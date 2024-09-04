@@ -7,6 +7,8 @@ entity.advancedRocketry.rocket.name=Ракета
 entity.rocket.name=Ракета
 
 tile.landingPad.name=Посадочная площадка
+tile.serviceStation.name=Станция техобслуживания
+tile.servicemonitor.name=Монитор состояния
 tile.seat.name=Сиденье
 tile.pad.name=Стартовая площадка
 tile.structuretower.name=Структурная башня
@@ -180,6 +182,7 @@ container.observatory=Обсерватория
 container.satellite=Отсек для спутника
 container.monitoringstation=Станция мониторинга
 container.satelliteMonitor=Спутниковый терминал
+container.servicestation=Станция техобслуживания
 
 enchantment.spaceBreathing=Герметичная изоляция
 
@@ -265,6 +268,17 @@ msg.fuelingStation.link=Вы подключили частотный связы�
 msg.monitoringStation.missionProgressNA=Прогресс миссии: Н/Д
 msg.monitoringStation.link=Вы подключили частотный связыватель к станции мониторинга на
 msg.monitoringStation.progress=Прогресс:
+
+msg.serviceStation.destroyProbNA=Вероятность разрушения: Н/Д
+msg.serviceStation.destroyProb=Вероятность разрушения
+msg.serviceStation.serviceProgress=Прогресс обслуживания
+msg.serviceStation.serviceProgressNA=Прогресс обслуживания: Н/Д
+msg.serviceStation.wornMotorsText=Двигатели
+msg.serviceStation.wornSeatsText=Сиденья
+msg.serviceStation.wornTanksText=Резервуары
+msg.serviceStation.assemblerScan=Сканировать сборщики
+msg.serviceStation.link=Вы подключили частотный связыватель к станции техобслуживания на
+
 msg.guidanceComputerHatch.loadingState=Состояние загрузки:
 msg.guidanceComputerHatch.ejectonlanding=Автоматический выброс при посадке
 msg.guidanceComputerHatch.ejectonsatlanding=Разрешить выброс спутниковых чипов
@@ -384,6 +398,11 @@ msg.itemsatellite.nopwrgen=Энергия не генерируется!
 msg.itemsatellite.data=Хранилище данных:
 msg.itemsatellite.nodata=Нет хранилища данных!
 msg.itemsatellite.empty=Пустое шасси
+msg.itemsatellite.weight=Масса спутника:
+msg.itemsatellite.noweight=Ошибка в подсчёте массы
+
+msg.brokenstage.text=Стадия повреждений
+
 msg.itemsatchip.id=ID:
 msg.itemsatchip.planet=Планета:
 msg.itemsatchip.planetunk=Планета: Неизвестно

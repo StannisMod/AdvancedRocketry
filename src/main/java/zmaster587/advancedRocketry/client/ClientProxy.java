@@ -30,11 +30,15 @@ import net.minecraftforge.fluids.IFluidBlock;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.client.registry.IRenderFactory;
 import net.minecraftforge.fml.client.registry.RenderingRegistry;
+import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
+import zmaster587.advancedRocketry.backwardCompat.ModelFormatException;
+import zmaster587.advancedRocketry.backwardCompat.WavefrontObject;
 import zmaster587.advancedRocketry.block.BlockCrystal;
 import zmaster587.advancedRocketry.block.CrystalColorizer;
 import zmaster587.advancedRocketry.client.model.ModelRocket;
@@ -47,6 +51,7 @@ import zmaster587.advancedRocketry.entity.fx.*;
 import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.event.RocketEventHandler;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
+import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.TileFluidTank;
 import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine;
 import zmaster587.advancedRocketry.tile.cables.TileDataPipe;
@@ -64,16 +69,31 @@ import zmaster587.libVulpes.tile.TileSchematic;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
+@Mod.EventBusSubscriber(value = Side.CLIENT)
 public class ClientProxy extends CommonProxy {
 
     private static final zmaster587.advancedRocketry.dimension.DimensionManager dimensionManagerClient = new zmaster587.advancedRocketry.dimension.DimensionManager();
+    private static final Map<ResourceLocation, WavefrontObject> models = new HashMap<>();
+
+    public static WavefrontObject getModel(ResourceLocation location) {
+        WavefrontObject model = models.getOrDefault(location, null);
+        if (model == null) {
+            try {
+                model = new WavefrontObject(location);
+                models.put(location, model);
+            } catch (ModelFormatException e) {
+                e.printStackTrace();
+            }
+        }
+        return model;
+    }
 
     @Override
     public void registerRenderers() {
-
-
         ClientRegistry.bindTileEntitySpecialRenderer(TileRocketAssemblingMachine.class, new RendererRocketAssemblingMachine());
         ClientRegistry.bindTileEntitySpecialRenderer(TilePrecisionAssembler.class, new RendererPrecisionAssembler());
         ClientRegistry.bindTileEntitySpecialRenderer(TileCuttingMachine.class, new RendererCuttingMachine());
@@ -104,6 +124,7 @@ public class ClientProxy extends CommonProxy {
         ClientRegistry.bindTileEntitySpecialRenderer(zmaster587.advancedRocketry.tile.multiblock.machine.TileCentrifuge.class, new zmaster587.advancedRocketry.client.render.multiblocks.RenderCentrifuge());
         ClientRegistry.bindTileEntitySpecialRenderer(TilePrecisionLaserEtcher.class, new RendererPrecisionLaserEtcher());
         ClientRegistry.bindTileEntitySpecialRenderer(TileSolarArray.class, new RendererSolarArray());
+        ClientRegistry.bindTileEntitySpecialRenderer(TileBrokenPart.class, new RendererBrokenPart());
 
         //ClientRegistry.bindTileEntitySpecialRenderer(TileModelRenderRotatable.class, modelBlock);
 
@@ -128,7 +149,7 @@ public class ClientProxy extends CommonProxy {
         Minecraft.getMinecraft().getItemColors().registerItemColorHandler(colorizer, Item.getItemFromBlock(AdvancedRocketryBlocks.blockCrystal));
 
         Minecraft.getMinecraft().getItemColors().registerItemColorHandler(new IItemColor() {
-            public int getColorFromItemstack(@Nonnull ItemStack stack, int tintIndex) {
+            public int colorMultiplier(@Nonnull ItemStack stack, int tintIndex) {
                 return tintIndex > 0 ? -1 : ((ItemArmor) stack.getItem()).getColor(stack);
             }
         }, AdvancedRocketryItems.itemSpaceSuit_Boots, AdvancedRocketryItems.itemSpaceSuit_Chest, AdvancedRocketryItems.itemSpaceSuit_Helmet, AdvancedRocketryItems.itemSpaceSuit_Leggings);
@@ -240,8 +261,6 @@ public class ClientProxy extends CommonProxy {
     public void preinit() {
         OBJLoader.INSTANCE.addDomain("advancedrocketry");
         registerRenderers();
-
-
     }
 
     private void registerFluidModel(IFluidBlock fluidBlock) {

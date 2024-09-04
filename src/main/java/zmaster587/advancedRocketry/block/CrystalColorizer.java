@@ -12,7 +12,7 @@ import javax.annotation.Nonnull;
 public class CrystalColorizer implements IBlockColor, IItemColor {
 
     @Override
-    public int getColorFromItemstack(@Nonnull ItemStack stack, int tintIndex) {
+    public int colorMultiplier(@Nonnull ItemStack stack, int tintIndex) {
         return BlockCrystal.EnumCrystal.values()[stack.getItemDamage()].getColor();
 
     }

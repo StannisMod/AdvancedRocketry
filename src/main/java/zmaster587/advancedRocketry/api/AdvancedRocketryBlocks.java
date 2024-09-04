@@ -28,6 +28,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockBipropellantFuelTank;
     public static Block blockOxidizerFuelTank;
     public static Block blockFuelingStation;
+    public static Block blockServiceStation;
     public static Block blockMonitoringStation, blockSatelliteBuilder, blockSatelliteControlCenter;
     public static Block blockNuclearFuelTank;
     public static Block blockMoonTurf, blockHotTurf;
@@ -106,4 +107,5 @@ public class AdvancedRocketryBlocks {
     public static Block blockSolarArray;
     public static Block blockSolarArrayPanel;
     public static Block blockRocketFire;
+    public static Block blockServiceMonitor;
 }

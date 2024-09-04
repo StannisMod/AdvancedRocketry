@@ -39,7 +39,7 @@ public class BlockPressurizedFluidTank extends Block {
 
     public BlockPressurizedFluidTank(Material material) {
         super(material);
-        isBlockContainer = true;
+        hasTileEntity = true;
     }
 
     @Override

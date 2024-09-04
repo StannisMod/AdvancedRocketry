@@ -1,0 +1,27 @@
+{
+    "type": "advancedrocketry:precisionassembler",
+    "itemingredients":
+    [
+        {
+            "type": "forge:ore_dict",
+            "ore": "ingotTitaniumIridium",
+            "count": 2
+        },
+        {
+            "type": "forge:ore_dict",
+            "ore": "plateTitaniumAluminide",
+            "count": 2
+        },
+	    {
+            "item": "advancedrocketry:advrocketmotor",
+            "data": 9
+        }
+    ],
+    "time": 2700,
+    "energy": 900,
+    "itemresults":
+    {
+        "item": "advancedrocketry:advrocketmotor",
+        "count": 1
+    }
+}

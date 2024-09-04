@@ -236,6 +236,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int planetDiscoveryChance;
     @ConfigProperty
+    public boolean allowNonArBiomesInTerraforming;
+    @ConfigProperty
     public double oxygenVentPowerMultiplier;
     @ConfigProperty
     public boolean skyOverride;
@@ -272,14 +274,20 @@ public class ARConfiguration {
     @ConfigProperty(needsSync = true)
     public boolean experimentalSpaceFlight;
 
-    public ARConfiguration() {
+    @ConfigProperty
+    public boolean advancedWeightSystem;
 
-    }
+    @ConfigProperty
+    public boolean partsWearSystem;
+
+    @ConfigProperty
+    public double increaseWearIntensityProb;
+
+    public ARConfiguration() {}
 
     public ARConfiguration(ARConfiguration config) {
         Field[] fields = ARConfiguration.class.getDeclaredFields();
         List<Field> fieldList = new ArrayList<>(fields.length);
-
 
         // getDeclaredFields returns an unordered list, so we need to sort them
         for (Field field : fields) {
@@ -355,7 +363,7 @@ public class ARConfiguration {
         arConfig.crystalliserMaximumGravity = (float) config.get(Configuration.CATEGORY_GENERAL, "crystalliserMaximumGravity", 0f, "Maximum gravity the crystalliser will function at. Use 0.0 to disable!").getDouble();
         arConfig.enableLaserDrill = config.get(Configuration.CATEGORY_GENERAL, "EnableLaserDrill", true, "Enables the laser drill machine").getBoolean();
         arConfig.spaceLaserPowerMult = (float) config.get(Configuration.CATEGORY_GENERAL, "LaserDrillPowerMultiplier", 1d, "Power multiplier for the laser drill machine").getDouble();
-        arConfig.laserDrillPlanet = config.get(Configuration.CATEGORY_GENERAL, "laserDrillPlanet", false, "If true the orbital laser will actually mine blocks on the planet below (currently not working)").getBoolean();
+        arConfig.laserDrillPlanet = config.get(Configuration.CATEGORY_GENERAL, "laserDrillPlanet", false, "If true the orbital laser will actually mine blocks on the planet below").getBoolean();
         String[] str = config.getStringList("spaceLaserDimIdBlackList", Configuration.CATEGORY_GENERAL, new String[]{}, "Laser drill will not mine these dimension");
         arConfig.enableTerraforming = config.get(Configuration.CATEGORY_GENERAL, "EnableTerraforming", true, "Enables terraforming items and blocks").getBoolean();
         arConfig.terraformSpeed = config.get(Configuration.CATEGORY_GENERAL, "terraformMult", 1f, "Multplier for atmosphere change speed").getDouble();
@@ -364,6 +372,7 @@ public class ARConfiguration {
         arConfig.terraformliquidRate = config.get(Configuration.CATEGORY_GENERAL, "TerraformerFluidConsumeRate", 40, "how many millibuckets/t are required to keep the terraformer running").getInt();
         arConfig.allowTerraformNonAR = config.get(Configuration.CATEGORY_GENERAL, "allowTerraformingNonARWorlds", false, "If true dimensions not added by AR can be terraformed, including the overworld").getBoolean();
         arConfig.enableGravityController = config.get(Configuration.CATEGORY_GENERAL, "enableGravityMachine", true, "If false the gravity controller cannot be built or used").getBoolean();
+        arConfig.allowNonArBiomesInTerraforming = config.get(Configuration.CATEGORY_GENERAL, "allowNonArBiomesInTerraforming", false, "non-ar biomes from mods with custom world gen can not be decorated in terraforming. If you want fully decorated terraforming with only default biomes, set this to false").getBoolean();
 
         //Oxygen
         arConfig.enableOxygen = config.get(OXYGEN, "EnableAtmosphericEffects", true, "If true, allows players being hurt due to lack of oxygen and allows effects from non-standard atmosphere types").getBoolean();
@@ -446,6 +455,9 @@ public class ARConfiguration {
         arConfig.gravityAffectsFuel = config.get(ROCKET, "gravityAffectsFuels", true, "If true planets with higher gravity require more fuel and lower gravity would require less").getBoolean();
         arConfig.launchingDestroysBlocks = config.get(ROCKET, "launchBlockDestruction", false, "If true rocket launches will kill plants, glass soil, turn rock into lava, and more").getBoolean();
         blackListRocketBlocksStr = config.getStringList("rocketBlockBlackList", ROCKET, new String[]{"minecraft:portal", "minecraft:bedrock", "minecraft:snow_layer", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava", "minecraft:fire", "advancedrocketry:rocketfire"}, "Mod:Blockname  for example \"minecraft:chest\"");
+        arConfig.advancedWeightSystem = config.get(ROCKET, "advancedWeightSystem", true, "Enables advanced weight system which computes rocket weight, including the handled inventories. Block weights are stores in weights.json").getBoolean();
+        arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enables rocket parts wear subsystem. Every rocket start it has probability to explode based on parts' wear intensities").getBoolean();
+        arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Every rocket usage every part has this probability to increase wear intensity").getDouble();
 
         //Ore and worldgen configuration
         //Ore configuration

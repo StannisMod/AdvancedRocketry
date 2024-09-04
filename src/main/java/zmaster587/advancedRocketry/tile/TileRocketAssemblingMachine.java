@@ -240,7 +240,6 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public void scanRocket(World world, BlockPos pos2, AxisAlignedBB bb) {
-
         int thrustMonopropellant = 0;
         int thrustBipropellant = 0;
         int thrustNuclearNozzleLimit = 0;
@@ -253,7 +252,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         int fuelCapacityBipropellant = 0;
         int fuelCapacityOxidizer = 0;
         int fuelCapacityNuclearWorkingFluid = 0;
-        int numBlocks = 0;
+
         float drillPower = 0f;
         stats.reset();
 
@@ -318,9 +317,11 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 continue;
                             }
 
-                            numBlocks++;
-
-                            weight += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
+                            if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
+                                weight += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
+                            } else {
+                                weight += 1;
+                            }
 
                             //If rocketEngine increaseThrust
                             final float x = xCurr - actualMinX - ((actualMaxX - actualMinX) / 2f);
@@ -336,18 +337,18 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                     monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
                                     thrustMonopropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
                                 }
-                                stats.addEngineLocation(x, yCurr - actualMinY, z);
+                                stats.addEngineLocation(x+0.5f, yCurr - actualMinY+0.5f, z+0.5f);
                             }
 
                             if (block instanceof IFuelTank) {
-                                if (block instanceof BlockFuelTank) {
-                                    fuelCapacityMonopropellant += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
-                                } else if (block instanceof BlockBipropellantFuelTank) {
+                                if (block instanceof BlockBipropellantFuelTank) {
                                     fuelCapacityBipropellant += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
                                 } else if (block instanceof BlockOxidizerFuelTank) {
                                     fuelCapacityOxidizer += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
                                 } else if (block instanceof BlockNuclearFuelTank) {
                                     fuelCapacityNuclearWorkingFluid += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
+                                } else if (block instanceof BlockFuelTank) {
+                                    fuelCapacityMonopropellant += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
                                 }
                             }
 
@@ -366,12 +367,14 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                             TileEntity tile = world.getTileEntity(currBlockPos);
                             if (tile instanceof TileSatelliteHatch) {
                                 hasSatellite = true;
-                                TileSatelliteHatch hatch = (TileSatelliteHatch) tile;
-                                if (hatch.getSatellite() != null) {
-                                    weight += hatch.getSatellite().getProperties().getWeight();
-                                } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
-                                    ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
-                                    weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
+                                if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
+                                    TileSatelliteHatch hatch = (TileSatelliteHatch) tile;
+                                    if (hatch.getSatellite() != null) {
+                                        weight += hatch.getSatellite().getProperties().getWeight();
+                                    } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
+                                        ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
+                                        weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
+                                    }
                                 }
                             } else if (tile instanceof TileGuidanceComputer) {
                                 hasGuidance = true;

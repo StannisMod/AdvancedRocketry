@@ -6,14 +6,32 @@
         "transform": "forge:default-block"
     },
     "variants": {
-        "tankstates=top": { "model": "advancedrocketry:models/toptank.obj" },
-        "tankstates=middle": { "model": "advancedrocketry:models/middletank.obj" },
-        "tankstates=bottom": { "model": "advancedrocketry:models/bottomtank.obj" },
         "inventory": {
             "model": "advancedrocketry:models/middletank.obj",
             "textures": {
                 "layer0": "advancedrocketry:textures/models/tank"
             }
-        }
+        },
+	"facing=north,tankstates=middle": { "model": "advancedrocketry:models/middletank.obj", "x": 90 },
+        "facing=south,tankstates=middle": {  "model": "advancedrocketry:models/middletank.obj", "x": 90, "y": 180 },
+        "facing=west,tankstates=middle":  { "model": "advancedrocketry:models/middletank.obj", "x": 90, "y": 270 },
+        "facing=east,tankstates=middle":  { "model": "advancedrocketry:models/middletank.obj", "x": 90, "y": 90 },
+        "facing=up,tankstates=middle":  { "model": "advancedrocketry:models/middletank.obj"},
+        "facing=down,tankstates=middle":  { "model": "advancedrocketry:models/middletank.obj"},
+
+	"facing=north,tankstates=top": { "model": "advancedrocketry:models/toptank.obj", "x": 90 },
+        "facing=south,tankstates=top": {  "model": "advancedrocketry:models/toptank.obj", "x": 90, "y": 180 },
+        "facing=west,tankstates=top":  { "model": "advancedrocketry:models/toptank.obj", "x": 90, "y": 270 },
+        "facing=east,tankstates=top":  { "model": "advancedrocketry:models/toptank.obj", "x": 90, "y": 90 },
+        "facing=up,tankstates=top":  { "model": "advancedrocketry:models/toptank.obj"},
+        "facing=down,tankstates=top":  { "model": "advancedrocketry:models/toptank.obj"},
+
+	"facing=north,tankstates=bottom": { "model": "advancedrocketry:models/bottomtank.obj", "x": 90 },
+        "facing=south,tankstates=bottom": {  "model": "advancedrocketry:models/bottomtank.obj", "x": 90, "y": 180 },
+        "facing=west,tankstates=bottom":  { "model": "advancedrocketry:models/bottomtank.obj", "x": 90, "y": 270 },
+        "facing=east,tankstates=bottom":  { "model": "advancedrocketry:models/bottomtank.obj", "x": 90, "y": 90 },
+        "facing=up,tankstates=bottom":  { "model": "advancedrocketry:models/bottomtank.obj"},
+        "facing=down,tankstates=bottom":  { "model": "advancedrocketry:models/bottomtank.obj"}
+
     }
 }

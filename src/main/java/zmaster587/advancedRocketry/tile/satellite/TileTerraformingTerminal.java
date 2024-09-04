@@ -29,6 +29,7 @@ import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.advancedRocketry.util.BiomeHandler;
 import zmaster587.advancedRocketry.util.IDataInventory;
 import zmaster587.advancedRocketry.util.PlanetaryTravelHelper;
+import zmaster587.advancedRocketry.util.TerraformingHelper;
 import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
 import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
 import zmaster587.libVulpes.LibVulpes;
@@ -140,7 +141,7 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
     public void update() {
         super.update();
         boolean has_redstone = world.isBlockIndirectlyGettingPowered(getPos()) != 0;
-        int powerrequired = 120;
+        int powerrequired = 40; //120;
         if (!world.isRemote) {
 
             if (world.getTotalWorldTime() % 20 == 0)
@@ -175,33 +176,36 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
                     SatelliteBiomeChanger sat = (SatelliteBiomeChanger) ItemSatelliteIdentificationChip.getSatellite(getStackInSlot(0));
                     IUniversalEnergy battery = sat.getBattery();
 
-                    for (int i = 0; i < 10; i++) {
+                    for (int i = 0; i < 1000; i++) {
                         //TODO: Better imp
 
                         if (battery.getUniversalEnergyStored() > powerrequired) {
-                            if (battery.extractEnergy(powerrequired, false) == powerrequired) {
                                 try {
 
-                                    HashedBlockPosition next_block = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).get_next_terraforming_block();
 
-                                    BiomeProvider chunkmgr = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).chunkMgrTerraformed;
+                                    TerraformingHelper t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
 
-                                    // this chunkmgr is not initialized by default because dimensionproperties
-                                    // inits during the forge mod init phase and some stuff is not loaded at this time.
-                                    // I will make sure it will be initialized here
-                                    // I have no idea where else to put it :(
-                                    if (chunkmgr == null)
-                                        DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).reset_chunkmgr();
+                                    if (t == null) {
+                                        DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).load_terraforming_helper(false);
+                                        t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
+                                    }
+                                    BiomeProvider chunkmgr = t.chunkMgrTerraformed;
+                                    BlockPos next_block_pos = t.get_next_position(false);
 
-                                    BiomeHandler.changeBiome(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block.x, next_block.z), new BlockPos(next_block.x, 0, next_block.z), false);
+                                    if (next_block_pos != null) { // it is null when there is everything terraformed
+                                        battery.extractEnergy(powerrequired, false);
+                                        BiomeHandler.terraform(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block_pos.getX(), next_block_pos.getZ()), next_block_pos, false, world.provider.getDimension());
+                                    }else{
+                                        //System.out.println("nothing to terraform");
+                                        break; // nothing to do, everything is terraformed
+                                    }
 
-
-                                } catch (NullPointerException e) {
-                                    e.printStackTrace();
+                                //} catch (NullPointerException e) {
+                                //    e.printStackTrace();
                                 } catch (NoClassDefFoundError e){
                                     e.printStackTrace(); //WTF
                                 }
-                            }
+
                         } else
                             break;
                     }

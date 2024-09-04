@@ -1,0 +1,27 @@
+{
+    "type": "advancedrocketry:precisionassembler",
+    "itemingredients":
+    [
+        {
+            "type": "forge:ore_dict",
+            "ore": "ingotSteel",
+            "count": 2
+        },
+        {
+            "type": "forge:ore_dict",
+            "ore": "plateTitanium",
+            "count": 2
+        },
+	    {
+            "item": "advancedrocketry:rocketmotor",
+            "data": 7
+        }
+    ],
+    "time": 2700,
+    "energy": 900,
+    "itemresults":
+    {
+        "item": "advancedrocketry:rocketmotor",
+        "count": 1
+    }
+}

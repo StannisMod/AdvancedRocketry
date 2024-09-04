@@ -59,18 +59,7 @@ public class EntityLaserNode extends Entity {
      * Removes all the light blocks created by the laser
      */
     private void cleanUp() {
-        if (!this.world.isRemote && this.isDead)
-            new Thread(() -> {
-                for (int h = 0; h < world.getHeight(); h++) {
-                    for (int i = 0; i < 9; i++) {
-                        int x = (int) posX + (i % 3) - 1;
-                        int z = (int) posZ + (i / 3) - 1;
-                        BlockPos pos = new BlockPos(x, h, z);
-                        if (world.getBlockState(pos).getBlock() == AdvancedRocketryBlocks.blockLightSource)
-                            world.setBlockToAir(pos);
-                    }
-                }
-            }).start();
+
     }
 
     @Override

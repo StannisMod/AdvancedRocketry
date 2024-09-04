@@ -10,8 +10,10 @@ public class TileEntitySyncable extends TileEntity {
 
     public void markDirty() {
         super.markDirty();
-        IBlockState state = world.getBlockState(pos);
-        world.notifyBlockUpdate(pos, state, state, 3);
+        if (hasWorld()) {
+            IBlockState state = world.getBlockState(pos);
+            world.notifyBlockUpdate(pos, state, state, 3);
+        }
     }
 
     @Override

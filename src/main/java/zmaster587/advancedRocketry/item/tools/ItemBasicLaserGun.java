@@ -41,7 +41,7 @@ public class ItemBasicLaserGun extends Item {
     }
 
     @Override
-    public float getStrVsBlock(@Nonnull ItemStack stack, IBlockState state) {
+    public float getDestroySpeed(@Nonnull ItemStack stack, IBlockState state) {
         return 0;
     }
 

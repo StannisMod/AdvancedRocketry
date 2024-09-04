@@ -43,7 +43,7 @@ public class BiomeGenAlienForest extends Biome {
     @Override
     @Nonnull
     public WorldGenAbstractTree getRandomTreeFeature(Random rand) {
-        return noTree;
+        return alienTree;
     }
 
     @Override

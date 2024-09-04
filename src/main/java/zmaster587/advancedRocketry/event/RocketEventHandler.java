@@ -1,4 +1,7 @@
 package zmaster587.advancedRocketry.event;
+// This code does not work - it should display the earth below rockets at start but it does not.
+// The detailed map is scaled too small and it is ugly even with correct scale
+// maybe just use leo as earth? 
 
 import net.minecraft.block.material.MapColor;
 import net.minecraft.block.state.IBlockState;

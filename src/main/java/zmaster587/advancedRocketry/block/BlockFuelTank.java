@@ -13,6 +13,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.IFuelTank;
+import zmaster587.advancedRocketry.api.IRocketEngine;
 import zmaster587.libVulpes.block.BlockFullyRotatable;
 
 import javax.annotation.Nonnull;
@@ -84,7 +85,7 @@ public class BlockFuelTank extends BlockFullyRotatable implements IFuelTank {
 
         if (world.getBlockState(pos).getValue(FACING) == EnumFacing.DOWN || world.getBlockState(pos).getValue(FACING) == EnumFacing.UP) {
             int i = (world.getBlockState(pos.add(0, 1, 0)).getBlock() == this && world.getBlockState(pos.add(0, 1, 0)).getValue(FACING) == EnumFacing.UP) ? 1 : 0;
-            i += (world.getBlockState(pos.add(0, -1, 0)).getBlock() == this && world.getBlockState(pos.add(0, -1, 0)).getValue(FACING) == EnumFacing.UP) || world.getBlockState(pos.add(0, -1, 0)).getBlock() instanceof BlockRocketMotor ? 2 : 0;
+            i += (world.getBlockState(pos.add(0, -1, 0)).getBlock() == this && world.getBlockState(pos.add(0, -1, 0)).getValue(FACING) == EnumFacing.UP) || world.getBlockState(pos.add(0, -1, 0)).getBlock() instanceof IRocketEngine ? 2 : 0;
 
             //If there is no tank below this one and no engine below
             if (i == 1) {
@@ -101,8 +102,8 @@ public class BlockFuelTank extends BlockFullyRotatable implements IFuelTank {
         }
 
         if (world.getBlockState(pos).getValue(FACING) == EnumFacing.EAST || world.getBlockState(pos).getValue(FACING) == EnumFacing.WEST) {
-            int i = (world.getBlockState(pos.add(1, 0, 0)).getBlock() == this && world.getBlockState(pos.add(1, 0, 0)).getValue(FACING) == EnumFacing.EAST) || world.getBlockState(pos.add(1, 0, 0)).getBlock() instanceof BlockRocketMotor ? 1 : 0;
-            i += (world.getBlockState(pos.add(-1, 0, 0)).getBlock() == this && world.getBlockState(pos.add(-1, 0, 0)).getValue(FACING) == EnumFacing.EAST) || world.getBlockState(pos.add(-1, 0, 0)).getBlock() instanceof BlockRocketMotor ? 2 : 0;
+            int i = (world.getBlockState(pos.add(1, 0, 0)).getBlock() == this && world.getBlockState(pos.add(1, 0, 0)).getValue(FACING) == EnumFacing.EAST) || world.getBlockState(pos.add(1, 0, 0)).getBlock() instanceof IRocketEngine ? 1 : 0;
+            i += (world.getBlockState(pos.add(-1, 0, 0)).getBlock() == this && world.getBlockState(pos.add(-1, 0, 0)).getValue(FACING) == EnumFacing.EAST) || world.getBlockState(pos.add(-1, 0, 0)).getBlock() instanceof IRocketEngine ? 2 : 0;
 
             //If there is no tank below this one and no engine below
             if (i == 1) {
@@ -119,8 +120,8 @@ public class BlockFuelTank extends BlockFullyRotatable implements IFuelTank {
         }
 
         if (world.getBlockState(pos).getValue(FACING) == EnumFacing.NORTH || world.getBlockState(pos).getValue(FACING) == EnumFacing.SOUTH) {
-            int i = (world.getBlockState(pos.add(0, 0, 1)).getBlock() == this && world.getBlockState(pos.add(0, 0, 1)).getValue(FACING) == EnumFacing.SOUTH) || world.getBlockState(pos.add(0, 0, 1)).getBlock() instanceof BlockRocketMotor ? 1 : 0;
-            i += (world.getBlockState(pos.add(0, 0, -1)).getBlock() == this && world.getBlockState(pos.add(0, 0, -1)).getValue(FACING) == EnumFacing.SOUTH) || world.getBlockState(pos.add(0, 0, -1)).getBlock() instanceof BlockRocketMotor ? 2 : 0;
+            int i = (world.getBlockState(pos.add(0, 0, 1)).getBlock() == this && world.getBlockState(pos.add(0, 0, 1)).getValue(FACING) == EnumFacing.SOUTH) || world.getBlockState(pos.add(0, 0, 1)).getBlock() instanceof IRocketEngine ? 1 : 0;
+            i += (world.getBlockState(pos.add(0, 0, -1)).getBlock() == this && world.getBlockState(pos.add(0, 0, -1)).getValue(FACING) == EnumFacing.SOUTH) || world.getBlockState(pos.add(0, 0, -1)).getBlock() instanceof IRocketEngine ? 2 : 0;
 
             //If there is no tank below this one and no engine below
             if (i == 1) {

@@ -8,6 +8,7 @@ import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.properties.PropertyBool;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.IInventory;
@@ -20,11 +21,15 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import org.lwjgl.Sys;
+import scala.tools.nsc.doc.base.comment.EntityLink;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.tile.satellite.TileTerraformingTerminal;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.block.RotatableBlock;
 import zmaster587.libVulpes.util.IAdjBlockUpdate;
+
+import javax.annotation.Nonnull;
 
 public class BlockTileTerraformer extends RotatableBlock {
     protected Class<? extends TileEntity> tileClass;
@@ -100,7 +105,18 @@ public class BlockTileTerraformer extends RotatableBlock {
         return false;
     }
 
+    @Override
+    public void onBlockPlacedBy(World world, BlockPos pos, IBlockState state, EntityLivingBase player, @Nonnull ItemStack itemstack) {
+        super.onBlockPlacedBy(world, pos, state, player, itemstack);
+        if (!world.isRemote) {
+            DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).registerProtectingBlock(pos);
+            System.out.println("terminal placed");
+        }
+    }
     public void breakBlock(World world, BlockPos pos, IBlockState state) {
+        if (!world.isRemote)
+            DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).unregisterProtectingBlock(pos);
+
         TileEntity tile = world.getTileEntity(pos);
 
 
@@ -133,6 +149,7 @@ public class BlockTileTerraformer extends RotatableBlock {
                             entityitem.getItem().setTagCompound(tag == null ? null : tag.copy());
                         }
 
+                        // why double calling this??
                         world.spawnEntity(entityitem);
                         world.spawnEntity(entityitem);
                     }

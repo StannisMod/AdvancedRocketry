@@ -12,6 +12,7 @@ import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.world.gen.ChunkGeneratorSettings;
 import net.minecraft.world.gen.layer.*;
 import net.minecraftforge.common.BiomeManager.BiomeEntry;
+import net.minecraftforge.fml.relauncher.ReflectionHelper;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
@@ -37,6 +38,10 @@ public class ChunkManagerPlanet extends BiomeProvider {
         agenlayer = getModdedBiomeGenerators(default1, seed, agenlayer);
         this.genBiomes = agenlayer[0];
         this.biomeIndexLayer = agenlayer[1];
+
+        ReflectionHelper.setPrivateValue(BiomeProvider.class, this, this.genBiomes, "genBiomes", "field_76944_d");
+        ReflectionHelper.setPrivateValue(BiomeProvider.class, this, this.biomeIndexLayer, "biomeIndexLayer", "field_76945_e");
+
     }
 
     long seed;
