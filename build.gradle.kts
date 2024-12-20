@@ -41,7 +41,7 @@ fun getDate(): String {
     return format.format(Date())
 }
 
-version = "$modVersion-$buildNumber"
+version = "$modVersion"
 
 println("$archiveBase v$mcVersion-$version")
 
