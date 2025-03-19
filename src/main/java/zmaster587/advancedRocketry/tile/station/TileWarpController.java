@@ -937,7 +937,7 @@ public class TileWarpController extends TileEntity implements ITickable, IModula
 
         int dimId = properties.getId();
 
-        if (dimId > DimensionManager.dimOffset) {
+        if (DimensionManager.getInstance().getDimensionProperties(dimId).isStar()) {
             return true;
         }
 

@@ -24,7 +24,6 @@ public class PacketSyncKnownPlanets extends BasePacket {
         this.stationId = stationId;
         this.knownPlanets = knownPlanets;
         this.knownPlanets.addAll(DimensionManager.getInstance().knownPlanets);
-        this.knownPlanets.remove(0);
     }
 
     @Override
