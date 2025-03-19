@@ -77,6 +77,10 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         rotation = new double[3];
     }
 
+    public Set<Integer> getKnownPlanetList() {
+        return knownPlanetList;
+    }
+
     public long getExpireTime() {
         return Long.MAX_VALUE;
     }

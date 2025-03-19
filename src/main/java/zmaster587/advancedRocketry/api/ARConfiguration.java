@@ -11,6 +11,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.oredict.OreDictionary;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,6 +20,7 @@ import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereVacuum;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.integration.MatterOvedriveIntegration;
 import zmaster587.advancedRocketry.util.Asteroid;
 import zmaster587.advancedRocketry.util.SealableBlockHandler;
 
@@ -704,6 +706,9 @@ public class ARConfiguration {
 
         //Add armor stand by default
         arConfig.bypassEntity.add(EntityArmorStand.class);
+        if (Loader.isModLoaded("matteroverdrive")) {
+            MatterOvedriveIntegration.addAndroidsToBypassList(arConfig);
+        }
 
 
         for (String str : entityList) {
