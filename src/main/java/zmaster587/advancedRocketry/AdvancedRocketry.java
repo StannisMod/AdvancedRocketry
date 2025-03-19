@@ -6,6 +6,7 @@ import net.minecraft.block.material.Material;
 import net.minecraft.block.material.MaterialLiquid;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.enchantment.Enchantment;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Biomes;
 import net.minecraft.init.Blocks;
 import net.minecraft.inventory.EntityEquipmentSlot;
@@ -37,6 +38,7 @@ import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.*;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.registry.EntityRegistry;
 import net.minecraftforge.fml.common.registry.GameRegistry;
@@ -50,6 +52,7 @@ import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.capability.CapabilitySpaceArmor;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
+import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.armor.ItemSpaceArmor;
 import zmaster587.advancedRocketry.armor.ItemSpaceChest;
 import zmaster587.advancedRocketry.block.*;
@@ -324,6 +327,7 @@ public class AdvancedRocketry {
         PacketHandler.INSTANCE.addDiscriminator(PacketConfigSync.class);
         PacketHandler.INSTANCE.addDiscriminator(PacketFluidParticle.class);
         PacketHandler.INSTANCE.addDiscriminator(PacketSatellitesUpdate.class);
+        PacketHandler.INSTANCE.addDiscriminator(PacketSyncKnownPlanets.class);
 
 
         //if(zmaster587.advancedRocketry.api.Configuration.allowMakingItemsForOtherMods)
@@ -1277,6 +1281,22 @@ public class AdvancedRocketry {
                 HashSet<String> list = modProducts.computeIfAbsent(product, k -> new HashSet<>());
                 list.add(event.getName().substring(product.name().length()));
             }
+        }
+    }
+
+    // pretty hacky way and AR also have it's own syncing mechanism, but i just dont trust it
+    @SubscribeEvent
+    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.player instanceof EntityPlayerMP) {
+            EntityPlayerMP player = (EntityPlayerMP) event.player;
+
+            for (ISpaceObject spaceObject : SpaceObjectManager.getSpaceManager().getSpaceObjects()) {
+                if (spaceObject instanceof SpaceStationObject) {
+                    SpaceStationObject station = (SpaceStationObject) spaceObject;
+                    PacketHandler.sendToPlayer(new PacketSyncKnownPlanets(station.getId(), station.getKnownPlanetList()), player);
+                }
+            }
+
         }
     }
 }
