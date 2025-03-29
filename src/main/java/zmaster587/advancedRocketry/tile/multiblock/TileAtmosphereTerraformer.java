@@ -471,12 +471,12 @@ public class TileAtmosphereTerraformer extends TileMultiPowerConsumer implements
             outOfFluid = false;
             this.world.notifyBlockUpdate(this.pos, this.world.getBlockState(this.pos), this.world.getBlockState(this.pos), 3);
 
-            System.out.println("s oof false");
+            //System.out.println("s oof false");
         } else if (x && !outOfFluid) {
             outOfFluid = true;
             this.world.notifyBlockUpdate(this.pos, this.world.getBlockState(this.pos), this.world.getBlockState(this.pos), 3);
 
-            System.out.println("s oof true");
+            //System.out.println("s oof true");
         }
     }
 
@@ -573,7 +573,7 @@ public class TileAtmosphereTerraformer extends TileMultiPowerConsumer implements
         super.writeNetworkData(nbt);
         nbt.setInteger("selected", radioButton.getOptionSelected());
         nbt.setBoolean("oofluid", outOfFluid);
-        System.out.println("write oof:"+outOfFluid);
+        //System.out.println("write oof:"+outOfFluid);
     }
 
     @Override
@@ -581,7 +581,7 @@ public class TileAtmosphereTerraformer extends TileMultiPowerConsumer implements
         super.readNetworkData(nbt);
         radioButton.setOptionSelected(nbt.getInteger("selected"));
         outOfFluid = nbt.getBoolean("oofluid");
-        System.out.println("oof:"+outOfFluid);
+        //System.out.println("oof:"+outOfFluid);
 
         if (world !=null && world.isRemote){
             //if (!client_contructed)
