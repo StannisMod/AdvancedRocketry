@@ -162,6 +162,7 @@ public class RocketFx extends Particle {
         Tessellator.getInstance().draw();
         GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
+        GlStateManager.enableAlpha();
     }
 
     public boolean shouldDisableDepth() {

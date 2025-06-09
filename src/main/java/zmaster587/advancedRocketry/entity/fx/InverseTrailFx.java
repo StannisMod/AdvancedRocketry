@@ -122,8 +122,9 @@ public class InverseTrailFx extends Particle {
         }
 
         Tessellator.getInstance().draw();
-
+        GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
+        GlStateManager.enableAlpha();
     }
 
     @Override
