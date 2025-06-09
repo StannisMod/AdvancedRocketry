@@ -24,9 +24,6 @@ public class DelayedParticleRenderingEventHandler {
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         InverseTrailFx.renderAll(TrailFxParticles);
         RocketFx.renderAll(RocketFxParticles);
-
-
-
     }
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {

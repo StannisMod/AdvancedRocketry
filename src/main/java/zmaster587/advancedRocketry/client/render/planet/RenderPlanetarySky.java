@@ -1067,6 +1067,8 @@ GL11.glPopMatrix();
         // Reset color to full opacity and enable fog again
         GlStateManager.color(1f, 1f, 1f, 1f);
         GlStateManager.enableFog();
+        GlStateManager.disableBlend();
+        GlStateManager.enableAlpha();
 
 
     }
