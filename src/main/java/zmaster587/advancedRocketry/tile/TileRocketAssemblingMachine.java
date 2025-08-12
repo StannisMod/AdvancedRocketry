@@ -1132,6 +1132,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                 for (IInfrastructure infrastructure : getConnectedInfrastructure()) {
                     rocket.linkInfrastructure(infrastructure);
                 }
+                scanRocket(world,pos, bbCache); // rescan on landing
 
                 PacketHandler.sendToPlayersTrackingEntity(new PacketMachine(this, (byte) 3), rocket);
             }
