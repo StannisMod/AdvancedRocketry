@@ -168,6 +168,8 @@ public enum WeightEngine {
             weights = GSON.fromJson(root.getAsJsonObject("individual"), HashMap.class);
         } catch (Exception e) {
             e.printStackTrace();
+            weights = new HashMap<>(); // use empty map
+            System.out.println("The weight config was wrong, could not be read, was broken, not there or something else! An empty weight config will be used");
         }
     }
 

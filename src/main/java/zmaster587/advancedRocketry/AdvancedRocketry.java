@@ -95,6 +95,7 @@ import zmaster587.advancedRocketry.tile.cables.TileEnergyPipe;
 import zmaster587.advancedRocketry.tile.cables.TileLiquidPipe;
 import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
+import zmaster587.advancedRocketry.tile.hatch.TileInvHatch;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.tile.infrastructure.*;
 import zmaster587.advancedRocketry.tile.multiblock.*;
@@ -374,7 +375,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileCuttingMachine.class, "ARcuttingmachine");
         GameRegistry.registerTileEntity(TileDataBus.class, "ARdataBus");
         GameRegistry.registerTileEntity(TileSatelliteHatch.class, "ARsatelliteHatch");
-        GameRegistry.registerTileEntity(TileInventoryHatch.class, "ARinventoryHatch");
+        GameRegistry.registerTileEntity(TileInvHatch.class, "ARinventoryHatch");
         GameRegistry.registerTileEntity(TileGuidanceComputerAccessHatch.class, "ARguidanceComputerHatch");
         GameRegistry.registerTileEntity(TileSatelliteBuilder.class, "ARsatelliteBuilder");
         GameRegistry.registerTileEntity(TileSatelliteTerminal.class, "ARTileEntitySatelliteControlCenter");
