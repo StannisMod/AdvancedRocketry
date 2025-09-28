@@ -24,7 +24,9 @@ import net.minecraft.world.World;
 import org.lwjgl.Sys;
 import scala.tools.nsc.doc.base.comment.EntityLink;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.tile.satellite.TileTerraformingTerminal;
+import zmaster587.advancedRocketry.util.TerraformingHelper;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.block.RotatableBlock;
 import zmaster587.libVulpes.util.IAdjBlockUpdate;
@@ -63,7 +65,7 @@ public class BlockTileTerraformer extends RotatableBlock {
     }
 
     public void setBlockState(World world, IBlockState state, BlockPos pos, boolean newState) {
-        world.setBlockState(pos, state.withProperty(STATE, newState), 2);
+        world.setBlockState(pos, state.withProperty(STATE, newState), 3);
         world.markBlockRangeForRenderUpdate(pos, pos);
     }
 
@@ -109,8 +111,12 @@ public class BlockTileTerraformer extends RotatableBlock {
     public void onBlockPlacedBy(World world, BlockPos pos, IBlockState state, EntityLivingBase player, @Nonnull ItemStack itemstack) {
         super.onBlockPlacedBy(world, pos, state, player, itemstack);
         if (!world.isRemote) {
+
+            if (!DimensionProperties.proxylists.isinitialized(DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getId())){
+                DimensionProperties.proxylists.initdim(DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getId());
+            }
+
             DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).registerProtectingBlock(pos);
-            System.out.println("terminal placed");
         }
     }
     public void breakBlock(World world, BlockPos pos, IBlockState state) {
@@ -149,8 +155,6 @@ public class BlockTileTerraformer extends RotatableBlock {
                             entityitem.getItem().setTagCompound(tag == null ? null : tag.copy());
                         }
 
-                        // why double calling this??
-                        world.spawnEntity(entityitem);
                         world.spawnEntity(entityitem);
                     }
                 }

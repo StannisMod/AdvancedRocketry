@@ -14,6 +14,7 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
+import zmaster587.advancedRocketry.block.BlockTileTerraformer;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.inventory.modules.ModuleSatellite;
@@ -39,24 +40,20 @@ import java.util.LinkedList;
 import java.util.List;
 
 
-
 public class TileTerraformingTerminal extends TileInventoriedRFConsumer implements INetworkMachine, IModularInventory, IButtonInventory {
 
     private ModuleText moduleText;
 
     public boolean was_enabled_last_tick;
 
-    private ModuleButton buttonstopall;
-
     private int sat_power_per_tick;
     private float randomblocks_per_tick;
 
 
-
     public TileTerraformingTerminal() {
         super(1, 1);
-         sat_power_per_tick = 0;
-         randomblocks_per_tick = 0;
+        sat_power_per_tick = 0;
+        randomblocks_per_tick = 0;
         was_enabled_last_tick = false;
     }
 
@@ -94,7 +91,7 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
 
     @Override
     public void writeDataToNetwork(ByteBuf out, byte packetId) {
-        if (packetId == (byte) 22){
+        if (packetId == (byte) 22) {
             out.writeInt(sat_power_per_tick);
             out.writeFloat(randomblocks_per_tick);
         }
@@ -103,7 +100,7 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
     @Override
     public void readDataFromNetwork(ByteBuf in, byte packetId,
                                     NBTTagCompound nbt) {
-        if (packetId == (byte) 22){
+        if (packetId == (byte) 22) {
             nbt.setInteger("powergen", in.readInt());
             nbt.setFloat("blockpertick", in.readFloat());
         }
@@ -111,9 +108,9 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
-        if (id == (byte) 22){
+        if (id == (byte) 22) {
             this.sat_power_per_tick = nbt.getInteger("powergen");
-            this.randomblocks_per_tick=  nbt.getFloat("blockpertick");
+            this.randomblocks_per_tick = nbt.getFloat("blockpertick");
             this.updateInventoryInfo();
         }
     }
@@ -132,27 +129,25 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
         int powerrequired = 80; //120;
         if (!world.isRemote) {
 
-            if (world.getTotalWorldTime() % 20 == 0)
-                //world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
-                PacketHandler.sendToNearby(new PacketMachine(this,(byte) 22),world.provider.getDimension(),pos,16);
+            if ((world.getTotalWorldTime() + 6) % 21 == 0)
+                PacketHandler.sendToNearby(new PacketMachine(this, (byte) 22), world.provider.getDimension(), pos, 16);
 
             if (hasValidBiomeChanger() && has_redstone) {
-                if (!was_enabled_last_tick) {
-                    was_enabled_last_tick = true;
+                was_enabled_last_tick = true;
+                if(!world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)){
+                    world.setBlockState(pos, world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, true), 3);
+                }
 
-                    Item biomeChanger = getStackInSlot(0).getItem();
-                    if (biomeChanger instanceof ItemBiomeChanger) {
-                        SatelliteBiomeChanger sat = (SatelliteBiomeChanger) ItemSatelliteIdentificationChip.getSatellite(getStackInSlot(0));
-                        sat_power_per_tick = sat.getPowerPerTick();
-                        randomblocks_per_tick = (float) sat_power_per_tick / powerrequired;
-                    }
-
-                    markDirty();
+                Item biomeChanger = getStackInSlot(0).getItem();
+                if (biomeChanger instanceof ItemBiomeChanger) {
+                    SatelliteBiomeChanger sat = (SatelliteBiomeChanger) ItemSatelliteIdentificationChip.getSatellite(getStackInSlot(0));
+                    sat_power_per_tick = sat.getPowerPerTick();
+                    randomblocks_per_tick = (float) sat_power_per_tick / powerrequired;
                 }
             } else {
-                if (was_enabled_last_tick) {
-                    was_enabled_last_tick = false;
-                    markDirty();
+                was_enabled_last_tick = false;
+                if(world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)){
+                    world.setBlockState(pos, world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, false), 3);
                 }
             }
         }
@@ -168,35 +163,35 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
                         //TODO: Better imp
 
                         if (battery.getUniversalEnergyStored() > powerrequired) {
-                                try {
+                            try {
 
 
-                                    TerraformingHelper t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
+                                TerraformingHelper t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
 
-                                    if (t == null) {
-                                        DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).load_terraforming_helper(false);
-                                        t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
-                                    }
+                                if (t == null) {
+                                    DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).load_terraforming_helper(false);
+                                    t = DimensionProperties.proxylists.gethelper(world.provider.getDimension());
+                                }
 
-                                    BiomeProvider chunkmgr = t.chunkMgrTerraformed;
-                                    //BlockPos next_block_pos = t.get_next_position(false);
-                                    //BlockPos next_block_pos = t.get_next_position_biomechanging(false);
-                                    BlockPos next_block_pos = t.get_next_position_biomechanging(true);
+                                BiomeProvider chunkmgr = t.chunkMgrTerraformed;
+                                //BlockPos next_block_pos = t.get_next_position(false);
+                                //BlockPos next_block_pos = t.get_next_position_biomechanging(false);
+                                BlockPos next_block_pos = t.get_next_position_biomechanging(true);
 
-                                    if (next_block_pos != null) { // it is null when there is everything terraformed
-                                        battery.extractEnergy(powerrequired, false);
-                                        //BiomeHandler.terraform(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block_pos.getX(), next_block_pos.getZ()), next_block_pos, false, world.provider.getDimension());
-                                        BiomeHandler.terraform_biomes(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block_pos.getX(), next_block_pos.getZ()), next_block_pos,  world.provider.getDimension());
-                                    }else{
-                                        //System.out.println("nothing to terraform");
-                                        break; // nothing to do, everything is terraformed
-                                    }
+                                if (next_block_pos != null) { // it is null when there is everything terraformed
+                                    battery.extractEnergy(powerrequired, false);
+                                    //BiomeHandler.terraform(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block_pos.getX(), next_block_pos.getZ()), next_block_pos, false, world.provider.getDimension());
+                                    BiomeHandler.terraform_biomes(world, ((ChunkManagerPlanet) chunkmgr).getBiomeGenAt(next_block_pos.getX(), next_block_pos.getZ()), next_block_pos, world.provider.getDimension());
+                                } else {
+                                    //System.out.println("nothing to terraform");
+                                    break; // nothing to do, everything is terraformed
+                                }
 
                                 //} catch (NullPointerException e) {
                                 //    e.printStackTrace();
-                                } catch (NoClassDefFoundError e){
-                                    e.printStackTrace(); //WTF
-                                }
+                            } catch (NoClassDefFoundError e) {
+                                e.printStackTrace(); //WTF
+                            }
 
                         } else
                             break;
@@ -205,23 +200,24 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
             }
         }
     }
+
     public void updateInventoryInfo() {
         if (moduleText != null) {
 
 
-                if (hasValidBiomeChanger() && world.isBlockIndirectlyGettingPowered(getPos()) != 0) {
-                    BigDecimal bd = new BigDecimal(randomblocks_per_tick);
-                    bd = bd.setScale(2, RoundingMode.HALF_UP);
+            if (hasValidBiomeChanger() && world.isBlockIndirectlyGettingPowered(getPos()) != 0) {
+                BigDecimal bd = new BigDecimal(randomblocks_per_tick);
+                bd = bd.setScale(2, RoundingMode.HALF_UP);
 
-                    moduleText.setText("terraforming planet...\n" +
-                            "\nPower generation:" + sat_power_per_tick +
-                            "\nBlocks per tick:" + bd);
+                moduleText.setText("terraforming planet...\n" +
+                        "\nPower generation:" + sat_power_per_tick +
+                        "\nBlocks per tick:" + bd);
 
-                } else if (hasValidBiomeChanger()) {
-                    moduleText.setText("provide redstone signal\nto start the process");
-                } else {
-                    moduleText.setText("place a biome remote here\nto make the satellite terraform\nthe entire planet");
-                }
+            } else if (hasValidBiomeChanger()) {
+                moduleText.setText("provide redstone signal\nto start the process");
+            } else {
+                moduleText.setText("place a biome remote here\nto make the satellite terraform\nthe entire planet");
+            }
 
         }
     }
@@ -256,7 +252,7 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
 
     @Override
     public void onInventoryButtonPressed(int buttonId) {
-            PacketHandler.sendToServer(new PacketMachine(this, (byte) (buttonId)));
+        PacketHandler.sendToServer(new PacketMachine(this, (byte) (buttonId)));
     }
 
 

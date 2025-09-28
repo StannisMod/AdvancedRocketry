@@ -9,7 +9,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
+// ok so nobody understands how and why the terraforming system works like it does,
+// but there was a problem where some variables have been reset and it seems like the client thread had
+// reset variables on server thread (only in singleplayer) on world join so it was divided in 2 classes.
+
 public interface Afuckinginterface {
+
+    public void reset();
 
     public void initdim(int dim);
 

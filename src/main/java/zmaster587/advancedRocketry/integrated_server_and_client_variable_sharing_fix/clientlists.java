@@ -10,6 +10,9 @@ public class clientlists implements Afuckinginterface {
     Map<Integer, dimensionTerraformingInfo> terraforminginfolists;
 
     public clientlists(){
+        reset();
+    }
+    public void reset(){
         this.terraforminginfolists = new HashMap<>();
     }
 

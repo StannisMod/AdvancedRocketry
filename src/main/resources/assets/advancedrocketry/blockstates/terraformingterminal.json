@@ -5,19 +5,21 @@
         "model": "minecraft:orientable",
         "textures": {
             "top": "libvulpes:blocks/machinegeneric",
-            "front": "advancedrocketry:blocks/terraformterminal",
-            "side": "libvulpes:blocks/machinegeneric"
+            "side": "libvulpes:blocks/machinegeneric",
+            "front": "advancedrocketry:blocks/terraformterminal"
         }
     },
     "variants": {
-        "facing=north,state=false": [{}],
-        "facing=south,state=false": { "model": "minecraft:orientable", "y": 180 },
-        "facing=west,state=false":  { "model": "minecraft:orientable", "y": 270 },
-        "facing=east,state=false":  { "model": "minecraft:orientable", "y": 90 },
-        "facing=north,state=true": [{}],
-        "facing=south,state=true": { "model": "minecraft:orientable", "y": 180 },
-        "facing=west,state=true":  { "model": "minecraft:orientable", "y": 270 },
-        "facing=east,state=true":  { "model": "minecraft:orientable", "y": 90 },
-        "inventory" : [{}]
+        "facing=north,state=false": [{ "textures": { "front": "advancedrocketry:blocks/terraformterminal" } }],
+        "facing=south,state=false": { "model": "minecraft:orientable", "y": 180, "textures": { "front": "advancedrocketry:blocks/terraformterminal" } },
+        "facing=west,state=false":  { "model": "minecraft:orientable", "y": 270, "textures": { "front": "advancedrocketry:blocks/terraformterminal" } },
+        "facing=east,state=false":  { "model": "minecraft:orientable", "y": 90,  "textures": { "front": "advancedrocketry:blocks/terraformterminal" } },
+
+        "facing=north,state=true": [{ "textures": { "front": "advancedrocketry:blocks/terraformterminal_animated" } }],
+        "facing=south,state=true": { "model": "minecraft:orientable", "y": 180, "textures": { "front": "advancedrocketry:blocks/terraformterminal_animated" } },
+        "facing=west,state=true":  { "model": "minecraft:orientable", "y": 270, "textures": { "front": "advancedrocketry:blocks/terraformterminal_animated" } },
+        "facing=east,state=true":  { "model": "minecraft:orientable", "y": 90,  "textures": { "front": "advancedrocketry:blocks/terraformterminal_animated" } },
+
+        "inventory": [{}]
     }
 }

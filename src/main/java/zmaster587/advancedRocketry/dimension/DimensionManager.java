@@ -40,6 +40,7 @@ import java.util.Map.Entry;
 import java.util.zip.GZIPOutputStream;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static zmaster587.advancedRocketry.dimension.DimensionProperties.proxylists;
 
 
 public class DimensionManager implements IGalaxy {
@@ -1088,6 +1089,7 @@ public class DimensionManager implements IGalaxy {
 
         NBTTagCompound dimListNbt = nbt.getCompoundTag("dimList");
 
+        proxylists.reset(); // clear from old sessions
 
         for (String key : dimListNbt.getKeySet()) {
             DimensionProperties properties = DimensionProperties.createFromNBT(Integer.parseInt(key), dimListNbt.getCompoundTag(key));

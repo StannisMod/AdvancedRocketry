@@ -11,6 +11,9 @@ public class serverlists implements Afuckinginterface {
     Map<Integer, dimensionTerraformingInfo> terraforminginfolists;
 
     public serverlists(){
+        reset();
+    }
+    public void reset(){
         this.terraforminginfolists = new HashMap<>();
     }
 
