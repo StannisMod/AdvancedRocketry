@@ -20,6 +20,7 @@ import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.inventory.modules.ModuleData;
+import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemData;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
@@ -405,9 +406,10 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 modules.add(new ModuleScaledImage(baseX, 2 * baseY + sizeY, sizeX, -3, TextureResources.horizontalBar));
             }
 
-            //Relying on a bug, is this safe?
+            //listing of asteroids with scrollcaching
             if (lastSeed != -1) {
-                ModuleContainerPanYOnly pan = new ModuleContainerPanYOnly(baseX, baseY, list2, new LinkedList<>(), null, sizeX - 2, sizeY, 0, -48, 0, 72);
+                ModuleContainerPanYOnlyWithScrollCache pan = new ModuleContainerPanYOnlyWithScrollCache(
+                    baseX, baseY, list2, new LinkedList<>(), null, sizeX - 2, sizeY, 0, -48, 0, 72);
                 modules.add(pan);
             }
 
@@ -499,26 +501,30 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         else if (id == TAB_SWITCH && !world.isRemote) {
             tabModule.setTab(nbt.getShort("tab"));
             player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
-        } else if (id == BUTTON_PRESS && !world.isRemote) {
+        }
+        else if (id == BUTTON_PRESS && !world.isRemote) {
             lastButton = nbt.getShort("button");
             lastType = buttonType.get(lastButton - LIST_OFFSET);
             markDirty();
             world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
             player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
-
-        } else if (id == SEED_CHANGE) {
+        }
+        else if (id == SEED_CHANGE) {
             if (extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, false) >= dataConsumedPerRefresh) {
                 lastSeed = world.getTotalWorldTime() / 100;
                 lastButton = -1;
                 lastType = "";
+                
+                // Clear scroll cache when scanning new data
+                ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+                
                 extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, true);
                 world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
                 markDirty();
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
             }
-
-
-        } else if (id == PROCESS_CHIP && !world.isRemote) {
+        }
+        else if (id == PROCESS_CHIP && !world.isRemote) {
 
             if (inv.getStackInSlot(2).isEmpty() && isOpen && hasEnergy(500) && lastButton != -1) {
                 ItemStack stack = inv.decrStackSize(1, 1);
