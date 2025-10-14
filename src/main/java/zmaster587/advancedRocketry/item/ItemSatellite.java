@@ -54,7 +54,7 @@ public class ItemSatellite extends ItemIdWithName {
 
 
     public EmbeddedInventory readInvFromNBT(@Nonnull ItemStack stackIn) {
-        EmbeddedInventory inv = new SatelliteModuleInventory(); // <-- guarded
+        EmbeddedInventory inv = new SatelliteModuleInventory(); // slots 0-6 embedded from chassis, guarded by class above
         if (!stackIn.hasTagCompound() || !stackIn.getTagCompound().hasKey("inv"))
             return inv;
 
