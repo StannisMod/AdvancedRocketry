@@ -17,8 +17,44 @@ import java.util.List;
 
 public class ItemSatellite extends ItemIdWithName {
 
+    //Guarding inventory to ensure only valid items are placed in slots.
+    public static class SatelliteModuleInventory extends EmbeddedInventory {
+        public SatelliteModuleInventory() { super(7); } // slots 0-6 embedded from chassis
+
+        @Override
+        public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) {
+            if (stack.isEmpty()) return false;
+
+            // Registry-driven: only accept items that have SatelliteProperties
+            SatelliteProperties p = SatelliteRegistry.getSatelliteProperty(stack);
+            if (p == null) return false;
+            int f = p.getPropertyFlag();
+
+            // Slot 0: ONLY primary function meta 0-6
+            if (slot == 0) {
+                return SatelliteProperties.Property.MAIN.isOfType(f);
+            }
+
+            // Slots 1–6: power gen, battery, or data modules
+            if (slot >= 1 && slot <= 6) {
+                return  SatelliteProperties.Property.POWER_GEN.isOfType(f) ||
+                        SatelliteProperties.Property.BATTERY.isOfType(f)   ||
+                        SatelliteProperties.Property.DATA.isOfType(f);
+            }
+
+            return false;
+        }
+
+        @Override
+        public void setInventorySlotContents(int index, ItemStack stack) {
+            if (!stack.isEmpty() && !isItemValidForSlot(index, stack)) return;
+            super.setInventorySlotContents(index, stack);
+        }
+    }
+
+
     public EmbeddedInventory readInvFromNBT(@Nonnull ItemStack stackIn) {
-        EmbeddedInventory inv = new EmbeddedInventory(7);
+        EmbeddedInventory inv = new SatelliteModuleInventory(); // <-- guarded
         if (!stackIn.hasTagCompound() || !stackIn.getTagCompound().hasKey("inv"))
             return inv;
 
