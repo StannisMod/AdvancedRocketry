@@ -812,6 +812,17 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
+
+        // Automatically set status to unscanned if no rocket is present when opening GUI
+        if (!world.isRemote && status == ErrorCodes.ALREADY_ASSEMBLED) {
+            AxisAlignedBB box = (bbCache != null) ? bbCache : getRocketPadBounds(world, pos);
+            if (box == null || world.getEntitiesWithinAABB(EntityRocket.class, box).isEmpty()) {
+                status = ErrorCodes.UNSCANNED;
+                markDirty();
+            }
+        }
+
+
         List<ModuleBase> modules = new LinkedList<>();
 
         modules.add(new ModulePower(160, 90, this));
@@ -1155,7 +1166,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         OUTPUTBLOCKED(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.outputblocked")),
         INVALIDBLOCK(LibVulpes.proxy.getLocalizedString("msg.rocketbuild.invalidblock")),
         COMBINEDTHRUST(LibVulpes.proxy.getLocalizedString("msg.rocketbuild.combinedthrust")),
-        ALREADY_ASSEMBLED("rocket already assembled");
+        ALREADY_ASSEMBLED(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.alreadyassembled"));
 
         String code;
 
