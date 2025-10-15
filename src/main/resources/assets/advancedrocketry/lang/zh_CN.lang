@@ -412,6 +412,7 @@ msg.rocketbuilder.acc=飞行控制中心
 msg.rocketbuilder.build=建造
 msg.rocketbuilder.scan=扫描
 msg.rocketbuild.combinedthrust=燃料类型不能组合!
+msg.rocketbuilder.alreadyassembled=火箭已组装
 msg.solar.collectingEnergy=收集能量:
 msg.solar.cannotcollectEnergy=无法收集能量
 msg.asteroidChip.asteroid=小行星
