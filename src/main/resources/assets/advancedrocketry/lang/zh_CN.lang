@@ -507,3 +507,9 @@ msg.chat.nostation3=你必须在空间站上才能来到这个时空，而现在
 commands.weather.always_not_clear=这个星球的天气总是阴暗...
 commands.weather.cannot_rain=这里无法启动降雨
 commands.weather.cannot_thunder=这里无法启动雷暴
+
+jei.sb.satellitepreview=准备进入轨道！
+jei.sb.copy.source=来源
+jei.sb.copy.output=新副本
+jei.sb.assemblyhint=至少一个太阳能电池板
+jei.sb.copychiphint=请做好备份！
