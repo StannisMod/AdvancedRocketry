@@ -132,3 +132,9 @@ fluid.hydrogen=Hidrógeno
 fluid.rocketFuel=Combustible de cohete
 
 mission.asteroidmining.name=Minería de asteroides
+
+jei.sb.satellitepreview=¡Listo para la órbita!
+jei.sb.copy.source=Fuente
+jei.sb.copy.output=Nueva copia
+jei.sb.assemblyhint=Al menos un panel solar
+jei.sb.copychiphint=¡Haz copias de seguridad!
