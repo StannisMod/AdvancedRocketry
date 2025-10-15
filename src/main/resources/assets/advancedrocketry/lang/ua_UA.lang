@@ -159,3 +159,10 @@ mission.asteroidmining.name=Вивчення астероїдів
 
 key.controls.advancedrocketry=Advanced Rocketry
 key.toggleJetpack=Ввімкнути реактивний ранець
+
+jei.sb.satellitepreview=Готово до орбіти!
+jei.sb.copy.source=Джерело
+jei.sb.copy.output=Нова копія
+jei.sb.assemblyhint=Щонайменше одна сонячна панель
+jei.sb.copychiphint=Робіть резервні копії!
+
