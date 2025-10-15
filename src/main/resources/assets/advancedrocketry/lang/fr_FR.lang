@@ -260,3 +260,10 @@ msg.spaceElevator.ascentReady=Paré pour l'ascension
 msg.spaceElevator.turnedOff=L'ascenseur est hors tension.
 msg.entityDeployedRocket.notGasGiant=Absence de gaz
 msg.noOxygen=Avertissement: oxygène non détecté!
+
+jei.sb.satellitepreview=Prêt pour l’orbite !
+jei.sb.copy.source=Source
+jei.sb.copy.output=Nouvelle copie
+jei.sb.assemblyhint=Au moins un panneau solaire
+jei.sb.copychiphint=Faites des sauvegardes !
+
