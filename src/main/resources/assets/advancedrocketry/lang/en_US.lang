@@ -412,6 +412,7 @@ msg.rocketbuilder.acc=Acc
 msg.rocketbuilder.build=Build
 msg.rocketbuilder.scan=Scan
 msg.rocketbuild.combinedthrust=Fuel types cannot be combined!
+msg.rocketbuilder.alreadyassembled=Rocket already assembled
 msg.solar.collectingEnergy=Collecting Energy:
 msg.solar.cannotcollectEnergy=Unable to collect Energy
 msg.asteroidChip.asteroid=Asteroid
