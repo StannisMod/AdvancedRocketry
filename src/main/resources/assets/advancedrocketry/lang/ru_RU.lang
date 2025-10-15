@@ -376,6 +376,7 @@ msg.rocketbuilder.fuel=Топливо
 msg.rocketbuilder.acc=Точность
 msg.rocketbuilder.build=Стройка
 msg.rocketbuilder.scan=Сканирование
+msg.rocketbuilder.alreadyassembled=Ракета вже зібрана
 msg.solar.collectingEnergy=Сбор энергии:
 msg.solar.cannotcollectEnergy=Невозможно собрать энергию
 msg.asteroidChip.asteroid=Астероид
