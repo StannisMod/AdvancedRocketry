@@ -63,11 +63,13 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
     public AxisAlignedBB scanRocket(World world, BlockPos pos2, AxisAlignedBB bb) {
 
         int actualMinX = (int) bb.maxX,
-                actualMinY = (int) bb.maxY,
-                actualMinZ = (int) bb.maxZ,
-                actualMaxX = (int) bb.minX,
-                actualMaxY = (int) bb.minY,
-                actualMaxZ = (int) bb.minZ;
+            actualMinY = (int) bb.maxY,
+            actualMinZ = (int) bb.maxZ,
+            actualMaxX = (int) bb.minX,
+            actualMaxY = (int) bb.minY,
+            actualMaxZ = (int) bb.minZ;
+
+        boolean foundNonAir = false;
 
         for (int xCurr = (int) bb.minX; xCurr <= bb.maxX; xCurr++) {
             for (int zCurr = (int) bb.minZ; zCurr <= bb.maxZ; zCurr++) {
@@ -76,27 +78,30 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
                     BlockPos posCurr = new BlockPos(xCurr, yCurr, zCurr);
 
                     if (!world.isAirBlock(posCurr)) {
-                        if (xCurr < actualMinX)
-                            actualMinX = xCurr;
-                        if (yCurr < actualMinY)
-                            actualMinY = yCurr;
-                        if (zCurr < actualMinZ)
-                            actualMinZ = zCurr;
-                        if (xCurr > actualMaxX)
-                            actualMaxX = xCurr;
-                        if (yCurr > actualMaxY)
-                            actualMaxY = yCurr;
-                        if (zCurr > actualMaxZ)
-                            actualMaxZ = zCurr;
+                        foundNonAir = true;
+
+                        if (xCurr < actualMinX) actualMinX = xCurr;
+                        if (yCurr < actualMinY) actualMinY = yCurr;
+                        if (zCurr < actualMinZ) actualMinZ = zCurr;
+                        if (xCurr > actualMaxX) actualMaxX = xCurr;
+                        if (yCurr > actualMaxY) actualMaxY = yCurr;
+                        if (zCurr > actualMaxZ) actualMaxZ = zCurr;
                     }
                 }
             }
         }
 
-        status = ErrorCodes.SUCCESS_STATION;
+        // Tell the player whats up
+        if (!foundNonAir) {
+            status = ErrorCodes.EMPTY;              // nothing to pack inside bb
+            return bb;                              // sanity check 
+        } else {
+            status = ErrorCodes.SUCCESS_STATION;    // ok to proceed with packing
+        }
 
         return new AxisAlignedBB(actualMinX, actualMinY, actualMinZ, actualMaxX, actualMaxY, actualMaxZ);
     }
+
 
 
     @Override
@@ -113,6 +118,9 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
             try {
                 storageChunk = StorageChunk.cutWorldBB(world, bbCache);
             } catch (NegativeArraySizeException e) {
+                status = ErrorCodes.FAIL_CUT;
+                markDirty();
+                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
                 return;
             }
 
@@ -152,19 +160,37 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
 
     @Override
     protected void updateText() {
-        if (!world.isRemote) {
-            if (getRocketPadBounds(world, pos) == null)
+        if (world != null && !world.isRemote) {
+            if (getRocketPadBounds(world, pos) == null) {
                 setStatus(ErrorCodes.INCOMPLETESTRCUTURE.ordinal());
-            else if (ErrorCodes.INCOMPLETESTRCUTURE.equals(getStatus()))
-                setStatus(ErrorCodes.UNSCANNED.ordinal());
+            } else if (ErrorCodes.INCOMPLETESTRCUTURE.equals(getStatus())) {
+                setStatus(ErrorCodes.UNSCANNED_STATION.ordinal());
+            }
         }
 
-        errorText.setText(status.getErrorCode());
+        if (errorText != null) {
+            errorText.setText(status.getErrorCode());
+        }
     }
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
+
+        // GUI-open reset errorcode if pad is valid and we're idle
+        if (!world.isRemote) {
+            AxisAlignedBB bounds = getRocketPadBounds(world, pos);
+            if (bounds == null) {
+                setStatus(ErrorCodes.INCOMPLETESTRCUTURE.ordinal());
+            } else if (!isScanning()) {
+                ErrorCodes s = getStatus();
+                if (s == ErrorCodes.SUCCESS_STATION || s == ErrorCodes.SUCCESS ||
+                    s == ErrorCodes.FINISHED || s == ErrorCodes.EMPTY ||
+                    s == ErrorCodes.UNSCANNED) {
+                    setStatus(ErrorCodes.UNSCANNED_STATION.ordinal());
+                }
+            }
+        }
 
         modules.add(new ModulePower(160, 30, this));
 
@@ -177,6 +203,7 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
         buttonBuild.setColor(0xFFFF2222);
         modules.add(errorText = new ModuleText(5, 22, "", 0xFFFFFF22));
         modules.add(new ModuleSync(4, this));
+        modules.add(new ModuleSync(2, this)); // sync error codes to client (on change)
 
         updateText();
 
@@ -190,18 +217,19 @@ public class TileStationAssembler extends TileRocketAssemblingMachine implements
 
 
     @Override
-    public void useNetworkData(EntityPlayer player, Side side, byte id,
-                               NBTTagCompound nbt) {
-
-        boolean isScanningFlag = !isScanning() && canScan();
+    public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
 
         super.useNetworkData(player, side, id, nbt);
-        if (id == 1 && isScanningFlag) {
 
+        // recompute AFTER super
+        boolean isScanningFlag = !isScanning() && canScan();
+
+        if (id == 1 && isScanningFlag) {
             storedId = (long) ItemStationChip.getUUID(inventory.getStackInSlot(1));
             if (storedId == 0) storedId = null;
         }
     }
+
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
