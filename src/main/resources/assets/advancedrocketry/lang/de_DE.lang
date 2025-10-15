@@ -345,6 +345,7 @@ msg.rocketbuilder.fuel=Treibstoff
 msg.rocketbuilder.acc=Beschleunigung
 msg.rocketbuilder.build=Bauen
 msg.rocketbuilder.scan=Scannen
+msg.rocketbuilder.alreadyassembled=Rakete bereits zusammengebaut
 msg.solar.collectingEnergy= Energie sammeln:
 msg.solar.cannotcollectEnergy=Kann keine  Energie sammeln
 msg.asteroidChip.asteroid=Asteroid
