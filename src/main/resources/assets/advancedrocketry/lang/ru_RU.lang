@@ -448,3 +448,10 @@ msg.na=Н/Д
 commands.weather.always_not_clear=На этой планете не бывает сухо...
 commands.weather.cannot_rain=Невозможно начать дождь, увы...
 commands.weather.cannot_thunder=Невозможно включить грозу, увы...
+
+
+jei.sb.satellitepreview=Готово к орбите!
+jei.sb.copy.source=Источник
+jei.sb.copy.output=Новая копия
+jei.sb.assemblyhint=Как минимум одна солнечная панель
+jei.sb.copychiphint=Делайте резервные копии!
