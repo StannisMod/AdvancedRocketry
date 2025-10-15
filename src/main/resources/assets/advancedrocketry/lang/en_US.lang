@@ -507,3 +507,10 @@ msg.chat.nostation3=You must be on a space station to be in this dimension, and 
 commands.weather.always_not_clear=This planet is always not clear...
 commands.weather.cannot_rain=Cannot start a rain here
 commands.weather.cannot_thunder=Cannot start a thunder here
+
+jei.sb.satellitepreview=Ready for orbit!
+jei.sb.copy.source=Source
+jei.sb.copy.output=New Copy
+jei.sb.assemblyhint=Atleast one solar panel
+jei.sb.copychiphint=Make backups!
+
