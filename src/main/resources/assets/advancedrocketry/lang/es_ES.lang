@@ -108,6 +108,8 @@ item.jackhammer.name=Martillo neumático
 item.sealDetector.name=Detector de sellado
 tile.orientationControl.name=Controlador de orientación
 
+msg.rocketbuilder.alreadyassembled=Cohete ya ensamblado
+
 material.Dilithium.name=Dilitio
 
 
