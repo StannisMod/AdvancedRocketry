@@ -407,3 +407,9 @@ msg.unprogrammed=Unprogrammiert
 msg.programfail=Programmierung fehlgeschlagen
 msg.modules=Module
 msg.na=Nicht verfügbar
+
+jei.sb.satellitepreview=Bereit für den Orbit!
+jei.sb.copy.source=Quelle
+jei.sb.copy.output=Neue Kopie
+jei.sb.assemblyhint=Mindestens ein Solarpanel
+jei.sb.copychiphint=Erstelle Sicherungskopien!
