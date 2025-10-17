@@ -38,6 +38,10 @@ import java.util.List;
 
 public class TileWirelessTransciever extends TileEntity implements INetworkMachine, IModularInventory, ILinkableTile, IDataHandler, ITickable, IToggleButton {
 
+    // How often to transfer data (in ticks)
+    private int transferIntervalTicks = 20;
+    // Fixed phase per tile to spread load
+    private int phase = -1;
 
     protected ModuleToggleSwitch toggleSwitch;
     boolean extractMode;
@@ -53,6 +57,10 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         data.setMaxData(100);
         toggle = new ModuleToggleSwitch(50, 50, 0, LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.extract"), this, TextureResources.buttonGeneric, 64, 18, false);
         toggleSwitch = new ModuleToggleSwitch(160, 5, 1, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, 11, 26, true);
+
+        // Align internal booleans with UI defaults
+        extractMode = toggle.getState();         // false initially
+        enabled = toggleSwitch.getState();       // true initially    
     }
 
 
@@ -229,7 +237,7 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         nbt.setBoolean("mode", extractMode);
         nbt.setBoolean("enabled", enabled);
         nbt.setInteger("networkID", networkID);
-        data.writeToNBT(nbt);
+        data.writeToNBT(nbt);      
         return super.writeToNBT(nbt);
     }
 
@@ -248,50 +256,97 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     @Override
     public void onLoad() {
         super.onLoad();
-        if (!world.isRemote) {
 
-            if (!NetworkRegistry.dataNetwork.doesNetworkExist(networkID))
+        // Server side only
+        if (world == null || world.isRemote) return;
+
+        // Ensure sane interval before using it in modulo
+        if (transferIntervalTicks <= 0) transferIntervalTicks = 20;
+
+        // Stable per-tile phase to spread work over time (no persistence needed)
+        phase = (int) Math.floorMod(this.pos.toLong(), transferIntervalTicks);
+
+        // (Re)join the data network only if we’re actually linked to one
+        if (networkID != -1) {
+            if (!NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
+                // Create (or re-create) this specific network id
                 NetworkRegistry.dataNetwork.getNewNetworkID(networkID);
+            }
 
+            // Make sure we're not double-registered, then register with the right role
             NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
 
-            if (extractMode)
+            if (extractMode) {
                 NetworkRegistry.dataNetwork.getNetwork(networkID).addSource(this, EnumFacing.UP);
-            else
+            } else {
                 NetworkRegistry.dataNetwork.getNetwork(networkID).addSink(this, EnumFacing.UP);
-
+            }
         }
     }
 
     @Override
     public void update() {
+        // Server only
+        if (world.isRemote) return;
 
-        if (!world.isRemote) {
-            IBlockState state = world.getBlockState(getPos());
-            if (state.getBlock() instanceof RotatableBlock) {
-                EnumFacing facing = RotatableBlock.getFront(state).getOpposite();
+        // Respect front-panel enable switch
+        if (!enabled) return;
 
-                TileEntity tile = world.getTileEntity(getPos().add(facing.getFrontOffsetX(), facing.getFrontOffsetY(), facing.getFrontOffsetZ()));
+        // Guard against bad values (e.g., NBT edits)
+        if (transferIntervalTicks <= 0) transferIntervalTicks = 20;
 
-                if (tile instanceof IDataHandler && !(tile instanceof TileWirelessTransciever)) {
-                    for (DataType data : DataType.values()) {
+        // Initialize a stable phase to spread load across ticks
+        if (phase < 0) {
+            phase = (int) Math.floorMod(this.pos.toLong(), transferIntervalTicks);
+        }
 
-                        if (data == DataStorage.DataType.UNDEFINED)
-                            continue;
+        // Throttle: only run on the tile's assigned tick
+        long now = world.getTotalWorldTime();
+        if (((now + phase) % transferIntervalTicks) != 0) return;
 
-                        if (!extractMode) {
-                            int amountCurrent = this.data.getDataAmount(data);
-                            if (amountCurrent > 0) {
-                                int amt = ((IDataHandler) tile).addData(amountCurrent, data, facing.getOpposite(), true);
-                                this.data.extractData(amt, data, facing.getOpposite(), true);
-                            }
-                        } else {
-                            int amt = ((IDataHandler) tile).extractData(this.data.getMaxData() - this.data.getDataAmount(data), data, facing.getOpposite(), true);
-                            this.data.addData(amt, data, facing.getOpposite(), true);
-                        }
-                    }
+        IBlockState state = world.getBlockState(getPos());
+        if (!(state.getBlock() instanceof RotatableBlock)) return;
+
+        // Face the block's "IO" side
+        EnumFacing facing = RotatableBlock.getFront(state).getOpposite();
+        TileEntity neighbor = world.getTileEntity(getPos().offset(facing));
+
+        // Must be a data handler and not another wireless transceiver (avoid loops)
+        if (!(neighbor instanceof IDataHandler) || (neighbor instanceof TileWirelessTransciever)) return;
+
+        boolean changed = false;
+
+        for (DataStorage.DataType dataType : DataStorage.DataType.values()) {
+            if (dataType == DataStorage.DataType.UNDEFINED) continue;
+
+            if (!extractMode) {
+                // PUSH: from this buffer -> neighbor
+                int have = this.data.getDataAmount(dataType);
+                if (have <= 0) continue;
+
+                int moved = ((IDataHandler) neighbor).addData(have, dataType, facing.getOpposite(), true);
+                if (moved > 0) {
+                    this.data.extractData(moved, dataType, facing.getOpposite(), true);
+                    changed = true;
+                }
+            } else {
+                // PULL: from neighbor -> this buffer
+                int room = this.data.getMaxData() - this.data.getDataAmount(dataType);
+                if (room <= 0) continue;
+
+                int moved = ((IDataHandler) neighbor).extractData(room, dataType, facing.getOpposite(), true);
+                if (moved > 0) {
+                    this.data.addData(moved, dataType, facing.getOpposite(), true);
+                    changed = true;
                 }
             }
+        }
+
+        // Persist changes; a full block update isn't strictly required each tick
+        if (changed) {
+            this.markDirty();
+            // If you want to sync the client meter instantly, you can uncomment:
+            // world.notifyBlockUpdate(pos, state, state, 3);
         }
     }
 
