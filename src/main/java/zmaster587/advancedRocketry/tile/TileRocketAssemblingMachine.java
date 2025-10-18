@@ -28,6 +28,7 @@ import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
 import zmaster587.advancedRocketry.network.PacketInvalidLocationNotify;
+import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine.ErrorCodes;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.util.StorageChunk;
 import zmaster587.advancedRocketry.util.WeightEngine;
@@ -91,25 +92,44 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         stats = new StatsRocket();
         building = false;
         prevProgress = 0;
-        MinecraftForge.EVENT_BUS.register(this);
     }
+
+    private boolean registeredBus = false;
+
+    @Override
+    public void onLoad() {
+        // Called after world is set and NBT is loaded; safe place to register (server only)
+        if (!world.isRemote && !registeredBus) {
+            MinecraftForge.EVENT_BUS.register(this);
+            registeredBus = true;
+        }
+    }    
 
     @Override
     public void invalidate() {
         super.invalidate();
-        MinecraftForge.EVENT_BUS.unregister(this);
-        for (HashedBlockPosition pos : blockPos) {
-            TileEntity tile = world.getTileEntity(pos.getBlockPos());
+        unregisterFromBus();
 
-            if (tile instanceof IMultiblock)
-                ((IMultiblock) tile).setIncomplete();
+        if (world != null)
+            for (HashedBlockPosition pos : blockPos) {
+                TileEntity tile = world.getTileEntity(pos.getBlockPos());
+                if (tile instanceof IMultiblock) {
+                    ((IMultiblock) tile).setIncomplete();
+                }
         }
     }
 
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
-        MinecraftForge.EVENT_BUS.unregister(this);
+        unregisterFromBus();
+    }
+
+    private void unregisterFromBus() {
+        if (registeredBus) {
+            MinecraftForge.EVENT_BUS.unregister(this);
+            registeredBus = false;
+        }
     }
 
     public ErrorCodes getStatus() {
@@ -1117,38 +1137,47 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     @SubscribeEvent
-    public void onRocketLand(RocketLandedEvent event) {
-        if (event.world.isRemote)
-            return;
-        EntityRocketBase rocket = (EntityRocketBase) event.getEntity();
+    public void onRocketLand(RocketLandedEvent e) {
+        // Server/world guard
+        if (e.world.isRemote || e.world != this.world) return;
 
+        // Ensure we have pad bounds
+        if (bbCache == null) bbCache = getRocketPadBounds(world, pos);
+        if (bbCache == null) return;
 
-        //This apparently happens sometimes
-        if (world == null) {
-            AdvancedRocketry.logger.debug("World null for rocket builder during rocket land event @ " + this.pos);
-            return;
+        // Make sure the event entity is a rocket
+        final net.minecraft.entity.Entity ent = e.getEntity();
+        if (!(ent instanceof EntityRocketBase)) return;
+        final EntityRocketBase landed = (EntityRocketBase) ent;
+
+        // Quick membership test with tiny epsilon
+        final AxisAlignedBB box = bbCache.grow(1.0E-4, 1.0E-4, 1.0E-4);
+        if (!landed.getEntityBoundingBox().intersects(box)) return;
+
+        // Track rocket id and (re)link infra
+        lastRocketID = landed.getEntityId();
+        for (IInfrastructure infra : getConnectedInfrastructure()) {
+            landed.linkInfrastructure(infra);
         }
 
-        if (getBBCache() == null) {
-            bbCache = getRocketPadBounds(world, pos);
+        // Maintain original semantics: only fast-path when exactly one rocket in the pad
+        List<EntityRocket> rockets = world.getEntitiesWithinAABB(EntityRocket.class, box);
+        if (rockets.size() == 1) {
+            EntityRocket r = rockets.get(0);
+            r.recalculateStats();
+            this.stats = r.stats.copy();
+            this.status = ErrorCodes.ALREADY_ASSEMBLED;
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        } else {
+            // Fallback: rescan if something odd happens
+            scanRocket(world, pos, bbCache);
         }
 
-        if (getBBCache() != null) {
-            double buffer = 0.0001;
-            AxisAlignedBB bufferedBB = bbCache.grow(buffer, buffer, buffer);
-            List<EntityRocketBase> rockets = world.getEntitiesWithinAABB(EntityRocketBase.class, bufferedBB);
-
-            if (rockets.contains(rocket)) {
-                lastRocketID = rocket.getEntityId();
-                for (IInfrastructure infrastructure : getConnectedInfrastructure()) {
-                    rocket.linkInfrastructure(infrastructure);
-                }
-                scanRocket(world,pos, bbCache); // rescan on landing
-
-                PacketHandler.sendToPlayersTrackingEntity(new PacketMachine(this, (byte) 3), rocket);
-            }
-        }
+        // Preserve original networking
+        PacketHandler.sendToPlayersTrackingEntity(new PacketMachine(this, (byte)3), landed);
     }
+
 
     protected enum ErrorCodes {
         SUCCESS(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.success")),
