@@ -24,7 +24,7 @@ import zmaster587.libVulpes.inventory.modules.ModuleText;
 
 /**
  * Per-viewer status module for the Satellite Control Center.
- * Forces a sync every 0.5s (10 ticks) while the GUI is open.
+ * Forces a sync every 0.5s (9 ticks) while the GUI is open.
  * Sends 4 ints: 0=status, 1=ppt, 2=data, 3=maxdata.
  */
 public class ModuleSatelliteTerminal extends ModuleBase {
@@ -34,11 +34,12 @@ public class ModuleSatelliteTerminal extends ModuleBase {
     private final IInventory inv;                // client: read chip name
     private final TileSatelliteTerminal tile;    // server: compute values
 
+    private static final long PERIOD_TICKS = 9L;
     // {status, ppt, data, max}
     private final int[] vals     = new int[4];
 
 
-    // Force burst every 10 ticks
+    // Force burst every 9 ticks
     private long lastPushBucket = Long.MIN_VALUE;
     private boolean burstPending = false;
 
@@ -93,7 +94,7 @@ public class ModuleSatelliteTerminal extends ModuleBase {
             for (int i = 0; i < 4; i++) vals[i] = now[i];
             lastSatId = getCurrentSatId(tile);
             long t = tile.getWorld().getTotalWorldTime();
-            lastPushBucket = t / 10L;
+            lastPushBucket = t / PERIOD_TICKS;
         }
 
         for (int i = 0; i < 4; i++) {
@@ -106,7 +107,7 @@ public class ModuleSatelliteTerminal extends ModuleBase {
     public boolean isUpdateRequired(int relativeIdx) {
         if (tile != null && !tile.getWorld().isRemote) {
             final long t = tile.getWorld().getTotalWorldTime();
-            final long bucket = t / 10L;
+            final long bucket = t / PERIOD_TICKS;
 
             // Detect satellite/chip change
             final long curSatId = getCurrentSatId(tile);
