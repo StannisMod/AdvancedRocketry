@@ -20,6 +20,7 @@ import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.advancedRocketry.util.IDataInventory;
 import zmaster587.advancedRocketry.util.PlanetaryTravelHelper;
+
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.inventory.modules.*;
 import zmaster587.libVulpes.network.PacketHandler;
@@ -32,30 +33,20 @@ import javax.annotation.Nullable;
 import java.util.LinkedList;
 import java.util.List;
 
+public class TileSatelliteTerminal extends TileInventoriedRFConsumer
+        implements INetworkMachine, IModularInventory, IButtonInventory, IDataInventory, IDataHandler {
 
-public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements INetworkMachine, IModularInventory, IButtonInventory, IDataInventory, IDataHandler {
-
-    // Subscribers: players who currently have this GUI open (server-side only)
-    private final java.util.Set<java.util.UUID> subscribers = new java.util.HashSet<>();
-
-
-    //private ModuleText satelliteText;
-    private SatelliteBase satellite;
-    private ModuleText moduleText;
     private DataStorage data;
 
     public TileSatelliteTerminal() {
         super(10000, 2);
-
         data = new DataStorage();
         data.setMaxData(1000);
     }
 
     @Override
     @Nonnull
-    public int[] getSlotsForFace(@Nullable EnumFacing side) {
-        return new int[0];
-    }
+    public int[] getSlotsForFace(@Nullable EnumFacing side) { return new int[0]; }
 
     @Override
     public String getModularInventoryName() {
@@ -63,9 +54,7 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements 
     }
 
     @Override
-    public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) {
-        return true;
-    }
+    public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) { return true; }
 
     @Override
     public boolean canPerformFunction() {
@@ -73,81 +62,36 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements 
     }
 
     @Override
-    public int getPowerPerOperation() {
-        return 1;
-    }
+    public int getPowerPerOperation() { return 1; }
 
     @Override
     public void performFunction() {
-        if (world.isRemote)
-            updateInventoryInfo();
+        // No client push here anymore; module sync handles display updates.
     }
 
+    // Old custom packet not used anymore; keep empty to satisfy INetworkMachine
     @Override
-    public void writeDataToNetwork(ByteBuf out, byte packetId) {
-        if (packetId == (byte) 22) {
-            satellite = getSatelliteFromSlot(0);
-            if (satellite != null && satellite instanceof SatelliteData) {
-                if (getUniversalEnergyStored() < getPowerPerOperation()) {
-                    out.writeInt(1); // no power
-                } else {
-                    if (!PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(satellite.getDimensionId(), DimensionManager.getEffectiveDimId(world, pos).getId())) {
-                        out.writeInt(2);//out of range
-                    } else {
-                        out.writeInt(3);
-                        out.writeInt(((SatelliteData) satellite).getPowerPerTick());
-                        out.writeInt(((SatelliteData) satellite).data.getData());
-                        out.writeInt(((SatelliteData) satellite).data.getMaxData());
-                    }
-                }
-            } else {
-                out.writeInt(0); // no link
-            }
-        }
-    }
+    public void writeDataToNetwork(ByteBuf out, byte packetId) { }
 
+    // Old custom packet not used anymore; keep empty to satisfy INetworkMachine
     @Override
-    public void readDataFromNetwork(ByteBuf in, byte packetId,
-                                    NBTTagCompound nbt) {
-        if (packetId == (byte) 22) {
-            int status = in.readInt();
-            if (status == 3){
-                nbt.setInteger("ppt", in.readInt());
-                nbt.setInteger("data", in.readInt());
-                nbt.setInteger("maxdata", in.readInt());
-            }
-            nbt.setInteger("status", status);
-        }
-    }
+    public void readDataFromNetwork(ByteBuf in, byte packetId, NBTTagCompound nbt) { }
 
-    @Override
-    public void update() {
-        super.update();
-        if (world.isRemote) return;
-
-        if ((world.getTotalWorldTime() % 20) == 0 && !subscribers.isEmpty()) {
-            PacketMachine pkt = new PacketMachine(this, (byte)22);
-            java.util.Set<java.util.UUID> stale = new java.util.HashSet<>();
-
-            for (java.util.UUID id : subscribers) {
-                net.minecraft.entity.player.EntityPlayerMP mp =
-                    (net.minecraft.entity.player.EntityPlayerMP) world.getPlayerEntityByUUID(id);
-                if (mp == null || !mp.isEntityAlive()) {
-                    stale.add(id);
-                    continue;
-                }
-                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(pkt, mp);
-            }
-            if (!stale.isEmpty()) subscribers.removeAll(stale);
-        }
-    }
+    // Tick: nothing needed; the module polls the tile every 9 tick while GUI is open
+    //@Override
+    //public void update() {
+    //    super.update();
+        // no status pushing needed
+    //}
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (id == 0) {
+            // store data to item (server handles it inside storeData)
             storeData(0);
 
         } else if (id == 100) {
+            // "Connect" / perform action
             if (!world.isRemote) {
                 SatelliteBase sat = getSatelliteFromSlot(0);
 
@@ -161,153 +105,104 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements 
                 boolean hasPower = getUniversalEnergyStored() >= getPowerPerOperation();
 
                 if (hasLink && hasPower) {
-                    // perform action and pay the RF cost, just like extractData(commit=true)
                     sat.performAction(player, world, pos);
                     this.energy.extractEnergy(getPowerPerOperation(), false);
-                }
-
-                // Push a fresh status payload either way so the UI reflects current state
-                if (player instanceof net.minecraft.entity.player.EntityPlayerMP) {
-                    zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
-                        new PacketMachine(this, (byte)22),
-                        (net.minecraft.entity.player.EntityPlayerMP) player
-                    );
                 }
             }
 
         } else if (id == 101) {
-            onInventoryButtonPressed(id - 100);
-        }
+            if (!world.isRemote) {
+                ItemStack stack = getStackInSlot(0);
+                if (!stack.isEmpty() && stack.getItem() instanceof ItemSatelliteIdentificationChip) {
+                    ItemSatelliteIdentificationChip idchip = (ItemSatelliteIdentificationChip) stack.getItem();
 
-        if (id == 22) {
-            if (world.isRemote) { // 22 should never arrive at the server
-                int status = nbt.getInteger("status");
-                satellite = getSatelliteFromSlot(0);
-                if (moduleText != null) {
-                    if (status != 0 && satellite != null) {
-                        if (status == 1) {
-                            moduleText.setText(LibVulpes.proxy.getLocalizedString("msg.notenoughpower"));
-                        } else if (status == 2) {
-                            moduleText.setText(satellite.getName() + "\n\n" + LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.toofar"));
-                        } else if (status == 3) {
-                            moduleText.setText(satellite.getName() + "\n\n" + LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.info") + "\n" +
-                                    "Power gen.: " + nbt.getInteger("ppt") + "\n" +
-                                    "Data: " + nbt.getInteger("data") + "/" + nbt.getInteger("maxdata"));
-                        }
-                    } else {
-                        moduleText.setText(LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.nolink"));
+                    SatelliteBase sat = idchip.getSatellite(stack);
+                    if (sat != null) {
+                        DimensionManager.getInstance()
+                                .getDimensionProperties(sat.getDimensionId())
+                                .removeSatellite(sat.getId());
                     }
+
+                    idchip.erase(stack);
+                    // server mutates the inventory; client will get it via normal container sync
+                    setInventorySlotContents(0, stack);
                 }
             }
         }
     }
 
-
     @Override
     public void setInventorySlotContents(int slot, @Nonnull ItemStack stack) {
         super.setInventorySlotContents(slot, stack);
-        satellite = getSatelliteFromSlot(0);
-        updateInventoryInfo();
     }
-
-    public void updateInventoryInfo() {
-
-    }
-
 
     public SatelliteBase getSatelliteFromSlot(int slot) {
-
         ItemStack stack = getStackInSlot(slot);
         if (!stack.isEmpty() && stack.getItem() instanceof ItemSatelliteIdentificationChip) {
             return ItemSatelliteIdentificationChip.getSatellite(stack);
         }
-
         return null;
     }
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
-
-        // Ensure the server registers the viewer and sends immediate state
-        if (!world.isRemote && player instanceof net.minecraft.entity.player.EntityPlayerMP) {
-            java.util.UUID uid = player.getUniqueID();
-            if (!subscribers.contains(uid)) {
-                subscribers.add(uid);
-            }
-            // immediate payload so UI doesn’t show "no link" for up to 1s
-            zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
-                    new PacketMachine(this, (byte)22),
-                    (net.minecraft.entity.player.EntityPlayerMP) player
-            );
-        }        
-
         List<ModuleBase> modules = new LinkedList<>();
-        modules.add(new ModulePower(18, 20, this.energy));
-        modules.add(new ModuleButton(116, 70, 0, LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.connect"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
-        modules.add(new ModuleButton(173, 3, 1, "", this, TextureResources.buttonKill, LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.destroysat"), 24, 24));
-        modules.add(new ModuleData(28, 20, 1, this, data));
-        ModuleSatellite moduleSatellite = new ModuleSatellite(152, 10, this, 0);
-        moduleSatellite.setSatellite(satellite);
-        modules.add(moduleSatellite);
 
-        //Try to assign a satellite ASAP
-        //moduleSatellite.setSatellite(getSatelliteFromSlot(0));
+        modules.add(new ModulePower(18, 20, this.energy) {
+            @Override public int numberOfChangesToSend() { return 2; }
+        });
 
-        moduleText = new ModuleText(60, 20, LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.nolink"), 0x404040);
-        modules.add(moduleText);
+        modules.add(new ModuleButton(116, 70, 0,
+            LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.connect"),
+            this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
 
-        updateInventoryInfo();
+        modules.add(new ModuleButton(173, 3, 1, "",
+            this, TextureResources.buttonKill,
+            LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.destroysat"), 24, 24));
+
+        modules.add(new ModuleData(28, 20, 1, this, data) {
+            @Override public int numberOfChangesToSend() { return 2; }
+        });
+
+        modules.add(new ModuleSatellite(152, 10, this, 0) {
+            @Override public int numberOfChangesToSend() { return 0; }
+        });
+
+        // Add status module last; no need to keep a field reference
+        modules.add(new zmaster587.advancedRocketry.inventory.modules.ModuleSatelliteTerminal(
+            60, 20, 0x404040, this, this));
+
         return modules;
     }
 
+
     @Override
     public void onInventoryButtonPressed(int buttonId) {
-
         if (buttonId == 0) {
-            PacketHandler.sendToServer(new PacketMachine(this, (byte) (100 + buttonId)));
-
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) (100 + buttonId))); // id 100
         } else if (buttonId == 1) {
-            ItemStack stack = getStackInSlot(0);
-
-            if (!stack.isEmpty() && stack.getItem() instanceof ItemSatelliteIdentificationChip) {
-                ItemSatelliteIdentificationChip idchip = (ItemSatelliteIdentificationChip) stack.getItem();
-
-                SatelliteBase satellite = idchip.getSatellite(stack);
-
-                //Somebody might want to erase the chip of an already existing satellite
-                if (satellite != null)
-                    DimensionManager.getInstance().getDimensionProperties(satellite.getDimensionId()).removeSatellite(satellite.getId());
-
-                idchip.erase(stack);
-                setInventorySlotContents(0, stack);
-                PacketHandler.sendToServer(new PacketMachine(this, (byte) (100 + buttonId)));
-            }
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) (100 + buttonId))); // id 101
         }
-
     }
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
-
-        NBTTagCompound data = new NBTTagCompound();
-
-        this.data.writeToNBT(data);
-        nbt.setTag("data", data);
+        NBTTagCompound dataTag = new NBTTagCompound();
+        this.data.writeToNBT(dataTag);
+        nbt.setTag("data", dataTag);
         return nbt;
     }
 
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
-
-        NBTTagCompound data = nbt.getCompoundTag("data");
-        this.data.readFromNBT(data);
+        NBTTagCompound dataTag = nbt.getCompoundTag("data");
+        this.data.readFromNBT(dataTag);
     }
 
     @Override
-    public void loadData(int id) {
-    }
+    public void loadData(int id) { }
 
     @Override
     public void storeData(int id) {
@@ -326,7 +221,6 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements 
     public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
         SatelliteBase sat = getSatelliteFromSlot(0);
 
-        // Link + range + power gates (same as UI)
         boolean inRange = false;
         if (sat != null) {
             int satDim = sat.getDimensionId();
@@ -336,80 +230,34 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer implements 
         boolean hasLink  = (sat instanceof SatelliteData) && inRange;
         boolean hasPower = getUniversalEnergyStored() >= getPowerPerOperation();
 
-        if (!(hasLink && hasPower)) {
-            return 0;
-        }
+        if (!(hasLink && hasPower)) return 0;
 
         if (!commit) {
-            // Simulate: do NOT pull from satellite; just report current availability
             if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) return 0;
             int available = data.getData();
             return Math.min(maxAmount, available);
         }
 
-        // COMMIT path: first pull fresh data from the satellite into our buffer
         sat.performAction(null, world, pos);
 
-        // Now validate type and figure out how much we can remove
         if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) return 0;
 
         int removable = Math.min(maxAmount, data.getData());
         if (removable <= 0) return 0;
 
-        // Consume RF only if we're actually removing data
         this.energy.extractEnergy(getPowerPerOperation(), false);
+        int removed = data.removeData(removable, true);
 
-        return data.removeData(removable, true);
+        return removed;
     }
 
     @Override
     public int addData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
+        int added = data.addData(maxAmount, type, commit);
 
-        return data.addData(maxAmount, type, commit);
+        return added;
     }
 
     @Override
-    public boolean canInteractWithContainer(EntityPlayer entity) {
-        return true;
-    }
-
-
-    // Subscribe/unsubscribe when GUI (container) opens/closes
-    @Override
-    public void openInventory(EntityPlayer player) {
-        super.openInventory(player);
-        if (!world.isRemote && player != null) {
-            subscribers.add(player.getUniqueID());
-            // immediate first payload so UI populates without waiting a tick
-            if (player instanceof net.minecraft.entity.player.EntityPlayerMP) {
-                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(new PacketMachine(this, (byte)22),
-                        (net.minecraft.entity.player.EntityPlayerMP) player);
-            }
-        }
-    }
-
-    @Override
-    public void closeInventory(EntityPlayer player) {
-        super.closeInventory(player);
-        if (!world.isRemote && player != null) {
-            subscribers.remove(player.getUniqueID());
-        }
-    }
-
-    @Override
-    public void onChunkUnload() {
-        super.onChunkUnload();
-        if (!world.isRemote) {
-            subscribers.clear();
-        }
-    }
-
-    @Override
-    public void invalidate() {
-        super.invalidate();
-        if (!world.isRemote) {
-            subscribers.clear();
-        }
-    }
-
+    public boolean canInteractWithContainer(EntityPlayer entity) { return true; }
 }
