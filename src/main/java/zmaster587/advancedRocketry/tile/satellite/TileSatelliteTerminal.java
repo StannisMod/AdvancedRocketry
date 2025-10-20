@@ -219,8 +219,27 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
-        SatelliteBase sat = getSatelliteFromSlot(0);
+        // 1) Type guard (unchanged)
+        if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) {
+            return 0;
+        }
 
+        // 2) Simulation: report local only (don’t guess satellite yield)
+        if (!commit) {
+            int availableLocal = data.getData();
+            return Math.min(maxAmount, availableLocal);
+        }
+
+        // 3) Drain LOCAL first, chip or no chip
+        int availableLocal = data.getData();
+        int toGive = Math.min(maxAmount, availableLocal);
+        int removed = 0;
+        if (toGive > 0) {
+            removed = data.removeData(toGive, true);
+        }
+
+        // 4) If we have link+power, auto-download to refill AFTER the pull
+        SatelliteBase sat = getSatelliteFromSlot(0);
         boolean inRange = false;
         if (sat != null) {
             int satDim = sat.getDimensionId();
@@ -230,26 +249,15 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         boolean hasLink  = (sat instanceof SatelliteData) && inRange;
         boolean hasPower = getUniversalEnergyStored() >= getPowerPerOperation();
 
-        if (!(hasLink && hasPower)) return 0;
-
-        if (!commit) {
-            if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) return 0;
-            int available = data.getData();
-            return Math.min(maxAmount, available);
+        if (hasLink && hasPower) {
+            sat.performAction(null, world, pos);                // same as GUI Download
+            this.energy.extractEnergy(getPowerPerOperation(), false);
+            // (No immediate extra removal here; we already served the request.)
         }
 
-        sat.performAction(null, world, pos);
-
-        if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) return 0;
-
-        int removable = Math.min(maxAmount, data.getData());
-        if (removable <= 0) return 0;
-
-        this.energy.extractEnergy(getPowerPerOperation(), false);
-        int removed = data.removeData(removable, true);
-
-        return removed;
+        return removed;  // may be 0 if buffer empty and no link/power
     }
+
 
     @Override
     public int addData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
