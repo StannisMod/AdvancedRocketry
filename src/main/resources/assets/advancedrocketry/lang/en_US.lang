@@ -482,6 +482,7 @@ msg.entity.rocket.clear=Clear
 msg.entity.rocket.rcs=RCS Mode
 msg.entity.rocket.none=None Selected
 msg.wirelessTransciever.extract=extract
+msg.wirelessTransciever.insert=insert
 
 msg.powerunit.rfpertick=FE/t
 msg.linker.error.firstMachine=This must be the first machine to link!
