@@ -383,35 +383,55 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             int sizeX = 52;
             int sizeY = 46;
             if (world.isRemote) {
-                //Border
+                // Border for RIGHT composition pane (unchanged)
                 modules.add(new ModuleScaledImage(baseX - 3, baseY - 3, 3, baseY + sizeY + 6, TextureResources.verticalBar));
                 modules.add(new ModuleScaledImage(baseX + sizeX, baseY - 3, -3, baseY + sizeY + 6, TextureResources.verticalBar));
                 modules.add(new ModuleScaledImage(baseX, baseY - 3, sizeX, 3, TextureResources.horizontalBar));
                 modules.add(new ModuleScaledImage(baseX, 2 * baseY + sizeY, sizeX, -3, TextureResources.horizontalBar));
             }
 
-            ModuleContainerPanYOnly pan2 = new ModuleContainerPanYOnly(baseX, baseY, buttonList, new LinkedList<>(), null, 40, 48, 0, 0, 0, 72);
-            modules.add(pan2);
+            // Preserve RIGHT pane coords before reusing baseX/baseY for the LEFT pane
+            final int compX = baseX;
+            final int compY = baseY;
+            final int compScreenX = 40;  // same as original
+            final int compScreenY = 48;  // same as original
 
-            //Add borders for asteroid
-             baseX = 5;
-             baseY = 32;
-             sizeX = 112;
-             sizeY = 46;
+            // ---- LEFT pane (asteroid list) border
+            baseX = 5;
+            baseY = 32;
+            sizeX = 112;
+            sizeY = 46;
             if (world.isRemote) {
-                //Border
+                // Border for LEFT asteroid list
                 modules.add(new ModuleScaledImage(baseX - 3, baseY - 3, 3, baseY + sizeY + 6, TextureResources.verticalBar));
                 modules.add(new ModuleScaledImage(baseX + sizeX, baseY - 3, -3, baseY + sizeY + 6, TextureResources.verticalBar));
                 modules.add(new ModuleScaledImage(baseX, baseY - 3, sizeX, 3, TextureResources.horizontalBar));
                 modules.add(new ModuleScaledImage(baseX, 2 * baseY + sizeY, sizeX, -3, TextureResources.horizontalBar));
             }
 
-            //listing of asteroids with scrollcaching
+            // ---- LEFT asteroid list: wheel-enabled + cached
             if (lastSeed != -1) {
-                ModuleContainerPanYOnlyWithScrollCache pan = new ModuleContainerPanYOnlyWithScrollCache(
-                    baseX, baseY, list2, new LinkedList<>(), null, sizeX - 2, sizeY, 0, -48, 0, 72);
-                modules.add(pan);
+                ModuleContainerPanYOnlyWithScrollCache panLeft = new ModuleContainerPanYOnlyWithScrollCache(
+                    baseX, baseY,
+                    list2, new LinkedList<>(),
+                    null,
+                    sizeX - 2, sizeY,   // (screen width minus 2 like original)
+                    0, -48,             // paddingX, paddingY
+                    0, 72               // containerSizeX, containerSizeY
+                );
+                modules.add(panLeft); // LEFT FIRST to consume wheel
             }
+
+            // ---- RIGHT composition pane: parent class (drag-only; wheel will be 0 after left consumes it)
+            ModuleContainerPanYOnly panRight = new ModuleContainerPanYOnly(
+                compX, compY,
+                buttonList, new LinkedList<>(),
+                null,
+                compScreenX, compScreenY,
+                0, 0,
+                0, 72
+            );
+            modules.add(panRight);
 
 
         } else if (tabModule.getTab() == 0) {
