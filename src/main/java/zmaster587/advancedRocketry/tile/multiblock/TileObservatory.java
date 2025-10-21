@@ -303,8 +303,30 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             modules.add(new ModuleTexturedSlotArray(5, 120, this, 1, 2, TextureResources.idChip));
             modules.add(new ModuleOutputSlotArray(45, 120, this, 2, 3));
             modules.add(new ModuleProgress(25, 120, 0, new ProgressBarImage(217, 0, 17, 17, 234, 0, EnumFacing.DOWN, TextureResources.progressBars), this));
-            modules.add(new ModuleButton(25, 120, 1, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonNull, LibVulpes.proxy.getLocalizedString("msg.observetory.text.processdiscovery"), 17, 17));
+            
+            ModuleButton processBtn = new ModuleButton(
+                25, 120, 1, "",
+                this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonNull,
+                // default tooltip (will be replaced conditionally below)
+                LibVulpes.proxy.getLocalizedString("msg.observetory.text.processdiscovery"),
+                17, 17
+            );
 
+            // `isOpen` is synchronized to client via writeNetworkData/readNetworkData, so safe to read here.
+            if (!isOpen) {
+                // Show requirements when the dome isn't open (daytime, raining, no sky, etc.)
+                String tooltip = LibVulpes.proxy.getLocalizedString("msg.observetory.req.open");
+                processBtn.setToolTipText(tooltip);
+            } else {
+                // Keep your normal tooltip when open
+                processBtn.setToolTipText(LibVulpes.proxy.getLocalizedString("msg.observetory.text.processdiscovery"));
+            }
+
+            // Keep it enabled so the tooltip renders (ModuleButton.isMouseOver checks enabled)
+            processBtn.setEnabled(true);
+
+            modules.add(processBtn);
 
             ModuleButton scanButton = new ModuleButton(100, 120, 2, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.button"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.tooltip"), 64, 18);
 
@@ -549,7 +571,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             if (inv.getStackInSlot(2).isEmpty() && isOpen && hasEnergy(500) && lastButton != -1) {
                 ItemStack stack = inv.decrStackSize(1, 1);
                 if (stack != ItemStack.EMPTY && stack.getItem() instanceof ItemAsteroidChip) {
-                    ((ItemAsteroidChip) (stack.getItem())).setUUID(stack, lastSeed);
+                    ((ItemAsteroidChip) (stack.getItem())).setUUID(stack, lastSeed + lastButton);
                     ((ItemAsteroidChip) (stack.getItem())).setType(stack, lastType);
                     ((ItemAsteroidChip) (stack.getItem())).setMaxData(stack, 1000);
                     inv.setInventorySlotContents(2, stack);
