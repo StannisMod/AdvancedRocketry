@@ -15,6 +15,21 @@ public class BlockTileNeighborUpdate extends BlockTileComparatorOverride {
         super(tileClass, guiId);
     }
 
+    // redstone power uses neighbor change to update redstone power
+    @Override
+    public void neighborChanged(net.minecraft.block.state.IBlockState state,
+                                net.minecraft.world.World world,
+                                net.minecraft.util.math.BlockPos pos,
+                                net.minecraft.block.Block blockIn,
+                                net.minecraft.util.math.BlockPos fromPos) {
+        super.neighborChanged(state, world, pos, blockIn, fromPos);
+        TileEntity te = world.getTileEntity(pos);
+        if (te instanceof zmaster587.libVulpes.util.IAdjBlockUpdate) {
+            ((zmaster587.libVulpes.util.IAdjBlockUpdate) te).onAdjacentBlockUpdated();
+        }
+    }
+
+
     @Override
     public void onNeighborChange(IBlockAccess world, BlockPos pos, BlockPos neighbor) {
         super.onNeighborChange(world, pos, neighbor);
