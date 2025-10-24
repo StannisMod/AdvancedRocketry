@@ -5,21 +5,29 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.NetworkManager;
+import net.minecraft.network.play.server.SPacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
+
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
 import zmaster587.advancedRocketry.api.IInfrastructure;
 import zmaster587.advancedRocketry.api.IMission;
+import zmaster587.advancedRocketry.api.RocketEvent;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.client.util.IndicatorBarImage;
 import zmaster587.libVulpes.client.util.ProgressBarImage;
@@ -31,7 +39,6 @@ import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.tile.IComparatorOverride;
 import zmaster587.libVulpes.util.IAdjBlockUpdate;
 import zmaster587.libVulpes.util.INetworkMachine;
-import zmaster587.libVulpes.util.ZUtils.RedstoneState;
 
 import javax.annotation.Nonnull;
 import java.util.LinkedList;
@@ -39,28 +46,80 @@ import java.util.List;
 
 public class TileRocketMonitoringStation extends TileEntity implements IModularInventory, ITickable, IAdjBlockUpdate, IInfrastructure, ILinkableTile, INetworkMachine, IButtonInventory, IProgressBar, IComparatorOverride {
 
+    // ==== TUNABLE TICK THROTTLES ====
+    // 2–3 ticks for height/vel feels live; 5–10 ticks is fine for fuel.
+    private static final int T_HEIGHTVEL_TICKS  = 3;   // ~6.7 Hz
+    private static final int T_FUEL_TICKS       = 10;  // ~2 Hz
+    private static final int T_COMPARATOR_TICKS = 3;   // match height cadence
+    // =================================
+
     EntityRocketBase linkedRocket;
     IMission mission;
     ModuleText missionText;
-    //RedstoneState state;
-    //ModuleRedstoneOutputButton redstoneControl;
+
+    // Cached redstone state from neighbor callbacks (don’t poll every tick)
+    private boolean isPoweredCached = false, initPower = false;
+
+    // Throttles
+    private int heightVelTick = 0, fuelTick = 0, comparatorTick = 0;
+
+    // Comparator cache (change-only)
+    private int lastComparator = -1;
+
+    // Server snapshots (served via ModuleProgress polling)
+    private int snapHeight = 0, snapVel = 0;
+    private int snapFuel = 0,  snapFuelCap = 0;  // active fuel (id=2 semantics)
+    private int snapOx   = 0,  snapOxCap   = 0;  // oxidizer    (id=6 semantics)
+
+    // GUI cached fields (client)
     boolean was_powered = false;
     int rocketHeight;
     int velocity;
     int fuelLevel, maxFuelLevel;
     int oxidizerFuelLevel;
 
+    // === GUI event status (server -> client via TE update) ===
+    // 0=idle, 1=prelaunch, 2=launching, 3=orbit, 4=landed, 5=aborted
+    private int uiStatus = 0;
+    private transient ModuleText launchStatus;      // client-only widget
+    private transient int lastUiStatusShown = -1;   // client change-detect
+
+    // Event bus registration flag
+    private boolean registeredBus = false;
+
     public TileRocketMonitoringStation() {
         mission = null;
         missionText = new ModuleText(20, 90, LibVulpes.proxy.getLocalizedString("msg.monitoringStation.missionProgressNA"), 0x2b2b2b);
-        //redstoneControl = new ModuleRedstoneOutputButton(174, 4, -1, "", this);
-        //state = RedstoneState.ON;
     }
+
+    // --- Lifecycle / bus registration ---
+
+    @Override
+    public void onLoad() {
+        if (!world.isRemote && !registeredBus) {
+            MinecraftForge.EVENT_BUS.register(this);
+            registeredBus = true;
+        }
+        if (!world.isRemote && !initPower) {
+            boolean now = world.isBlockIndirectlyGettingPowered(pos) > 0;
+            isPoweredCached = now;
+            was_powered = now;    // <- important: no phantom rising edge later
+            initPower = true;
+        }
+    }
+
 
     @Override
     public void invalidate() {
         super.invalidate();
 
+        // Unregister bus
+        if (!world.isRemote && registeredBus) {
+            MinecraftForge.EVENT_BUS.unregister(this);
+            registeredBus = false;
+        }
+
+        // Preserve original unlink-on-destroy semantics
         if (linkedRocket != null) {
             linkedRocket.unlinkInfrastructure(this);
             unlinkRocket();
@@ -71,21 +130,44 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         }
     }
 
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        // IMPORTANT: do NOT unlink here — preserve original behavior:
+        // this tile remains linked across unload/reload and during flight/space.
+        if (!world.isRemote && registeredBus) {
+            MinecraftForge.EVENT_BUS.unregister(this);
+            registeredBus = false;
+        }
+    }
+
+    // --- Redstone power caching via block neighbor callbacks ---
+
+    @Deprecated
     public boolean getEquivalentPower() {
-        //if (state == RedstoneState.OFF)
-        //    return false;
-
-        boolean state2 = world.isBlockIndirectlyGettingPowered(pos) > 0;
-
-        //if (state == RedstoneState.INVERTED)
-        //    state2 = !state2;
-        return state2;
+        return world.isBlockIndirectlyGettingPowered(pos) > 0;
     }
 
     @Override
     public void onAdjacentBlockUpdated() {
+        if (world == null || world.isRemote) return;
 
+        boolean now = world.isBlockIndirectlyGettingPowered(pos) > 0;
+        boolean rising = now && !isPoweredCached;
+
+        // Update cache first so it stays correct even with no rocket linked
+        isPoweredCached = now;
+        was_powered = now; // optional if you surface this elsewhere
+
+        if (rising && linkedRocket != null) {
+            linkedRocket.prepareLaunch();   // only on true 0->1 edge
+            markDirty();
+        }
     }
+
+
+
+    // --- IInfrastructure ---
 
     @Override
     public int getMaxLinkDistance() {
@@ -93,27 +175,133 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     }
 
     @Override
-    public void update() {
-        if (!world.isRemote) {
-            if (linkedRocket instanceof EntityRocket) {
-                if ((int) (15 * ((EntityRocket) linkedRocket).getRelativeHeightFraction()) != (int) (15 * ((EntityRocket) linkedRocket).getPreviousRelativeHeightFraction())) {
-                    markDirty();
-                }
-                if (getEquivalentPower() && linkedRocket != null) {
-                    if (!was_powered) {
-                        System.out.println("prepare launch (redstone powered)");
-                        linkedRocket.prepareLaunch();
-                        //System.out.println("launching...");
-                        was_powered = true;
-                    }
-                }
-            }
-            if(!getEquivalentPower()){
-                was_powered = false; //
-            }
+    public boolean disconnectOnLiftOff() {
+        return false;
+    }
+
+    @Override
+    public boolean linkRocket(EntityRocketBase rocket) {
+        this.linkedRocket = rocket;
+        this.lastComparator = -1; // ensure first comparator notify fires if needed
+        return true;
+    }
+
+    @Override
+    public void unlinkRocket() {
+        linkedRocket = null;
+
+        // Reset snapshots so viewers don't see stale values
+        snapHeight = 0; snapVel = 0;
+        snapFuel = 0;  snapFuelCap = 0;
+        snapOx   = 0;  snapOxCap   = 0;
+
+        // Server-only: force comparator to 0 and notify once
+        if (world != null && !world.isRemote) {
+            lastComparator = 0;
+            world.updateComparatorOutputLevel(pos, world.getBlockState(pos).getBlock());
         }
     }
 
+    // --- Ticking ---
+
+    @Override
+    public void update() {
+        if (world.isRemote) return;
+
+        // One-time prime (in case no neighbor event has fired yet)
+        if (!initPower) {
+            isPoweredCached = world.isBlockIndirectlyGettingPowered(pos) > 0;
+            initPower = true;
+        }
+
+        // Runs infrequently to recover from any missed neighbor events.
+        if ( (world.getTotalWorldTime() & 100) == 0 ) { // every 100 ticks
+            boolean polled = world.isBlockIndirectlyGettingPowered(pos) > 0;
+            isPoweredCached = polled; // DO NOT trigger launch here; just reconcile the cache
+        }
+        // Idle fast-exit
+        if (linkedRocket == null) { return; }
+
+        // ---- height + velocity snapshots, every T_HEIGHTVEL_TICKS ----
+        if (++heightVelTick >= Math.max(1, T_HEIGHTVEL_TICKS)) {
+            heightVelTick = 0;
+
+            snapHeight = (int) linkedRocket.posY;
+            snapVel    = (int) (linkedRocket.motionY * 100);
+
+            // comparator (0–15) change-only, every T_COMPARATOR_TICKS
+            if (++comparatorTick >= Math.max(1, T_COMPARATOR_TICKS)) {
+                comparatorTick = 0;
+                if (linkedRocket instanceof EntityRocket) {
+                    int comp = (int)(15 * ((EntityRocket) linkedRocket).getRelativeHeightFraction());
+                    if (comp != lastComparator) {
+                        lastComparator = comp;
+                        world.updateComparatorOutputLevel(pos, world.getBlockState(pos).getBlock());
+                    }
+                }
+            }
+        }
+
+        // ---- fuel snapshots, every T_FUEL_TICKS ----
+        if (++fuelTick >= Math.max(1, T_FUEL_TICKS)) {
+            fuelTick = 0;
+
+            // Original semantics:
+            //  - id=2 shows the *active* rocket fuel
+            //  - id=6 shows oxidizer independently
+            final FuelRegistry.FuelType active = linkedRocket.getRocketFuelType();
+            snapFuel    = linkedRocket.getFuelAmount(active);
+            snapFuelCap = linkedRocket.getFuelCapacity(active);
+
+            snapOx      = linkedRocket.getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER);
+            snapOxCap   = linkedRocket.getFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER);
+        }
+    }
+
+    // --- Forge Rocket Events -> authorititative UI status (server -> client via TE update) ---
+
+    @SubscribeEvent(priority = EventPriority.LOWEST) // see final canceled state
+    public void onPreLaunch(RocketEvent.RocketPreLaunchEvent e) {
+        if (world == null || world.isRemote) return;
+        if (linkedRocket != null && e.getEntity() == linkedRocket) {
+            // At LOWEST, if someone canceled it, isCanceled() will be true now.
+            uiStatus = e.isCanceled() ? 5 : 1; // aborted or prelaunch
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    @SubscribeEvent
+    public void onLaunch(RocketEvent.RocketLaunchEvent e) {
+        if (world == null || world.isRemote) return;
+        if (linkedRocket != null && e.getEntity() == linkedRocket) {
+            uiStatus = 2; // launching!
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    @SubscribeEvent
+    public void onOrbit(RocketEvent.RocketReachesOrbitEvent e) {
+        if (world == null || world.isRemote) return;
+        if (linkedRocket != null && e.getEntity() == linkedRocket) {
+            uiStatus = 3; // reached orbit
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    @SubscribeEvent
+    public void onLanded(RocketEvent.RocketLandedEvent e) {
+        if (world == null || world.isRemote) return;
+        if (linkedRocket != null && e.getEntity() == linkedRocket) {
+            uiStatus = 4; // landed
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    // --- Linker flow ---
 
     @Override
     public boolean onLinkStart(@Nonnull ItemStack item, TileEntity entity, EntityPlayer player, World world) {
@@ -128,7 +316,10 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         }
 
         if (player.world.isRemote)
-            Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(new TextComponentTranslation("%s %s", new TextComponentTranslation("msg.monitoringStation.link"), ": " + getPos().getX() + " " + getPos().getY() + " " + getPos().getZ()));
+            Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(
+                    new TextComponentTranslation("%s %s",
+                            new TextComponentTranslation("msg.monitoringStation.link"),
+                            ": " + getPos().getX() + " " + getPos().getY() + " " + getPos().getZ()));
         return true;
     }
 
@@ -139,21 +330,7 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         return false;
     }
 
-    @Override
-    public void unlinkRocket() {
-        linkedRocket = null;
-    }
-
-    @Override
-    public boolean disconnectOnLiftOff() {
-        return false;
-    }
-
-    @Override
-    public boolean linkRocket(EntityRocketBase rocket) {
-        this.linkedRocket = rocket;
-        return true;
-    }
+    // --- NBT / TE sync ---
 
     @Override
     public NBTTagCompound getUpdateTag() {
@@ -161,47 +338,54 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     }
 
     @Override
+    public SPacketUpdateTileEntity getUpdatePacket() {
+        NBTTagCompound tag = new NBTTagCompound();
+        writeToNBT(tag);
+        return new SPacketUpdateTileEntity(pos, 0, tag);
+    }
+
+    @Override
+    public void onDataPacket(NetworkManager net, SPacketUpdateTileEntity pkt) {
+        readFromNBT(pkt.getNbtCompound());
+    }
+
+    @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
-
-        //state = RedstoneState.values()[nbt.getByte("redstoneState")];
-        //redstoneControl.setRedstoneState(state);
         was_powered = nbt.getBoolean("was_powered");
 
         if (nbt.hasKey("missionID")) {
             long id = nbt.getLong("missionID");
-            int dimid = nbt.getInteger("missionDimId");
-
             SatelliteBase sat = DimensionManager.getInstance().getSatellite(id);
-
-            if (sat instanceof IMission)
+            if (sat instanceof IMission) {
                 mission = (IMission) sat;
+            }
         }
+        uiStatus = nbt.getInteger("uiStatus");
     }
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
-        //nbt.setByte("redstoneState", (byte) state.ordinal());
         nbt.setBoolean("was_powered", was_powered);
         if (mission != null) {
             nbt.setLong("missionID", mission.getMissionId());
             nbt.setInteger("missionDimId", mission.getOriginatingDimension());
         }
+        nbt.setInteger("uiStatus", uiStatus);
         return nbt;
     }
+
+    // --- LibVulpes network bridge  ---
 
     @Override
     public void writeDataToNetwork(ByteBuf out, byte id) {
         if (id == 1)
             out.writeLong(mission == null ? -1 : mission.getMissionId());
-        //else if (id == 2)
-            //out.writeByte(state.ordinal());
     }
 
     @Override
-    public void readDataFromNetwork(ByteBuf in, byte packetId,
-                                    NBTTagCompound nbt) {
+    public void readDataFromNetwork(ByteBuf in, byte packetId, NBTTagCompound nbt) {
         if (packetId == 1) {
             nbt.setLong("id", in.readLong());
         } else if (packetId == 2) {
@@ -210,8 +394,7 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     }
 
     @Override
-    public void useNetworkData(EntityPlayer player, Side side, byte id,
-                               NBTTagCompound nbt) {
+    public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (id == 1) {
             long idNum = nbt.getLong("id");
             if (idNum == -1) {
@@ -219,15 +402,13 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
                 setMissionText();
             } else {
                 SatelliteBase base = DimensionManager.getInstance().getSatellite(idNum);
-
                 if (base instanceof IMission) {
                     mission = (IMission) base;
                     setMissionText();
                 }
             }
         } else if (id == 2) {
-            //state = RedstoneState.values()[nbt.getByte("state")];
-            //redstoneControl.setRedstoneState(state);
+            // redstone control path was commented in original; preserved
         }
         if (id == 100) {
             if (linkedRocket != null)
@@ -235,20 +416,26 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         }
     }
 
+    // --- GUI / Modules ---
+
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
-
         LinkedList<ModuleBase> modules = new LinkedList<>();
 
         modules.add(new ModuleButton(20, 40, 0, "Launch!", this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
+        // Status line for rocket events (client only)
+        if (world.isRemote) {
+            launchStatus = new ModuleText(10, 30, "", 0xFFFFFF22);
+            modules.add(launchStatus);
+        }
+
         modules.add(new ModuleProgress(98, 4, 0, new IndicatorBarImage(2, 7, 12, 81, 17, 0, 6, 6, 1, 0, EnumFacing.UP, TextureResources.rocketHud), this));
         modules.add(new ModuleProgress(120, 14, 1, new IndicatorBarImage(2, 95, 12, 71, 17, 0, 6, 6, 1, 0, EnumFacing.UP, TextureResources.rocketHud), this));
         modules.add(new ModuleProgress(142, 14, 2, new ProgressBarImage(2, 173, 12, 71, 17, 6, 3, 69, 1, 1, EnumFacing.UP, TextureResources.rocketHud), this));
         modules.add(new ModuleProgress(148, 14, 6, new ProgressBarImage(2, 173, 12, 71, 17, 75, 3, 69, 1, 1, EnumFacing.UP, TextureResources.rocketHud), this));
 
-        //modules.add(redstoneControl);
         setMissionText();
-
         modules.add(missionText);
         modules.add(new ModuleProgress(30, 110, 3, TextureResources.progressToMission, this));
         modules.add(new ModuleProgress(30, 120, 4, TextureResources.workMission, this));
@@ -268,19 +455,23 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
             int minutes = (time / 60) % 60;
             int hours = time / 3600;
 
-            missionText.setText(((SatelliteBase) mission).getName() + LibVulpes.proxy.getLocalizedString("msg.monitoringStation.progress") + String.format("\n%02dhr:%02dm:%02ds", hours, minutes, seconds));
-        } else
+            String name = (mission instanceof SatelliteBase)
+                    ? ((SatelliteBase) mission).getName()
+                    : LibVulpes.proxy.getLocalizedString("msg.monitoringStation.mission");
+
+            missionText.setText(name + LibVulpes.proxy.getLocalizedString("msg.monitoringStation.progress")
+                    + String.format("\n%02dhr:%02dm:%02ds", hours, minutes, seconds));
+        } else {
             missionText.setText(LibVulpes.proxy.getLocalizedString("msg.monitoringStation.missionProgressNA"));
+        }
     }
 
     @Override
     public void onInventoryButtonPressed(int buttonId) {
         if (buttonId != -1)
             PacketHandler.sendToServer(new PacketMachine(this, (byte) (buttonId + 100)));
-        else {
-            //state = redstoneControl.getState();
+        else
             PacketHandler.sendToServer(new PacketMachine(this, (byte) 2));
-        }
     }
 
     @Override
@@ -306,7 +497,22 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
             return (float) Math.min(Math.max(3f * (mission.getProgress(this.world) - 0.666f), 0f), 1f);
         }
 
-        //keep text updated
+        // Client: reflect server-driven rocket event status in the GUI text
+        if (world.isRemote && launchStatus != null && uiStatus != lastUiStatusShown) {
+            lastUiStatusShown = uiStatus;
+            String msg;
+            switch (uiStatus) {
+                case 1:  msg = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.prelaunch"); break; // "Pre-launch checks…"
+                case 2:  msg = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.launching"); break; // "Launching!"
+                case 3:  msg = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.orbit");     break; // "Reached orbit"
+                case 4:  msg = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.landed");    break; // "Landed"
+                case 5:  msg = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.aborted");   break; // "Launch aborted"
+                default: msg = ""; break;
+            }
+            launchStatus.setText(msg);
+        }
+
+        // Keep mission text updated on client
         if (world.isRemote && mission != null)
             setMissionText();
 
@@ -327,31 +533,20 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
 
     @Override
     public int getProgress(int id) {
-        //Try to keep client synced with server, this also allows us to put the monitor on a different world altogether
-        if (world.isRemote)
-            if (mission != null && id == 0)
-                return getTotalProgress(id);
-            else if (id == 0)
-                return rocketHeight;
-            else if (id == 1)
-                return velocity;
-            else if (id == 2)
-                return fuelLevel;
-            else if (id == 6)
-                return oxidizerFuelLevel;
-
-        if (linkedRocket == null)
+        // Client: use client-side cached fields (preserve original mission/height quirk)
+        if (world.isRemote) {
+            if (mission != null && id == 0) return getTotalProgress(id); // original oddity preserved
+            if (id == 0) return rocketHeight;
+            if (id == 1) return velocity;
+            if (id == 2) return fuelLevel;
+            if (id == 6) return oxidizerFuelLevel;
             return 0;
-
-        if (id == 0)
-            return (int) linkedRocket.posY;
-        else if (id == 1)
-            return (int) (linkedRocket.motionY * 100);
-        else if (id == 2)
-            return  linkedRocket.getFuelAmount(linkedRocket.getRocketFuelType());
-        else if (id == 6)
-            return  linkedRocket.getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER);
-
+        }
+        // Server: return snapshots only (cheap)
+        if (id == 0) return snapHeight;
+        if (id == 1) return snapVel;
+        if (id == 2) return snapFuel; // active fuel amount 
+        if (id == 6) return snapOx;   // oxidizer amount 
         return 0;
     }
 
@@ -362,23 +557,9 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         else if (id == 1)
             return 1000;
         else if (id == 2)
-            if (world.isRemote)
-                return maxFuelLevel;
-            else if (linkedRocket == null)
-                return 0;
-            else
-                return linkedRocket.getFuelCapacity(linkedRocket.getRocketFuelType());
-
+            return world.isRemote ? maxFuelLevel : snapFuelCap;
         else if (id == 6)
-            if (world.isRemote)
-                return maxFuelLevel;
-            else if (linkedRocket == null)
-                return 0;
-            else
-                return linkedRocket.getFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER);
-
-
-
+            return world.isRemote ? maxFuelLevel : snapOxCap;
         return 1;
     }
 
