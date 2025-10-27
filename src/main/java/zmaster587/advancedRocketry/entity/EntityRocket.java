@@ -177,6 +177,32 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         landingPadDisplayText.setColor(0x00ff00);
     }
 
+    private void recomputeFuelRates() {
+        for (FuelRegistry.FuelType t : new FuelRegistry.FuelType[]{
+                FuelRegistry.FuelType.LIQUID_MONOPROPELLANT,
+                FuelRegistry.FuelType.LIQUID_BIPROPELLANT,
+                FuelRegistry.FuelType.LIQUID_OXIDIZER,
+                FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID}) {
+
+            if (getFuelCapacity(t) <= 0) continue;
+
+            String name = (t == FuelRegistry.FuelType.LIQUID_OXIDIZER) ? stats.getOxidizerFluid()
+                    : (t == FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID) ? stats.getWorkingFluid()
+                    : stats.getFuelFluid();
+            if ("null".equals(name)) continue;
+
+            Fluid f = FluidRegistry.getFluid(name);
+            if (f == null) continue;
+
+            int base = stats.getBaseFuelRate(t);
+            if (base <= 0) continue;
+
+            int rate = (int)(FuelRegistry.instance.getMultiplier(t, f) * base);
+            if (rate > 0) setFuelConsumptionRate(t, rate);
+        }
+    }
+
+
     /**
      * @param blockState the blockstate to damage
      * @return the blockstate that the input blockstate turns into
@@ -1747,6 +1773,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     public void recalculateStats(){
         this.storage.recalculateStats(this.stats);
+        recomputeFuelRates(); 
     }
 
     /**
@@ -1764,6 +1791,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         boolean allowLaunch = false;
 
         this.storage.recalculateStats(this.stats);
+        recalculateStats();
 
         NBTTagCompound nbtdata = new NBTTagCompound();
         writeToNBT(nbtdata);
@@ -2039,6 +2067,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
         spacePosition.readFromNBT(nbt);
+        recomputeFuelRates(); 
     }
 
     protected void writeNetworkableNBT(NBTTagCompound nbt) {
