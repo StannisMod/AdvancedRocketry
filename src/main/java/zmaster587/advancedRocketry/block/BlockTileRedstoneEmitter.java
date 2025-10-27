@@ -8,17 +8,21 @@ import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import zmaster587.libVulpes.block.BlockTile;
 
+// Fueling Station block
 public class BlockTileRedstoneEmitter extends BlockTile {
 
-    public BlockTileRedstoneEmitter(Class<? extends TileEntity> tileClass,
-                                    int guiId) {
+    public BlockTileRedstoneEmitter(Class<? extends TileEntity> tileClass, int guiId) {
         super(tileClass, guiId);
     }
 
     @Override
-    public int getWeakPower(IBlockState blockState, IBlockAccess blockAccess,
-                            BlockPos pos, EnumFacing side) {
-        return blockState.getValue(STATE) ? 15 : 0;
+    public int getWeakPower(IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
+        return state.getValue(STATE) ? 15 : 0;
+    }
+
+    @Override
+    public int getStrongPower(IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
+        return getWeakPower(state, world, pos, side);
     }
 
     @Override
@@ -26,11 +30,23 @@ public class BlockTileRedstoneEmitter extends BlockTile {
         return true;
     }
 
-    public void setRedstoneState(World world, IBlockState state, BlockPos pos, boolean newState) {
-        if (world.getBlockState(pos).getBlock() != this)
-            return;
+    public void setRedstoneState(World world, IBlockState _ignored, BlockPos pos, boolean newState) {
+        // Server-only to avoid client mutations
+        if (world.isRemote) return;
 
-        world.setBlockState(pos, state.withProperty(STATE, newState));
-        world.notifyBlockUpdate(pos, state, state, 3);
+        // skip if chunk isn't loaded
+        if (!world.isBlockLoaded(pos)) return;
+
+        // Read the current state from the world to avoid acting on a stale IBlockState
+        IBlockState curState = world.getBlockState(pos);
+        if (curState.getBlock() != this) return;
+
+        boolean current = curState.getValue(STATE);
+        if (current == newState) return; // no-op if unchanged
+
+        IBlockState updated = curState.withProperty(STATE, newState);
+
+        // 3 = neighbors notified (1) + clients updated (2)
+        world.setBlockState(pos, updated, 3);
     }
 }
