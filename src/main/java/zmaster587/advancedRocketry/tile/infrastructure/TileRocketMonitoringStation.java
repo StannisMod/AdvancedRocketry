@@ -83,9 +83,25 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     private int uiStatus = 0;
     private transient ModuleText launchStatus;      // client-only widget
     private transient int lastUiStatusShown = -1;   // client change-detect
+    // How long a status is considered fresh after the last event (in ticks)
+    private static final long STATUS_STALE_TICKS = 400L; // over 20 seconds is outdated
+    private long lastStatusTick = 0L; // server-only; persisted
 
     // Event bus registration flag
     private boolean registeredBus = false;
+    
+    private void pushState() {
+        if (world != null && !world.isRemote) {
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    private void clearUiStatus() {
+        uiStatus = 0;
+        lastUiStatusShown = -1; // force client label to refresh to empty
+        pushState();
+    }
 
     public TileRocketMonitoringStation() {
         mission = null;
@@ -103,9 +119,23 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         if (!world.isRemote && !initPower) {
             boolean now = world.isBlockIndirectlyGettingPowered(pos) > 0;
             isPoweredCached = now;
-            was_powered = now;    // <- important: no phantom rising edge later
+            was_powered = now;
             initPower = true;
         }
+
+        if (!world.isRemote) {
+            boolean stale = lastStatusTick == 0L ||
+                            (world.getTotalWorldTime() - lastStatusTick) > STATUS_STALE_TICKS;
+
+            if (stale || linkedRocket == null) {
+                clearUiStatus();
+                lastStatusTick = 0L;  // reset tick
+            } else {
+                pushState();           // keep fresh status visible
+            }
+        }
+            
+
     }
 
 
@@ -182,25 +212,33 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     @Override
     public boolean linkRocket(EntityRocketBase rocket) {
         this.linkedRocket = rocket;
-        this.lastComparator = -1; // ensure first comparator notify fires if needed
+        this.lastComparator = -1;
+
+        if (!world.isRemote) {
+            clearUiStatus();
+            lastStatusTick = 0L;       // reset tick
+        }
         return true;
     }
+
 
     @Override
     public void unlinkRocket() {
         linkedRocket = null;
 
-        // Reset snapshots so viewers don't see stale values
-        snapHeight = 0; snapVel = 0;
-        snapFuel = 0;  snapFuelCap = 0;
-        snapOx   = 0;  snapOxCap   = 0;
+        // reset snapshots
+        snapHeight = snapVel = 0;
+        snapFuel = snapFuelCap = 0;
+        snapOx = snapOxCap = 0;
 
-        // Server-only: force comparator to 0 and notify once
-        if (world != null && !world.isRemote) {
+        if (!world.isRemote) {
             lastComparator = 0;
             world.updateComparatorOutputLevel(pos, world.getBlockState(pos).getBlock());
+            clearUiStatus();
+            lastStatusTick = 0L;       // reset tick
         }
     }
+
 
     // --- Ticking ---
 
@@ -215,7 +253,7 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         }
 
         // Runs infrequently to recover from any missed neighbor events.
-        if ( (world.getTotalWorldTime() & 100) == 0 ) { // every 100 ticks
+        if (world.getTotalWorldTime() % 100 == 0) { // every 100 ticks
             boolean polled = world.isBlockIndirectlyGettingPowered(pos) > 0;
             isPoweredCached = polled; // DO NOT trigger launch here; just reconcile the cache
         }
@@ -260,14 +298,13 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
 
     // --- Forge Rocket Events -> authorititative UI status (server -> client via TE update) ---
 
-    @SubscribeEvent(priority = EventPriority.LOWEST) // see final canceled state
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onPreLaunch(RocketEvent.RocketPreLaunchEvent e) {
         if (world == null || world.isRemote) return;
         if (linkedRocket != null && e.getEntity() == linkedRocket) {
-            // At LOWEST, if someone canceled it, isCanceled() will be true now.
-            uiStatus = e.isCanceled() ? 5 : 1; // aborted or prelaunch
-            markDirty();
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            uiStatus = e.isCanceled() ? 5 : 1;   // aborted or prelaunch
+            lastStatusTick = world.getTotalWorldTime();
+            pushState();                         // single place to mark+notify
         }
     }
 
@@ -275,9 +312,9 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     public void onLaunch(RocketEvent.RocketLaunchEvent e) {
         if (world == null || world.isRemote) return;
         if (linkedRocket != null && e.getEntity() == linkedRocket) {
-            uiStatus = 2; // launching!
-            markDirty();
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            uiStatus = 2;
+            lastStatusTick = world.getTotalWorldTime();
+            pushState();
         }
     }
 
@@ -285,9 +322,9 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     public void onOrbit(RocketEvent.RocketReachesOrbitEvent e) {
         if (world == null || world.isRemote) return;
         if (linkedRocket != null && e.getEntity() == linkedRocket) {
-            uiStatus = 3; // reached orbit
-            markDirty();
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            uiStatus = 3;
+            lastStatusTick = world.getTotalWorldTime();
+            pushState();
         }
     }
 
@@ -295,11 +332,12 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
     public void onLanded(RocketEvent.RocketLandedEvent e) {
         if (world == null || world.isRemote) return;
         if (linkedRocket != null && e.getEntity() == linkedRocket) {
-            uiStatus = 4; // landed
-            markDirty();
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            uiStatus = 4;
+            lastStatusTick = world.getTotalWorldTime();
+            pushState();
         }
     }
+
 
     // --- Linker flow ---
 
@@ -362,6 +400,7 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
             }
         }
         uiStatus = nbt.getInteger("uiStatus");
+        lastStatusTick = nbt.getLong("lastStatusTick");
     }
 
     @Override
@@ -373,6 +412,7 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
             nbt.setInteger("missionDimId", mission.getOriginatingDimension());
         }
         nbt.setInteger("uiStatus", uiStatus);
+        nbt.setLong("lastStatusTick", lastStatusTick);
         return nbt;
     }
 
@@ -428,7 +468,11 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         if (world.isRemote) {
             launchStatus = new ModuleText(10, 30, "", 0xFFFFFF22);
             modules.add(launchStatus);
+
+            // Force the label to refresh on this GUI open
+            lastUiStatusShown = -1;
         }
+
 
         modules.add(new ModuleProgress(98, 4, 0, new IndicatorBarImage(2, 7, 12, 81, 17, 0, 6, 6, 1, 0, EnumFacing.UP, TextureResources.rocketHud), this));
         modules.add(new ModuleProgress(120, 14, 1, new IndicatorBarImage(2, 95, 12, 71, 17, 0, 6, 6, 1, 0, EnumFacing.UP, TextureResources.rocketHud), this));
@@ -442,7 +486,8 @@ public class TileRocketMonitoringStation extends TileEntity implements IModularI
         modules.add(new ModuleProgress(30, 130, 5, TextureResources.progressFromMission, this));
 
         if (!world.isRemote) {
-            PacketHandler.sendToPlayer(new PacketMachine(this, (byte) 1), player);
+            PacketHandler.sendToPlayer(new PacketMachine(this, (byte) 1), player); // mission sync
+            pushState(); // TE sync (includes cleared/derived uiStatus)
         }
 
         return modules;
