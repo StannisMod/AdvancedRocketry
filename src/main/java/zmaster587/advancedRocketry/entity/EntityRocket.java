@@ -25,6 +25,7 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
@@ -33,6 +34,9 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.ForgeChunkManager;
+import net.minecraftforge.common.ForgeChunkManager.Ticket;
+import net.minecraftforge.common.ForgeChunkManager.Type;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidTank;
@@ -90,6 +94,8 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.*;
 
+
+
 public class EntityRocket extends EntityRocketBase implements INetworkEntity, IModularInventory, IProgressBar, IButtonInventory, ISelectionNotify, IPlanetDefiner {
 
     // set to 2 seconds because keyboard event is not sent to server
@@ -140,6 +146,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private int rcs_mode_counter = 0;
     //Used to most of the logic, determining if in RCS mode or not
     private boolean rcs_mode = false;
+
+    // Preload ticket for destination chunks on launch event should be enough time to get a warm dimension
+    private Ticket destPreloadTicket = null;
+    private int    destPreloadDim    = Integer.MIN_VALUE;
+    private long   destPreloadExpire = Long.MIN_VALUE; // world time when we auto-release    
+    
+    // Only show an oxidizer bar when the rocket actually provides oxidizer capacity.
+    public boolean shouldShowOxBar() {
+        return getFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER) > 0;
+    }
+
+
     public EntityRocket(World p_i1582_1_) {
         super(p_i1582_1_);
 
@@ -177,32 +195,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         landingPadDisplayText.setColor(0x00ff00);
     }
 
-    private void recomputeFuelRates() {
-        for (FuelRegistry.FuelType t : new FuelRegistry.FuelType[]{
-                FuelRegistry.FuelType.LIQUID_MONOPROPELLANT,
-                FuelRegistry.FuelType.LIQUID_BIPROPELLANT,
-                FuelRegistry.FuelType.LIQUID_OXIDIZER,
-                FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID}) {
-
-            if (getFuelCapacity(t) <= 0) continue;
-
-            String name = (t == FuelRegistry.FuelType.LIQUID_OXIDIZER) ? stats.getOxidizerFluid()
-                    : (t == FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID) ? stats.getWorkingFluid()
-                    : stats.getFuelFluid();
-            if ("null".equals(name)) continue;
-
-            Fluid f = FluidRegistry.getFluid(name);
-            if (f == null) continue;
-
-            int base = stats.getBaseFuelRate(t);
-            if (base <= 0) continue;
-
-            int rate = (int)(FuelRegistry.instance.getMultiplier(t, f) * base);
-            if (rate > 0) setFuelConsumptionRate(t, rate);
-        }
-    }
-
-
     /**
      * @param blockState the blockstate to damage
      * @return the blockstate that the input blockstate turns into
@@ -234,6 +226,50 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
         return null;
     }
+
+    private void preloadDestinationChunks(int dimId, double x, double z, int radiusChunks, int holdSeconds) {
+        if (world.isRemote) return;
+
+        // Clean any previous
+        releaseDestinationPreload();
+
+        MinecraftServer server = this.getServer();
+        if (server == null) return;
+
+        WorldServer target = server.getWorld(dimId);
+        if (target == null) return; // dimension not available
+
+        // Request a NORMAL ticket in the DESTINATION world (not bound to this entity)
+        destPreloadTicket = ForgeChunkManager.requestTicket(AdvancedRocketry.instance, target, Type.NORMAL);
+        if (destPreloadTicket == null) {
+            AdvancedRocketry.logger.warn("[EntityRocket] Could not acquire destination preload ticket for dim {}", dimId);
+            return;
+        }
+
+        int cx = ((int)Math.floor(x)) >> 4;
+        int cz = ((int)Math.floor(z)) >> 4;
+        for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
+            for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
+                ForgeChunkManager.forceChunk(destPreloadTicket, new ChunkPos(cx + dx, cz + dz));
+            }
+        }
+
+        destPreloadDim    = dimId;
+        // use *server* time base;  holdSeconds should be enough to cover ascent (~6s)
+        destPreloadExpire = world.getTotalWorldTime() + holdSeconds * 20L;
+        AdvancedRocketry.logger.debug("[EntityRocket] Preloaded 3x3 chunks at dim {} around {},{} for ~{}s",
+                dimId, (cx<<4), (cz<<4), holdSeconds);
+    }
+
+    private void releaseDestinationPreload() {
+        if (destPreloadTicket != null) {
+            ForgeChunkManager.releaseTicket(destPreloadTicket);
+            destPreloadTicket = null;
+            destPreloadDim    = Integer.MIN_VALUE;
+            destPreloadExpire = Long.MIN_VALUE;
+        }
+    }
+
 
     public void toggleRCS() {
         if (DimensionManager.getInstance().getDimensionProperties(this.world.provider.getDimension()).isAsteroid()) {
@@ -1110,6 +1146,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 entity.fallDistance = 0;
             }
             this.fallDistance = 0;
+
+            // Auto-release destination preload after timeout
+            if (destPreloadTicket != null && world.getTotalWorldTime() >= destPreloadExpire) {
+                releaseDestinationPreload();
+            }
         }
 
         // When flying around in space
@@ -1314,6 +1355,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     this.motionY = 0;
                     this.setInFlight(false);
                     this.setInOrbit(false);
+                    releaseDestinationPreload();
                 }
 
 
@@ -1773,7 +1815,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     public void recalculateStats(){
         this.storage.recalculateStats(this.stats);
-        recomputeFuelRates(); 
     }
 
     /**
@@ -1791,7 +1832,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         boolean allowLaunch = false;
 
         this.storage.recalculateStats(this.stats);
-        recalculateStats();
 
         NBTTagCompound nbtdata = new NBTTagCompound();
         writeToNBT(nbtdata);
@@ -1874,11 +1914,36 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
 
         //TODO: Clean this logic a bit?
-        if (allowLaunch || !stats.hasSeat() || ((DimensionManager.getInstance().isDimensionCreated(destinationDimId)) || destinationDimId == ARConfiguration.getCurrentConfig().spaceDimId || destinationDimId == 0)) { //Abort if destination is invalid
+        if (allowLaunch || !stats.hasSeat() || ((DimensionManager.getInstance().isDimensionCreated(destinationDimId)) || destinationDimId == ARConfiguration.getCurrentConfig().spaceDimId || destinationDimId == 0)) {
             setInFlight(true);
             Iterator<IInfrastructure> connectedTiles = connectedInfrastructure.iterator();
 
             MinecraftForge.EVENT_BUS.post(new RocketLaunchEvent(this));
+
+            // ---- PRELOAD DESTINATION 3x3 (server only) ----
+            if (!world.isRemote) {
+                boolean willTeleportAtAscent =
+                    !(ARConfiguration.getCurrentConfig().experimentalSpaceFlight && storage.getGuidanceComputer().isEmpty());
+
+                // Only preload when we know we’ll teleport off this world soon
+                if (willTeleportAtAscent) {
+                    int dimId = destinationDimId;
+
+                    boolean canLoad =
+                        DimensionManager.getInstance().isDimensionCreated(dimId) ||
+                        dimId == ARConfiguration.getCurrentConfig().spaceDimId;
+
+                    if (canLoad) {
+                        Vector3F<Float> destVec = (storage != null) ? storage.getDestinationCoordinates(dimId, true) : null;
+                        double dx = (destVec != null) ? destVec.x : this.posX;
+                        double dz = (destVec != null) ? destVec.z : this.posZ;
+
+                        preloadDestinationChunks(dimId, dx, dz, /*radiusChunks*/ 1, /*holdSeconds*/ 60);
+                    }
+                }
+            }
+            // -----------------------------------------------
+
 
             //Disconnect things linked to the rocket on liftoff
             while (connectedTiles.hasNext()) {
@@ -1939,6 +2004,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     @Override
     public void setDead() {
         super.setDead();
+        releaseDestinationPreload();
 
         if (storage != null && storage.world.displayListIndex != -1)
             GLAllocation.deleteDisplayLists(storage.world.displayListIndex);
@@ -2067,7 +2133,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
         spacePosition.readFromNBT(nbt);
-        recomputeFuelRates(); 
     }
 
     protected void writeNetworkableNBT(NBTTagCompound nbt) {
@@ -2285,6 +2350,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             this.turningDownforWhat = nbt.getBoolean("down");
         } else if (id == PacketType.ABORTLAUNCH.ordinal()) {
             this.dataManager.set(LAUNCH_COUNTER, -1);
+            releaseDestinationPreload();
         } else if (id == PacketType.SENDSPACEPOS.ordinal()) {
             this.spacePosition.readFromNBT(nbt);
         } else if (id >= STATION_LOC_OFFSET + BUTTON_ID_OFFSET) {
@@ -2415,6 +2481,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
             //Fuel
             modules.add(new ModuleProgress(192, 7, 0, new ProgressBarImage(2, 173, 12, 71, 17, 6, 3, 69, 1, 1, EnumFacing.UP, TextureResources.rocketHud), this));
+            // Conditional oxidizer bar
+            if (shouldShowOxBar()) {
+                // Add a second, distinct bar for oxidizer (reuse the monitoring station’s UVs)
+                modules.add(new ModuleProgress(
+                    198, 7, 6, // position offset to avoid overlap; ID=6 matches monitoring station semantics
+                    new ProgressBarImage(2, 173, 12, 71, 17, 75, 3, 69, 1, 1, EnumFacing.UP, TextureResources.rocketHud),
+                    this
+                ));
+            }
 
 
             //Add buttons
@@ -2489,13 +2564,22 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 case LIQUID_BIPROPELLANT:
                 case LIQUID_MONOPROPELLANT:
                 case NUCLEAR_WORKING_FLUID:
-                    return getFuelAmount(fuelType) / (float) getFuelCapacity(fuelType);
+                    int amt = getFuelAmount(fuelType);
+                    int cap = getFuelCapacity(fuelType);
+                    return (cap > 0) ? (amt / (float) cap) : 0f;
             }
         }
 
+        // oxidizer bar matches monitoring station’s ID=6 semantics
+        if (id == 6) {
+            int oxAmt = getFuelAmount(FuelType.LIQUID_OXIDIZER);
+            int oxCap = getFuelCapacity(FuelType.LIQUID_OXIDIZER);
+            return (oxCap > 0) ? (oxAmt / (float) oxCap) : 0f;
+        }
 
-        return 0;
+        return 0f;
     }
+
 
     public double getRelativeHeightFraction() {
         return (posY - getTopBlock(getPosition()).getY()) / (getEntryHeight(dimension) - getTopBlock(getPosition()).getY());
@@ -2512,12 +2596,25 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public int getProgress(int id) {
+        if (id == 0) {
+            FuelType ft = getRocketFuelType();
+            return (ft != null) ? getFuelAmount(ft) : 0;
+        } else if (id == 6) {
+            return getFuelAmount(FuelType.LIQUID_OXIDIZER);
+        }
         return 0;
     }
 
     @Override
     public int getTotalProgress(int id) {
-        return 0;
+        if (id == 0) {
+            FuelType ft = getRocketFuelType();
+            return (ft != null) ? getFuelCapacity(ft) : 1; // never 0
+        } else if (id == 6) {
+            int cap = getFuelCapacity(FuelType.LIQUID_OXIDIZER);
+            return (cap > 0) ? cap : 1; // never 0
+        }
+        return 1;
     }
 
     @Override
