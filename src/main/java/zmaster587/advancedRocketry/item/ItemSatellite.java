@@ -192,7 +192,7 @@ public class ItemSatellite extends ItemIdWithName {
 
         // Always show power storage in preview (even if no battery modules are installed)
         list.add(LibVulpes.proxy.getLocalizedString("msg.itemsatellite.pwr") + powerStor);
-        
+
         if (SatelliteProperties.Property.POWER_GEN.isOfType(flags)) {
             list.add((powerGen > 0)
                 ? LibVulpes.proxy.getLocalizedString("msg.itemsatellite.pwrgen") + powerGen
