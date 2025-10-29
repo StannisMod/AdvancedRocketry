@@ -8,7 +8,6 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
-import zmaster587.advancedRocketry.item.ItemSatellite.SatelliteModuleInventory;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.util.EmbeddedInventory;
 import zmaster587.libVulpes.util.ZUtils;
