@@ -2,7 +2,6 @@ package zmaster587.advancedRocketry.tile.cables;
 
 import io.netty.buffer.ByteBuf;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -28,10 +27,13 @@ import zmaster587.libVulpes.inventory.modules.IToggleButton;
 import zmaster587.libVulpes.inventory.modules.ModuleBase;
 import zmaster587.libVulpes.inventory.modules.ModuleText;
 import zmaster587.libVulpes.inventory.modules.ModuleToggleSwitch;
+import zmaster587.advancedRocketry.inventory.modules.ModuleWirelessBufferBar;
 import zmaster587.libVulpes.items.ItemLinker;
 import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.util.INetworkMachine;
+
+
 
 import javax.annotation.Nonnull;
 import java.util.LinkedList;
@@ -39,13 +41,14 @@ import java.util.List;
 
 public class TileWirelessTransciever extends TileEntity implements INetworkMachine, IModularInventory, ILinkableTile, IDataHandler, ITickable, IToggleButton {
 
-    // How often to transfer data (in ticks)
-    private int transferIntervalTicks = 20;
-    // Fixed phase per tile to spread load
-    private int phase = -1;
-    // Show network ID (label)
-    private ModuleText netIdLabel;
-
+    
+    private int transferIntervalTicks = 20; // How often to transfer data (in ticks)
+    private int phase = -1; // Fixed phase per tile to spread load
+    private ModuleText netIdLabel; // Show network ID (label)
+    private final DataStorage uiBuffer = new DataStorage(); // UI-only, never used for logic
+    
+    
+    
     // Avoid per-call allocations from DataType.values()
     // needs update if DataType enum changes
     private static final DataType[] TYPES = {
@@ -65,6 +68,9 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         networkID = -1;
         data = new MultiData();
         data.setMaxData(100);
+        uiBuffer.setMaxData(data.getMaxData()); // UI mirror max should match MultiData max
+        uiBuffer.setData(0, DataType.UNDEFINED);
+        syncUiBufferFromMultiData();
         toggle = new ModuleToggleSwitch(50, 50, 0, LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.extract"), this, TextureResources.buttonGeneric, 64, 18, false);
         toggleSwitch = new ModuleToggleSwitch(160, 5, 1, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, 11, 26, true);
         
@@ -74,8 +80,45 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         updateToggleLabel();
         
         // Network ID label
-        netIdLabel = new ModuleText(40, 72, "Network: -", 0x000000);
-        netIdLabel.setAlwaysOnTop(true); // optional, so it renders over slots
+        String initial = LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.network") + " -";
+        netIdLabel = new ModuleText(40, 72, initial, 0x000000);
+        netIdLabel.setAlwaysOnTop(true);
+
+    }
+
+    // Helpers for other terminals to query state
+    public boolean isEnabledWireless() {
+        return this.enabled;
+    }
+    public boolean isExtractModeWireless() {
+        return this.extractMode;
+    }
+
+    // helper for syncing UI buffer from multiData
+    private void syncUiBufferFromMultiData() {
+        int total = 0;
+        int max   = data.getMaxData();
+
+        int nonZero = 0;
+        DataType lastTypeWithData = DataType.UNDEFINED;
+
+        for (DataType t : TYPES) {
+            int amt = data.getDataAmount(t);
+            if (amt > 0) {
+                nonZero++;
+                lastTypeWithData = t;
+                total += amt;
+            }
+        }
+
+        if (total < 0) total = 0;
+        if (total > max) total = max;
+
+        final DataType displayType = (nonZero == 1) ? lastTypeWithData : DataType.UNDEFINED;
+
+        // Mirror into UI-only storage (server-authoritative; GUI module will poll this)
+        uiBuffer.setMaxData(max);
+        uiBuffer.setData(total, displayType);
     }
 
     private void updateToggleLabel() {
@@ -222,10 +265,14 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
 
         list.add(toggle);
         list.add(toggleSwitch);
-        list.add(netIdLabel);  
+        list.add(netIdLabel);
+
+        // Bar-only UI (no buttons/slots). Place it where you want it.
+        list.add(new ModuleWirelessBufferBar(14, 22, uiBuffer));
 
         return list;
     }
+
 
     @Override
     public String getModularInventoryName() {
@@ -255,24 +302,30 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (!side.isServer()) return;
-        if (id == 1) { // enable/disable toggle doesn’t touch networks
+
+        if (id == 1) { // enable/disable toggle — always allowed
             enabled = nbt.getBoolean("state");
             return;
         }
-        if (networkID == -1) return; // not linked yet; ignore network mutations
 
-        if (id == 0) {
+        if (id == 0) { // extract/insert toggle
+            // Always update local state so neighbors (like the terminal) can see it
             extractMode = nbt.getBoolean("state");
             updateToggleLabel();
-            if (NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
+
+            // Only touch the network if we are actually linked
+            if (networkID != -1 && NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
                 NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
-                if (extractMode)
+                if (extractMode) {
                     NetworkRegistry.dataNetwork.getNetwork(networkID).addSource(this, EnumFacing.UP);
-                else
+                } else {
                     NetworkRegistry.dataNetwork.getNetwork(networkID).addSink(this, EnumFacing.UP);
+                }
             }
+            return;
         }
     }
+
 
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
@@ -282,21 +335,25 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         enabled = nbt.getBoolean("enabled");
         networkID = nbt.getInteger("networkID");
         data.readFromNBT(nbt);
+        syncUiBufferFromMultiData();
         //addToNetwork();
 
         toggle.setToggleState(extractMode);
         updateToggleLabel();
         toggleSwitch.setToggleState(enabled);
         if (world != null && world.isRemote && netIdLabel != null) {
-            netIdLabel.setText("Network: " + networkID);
+        String idStr = (networkID == -1)
+                ? net.minecraft.client.resources.I18n.format("msg.wirelessTransciever.network.unlinked")
+                : Integer.toString(networkID);
+        String label = LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.network");
+        netIdLabel.setText(label + idStr);
         }
-
     }
-
+    
     @Override
     @Nonnull
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
-        super.writeToNBT(nbt);                 // MOVE: call first
+        super.writeToNBT(nbt);
         nbt.setBoolean("mode", extractMode);
         nbt.setBoolean("enabled", enabled);
         nbt.setInteger("networkID", networkID);
@@ -306,20 +363,34 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
 
 
     @Override
-    public int extractData(int maxAmount, DataType type, EnumFacing dir,
-                           boolean commit) {
-        return enabled ? data.extractData(maxAmount, type, dir, commit) : 0;
+    public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
+        int out = enabled ? data.extractData(maxAmount, type, dir, commit) : 0;
+        if (commit && out > 0) {
+            syncUiBufferFromMultiData();
+        }
+        return out;
     }
 
     @Override
-    public int addData(int maxAmount, DataType type, EnumFacing dir,
-                       boolean commit) {
-        return enabled ? data.addData(maxAmount, type, dir, commit) : 0;
+    public int addData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
+        int in = enabled ? data.addData(maxAmount, type, dir, commit) : 0;
+        if (commit && in > 0) {
+            syncUiBufferFromMultiData();
+        }
+        return in;
     }
+
 
     @Override
     public void onLoad() {
         super.onLoad();
+
+        if (!world.isRemote) {
+            syncUiBufferFromMultiData(); // ensures server-side mirror matches after load
+            // Ensure booleans reflect current UI widgets on server after load/place
+            extractMode = toggle.getState();
+            enabled = toggleSwitch.getState();
+        }
 
         // Server side only
         if (world == null || world.isRemote) return;
@@ -408,8 +479,7 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         // Persist changes; a full block update isn't strictly required each tick
         if (changed) {
             this.markDirty();
-            // If you want to sync the client meter instantly, you can uncomment:
-            // world.notifyBlockUpdate(pos, state, state, 3);
+            syncUiBufferFromMultiData();
         }
     }
 
