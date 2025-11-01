@@ -627,8 +627,6 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                     ((ItemAsteroidChip)(stack.getItem())).setMaxData(stack, 1000);
                     inv.setInventorySlotContents(2, stack);
 
-                    extractData(1000, DataType.COMPOSITION, EnumFacing.UP, true);
-                    extractData(1000, DataType.MASS, EnumFacing.UP, true);
                     useEnergy(500);
 
                     // Mark this selection as consumed for this seed
