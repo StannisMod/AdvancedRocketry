@@ -1,6 +1,8 @@
 package zmaster587.advancedRocketry.tile.station;
 
 import io.netty.buffer.ByteBuf;
+import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -54,14 +56,95 @@ public class TileStationGravityController extends TileEntity implements IModular
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
         modules.add(moduleGrav);
-        //modules.add(numThrusters);
         modules.add(maxGravBuildSpeed);
         modules.add(redstoneControl);
 
         modules.add(targetGrav);
         modules.add(new ModuleSlider(6, 60, 0, TextureResources.doubleWarningSideBarIndicator, this));
 
-        updateText();
+        // inline updater that runs only while GUI is open
+        modules.add(new ModuleBase(0, 0) {
+            // --- Caches (live only for GUI lifetime) ---
+            private SpaceStationObject cached;         // strong ref during GUI life
+            private int cachedId = Integer.MIN_VALUE;  // station id for validation
+
+            // last *displayed* keys (so we only update text when the user can see a change)
+            private int lastGravKey = Integer.MIN_VALUE; // 2dp: round(grav*100)
+            private int lastRateKey = Integer.MIN_VALUE; // 1dp: round(rate*10)
+            private int lastTgtKey  = Integer.MIN_VALUE; // int
+
+            // localized prefixes
+            private final String prefixGrav = LibVulpes.proxy.getLocalizedString("msg.stationgravctrl.alt");
+            private final String prefixMax  = LibVulpes.proxy.getLocalizedString("msg.stationgravctrl.maxaltrate");
+            private final String prefixTgt  = LibVulpes.proxy.getLocalizedString("msg.stationgravctrl.tgtalt");
+
+            // tiny formatters (no String.format churn) ---
+            private String twoDpFromKey(int key) { // key = round(value * 100)
+                int abs = Math.abs(key), whole = abs / 100, frac = abs % 100;
+                String s = whole + "." + (frac < 10 ? "0" : "") + frac;
+                return key < 0 ? "-" + s : s;
+            }
+            private String oneDpFromKey(int key) { // key = round(value * 10)
+                int abs = Math.abs(key), whole = abs / 10, frac = abs % 10;
+                String s = whole + "." + frac;
+                return key < 0 ? "-" + s : s;
+            }
+
+            // Resolve or revalidate the cached station safely.
+            private boolean ensureStation() {
+                // Resolve if no cache yet
+                if (cached == null) {
+                    ISpaceObject so = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+                    if (!(so instanceof SpaceStationObject)) return false;
+                    cached = (SpaceStationObject) so;
+                    cachedId = so.getId();
+                    return true;
+                }
+                // Revalidate in case manager swapped instances
+                ISpaceObject current = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+                if (!(current instanceof SpaceStationObject)) { cached = null; cachedId = Integer.MIN_VALUE; return false; }
+                if (current.getId() != cachedId) { // instance swapped or different station under pos
+                    cached = (SpaceStationObject) current;
+                    cachedId = current.getId();
+                }
+                return true;
+            }
+
+            @Override
+            public void renderBackground(GuiContainer gui, int x, int y, int mouseX, int mouseY, FontRenderer font) {
+                // Only runs while GUI is visible → zero idle cost when closed.
+                if (!ensureStation()) return;
+
+                // Pull current (client-synced) values
+                float grav = cached.getProperties().getGravitationalMultiplier(); // e.g. 0.57
+                double maxRate = 7200D * cached.getMaxRotationalAcceleration();   // e.g. 144.0
+                int tgt = cached.targetGravity;                                   // 10..100
+
+                // Compute compare keys at display precision
+                int gravKey = Math.round(grav * 100f);          // 2dp
+                int rateKey = (int)Math.round(maxRate * 10d);   // 1dp
+                int tgtKey  = tgt;                               // int
+
+                // Only touch ModuleText when the visible value actually changes
+                if (gravKey != lastGravKey) {
+                    moduleGrav.setText(prefixGrav + twoDpFromKey(gravKey));
+                    lastGravKey = gravKey;
+                }
+                if (rateKey != lastRateKey) {
+                    maxGravBuildSpeed.setText(prefixMax + oneDpFromKey(rateKey));
+                    lastRateKey = rateKey;
+                }
+                if (tgtKey != lastTgtKey) {
+                    targetGrav.setText(prefixTgt + tgtKey);
+                    lastTgtKey = tgtKey;
+                }
+            }
+
+            @Override public int getSizeX() { return 0; } // no visual footprint
+            @Override public int getSizeY() { return 0; }
+        });
+
+
         return modules;
     }
 
@@ -103,48 +186,40 @@ public class TileStationGravityController extends TileEntity implements IModular
 
     @Override
     public void update() {
+        if (!(this.world.provider instanceof WorldProviderSpace)) return;
 
-        if (this.world.provider instanceof WorldProviderSpace) {
+        if (!world.isRemote) {
+            ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+            if (spaceObject == null) return;
 
-            if (!world.isRemote) {
-                ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+            if (redstoneControl.getState() == RedstoneState.ON) {
+                ((SpaceStationObject) spaceObject).targetGravity = (world.getStrongPower(pos) * 6) + 10;
+            } else if (redstoneControl.getState() == RedstoneState.INVERTED) {
+                ((SpaceStationObject) spaceObject).targetGravity = Math.abs(15 - world.getStrongPower(pos)) * 6 + 10;
+            }
 
-                if (spaceObject != null) {
-                    if (redstoneControl.getState() == RedstoneState.ON)
-                        ((SpaceStationObject) spaceObject).targetGravity = (world.getStrongPower(pos) * 6) + 10;
-                    else if (redstoneControl.getState() == RedstoneState.INVERTED)
-                        ((SpaceStationObject) spaceObject).targetGravity = Math.abs(15 - world.getStrongPower(pos)) * 6 + 10;
+            progress = ((SpaceStationObject) spaceObject).targetGravity - minGravity;
 
-                    progress = ((SpaceStationObject) spaceObject).targetGravity - minGravity;
+            int targetMultiplier = ARConfiguration.getCurrentConfig().allowZeroGSpacestations
+                    ? ((SpaceStationObject) spaceObject).targetGravity
+                    : Math.max(10, ((SpaceStationObject) spaceObject).targetGravity);
 
-                    int targetMultiplier = (ARConfiguration.getCurrentConfig().allowZeroGSpacestations) ? ((SpaceStationObject) spaceObject).targetGravity : Math.max(10, ((SpaceStationObject) spaceObject).targetGravity);
-                    double targetGravity = targetMultiplier / 100D;
-                    double angVel = spaceObject.getProperties().getGravitationalMultiplier();
-                    double acc = 0.001;
+            double targetGravity = targetMultiplier / 100D;
+            double angVel = spaceObject.getProperties().getGravitationalMultiplier();
+            double acc = 0.001;
 
-                    double difference = targetGravity - angVel;
+            double difference = targetGravity - angVel;
+            if (Math.abs(difference) >= 0.001) {
+                double finalVel = angVel + (difference < 0 ? Math.max(difference, -acc) : Math.min(difference, acc));
+                spaceObject.getProperties().setGravitationalMultiplier((float) finalVel);
 
-                    if (Math.abs(difference) >= 0.001) {
-                        double finalVel = angVel;
-                        if (difference < 0) {
-                            finalVel = angVel + Math.max(difference, -acc);
-                        } else if (difference > 0) {
-                            finalVel = angVel + Math.min(difference, acc);
-                        }
-
-                        spaceObject.getProperties().setGravitationalMultiplier((float) finalVel);
-                        if (!world.isRemote) {
-                            //PacketHandler.sendToNearby(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.ROTANGLE_UPDATE), this.worldObj.provider.dimensionId, this.xCoord, this.yCoord, this.zCoord, 1024);
-                            PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.DIM_PROPERTY_UPDATE));
-                            markDirty();
-                        } else
-                            updateText();
-                    }
-                }
-            } else
-                updateText();
+                // networking unchanged
+                PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.DIM_PROPERTY_UPDATE));
+                markDirty();
+            }
         }
     }
+
 
     @Override
     public String getModularInventoryName() {
