@@ -36,6 +36,7 @@ public class TileStationGravityController extends TileEntity implements IModular
     private RedstoneState state = RedstoneState.OFF;
     private ModuleText moduleGrav, maxGravBuildSpeed, targetGrav;
     private ModuleRedstoneOutputButton redstoneControl;
+    private long lastDimPropSyncTick = -5;
 
     public TileStationGravityController() {
         moduleGrav = new ModuleText(6, 15, LibVulpes.proxy.getLocalizedString("msg.stationgravctrl.alt"), 0xaa2020);
@@ -213,8 +214,13 @@ public class TileStationGravityController extends TileEntity implements IModular
                 double finalVel = angVel + (difference < 0 ? Math.max(difference, -acc) : Math.min(difference, acc));
                 spaceObject.getProperties().setGravitationalMultiplier((float) finalVel);
 
-                // networking unchanged
-                PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.DIM_PROPERTY_UPDATE));
+                long wt = world.getTotalWorldTime();
+
+                if ((wt - lastDimPropSyncTick) >= 5) { // every 5 ticks ≈ 4 Hz
+                    PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.DIM_PROPERTY_UPDATE));
+                    lastDimPropSyncTick = wt;
+                }
+
                 markDirty();
             }
         }
