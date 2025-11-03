@@ -15,7 +15,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidUtil;
-import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
@@ -48,65 +47,138 @@ public class BlockPressurizedFluidTank extends Block {
     }
 
     @Override
-    public boolean onBlockActivated(World world, BlockPos pos, IBlockState state, EntityPlayer player, EnumHand hand, EnumFacing side, float hitX, float hitY, float hitZ) {
-        TileEntity tile = world.getTileEntity(pos);
+    public boolean onBlockActivated(World world, BlockPos pos, IBlockState state, EntityPlayer player, EnumHand hand,
+                                    EnumFacing side, float hitX, float hitY, float hitZ) {
+        TileEntity te = world.getTileEntity(pos);
+        if (!(te instanceof TileFluidTank)) return false;
 
-        //Do some fancy fluid stuff
-        if (FluidUtils.containsFluid(player.getHeldItem(hand))) {
-            FluidUtil.interactWithFluidHandler(player, hand, ((TileFluidHatch) tile).getFluidTank());
-        } else if (!world.isRemote)
-            player.openGui(LibVulpes.instance, guiId.MODULAR.ordinal(), world, pos.getX(), pos.getY(), pos.getZ());
+        // Client: consume the click (let server do the actual transfer)
+        if (world.isRemote) return true;
+
+        // Try to interact via the tile's FLUID CAPABILITY (column-aware path),
+        // NOT the raw internal tank.
+        IFluidHandler handler = te.getCapability(
+                net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY,
+                side
+        );
+        if (handler == null) {
+            handler = te.getCapability(
+                    net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY,
+                    null
+            );
+        }
+
+        boolean acted = false;
+        if (handler != null) {
+            // Server-side inventory mutation
+            acted = net.minecraftforge.fluids.FluidUtil.interactWithFluidHandler(player, hand, handler);
+            if (acted) {
+                TileFluidTank tank = (TileFluidTank) te;
+                // Persist + sync
+                tank.markDirty();
+                tank.onAdjacentBlockUpdated(EnumFacing.DOWN);
+                tank.onAdjacentBlockUpdated(EnumFacing.UP);
+            }
+        }
+
+        // If we didn't perform a fluid interaction, open the GUI
+        if (!acted) {
+            player.openGui(zmaster587.libVulpes.LibVulpes.instance,
+                    zmaster587.libVulpes.inventory.GuiHandler.guiId.MODULAR.ordinal(),
+                    world, pos.getX(), pos.getY(), pos.getZ());
+        }
         return true;
     }
 
+
+
+    @Override
+    public void onBlockAdded(World world, BlockPos pos, IBlockState state) {
+        super.onBlockAdded(world, pos, state);
+        if (world.isRemote) return;                // <- add this
+        TileEntity teAbove = world.getTileEntity(pos.up());
+        if (teAbove instanceof TileFluidTank) {
+            ((TileFluidTank) teAbove).onAdjacentBlockUpdated(EnumFacing.DOWN);
+        }
+    }
+
+    
     @Override
     @ParametersAreNullableByDefault
     public TileEntity createTileEntity(World world, IBlockState state) {
-        return new TileFluidTank((int) (64000 * ARConfiguration.getCurrentConfig().blockTankCapacity));
+        long computed = Math.round(64000d * ARConfiguration.getCurrentConfig().blockTankCapacity);
+        int capMb = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, computed));
+        return new TileFluidTank(capMb);
     }
 
     @Override
     @Nonnull
     @ParametersAreNullableByDefault
-    public List<ItemStack> getDrops(IBlockAccess world, BlockPos pos,
-                                    IBlockState state, int fortune) {
-        return new LinkedList<>();
-    }
+    public List<ItemStack> getDrops(IBlockAccess world, BlockPos pos, IBlockState state, int fortune) {
+        List<ItemStack> drops = new LinkedList<>();
+        TileEntity te = world.getTileEntity(pos);
 
-    @Override
-    @ParametersAreNonnullByDefault
-    public void harvestBlock(World world, EntityPlayer player, BlockPos pos, IBlockState state, @Nullable TileEntity te, @Nonnull ItemStack stack) {
+        ItemStack out = new ItemStack(AdvancedRocketryBlocks.blockPressureTank);
 
         if (te instanceof TileFluidTank) {
-            IFluidHandler fluid = te.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, EnumFacing.DOWN);
-
-
-            ItemStack itemstack = new ItemStack(AdvancedRocketryBlocks.blockPressureTank);
-
-            ((ItemBlockFluidTank) itemstack.getItem()).fill(itemstack, fluid.drain(Integer.MAX_VALUE, false));
-
-            EntityItem entityitem;
-
-            int j1 = world.rand.nextInt(21) + 10;
-            float f = world.rand.nextFloat() * 0.8F + 0.1F;
-            float f1 = world.rand.nextFloat() * 0.8F + 0.1F;
-            float f2 = world.rand.nextFloat() * 0.8F + 0.1F;
-
-            itemstack.setCount(1);
-            entityitem = new EntityItem(world, (float) pos.getX() + f, (float) pos.getY() + f1, (float) pos.getZ() + f2, new ItemStack(itemstack.getItem(), 1, 0));
-            float f3 = 0.05F;
-            entityitem.motionX = (float) world.rand.nextGaussian() * f3;
-            entityitem.motionY = (float) world.rand.nextGaussian() * f3 + 0.2F;
-            entityitem.motionZ = (float) world.rand.nextGaussian() * f3;
-
-            if (itemstack.hasTagCompound()) {
-                entityitem.getItem().setTagCompound(itemstack.getTagCompound().copy());
+            net.minecraftforge.fluids.FluidStack own = ((TileFluidTank) te).getOwnContentsCopy();
+            // 1.12: FluidStack has no isEmpty(); guard on null and amount > 0
+            if (own != null && own.amount > 0) {
+                ((ItemBlockFluidTank) out.getItem()).fill(out, own);
             }
-            world.spawnEntity(entityitem);
         }
 
-        super.harvestBlock(world, player, pos, state, te, stack);
+        drops.add(out);
+        return drops;
     }
+
+
+    @Override
+    public boolean removedByPlayer(IBlockState state, World world, BlockPos pos, EntityPlayer player, boolean willHarvest) {
+        if (!world.isRemote) {
+            TileEntity te = world.getTileEntity(pos);
+            if (te instanceof TileFluidTank) {
+                ((TileFluidTank) te).setRemoving(true); // <- you’ll add this setter in the tile
+            }
+        }
+        // Let vanilla handle removal; we’ll control drops in harvestBlock
+        return super.removedByPlayer(state, world, pos, player, willHarvest);
+    }    
+
+    @Override
+    public void harvestBlock(World world, EntityPlayer player, BlockPos pos, IBlockState state,
+                            @Nullable TileEntity te, @Nonnull ItemStack tool) {
+        if (world.isRemote) return;
+
+        // Creative: no drop, just remove
+        if (player.capabilities.isCreativeMode) {
+            world.setBlockToAir(pos);
+            return;
+        }
+
+        // Build ONE drop item from the authoritative server tile we received
+        ItemStack drop = new ItemStack(AdvancedRocketryBlocks.blockPressureTank);
+        if (te instanceof TileFluidTank) {
+            // Make sure the tile knows it's in teardown; block cross-tile moves
+            ((TileFluidTank) te).setRemoving(true);
+
+            net.minecraftforge.fluids.FluidStack own = ((TileFluidTank) te).getOwnContentsCopy();
+            if (own != null && own.amount > 0) {
+                ((ItemBlockFluidTank) drop.getItem()).fill(drop, own);
+            }
+        }
+
+        // Spawn our single, correct drop
+        EntityItem ei = new EntityItem(world,
+                pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, drop);
+        world.spawnEntity(ei);
+
+        // Finally remove the block (this will call breakBlock and clear TE)
+        world.setBlockToAir(pos);
+    }
+
+
+
 
     @Override
     @ParametersAreNonnullByDefault
@@ -133,12 +205,39 @@ public class BlockPressurizedFluidTank extends Block {
         return false;
     }
 
+    private void notifyTankOfNeighborChange(World world, BlockPos pos, BlockPos fromPos) {
+        // Only act for strictly adjacent vertical neighbors (no diagonals, no sides)
+        int dx = fromPos.getX() - pos.getX();
+        int dy = fromPos.getY() - pos.getY();
+        int dz = fromPos.getZ() - pos.getZ();
+
+        // Must be exactly one block away on Y, and same X/Z
+        if (dx != 0 || dz != 0) return;
+        if (dy != 1 && dy != -1) return;
+
+        TileEntity te = world.getTileEntity(pos);
+        if (!(te instanceof zmaster587.advancedRocketry.tile.TileFluidTank)) return;
+
+        EnumFacing dir = (dy == 1) ? EnumFacing.UP : EnumFacing.DOWN;
+        ((zmaster587.advancedRocketry.tile.TileFluidTank) te).onAdjacentBlockUpdated(dir);
+    }
+
+
+
+    // Reliable for block state changes (place/break)
     @Override
-    public void onNeighborChange(IBlockAccess world, BlockPos pos,
-                                 BlockPos neighbor) {
-        TileEntity tile = world.getTileEntity(pos);
-        if (tile instanceof TileFluidTank)
-            ((TileFluidTank) tile).onAdjacentBlockUpdated(EnumFacing.getFacingFromVector(neighbor.getX() - pos.getX(), neighbor.getY() - pos.getY(), neighbor.getZ() - pos.getZ()));
+    public void neighborChanged(IBlockState state, World world, BlockPos pos, Block blockIn, BlockPos fromPos) {
+        super.neighborChanged(state, world, pos, blockIn, fromPos);
+        if (!world.isRemote) notifyTankOfNeighborChange(world, pos, fromPos);
+    }
+
+    // TE-only neighbor updates (no block state change)
+    @Override
+    public void onNeighborChange(IBlockAccess world, BlockPos pos, BlockPos neighbor) {
+        if (world instanceof World) {
+            World w = (World) world;
+            if (!w.isRemote) notifyTankOfNeighborChange(w, pos, neighbor);
+        }
     }
 
     @Override
