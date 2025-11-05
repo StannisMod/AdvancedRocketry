@@ -13,7 +13,7 @@ public class BlockIntake extends Block implements IIntake {
 
     @Override
     public int getIntakeAmt(IBlockState state) {
-        return 10;
+        return 1;
     }
 
 }
