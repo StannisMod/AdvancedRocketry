@@ -315,8 +315,7 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
 
     @Override
     public int getPowerPerOperation() {
-        // same average RF/mb as before, just throttled
-        return 30 * OP_THROTTLE_TICKS;
+        return 30;
     }
 
 
@@ -343,11 +342,8 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         FluidStack fs = tank.getFluid();
         if (fs == null || fs.amount <= 9) return false;
 
-        // only if the rocket can fit this fluid
-        if (!canRocketFitFluid(fs.getFluid())) return false;
-
-        // Consume RF only on the throttled ticks
-        return (world.getTotalWorldTime() % OP_THROTTLE_TICKS) == 0L;
+        // Only draw power when the rocket can actually take this fluid
+        return canRocketFitFluid(fs.getFluid());
     }
 
     @Override
