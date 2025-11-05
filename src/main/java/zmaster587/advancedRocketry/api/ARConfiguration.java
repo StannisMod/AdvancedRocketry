@@ -165,6 +165,10 @@ public class ARConfiguration {
     @ConfigProperty(needsSync = true)
     public double gasCollectionMult;
     @ConfigProperty(needsSync = true)
+    public double gasHarvestAmountMultiplier;
+    @ConfigProperty(needsSync = true)
+    public boolean gasHarvestInfinite;
+    @ConfigProperty(needsSync = true)
     public double terraformSpeed;
     @ConfigProperty
     public boolean terraformRequiresFluid;
@@ -412,6 +416,16 @@ public class ARConfiguration {
         arConfig.gasCollectionMult = config.get(MISSION, "gasMissionMultiplier", 1.0, "Multiplier for the amount of time gas collection missions take").getDouble();
         harvestableGasses = config.getStringList("harvestableGasses", MISSION, new String[]{}, "list of fluid names that can be harvested as Gas from any gas giant");
         spawnableGasses = config.getStringList("spawnableGasses", MISSION, new String[]{"hydrogen;125;1600;1.0", "helium;125;1600;0.9", "helium3;175;1600;0.2", "oxygen;0;124;1.0", "nitrogen;0;124;1.0", "ammonia;0;124;0.75", "methane;0;124;0.25"}, "list of fluid names that can be spawned as a gas giant. Format is fluid;minGravity;maxGravity;chance");
+        arConfig.gasHarvestAmountMultiplier = config.get(
+            MISSION, "gasHarvestAmountMultiplier", 1.0,
+            "Per-mission harvest cap = 64,000 mB × multiplier. Actual yield = min(cap, total free tank space at launch). Ignored if gasHarvestInfinite=true."
+        ).getDouble();
+
+        arConfig.gasHarvestInfinite = config.get(
+            MISSION, "gasHarvestInfinite", false,
+            "Fill all attached tanks up to their total free space at launch, capped at 2,147,483,647 mB per mission."
+        ).getBoolean();
+
 
         //Energy Production
         arConfig.solarGeneratorMult = config.get(ENERGY, "solarGeneratorMultiplier", 1, "Amount of power per tick the solar generator should produce").getInt();
