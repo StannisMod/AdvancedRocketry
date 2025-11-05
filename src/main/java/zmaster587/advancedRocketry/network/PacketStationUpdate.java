@@ -143,29 +143,9 @@ public class PacketStationUpdate extends BasePacket {
                     ((SpaceStationObject) spaceObject).setFuelAmount(fuel);
                 break;
             case ROTANGLE_UPDATE: {
-                SpaceStationObject sso = (SpaceStationObject) spaceObject;
-
-                // Current client-predicted angles
-                double crx = sso.getRotation(EnumFacing.EAST);
-                double cry = sso.getRotation(EnumFacing.UP);
-                double crz = sso.getRotation(EnumFacing.NORTH);
-
-                // If we're close to server snapshot, avoid snapping: just update angular velocities
-                final double SNAP_DEG = 2.0; // small tolerance; tune 1–3°
-                boolean close =
-                    Math.abs(crx - rx) < SNAP_DEG &&
-                    Math.abs(cry - ry) < SNAP_DEG &&
-                    Math.abs(crz - rz) < SNAP_DEG;
-
-                if (close) {
-                    // keep current pose, just update velocities (smooth, no blink)
-                    sso.setDeltaRotation(drx, EnumFacing.EAST);
-                    sso.setDeltaRotation(dry, EnumFacing.UP);
-                    sso.setDeltaRotation(drz, EnumFacing.NORTH);
-                } else {
-                    // we're far off: do a one-time snap + reset baseline
-                    sso.applyRemoteRotationState(rx, ry, rz, drx, dry, drz);
-                }
+                ((SpaceStationObject) spaceObject).applyRemoteRotationState(
+                    rx, ry, rz, drx, dry, drz
+                );
                 break;
             }
             case SIGNAL_WHITE_BURST:
