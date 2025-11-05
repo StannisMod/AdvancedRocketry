@@ -57,9 +57,10 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     private boolean isAnchored = false;
     private double[] rotation;
     private double[] angularVelocity;
-    private long lastTimeModification = 0;
+    private final long[] lastTimeModification = new long[3]; // one per axis
     private DimensionProperties properties;
 
+    
     public SpaceStationObject() {
         properties = (DimensionProperties) zmaster587.advancedRocketry.dimension.DimensionManager.defaultSpaceDimensionProperties.clone();
         orbitalDistance = 50.0f;
@@ -75,8 +76,12 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         knownPlanetList = new HashSet<>();
         angularVelocity = new double[3];
         rotation = new double[3];
-    }
-
+        long now = getWorldTime();
+        lastTimeModification[0] = now;
+        lastTimeModification[1] = now;
+        lastTimeModification[2] = now;
+    }        
+    
     public Set<Integer> getKnownPlanetList() {
         return knownPlanetList;
     }
@@ -109,6 +114,17 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         knownPlanetList.add(pid);
         PacketHandler.sendToAll(new PacketSpaceStationInfo(getId(), this));
     }
+
+    public void applyRemoteRotationState(double rx, double ry, double rz,
+                                        double drx, double dry, double drz) {
+        rotation[0] = rx; rotation[1] = ry; rotation[2] = rz;
+        angularVelocity[0] = drx; angularVelocity[1] = dry; angularVelocity[2] = drz;
+        long now = getWorldTime();
+        lastTimeModification[0] = now;
+        lastTimeModification[1] = now;
+        lastTimeModification[2] = now;
+    }
+
 
     /**
      * @return id of the space object (NOT the DIMID)
@@ -209,8 +225,12 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
      * @return rotation of the station in degrees
      */
     public double getRotation(EnumFacing dir) {
-
-        return (rotation[getIDFromDir(dir)] + getDeltaRotation(dir) * (getWorldTime() - lastTimeModification)) % (360D);
+        int idx = getIDFromDir(dir);
+        long dt = getWorldTime() - lastTimeModification[idx];
+        double a = rotation[idx] + angularVelocity[idx] * dt;
+        // keep modulo stable
+        a = ((a % 360D) + 360D) % 360D;
+        return a;
     }
 
     /**
@@ -241,8 +261,10 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     /**
      * @param rotation rotation of the station in degrees
      */
-    public void setRotation(double rotation, EnumFacing facing) {
-        this.rotation[getIDFromDir(facing)] = rotation;
+    public void setRotation(double rotDeg, EnumFacing facing) {
+        int idx = getIDFromDir(facing);
+        rotation[idx] = rotDeg;
+        lastTimeModification[idx] = getWorldTime();
     }
 
     /**
@@ -255,14 +277,16 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     /**
      * @param rotation anglarVelocity of the station in degrees per tick
      */
-    public void setDeltaRotation(double rotation, EnumFacing facing) {
+    public void setDeltaRotation(double newVel, EnumFacing facing) {
         if (!isAnchored()) {
-            this.rotation[getIDFromDir(facing)] = getRotation(facing);
-            this.lastTimeModification = getWorldTime();
-
-            this.angularVelocity[getIDFromDir(facing)] = rotation;
+            int idx = getIDFromDir(facing);
+            // capture current integrated angle as the new snapshot
+            rotation[idx] = getRotation(facing);
+            lastTimeModification[idx] = getWorldTime();
+            angularVelocity[idx] = newVel;
         }
     }
+
 
     public double getMaxRotationalAcceleration() {
         return 0.02D;
