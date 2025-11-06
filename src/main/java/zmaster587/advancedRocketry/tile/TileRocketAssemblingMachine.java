@@ -98,32 +98,60 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     @Override
     public void onLoad() {
-        // Called after world is set and NBT is loaded; safe place to register (server only)
         if (!world.isRemote && !registeredBus) {
             MinecraftForge.EVENT_BUS.register(this);
             registeredBus = true;
         }
-    }    
+
+        if (world.isRemote) return;
+
+        // Recompute pad bounds and relink infra to any rockets already on the pad
+        bbCache = getRocketPadBounds(world, pos);
+        if (bbCache != null) {
+            final AxisAlignedBB box = bbCache.grow(1.0E-4, 1.0E-4, 1.0E-4);
+            List<EntityRocketBase> rockets = world.getEntitiesWithinAABB(EntityRocketBase.class, box);
+            if (!rockets.isEmpty()) {
+                for (IInfrastructure infra : getConnectedInfrastructure()) {
+                    for (EntityRocketBase r : rockets) {
+                        r.linkInfrastructure(infra);
+                    }
+                }
+            }
+        }
+    }  
 
     @Override
     public void invalidate() {
         super.invalidate();
         unregisterFromBus();
 
-        if (world != null)
-            for (HashedBlockPosition pos : blockPos) {
-                TileEntity tile = world.getTileEntity(pos.getBlockPos());
-                if (tile instanceof IMultiblock) {
-                    ((IMultiblock) tile).setIncomplete();
+        // Notify linked multiblocks BEFORE clearing (server only)
+        if (world != null && !world.isRemote) {
+            for (HashedBlockPosition p : blockPos) {
+                TileEntity te = world.getTileEntity(p.getBlockPos());
+                if (te instanceof IMultiblock) {
+                    ((IMultiblock) te).setIncomplete();
                 }
+            }
         }
+
+        // Clear caches
+        bbCache = null;
+        stats.reset();
+        blockPos.clear();
     }
 
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
         unregisterFromBus();
+
+        // Clear caches
+        bbCache = null;
+        stats.reset();
+        blockPos.clear();
     }
+
 
     private void unregisterFromBus() {
         if (registeredBus) {
@@ -1171,7 +1199,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         if (e.world.isRemote || e.world != this.world) return;
 
         // Ensure we have pad bounds
-        if (bbCache == null) bbCache = getRocketPadBounds(world, pos);
+        bbCache = getRocketPadBounds(world, pos);
         if (bbCache == null) return;
 
         // Make sure the event entity is a rocket
