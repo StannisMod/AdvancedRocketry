@@ -6,6 +6,8 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
@@ -19,6 +21,7 @@ import zmaster587.libVulpes.inventory.modules.*;
 import zmaster587.libVulpes.tile.TileInventoriedRFConsumerTank;
 import zmaster587.libVulpes.util.FluidUtils;
 import zmaster587.libVulpes.util.IconResource;
+import zmaster587.libVulpes.cap.TeslaHandler;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -50,6 +53,30 @@ public class TileGasChargePad extends TileInventoriedRFConsumerTank implements I
     public int getPowerPerOperation() {
         return 0;
     }
+
+    @Override
+    public boolean hasCapability(Capability<?> capability, @Nullable EnumFacing facing) {
+        // Hide Forge Energy capability
+        if (capability == CapabilityEnergy.ENERGY) return false;
+        // Hide any Tesla capability the base class would expose
+        if (TeslaHandler.hasTeslaCapability(this, capability)) return false;
+        return super.hasCapability(capability, facing);
+    }
+
+    @Override
+    @Nullable
+    public <T> T getCapability(Capability<T> capability, @Nullable EnumFacing facing) {
+        // Don’t provide energy handlers to probes/pipes
+        if (capability == CapabilityEnergy.ENERGY) return null;
+        if (TeslaHandler.hasTeslaCapability(this, capability)) return null;
+        return super.getCapability(capability, facing);
+    }
+
+    // Optional (extra safety for mods that query IPower-style methods directly)
+    @Override public boolean canConnectEnergy(EnumFacing side) { return false; }
+    @Override public boolean canReceive() { return false; }
+    @Override public int getEnergyStored(EnumFacing side) { return 0; }
+    @Override public int getMaxEnergyStored(EnumFacing side) { return 0; }
 
     @Override
     public boolean canPerformFunction() {
