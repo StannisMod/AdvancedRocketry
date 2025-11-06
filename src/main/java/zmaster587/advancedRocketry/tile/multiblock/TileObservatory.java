@@ -820,6 +820,26 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     }
 
     @Override
+    public void invalidate() {
+        super.invalidate();
+        dataCables.clear();
+        buttonType.clear();
+        printedButtonsThisSeed.clear();
+        printedSetSeed = -1;
+        lastSeed = -1;
+        lastButton = -1;
+        lastType = "";
+        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache(); // static GUI cache
+    }
+
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        dataCables.clear();
+        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+    }
+
+    @Override
     public void onModuleUpdated(ModuleBase module) {
         //ReopenUI on server
         PacketHandler.sendToServer(new PacketMachine(this, TAB_SWITCH));
