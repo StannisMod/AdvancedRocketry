@@ -48,6 +48,10 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
         startWorldTime = DimensionManager.getWorld(0).getTotalWorldTime();
         this.duration = duration;
+        if (this.duration <= 0L) {
+            this.duration = 1L; // at least 1 tick
+        }
+
         this.launchDimension = entity.world.provider.getDimension();
         rocketStorage = entity.storage;
         rocketStats = entity.stats;
@@ -64,6 +68,7 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
     @Override
     public double getProgress(World world) {
+        if (duration <= 0L) return 1.0d;        
         return Math.max((AdvancedRocketry.proxy.getWorldTimeUniversal(0) - startWorldTime) / (double) duration, 0);
     }
 
