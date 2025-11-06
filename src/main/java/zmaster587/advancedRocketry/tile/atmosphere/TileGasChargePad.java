@@ -29,8 +29,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TileGasChargePad extends TileInventoriedRFConsumerTank implements IModularInventory {
+    private static final int TICK_INTERVAL = 2; 
+    // Avoid per-tick AABB allocation: cache lazily
+    @Nullable
+    private AxisAlignedBB cachedPlayerBox;    
+    
     public TileGasChargePad() {
         super(0, 2, 16000);
+    }
+
+    // Lazy AABB getter
+    private AxisAlignedBB getPlayerBox() {
+        if (cachedPlayerBox == null) {
+            cachedPlayerBox = new AxisAlignedBB(pos, pos.add(1, 2, 1));
+        }
+        return cachedPlayerBox;
     }
 
     @Override
@@ -81,7 +94,18 @@ public class TileGasChargePad extends TileInventoriedRFConsumerTank implements I
     @Override
     public boolean canPerformFunction() {
         if (!world.isRemote) {
-            for (EntityPlayer player : this.world.getEntitiesWithinAABB(EntityPlayer.class, new AxisAlignedBB(pos, pos.add(1, 2, 1)))) {
+
+            // Throttle: only run every TICK_INTERVAL ticks
+            if ((world.getTotalWorldTime() % TICK_INTERVAL) != 0) {
+                return false;
+            }
+
+            FluidStack tf = this.tank.getFluid();
+            if (tf == null || tf.amount <= 0) {
+                return false;
+            }
+
+            for (EntityPlayer player : this.world.getEntitiesWithinAABB(EntityPlayer.class, getPlayerBox())) {
                 ItemStack stack = player.getItemStackFromSlot(EntityEquipmentSlot.CHEST);
 
                 if (!stack.isEmpty()) {
@@ -94,15 +118,18 @@ public class TileGasChargePad extends TileInventoriedRFConsumerTank implements I
 
                     //Check for O2 fill
                     if (fillable != null) {
-                        int amtFluid = fillable.getMaxAir(stack) - fillable.getAirRemaining(stack);
-                        FluidStack fluidStack = this.drain(amtFluid, false);
-
-                        if (amtFluid > 0 && fluidStack != null && FluidUtils.areFluidsSameType(fluidStack.getFluid(), AdvancedRocketryFluids.fluidOxygen) && fluidStack.amount > 0) {
-                            FluidStack fstack = this.drain(amtFluid, true);
-                            this.markDirty();
-                            world.markChunkDirty(getPos(), this);
-                            fillable.increment(stack, fstack.amount);
-                            return true;
+                        int deficit = fillable.getMaxAir(stack) - fillable.getAirRemaining(stack);
+                        tf = this.tank.getFluid(); // refresh
+                        if (deficit > 0 && tf != null
+                                && FluidUtils.areFluidsSameType(tf.getFluid(), AdvancedRocketryFluids.fluidOxygen)
+                                && tf.amount > 0) {
+                            int toDrain = Math.min(deficit, tf.amount);
+                            FluidStack drained = this.drain(toDrain, true);
+                            if (drained != null && drained.amount > 0) {
+                                fillable.increment(stack, drained.amount);
+                                this.markDirty(); // no world.markChunkDirty
+                                return true;
+                            }
                         }
                     }
                 }
@@ -112,36 +139,39 @@ public class TileGasChargePad extends TileInventoriedRFConsumerTank implements I
                 if (this.tank.getFluid() != null && !FluidUtils.areFluidsSameType(this.tank.getFluid().getFluid(), AdvancedRocketryFluids.fluidOxygen) && !stack.isEmpty() && stack.getItem() instanceof IModularArmor) {
                     IInventory inv = ((IModularArmor) stack.getItem()).loadModuleInventory(stack);
 
-                    FluidStack fluidStack = this.drain(100, false);
-                    if (fluidStack != null) {
+                    // Create a trial FluidStack up to available amount
+                    final int perAttempt = 100 * TICK_INTERVAL;
+                    int trialAmt = Math.min(perAttempt, this.tank.getFluid().amount);
+                    if (trialAmt > 0) {
+                        FluidStack trial = new FluidStack(this.tank.getFluid(), trialAmt);
                         for (int i = 0; i < inv.getSizeInventory(); i++) {
 
                             if (!((IModularArmor) stack.getItem()).canBeExternallyModified(stack, i))
                                 continue;
 
                             ItemStack module = inv.getStackInSlot(i);
-                            if (FluidUtils.containsFluid(module)) {
-                                int amtFilled = module.getCapability(CapabilityFluidHandler.FLUID_HANDLER_ITEM_CAPABILITY, EnumFacing.UP).fill(fluidStack, true);
-                                if (amtFilled == 100) {
-                                    this.drain(100, true);
+                            if (!FluidUtils.containsFluid(module)) continue; // fast path
+                            net.minecraftforge.fluids.capability.IFluidHandlerItem fh =
+                                    module.getCapability(CapabilityFluidHandler.FLUID_HANDLER_ITEM_CAPABILITY, EnumFacing.UP);
+                            if (fh == null) continue; // null-guard
 
-                                    this.markDirty();
-                                    world.markChunkDirty(getPos(), this);
-
-                                    ((IModularArmor) stack.getItem()).saveModuleInventory(stack, inv);
-
-                                    return true;
-                                }
+                            int amtFilled = fh.fill(trial, true);
+                            // Accept partial fills: drain exactly what was accepted
+                            if (amtFilled > 0) {
+                                this.drain(amtFilled, true);
+                                this.markDirty(); // no world.markChunkDirty
+                                ((IModularArmor) stack.getItem()).saveModuleInventory(stack, inv);
+                                return true;
                             }
-                        }
-                    }
-                }
-
-                return false;
-            }
-        }
-        return false;
-    }
+                         }
+                     }
+                 }
+             }
+            // no player matched this tick
+            return false;
+         }
+         return false;
+     }
 
     @Override
     public void performFunction() {
@@ -188,4 +218,23 @@ public class TileGasChargePad extends TileInventoriedRFConsumerTank implements I
     public boolean isEmpty() {
         return inventory.isEmpty();
     }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        cachedPlayerBox = null; // drop cached AABB
+    }
+
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        cachedPlayerBox = null; // drop cached AABB
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        // Ensure cache recomputes from the current pos after NBT load
+        cachedPlayerBox = null;
+    }    
 }
