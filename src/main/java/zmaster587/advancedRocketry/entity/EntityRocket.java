@@ -752,6 +752,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             if (stats.getOxidizerFluid().equals("null") && isCorrectFluid)
                 stats.setOxidizerFluid(fluidStack.getFluid().getName());
             return isCorrectFluid;
+        } else if (FuelRegistry.instance.isFuel(FuelType.NUCLEAR_WORKING_FLUID, fluidStack.getFluid())) {
+            boolean isCorrectFluid = stats.getWorkingFluid().equals("null") || fluidStack.getFluid() == FluidRegistry.getFluid(stats.getWorkingFluid());
+            if (stats.getWorkingFluid().equals("null") && isCorrectFluid)
+                stats.setWorkingFluid(fluidStack.getFluid().getName());
+            return isCorrectFluid;
         }
         return false;
     }
