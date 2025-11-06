@@ -457,6 +457,8 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         this.linkedRocket = null;
         this.fuelingActive = false;
         this.lastRs = null;
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         ((BlockTileRedstoneEmitter) AdvancedRocketryBlocks.blockFuelingStation)
             .setRedstoneState(world, world.getBlockState(pos), pos, false);
         markDirty();
@@ -516,7 +518,9 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         if (linkedRocket != null)
             linkedRocket.unlinkInfrastructure(this);
 
-        // Hard-off to avoid stale output when chunk unload order is weird
+        // Clear caches
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         lastRs = null;
         fuelingActive = false;
 
@@ -670,6 +674,9 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         super.onChunkUnload();
         if (world == null || world.isRemote) return;
 
+        // Clear caches
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         lastRs = null;
         fuelingActive = false;
         if (AdvancedRocketryBlocks.blockFuelingStation instanceof BlockTileRedstoneEmitter) {
