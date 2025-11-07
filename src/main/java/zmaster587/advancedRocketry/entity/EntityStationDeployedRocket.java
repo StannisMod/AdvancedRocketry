@@ -62,6 +62,8 @@ public class EntityStationDeployedRocket extends EntityRocket {
     private short gasId;
     private Ticket ticket;
     private long plannedHarvestMb = 0L;  // planned total mB to attempt this mission
+    private boolean orbitEventPosted = false; // not persisted to NBT
+
 
     public EntityStationDeployedRocket(World world) {
         super(world);
@@ -393,13 +395,17 @@ public class EntityStationDeployedRocket extends EntityRocket {
     /**
      * Called when the rocket reaches orbit
      */
+    @Override
     public void onOrbitReached() {
-        //make it 30 minutes with one drill
+        if (world.isRemote) return;  // client should not run any of this
 
-        if (world.isRemote)System.out.println("this code should not run on client side!");
+        // Fire the standard event exactly once for monitors
+        if (!orbitEventPosted) {
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketReachesOrbitEvent(this));
+            orbitEventPosted = true;
+        }
 
-        if (this.isDead)
-            return;
+        if (this.isDead) return;
 
         //Check again to make sure we are around a gas giant
         ISpaceObject spaceObj;
