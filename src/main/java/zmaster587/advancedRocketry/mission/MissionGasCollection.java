@@ -128,6 +128,10 @@ public class MissionGasCollection extends MissionResourceCollection {
         }
     }
 
+    public net.minecraftforge.fluids.Fluid getGasFluid() {
+        return gasFluid;
+    }
+    
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
