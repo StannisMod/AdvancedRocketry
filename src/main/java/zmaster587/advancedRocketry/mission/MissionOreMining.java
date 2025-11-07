@@ -34,8 +34,38 @@ public class MissionOreMining extends MissionResourceCollection {
     public MissionOreMining(long l, EntityRocket entityRocket,
                             LinkedList<IInfrastructure> connectedInfrastructure) {
         super(l, entityRocket, connectedInfrastructure);
+
+        // Persist asteroid metadata for the monitor UI
+        try {
+            if (rocketStorage != null && rocketStorage.getGuidanceComputer() != null) {
+                ItemStack chip = rocketStorage.getGuidanceComputer().getStackInSlot(0);
+                if (!chip.isEmpty() && chip.getItem() instanceof ItemAsteroidChip) {
+                    ItemAsteroidChip ac = (ItemAsteroidChip) chip.getItem();
+
+                    String type = ac.getType(chip);
+                    Long   uuid = ac.getUUID(chip);
+
+                    if (type != null && !type.isEmpty())
+                        missionPersistantNBT.setString("asteroidType", type);
+                    if (uuid != null)
+                        missionPersistantNBT.setLong("asteroidUUID", uuid);
+                }
+            }
+        } catch (Throwable t) {
+            // leave fields unset; GUI will show defaults
+        }
     }
 
+
+    public String getAsteroidTypeOrEmpty() {
+        return (missionPersistantNBT != null && missionPersistantNBT.hasKey("asteroidType"))
+                ? missionPersistantNBT.getString("asteroidType") : "";
+    }
+    @javax.annotation.Nullable
+    public Long getAsteroidUUIDOrNull() {
+        return (missionPersistantNBT != null && missionPersistantNBT.hasKey("asteroidUUID"))
+                ? missionPersistantNBT.getLong("asteroidUUID") : null;
+    }
     @Override
     public void onMissionComplete() {
 
