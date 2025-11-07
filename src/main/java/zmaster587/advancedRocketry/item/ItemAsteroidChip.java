@@ -23,7 +23,14 @@ public class ItemAsteroidChip extends ItemMultiData {
         return false;
     }
 
-
+    public static String shortDisplayId(Long uuid, String type) {
+        long base = (uuid == null) ? 0L : uuid;
+        long th   = (type == null) ? 0L : Integer.toUnsignedLong(type.hashCode());
+        long disp = mix64(base ^ (th << 1));
+        String hex = Long.toUnsignedString(disp, 16).toUpperCase();
+        int N = 6;
+        return (hex.length() > N) ? hex.substring(hex.length() - N) : hex;
+    }    
     /**
      * Removes any Information and reset the stack to a default state
      *
