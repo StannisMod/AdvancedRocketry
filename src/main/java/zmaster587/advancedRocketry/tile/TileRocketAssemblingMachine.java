@@ -539,7 +539,20 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                 status = ErrorCodes.SUCCESS;
             }
         }
-        return new AxisAlignedBB(actualMinX, actualMinY, actualMinZ, actualMaxX, actualMaxY, actualMaxZ);
+        
+        // Normalize integer mins/maxes first
+        int minXi = Math.min(actualMinX, actualMaxX);
+        int minYi = Math.min(actualMinY, actualMaxY);
+        int minZi = Math.min(actualMinZ, actualMaxZ);
+        int maxXi = Math.max(actualMinX, actualMaxX);
+        int maxYi = Math.max(actualMaxY, actualMinY);
+        int maxZi = Math.max(actualMinZ, actualMaxZ);
+
+        // IMPORTANT: use BlockPos ctor so the AABB is [min, max+1) in block space
+        return new AxisAlignedBB(
+            new BlockPos(minXi, minYi, minZi),
+            new BlockPos(maxXi, maxYi, maxZi)
+        );
     }
 
     protected void removeReplaceableBlocks(AxisAlignedBB bb) {
@@ -562,37 +575,63 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         }
     }
 
+    private static boolean isEmptyAABB(@Nullable AxisAlignedBB b) {
+        return b == null || b.maxX < b.minX || b.maxY < b.minY || b.maxZ < b.minZ;
+    }
+
+
+    private static AxisAlignedBB normalize(AxisAlignedBB b) {
+        double minX = Math.min(b.minX, b.maxX);
+        double minY = Math.min(b.minY, b.maxY);
+        double minZ = Math.min(b.minZ, b.maxZ);
+        double maxX = Math.max(b.minX, b.maxX);
+        double maxY = Math.max(b.minY, b.maxY);
+        double maxZ = Math.max(b.minZ, b.maxZ);
+        return new AxisAlignedBB(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+
     public void assembleRocket() {
+        // server only + need a pad cache
+        if (world.isRemote || bbCache == null) return;
 
-        if (bbCache == null || world.isRemote)
-            return;
-        // Need to scan again b/c something may have changed
-        AxisAlignedBB rocketBB = scanRocket(world, pos, bbCache);
+        // Re-scan to get a *tight* non-air AABB and fresh stats/status
+        final AxisAlignedBB scanBB = scanRocket(world, pos, bbCache);
+        if (status != ErrorCodes.SUCCESS || scanBB == null) return;
 
-        if (status != ErrorCodes.SUCCESS)
-            return;
-
-        // Remove replacable blocks that don't belong on the rocket
-        removeReplaceableBlocks(bbCache);
-
-        StorageChunk storageChunk;
-        try {
-            storageChunk = StorageChunk.cutWorldBB(world, bbCache);
-        } catch (NegativeArraySizeException e) {
+        // Normalize and defensively guard against degenerate boxes
+        final AxisAlignedBB rocketBB = normalize(scanBB);
+        if (isEmptyAABB(rocketBB)) {
+            status = ErrorCodes.FAIL_CUT;
             return;
         }
 
-        EntityRocket rocket = new EntityRocket(world, storageChunk, stats.copy(),
-                rocketBB.minX + (rocketBB.maxX - rocketBB.minX) / 2f + .5f,
-                this.getPos().getY(),
-                rocketBB.minZ + (rocketBB.maxZ - rocketBB.minZ) / 2f + .5f);
+        // Remove replaceable/blacklisted blocks *inside the tightened bounds*
+        removeReplaceableBlocks(rocketBB);
 
+        // Cut the world using the tightened box (avoid pad air)
+        final StorageChunk storageChunk;
+        try {
+            storageChunk = StorageChunk.cutWorldBB(world, rocketBB);
+        } catch (Throwable t) { // covers NegativeArraySizeException & other edge errors
+            status = ErrorCodes.FAIL_CUT;
+            return;
+        }
+
+        // Center spawn on tightened AABB
+        final double cx = rocketBB.minX + (rocketBB.maxX - rocketBB.minX) / 2.0 + 0.5;
+        final double cz = rocketBB.minZ + (rocketBB.maxZ - rocketBB.minZ) / 2.0 + 0.5;
+        final double cy = this.getPos().getY();
+
+        EntityRocket rocket = new EntityRocket(world, storageChunk, stats.copy(), cx, cy, cz);
         world.spawnEntity(rocket);
+
         NBTTagCompound nbtdata = new NBTTagCompound();
-
         rocket.writeToNBT(nbtdata);
-        PacketHandler.sendToNearby(new PacketEntity(rocket, (byte) 0, nbtdata), rocket.world.provider.getDimension(), this.pos, 64);
+        PacketHandler.sendToNearby(new PacketEntity(rocket, (byte) 0, nbtdata),
+                rocket.world.provider.getDimension(), this.pos, 64);
 
+        // Finish & link as before
         stats.reset();
         this.status = ErrorCodes.FINISHED;
         this.markDirty();
@@ -602,7 +641,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             rocket.linkInfrastructure(infrastructure);
         }
 
-        scanRocket(world, pos, bbCache); // to show stats
+        // Rescan so UI immediately reflects the post-build state
+        scanRocket(world, pos, bbCache);
     }
 
     /**
