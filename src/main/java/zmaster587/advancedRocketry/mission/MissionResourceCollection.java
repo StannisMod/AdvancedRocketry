@@ -37,6 +37,7 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
     public MissionResourceCollection() {
         infrastructureCoords = new LinkedList<>();
+        missionPersistantNBT = new NBTTagCompound();
     }
 
     public MissionResourceCollection(long duration, EntityRocket entity, LinkedList<IInfrastructure> infrastructureCoords) {
@@ -65,6 +66,13 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
         for (IInfrastructure tile : infrastructureCoords)
             this.infrastructureCoords.add(new HashedBlockPosition(((TileEntity) tile).getPos()));
     }
+
+    public long getPlannedHarvestMbOrDefault() {
+        if (missionPersistantNBT != null && missionPersistantNBT.hasKey("plannedHarvestMb")) {
+            return Math.max(0L, missionPersistantNBT.getLong("plannedHarvestMb"));
+        }
+        return -1L; // means "unknown/not provided"
+    }    
 
     @Override
     public double getProgress(World world) {
@@ -148,7 +156,8 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
 
-        missionPersistantNBT = nbt.getCompoundTag("persist");
+        missionPersistantNBT = nbt.hasKey("persist") ? nbt.getCompoundTag("persist") : new NBTTagCompound();
+
 
         rocketStats = new StatsRocket();
         rocketStats.readFromNBT(nbt.getCompoundTag("rocketStats"));
