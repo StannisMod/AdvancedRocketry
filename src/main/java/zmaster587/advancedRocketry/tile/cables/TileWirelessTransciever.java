@@ -156,10 +156,20 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
-        if (networkID == -1) return;
-        if (NetworkRegistry.dataNetwork.doesNetworkExist(networkID))
+
+        // Leave the network cleanly if linked
+        if (networkID != -1 && NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
             NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
+        }
+
+        // Clear per-instance caches
+        phase = -1;
+
+        // Clear UI-only mirror (logic stays in 'data')
+        uiBuffer.setMaxData(data.getMaxData());
+        uiBuffer.setData(0, DataType.UNDEFINED);
     }
+
 
     @Override
     public boolean onLinkComplete(@Nonnull ItemStack item, TileEntity entity, EntityPlayer player, World world) {
@@ -303,17 +313,19 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (!side.isServer()) return;
 
-        if (id == 1) { // enable/disable toggle — always allowed
+        if (id == 1) { // enable/disable
             enabled = nbt.getBoolean("state");
+
+            // persist + push to clients
+            this.markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
             return;
         }
 
-        if (id == 0) { // extract/insert toggle
-            // Always update local state so neighbors (like the terminal) can see it
+        if (id == 0) { // extract/insert
             extractMode = nbt.getBoolean("state");
             updateToggleLabel();
 
-            // Only touch the network if we are actually linked
             if (networkID != -1 && NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
                 NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
                 if (extractMode) {
@@ -322,9 +334,14 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
                     NetworkRegistry.dataNetwork.getNetwork(networkID).addSink(this, EnumFacing.UP);
                 }
             }
+
+            // persist + push to clients
+            this.markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
             return;
         }
     }
+
 
 
     @Override
@@ -332,21 +349,24 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         super.readFromNBT(nbt);
 
         extractMode = nbt.getBoolean("mode");
-        enabled = nbt.getBoolean("enabled");
-        networkID = nbt.getInteger("networkID");
+        enabled     = nbt.getBoolean("enabled");
+        networkID   = nbt.getInteger("networkID");
         data.readFromNBT(nbt);
-        syncUiBufferFromMultiData();
-        //addToNetwork();
 
-        toggle.setToggleState(extractMode);
+        syncUiBufferFromMultiData();
+
+        // Mirror persisted booleans into UI widgets (guard null on client)
+        if (toggle != null)       toggle.setToggleState(extractMode);
+        if (toggleSwitch != null) toggleSwitch.setToggleState(enabled);
         updateToggleLabel();
-        toggleSwitch.setToggleState(enabled);
+
+        // Client-only network label text
         if (world != null && world.isRemote && netIdLabel != null) {
-        String idStr = (networkID == -1)
+            String idStr = (networkID == -1)
                 ? net.minecraft.client.resources.I18n.format("msg.wirelessTransciever.network.unlinked")
                 : Integer.toString(networkID);
-        String label = LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.network");
-        netIdLabel.setText(label + idStr);
+            String label = LibVulpes.proxy.getLocalizedString("msg.wirelessTransciever.network");
+            netIdLabel.setText(label + idStr);
         }
     }
     
@@ -386,31 +406,27 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         super.onLoad();
 
         if (!world.isRemote) {
-            syncUiBufferFromMultiData(); // ensures server-side mirror matches after load
-            // Ensure booleans reflect current UI widgets on server after load/place
-            extractMode = toggle.getState();
-            enabled = toggleSwitch.getState();
+            // Rebuild UI mirror from authoritative MultiData
+            syncUiBufferFromMultiData();
+
+            // Mirror persisted booleans -> widgets (do NOT read from widgets)
+            if (toggle != null)       toggle.setToggleState(extractMode);
+            if (toggleSwitch != null) toggleSwitch.setToggleState(enabled);
+            updateToggleLabel();
         }
 
-        // Server side only
         if (world == null || world.isRemote) return;
 
-        // Ensure sane interval before using it in modulo
+        // Recompute throttle phase after we cleared it
         if (transferIntervalTicks <= 0) transferIntervalTicks = 20;
-
-        // Stable per-tile phase to spread work over time (no persistence needed)
         phase = (int) Math.floorMod(this.pos.toLong(), transferIntervalTicks);
 
-        // (Re)join the data network only if we’re actually linked to one
+        // Rejoin the network with the correct role (source/sink)
         if (networkID != -1) {
             if (!NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
-                // Create (or re-create) this specific network id
                 NetworkRegistry.dataNetwork.getNewNetworkID(networkID);
             }
-
-            // Make sure we're not double-registered, then register with the right role
             NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
-
             if (extractMode) {
                 NetworkRegistry.dataNetwork.getNetwork(networkID).addSource(this, EnumFacing.UP);
             } else {
@@ -418,6 +434,8 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
             }
         }
     }
+
+
 
     @Override
     public void update() {
@@ -511,11 +529,14 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     }
     @Override
     public void invalidate() {
-        // called when the TE is removed because the block changed/broke
-        if (!world.isRemote && NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
+        if (!world.isRemote && networkID != -1 && NetworkRegistry.dataNetwork.doesNetworkExist(networkID)) {
             NetworkRegistry.dataNetwork.getNetwork(networkID).removeFromAll(this);
         }
+        // Clear per-instance caches
+        phase = -1;
+
         super.invalidate();
     }
+
     
 }
