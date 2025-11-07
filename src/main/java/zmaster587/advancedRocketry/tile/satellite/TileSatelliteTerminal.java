@@ -124,17 +124,13 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
             return;
         }
 
-        // Hoist satellite once
-        final SatelliteBase sat = getCachedSatellite();
+        // Resolve satellite fresh from the chip each poll
+        SatelliteBase sat = resolveSatelliteFresh();
         if (sat == null) {
             if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
             nextAutoDlTick = now + autoDlInterval;
             return;
         }
-
-
-        
-        // No link or power → back off (unless forced)
         if (!hasLinkAndPower(sat)) {
             if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
             nextAutoDlTick = now + autoDlInterval;
@@ -245,20 +241,21 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         }
     }
 
-    @Nullable private SatelliteBase cachedSat = null;
+    @Nullable
+    private SatelliteBase resolveSatelliteFresh() {
+        ItemStack s0 = getStackInSlot(0);
+        return (!s0.isEmpty() && s0.getItem() instanceof ItemSatelliteIdentificationChip)
+                ? ItemSatelliteIdentificationChip.getSatellite(s0)
+                : null;
+    }
 
     @Override
     public void setInventorySlotContents(int slot, @Nonnull ItemStack stack) {
         super.setInventorySlotContents(slot, stack);
         if (!world.isRemote && slot == 0) {
-            cachedSat = (!stack.isEmpty() && stack.getItem() instanceof ItemSatelliteIdentificationChip)
-                    ? ItemSatelliteIdentificationChip.getSatellite(stack)
-                    : null;
             maybeAutoDownloadFromSatellite(true); // force reset to base
         }
     }
-
-    private @Nullable SatelliteBase getCachedSatellite() { return cachedSat; }
 
     public SatelliteBase getSatelliteFromSlot(int slot) {
         ItemStack stack = getStackInSlot(slot);
@@ -377,19 +374,27 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
     public void onLoad() {
         super.onLoad();
         if (!world.isRemote) {
-            // Rebuild cache from current slot-0
-            ItemStack s0 = getStackInSlot(0);
-            cachedSat = (!s0.isEmpty() && s0.getItem() instanceof ItemSatelliteIdentificationChip)
-                    ? ItemSatelliteIdentificationChip.getSatellite(s0)
-                    : null;
-
+            // Reset backoff scheduler to a sane base state
             autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
-            nextAutoDlTick = Math.min(nextAutoDlTick, world.getTotalWorldTime() + AUTO_DL_MAX_INTERVAL_TICKS);
-            maybeAutoDownloadFromSatellite(false);
+            long now = world.getTotalWorldTime();
+            // Warm-up so neighbors/registries settle (e.g. 80 ticks ~ 4s)
+            nextAutoDlTick = now + 80;
         }
     }
 
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        // Hard-clear any references and scheduling
+        autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
+        nextAutoDlTick = 0L;
+    }
 
+    // Clear caches if the block/TE is invalidated (broken/replaced)
+    @Override
+    public void invalidate() {
+        super.invalidate();
+    }
 
 
     @Override
