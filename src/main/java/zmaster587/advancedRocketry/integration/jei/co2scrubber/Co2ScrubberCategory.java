@@ -34,21 +34,6 @@ public class Co2ScrubberCategory implements IRecipeCategory<Co2ScrubberWrapper> 
     public void setRecipe(IRecipeLayout layout, Co2ScrubberWrapper wrapper, IIngredients ing) {
         IGuiItemStackGroup items = layout.getItemStacks();
 
-        // Register tooltip handler first
-        items.addTooltipCallback((slotIndex, isInput, stack, tooltip) -> {
-            if (stack == null || stack.isEmpty()) return;
-
-            if (slotIndex == 0) {
-                // Cartridge (left)
-                tooltip.add(net.minecraft.util.text.TextFormatting.YELLOW +
-                    zmaster587.libVulpes.LibVulpes.proxy.getLocalizedString("jei.ar.scrubber.cartridge"));
-            } else if (slotIndex == 1) {
-                // Oxygen Vent ghost (right)
-                tooltip.add(net.minecraft.util.text.TextFormatting.YELLOW +
-                    zmaster587.libVulpes.LibVulpes.proxy.getLocalizedString("jei.ar.scrubber.info_compact"));
-            }
-        });
-
         // One input slot (cartridge), left side
         items.init(0, true, 20, 11);
         items.set(0, ing.getInputs(mezz.jei.api.ingredients.VanillaTypes.ITEM).get(0));
