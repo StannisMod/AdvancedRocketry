@@ -156,7 +156,7 @@ public class BlockRocketMotor extends BlockFullyRotatable implements IRocketEngi
 
         if (alt) {
             // Advanced details
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.alt.1"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.alt.1"));
         } else if (shift) {
             // More info
             tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.shift.1"));
