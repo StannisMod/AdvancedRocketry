@@ -2,6 +2,9 @@ package zmaster587.advancedRocketry.block;
 
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
@@ -11,13 +14,18 @@ import net.minecraft.util.EnumBlockRenderType;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.IRocketEngine;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.util.IBrokenPartBlock;
 import zmaster587.libVulpes.block.BlockFullyRotatable;
+
+import java.util.List;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -137,4 +145,42 @@ public class BlockRocketMotor extends BlockFullyRotatable implements IRocketEngi
         }
         return drop;
     }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor"));
+
+        final boolean shift = GuiScreen.isShiftKeyDown();
+        final boolean alt   = isAltDown();
+
+        if (alt) {
+            // Advanced details
+            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.alt.1"));
+        } else if (shift) {
+            // More info
+            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.shift.1"));
+            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
+                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
+        } else {
+            // Hints
+            if (I18n.hasKey("tooltip.advancedrocketry.hold_shift"))
+                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_shift"));
+            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
+                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
+        }
+    }
+
+    @SideOnly(Side.CLIENT)
+    private static boolean isAltDown() {
+        try {
+            // Works on Forge 1.12.x; LWJGL fallback for safety
+            return GuiScreen.isAltKeyDown()
+                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_LMENU)
+                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_RMENU);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
 }
