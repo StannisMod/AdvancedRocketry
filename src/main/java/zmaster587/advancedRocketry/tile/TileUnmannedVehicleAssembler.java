@@ -109,14 +109,14 @@ public class TileUnmannedVehicleAssembler extends TileRocketAssemblingMachine {
         AxisAlignedBB rocketBB = scanRocket(world, getPos(), bbCache);
         if (status != ErrorCodes.SUCCESS || rocketBB == null) return;
 
-        // 2) Remove replaceable/blacklisted blocks before cutting (uses parent’s helper)
-        removeReplaceableBlocks(bbCache);
+        // 2) Remove replaceables **inside the tight box**
+        removeReplaceableBlocks(rocketBB);
 
-        // 3) Cut the world into a storage chunk
+        // 3) Cut the world using the **tight** AABB 
         final StorageChunk storageChunk;
         try {
-            storageChunk = StorageChunk.cutWorldBB(world, bbCache);
-        } catch (NegativeArraySizeException e) {
+            storageChunk = StorageChunk.cutWorldBB(world, rocketBB);
+        } catch (Throwable t) { // covers NegativeArraySizeException, etc.
             return;
         }
 
@@ -180,22 +180,26 @@ public class TileUnmannedVehicleAssembler extends TileRocketAssemblingMachine {
 
     @Override
     public AxisAlignedBB scanRocket(World world, BlockPos pos2, AxisAlignedBB bb) {
+        // Always refresh local bounds first
+        AxisAlignedBB fresh = getRocketPadBounds(world, getPos());
+        if (fresh == null) {
+            status = ErrorCodes.INCOMPLETESTRCUTURE; // upstream typo
+            return null; // avoid using stale bb
+        }
+        bbCache = fresh;
+        bb = fresh; // ensure loops below use the fresh bounds
 
         // fast-path: rocket entity already present?
-        if (getBBCache() == null) bbCache = getRocketPadBounds(world, getPos());
-        if (bbCache != null) {
-            final AxisAlignedBB buffered = bbCache.grow(1.0e-4, 1.0e-4, 1.0e-4);
-
-            java.util.List<EntityStationDeployedRocket> sdr =
-                world.getEntitiesWithinAABB(EntityStationDeployedRocket.class, buffered);
-            if (sdr.size() == 1) {
-                EntityStationDeployedRocket r = sdr.get(0);
-                r.recalculateStats();
-                this.stats = r.stats.copy();
-                this.status = ErrorCodes.ALREADY_ASSEMBLED;
-                return null;
-            }
-        }    
+        final AxisAlignedBB buffered = bb.grow(1.0e-4, 1.0e-4, 1.0e-4);
+        java.util.List<EntityStationDeployedRocket> sdr =
+            world.getEntitiesWithinAABB(EntityStationDeployedRocket.class, buffered);
+        if (sdr.size() == 1) {
+            EntityStationDeployedRocket r = sdr.get(0);
+            r.recalculateStats();
+            this.stats = r.stats.copy();
+            this.status = ErrorCodes.ALREADY_ASSEMBLED;
+            return null;
+        }  
         int thrustMonopropellant = 0;
         int thrustBipropellant = 0;
         int thrustNuclearNozzleLimit = 0;
@@ -399,7 +403,14 @@ public class TileUnmannedVehicleAssembler extends TileRocketAssemblingMachine {
             }
         }
 
-        return new AxisAlignedBB(actualMinX, actualMinY, actualMinZ, actualMaxX, actualMaxY, actualMaxZ);
+        // Normalize bounds to avoid inverted AABBs on edge cases
+        double minX = Math.min(actualMinX, actualMaxX);
+        double minY = Math.min(actualMinY, actualMaxY);
+        double minZ = Math.min(actualMinZ, actualMaxZ);
+        double maxX = Math.max(actualMinX, actualMaxX);
+        double maxY = Math.max(actualMaxY, actualMinY);
+        double maxZ = Math.max(actualMinZ, actualMaxZ);
+        return new AxisAlignedBB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
 
@@ -450,9 +461,13 @@ public class TileUnmannedVehicleAssembler extends TileRocketAssemblingMachine {
         return sCan >= targetS;
     }
 
+    @Override public void onLoad() { super.onLoad(); }
 
+    @Override public void invalidate() { super.invalidate(); }
 
-    //No additional scanning is needed
+    @Override public void onChunkUnload() { super.onChunkUnload(); }
+    
+     
     @Override
     protected boolean verifyScan(AxisAlignedBB bb, World world) {
         return true;
