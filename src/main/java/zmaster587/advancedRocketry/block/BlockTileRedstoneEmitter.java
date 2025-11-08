@@ -1,12 +1,22 @@
 package zmaster587.advancedRocketry.block;
 
+import javax.annotation.Nullable;
+
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
+import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.libVulpes.block.BlockTile;
+
+import javax.annotation.Nullable;
+import java.util.List;
 
 // Fueling Station block
 public class BlockTileRedstoneEmitter extends BlockTile {
@@ -23,6 +33,13 @@ public class BlockTileRedstoneEmitter extends BlockTile {
     @Override
     public int getStrongPower(IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
         return getWeakPower(state, world, pos, side);
+    }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.fuelingstation", insertAt);
     }
 
     @Override
