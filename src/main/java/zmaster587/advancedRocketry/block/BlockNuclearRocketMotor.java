@@ -70,7 +70,7 @@ public class BlockNuclearRocketMotor extends BlockRocketMotor {
 
         if (alt) {
             // Advanced details
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.alt.1"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.alt.1"));
         } else if (shift) {
             // More info
             tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.shift.1"));
