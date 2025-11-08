@@ -172,7 +172,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         float drillPower = 0f;
         //stats.reset_no_fuel();
         stats.reset_no_fuel();// Oh Quarter... you can not keep adding engine and seat locations every launch
-
+        final boolean isSD = (this.entity instanceof zmaster587.advancedRocketry.entity.EntityStationDeployedRocket);
+                
         float weight = 0;
 
         for (int yCurr = 0; yCurr <= this.sizeY; yCurr++) {
@@ -193,18 +194,33 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         }
 
                         //If rocketEngine increaseThrust
-                        if (block instanceof IRocketEngine && (world.getBlockState(belowPos).getBlock().isAir(world.getBlockState(belowPos), world, belowPos) || world.getBlockState(belowPos).getBlock() instanceof BlockLandingPad || world.getBlockState(belowPos).getBlock() == AdvancedRocketryBlocks.blockLaunchpad)) {
-                            if (block instanceof BlockNuclearRocketMotor) {
-                                nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustNuclearNozzleLimit += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockBipropellantRocketMotor) {
-                                bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustBipropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockRocketMotor) {
-                                monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustMonopropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                        if (block instanceof IRocketEngine) {
+                            boolean eligible;
+                            if (isSD) {
+                                // SD rockets: skip vertical requirements
+                                eligible = true;
+                            } else {
+                                // Legacy vertical rule
+                                IBlockState belowState = world.getBlockState(belowPos);
+                                Block below = belowState.getBlock();
+                                eligible = below.isAir(belowState, world, belowPos)
+                                        || below instanceof BlockLandingPad
+                                        || below == AdvancedRocketryBlocks.blockLaunchpad;
                             }
-                            stats.addEngineLocation(xCurr - (float) this.sizeX /2+0.5f, yCurr+0.5f, zCurr- (float) this.sizeZ /2+0.5f);
+
+                            if (eligible) {
+                                if (block instanceof BlockNuclearRocketMotor) {
+                                    nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustNuclearNozzleLimit  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockBipropellantRocketMotor) {
+                                    bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustBipropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockRocketMotor) {
+                                    monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustMonopropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                }
+                                stats.addEngineLocation(xCurr - (float)this.sizeX/2 + 0.5f, yCurr+0.5f, zCurr - (float)this.sizeZ/2 + 0.5f);
+                            }
                         }
 
                         if (block instanceof IFuelTank) {
@@ -219,8 +235,18 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             }
                         }
 
-                        if (block instanceof IRocketNuclearCore && ((world.getBlockState(belowPos).getBlock() instanceof IRocketNuclearCore) || (world.getBlockState(belowPos).getBlock() instanceof IRocketEngine))) {
-                            thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                        if (block instanceof IRocketNuclearCore) {
+                            boolean counts;
+                            if (isSD) {
+                                // SD rockets: no vertical stack requirement
+                                counts = true;
+                            } else {
+                                Block below = world.getBlockState(belowPos).getBlock();
+                                counts = (below instanceof IRocketNuclearCore) || (below instanceof IRocketEngine);
+                            }
+                            if (counts) {
+                                thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                            }
                         }
 
                         if (block instanceof BlockSeat && world.getBlockState(abovePos).getBlock().isPassable(world, abovePos)) {
