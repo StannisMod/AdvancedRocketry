@@ -17,6 +17,9 @@ import zmaster587.advancedRocketry.integration.jei.centrifuge.CentrifugeRecipeMa
 import zmaster587.advancedRocketry.integration.jei.chemicalReactor.ChemicalReactorCategory;
 import zmaster587.advancedRocketry.integration.jei.chemicalReactor.ChemicalReactorRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.chemicalReactor.ChemicalReactorRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.co2scrubber.Co2ScrubberCategory;
+import zmaster587.advancedRocketry.integration.jei.co2scrubber.Co2ScrubberRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.co2scrubber.Co2ScrubberRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.crystallizer.CrystallizerCategory;
 import zmaster587.advancedRocketry.integration.jei.crystallizer.CrystallizerRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.crystallizer.CrystallizerRecipeMaker;
@@ -71,6 +74,7 @@ public class ARPlugin implements IModPlugin {
     public static final String precisionLaserEngraverUUID = "zmaster587.AR.precisionlaseretcher";
     public static final String satelliteBuilderUUID = "zmaster587.AR.satelliteBuilder";
     public static final String fuelingStationUUID = "zmaster587.AR.fuelingStation";
+    public static final String co2ScrubberUUID = "zmaster587.AR.co2scrubber";
     public static IJeiHelpers jeiHelpers;
 
     //AR machines can reload recipes. We still need this for JEI to be up-to-date
@@ -97,7 +101,8 @@ public class ARPlugin implements IModPlugin {
             new CentrifugeCategory(guiHelper),
             new PrecisionLaserEtcherCategory(guiHelper),
             new SatelliteBuilderCategory(guiHelper),
-            new FuelingStationCategory(guiHelper)
+            new FuelingStationCategory(guiHelper),
+            new Co2ScrubberCategory(guiHelper)
         );
     }
 
@@ -144,7 +149,8 @@ public class ARPlugin implements IModPlugin {
                 new CentrifugeRecipeHandler(),
                 new PrecisionLaserEtcherRecipeHandler(),
                 new SatelliteBuilderRecipeHandler(),
-                new FuelingStationRecipeHandler()
+                new FuelingStationRecipeHandler(),
+                new Co2ScrubberRecipeHandler()
             );
 
         registry.addRecipes(RollingMachineRecipeMaker.getMachineRecipes(jeiHelpers, TileRollingMachine.class), rollingMachineUUID);
@@ -160,6 +166,8 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipes(PrecisionLaserEtcherRecipeMaker.getMachineRecipes(jeiHelpers, TilePrecisionLaserEtcher.class), precisionLaserEngraverUUID);
         registry.addRecipes(SatelliteBuilderRecipeMaker.getMachineRecipes(jeiHelpers, TileSatelliteBuilder.class), satelliteBuilderUUID);
         registry.addRecipes(FuelingStationRecipeMaker.getMachineRecipes(jeiHelpers, TileFuelingStation.class), fuelingStationUUID);
+        registry.addRecipes(Co2ScrubberRecipeMaker.getRecipes(jeiHelpers), co2ScrubberUUID);
+
 
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockRollingMachine), rollingMachineUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockLathe), latheUUID);
@@ -173,7 +181,10 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCentrifuge), centrifugeUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockPrecisionLaserEngraver), precisionLaserEngraverUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockSatelliteBuilder), satelliteBuilderUUID);
-        
+       
+        // Co2 Scrubber catalysts
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCO2Scrubber),  co2ScrubberUUID);
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxygenVent),   co2ScrubberUUID);
         
         // One tab: Fueling Station + Tank-type catalysts (mono / biprop fuel / oxidizer / working fluid)
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockFuelingStation), fuelingStationUUID);
