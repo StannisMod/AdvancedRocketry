@@ -62,9 +62,9 @@ public class EntityStationDeployedRocket extends EntityRocket {
     private short gasId;
     private Ticket ticket;
     private long plannedHarvestMb = 0L;  // planned total mB to attempt this mission
-    private boolean orbitEventPosted = false; // not persisted to NBT
-
-
+    private transient boolean postedLandedAfterLoad = false;
+    private transient boolean postedDeorbit = false;
+    
     public EntityStationDeployedRocket(World world) {
         super(world);
         launchDirection = EnumFacing.DOWN;
@@ -167,7 +167,15 @@ public class EntityStationDeployedRocket extends EntityRocket {
     @Override
     public void onUpdate() {
         lastWorldTickTicked = world.getTotalWorldTime();
-
+        if (!world.isRemote && !postedLandedAfterLoad && this.ticksExisted >= 5) {
+            // Consider "landed" = entity exists, NOT in flight, NOT in orbit
+            if (!isInFlight() && !isInOrbit()) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new zmaster587.advancedRocketry.api.RocketEvent.RocketLandedEvent(this)
+                );
+                postedLandedAfterLoad = true;
+            }
+        }
         if (this.ticksExisted == 20) {
             //problems with loading on other world then where the infrastructure was set?
             for (HashedBlockPosition temp : new LinkedList<>(infrastructureCoords)) {
@@ -241,6 +249,13 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
             //Returning
             if (isInOrbit()) { //For unmanned rockets
+                // Post deorbit once, as we start the return phase
+                if (!world.isRemote && !postedDeorbit) {
+                    net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                        new zmaster587.advancedRocketry.api.RocketEvent.RocketDeOrbitingEvent(this)
+                    );
+                    postedDeorbit = true;
+                }                
                 EnumFacing dir;
                 isCoasting = Math.abs(this.posX - actualLaunchLocation.x) < 0.01 && Math.abs(this.posZ - actualLaunchLocation.z) < 0.01;
 
@@ -398,14 +413,12 @@ public class EntityStationDeployedRocket extends EntityRocket {
     @Override
     public void onOrbitReached() {
         if (world.isRemote) return;  // client should not run any of this
-
-        // Fire the standard event exactly once for monitors
-        if (!orbitEventPosted) {
-            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketReachesOrbitEvent(this));
-            orbitEventPosted = true;
-        }
-
+        // Emit the “reached orbit” event directly so monitors update.
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+            new zmaster587.advancedRocketry.api.RocketEvent.RocketReachesOrbitEvent(this)
+        );
         if (this.isDead) return;
+
 
         //Check again to make sure we are around a gas giant
         ISpaceObject spaceObj;
@@ -461,7 +474,7 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
         final long durationSeconds;
         if (intake <= 0 || this.plannedHarvestMb <= 0) {
-            durationSeconds = 360L; // safety default
+            durationSeconds = 180L; // safety default
         } else {
             // IMPORTANT: cap the capacity used by the curve to the harvest cap,
             // so durations match the table when harvest is smaller than tank size.
@@ -594,7 +607,7 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
     private static long computeMissionDurationSeconds(int liquidCapacity, int intakePower) {
         // default fallback if bad data
-        if (intakePower <= 0) return 360L; // 6 minutes safety default
+        if (intakePower <= 0) return 180L; // 3 minutes safety default
 
         // scale in double to avoid precision loss, clamp ratio >= 1 to avoid shrinking below base
         double ratio = Math.max(1.0d, ((double) liquidCapacity) / (double) BASE_CAP);
