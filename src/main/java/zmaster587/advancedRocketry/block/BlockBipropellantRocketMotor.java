@@ -138,7 +138,7 @@ public class BlockBipropellantRocketMotor extends BlockFullyRotatable implements
 
         if (alt) {
             // Advanced details
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.bipropmotor.alt.1"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.bipropmotor.alt.1"));
         } else if (shift) {
             // More info
             tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.bipropmotor.shift.1"));
