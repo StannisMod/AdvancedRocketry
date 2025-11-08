@@ -34,7 +34,7 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
     public ItemPressureTank(int number, int capacity) {
         super(number);
         this.capacity = capacity;
-        this.maxStackSize = 1;
+        this.maxStackSize = 8;
     }
 
     @Override
