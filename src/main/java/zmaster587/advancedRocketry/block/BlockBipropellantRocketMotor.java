@@ -40,6 +40,23 @@ public class BlockBipropellantRocketMotor extends BlockFullyRotatable implements
     }
 
     @Override
+    public IBlockState getActualState(@Nonnull IBlockState state, IBlockAccess world, BlockPos pos) {
+        if (world.getBlockState(pos.up()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.DOWN);
+        if (world.getBlockState(pos.down()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.UP);
+        if (world.getBlockState(pos.east()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.EAST);
+        if (world.getBlockState(pos.west()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.WEST);
+        if (world.getBlockState(pos.south()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.SOUTH);
+        if (world.getBlockState(pos.north()).getBlock() instanceof BlockFuelTank)
+            return state.withProperty(FACING, EnumFacing.NORTH);
+        return super.getActualState(state, world, pos);
+    }
+
+    @Override
     public int getFuelConsumptionRate(World world, int x, int y, int z) {
         return 1;
     }
