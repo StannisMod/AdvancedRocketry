@@ -82,6 +82,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     private boolean building; //True is rocket is being built, false if only scanning or otherwise
     private int lastRocketID;
     private List<HashedBlockPosition> blockPos;
+    private int relinkRetries = 0;           // how many relinking tries left
+    private long nextRelinkAttempt = 0L;     // world time for next try
 
     public TileRocketAssemblingMachine() {
         super(100000);
@@ -102,7 +104,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             MinecraftForge.EVENT_BUS.register(this);
             registeredBus = true;
         }
-
+        if (!world.isRemote) {
+            relinkRetries = 10;                  // up to ~10 seconds
+            nextRelinkAttempt = world.getTotalWorldTime() + 20;  // first retry in 1s
+        }
         if (world.isRemote) return;
 
         // Recompute pad bounds and relink infra to any rockets already on the pad
@@ -124,7 +129,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     public void invalidate() {
         super.invalidate();
         unregisterFromBus();
-
+        relinkRetries = 0;
+        nextRelinkAttempt = 0L;
         // Notify linked multiblocks BEFORE clearing (server only)
         if (world != null && !world.isRemote) {
             for (HashedBlockPosition p : blockPos) {
@@ -145,7 +151,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     public void onChunkUnload() {
         super.onChunkUnload();
         unregisterFromBus();
-
+        relinkRetries = 0;
+        nextRelinkAttempt = 0L;
         // Clear caches
         bbCache = null;
         stats.reset();
@@ -250,6 +257,44 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     @Override
     public void performFunction() {
+        // Retry linking infra for up to ~10s, but stop early once ALL are linked
+        if (!world.isRemote && relinkRetries > 0 && world.getTotalWorldTime() >= nextRelinkAttempt) {
+
+            if (bbCache == null) bbCache = getRocketPadBounds(world, pos);
+
+            int expected = blockPos.size();   // how many infra we remember from NBT
+            if (expected == 0) { relinkRetries = 0; return; }
+            int found = 0;                    // how many are currently loaded & obtainable
+
+            if (bbCache != null) {
+                final AxisAlignedBB box = bbCache.grow(1.0E-4, 1.0E-4, 1.0E-4);
+                java.util.List<EntityRocketBase> rockets = world.getEntitiesWithinAABB(EntityRocketBase.class, box);
+
+                // Only count + link if a rocket is actually on the pad
+                if (!rockets.isEmpty()) {
+                    java.util.List<IInfrastructure> infraNow = getConnectedInfrastructure(); // only returns loaded TEs
+                    found = infraNow.size();
+
+                    // Link them all (idempotent in AR)
+                    for (EntityRocketBase r : rockets) {
+                        for (IInfrastructure infra : infraNow) {
+                            r.linkInfrastructure(infra);
+                        }
+                    }
+                }
+            }
+
+            // Stop early only when we've linked ALL remembered infra positions
+            if (found >= expected && expected > 0) {
+                relinkRetries = 0; // done
+            } else {
+                relinkRetries--;                       // try again next second
+                nextRelinkAttempt = world.getTotalWorldTime() + 20;
+            }
+        }
+
+
+        if (!isScanning()) return; 
         if (progress >= (totalProgress * MAXSCANDELAY)) {
             if (!world.isRemote) {
                 if (building)
@@ -913,6 +958,9 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     protected void updateText() {
+        if (thrustText == null || weightText == null || fuelText == null || accelerationText == null || errorText == null) {
+            return;
+        }
         thrustText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust") + ": ???") : String.format("%s: %dkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust"), getThrust()));
         weightText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight") + ": ???") : String.format("%s: %.2fkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight"), (getWeight() * getGravityMultiplier())));
         fuelText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel") + ": ???") : String.format("%s: %dmb/s", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel"), 20* getRocketStats().getFuelRate((stats.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT) > 0) ? FuelType.LIQUID_MONOPROPELLANT : (stats.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID) > 0) ? FuelType.NUCLEAR_WORKING_FLUID : FuelType.LIQUID_BIPROPELLANT)));
@@ -1217,20 +1265,15 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public List<IInfrastructure> getConnectedInfrastructure() {
-        List<IInfrastructure> infrastructure = new LinkedList<>();
-
-        Iterator<HashedBlockPosition> iter = blockPos.iterator();
-
-        while (iter.hasNext()) {
-            HashedBlockPosition position = iter.next();
-            TileEntity tile = world.getTileEntity(position.getBlockPos());
-            if (tile instanceof IInfrastructure) {
-                infrastructure.add((IInfrastructure) tile);
-            } else
-                iter.remove();
+        List<IInfrastructure> list = new LinkedList<>();
+        // Don't mutate blockPos here; tiles may not be loaded yet
+        for (HashedBlockPosition position : blockPos) {
+            TileEntity te = world.getTileEntity(position.getBlockPos());
+            if (te instanceof IInfrastructure) {
+                list.add((IInfrastructure) te);
+            }
         }
-
-        return infrastructure;
+        return list;
     }
 
     @SubscribeEvent
