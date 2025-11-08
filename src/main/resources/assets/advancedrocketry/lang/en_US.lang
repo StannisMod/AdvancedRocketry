@@ -338,6 +338,7 @@ msg.monitoringStation.orbit=Reached orbit!
 msg.monitoringStation.deorbiting=Returned from orbit!
 msg.monitoringStation.landed=Landed
 msg.monitoringStation.aborted=Aborted!
+msg.monitoringStation.returningToDock=Returning to dock
 
 
 msg.guidanceComputerHatch.loadingState=Loading State: 
