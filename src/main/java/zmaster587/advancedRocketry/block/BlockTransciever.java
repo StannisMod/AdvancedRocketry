@@ -4,6 +4,7 @@ import javax.annotation.Nonnull;
 
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
@@ -18,6 +19,14 @@ import net.minecraft.block.properties.PropertyDirection;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.libVulpes.block.BlockTile;
+import zmaster587.advancedRocketry.client.TooltipInjector;
+
+import javax.annotation.Nullable;
+import java.util.List;
+
+
+
+
 
 public class BlockTransciever extends BlockTile {
 
@@ -136,6 +145,13 @@ public class BlockTransciever extends BlockTile {
             return true;
         }
         return false;
+    }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.transciever", insertAt);
     }
 
     public static EnumFacing getFront(IBlockState state) {
