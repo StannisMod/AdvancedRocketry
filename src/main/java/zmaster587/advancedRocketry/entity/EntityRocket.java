@@ -130,6 +130,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     protected ModulePlanetSelector container;
     boolean acceptedPacket = false;
     SpacePosition spacePosition;
+    //true if we have posted the landed event after loading from nbt
+    private transient boolean postedLandedAfterLoad = false;
     //true if the rocket is on decent
     private boolean isInOrbit;
     //True if the rocket isn't on the ground
@@ -1088,7 +1090,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         super.onUpdate();
         long deltaTime = world.getTotalWorldTime() - lastWorldTickTicked;
         lastWorldTickTicked = world.getTotalWorldTime();
-
+        if (!world.isRemote && !postedLandedAfterLoad && this.ticksExisted >= 5) {
+            // Consider "landed" = entity exists, NOT in flight, NOT in orbit
+            if (!isInFlight() && !isInOrbit()) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new zmaster587.advancedRocketry.api.RocketEvent.RocketLandedEvent(this)
+                );
+                postedLandedAfterLoad = true;
+            }
+        }
         if (world.isRemote) {
 
             double ct = 50;
