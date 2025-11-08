@@ -72,7 +72,7 @@ public class ItemBlockFluidTank extends ItemBlock {
                 ItemStack one = stack.copy();
                 one.setCount(1);
                 FluidStack drained = drain(one, Integer.MAX_VALUE);
-                if (drained != null && drained.amount > 0) { // <- guard
+                if (drained != null && drained.amount > 0) { 
                     handler.fill(drained, true);
                 }
             }
