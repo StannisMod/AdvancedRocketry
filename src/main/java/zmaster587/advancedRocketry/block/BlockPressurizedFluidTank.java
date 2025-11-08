@@ -95,7 +95,7 @@ public class BlockPressurizedFluidTank extends Block {
     @Override
     public void onBlockAdded(World world, BlockPos pos, IBlockState state) {
         super.onBlockAdded(world, pos, state);
-        if (world.isRemote) return;                // <- add this
+        if (world.isRemote) return;
         TileEntity teAbove = world.getTileEntity(pos.up());
         if (teAbove instanceof TileFluidTank) {
             ((TileFluidTank) teAbove).onAdjacentBlockUpdated(EnumFacing.DOWN);
@@ -122,7 +122,6 @@ public class BlockPressurizedFluidTank extends Block {
 
         if (te instanceof TileFluidTank) {
             net.minecraftforge.fluids.FluidStack own = ((TileFluidTank) te).getOwnContentsCopy();
-            // 1.12: FluidStack has no isEmpty(); guard on null and amount > 0
             if (own != null && own.amount > 0) {
                 ((ItemBlockFluidTank) out.getItem()).fill(out, own);
             }
@@ -138,7 +137,7 @@ public class BlockPressurizedFluidTank extends Block {
         if (!world.isRemote) {
             TileEntity te = world.getTileEntity(pos);
             if (te instanceof TileFluidTank) {
-                ((TileFluidTank) te).setRemoving(true); // <- you’ll add this setter in the tile
+                ((TileFluidTank) te).setRemoving(true); 
             }
         }
         // Let vanilla handle removal; we’ll control drops in harvestBlock
@@ -168,12 +167,10 @@ public class BlockPressurizedFluidTank extends Block {
             }
         }
 
-        // Spawn our single, correct drop
         EntityItem ei = new EntityItem(world,
                 pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, drop);
         world.spawnEntity(ei);
 
-        // Finally remove the block (this will call breakBlock and clear TE)
         world.setBlockToAir(pos);
     }
 
