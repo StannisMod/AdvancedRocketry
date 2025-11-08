@@ -23,6 +23,9 @@ import zmaster587.advancedRocketry.integration.jei.crystallizer.CrystallizerReci
 import zmaster587.advancedRocketry.integration.jei.electrolyser.ElectrolyzerCategory;
 import zmaster587.advancedRocketry.integration.jei.electrolyser.ElectrolyzerRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.electrolyser.ElectrolyzerRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationCategory;
+import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheCategory;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeMaker;
@@ -44,7 +47,9 @@ import zmaster587.advancedRocketry.integration.jei.sawmill.SawMillRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderCategory;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderRecipeMaker;
+import zmaster587.advancedRocketry.tile.infrastructure.TileFuelingStation;
 import zmaster587.advancedRocketry.tile.multiblock.machine.*;
+import zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder;
 import zmaster587.libVulpes.inventory.GuiModular;
 
 import javax.annotation.Nonnull;
@@ -65,6 +70,7 @@ public class ARPlugin implements IModPlugin {
     public static final String centrifugeUUID = "zmaster587.AR.centrifuge";
     public static final String precisionLaserEngraverUUID = "zmaster587.AR.precisionlaseretcher";
     public static final String satelliteBuilderUUID = "zmaster587.AR.satelliteBuilder";
+    public static final String fuelingStationUUID = "zmaster587.AR.fuelingStation";
     public static IJeiHelpers jeiHelpers;
 
     //AR machines can reload recipes. We still need this for JEI to be up-to-date
@@ -90,7 +96,8 @@ public class ARPlugin implements IModPlugin {
             new PlatePressCategory(guiHelper),
             new CentrifugeCategory(guiHelper),
             new PrecisionLaserEtcherCategory(guiHelper),
-            new SatelliteBuilderCategory(guiHelper)
+            new SatelliteBuilderCategory(guiHelper),
+            new FuelingStationCategory(guiHelper)
         );
     }
 
@@ -136,7 +143,8 @@ public class ARPlugin implements IModPlugin {
                 new PlatePressRecipeHandler(),
                 new CentrifugeRecipeHandler(),
                 new PrecisionLaserEtcherRecipeHandler(),
-                new SatelliteBuilderRecipeHandler()
+                new SatelliteBuilderRecipeHandler(),
+                new FuelingStationRecipeHandler()
             );
 
         registry.addRecipes(RollingMachineRecipeMaker.getMachineRecipes(jeiHelpers, TileRollingMachine.class), rollingMachineUUID);
@@ -150,8 +158,8 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipes(ChemicalReactorRecipeMaker.getMachineRecipes(jeiHelpers, TileChemicalReactor.class), chemicalReactorUUID);
         registry.addRecipes(CentrifugeRecipeMaker.getMachineRecipes(jeiHelpers, TileCentrifuge.class), centrifugeUUID);
         registry.addRecipes(PrecisionLaserEtcherRecipeMaker.getMachineRecipes(jeiHelpers, TilePrecisionLaserEtcher.class), precisionLaserEngraverUUID);
-        registry.addRecipes(SatelliteBuilderRecipeMaker.getMachineRecipes(jeiHelpers, null), satelliteBuilderUUID); 
-
+        registry.addRecipes(SatelliteBuilderRecipeMaker.getMachineRecipes(jeiHelpers, TileSatelliteBuilder.class), satelliteBuilderUUID);
+        registry.addRecipes(FuelingStationRecipeMaker.getMachineRecipes(jeiHelpers, TileFuelingStation.class), fuelingStationUUID);
 
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockRollingMachine), rollingMachineUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockLathe), latheUUID);
@@ -165,5 +173,14 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCentrifuge), centrifugeUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockPrecisionLaserEngraver), precisionLaserEngraverUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockSatelliteBuilder), satelliteBuilderUUID);
+        
+        
+        // One tab: Fueling Station + Tank-type catalysts (mono / biprop fuel / oxidizer / working fluid)
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockFuelingStation), fuelingStationUUID);
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockFuelTank),             fuelingStationUUID); // mono
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockBipropellantFuelTank), fuelingStationUUID); // biprop fuel
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxidizerFuelTank),     fuelingStationUUID); // oxidizer
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockNuclearFuelTank),      fuelingStationUUID); // working fluid
+
     }
 }
