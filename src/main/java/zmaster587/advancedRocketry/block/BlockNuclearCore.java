@@ -38,8 +38,8 @@ public class BlockNuclearCore extends Block implements IRocketNuclearCore {
 
         if (alt) {
             // Advanced details
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearcore.alt.1"));
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearcore.alt.2"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.nuclearcore.alt.1"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.nuclearcore.alt.2"));
         } else if (shift) {
             // More info
             tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearcore.shift.1"));
