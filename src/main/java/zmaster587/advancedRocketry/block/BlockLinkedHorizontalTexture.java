@@ -107,8 +107,8 @@ public class BlockLinkedHorizontalTexture extends Block {
 
         if (alt) {
             // Advanced details
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.launchpad.alt.1"));
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.launchpad.alt.2"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.launchpad.alt.1"));
+            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.launchpad.alt.2"));
         } else if (shift) {
             // More info
             tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.launchpad.shift.1"));
