@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.item;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemBlock;
@@ -17,6 +18,9 @@ import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidTank;
 import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import org.lwjgl.input.Keyboard;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.tile.TileFluidTank;
 
@@ -26,6 +30,9 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
+
+import org.lwjgl.input.Keyboard;
+
 import java.util.List;
 
 public class ItemBlockFluidTank extends ItemBlock {
@@ -56,6 +63,15 @@ public class ItemBlockFluidTank extends ItemBlock {
 
         list.add("Fluid: " + fluidName);
         list.add("Level: " + amount + "/" + capMb + " mB");
+
+        // --- SHIFT for more info (adds two short lines) ---
+        if (GuiScreen.isShiftKeyDown()) {
+            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.fluidtank.shift.1"));
+            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.fluidtank.shift.2"));
+        } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
+            list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
+                    I18n.format("tooltip.advancedrocketry.hold_shift"));
+        }  
     }
 
     @Override
