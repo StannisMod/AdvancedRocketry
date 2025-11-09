@@ -1,9 +1,11 @@
 package zmaster587.advancedRocketry.item;
 
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -96,7 +98,13 @@ public class ItemData extends ItemIngredient {
 
         list.add(data.getData() + " / " + data.getMaxData() + " Data");
         list.add(I18n.format(data.getDataType().toString()));
-
+        // --- SHIFT for more info (adds two short lines) ---
+        if (GuiScreen.isShiftKeyDown()) {
+            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.itemdataunit.shift.1"));
+            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.itemdataunit.shift.2"));
+        } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
+            list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
+                    I18n.format("tooltip.advancedrocketry.hold_shift"));
+        }  
     }
-
 }
