@@ -80,7 +80,7 @@ public class TileAtmosphereDetector extends TileEntity implements ITickable, IMo
             i++;
         }
 
-        ModuleContainerPan panningContainer = new ModuleContainerPan(5, 20, btns, new LinkedList<>(), zmaster587.libVulpes.inventory.TextureResources.starryBG, 165, 120, 0, 500);
+        ModuleContainerPan panningContainer = new ModuleContainerPan(5, 20, btns, new LinkedList<>(), zmaster587.libVulpes.inventory.TextureResources.starryBG, 160, 100, 0, 500);
         modules.add(panningContainer);
         return modules;
     }
