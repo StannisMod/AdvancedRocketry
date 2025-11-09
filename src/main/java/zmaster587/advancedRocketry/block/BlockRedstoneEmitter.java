@@ -5,20 +5,28 @@ import net.minecraft.block.material.Material;
 import net.minecraft.block.properties.PropertyBool;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.inventory.GuiHandler;
 
-import javax.annotation.Nonnull;
-import javax.annotation.ParametersAreNullableByDefault;
+import java.util.List;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import javax.annotation.ParametersAreNullableByDefault;
+// Atmosphere Detector that emits redstone signal when a specific atmosphere is detected
 public class BlockRedstoneEmitter extends Block {
 
     public static final PropertyBool POWERED = PropertyBool.create("powered");
@@ -84,6 +92,13 @@ public class BlockRedstoneEmitter extends Block {
     public int getWeakPower(IBlockState blockState, IBlockAccess blockAccess,
                             BlockPos pos, EnumFacing side) {
         return blockState.getValue(POWERED) ? 15 : 0;
+    }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.atmosphereDetector", insertAt);
     }
 
     @Override
