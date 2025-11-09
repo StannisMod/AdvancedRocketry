@@ -1,9 +1,13 @@
 package zmaster587.advancedRocketry.item;
 
 import com.mojang.realmsclient.gui.ChatFormatting;
+
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import zmaster587.libVulpes.LibVulpes;
 
@@ -94,6 +98,15 @@ public class ItemAsteroidChip extends ItemMultiData {
     public void addInformation(@Nonnull ItemStack stack, World world, List<String> list, ITooltipFlag flag) {
         if (!stack.hasTagCompound()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.unprogrammed"));
+
+            // --- SHIFT for more info (adds two short lines) ---
+            if (GuiScreen.isShiftKeyDown()) {
+                list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.asteroidchip.shift.1"));
+                list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.asteroidchip.shift.2"));
+            } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
+                list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
+                        I18n.format("tooltip.advancedrocketry.hold_shift"));
+            } 
             return;
         }
         if (stack.getItemDamage() == 0) {
@@ -116,8 +129,7 @@ public class ItemAsteroidChip extends ItemMultiData {
             list.add(LibVulpes.proxy.getLocalizedString("msg.asteroidChip.asteroid") + ": "
                     + ChatFormatting.DARK_GREEN + shortHex);
 
-            super.addInformation(stack, world, list, flag);
+            super.addInformation(stack, world, list, flag);          
         }
     }
-
 }
