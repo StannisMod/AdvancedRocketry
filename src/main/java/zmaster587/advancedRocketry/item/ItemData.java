@@ -13,6 +13,8 @@ import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.libVulpes.items.ItemIngredient;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 import java.util.List;
 
 public class ItemData extends ItemIngredient {
@@ -91,20 +93,32 @@ public class ItemData extends ItemIngredient {
 
     @Override
     @SideOnly(Side.CLIENT)
-    public void addInformation(@Nonnull ItemStack stack, World player, List<String> list, ITooltipFlag bool) {
-        super.addInformation(stack, player, list, bool);
+    public void addInformation(@Nonnull ItemStack stack, @Nullable World world, List<String> list, ITooltipFlag flag) {
+        super.addInformation(stack, world, list, flag);
 
         DataStorage data = getDataStorage(stack);
 
-        list.add(data.getData() + " / " + data.getMaxData() + " Data");
-        list.add(I18n.format(data.getDataType().toString()));
-        // --- SHIFT for more info (adds two short lines) ---
-        if (GuiScreen.isShiftKeyDown()) {
-            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.itemdataunit.shift.1"));
-            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.itemdataunit.shift.2"));
-        } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
-            list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
-                    I18n.format("tooltip.advancedrocketry.hold_shift"));
-        }  
+        // 1) Type: <type>
+        String typeText = net.minecraft.client.resources.I18n.format(data.getDataType().toString());
+        list.add("Type: " + typeText);
+
+        // 2) §fData stored: §6<data> §f/§6 <max>
+        list.add(net.minecraft.util.text.TextFormatting.WHITE + "Data stored: "
+            + net.minecraft.util.text.TextFormatting.GOLD + data.getData()
+            + net.minecraft.util.text.TextFormatting.WHITE + " / "
+            + net.minecraft.util.text.TextFormatting.GOLD + data.getMaxData());
+
+        // 3) Hold Shift for more info
+        if (net.minecraft.client.gui.GuiScreen.isShiftKeyDown()) {
+            list.add(net.minecraft.util.text.TextFormatting.GRAY +
+                    net.minecraft.client.resources.I18n.format("tooltip.advancedrocketry.itemdataunit.shift.1"));
+            list.add(net.minecraft.util.text.TextFormatting.GRAY +
+                    net.minecraft.client.resources.I18n.format("tooltip.advancedrocketry.itemdataunit.shift.2"));
+        } else if (net.minecraft.client.resources.I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
+            list.add(net.minecraft.util.text.TextFormatting.DARK_GRAY.toString() +
+                    net.minecraft.util.text.TextFormatting.ITALIC +
+                    net.minecraft.client.resources.I18n.format("tooltip.advancedrocketry.hold_shift"));
+        }
     }
+
 }
