@@ -21,6 +21,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.IRocketEngine;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.util.IBrokenPartBlock;
 import zmaster587.libVulpes.block.BlockFullyRotatable;
@@ -149,38 +150,7 @@ public class BlockRocketMotor extends BlockFullyRotatable implements IRocketEngi
     @SideOnly(Side.CLIENT)
     @Override
     public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
-        tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor"));
-
-        final boolean shift = GuiScreen.isShiftKeyDown();
-        final boolean alt   = isAltDown();
-
-        if (alt) {
-            // Advanced details
-            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.alt.1"));
-        } else if (shift) {
-            // More info
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.monopropmotor.shift.1"));
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
-        } else {
-            // Hints
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_shift"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_shift"));
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
-        }
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.monopropmotor", insertAt);
     }
-
-    @SideOnly(Side.CLIENT)
-    private static boolean isAltDown() {
-        try {
-            // Works on Forge 1.12.x; LWJGL fallback for safety
-            return GuiScreen.isAltKeyDown()
-                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_LMENU)
-                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_RMENU);
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
 }
