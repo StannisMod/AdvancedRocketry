@@ -16,6 +16,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.IRocketNuclearCore;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 
 import java.util.List;
@@ -60,42 +61,11 @@ public class BlockNuclearRocketMotor extends BlockRocketMotor {
     public TileEntity createTileEntity(final World worldIn, final IBlockState state) {
         return new TileBrokenPart(10, 4 * (float) ARConfiguration.getCurrentConfig().increaseWearIntensityProb);
     }
+
     @SideOnly(Side.CLIENT)
     @Override
     public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
-        tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor"));
-
-        final boolean shift = GuiScreen.isShiftKeyDown();
-        final boolean alt   = isAltDown();
-
-        if (alt) {
-            // Advanced details
-            tooltip.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.alt.1"));
-        } else if (shift) {
-            // More info
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.shift.1"));
-            tooltip.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.nuclearmotor.shift.2"));
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
-        } else {
-            // Hints
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_shift"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_shift"));
-            if (I18n.hasKey("tooltip.advancedrocketry.hold_alt"))
-                tooltip.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC + I18n.format("tooltip.advancedrocketry.hold_alt"));
-        }
-    }
-
-    @SideOnly(Side.CLIENT)
-    private static boolean isAltDown() {
-        try {
-            // Works on Forge 1.12.x; LWJGL fallback for safety
-            return GuiScreen.isAltKeyDown()
-                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_LMENU)
-                || org.lwjgl.input.Keyboard.isKeyDown(org.lwjgl.input.Keyboard.KEY_RMENU);
-        } catch (Throwable t) {
-            return false;
-        }
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.nuclearmotor", insertAt);
     }
 }
-
