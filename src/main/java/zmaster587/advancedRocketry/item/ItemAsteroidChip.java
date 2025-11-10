@@ -98,15 +98,6 @@ public class ItemAsteroidChip extends ItemMultiData {
     public void addInformation(@Nonnull ItemStack stack, World world, List<String> list, ITooltipFlag flag) {
         if (!stack.hasTagCompound()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.unprogrammed"));
-
-            // --- SHIFT for more info (adds two short lines) ---
-            if (GuiScreen.isShiftKeyDown()) {
-                list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.asteroidchip.shift.1"));
-                list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.asteroidchip.shift.2"));
-            } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
-                list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
-                        I18n.format("tooltip.advancedrocketry.hold_shift"));
-            } 
             return;
         }
         if (stack.getItemDamage() == 0) {
