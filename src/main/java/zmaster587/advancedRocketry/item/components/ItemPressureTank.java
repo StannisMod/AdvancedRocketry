@@ -56,13 +56,13 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
         final int amount = (fs != null) ? fs.amount : 0;
 
         // Match main tank style
+        list.add(TextFormatting.DARK_PURPLE + "Space Suit Component");
         list.add("Fluid: " + fluidName);
         list.add("Level: " + amount + "/" + capMb + " mB");
 
         // SHIFT block
         if (GuiScreen.isShiftKeyDown()) {
             list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.pressuretank.shift.1"));
-            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.pressuretank.shift.2"));
         } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
             list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC
                     + I18n.format("tooltip.advancedrocketry.hold_shift"));
