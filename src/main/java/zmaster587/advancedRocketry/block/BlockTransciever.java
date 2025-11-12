@@ -151,7 +151,7 @@ public class BlockTransciever extends BlockTile {
     @Override
     public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
-        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.transciever", insertAt);
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.transceiver", insertAt);
     }
 
     public static EnumFacing getFront(IBlockState state) {
