@@ -67,7 +67,6 @@ public class ItemBlockFluidTank extends ItemBlock {
         // --- SHIFT for more info (adds two short lines) ---
         if (GuiScreen.isShiftKeyDown()) {
             list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.fluidtank.shift.1"));
-            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.fluidtank.shift.2"));
         } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
             list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC +
                     I18n.format("tooltip.advancedrocketry.hold_shift"));
