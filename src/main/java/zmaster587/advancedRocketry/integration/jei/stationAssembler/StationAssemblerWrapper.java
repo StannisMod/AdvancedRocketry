@@ -40,28 +40,29 @@ public class StationAssemblerWrapper implements IRecipeWrapper {
 
     @Override
     public void getIngredients(IIngredients ing) {
-        // No fluids; only items.
-        java.util.List<java.util.List<ItemStack>> inputs = new java.util.ArrayList<>(2);
-        inputs.add(java.util.Collections.singletonList(inputHatch));
-        inputs.add(java.util.Collections.singletonList(inputChip));
+        // --- Inputs (your two visible inputs) ---
+        java.util.List<java.util.List<ItemStack>> inputs = new java.util.ArrayList<>(3);
+        inputs.add(java.util.Collections.singletonList(inputHatch)); // bay (loader meta 1)
+        inputs.add(java.util.Collections.singletonList(inputChip));   // empty chip
+
+        // --- Hidden machine block for discoverability (so R/U on block opens this page) ---
+        ItemStack stationBlock = new ItemStack(
+            zmaster587.advancedRocketry.api.AdvancedRocketryBlocks.blockStationBuilder
+        );
+        inputs.add(java.util.Collections.singletonList(stationBlock));
+
         ing.setInputLists(mezz.jei.api.ingredients.VanillaTypes.ITEM, inputs);
 
-        // Show both outputs to reflect possible results of "Build".
-        java.util.List<ItemStack> outs = new java.util.ArrayList<>(2);
+        // --- Outputs (show both possible results of "Build") ---
+        java.util.List<ItemStack> outs = new java.util.ArrayList<>(3);
         outs.add(outStation);
-        outs.add(outChipMaybe);
+        if (outChipMaybe != null && !outChipMaybe.isEmpty()) {
+            outs.add(outChipMaybe);
+        }
+
+        // Also include the block as an output so R on the block finds this page too
+        outs.add(stationBlock);
+
         ing.setOutputs(mezz.jei.api.ingredients.VanillaTypes.ITEM, outs);
-    }
-
-    // Convenience accessors (used by Category layout)
-    public ItemStack getInputHatch()   { return inputHatch; }
-    public ItemStack getInputChip()    { return inputChip; }
-    public ItemStack getOutStation()   { return outStation; }
-    public ItemStack getOutChipMaybe() { return outChipMaybe; }
-
-    // Optional: a display/catalyst icon you can use if you decide later.
-    static ItemStack iconStack() {
-        // Safe: chip exists and isn’t blacklisted in your ARPlugin snippet.
-        return new ItemStack(AdvancedRocketryItems.itemSpaceStationChip);
     }
 }
