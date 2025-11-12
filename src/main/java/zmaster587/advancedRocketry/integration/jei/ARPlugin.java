@@ -50,6 +50,10 @@ import zmaster587.advancedRocketry.integration.jei.sawmill.SawMillRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderCategory;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBuilderRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerCategory;
+import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerRecipeMaker;
+import zmaster587.advancedRocketry.tile.TileStationAssembler;
 import zmaster587.advancedRocketry.tile.infrastructure.TileFuelingStation;
 import zmaster587.advancedRocketry.tile.multiblock.machine.*;
 import zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder;
@@ -75,6 +79,7 @@ public class ARPlugin implements IModPlugin {
     public static final String satelliteBuilderUUID = "zmaster587.AR.satelliteBuilder";
     public static final String fuelingStationUUID = "zmaster587.AR.fuelingStation";
     public static final String co2ScrubberUUID = "zmaster587.AR.co2scrubber";
+    public static final String stationAssemblerUUID = "zmaster587.AR.stationAssembler";
     public static IJeiHelpers jeiHelpers;
 
     //AR machines can reload recipes. We still need this for JEI to be up-to-date
@@ -102,7 +107,8 @@ public class ARPlugin implements IModPlugin {
             new PrecisionLaserEtcherCategory(guiHelper),
             new SatelliteBuilderCategory(guiHelper),
             new FuelingStationCategory(guiHelper),
-            new Co2ScrubberCategory(guiHelper)
+            new Co2ScrubberCategory(guiHelper),
+            new StationAssemblerCategory(guiHelper)
         );
     }
 
@@ -150,7 +156,8 @@ public class ARPlugin implements IModPlugin {
                 new PrecisionLaserEtcherRecipeHandler(),
                 new SatelliteBuilderRecipeHandler(),
                 new FuelingStationRecipeHandler(),
-                new Co2ScrubberRecipeHandler()
+                new Co2ScrubberRecipeHandler(),
+                new StationAssemblerRecipeHandler()
             );
 
         registry.addRecipes(RollingMachineRecipeMaker.getMachineRecipes(jeiHelpers, TileRollingMachine.class), rollingMachineUUID);
@@ -167,7 +174,7 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipes(SatelliteBuilderRecipeMaker.getMachineRecipes(jeiHelpers, TileSatelliteBuilder.class), satelliteBuilderUUID);
         registry.addRecipes(FuelingStationRecipeMaker.getMachineRecipes(jeiHelpers, TileFuelingStation.class), fuelingStationUUID);
         registry.addRecipes(Co2ScrubberRecipeMaker.getRecipes(jeiHelpers), co2ScrubberUUID);
-
+        registry.addRecipes(StationAssemblerRecipeMaker.getMachineRecipes(jeiHelpers, TileStationAssembler.class),stationAssemblerUUID);
 
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockRollingMachine), rollingMachineUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockLathe), latheUUID);
@@ -181,7 +188,9 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCentrifuge), centrifugeUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockPrecisionLaserEngraver), precisionLaserEngraverUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockSatelliteBuilder), satelliteBuilderUUID);
-       
+        // Station Assembler catalyst
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockStationBuilder), stationAssemblerUUID);
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryItems.itemSpaceStationChip), stationAssemblerUUID);
         // Co2 Scrubber catalysts
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCO2Scrubber),  co2ScrubberUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxygenVent),   co2ScrubberUUID);
