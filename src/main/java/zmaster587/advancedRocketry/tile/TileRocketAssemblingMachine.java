@@ -325,10 +325,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             double buffer = 0.0001;
             AxisAlignedBB bufferedBB = bbCache.grow(buffer, buffer, buffer);
             List<EntityRocket> rockets = world.getEntitiesWithinAABB(EntityRocket.class, bufferedBB);
-            if (rockets.size() == 1){ // only if exactly one rocket is here
+            if (rockets.size() == 1){
                 rockets.get(0).recalculateStats();
                 this.stats = rockets.get(0).stats;
-                status = ErrorCodes.ALREADY_ASSEMBLED; // to prevent assembly
+                status = ErrorCodes.ALREADY_ASSEMBLED;
                 return null;
             }
         }
@@ -514,10 +514,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             int totalFuelUse = bipropellantfuelUse + nuclearWorkingFluidUse + monopropellantfuelUse;
             //System.out.println("rocket fuel use:"+totalFuelUse);
 
-            // --- Biprop requirement: if any bipropellant thrust exists, require both tanks ---
+            // Biprop requirement: if any bipropellant thrust exists, require both tanks
             if (thrustBipropellant > 0) {
                 if (fuelCapacityBipropellant <= 0 || fuelCapacityOxidizer <= 0) {
-                    status = ErrorCodes.NOFUEL; // or a dedicated error if you add one
+                    status = ErrorCodes.NOFUEL;
                     return new AxisAlignedBB(actualMinX, actualMinY, actualMinZ, actualMaxX, actualMaxY, actualMaxZ);
                 }
             }            
@@ -563,7 +563,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         int maxYi = Math.max(actualMaxY, actualMinY);
         int maxZi = Math.max(actualMinZ, actualMaxZ);
 
-        // IMPORTANT: use BlockPos ctor so the AABB is [min, max+1) in block space
+        // use BlockPos ctor so the AABB is [min, max+1) in block space
         return new AxisAlignedBB(
             new BlockPos(minXi, minYi, minZi),
             new BlockPos(maxXi, maxYi, maxZi)
@@ -610,7 +610,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         // server only + need a pad cache
         if (world.isRemote || bbCache == null) return;
 
-        // Re-scan to get a *tight* non-air AABB and fresh stats/status
+        // Re-scan to get a tight non-air AABB and fresh stats/status
         final AxisAlignedBB scanBB = scanRocket(world, pos, bbCache);
         if (status != ErrorCodes.SUCCESS || scanBB == null) return;
 
@@ -628,7 +628,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         final StorageChunk storageChunk;
         try {
             storageChunk = StorageChunk.cutWorldBB(world, rocketBB);
-        } catch (Throwable t) { // covers NegativeArraySizeException & other edge errors
+        } catch (Throwable t) { // cover NegativeArraySizeException & other edge errors
             status = ErrorCodes.FAIL_CUT;
             return;
         }
@@ -1118,7 +1118,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         switch (id) {
 
             case 0:
-                return (int)(getRocketStats().getWeight_NoFuel()*1000);// because it is a float really so take it *1000
+                return (int)(getRocketStats().getWeight_NoFuel()*1000);
             case 1:
                 return getRocketStats().getThrust();
             case 2:
@@ -1160,7 +1160,6 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     @Override
     public void onInventoryButtonPressed(int buttonId) {
         PacketHandler.sendToServer(new PacketMachine(this, (byte) (buttonId)));
-        //updateText();
     }
 
     @Override
@@ -1241,7 +1240,6 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     public List<IInfrastructure> getConnectedInfrastructure() {
         List<IInfrastructure> list = new LinkedList<>();
-        // Don't mutate blockPos here; tiles may not be loaded yet
         for (HashedBlockPosition position : blockPos) {
             TileEntity te = world.getTileEntity(position.getBlockPos());
             if (te instanceof IInfrastructure) {
@@ -1280,7 +1278,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         }
 
 
-        // Maintain original semantics: only fast-path when exactly one rocket in the pad
+        // only fast-path when exactly one rocket in the pad
         List<EntityRocket> rockets = world.getEntitiesWithinAABB(EntityRocket.class, box);
         if (rockets.size() == 1) {
             EntityRocket r = rockets.get(0);
@@ -1293,8 +1291,6 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             // Fallback: rescan if something odd happens
             scanRocket(world, pos, bbCache);
         }
-
-        // Preserve original networking
         PacketHandler.sendToPlayersTrackingEntity(new PacketMachine(this, (byte)3), landed);
     }
 
@@ -1334,7 +1330,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     @Override
     public void update() {
-        super.update(); // << keep RFConsumer’s normal ticking/performFunction()
+        super.update(); 
         if (world.isRemote) return;
 
         if (relinkRetries > 0 && world.getTotalWorldTime() >= nextRelinkAttempt) {
