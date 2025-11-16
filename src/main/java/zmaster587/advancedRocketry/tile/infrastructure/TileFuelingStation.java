@@ -62,7 +62,7 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
     // Cache last emitted redstone to avoid duplicate updates
     private Boolean lastRs = null;
 
-    // Small perf win: cache resolved fluids from rocket stats
+    // Cache resolved fluids from rocket stats
     private String lastFuelStr = null, lastOxStr = null, lastWorkStr = null;
     private Fluid cachedFuelFluid = null, cachedOxFluid = null, cachedWorkFluid = null;
 
