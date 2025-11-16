@@ -14,6 +14,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.ITickable;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
@@ -59,7 +60,7 @@ import java.util.List;
  * changed to complete the rocket structure
  * Also will be used to "build" the rocket components from the placed frames, control fuel flow etc
  **/
-public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements IButtonInventory, INetworkMachine, IDataSync, IModularInventory, IProgressBar, ILinkableTile {
+public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements ITickable, IButtonInventory, INetworkMachine, IDataSync, IModularInventory, IProgressBar, ILinkableTile {
 
     protected static final ResourceLocation backdrop = new ResourceLocation("advancedrocketry", "textures/gui/rocketBuilder.png");
     protected static final ProgressBarImage verticalProgressBar = new ProgressBarImage(76, 93, 8, 52, 176, 15, 2, 38, 3, 2, EnumFacing.UP, backdrop);
@@ -105,8 +106,9 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             registeredBus = true;
         }
         if (!world.isRemote) {
-            relinkRetries = 10;                  // up to ~10 seconds
-            nextRelinkAttempt = world.getTotalWorldTime() + 20;  // first retry in 1s
+            relinkRetries = 15; // give it time
+            nextRelinkAttempt = world.getTotalWorldTime() + 20;
+            tryRelinkNow(); // best-effort first shot
         }
         if (world.isRemote) return;
 
@@ -118,6 +120,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             if (!rockets.isEmpty()) {
                 for (IInfrastructure infra : getConnectedInfrastructure()) {
                     for (EntityRocketBase r : rockets) {
+                        if (infra instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) {
+                            ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) infra)
+                                    .markRocketFromAssembler(r);
+                        }
                         r.linkInfrastructure(infra);
                     }
                 }
@@ -257,42 +263,6 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
     @Override
     public void performFunction() {
-        // Retry linking infra for up to ~10s, but stop early once ALL are linked
-        if (!world.isRemote && relinkRetries > 0 && world.getTotalWorldTime() >= nextRelinkAttempt) {
-
-            if (bbCache == null) bbCache = getRocketPadBounds(world, pos);
-
-            int expected = blockPos.size();   // how many infra we remember from NBT
-            if (expected == 0) { relinkRetries = 0; return; }
-            int found = 0;                    // how many are currently loaded & obtainable
-
-            if (bbCache != null) {
-                final AxisAlignedBB box = bbCache.grow(1.0E-4, 1.0E-4, 1.0E-4);
-                java.util.List<EntityRocketBase> rockets = world.getEntitiesWithinAABB(EntityRocketBase.class, box);
-
-                // Only count + link if a rocket is actually on the pad
-                if (!rockets.isEmpty()) {
-                    java.util.List<IInfrastructure> infraNow = getConnectedInfrastructure(); // only returns loaded TEs
-                    found = infraNow.size();
-
-                    // Link them all (idempotent in AR)
-                    for (EntityRocketBase r : rockets) {
-                        for (IInfrastructure infra : infraNow) {
-                            r.linkInfrastructure(infra);
-                        }
-                    }
-                }
-            }
-
-            // Stop early only when we've linked ALL remembered infra positions
-            if (found >= expected && expected > 0) {
-                relinkRetries = 0; // done
-            } else {
-                relinkRetries--;                       // try again next second
-                nextRelinkAttempt = world.getTotalWorldTime() + 20;
-            }
-        }
-
 
         if (!isScanning()) return; 
         if (progress >= (totalProgress * MAXSCANDELAY)) {
@@ -683,8 +653,13 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
 
         for (IInfrastructure infrastructure : getConnectedInfrastructure()) {
+            if (infrastructure instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) {
+                ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) infrastructure)
+                        .markRocketFromAssembler(rocket);
+            }
             rocket.linkInfrastructure(infrastructure);
         }
+
 
         // Rescan so UI immediately reflects the post-build state
         scanRocket(world, pos, bbCache);
@@ -1297,8 +1272,13 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         // Track rocket id and (re)link infra
         lastRocketID = landed.getEntityId();
         for (IInfrastructure infra : getConnectedInfrastructure()) {
+            if (infra instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) {
+                ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) infra)
+                        .markRocketFromAssembler(landed);
+            }
             landed.linkInfrastructure(infra);
         }
+
 
         // Maintain original semantics: only fast-path when exactly one rocket in the pad
         List<EntityRocket> rockets = world.getEntitiesWithinAABB(EntityRocket.class, box);
@@ -1350,5 +1330,43 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         public String getErrorCode() {
             return code;
         }
+    }
+
+    @Override
+    public void update() {
+        super.update(); // << keep RFConsumer’s normal ticking/performFunction()
+        if (world.isRemote) return;
+
+        if (relinkRetries > 0 && world.getTotalWorldTime() >= nextRelinkAttempt) {
+            if (tryRelinkNow()) {
+                relinkRetries = 0;
+            } else {
+                relinkRetries--;
+                nextRelinkAttempt = world.getTotalWorldTime() + 20; // 1s
+            }
+        }
+    }
+
+    private boolean tryRelinkNow() {
+        if (bbCache == null) bbCache = getRocketPadBounds(world, pos);
+        if (bbCache == null) return false;
+
+        AxisAlignedBB box = bbCache.grow(1.0e-4,1.0e-4,1.0e-4);
+        java.util.List<EntityRocketBase> rockets = world.getEntitiesWithinAABB(EntityRocketBase.class, box);
+        if (rockets.isEmpty()) return false;
+
+        java.util.List<IInfrastructure> infraNow = getConnectedInfrastructure();
+        if (infraNow.isEmpty()) return false;
+
+        for (EntityRocketBase r : rockets) {
+            for (IInfrastructure i : infraNow) {
+                if (i instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) {
+                    ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation) i)
+                            .markRocketFromAssembler(r);
+                }
+                r.linkInfrastructure(i);
+            }
+        }
+        return true;
     }
 }
