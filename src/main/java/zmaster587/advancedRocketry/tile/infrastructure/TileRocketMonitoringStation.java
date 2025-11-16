@@ -349,20 +349,10 @@ public class TileRocketMonitoringStation extends TileEntity
                 // This rocket has us in its infra list, but assembler did NOT bless it.
                 // Clean its list and refuse.
                 rocket.unlinkInfrastructure(this);
-                System.out.println(
-                    "[Monitor] Rejecting rocket EID=" + rocket.getEntityId() +
-                    " for monitor " + pos +
-                    " (no assembler claim; master-bound monitor)"
-                );
                 return false;
             }
             if (!isRocketAllowedForMaster(rocket)) {
                 rocket.unlinkInfrastructure(this);
-                System.out.println(
-                    "[Monitor] Rejecting rocket EID=" + rocket.getEntityId() +
-                    " for monitor " + pos +
-                    " (rocket type not allowed for this master)"
-                );
                 return false;
             }
         }
@@ -377,7 +367,6 @@ public class TileRocketMonitoringStation extends TileEntity
             registeredBus = true;
         }
 
-        // --- debug: monitor <- rocket link (kept) --------------------------
         if (!world.isRemote) {
             final int dim = rocket.world.provider.getDimension();
             final int eid = rocket.getEntityId();
@@ -401,16 +390,6 @@ public class TileRocketMonitoringStation extends TileEntity
                 } catch (Throwable t) { /* keep simple */ }
             }
 
-            System.out.println(
-                "[Monitor] Linked @ " + pos +
-                " -> Rocket EID=" + eid +
-                " dim=" + dim +
-                " pos=(" + String.format("%.1f, %.1f, %.1f", rx, ry, rz) + ")" +
-                " fuel=" + (ft == null ? "NONE" : ft.name()) + " " + fAmt + "/" + fCap +
-                (thrust >= 0 ? (" thrust=" + thrust) : "") +
-                (weight >= 0 ? (" weight=" + weight) : "")
-            );
-
             // Fresh snapshot + UI as before
             primeSnapshotsFromRocket();
 
@@ -427,8 +406,6 @@ public class TileRocketMonitoringStation extends TileEntity
                 lastStatusTick = 0L;
             }
         }
-        // -------------------------------------------------------------------
-
         return true;
     }
 
@@ -748,7 +725,6 @@ public class TileRocketMonitoringStation extends TileEntity
         }        
         if (id == 100) {
             if (linkedRocket != null) {
-                System.out.println("[MS] Launch clicked @ " + pos + ", linked? " + (linkedRocket!=null));
                 // always re-prime before launch to avoid stale weight/fuel decisions
                 if (linkedRocket instanceof EntityRocket) {
                     ((EntityRocket) linkedRocket).recalculateStats();
