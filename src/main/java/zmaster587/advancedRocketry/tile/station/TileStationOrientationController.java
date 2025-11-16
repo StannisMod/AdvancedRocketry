@@ -1,6 +1,8 @@
 package zmaster587.advancedRocketry.tile.station;
 
 import io.netty.buffer.ByteBuf;
+import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
@@ -26,6 +28,7 @@ import java.util.List;
 public class TileStationOrientationController extends TileEntity implements ITickable, IModularInventory, INetworkMachine, ISliderBar, IButtonInventory {
 
     private int[] progress;
+    private long lastRotSyncTick = -5;
 
     private ModuleText moduleAngularVelocity, numThrusters, maxAngularAcceleration, targetRotations;
 
@@ -56,70 +59,111 @@ public class TileStationOrientationController extends TileEntity implements ITic
         modules.add(new ModuleButton(25, 35, 2, LibVulpes.proxy.getLocalizedString("msg.spacelaser.reset"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 36, 15));
         //modules.add(new ModuleSlider(24, 35, 2, TextureResources.doubleWarningSideBarIndicator, (ISliderBar)this));
 
-        updateText();
-        return modules;
-    }
+        // inline updater that runs only while GUI is open
+        modules.add(new ModuleBase(0, 0) {
+            private SpaceStationObject cached;
+            private int cachedId = Integer.MIN_VALUE;
 
-    private void updateText() {
-        if (world.isRemote) {
-            ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
-            if (spaceObject != null) {
-                moduleAngularVelocity.setText(String.format("%s%.1f %.1f %.1f", LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.alt"), 72000D * spaceObject.getDeltaRotation(EnumFacing.EAST), 72000D * spaceObject.getDeltaRotation(EnumFacing.UP), 7200D * spaceObject.getDeltaRotation(EnumFacing.NORTH)));
-                //maxAngularAcceleration.setText(String.format("Maximum Angular Acceleration: %.1f", 7200D*object.getMaxRotationalAcceleration()));
+            private int lastVelX = Integer.MIN_VALUE, lastVelY = Integer.MIN_VALUE, lastVelZ = Integer.MIN_VALUE;
+            private int lastTgtX = Integer.MIN_VALUE, lastTgtY = Integer.MIN_VALUE, lastTgtZ = Integer.MIN_VALUE;
 
-                //numThrusters.setText("Number Of Thrusters: 0");
-                int[] targetRotationsPerHour = ((SpaceStationObject) spaceObject).targetRotationsPerHour;
-                targetRotations.setText(String.format("%s%d %d %d", LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.tgtalt"), targetRotationsPerHour[0], targetRotationsPerHour[1], targetRotationsPerHour[2]));
+            private final String prefixVel = LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.alt");
+            private final String prefixTgt = LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.tgtalt");
+
+            private String oneDp(int key) {
+                int abs = Math.abs(key), whole = abs / 10, frac = abs % 10;
+                String s = whole + "." + frac;
+                return key < 0 ? "-" + s : s;
             }
-        }
+
+            private boolean ensureStation() {
+                if (cached == null) {
+                    ISpaceObject so = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+                    if (!(so instanceof SpaceStationObject)) return false;
+                    cached = (SpaceStationObject) so;
+                    cachedId = so.getId();
+                    return true;
+                }
+                ISpaceObject current = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+                if (!(current instanceof SpaceStationObject)) { cached = null; cachedId = Integer.MIN_VALUE; return false; }
+                if (current.getId() != cachedId) {
+                    cached = (SpaceStationObject) current;
+                    cachedId = current.getId();
+                }
+                return true;
+            }
+
+            @Override
+            public void renderBackground(GuiContainer gui, int x, int y, int mouseX, int mouseY, FontRenderer font) {
+                if (!ensureStation()) return;
+
+                double dX = cached.getDeltaRotation(EnumFacing.EAST);
+                double dY = cached.getDeltaRotation(EnumFacing.UP);
+                double dZ = cached.getDeltaRotation(EnumFacing.NORTH);
+                int[] tgt = cached.targetRotationsPerHour;
+
+                int velX = (int)Math.round(72000D * dX * 10D);
+                int velY = (int)Math.round(72000D * dY * 10D);
+                int velZ = (int)Math.round( 7200D * dZ * 10D);
+
+                if (velX != lastVelX || velY != lastVelY || velZ != lastVelZ) {
+                    moduleAngularVelocity.setText(prefixVel + oneDp(velX) + " " + oneDp(velY) + " " + oneDp(velZ));
+                    lastVelX = velX; lastVelY = velY; lastVelZ = velZ;
+                }
+
+                if (tgt[0] != lastTgtX || tgt[1] != lastTgtY || tgt[2] != lastTgtZ) {
+                    targetRotations.setText(prefixTgt + tgt[0] + " " + tgt[1] + " " + tgt[2]);
+                    lastTgtX = tgt[0]; lastTgtY = tgt[1]; lastTgtZ = tgt[2];
+                }
+            }
+
+            @Override public int getSizeX() { return 0; }
+            @Override public int getSizeY() { return 0; }
+        });
+
+        
+        return modules;
     }
 
     @Override
     public void update() {
+        // Only relevant in space
+        if (!(world.provider instanceof WorldProviderSpace)) return;
+        // Server-side only
+        if (world.isRemote) return;
 
-        if (this.world.provider instanceof WorldProviderSpace) {
-            if (!world.isRemote) {
-                ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
-                boolean update = false;
+        ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+        if (spaceObject == null) return;
 
-                if (spaceObject != null) {
+        EnumFacing[] dirs = { EnumFacing.EAST, EnumFacing.UP, EnumFacing.NORTH };
+        int[] targetRotationsPerHour = ((SpaceStationObject) spaceObject).targetRotationsPerHour;
 
-                    EnumFacing[] dirs = {EnumFacing.EAST, EnumFacing.UP, EnumFacing.NORTH};
-                    int[] targetRotationsPerHour = ((SpaceStationObject) spaceObject).targetRotationsPerHour;
-                    for (int i = 0; i < 3; i++) {
-                        setProgress(i, targetRotationsPerHour[i] + (getTotalProgress(i) / 2));
-                    }
+        // keep sliders in sync with server state
+        for (int i = 0; i < 3; i++) {
+            setProgress(i, targetRotationsPerHour[i] + (getTotalProgress(i) / 2));
+        }
 
+        boolean updated = false;
 
-                    for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3; i++) {
+            double targetAngularVelocity = targetRotationsPerHour[i] / 72000D;
+            double angVel = spaceObject.getDeltaRotation(dirs[i]);
+            double acc = spaceObject.getMaxRotationalAcceleration();
 
-                        double targetAngularVelocity = targetRotationsPerHour[i] / 72000D;
-                        double angVel = spaceObject.getDeltaRotation(dirs[i]);
-                        double acc = spaceObject.getMaxRotationalAcceleration();
+            double difference = targetAngularVelocity - angVel;
+            if (difference != 0) {
+                double finalVel = angVel + (difference < 0 ? Math.max(difference, -acc) : Math.min(difference, acc));
+                spaceObject.setDeltaRotation(finalVel, dirs[i]);
+                updated = true;
+            }
+        }
 
-                        double difference = targetAngularVelocity - angVel;
-
-                        if (difference != 0) {
-                            double finalVel = angVel;
-                            if (difference < 0) {
-                                finalVel = angVel + Math.max(difference, -acc);
-                            } else if (difference > 0) {
-                                finalVel = angVel + Math.min(difference, acc);
-                            }
-
-                            spaceObject.setDeltaRotation(finalVel, dirs[i]);
-                            update = true;
-                        }
-                    }
-
-                    if (!world.isRemote && update) {
-                        //PacketHandler.sendToNearby(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.ROTANGLE_UPDATE), this.worldObj.provider.dimensionId, this.xCoord, this.yCoord, this.zCoord, 1024);
-                        PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.ROTANGLE_UPDATE));
-                    }
-                } else
-                    updateText();
-            } else
-                updateText();
+        if (updated) {
+            long t = world.getTotalWorldTime();
+            if (t - lastRotSyncTick >= 5) { // ~4 Hz
+                PacketHandler.sendToAll(new PacketStationUpdate(spaceObject, PacketStationUpdate.Type.ROTANGLE_UPDATE));
+                lastRotSyncTick = t;
+            }
         }
     }
 

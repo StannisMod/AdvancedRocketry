@@ -20,6 +20,7 @@ import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidTankProperties;
 import net.minecraftforge.fml.relauncher.Side;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
@@ -61,7 +62,7 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
     // Cache last emitted redstone to avoid duplicate updates
     private Boolean lastRs = null;
 
-    // Small perf win: cache resolved fluids from rocket stats
+    // Cache resolved fluids from rocket stats
     private String lastFuelStr = null, lastOxStr = null, lastWorkStr = null;
     private Fluid cachedFuelFluid = null, cachedOxFluid = null, cachedWorkFluid = null;
 
@@ -109,15 +110,15 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
 
         if (!Objects.equals(f, lastFuelStr)) {
             lastFuelStr = f;
-            cachedFuelFluid = (f == null || "null".equals(f)) ? null : FluidRegistry.getFluid(f);
+            cachedFuelFluid = (f == null || "null".equals(f) || f.isEmpty()) ? null : FluidRegistry.getFluid(f);
         }
         if (!Objects.equals(o, lastOxStr)) {
             lastOxStr = o;
-            cachedOxFluid = (o == null || "null".equals(o)) ? null : FluidRegistry.getFluid(o);
+            cachedOxFluid = (o == null || "null".equals(o) || o.isEmpty()) ? null : FluidRegistry.getFluid(o);
         }
         if (!Objects.equals(w, lastWorkStr)) {
             lastWorkStr = w;
-            cachedWorkFluid = (w == null || "null".equals(w)) ? null : FluidRegistry.getFluid(w);
+            cachedWorkFluid = (w == null || "null".equals(w) || w.isEmpty()) ? null : FluidRegistry.getFluid(w);
         }
     }
 
@@ -125,8 +126,17 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         refreshFluidCachesIfNeeded();
         if (current == null || linkedRocket == null) return false;
 
-        // If a specific fluid was already chosen, match directly.
-        if (current == cachedFuelFluid || current == cachedOxFluid || current == cachedWorkFluid) {
+        // --- compare by fluid name, not by instance ---
+        final String currentName = current.getName();
+
+        // If a specific fluid was already chosen, match directly by name.
+        if (lastFuelStr != null && !"null".equals(lastFuelStr) && !lastFuelStr.isEmpty() && currentName.equals(lastFuelStr)) {
+            return true;
+        }
+        if (lastOxStr != null && !"null".equals(lastOxStr) && !lastOxStr.isEmpty() && currentName.equals(lastOxStr)) {
+            return true;
+        }
+        if (lastWorkStr != null && !"null".equals(lastWorkStr) && !lastWorkStr.isEmpty() && currentName.equals(lastWorkStr)) {
             return true;
         }
 
@@ -287,13 +297,26 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
             fuelingActive = false;
             return;
         }
-        // Bounded transfer scaled by throttle; drain exactly what was accepted
+
+        // Bounded transfer scaled by throttle; drain exactly the delta that actually landed
         int step = ARConfiguration.getCurrentConfig().fuelPointsPer10Mb;
         int toOffer = Math.min(step * OP_THROTTLE_TICKS, tank.getFluidAmount());
         if (toOffer > 0) {
-            int accepted = linkedRocket.addFuelAmount(typeToFill, toOffer); // assumes returns actual mB accepted
-            if (accepted > 0) {
-                tank.drain(accepted, true);
+            final int before = linkedRocket.getFuelAmount(typeToFill);
+            final int ret    = linkedRocket.addFuelAmount(typeToFill, toOffer);
+
+            // Be robust to either contract:
+            //  - if ret == new total -> delta = ret - before
+            //  - if ret == accepted  -> delta = ret (clamped to toOffer)
+            int delta = Math.max(0, ret - before);
+            if (delta == 0) {
+                // Assume ret is "accepted amount"
+                delta = Math.min(toOffer, Math.max(0, ret));
+            }
+
+            if (delta > 0) {
+                tank.drain(delta, true);
+
                 int baseRate = linkedRocket.stats.getBaseFuelRate(typeToFill);
                 if (baseRate > 0) {
                     int multRate = (int)(FuelRegistry.instance.getMultiplier(typeToFill, currentFluid) * baseRate);
@@ -303,6 +326,7 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
                 }
             }
         }
+
 
         // Re-evaluate full; if full now, stop within this link
         boolean fullNow = !canRocketFitFluid(currentFluid);
@@ -315,8 +339,7 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
 
     @Override
     public int getPowerPerOperation() {
-        // same average RF/mb as before, just throttled
-        return 30 * OP_THROTTLE_TICKS;
+        return 30;
     }
 
 
@@ -343,11 +366,8 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         FluidStack fs = tank.getFluid();
         if (fs == null || fs.amount <= 9) return false;
 
-        // only if the rocket can fit this fluid
-        if (!canRocketFitFluid(fs.getFluid())) return false;
-
-        // Consume RF only on the throttled ticks
-        return (world.getTotalWorldTime() % OP_THROTTLE_TICKS) == 0L;
+        // Only draw power when the rocket can actually take this fluid
+        return canRocketFitFluid(fs.getFluid());
     }
 
     @Override
@@ -366,19 +386,23 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
     private boolean canRocketFitFluid(Fluid f) {
         if (f == null || linkedRocket == null) return false;
 
+        boolean fits = false;
+
+        // Check every type the fluid qualifies for; OR the results.
         if (FuelRegistry.instance.isFuel(FuelType.LIQUID_OXIDIZER, f)) {
-            return linkedRocket.getFuelAmount(FuelType.LIQUID_OXIDIZER) < linkedRocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER);
+            fits |= linkedRocket.getFuelAmount(FuelType.LIQUID_OXIDIZER) < linkedRocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER);
         }
         if (FuelRegistry.instance.isFuel(FuelType.LIQUID_BIPROPELLANT, f)) {
-            return linkedRocket.getFuelAmount(FuelType.LIQUID_BIPROPELLANT) < linkedRocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT);
+            fits |= linkedRocket.getFuelAmount(FuelType.LIQUID_BIPROPELLANT) < linkedRocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT);
         }
         if (FuelRegistry.instance.isFuel(FuelType.LIQUID_MONOPROPELLANT, f)) {
-            return linkedRocket.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT) < linkedRocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT);
+            fits |= linkedRocket.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT) < linkedRocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT);
         }
         if (FuelRegistry.instance.isFuel(FuelType.NUCLEAR_WORKING_FLUID, f)) {
-            return linkedRocket.getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID) < linkedRocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID);
+            fits |= linkedRocket.getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID) < linkedRocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID);
         }
-        return false;
+
+        return fits;
     }
 
     @Override
@@ -433,6 +457,8 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         this.linkedRocket = null;
         this.fuelingActive = false;
         this.lastRs = null;
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         ((BlockTileRedstoneEmitter) AdvancedRocketryBlocks.blockFuelingStation)
             .setRedstoneState(world, world.getBlockState(pos), pos, false);
         markDirty();
@@ -492,7 +518,9 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         if (linkedRocket != null)
             linkedRocket.unlinkInfrastructure(this);
 
-        // Hard-off to avoid stale output when chunk unload order is weird
+        // Clear caches
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         lastRs = null;
         fuelingActive = false;
 
@@ -646,6 +674,9 @@ public class TileFuelingStation extends TileInventoriedRFConsumerTank implements
         super.onChunkUnload();
         if (world == null || world.isRemote) return;
 
+        // Clear caches
+        lastFuelStr = lastOxStr = lastWorkStr = null;
+        cachedFuelFluid = cachedOxFluid = cachedWorkFluid = null;
         lastRs = null;
         fuelingActive = false;
         if (AdvancedRocketryBlocks.blockFuelingStation instanceof BlockTileRedstoneEmitter) {

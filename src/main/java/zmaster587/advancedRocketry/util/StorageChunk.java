@@ -168,11 +168,12 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         int fuelCapacityBipropellant = 0;
         int fuelCapacityOxidizer = 0;
         int fuelCapacityNuclearWorkingFluid = 0;
-
+        int intakePower = 0;
         float drillPower = 0f;
         //stats.reset_no_fuel();
         stats.reset_no_fuel();// Oh Quarter... you can not keep adding engine and seat locations every launch
-
+        final boolean isSD = (this.entity instanceof zmaster587.advancedRocketry.entity.EntityStationDeployedRocket);
+                
         float weight = 0;
 
         for (int yCurr = 0; yCurr <= this.sizeY; yCurr++) {
@@ -193,18 +194,33 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         }
 
                         //If rocketEngine increaseThrust
-                        if (block instanceof IRocketEngine && (world.getBlockState(belowPos).getBlock().isAir(world.getBlockState(belowPos), world, belowPos) || world.getBlockState(belowPos).getBlock() instanceof BlockLandingPad || world.getBlockState(belowPos).getBlock() == AdvancedRocketryBlocks.blockLaunchpad)) {
-                            if (block instanceof BlockNuclearRocketMotor) {
-                                nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustNuclearNozzleLimit += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockBipropellantRocketMotor) {
-                                bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustBipropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockRocketMotor) {
-                                monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustMonopropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                        if (block instanceof IRocketEngine) {
+                            boolean eligible;
+                            if (isSD) {
+                                // SD rockets: skip vertical requirements
+                                eligible = true;
+                            } else {
+                                // Legacy vertical rule
+                                IBlockState belowState = world.getBlockState(belowPos);
+                                Block below = belowState.getBlock();
+                                eligible = below.isAir(belowState, world, belowPos)
+                                        || below instanceof BlockLandingPad
+                                        || below == AdvancedRocketryBlocks.blockLaunchpad;
                             }
-                            stats.addEngineLocation(xCurr - (float) this.sizeX /2+0.5f, yCurr+0.5f, zCurr- (float) this.sizeZ /2+0.5f);
+
+                            if (eligible) {
+                                if (block instanceof BlockNuclearRocketMotor) {
+                                    nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustNuclearNozzleLimit  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockBipropellantRocketMotor) {
+                                    bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustBipropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockRocketMotor) {
+                                    monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustMonopropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                }
+                                stats.addEngineLocation(xCurr - (float)this.sizeX/2 + 0.5f, yCurr+0.5f, zCurr - (float)this.sizeZ/2 + 0.5f);
+                            }
                         }
 
                         if (block instanceof IFuelTank) {
@@ -219,8 +235,18 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             }
                         }
 
-                        if (block instanceof IRocketNuclearCore && ((world.getBlockState(belowPos).getBlock() instanceof IRocketNuclearCore) || (world.getBlockState(belowPos).getBlock() instanceof IRocketEngine))) {
-                            thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                        if (block instanceof IRocketNuclearCore) {
+                            boolean counts;
+                            if (isSD) {
+                                // SD rockets: no vertical stack requirement
+                                counts = true;
+                            } else {
+                                Block below = world.getBlockState(belowPos).getBlock();
+                                counts = (below instanceof IRocketNuclearCore) || (below instanceof IRocketEngine);
+                            }
+                            if (counts) {
+                                thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                            }
                         }
 
                         if (block instanceof BlockSeat && world.getBlockState(abovePos).getBlock().isPassable(world, abovePos)) {
@@ -230,24 +256,14 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         if (block instanceof IMiningDrill) {
                             drillPower += ((IMiningDrill) block).getMiningSpeed(world, currBlockPos);
                         }
+                        if (block instanceof IIntake) {
+                            intakePower += ((IIntake) block).getIntakeAmt(state);
+                        }
 
                         if (block.getUnlocalizedName().contains("servicemonitor")) {
                             hasServiceMonitor = true;
                         }
-
-                        TileEntity tile = world.getTileEntity(currBlockPos);
-                        if (tile instanceof TileSatelliteHatch) {
-                            if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
-                                TileSatelliteHatch hatch = (TileSatelliteHatch) tile;
-                                if (hatch.getSatellite() != null) {
-                                    weight += hatch.getSatellite().getProperties().getWeight();
-                                } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
-                                    ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
-                                    weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
-                                }
-                            }
-                        }
-                    }
+                    }    
                 }
             }
         }
@@ -272,10 +288,42 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         stats.setFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER, fuelCapacityOxidizer);
         stats.setFuelCapacity(FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID, fuelCapacityNuclearWorkingFluid);
 
-        //Non-fuel stats
+        // SAFE liquid capacity sum (saturating at Integer.MAX_VALUE)
+        long liquidCapacitySum = 0L;
+
+        outer:
+        for (TileEntity te : this.getFluidTiles()) {
+            net.minecraftforge.fluids.capability.IFluidHandler fh =
+                te.getCapability(net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+            if (fh == null) continue;
+
+            net.minecraftforge.fluids.capability.IFluidTankProperties[] props = fh.getTankProperties();
+            if (props == null) continue;
+
+            for (net.minecraftforge.fluids.capability.IFluidTankProperties p : props) {
+                if (p == null) continue;
+                long cap = Math.max(0L, (long) p.getCapacity());  // guard negatives
+                if (cap == 0L) continue;
+
+                long next = liquidCapacitySum + cap;              // saturating add
+                if (next >= (long) Integer.MAX_VALUE) {
+                    liquidCapacitySum = (long) Integer.MAX_VALUE;
+                    break outer; // early exit once saturated
+                }
+                liquidCapacitySum = next;
+            }
+        }
+
+        int liquidCapacitySafe = (int) Math.max(0L, Math.min(liquidCapacitySum, (long) Integer.MAX_VALUE));
+        stats.setStatTag("liquidCapacity", liquidCapacitySafe);
+
+
+        //Non-fuel stats (keep these after the capacity/tag work)
         stats.setWeight(weight);
         stats.setThrust(Math.max(Math.max(thrustMonopropellant, thrustBipropellant), thrustNuclearTotalLimit));
         stats.setDrillingPower(drillPower);
+        stats.setStatTag("intakePower", intakePower);
+        // (liquidCapacity already set above)
     }
 
     public void addTileEntity(TileEntity te) {

@@ -1,9 +1,13 @@
 package zmaster587.advancedRocketry.item;
 
 import com.mojang.realmsclient.gui.ChatFormatting;
+
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import zmaster587.libVulpes.LibVulpes;
 
@@ -23,7 +27,14 @@ public class ItemAsteroidChip extends ItemMultiData {
         return false;
     }
 
-
+    public static String shortDisplayId(Long uuid, String type) {
+        long base = (uuid == null) ? 0L : uuid;
+        long th   = (type == null) ? 0L : Integer.toUnsignedLong(type.hashCode());
+        long disp = mix64(base ^ (th << 1));
+        String hex = Long.toUnsignedString(disp, 16).toUpperCase();
+        int N = 6;
+        return (hex.length() > N) ? hex.substring(hex.length() - N) : hex;
+    }    
     /**
      * Removes any Information and reset the stack to a default state
      *
@@ -109,8 +120,7 @@ public class ItemAsteroidChip extends ItemMultiData {
             list.add(LibVulpes.proxy.getLocalizedString("msg.asteroidChip.asteroid") + ": "
                     + ChatFormatting.DARK_GREEN + shortHex);
 
-            super.addInformation(stack, world, list, flag);
+            super.addInformation(stack, world, list, flag);          
         }
     }
-
 }

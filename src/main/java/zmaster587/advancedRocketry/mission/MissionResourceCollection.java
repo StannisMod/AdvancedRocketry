@@ -37,6 +37,7 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
     public MissionResourceCollection() {
         infrastructureCoords = new LinkedList<>();
+        missionPersistantNBT = new NBTTagCompound();
     }
 
     public MissionResourceCollection(long duration, EntityRocket entity, LinkedList<IInfrastructure> infrastructureCoords) {
@@ -48,6 +49,10 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
         startWorldTime = DimensionManager.getWorld(0).getTotalWorldTime();
         this.duration = duration;
+        if (this.duration <= 0L) {
+            this.duration = 1L; // at least 1 tick
+        }
+
         this.launchDimension = entity.world.provider.getDimension();
         rocketStorage = entity.storage;
         rocketStats = entity.stats;
@@ -62,8 +67,16 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
             this.infrastructureCoords.add(new HashedBlockPosition(((TileEntity) tile).getPos()));
     }
 
+    public long getPlannedHarvestMbOrDefault() {
+        if (missionPersistantNBT != null && missionPersistantNBT.hasKey("plannedHarvestMb")) {
+            return Math.max(0L, missionPersistantNBT.getLong("plannedHarvestMb"));
+        }
+        return -1L; // means "unknown/not provided"
+    }    
+
     @Override
     public double getProgress(World world) {
+        if (duration <= 0L) return 1.0d;        
         return Math.max((AdvancedRocketry.proxy.getWorldTimeUniversal(0) - startWorldTime) / (double) duration, 0);
     }
 
@@ -143,7 +156,8 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
 
-        missionPersistantNBT = nbt.getCompoundTag("persist");
+        missionPersistantNBT = nbt.hasKey("persist") ? nbt.getCompoundTag("persist") : new NBTTagCompound();
+
 
         rocketStats = new StatsRocket();
         rocketStats.readFromNBT(nbt.getCompoundTag("rocketStats"));

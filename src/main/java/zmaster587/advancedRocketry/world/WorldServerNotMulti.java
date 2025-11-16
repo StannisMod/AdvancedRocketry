@@ -56,7 +56,9 @@ public class WorldServerNotMulti extends WorldServer {
     }
 
     public World init() {
-        super.init();
+        // Removed super.init(): it recreates per-world managers (loot/adv/scoreboard/functions)
+        // will be reloaded per dimension, slow and breaks custom data.
+        
         // load weather data from NBT
         WorldInfoSavedData wi = (WorldInfoSavedData) perWorldStorage.getOrLoadData(WorldInfoSavedData.class, "WorldInfoSavedData");
         if (wi == null) {

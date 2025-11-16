@@ -130,6 +130,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     protected ModulePlanetSelector container;
     boolean acceptedPacket = false;
     SpacePosition spacePosition;
+    //true if we have posted the landed event after loading from nbt
+    private transient boolean postedLandedAfterLoad = false;
     //true if the rocket is on decent
     private boolean isInOrbit;
     //True if the rocket isn't on the ground
@@ -427,6 +429,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private void setError(String error) {
         this.errorStr = error;
         this.lastErrorTime = this.world.getTotalWorldTime();
+
+        if (!world.isRemote) {
+            // notify riders only
+            for (Entity e : this.getPassengers()) {
+                if (e instanceof EntityPlayerMP) {
+                    ((EntityPlayerMP) e).sendMessage(new TextComponentString(error));
+                }
+            }
+            // post an event the monitor already consumes
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketAbortEvent(this, error));
+
+            // stop countdown if it was running
+            this.dataManager.set(LAUNCH_COUNTER, -1);
+        }
     }
 
     @Override
@@ -732,6 +748,45 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return this.getPassengers().size() < stats.getNumPassengerSeats();
     }
 
+
+    // Check if we have enough fuel to reach orbit from our current position
+    private boolean hasMissionFuelFor(int destDimId) {
+        if (!ARConfiguration.getCurrentConfig().rocketRequireFuel) return true;
+
+        final FuelRegistry.FuelType main = getRocketFuelType();
+        if (main == null) return false; // no usable tanks
+
+        if (isInOrbit()) return true;   // already at orbit
+
+        if (stats.getThrust() <= stats.getWeight()) return false;
+
+        final DimensionProperties src = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension());
+        final float gSrc = Math.max(0.01f, src.getGravitationalMultiplier()); 
+        final double a = Math.max(0.0001d, stats.getAcceleration(gSrc));    
+        final double h = Math.max(0.0, stats.orbitHeight - this.posY);
+
+        long nTicks = (long)Math.ceil(Math.sqrt(2.0 * h / a));
+        nTicks += 2L; // small safety buffer
+        if (nTicks <= 0) nTicks = 1;
+
+        int mainRate = Math.max(1, getFuelConsumptionRate(main));
+        long mainNeeded = nTicks * (long)mainRate;
+        long mainHave   = getFuelAmount(main);
+        if (mainHave < mainNeeded) return false;
+
+        if (main == FuelRegistry.FuelType.LIQUID_BIPROPELLANT) {
+            int oxRate = Math.max(1, getFuelConsumptionRate(FuelRegistry.FuelType.LIQUID_OXIDIZER));
+            long oxNeeded = nTicks * (long)oxRate;
+            long oxHave   = getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER);
+            if (oxHave < oxNeeded) return false;
+        }
+
+        // Descent currently does not burn fuel in your code path.
+        return true;
+    }
+
+
     /**
      * @param fluidStack the stack to check whether the rocket can fit
      * @return boolean on whether said fluid stack can fit into the rocket's internal fuel point storage
@@ -751,6 +806,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             boolean isCorrectFluid = stats.getOxidizerFluid().equals("null") || fluidStack.getFluid() == FluidRegistry.getFluid(stats.getOxidizerFluid());
             if (stats.getOxidizerFluid().equals("null") && isCorrectFluid)
                 stats.setOxidizerFluid(fluidStack.getFluid().getName());
+            return isCorrectFluid;
+        } else if (FuelRegistry.instance.isFuel(FuelType.NUCLEAR_WORKING_FLUID, fluidStack.getFluid())) {
+            boolean isCorrectFluid = stats.getWorkingFluid().equals("null") || fluidStack.getFluid() == FluidRegistry.getFluid(stats.getWorkingFluid());
+            if (stats.getWorkingFluid().equals("null") && isCorrectFluid)
+                stats.setWorkingFluid(fluidStack.getFluid().getName());
             return isCorrectFluid;
         }
         return false;
@@ -1030,7 +1090,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         super.onUpdate();
         long deltaTime = world.getTotalWorldTime() - lastWorldTickTicked;
         lastWorldTickTicked = world.getTotalWorldTime();
-
+        if (!world.isRemote && !postedLandedAfterLoad && this.ticksExisted >= 5) {
+            // Consider "landed" = entity exists, NOT in flight, NOT in orbit
+            if (!isInFlight() && !isInOrbit()) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new zmaster587.advancedRocketry.api.RocketEvent.RocketLandedEvent(this)
+                );
+                postedLandedAfterLoad = true;
+            }
+        }
         if (world.isRemote) {
 
             double ct = 50;
@@ -1905,14 +1973,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
 
         if (this.stats.getWeight() >= this.stats.getThrust()) {
-            allowLaunch = false;
+            setError(LibVulpes.proxy.getLocalizedString("error.rocket.tooHeavy"));
+            return; // hard stop; no silent fall-through
         }
 
         //Check to see what place we should be going to
         //This is bad but it works and is mostly intelligible so it's here for now
         stats.orbitHeight = (storage.getGuidanceComputer() == null) ? getEntryHeight(this.world.provider.getDimension()) : storage.getGuidanceComputer().getLaunchSequence(this.world.provider.getDimension(), this.getPosition());
-
-
+        
+        // Enough fuel for the mission?
+        if (!hasMissionFuelFor(destinationDimId)) {
+            setError(LibVulpes.proxy.getLocalizedString("error.rocket.notEnoughMissionFuel"));
+            return;
+        }
+        
         //TODO: Clean this logic a bit?
         if (allowLaunch || !stats.hasSeat() || ((DimensionManager.getInstance().isDimensionCreated(destinationDimId)) || destinationDimId == ARConfiguration.getCurrentConfig().spaceDimId || destinationDimId == 0)) {
             setInFlight(true);

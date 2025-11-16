@@ -4,6 +4,8 @@ import io.netty.buffer.ByteBuf;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.EnumFacing;
 import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
@@ -30,7 +32,8 @@ import zmaster587.libVulpes.util.INetworkMachine;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.LinkedList;
+
+import java.util.ArrayList;
 import java.util.List;
 
 public class TileSatelliteTerminal extends TileInventoriedRFConsumer
@@ -38,15 +41,117 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     private DataStorage data;
 
+    // Auto-download polling with exponential backoff
+    private static final int AUTO_DL_BASE_INTERVAL_TICKS = 64;   // min interval
+    private static final int AUTO_DL_MAX_INTERVAL_TICKS  = 512;  // cap
+    private int autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;    // current interval
+    private long nextAutoDlTick = 0L;                             // worldTime gate
+
+
     public TileSatelliteTerminal() {
         super(10000, 2);
         data = new DataStorage();
         data.setMaxData(1000);
     }
 
+    private final BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
+
+    private boolean hasExtractPlugAdjacent() {
+        if (world == null) return false;
+        for (EnumFacing f : EnumFacing.values()) {
+            mpos.setPos(pos.getX() + f.getFrontOffsetX(),
+                        pos.getY() + f.getFrontOffsetY(),
+                        pos.getZ() + f.getFrontOffsetZ());
+            if (!world.isBlockLoaded(mpos)) continue;
+
+            TileEntity te = world.getTileEntity(mpos);
+            if (te instanceof zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever) {
+                zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever w =
+                    (zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever) te;
+                if (w.isEnabledWireless() && w.isExtractModeWireless()) return true;
+            }
+        }
+        return false;
+    }
+
+
+
+    // Link+power check using an already-looked-up satellite
+    private boolean hasLinkAndPower(@Nonnull SatelliteBase sat) {
+        // must be a data satellite
+        if (!(sat instanceof zmaster587.advancedRocketry.satellite.SatelliteData)) return false;
+
+        // check range
+        final int hereDim = zmaster587.advancedRocketry.dimension.DimensionManager
+                .getEffectiveDimId(world, pos).getId();
+        final int satDim  = sat.getDimensionId();
+
+        final boolean inRange = zmaster587.advancedRocketry.util.PlanetaryTravelHelper
+                .isTravelAnywhereInPlanetarySystem(satDim, hereDim);
+        if (!inRange) return false;
+
+        // check power
+        return getUniversalEnergyStored() >= getPowerPerOperation();
+    }
+
+    // Keep convenience overload
+    private void maybeAutoDownloadFromSatellite() { 
+        maybeAutoDownloadFromSatellite(false); 
+    }
+
+    private void maybeAutoDownloadFromSatellite(boolean force) {
+        if (world == null || world.isRemote) return;
+
+        final long now = world.getTotalWorldTime();
+
+        if (force) {
+            autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
+            nextAutoDlTick = now + autoDlInterval;  // avoid same-tick multi-pulls
+        } else if (now < nextAutoDlTick) {
+            return;
+        }
+
+        // Buffer full → just schedule next check
+        if (data.getData() >= data.getMaxData()) {
+            nextAutoDlTick = now + autoDlInterval;
+            return;
+        }
+
+        // No eligible plug → back off (unless forced)
+        if (!hasExtractPlugAdjacent()) {
+            if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
+            nextAutoDlTick = now + autoDlInterval;
+            return;
+        }
+
+        // Resolve satellite fresh from the chip each poll
+        SatelliteBase sat = resolveSatelliteFresh();
+        if (sat == null) {
+            if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
+            nextAutoDlTick = now + autoDlInterval;
+            return;
+        }
+        if (!hasLinkAndPower(sat)) {
+            if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
+            nextAutoDlTick = now + autoDlInterval;
+            return;
+        }
+
+        // Do the pull
+        sat.performAction(null, world, pos);
+        this.energy.extractEnergy(getPowerPerOperation(), false);
+
+        // Success → reset interval
+        autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
+        nextAutoDlTick = now + autoDlInterval;
+    }
+
+
+    private static final int[] NO_SLOTS = new int[0];
+
     @Override
     @Nonnull
-    public int[] getSlotsForFace(@Nullable EnumFacing side) { return new int[0]; }
+    public int[] getSlotsForFace(@Nullable EnumFacing side) { return NO_SLOTS; }
 
     @Override
     public String getModularInventoryName() {
@@ -58,7 +163,9 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public boolean canPerformFunction() {
-        return world.getTotalWorldTime() % 16 == 0 && getSatelliteFromSlot(0) != null;
+        if (world == null) return false;
+        final long now = world.getTotalWorldTime();
+        return (now % 16 == 0) && (now >= nextAutoDlTick);
     }
 
     @Override
@@ -66,8 +173,11 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public void performFunction() {
-        // No client push here anymore; module sync handles display updates.
+        if (world == null || world.isRemote) return;
+        maybeAutoDownloadFromSatellite(false);
     }
+
+
 
     // Old custom packet not used anymore; keep empty to satisfy INetworkMachine
     @Override
@@ -131,9 +241,20 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         }
     }
 
+    @Nullable
+    private SatelliteBase resolveSatelliteFresh() {
+        ItemStack s0 = getStackInSlot(0);
+        return (!s0.isEmpty() && s0.getItem() instanceof ItemSatelliteIdentificationChip)
+                ? ItemSatelliteIdentificationChip.getSatellite(s0)
+                : null;
+    }
+
     @Override
     public void setInventorySlotContents(int slot, @Nonnull ItemStack stack) {
         super.setInventorySlotContents(slot, stack);
+        if (!world.isRemote && slot == 0) {
+            maybeAutoDownloadFromSatellite(true); // force reset to base
+        }
     }
 
     public SatelliteBase getSatelliteFromSlot(int slot) {
@@ -146,15 +267,20 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
-        List<ModuleBase> modules = new LinkedList<>();
+        List<ModuleBase> modules = new ArrayList<>(6);
 
         modules.add(new ModulePower(18, 20, this.energy) {
             @Override public int numberOfChangesToSend() { return 2; }
         });
 
-        modules.add(new ModuleButton(116, 70, 0,
+        modules.add(new ModuleButton(
+            116, 70, 0,
             LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.connect"),
-            this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+            this,
+            zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+            LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.autodl_hint") // tooltip
+        ));
+
 
         modules.add(new ModuleButton(173, 3, 1, "",
             this, TextureResources.buttonKill,
@@ -219,43 +345,21 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
-        // 1) Type guard (unchanged)
-        if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) {
-            return 0;
-        }
+        // 1) Type guard
+        if (type != data.getDataType() && data.getDataType() != DataType.UNDEFINED) return 0;
 
-        // 2) Simulation: report local only (don’t guess satellite yield)
-        if (!commit) {
-            int availableLocal = data.getData();
-            return Math.min(maxAmount, availableLocal);
-        }
+        // 2) Simulation
+        if (!commit) return Math.min(maxAmount, data.getData());
 
-        // 3) Drain LOCAL first, chip or no chip
-        int availableLocal = data.getData();
-        int toGive = Math.min(maxAmount, availableLocal);
-        int removed = 0;
-        if (toGive > 0) {
-            removed = data.removeData(toGive, true);
-        }
+        // 3) Drain LOCAL once
+        int toGive = Math.min(maxAmount, data.getData());
+        int removed = (toGive > 0) ? data.removeData(toGive, true) : 0;
 
-        // 4) If we have link+power, auto-download to refill AFTER the pull
-        SatelliteBase sat = getSatelliteFromSlot(0);
-        boolean inRange = false;
-        if (sat != null) {
-            int satDim = sat.getDimensionId();
-            int hereDim = DimensionManager.getEffectiveDimId(world, pos).getId();
-            inRange = PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(satDim, hereDim);
+        // 4) Opportunistic refill (cheap guard inside function)
+        if (removed > 0) {
+            maybeAutoDownloadFromSatellite(true);
         }
-        boolean hasLink  = (sat instanceof SatelliteData) && inRange;
-        boolean hasPower = getUniversalEnergyStored() >= getPowerPerOperation();
-
-        if (hasLink && hasPower) {
-            sat.performAction(null, world, pos);                // same as GUI Download
-            this.energy.extractEnergy(getPowerPerOperation(), false);
-            // (No immediate extra removal here; we already served the request.)
-        }
-
-        return removed;  // may be 0 if buffer empty and no link/power
+        return removed;
     }
 
 
@@ -265,6 +369,33 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
         return added;
     }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (!world.isRemote) {
+            // Reset backoff scheduler to a sane base state
+            autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
+            long now = world.getTotalWorldTime();
+            // Warm-up so neighbors/registries settle (e.g. 80 ticks ~ 4s)
+            nextAutoDlTick = now + 80;
+        }
+    }
+
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        // Hard-clear any references and scheduling
+        autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
+        nextAutoDlTick = 0L;
+    }
+
+    // Clear caches if the block/TE is invalidated (broken/replaced)
+    @Override
+    public void invalidate() {
+        super.invalidate();
+    }
+
 
     @Override
     public boolean canInteractWithContainer(EntityPlayer entity) { return true; }

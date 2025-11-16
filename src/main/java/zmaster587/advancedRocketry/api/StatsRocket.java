@@ -145,6 +145,10 @@ public class StatsRocket {
                 Fluid f = FluidRegistry.getFluid(getOxidizerFluid());
                 fluidWeight += WeightEngine.INSTANCE.getWeight(f, getFuelAmount(FuelType.LIQUID_OXIDIZER));
             }
+            if (FluidRegistry.isFluidRegistered(getWorkingFluid())) {
+                Fluid f = FluidRegistry.getFluid(getWorkingFluid());
+                fluidWeight += WeightEngine.INSTANCE.getWeight(f, getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID));
+            }            
         }
         return weight + fluidWeight;
     }
@@ -554,6 +558,7 @@ public class StatsRocket {
         weight = 0;
         fuelFluid = "null";
         oxidizerFluid = "null";
+        workingFluid = "null";
         drillingPower = 0f;
 
         for (FuelType type : FuelType.values()) {
@@ -720,12 +725,12 @@ this.reset();
             this.fuelRateNuclearWorkingFluid = stats.getInteger("fuelRateNuclearWorkingFluid");
             this.fuelRateWarp = stats.getInteger("fuelRateWarp");
 
-            this.fuelBaseRateMonopropellant = stats.getInteger("fuelBaseRateMonopropellant");
-            this.fuelBaseRateBipropellant = stats.getInteger("fuelBaseRateBipropellant");
-            this.fuelBaseRateOxidizer = stats.getInteger("fuelBaseRateOxidizer");
+            this.fuelBaseRateMonopropellant = (int)stats.getFloat("fuelBaseRateMonopropellant");
+            this.fuelBaseRateBipropellant = (int)stats.getFloat("fuelBaseRateBipropellant");
+            this.fuelBaseRateOxidizer = (int)stats.getFloat("fuelBaseRateOxidizer");
             this.fuelBaseRateImpulse = stats.getInteger("fuelBaseRateImpulse");
             this.fuelBaseRateIon = stats.getInteger("fuelBaseRateIon");
-            this.fuelBaseRateNuclearWorkingFluid = stats.getInteger("fuelBaseRateNuclearWorkingFluid");
+            this.fuelBaseRateNuclearWorkingFluid = (int)stats.getFloat("fuelBaseRateNuclearWorkingFluid");
             this.fuelBaseRateWarp = stats.getInteger("fuelBaseRateWarp");
 
 
