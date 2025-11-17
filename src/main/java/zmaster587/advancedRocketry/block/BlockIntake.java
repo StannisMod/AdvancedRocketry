@@ -32,5 +32,4 @@ public class BlockIntake extends Block implements IIntake {
     public int getIntakeAmt(IBlockState state) {
         return 1;
     }
-
 }
