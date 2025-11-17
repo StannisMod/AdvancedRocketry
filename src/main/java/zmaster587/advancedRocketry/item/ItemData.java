@@ -98,18 +98,17 @@ public class ItemData extends ItemIngredient {
 
         DataStorage data = getDataStorage(stack);
 
-        // 1) Type: <type>
+        // Type: 
         list.add(TextFormatting.DARK_PURPLE + "Space Suit Component");
         String typeText = net.minecraft.client.resources.I18n.format(data.getDataType().toString());
         list.add(net.minecraft.util.text.TextFormatting.WHITE + "Type: " + typeText);
-
-        // 2) §fData stored: §6<data> §f/§6 <max>
+        // Data:
         list.add(net.minecraft.util.text.TextFormatting.WHITE + "Data stored: "
             + net.minecraft.util.text.TextFormatting.GOLD + data.getData()
             + net.minecraft.util.text.TextFormatting.WHITE + " / "
             + net.minecraft.util.text.TextFormatting.GOLD + data.getMaxData());
 
-        // 3) Hold Shift for more info
+        // Hold Shift for more info
         if (net.minecraft.client.gui.GuiScreen.isShiftKeyDown()) {
             list.add(net.minecraft.util.text.TextFormatting.GRAY +
                     net.minecraft.client.resources.I18n.format("tooltip.advancedrocketry.itemdataunit.shift.1"));
@@ -119,5 +118,4 @@ public class ItemData extends ItemIngredient {
                     net.minecraft.client.resources.I18n.format("tooltip.advancedrocketry.hold_shift"));
         }
     }
-
 }
