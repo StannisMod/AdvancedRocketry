@@ -69,5 +69,4 @@ public class BlockSuitWorkstation extends BlockTile {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
         TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.suitworkingstation", insertAt);
     }
-
 }
