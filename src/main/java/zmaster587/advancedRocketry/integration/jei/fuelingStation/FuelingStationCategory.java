@@ -90,9 +90,8 @@ public class FuelingStationCategory implements IRecipeCategory<FuelingStationWra
 
     @Override
     public void drawExtras(Minecraft mc) {
-        // Draw tank bezel and slot frames so it looks like the real GUI
-        tankFrame.draw(mc, 27, 2);   // 14x54 bezel
-        slotFrame.draw(mc, 45, 6);   // bucket slot
+        tankFrame.draw(mc, 27, 2);
+        slotFrame.draw(mc, 45, 6);
     }
 
 }
