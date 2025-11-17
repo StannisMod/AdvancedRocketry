@@ -1,7 +1,6 @@
 package zmaster587.advancedRocketry.block;
 
 import java.util.List;
-
 import javax.annotation.Nullable;
 
 import net.minecraft.block.material.Material;
@@ -48,5 +47,4 @@ public class BlockForceFieldProjector extends BlockFullyRotatable {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
         TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.forcefieldprojector", insertAt);
     }
-
 }
