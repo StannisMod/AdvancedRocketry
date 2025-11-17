@@ -117,14 +117,11 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
     @SideOnly(Side.CLIENT)
     public void renderScreen(@Nonnull ItemStack componentStack, List<ItemStack> modules, RenderGameOverlayEvent event, Gui gui) {
         // TODO Auto-generated method stub
-
     }
 
-
-    
+   
     @Override
     public ICapabilityProvider initCapabilities(@Nonnull ItemStack stack, NBTTagCompound nbt) {
         return new TankCapabilityItemStack(stack, getCapacity(stack));
     }
-
 }
