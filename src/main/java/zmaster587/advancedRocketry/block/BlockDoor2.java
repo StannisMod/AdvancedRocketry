@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.block;
 import net.minecraft.block.BlockDoor;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
@@ -14,9 +15,13 @@ import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNullableByDefault;
+
+import java.util.List;
 import java.util.Random;
 
 public class BlockDoor2 extends BlockDoor {
@@ -45,5 +50,5 @@ public class BlockDoor2 extends BlockDoor {
                                     IBlockState state, EntityPlayer playerIn, EnumHand hand, EnumFacing side, float hitX, float hitY,
                                     float hitZ) {
         return false;
-    }
+    } 
 }
