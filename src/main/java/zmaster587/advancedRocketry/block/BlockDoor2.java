@@ -37,7 +37,6 @@ public class BlockDoor2 extends BlockDoor {
         return new ItemStack(AdvancedRocketryItems.itemSmallAirlockDoor);
     }
 
-
     @Override
     @Nonnull
     public Item getItemDropped(IBlockState state, Random rand, int fortune) {
