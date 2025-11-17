@@ -119,5 +119,4 @@ public class BlockSeat extends Block {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
         TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.seat", insertAt);
     }
-    
 }
