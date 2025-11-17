@@ -33,8 +33,6 @@ import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.util.INetworkMachine;
 
-
-
 import javax.annotation.Nonnull;
 import java.util.LinkedList;
 import java.util.List;
@@ -277,7 +275,7 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
         list.add(toggleSwitch);
         list.add(netIdLabel);
 
-        // Bar-only UI (no buttons/slots). Place it where you want it.
+        // Bar-only UI
         list.add(new ModuleWirelessBufferBar(14, 22, uiBuffer));
 
         return list;
@@ -461,7 +459,7 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
 
         // Resolve front for either 6-way or legacy block
         EnumFacing front = resolveFront(state);
-        EnumFacing facing = front.getOpposite(); // keep existing IO semantics
+        EnumFacing facing = front.getOpposite();
         TileEntity neighbor = world.getTileEntity(getPos().offset(facing));
         if (neighbor == null || neighbor instanceof TileWirelessTransciever) return;
         if (!(neighbor instanceof IDataHandler)) return;
@@ -537,6 +535,4 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
 
         super.invalidate();
     }
-
-    
 }
