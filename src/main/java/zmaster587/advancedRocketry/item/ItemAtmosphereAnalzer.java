@@ -159,5 +159,4 @@ public class ItemAtmosphereAnalzer extends Item implements IArmorComponent {
     public ResourceIcon getComponentIcon(@Nonnull ItemStack armorStack) {
         return null;
     }
-
 }
