@@ -37,7 +37,6 @@ import zmaster587.libVulpes.block.RotatableBlock;
 import zmaster587.libVulpes.util.IAdjBlockUpdate;
 
 import java.util.List;
-
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
@@ -177,5 +176,4 @@ public class BlockTileTerraformer extends RotatableBlock {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
         TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.terraformer", insertAt);
     }  
-
 }
