@@ -24,15 +24,9 @@ import org.lwjgl.input.Keyboard;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.tile.TileFluidTank;
 
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
-
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
-
-import org.lwjgl.input.Keyboard;
-
 import java.util.List;
 
 public class ItemBlockFluidTank extends ItemBlock {
@@ -64,7 +58,7 @@ public class ItemBlockFluidTank extends ItemBlock {
         list.add("Fluid: " + fluidName);
         list.add("Level: " + amount + "/" + capMb + " mB");
 
-        // --- SHIFT for more info (adds two short lines) ---
+        // --- SHIFT for more info ---
         if (GuiScreen.isShiftKeyDown()) {
             list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.fluidtank.shift.1"));
         } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
@@ -94,7 +88,6 @@ public class ItemBlockFluidTank extends ItemBlock {
         }
         return true;
     }
-
 
     public void fill(@Nonnull ItemStack stack, FluidStack fluid) {
         NBTTagCompound nbt;
