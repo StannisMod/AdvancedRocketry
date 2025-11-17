@@ -113,7 +113,7 @@ public class ItemAsteroidChip extends ItemMultiData {
             final long disp = makeDisplayId(id, type);
             final String hex = Long.toUnsignedString(disp, 16).toUpperCase();
 
-            // Fixed-length visual tag (avoid lookalikes by using N=6 chars)
+            // Fixed-length visual tag
             final int N = 6;
             final String shortHex = (hex.length() > N) ? hex.substring(hex.length() - N) : hex;
 
