@@ -35,7 +35,6 @@ public class FuelingStationRecipeMaker {
         }
     }
 
-    // Optional: keep this to match your existing makers
     public static List<FuelingStationWrapper> getMachineRecipes(IJeiHelpers helpers, Class<?> ignored) {
         return getRecipes(helpers);
     }
