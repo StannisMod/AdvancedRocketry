@@ -1,7 +1,5 @@
 package zmaster587.advancedRocketry.block;
 
-import javax.annotation.Nonnull;
-
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.util.ITooltipFlag;
@@ -21,12 +19,9 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.libVulpes.block.BlockTile;
 import zmaster587.advancedRocketry.client.TooltipInjector;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.List;
-
-
-
-
 
 public class BlockTransciever extends BlockTile {
 
@@ -75,8 +70,6 @@ public class BlockTransciever extends BlockTile {
     public BlockRenderLayer getBlockLayer() {
         return BlockRenderLayer.CUTOUT_MIPPED;
     }
-    // If this still errors in your mappings, rename the method to:
-    // public BlockRenderLayer getRenderLayer() { return BlockRenderLayer.CUTOUT_MIPPED; }
 
     @Override
     protected BlockStateContainer createBlockState() {
