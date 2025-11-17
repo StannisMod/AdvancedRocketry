@@ -44,5 +44,4 @@ public class BlockMiningDrill extends BlockFullyRotatable implements IMiningDril
     public int powerConsumption() {
         return 0;
     }
-
 }
