@@ -105,5 +105,4 @@ public class BlockRedstoneEmitter extends Block {
     public boolean canProvidePower(IBlockState state) {
         return true;
     }
-
 }
