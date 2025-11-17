@@ -198,5 +198,4 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
         HashedBlockPosition pos = new HashedBlockPosition(((TileEntity) tile).getPos());
         infrastructureCoords.remove(pos);
     }
-
 }
