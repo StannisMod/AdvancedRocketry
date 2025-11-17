@@ -135,5 +135,4 @@ public class BlockLinkedHorizontalTexture extends Block {
             return false;
         }
     }
-
 }
