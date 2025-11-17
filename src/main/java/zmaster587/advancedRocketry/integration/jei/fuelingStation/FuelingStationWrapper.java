@@ -84,7 +84,6 @@ public class FuelingStationWrapper implements IRecipeWrapper {
         }
     }
 
-    // keep this helper; category uses it conditionally
     public ItemStack getFilledContainer() {
         ItemStack is = net.minecraftforge.fluids.FluidUtil.getFilledBucket(fluid);
         return is == null ? ItemStack.EMPTY : is;
