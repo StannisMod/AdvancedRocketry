@@ -366,8 +366,4 @@ public class TileFluidTank extends TileFluidHatch {
             exitColumnOp();
         }
     }
-
-
-
-
 }
