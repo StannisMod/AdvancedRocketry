@@ -17,7 +17,6 @@ public class Co2ScrubberCategory implements IRecipeCategory<Co2ScrubberWrapper> 
     private final IDrawable icon;
     private final IDrawable slot;
 
-    // Compact like your fueling station: 150x40
     public Co2ScrubberCategory(IGuiHelper gui) {
         this.bg   = gui.createBlankDrawable(150, 40);
         this.icon = gui.createDrawableIngredient(new ItemStack(AdvancedRocketryBlocks.blockCO2Scrubber));
@@ -42,7 +41,6 @@ public class Co2ScrubberCategory implements IRecipeCategory<Co2ScrubberWrapper> 
         items.init(1, false, 120, 11);
         items.set(1, new ItemStack(AdvancedRocketryBlocks.blockOxygenVent));
     }
-
 
     @Override
     public void drawExtras(Minecraft mc) {
