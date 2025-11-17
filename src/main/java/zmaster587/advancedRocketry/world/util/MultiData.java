@@ -19,6 +19,14 @@ public class MultiData implements IDataHandler {
         reset();
     }
 
+    private static final java.util.EnumSet<DataStorage.DataType> SUPPORTED_TYPES =
+        java.util.EnumSet.of(
+            DataStorage.DataType.COMPOSITION,
+            DataStorage.DataType.MASS,
+            DataStorage.DataType.DISTANCE
+        );
+
+
     public void reset() {
         for (DataStorage.DataType type : DataStorage.DataType.values()) {
             if (type != DataStorage.DataType.UNDEFINED)
