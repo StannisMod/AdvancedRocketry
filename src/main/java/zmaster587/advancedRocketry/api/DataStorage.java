@@ -168,7 +168,6 @@ public class DataStorage {
         }
     }
 
-
     public enum DataType {
         UNDEFINED,
         DISTANCE,
