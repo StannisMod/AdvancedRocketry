@@ -8,6 +8,8 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.BiomeProvider;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
@@ -31,6 +33,7 @@ import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.tile.TileInventoriedRFConsumer;
 import zmaster587.libVulpes.util.INetworkMachine;
+import zmaster587.libVulpes.cap.TeslaHandler;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -65,7 +68,7 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
 
     @Override
     public String getModularInventoryName() {
-        return AdvancedRocketryBlocks.blockSatelliteControlCenter.getLocalizedName();
+        return AdvancedRocketryBlocks.blockTerraformingTerminal.getLocalizedName();
     }
 
     @Override
@@ -209,14 +212,14 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
                 BigDecimal bd = new BigDecimal(randomblocks_per_tick);
                 bd = bd.setScale(2, RoundingMode.HALF_UP);
 
-                moduleText.setText("terraforming planet...\n" +
-                        "\nPower generation:" + sat_power_per_tick +
-                        "\nBlocks per tick:" + bd);
+                moduleText.setText("Terraforming planet...\n" +
+                        "\nPower generation: " + sat_power_per_tick +
+                        "\nBlocks per tick: " + bd);
 
             } else if (hasValidBiomeChanger()) {
-                moduleText.setText("provide redstone signal\nto start the process");
+                moduleText.setText("Provide redstone signal\nto start the process");
             } else {
-                moduleText.setText("place a biome remote here\nto make the satellite terraform\nthe entire planet");
+                moduleText.setText("\nPlace a Biome Changer Remote\nhere to make the Satellite\nterraform the entire planet");
             }
 
         }
@@ -264,6 +267,45 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
         //nbt.setFloat("randomblocks_per_tick", randomblocks_per_tick);
         return nbt;
     }
+
+    @Override
+    public boolean canConnectEnergy(EnumFacing side) {
+        return false;
+    }
+
+    @Override
+    public boolean canReceive() {
+        return false;
+    }
+
+    @Override
+    public int getEnergyStored(EnumFacing side) {
+        return 0;
+    }
+
+    @Override
+    public int getMaxEnergyStored(EnumFacing side) {
+        return 0;
+    }
+
+    @Override
+    public boolean hasCapability(Capability<?> capability, @Nullable EnumFacing facing) {
+        // Hide Forge Energy capability
+        if (capability == CapabilityEnergy.ENERGY) return false;
+        // Hide any Tesla capability the base class would expose
+        if (TeslaHandler.hasTeslaCapability(this, capability)) return false;
+        return super.hasCapability(capability, facing);
+    }
+
+    @Override
+    @Nullable
+    public <T> T getCapability(Capability<T> capability, @Nullable EnumFacing facing) {
+        // Don’t provide energy handlers to probes/pipes
+        if (capability == CapabilityEnergy.ENERGY) return null;
+        if (TeslaHandler.hasTeslaCapability(this, capability)) return null;
+        return super.getCapability(capability, facing);
+    }
+
 
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
