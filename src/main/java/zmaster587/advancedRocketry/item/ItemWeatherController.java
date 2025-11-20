@@ -75,11 +75,11 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
         } else if (mapping.getDimensionId() == world.provider.getDimension()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.connected"));
             if (mapping.mode_id == 0)
-                list.add("Mode: rain - Fills small basins in the terrain with water");
+                list.add("Mode: Rain - Fills small basins in the terrain with water");
             if (mapping.mode_id == 1)
-                list.add("Mode: dry - Drys all water in a radius of 16");
+                list.add("Mode: Dry - Drys all water in a radius of 16");
             if (mapping.mode_id == 2)
-                list.add("Mode: flood - Floods area with a radius of 16 with water");
+                list.add("Mode: Flood - Floods area with a radius of 16 with water");
         } else {
             list.add(LibVulpes.proxy.getLocalizedString("msg.notconnected"));
         }
