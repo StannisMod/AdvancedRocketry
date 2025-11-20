@@ -316,10 +316,53 @@ public final class TooltipInjector {
         KEY_BY_ID.put("advancedrocketry:pump", "tooltip.advancedrocketry.pump");
         KEY_BY_SUFFIX.put("pump",              "tooltip.advancedrocketry.pump");
 
+        // ---- Remotes ----
+        KEY_BY_ID.put("advancedrocketry:biomechanger", "tooltip.advancedrocketry.biomechangerremote");
+        KEY_BY_SUFFIX.put("biomechanger",              "tooltip.advancedrocketry.biomechangerremote");
+
+        KEY_BY_ID.put("advancedrocketry:weathercontroller", "tooltip.advancedrocketry.weathercontrollerremote");
+        KEY_BY_SUFFIX.put("weathercontroller",              "tooltip.advancedrocketry.weathercontrollerremote");
+
+        KEY_BY_ID.put("advancedrocketry:orescanner", "tooltip.advancedrocketry.orescanner");
+        KEY_BY_SUFFIX.put("orescanner",              "tooltip.advancedrocketry.orescanner");
+
+
+
+        // ---- Crafting items ----
+        // Iron Saw Blade
+        KEY_BY_ID.put("advancedrocketry:sawbladeiron", "tooltip.advancedrocketry.sawbladeiron");
+        KEY_BY_SUFFIX.put("sawbladeiron",              "tooltip.advancedrocketry.sawbladeiron");
+
+        // Wafer
+        KEY_BY_ID.put("advancedrocketry:wafer",        "tooltip.advancedrocketry.wafer");
+        KEY_BY_SUFFIX.put("wafer",                     "tooltip.advancedrocketry.wafer");
+
+        // Circuit Plate
+        KEY_BY_ID.put("advancedrocketry:itemcircuitplate", "tooltip.advancedrocketry.circuitplate");
+        KEY_BY_SUFFIX.put("itemcircuitplate",              "tooltip.advancedrocketry.circuitplate"); 
+        KEY_BY_SUFFIX.put("circuitplate",                  "tooltip.advancedrocketry.circuitplate"); 
+
+        // itemLens
+        KEY_BY_ID.put("advancedrocketry:lens",          "tooltip.advancedrocketry.itemlens");
+        KEY_BY_SUFFIX.put("lens",                       "tooltip.advancedrocketry.itemlens");
+
+        // Integrated Circuit (IC)
+        KEY_BY_ID.put("advancedrocketry:ic",           "tooltip.advancedrocketry.circuitic");
+        KEY_BY_SUFFIX.put("ic",                        "tooltip.advancedrocketry.circuitic");
+        KEY_BY_SUFFIX.put("circuitIC",                 "tooltip.advancedrocketry.circuitic");
+
+        // Misc parts
+        KEY_BY_ID.put("advancedrocketry:miscpart",     "tooltip.advancedrocketry.miscpart");
+        KEY_BY_SUFFIX.put("miscpart",                  "tooltip.advancedrocketry.miscpart");
+
+        KEY_BY_ID.put("advancedrocketry:misc",     "tooltip.advancedrocketry.misc");
+        KEY_BY_SUFFIX.put("misc",                  "tooltip.advancedrocketry.misc");
+
+
         // ---- Assemblers ----
         // Rocket Assembler
         KEY_BY_ID.put("advancedrocketry:rocketbuilder", "tooltip.advancedrocketry.rocketassembler");
-        KEY_BY_SUFFIX.put("rocketbuilder",              "tooltip.advancedrocketry.rocketassembler"); // safety
+        KEY_BY_SUFFIX.put("rocketbuilder",              "tooltip.advancedrocketry.rocketassembler");
         KEY_BY_SUFFIX.put("rocketAssembler",            "tooltip.advancedrocketry.rocketassembler");
 
         // Space Station Assembler
