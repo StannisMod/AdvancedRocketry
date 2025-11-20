@@ -64,27 +64,29 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
     }
 
     @Override
-    public void addInformation(@Nonnull ItemStack stack, World player, List<String> list, ITooltipFlag arg5) {
+    public void addInformation(@Nonnull ItemStack stack, World world, List<String> list, ITooltipFlag flag) {
 
         SatelliteBase sat = SatelliteRegistry.getSatellite(stack);
+        SatelliteBiomeChanger mapping = sat instanceof SatelliteBiomeChanger ? (SatelliteBiomeChanger) sat : null;
 
-        SatelliteBiomeChanger mapping = null;
-        if (sat instanceof SatelliteBiomeChanger)
-            mapping = (SatelliteBiomeChanger) sat;
+        // If unprogrammed, let the superclass handle the "unprogrammed" tooltip so it only shows once
+        if (!stack.hasTagCompound()) {
+            super.addInformation(stack, world, list, flag);
+            return;
+        }
 
-        if (!stack.hasTagCompound())
-            list.add(LibVulpes.proxy.getLocalizedString("msg.unprogrammed"));
-        else if (mapping == null)
+        if (mapping == null) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.nosat"));
-        else if (mapping.getDimensionId() == player.provider.getDimension()) {
+        } else if (mapping.getDimensionId() == world.provider.getDimension()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.connected"));
-            if (mapping.getBiome()!=null)
+            if (mapping.getBiome() != null)
                 list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.selBiome") + mapping.getBiome().getBiomeName());
             list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.numBiome") + mapping.discoveredBiomes().size());
-        } else
+        } else {
             list.add(LibVulpes.proxy.getLocalizedString("msg.notconnected"));
+        }
 
-        super.addInformation(stack, player, list, arg5);
+        super.addInformation(stack, world, list, flag);
     }
 
 
