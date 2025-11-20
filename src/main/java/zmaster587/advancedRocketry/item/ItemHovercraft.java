@@ -101,6 +101,6 @@ public class ItemHovercraft extends Item {
 
     @Override
     public void addInformation(@Nonnull ItemStack stack, World worldIn, List<String> tooltip, ITooltipFlag flagIn) {
-        tooltip.add(LibVulpes.proxy.getLocalizedString("item.hovercraft.tooltip"));
+        tooltip.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.hovercraft"));
     }
 }
