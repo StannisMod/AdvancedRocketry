@@ -33,7 +33,7 @@ tile.blastBrick.name=隔热砖
 tile.blastFurnaceController.name=隔热高炉控制器
 tile.fuelStation.name=加油站
 tile.loader.0.name=数据总线
-tile.loader.1.name=卫星舱
+tile.loader.1.name=卫星仓
 tile.loader.2.name=火箭卸载器
 tile.loader.3.name=火箭装载器
 tile.loader.4.name=火箭流体卸载器
@@ -201,7 +201,7 @@ item.pressureTank.2.name=高压储罐
 item.pressureTank.3.name=超高压储罐
 item.elevatorChip.name=太空电梯芯片
 
-container.satellite=卫星舱
+container.satellite=卫星仓
 container.monitoringstation=监测站
 container.invhatch=存储仓
 
@@ -423,7 +423,7 @@ msg.warpmon.datareq=需各类数据各100
 msg.warpmon.artifact=工件
 msg.rocketbuilder.success=可以发射！
 msg.rocketbuilder.nofuel=燃料容量不足！
-msg.rocketbuilder.noseat=缺少座位或卫星舱！
+msg.rocketbuilder.noseat=缺少座位或卫星仓！
 msg.rocketbuilder.noengines=推力不足！
 msg.rocketbuilder.noguidance=缺少导航计算机
 msg.rocketbuilder.unscanned=火箭未扫描
@@ -434,7 +434,7 @@ msg.rocketbuilder.empty=区域为空
 msg.rocketbuilder.finished=搭建完成！
 msg.rocketbuild.invalidblock=无效方块！
 msg.rocketbuilder.incompletestructure=发射台结构无效！
-msg.rocketbuilder.nosatellitehatch=缺少卫星舱
+msg.rocketbuilder.nosatellitehatch=缺少卫星仓
 msg.rocketbuilder.nosatellitechip=缺少芯片
 msg.rocketbuilder.outputblocked=输出槽被阻塞
 msg.rocketbuilder.thrust=推力
@@ -1192,7 +1192,7 @@ tooltip.advancedrocketry.stationassembler.shift.1=§b需要发射台+结构塔�
 tooltip.advancedrocketry.stationassembler.alt.1=§f将此方块放置在比发射台高1格的位置，连接底部边角且朝向与发射台方块相反
 
 # Packet Station
-tooltip.advancedrocketry.packedstructure=放入§c卫星舱§7以送入轨道！
+tooltip.advancedrocketry.packedstructure=放入§c卫星仓§7以送入轨道！
 tooltip.advancedrocketry.packedstructure.shift.1=§e记得告诉火箭应该将有效载荷部署到哪个行星的轨道！
 
 # Deployable Rocket Assembler
