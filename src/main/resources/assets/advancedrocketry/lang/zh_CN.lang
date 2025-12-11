@@ -69,7 +69,7 @@ tile.rollingMachine.name=卷板机
 tile.planetSelector.name=行星选择器
 tile.blockHandPress.name=小型压板器
 tile.placeHolder.name=机器
-tile.stationAssembler.name=太空站组装机
+tile.stationAssembler.name=空间站组装机
 tile.electrolyser.name=电解器
 tile.chemreactor.name=化学反应器
 tile.scrubber.name=二氧化碳净化器
@@ -352,7 +352,7 @@ msg.guidanceComputerHatch.loadingState=装载状态：
 msg.guidanceComputerHatch.ejectonlanding=着陆时自动弹出
 msg.guidanceComputerHatch.ejectonsatlanding=允许弹出卫星芯片
 msg.guidanceComputerHatch.ejectonplanetlanding=允许弹出行星芯片
-msg.guidanceComputerHatch.ejectonstationlanding=允许弹出太空站芯片
+msg.guidanceComputerHatch.ejectonstationlanding=允许弹出空间站芯片
 msg.guidanceComputerHatch.link=已将流体装载器写入链接器，位置：
 msg.fluidLoader.loadingState=装载状态：
 msg.fluidLoader.allowLoading=允许装载：
@@ -899,7 +899,7 @@ tooltip.advancedrocketry.oxygencharger.alt.1=不需要能量
 tooltip.advancedrocketry.dockingport=标记空间站模块的对接点
 tooltip.advancedrocketry.dockingport.shift.1=在空间站上：设置唯一的“本端ID”
 tooltip.advancedrocketry.dockingport.shift.2=在新模块上：设置“目标ID”
-tooltip.advancedrocketry.dockingport.alt.1=在太空站组装机中构建新模块
+tooltip.advancedrocketry.dockingport.alt.1=在空间站组装机中构建新模块
 tooltip.advancedrocketry.dockingport.alt.2=夹具面必须相互对准
 
 # Pipe Seal
