@@ -5,7 +5,7 @@ death.attack.Vacuum=%1$s因为失压而死
 death.attack.Vacuum.player=%1$s因为失压而死
 death.attack.OxygenToxicity=%1$s因氧气中毒而死
 death.attack.OxygenToxicity.player=%1$s因氧气中毒而死
-death.attack.LowOxygen=%1$s 因缺氧而死
+death.attack.LowOxygen=%1$s因缺氧而死
 death.attack.LowOxygen.player=%1$s因缺氧而死
 death.attack.Heat=%1$s因过热而死
 death.attack.Heat.player=%1$s因过热而死
@@ -808,7 +808,7 @@ tooltip.advancedrocketry.databusbig.shift.1=§b只能保存一种类型的数据
 tooltip.advancedrocketry.databusbig.alt.1=§b破坏时保留数据，可作为物品或方块使用
 
 # TileDataBus
-tooltip.advancedrocketry.hatch.databus=容量：§62000§7数据
+tooltip.advancedrocketry.hatch.databus=容量：§62000§7 数据
 tooltip.advancedrocketry.hatch.databus.shift.1=§b只能保存一种类型的数据
 tooltip.advancedrocketry.hatch.databus.alt.1=§f破坏时清空数据
 
