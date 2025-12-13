@@ -58,6 +58,7 @@ import zmaster587.advancedRocketry.armor.ItemSpaceChest;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.block.inventory.BlockInvHatch;
 import zmaster587.advancedRocketry.block.multiblock.BlockARHatch;
+import zmaster587.advancedRocketry.block.multiblock.BlockDataBusBig;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodLeaves;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodPlanks;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
@@ -95,6 +96,7 @@ import zmaster587.advancedRocketry.tile.cables.TileEnergyPipe;
 import zmaster587.advancedRocketry.tile.cables.TileLiquidPipe;
 import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
+import zmaster587.advancedRocketry.tile.hatch.TileDataBusBig;
 import zmaster587.advancedRocketry.tile.hatch.TileInvHatch;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.tile.infrastructure.*;
@@ -374,6 +376,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileCrystallizer.class, "ARcrystallizer");
         GameRegistry.registerTileEntity(TileCuttingMachine.class, "ARcuttingmachine");
         GameRegistry.registerTileEntity(TileDataBus.class, "ARdataBus");
+        GameRegistry.registerTileEntity(TileDataBusBig.class, "ARdataBusBig");
         GameRegistry.registerTileEntity(TileSatelliteHatch.class, "ARsatelliteHatch");
         GameRegistry.registerTileEntity(TileInvHatch.class, "ARinventoryHatch");
         GameRegistry.registerTileEntity(TileGuidanceComputerAccessHatch.class, "ARguidanceComputerHatch");
@@ -427,6 +430,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileCentrifuge.class, new ResourceLocation(Constants.modId, "ARCentrifuge"));
         GameRegistry.registerTileEntity(TilePrecisionLaserEtcher.class, new ResourceLocation(Constants.modId, "ARPrecisionLaserEtcher"));
         GameRegistry.registerTileEntity(TileSolarArray.class, new ResourceLocation(Constants.modId, "ARSolarArray"));
+        GameRegistry.registerTileEntity(TileOrbitalRegistry.class, new ResourceLocation(Constants.modId, "orbitalRegistry"));
 
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableGravityController)
             GameRegistry.registerTileEntity(TileAreaGravityController.class, "ARGravityMachine");
@@ -649,6 +653,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockPlanetAnalyser = new BlockMultiblockMachine(TileAstrobodyDataProcessor.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("planetanalyser").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockCentrifuge = new BlockMultiblockMachine(TileCentrifuge.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("centrifuge");
         AdvancedRocketryBlocks.blockSatelliteBuilder = new BlockMultiblockMachine(TileSatelliteBuilder.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteBuilder");
+        
         //Energy
         AdvancedRocketryBlocks.blockBlackHoleGenerator = new BlockMultiblockMachine(TileBlackHoleGenerator.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("blackholegenerator").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockMicrowaveReciever = new BlockMultiblockMachine(TileMicrowaveReciever.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("microwaveReciever");
@@ -667,6 +672,11 @@ public class AdvancedRocketry {
             AdvancedRocketryBlocks.blockGravityMachine = new BlockMultiblockMachine(TileAreaGravityController.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("gravityMachine").setCreativeTab(tabAdvRocketry).setHardness(3f);
         if (ARConfiguration.getCurrentConfig().enableLaserDrill)
             AdvancedRocketryBlocks.blockSpaceLaser = new BlockOrbitalLaserDrill().setHardness(2f).setCreativeTab(tabAdvRocketry);
+        if (ARConfiguration.getCurrentConfig().enableOrbitalRegistry)
+            AdvancedRocketryBlocks.blockOrbitalRegistry = new BlockMultiblockMachine(TileOrbitalRegistry.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("orbitalRegistry");
+        
+        
+        
         //Docking blocks
         AdvancedRocketryBlocks.blockLaunchpad = new BlockLinkedHorizontalTexture(Material.ROCK).setUnlocalizedName("pad").setCreativeTab(tabAdvRocketry).setHardness(2f).setResistance(10f);
         AdvancedRocketryBlocks.blockLandingPad = new BlockLandingPad(Material.ROCK).setUnlocalizedName("dockingPad").setHardness(3f).setCreativeTab(tabAdvRocketry);
@@ -695,11 +705,14 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockDeployableRocketBuilder = new BlockTileWithMultitooltip(TileUnmannedVehicleAssembler.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("deployableRocketAssembler").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Infrastructure machines
         AdvancedRocketryBlocks.blockLoader = new BlockARHatch(Material.IRON).setUnlocalizedName("loader").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // Big Data Bus Hatch
+        AdvancedRocketryBlocks.blockDataBusBig = new BlockDataBusBig(Material.IRON).setUnlocalizedName("databusbig").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockFuelingStation = new BlockTileRedstoneEmitter(TileFuelingStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("fuelStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockMonitoringStation = new BlockTileNeighborUpdate(TileRocketMonitoringStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("monitoringstation");
         AdvancedRocketryBlocks.blockSatelliteControlCenter = new BlockTile(TileSatelliteTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteMonitor");
         AdvancedRocketryBlocks.blockTerraformingTerminal = new BlockTileTerraformer(TileTerraformingTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("terraformingTerminal");
         AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
+        
 
         //Station machines
         AdvancedRocketryBlocks.blockWarpShipMonitor = new BlockWarpController(TileWarpController.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("stationmonitor");
@@ -823,6 +836,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlanetAnalyser.setRegistryName("planetAnalyser"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockCentrifuge.setRegistryName("centrifuge"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSatelliteBuilder.setRegistryName("satelliteBuilder"));
+       
         //Energy
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBlackHoleGenerator.setRegistryName("blackholegenerator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMicrowaveReciever.setRegistryName("microwaveReciever"));
@@ -840,6 +854,7 @@ public class AdvancedRocketry {
             LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGravityMachine.setRegistryName("gravityMachine"));
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableLaserDrill)
             LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSpaceLaser.setRegistryName("spaceLaser"));
+
         //Docking blocks
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLaunchpad.setRegistryName("launchpad"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLandingPad.setRegistryName("landingPad"));
@@ -868,10 +883,14 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDeployableRocketBuilder.setRegistryName("deployableRocketBuilder"));
         //Infrastructure machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLoader.setRegistryName("loader"), ItemBlockMeta.class, false);
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDataBusBig.setRegistryName("databusbig"), zmaster587.advancedRocketry.item.ItemBlockDataBusBig.class, true);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockServiceStation.setRegistryName("serviceStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFuelingStation.setRegistryName("fuelingStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMonitoringStation.setRegistryName("monitoringStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSatelliteControlCenter.setRegistryName("satelliteControlCenter"));
+        if (ARConfiguration.getCurrentConfig().enableOrbitalRegistry)
+            LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOrbitalRegistry.setRegistryName("orbitalRegistry"));
+
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTerraformingTerminal.setRegistryName("terraformingTerminal"));
         //Station machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWarpShipMonitor.setRegistryName("warpMonitor"));
@@ -1039,6 +1058,7 @@ public class AdvancedRocketry {
         List<BlockMeta> list = new LinkedList<>();
         list.add(new BlockMeta(AdvancedRocketryBlocks.blockLoader, 0));
         list.add(new BlockMeta(AdvancedRocketryBlocks.blockLoader, 8));
+        list.add(new BlockMeta(AdvancedRocketryBlocks.blockDataBusBig, 0));
         TileMultiBlock.addMapping('D', list);
 
         machineRecipes.createAutoGennedRecipes(modProducts);
