@@ -13,6 +13,8 @@ import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.client.settings.GameSettings;
 import net.minecraft.entity.Entity;
 import net.minecraft.init.Blocks;
 import net.minecraft.inventory.EntityEquipmentSlot;
@@ -38,6 +40,7 @@ import zmaster587.advancedRocketry.api.IPlanetaryProvider;
 import zmaster587.advancedRocketry.api.RocketEvent;
 import zmaster587.advancedRocketry.api.armor.IFillableArmor;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
+import zmaster587.advancedRocketry.client.KeyBindings;
 import zmaster587.advancedRocketry.client.render.ClientDynamicTexture;
 import zmaster587.advancedRocketry.client.render.planet.RenderPlanetarySky;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
@@ -56,6 +59,7 @@ import java.util.List;
 import java.util.Random;
 
 public class RocketEventHandler extends Gui {
+
 
 
     private static final int getImgSize = 512;
@@ -141,6 +145,30 @@ public class RocketEventHandler extends Gui {
                         vertPos++;
                     }
                 }
+                // New bottom-right hint
+                Minecraft mc = Minecraft.getMinecraft();
+                if (mc.currentScreen == null) { // no GUI open
+                    FontRenderer fontRenderer = mc.fontRenderer;
+                    String keyName = GameSettings.getKeyDisplayString(
+                            KeyBindings.getOpenRocketUI().getKeyCode()
+                    );
+                    String hint = I18n.format("msg.entity.rocket.openGuiHint", keyName);
+
+                    int scaledW = event.getResolution().getScaledWidth();
+                    int scaledH = event.getResolution().getScaledHeight();
+                    int textWidth = fontRenderer.getStringWidth(hint);
+                    int textHeight = fontRenderer.FONT_HEIGHT;
+
+                    float scale = 1.0F;
+                    float x = (scaledW - 4 - textWidth * scale) / scale;
+                    float y = (scaledH - 4 - textHeight * scale) / scale;
+
+                    GL11.glPushMatrix();
+                    GL11.glScalef(scale, scale, scale);
+                    fontRenderer.drawStringWithShadow(hint, x, y, 0xFFFFFF);
+                    GL11.glPopMatrix();
+                }               
+
             }
 
             //Draw the O2 Bar if needed
