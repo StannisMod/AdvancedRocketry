@@ -21,12 +21,12 @@ public class DataStorage {
 
     public boolean setData(int data, DataType dataType) {
         // If empty/typeless, allow adopting the provided type (unless locked)
-        if (this.dataType == DataStorage.DataType.UNDEFINED && !this.locked) {
+        if (!this.locked && this.dataType == DataType.UNDEFINED && dataType != DataType.UNDEFINED) {
             this.dataType = dataType;
         }
 
-        if (dataType == DataStorage.DataType.UNDEFINED || dataType == this.dataType) {
-            this.data = Math.min(data, maxData);
+        if (dataType == DataType.UNDEFINED || dataType == this.dataType) {
+            this.data = Math.max(0, Math.min(data, maxData));
 
             // If we just became empty and are not locked, clear type
             if (!this.locked && this.data == 0) {
