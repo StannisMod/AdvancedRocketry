@@ -109,4 +109,6 @@ public class AdvancedRocketryBlocks {
     public static Block blockRocketFire;
     public static Block blockServiceMonitor;
     public static Block blockInvHatch;
+    public static Block blockOrbitalRegistry;
+    public static Block blockDataBusBig;
 }
