@@ -194,6 +194,13 @@ item.basicLaserGun.name=基础激光枪
 item.beaconFinder.name=信标定位器
 item.thermite.name=铝热剂
 item.hovercraft.name=气垫船
+item.satellite.opticaltelescope=光学望远镜
+item.satellite.composition=成分扫描器
+item.satellite.massscanner=质量扫描器
+item.satellite.solar=太阳能
+item.satellite.oremapper=矿物测绘器
+item.satellite.biomechanger=生物群系变换器
+item.satellite.weather=天气卫星
 
 
 item.jetPack.name=飞行背包
@@ -298,8 +305,26 @@ msg.observetory.text.composition=成分
 msg.observetory.text.processdiscovery=扫描进度
 msg.observetory.text.observabledistance=可观测距离：
 msg.observetory.text.missionTime=任务时间：
+msg.observetory.text.time=时间：
 msg.observetory.req.open=瞭望台必须满足开放条件（夜晚、天气晴朗、可观测天空）或位于空间站中！
 msg.observetory.print.already=此小行星已存在对应芯片！
+
+# Atmosphere detector GUI labels
+msg.atmosphere.air=正常空气
+msg.atmosphere.pressurizedair=加压空气
+msg.atmosphere.lowo2=低氧
+msg.atmosphere.vacuum=真空
+msg.atmosphere.highpressure=高压
+msg.atmosphere.superhighpressure=超高压
+msg.atmosphere.veryhot=高温
+msg.atmosphere.superheated=过热
+msg.atmosphere.noo2=无氧
+msg.atmosphere.highpressurenoo2=高压无氧
+msg.atmosphere.superhighpressurenoo2=超高压无氧
+msg.atmosphere.veryhotnoo2=高温无氧
+msg.atmosphere.superheatednooxygen=过热无氧
+
+
 msg.tooltip.data=数据
 msg.tooltip.asteroidselection=小行星选择
 msg.label.name=名称
@@ -417,6 +442,8 @@ msg.satctrlcenter.nolink=无链接……
 msg.satctrlcenter.info=信息：
 msg.satctrlcenter.destroysat=摧毁卫星
 msg.satctrlcenter.connect=下载
+msg.satctrlcenter.data=数据：
+msg.satctrlcenter.power=能量产出：
 msg.satctrlcenter.autodl_hint=无线收发器自动下载（提取）
 msg.satbuilder.writesecondchip=写入第二芯片
 msg.dockingport.target=目标ID
@@ -653,6 +680,8 @@ commands.weather.cannot_rain=此处无法降雨
 commands.weather.cannot_thunder=此处无法降下雷暴
 
 # Jeistuff
+jei.machinerecipe.power=能量：
+jei.machinerecipe.time=时间：
 jei.sb.satellitepreview=已做好入轨准备！
 jei.sb.copy.source=来源
 jei.sb.copy.output=新副本
