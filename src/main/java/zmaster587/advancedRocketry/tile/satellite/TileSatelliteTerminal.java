@@ -17,7 +17,7 @@ import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.inventory.modules.ModuleData;
 import zmaster587.advancedRocketry.inventory.modules.ModuleSatellite;
-import zmaster587.advancedRocketry.item.ItemData;
+import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.advancedRocketry.util.IDataInventory;
@@ -159,7 +159,14 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
     }
 
     @Override
-    public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) { return true; }
+    public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) {
+        if (stack.isEmpty()) return true;
+        if (slot == 0) return stack.getItem() instanceof ItemSatelliteIdentificationChip;
+        if (slot == 1) return stack.getItem() instanceof IDataItem;
+        return false;
+    }
+
+
 
     @Override
     public boolean canPerformFunction() {
@@ -196,12 +203,15 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
-        if (id == 0) {
-            // store data to item (server handles it inside storeData)
-            storeData(0);
 
+        if (id == -1) {
+            storeData(1);
+            return;
+        } else if (id == -2) {
+            loadData(1);
+            return;
         } else if (id == 100) {
-            // "Connect" / perform action
+            // connect logic
             if (!world.isRemote) {
                 SatelliteBase sat = getSatelliteFromSlot(0);
 
@@ -211,6 +221,7 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
                     int hereDim = DimensionManager.getEffectiveDimId(world, pos).getId();
                     inRange = PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(satDim, hereDim);
                 }
+
                 boolean hasLink  = (sat instanceof SatelliteData) && inRange;
                 boolean hasPower = getUniversalEnergyStored() >= getPowerPerOperation();
 
@@ -219,6 +230,7 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
                     this.energy.extractEnergy(getPowerPerOperation(), false);
                 }
             }
+            return;
 
         } else if (id == 101) {
             if (!world.isRemote) {
@@ -234,13 +246,14 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
                     }
 
                     idchip.erase(stack);
-                    // server mutates the inventory; client will get it via normal container sync
                     setInventorySlotContents(0, stack);
                 }
             }
+            return;
         }
     }
 
+    
     @Nullable
     private SatelliteBase resolveSatelliteFresh() {
         ItemStack s0 = getStackInSlot(0);
@@ -328,20 +341,70 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
     }
 
     @Override
-    public void loadData(int id) { }
+    public int getInventoryStackLimit() {
+        return 1;
+    }
 
     @Override
-    public void storeData(int id) {
-        if (!world.isRemote) {
-            ItemStack stack = getStackInSlot(1);
-            if (!stack.isEmpty() && stack.getItem() instanceof ItemData && stack.getCount() == 1) {
-                ItemData dataItem = (ItemData) stack.getItem();
-                data.removeData(dataItem.addData(stack, data.getData(), data.getDataType()), true);
-            }
-        } else {
-            PacketHandler.sendToServer(new PacketMachine(this, (byte) 0));
+    public void loadData(int slotId) {
+        if (world == null || world.isRemote) {
+            // Client triggers server action
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) -2));
+            return;
+        }
+
+        ItemStack stack = getStackInSlot(slotId);
+        if (stack.isEmpty() || !(stack.getItem() instanceof IDataItem)) return;
+
+        IDataItem dataItem = (IDataItem) stack.getItem();
+        DataStorage itemStore = dataItem.getDataStorage(stack);
+
+        int available = itemStore.getData();
+        if (available <= 0) return;
+
+        DataType type = itemStore.getDataType();
+
+        // How much room does the terminal buffer have?
+        int room = data.getMaxData() - data.getData();
+        if (room <= 0) return;
+
+        int toMove = Math.min(available, room);
+
+        // Add to terminal first (authoritative return value)
+        int added = data.addData(toMove, type, true);
+
+        if (added > 0) {
+            // Remove only what actually got accepted
+            dataItem.removeData(stack, added, type);
+            setInventorySlotContents(slotId, stack);
+            markDirty();
         }
     }
+
+    @Override
+    public void storeData(int slotId) {
+        if (world == null || world.isRemote) {
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) -1));
+            return;
+        }
+
+        ItemStack stack = getStackInSlot(slotId);
+        if (stack.isEmpty() || !(stack.getItem() instanceof IDataItem)) return;
+
+        if (data.getData() <= 0 || data.getDataType() == DataType.UNDEFINED) return;
+
+        IDataItem dataItem = (IDataItem) stack.getItem();
+
+        int moved = dataItem.addData(stack, data.getData(), data.getDataType());
+
+        if (moved > 0) {
+            data.removeData(moved, true);
+            setInventorySlotContents(slotId, stack);
+            markDirty();
+        }
+    }
+
+
 
     @Override
     public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
