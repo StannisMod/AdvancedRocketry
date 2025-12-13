@@ -1,0 +1,37 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	" a ",
+	"cmb",
+	" a "
+    ],
+    "key":
+    {
+        "c":
+        {
+            "item": "advancedrocketry:loader",
+            "data": 0
+        },
+	    "m":
+        {
+            "item": "libvulpes:advstructuremachine"
+        },
+        "a":
+        {
+            "item": "advancedrocketry:ic",
+            "data": 2
+        },
+        "b":
+        {
+            "item": "advancedrocketry:dataunit",
+            "data": 0
+        }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:databusbig",
+        "data": 0,
+        "count": 1
+    }
+}
