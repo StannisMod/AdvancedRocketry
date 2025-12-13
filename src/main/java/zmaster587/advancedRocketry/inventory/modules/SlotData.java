@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.inventory.modules;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
-import zmaster587.advancedRocketry.item.ItemData;
+import zmaster587.advancedRocketry.item.IDataItem;
 
 import javax.annotation.Nonnull;
 
@@ -17,9 +17,16 @@ public class SlotData extends Slot {
 
     @Override
     public boolean isItemValid(@Nonnull ItemStack stack) {
-        if (stack.isEmpty() || stack.getItem() instanceof ItemData)
-            return super.isItemValid(stack);
-        return false;
+        return !stack.isEmpty() && stack.getItem() instanceof IDataItem;
     }
 
+    @Override
+    public int getSlotStackLimit() {
+        return 1;
+    }
+
+    @Override
+    public int getItemStackLimit(@Nonnull ItemStack stack) {
+        return 1;
+    }
 }
