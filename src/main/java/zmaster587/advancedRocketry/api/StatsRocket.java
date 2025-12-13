@@ -502,7 +502,6 @@ public class StatsRocket {
      * @return amount of fuel added
      */
     public int addFuelAmount(@Nonnull FuelRegistry.FuelType type, int amt) {
-        //TODO: finish other ones
         switch (type) {
             case WARP:
                 int maxAddWarp = fuelCapacityWarp - fuelWarp;
