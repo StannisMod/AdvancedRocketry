@@ -359,11 +359,11 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
                     LandingLocation loc = getTakeoffCoords(stack, spaceObject.getOrbitingPlanetId());
                     if (loc != null) {
                         Vector3F<Float> vec = loc.location;
-                        list.add("Name: " + loc.name);
+                        list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.stationchip.namelabel") + loc.name);
                         list.add("X: " + vec.x);
                         list.add("Z: " + vec.z);
                     } else {
-                        list.add("Name: N/A");
+                        list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.stationchip.namelabel") + "N/A");
                         list.add("X: N/A");
                         list.add("Z: N/A");
                     }
@@ -372,11 +372,11 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
                 LandingLocation loc = getTakeoffCoords(stack, player.provider.getDimension());
                 if (loc != null) {
                     Vector3F<Float> vec = loc.location;
-                    list.add("Name: " + loc.name);
+                    list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.stationchip.namelabel") + loc.name);
                     list.add("X: " + vec.x);
                     list.add("Z: " + vec.z);
                 } else {
-                    list.add("Name: N/A");
+                    list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.stationchip.namelabel") + "N/A");
                     list.add("X: N/A");
                     list.add("Z: N/A");
                 }
