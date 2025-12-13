@@ -127,7 +127,7 @@ public class ItemMultiData extends Item {
 
         for (DataStorage.DataType type : SUPPORTED_TYPES) {
             final int amt = data.getDataAmount(type);
-            list.add(amt + " / " + data.getMaxData() + " " + I18n.format(type.toString()) + " Data");
+            list.add(amt + " / " + data.getMaxData() + " " + I18n.format(type.toString()) + " " + I18n.format("data.label.data"));
         }
     }
 }
