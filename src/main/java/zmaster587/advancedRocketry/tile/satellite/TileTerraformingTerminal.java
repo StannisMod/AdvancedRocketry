@@ -127,30 +127,43 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
 
     @Override
     public void update() {
-        super.update();
-        boolean has_redstone = world.isBlockIndirectlyGettingPowered(getPos()) != 0;
+
+        // Fast path: truly idle — no chip and never enabled
+        if (getStackInSlot(0).isEmpty() && !was_enabled_last_tick) {
+            return;
+        }
+
         int powerrequired = 80; //120;
+
         if (!world.isRemote) {
+            boolean has_redstone = world.isBlockIndirectlyGettingPowered(getPos()) != 0;
+            boolean has_valid = hasValidBiomeChanger();
 
-            if ((world.getTotalWorldTime() + 6) % 21 == 0)
-                PacketHandler.sendToNearby(new PacketMachine(this, (byte) 22), world.provider.getDimension(), pos, 16);
+            // Only sync when there’s actually a biome changer present
+            if (has_valid && (world.getTotalWorldTime() + 6) % 21 == 0) {
+                PacketHandler.sendToNearby(new PacketMachine(this, (byte) 22),
+                        world.provider.getDimension(), pos, 16);
+            }
 
-            if (hasValidBiomeChanger() && has_redstone) {
+            if (has_valid && has_redstone) {
                 was_enabled_last_tick = true;
-                if(!world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)){
-                    world.setBlockState(pos, world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, true), 3);
+                if (!world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)) {
+                    world.setBlockState(pos,
+                            world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, true), 3);
                 }
 
                 Item biomeChanger = getStackInSlot(0).getItem();
                 if (biomeChanger instanceof ItemBiomeChanger) {
-                    SatelliteBiomeChanger sat = (SatelliteBiomeChanger) ItemSatelliteIdentificationChip.getSatellite(getStackInSlot(0));
+                    SatelliteBiomeChanger sat = (SatelliteBiomeChanger)
+                            ItemSatelliteIdentificationChip.getSatellite(getStackInSlot(0));
                     sat_power_per_tick = sat.getPowerPerTick();
                     randomblocks_per_tick = (float) sat_power_per_tick / powerrequired;
                 }
             } else {
                 was_enabled_last_tick = false;
-                if(world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)){
-                    world.setBlockState(pos, world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, false), 3);
+                if (world.getBlockState(pos).getValue(BlockTileTerraformer.STATE)) {
+                    world.setBlockState(pos,
+                            world.getBlockState(pos).withProperty(BlockTileTerraformer.STATE, false), 3);
                 }
             }
         }
@@ -207,23 +220,45 @@ public class TileTerraformingTerminal extends TileInventoriedRFConsumer implemen
     public void updateInventoryInfo() {
         if (moduleText != null) {
 
-
             if (hasValidBiomeChanger() && world.isBlockIndirectlyGettingPowered(getPos()) != 0) {
                 BigDecimal bd = new BigDecimal(randomblocks_per_tick);
                 bd = bd.setScale(2, RoundingMode.HALF_UP);
 
-                moduleText.setText("Terraforming planet...\n" +
-                        "\nPower generation: " + sat_power_per_tick +
-                        "\nBlocks per tick: " + bd);
+                String header = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.terraforming");
+                String powerLabel = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.powergen");
+                String blocksLabel = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.blockspertick");
+
+                moduleText.setText(
+                        header + "\n" +
+                        "\n" + powerLabel + " " + sat_power_per_tick +
+                        "\n" + blocksLabel + " " + bd
+                );
 
             } else if (hasValidBiomeChanger()) {
-                moduleText.setText("Provide redstone signal\nto start the process");
-            } else {
-                moduleText.setText("\nPlace a Biome Changer Remote\nhere to make the Satellite\nterraform the entire planet");
-            }
 
+                String redstoneLine1 = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.needredstone.line1");
+                String redstoneLine2 = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.needredstone.line2");
+
+                moduleText.setText(
+                        redstoneLine1 + "\n" +
+                        redstoneLine2
+                );
+
+            } else {
+
+                String insertLine1 = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.insertchip.line1");
+                String insertLine2 = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.insertchip.line2");
+                String insertLine3 = LibVulpes.proxy.getLocalizedString("msg.terraformingterminal.insertchip.line3");
+
+                moduleText.setText(
+                        "\n" + insertLine1 + "\n" +
+                        insertLine2 + "\n" +
+                        insertLine3
+                );
+            }
         }
     }
+
 
     public boolean hasValidBiomeChanger() {
         ItemStack biomeChanger = getStackInSlot(0);
