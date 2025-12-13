@@ -66,7 +66,7 @@ tile.hotDryturf.name=氧化铁沙
 tile.concrete.name=混凝土
 tile.lathe.name=车床
 tile.rollingMachine.name=卷板机
-tile.planetSelector.name=行星选择器
+tile.planetSelector.name=星球选择器
 tile.blockHandPress.name=小型压板器
 tile.placeHolder.name=机器
 tile.stationAssembler.name=空间站组装机
@@ -119,7 +119,7 @@ tile.altitudeController.name=海拔控制器
 tile.railgun.name=轨道炮
 tile.advRocket.name=高级单组元推进剂火箭发动机
 tile.advbipropellantRocket.name=高级双组元推进剂火箭发动机
-tile.planetHoloSelector.name=全息行星选择器
+tile.planetHoloSelector.name=全息星球选择器
 tile.lens.name=透镜
 tile.forceField.name=力场
 tile.forceFieldProjector.name=力场投射器
@@ -166,7 +166,7 @@ item.satellitePrimaryFunction.4.name=矿物测绘器
 item.satellitePrimaryFunction.5.name=生物群系变换器
 item.satellitePrimaryFunction.6.name=天气控制器
 item.satelliteIdChip.name=卫星ID芯片
-item.planetIdChip.name=行星ID芯片
+item.planetIdChip.name=星球ID芯片
 item.asteroidChip.name=小行星芯片
 item.miscpart.0.name=用户界面
 item.miscpart.1.name=碳砖
@@ -304,7 +304,7 @@ msg.tooltip.data=数据
 msg.tooltip.asteroidselection=小行星选择
 msg.label.name=名称
 msg.label.clear=清除
-msg.label.add=添加新行星
+msg.label.add=新增
 msg.label.rename=重命名
 msg.label.delete=删除
 msg.label.noneSelected=未选择目的地
@@ -351,7 +351,7 @@ msg.monitoringStation.noLinkedRocket=未链接任何火箭！
 msg.guidanceComputerHatch.loadingState=装载状态：
 msg.guidanceComputerHatch.ejectonlanding=着陆时自动弹出
 msg.guidanceComputerHatch.ejectonsatlanding=允许弹出卫星芯片
-msg.guidanceComputerHatch.ejectonplanetlanding=允许弹出行星芯片
+msg.guidanceComputerHatch.ejectonplanetlanding=允许弹出星球芯片
 msg.guidanceComputerHatch.ejectonstationlanding=允许弹出空间站芯片
 msg.guidanceComputerHatch.link=已将流体装载器写入链接器，位置：
 msg.fluidLoader.loadingState=装载状态：
@@ -386,14 +386,14 @@ msg.terraformer.outofgas=已中止：气体耗尽
 msg.terraformer.notrunning=未运行
 msg.terraformer.status=状态
 msg.terraformer.pressure=气压
-msg.terraformingterminal.terraforming=正在改造行星……
+msg.terraformingterminal.terraforming=正在改造星球……
 msg.terraformingterminal.powergen=能量产出：
 msg.terraformingterminal.blockspertick=每刻处理方块：
 msg.terraformingterminal.needredstone.line1=提供红石信号
 msg.terraformingterminal.needredstone.line2=启动改造流程
 msg.terraformingterminal.insertchip.line1=在此处放入生物群系
 msg.terraformingterminal.insertchip.line2=变换器遥控终端来让
-msg.terraformingterminal.insertchip.line3=卫星改造整颗行星
+msg.terraformingterminal.insertchip.line3=卫星改造整颗星球
 msg.biomescanner.gas=哈，是气体环境，对吧？
 msg.biomescanner.star=要是我的传感器有遮阳板就好了
 msg.gravitycontroller.radius=半径：
@@ -408,7 +408,7 @@ msg.spacelaser.reset=重置
 msg.spacelaser.notarget1=未找到目标！
 msg.spacelaser.notarget2=降落并勘察该区域！
 msg.spacelaser.voidmining.line1=正在开采
-msg.spacelaser.voidmining.line2=下方行星的内部物质
+msg.spacelaser.voidmining.line2=下方星球的内部物质
 msg.spacelaser.voidcobble=销毁圆石
 msg.spacelaser.voidcobble.on=销毁圆石：开
 msg.spacelaser.voidcobble.off=销毁圆石：关
@@ -432,8 +432,8 @@ msg.stationorientctrl.alt=角速度：
 msg.stationorientctrl.tgtalt=目标角速度：
 msg.warpmon.tab.warp=跃迁选择
 msg.warpmon.tab.data=数据
-msg.warpmon.tab.tracking=行星追踪
-msg.warpmon.selectplanet=选择行星
+msg.warpmon.tab.tracking=星球追踪
+msg.warpmon.selectplanet=选择星球
 msg.warpmon.corestatus=核心状态:
 msg.warpmon.anchored=空间站已锚定！
 msg.warpmon.nowhere=无可用目的地
@@ -446,7 +446,7 @@ msg.warpmon.fuel=燃料：
 msg.warpmon.dest=目的地：
 msg.warpmon.orbit=轨道环绕：
 msg.warpmon.na=N/A
-msg.warpmon.search=搜索行星
+msg.warpmon.search=搜索星球
 msg.warpmon.chip=从芯片载入程序
 msg.warpmon.datareq=需各类数据各100
 msg.warpmon.artifact=工件
@@ -490,7 +490,7 @@ msg.itemorescanner.nosat=卫星尚未发射
 msg.itemorescanner.maxzoom=最大缩放：
 msg.itemorescanner.filter=可过滤矿石：
 msg.itemorescanner.value=值：
-msg.itemplanetidchip.planetname=行星名称：
+msg.itemplanetidchip.planetname=星球名称：
 msg.itemplanetidchip.stationid=空间站ID：
 msg.itemplanetidchip.artifacts=工件：
 msg.vent.trace=氧气追踪
@@ -521,8 +521,8 @@ msg.itemsatellite.unassembled=未组装（预览）
 msg.brokenstage.text=摧毁阶段
 
 msg.itemsatchip.id=ID：
-msg.itemsatchip.planet=行星：
-msg.itemsatchip.planetunk=行星: 未知
+msg.itemsatchip.planet=星球：
+msg.itemsatchip.planetunk=星球: 未知
 msg.itemsatchip.sat=卫星：
 msg.itemsatchip.satlost=卫星：失去联系
 msg.sealdetector.sealed=应该能保持良好密封。
@@ -554,7 +554,7 @@ msg.wirelessTransciever.network.unlinked=未链接
 
 msg.advancedrocketry.planetselector.up=<< 上一级
 msg.advancedrocketry.planetselector.select=选择
-msg.advancedrocketry.planetselector.planet.list=行星列表
+msg.advancedrocketry.planetselector.planet.list=星球列表
 msg.advancedrocketry.planetselector.atm.tooltip=%b -> %a个地球大气压
 msg.advancedrocketry.planetselector.mass.tooltip=%b -> %a个地球质量
 msg.advancedrocketry.planetselector.distance.tooltip=%b -> %a相对距离单位
@@ -648,7 +648,7 @@ msg.orbitalregistry.writechip.hint.station.unlaunched=该空间站尚未进入�
 
 
 
-commands.weather.always_not_clear=这颗行星从未晴朗过……
+commands.weather.always_not_clear=这颗星球从未晴朗过……
 commands.weather.cannot_rain=此处无法降雨
 commands.weather.cannot_thunder=此处无法降下雷暴
 
@@ -734,7 +734,7 @@ tooltip.advancedrocketry.seat.shift.1=为火箭增加一个乘客位
 tooltip.advancedrocketry.guidancecomputer=§c火箭的组成部分
 tooltip.advancedrocketry.guidancecomputer.shift.1=放入§c芯片§7或已编程的§c链接器§7
 tooltip.advancedrocketry.guidancecomputer.alt.1=部署卫星或空间站至轨道时
-tooltip.advancedrocketry.guidancecomputer.alt.2=记得设定火箭的目标行星
+tooltip.advancedrocketry.guidancecomputer.alt.2=记得设定火箭的目标星球
 
 # Service Monitor
 tooltip.advancedrocketry.servicemonitor=§c火箭的组成部分
@@ -766,9 +766,9 @@ tooltip.advancedrocketry.structuretower.alt.1=无人载具组装机的主要方�
 tooltip.advancedrocketry.structuretower.alt.2=查看维基了解更多信息。
 
 # Terraformer
-tooltip.advancedrocketry.terraformer=改变整颗行星的地形环境！
+tooltip.advancedrocketry.terraformer=改变整颗星球的地形环境！
 tooltip.advancedrocketry.terraformer.shift.1=§f需与§c生物群系变换器卫星§f搭配使用
-tooltip.advancedrocketry.terraformer.shift.2=§f卫星必须环绕对应行星运行
+tooltip.advancedrocketry.terraformer.shift.2=§f卫星必须环绕对应星球运行
 tooltip.advancedrocketry.terraformer.alt.1=§f放入§c生物群系变换器遥控终端
 tooltip.advancedrocketry.terraformer.alt.2=§f由卫星提供能源
 
@@ -815,7 +815,7 @@ tooltip.advancedrocketry.hatch.databus.alt.1=§f破坏时清空数据
 # TileSatelliteHatch
 tooltip.advancedrocketry.hatch.satellite=§c火箭的组成部分
 tooltip.advancedrocketry.hatch.satellite.shift.1=用于将有效载荷送入轨道
-tooltip.advancedrocketry.hatch.satellite.shift.2=记得设定轨道的目标行星！
+tooltip.advancedrocketry.hatch.satellite.shift.2=记得设定轨道的目标星球！
 tooltip.advancedrocketry.hatch.satellite.alt.1=§f可在§4空间站组装机§f中用于封装和存储空间站
 
 # TileRocketUnloader
@@ -910,15 +910,15 @@ tooltip.advancedrocketry.pipeseal.alt.2=实体可通过此类开口穿行
 
 # Planet Selector (full-screen)
 tooltip.advancedrocketry.planetselector=浏览星体
-tooltip.advancedrocketry.planetselector.shift.1=开启全屏行星UI。
+tooltip.advancedrocketry.planetselector.shift.1=开启全屏星球UI。
 tooltip.advancedrocketry.planetselector.shift.2=浏览星系、行星与天然卫星
 tooltip.advancedrocketry.planetselector.alt.1=可远程设置跃迁控制器的
-tooltip.advancedrocketry.planetselector.alt.2=行星目的地
+tooltip.advancedrocketry.planetselector.alt.2=目标星球
 
 # Holographic Planet Selector
 tooltip.advancedrocketry.planetholoselector=全息星体显示器
 tooltip.advancedrocketry.planetholoselector.shift.1=在世界中生成全息投影
-tooltip.advancedrocketry.planetholoselector.alt.1=“功能与行星选择器相同
+tooltip.advancedrocketry.planetholoselector.alt.1=“功能与星球选择器相同
 tooltip.advancedrocketry.planetholoselector.alt.2=但采用3D全息投影显示”
 
 # Orientation Controller
@@ -959,7 +959,7 @@ tooltip.advancedrocketry.smallairlock.alt.2=建造一个合适的气闸
 # Warp Controller
 tooltip.advancedrocketry.warpcontroller=将空间站转变为§6星际飞船
 tooltip.advancedrocketry.warpcontroller.shift.1=在空间站上放置§4跃迁控制器§7和§4跃迁核心
-tooltip.advancedrocketry.warpcontroller.shift.2=在行星和太阳系之间进行跃迁旅行
+tooltip.advancedrocketry.warpcontroller.shift.2=在行星和恒星系之间进行跃迁旅行
 tooltip.advancedrocketry.warpcontroller.alt.1=界面中会显示位置、目的地和跃迁燃料
 tooltip.advancedrocketry.warpcontroller.alt.2=（你已经做到了！去看看Wiki吧伙计）
 
@@ -1037,7 +1037,7 @@ tooltip.advancedrocketry.itemupgrade.3.alt.1=无额外叠加效果。
 
 # 4 = Antifog Visor Upgrade
 tooltip.advancedrocketry.itemupgrade.4=§5太空服组件
-tooltip.advancedrocketry.itemupgrade.4.shift.1=§f看透高气压行星上的迷雾
+tooltip.advancedrocketry.itemupgrade.4.shift.1=§f看透高气压星球上的迷雾
 tooltip.advancedrocketry.itemupgrade.4.shift.2=§d槽位：头盔§7
 tooltip.advancedrocketry.itemupgrade.4.alt.1=无额外叠加效果。
 
@@ -1074,7 +1074,7 @@ tooltip.advancedrocketry.satfunc.microwave.alt.1=组装时
 tooltip.advancedrocketry.satfunc.microwave.alt.2=与卫星芯片结合
 
 tooltip.advancedrocketry.satfunc.oremapping=§5卫星核心组件
-tooltip.advancedrocketry.satfunc.oremapping.shift.1=§b扫描行星上的矿物§7
+tooltip.advancedrocketry.satfunc.oremapping.shift.1=§b扫描星球上的矿物§7
 tooltip.advancedrocketry.satfunc.oremapping.alt.1=组装时
 tooltip.advancedrocketry.satfunc.oremapping.alt.2=与矿物扫描仪结合
 
@@ -1158,7 +1158,7 @@ tooltip.advancedrocketry.satidchip=§b记得做好备份！
 tooltip.advancedrocketry.satidchip.shift.1=§f储存卫星的ID。
 tooltip.advancedrocketry.satidchip.shift.2=§c在卫星组装机中复制
 tooltip.advancedrocketry.satidchip.alt.1=§4在卫星终端中使用以进行链接，或在微波接收器多方块结构（输入仓）中使用。
-tooltip.advancedrocketry.satidchip.alt.2=§8（行星：放入终端时解析信息）
+tooltip.advancedrocketry.satidchip.alt.2=§8（星球：放入终端时解析信息）
 
 # Elevator Chip
 tooltip.advancedrocketry.elevatorchip=太空电梯芯片
@@ -1270,7 +1270,7 @@ tooltip.advancedrocketry.beacon=远程信标
 tooltip.advancedrocketry.beacon.shift.1=§b使用全息投影器！
 
 # Biome Scanner
-tooltip.advancedrocketry.biomescan=扫描行星的生物群系
+tooltip.advancedrocketry.biomescan=扫描星球的生物群系
 tooltip.advancedrocketry.biomescan.shift.1=§b使用全息投影器！
 
 # Railgun
@@ -1283,7 +1283,7 @@ tooltip.advancedrocketry.spaceelevatorctrl=用于控制太空电梯
 tooltip.advancedrocketry.spaceelevatorctrl.shift.1=§b使用全息投影器！
 
 # Atmosphere Terraformer
-tooltip.advancedrocketry.atmosterraformer=改变整颗行星上的大气压
+tooltip.advancedrocketry.atmosterraformer=改变整颗星球的大气压
 tooltip.advancedrocketry.atmosterraformer.shift.1=§b使用全息投影器！
 tooltip.advancedrocketry.atmosterraformer.alt.1=§f通过连接的§c生物群系变换器遥控终端§f增加和减少大气压。
 
@@ -1341,7 +1341,7 @@ tooltip.advancedrocketry.stationassembler.alt.1=§f将此方块放置在比发�
 
 # Packet Station
 tooltip.advancedrocketry.packedstructure=放入§c卫星仓§7以送入轨道！
-tooltip.advancedrocketry.packedstructure.shift.1=§e发射前记得要设置火箭的目标行星！
+tooltip.advancedrocketry.packedstructure.shift.1=§e发射前记得要设置火箭的目标星球！
 
 # Deployable Rocket Assembler
 tooltip.advancedrocketry.deployablerocketassembler=§c在空间站中搭建火箭
