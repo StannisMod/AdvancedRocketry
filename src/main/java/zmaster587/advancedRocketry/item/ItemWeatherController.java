@@ -75,16 +75,16 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
         } else if (mapping.getDimensionId() == world.provider.getDimension()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.connected"));
             if (mapping.mode_id == 0)
-                list.add("Mode: Rain - Fills small basins in the terrain with water");
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.rain"));
             if (mapping.mode_id == 1)
-                list.add("Mode: Dry - Drys all water in a radius of 16");
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.dry"));
             if (mapping.mode_id == 2)
-                list.add("Mode: Flood - Floods area with a radius of 16 with water");
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.flood"));
         } else {
             list.add(LibVulpes.proxy.getLocalizedString("msg.notconnected"));
         }
 
-        // Still let the parent add its usual info (except "unprogrammed", which we handled above)
+        // Still let the parent add its usual info
         super.addInformation(stack, world, list, flag);
     }
 
