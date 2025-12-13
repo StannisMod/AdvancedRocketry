@@ -1127,7 +1127,7 @@ tooltip.libvulpes.battery.1.shift.1=增加能量存储
 tooltip.libvulpes.battery.1.shift.2=§f容量：§c40.000 §fRF§7
 
 # Data Unit
-tooltip.advancedrocketry.itemdata.header=§5太空服组件
+tooltip.advancedrocketry.itemdata.header=§5卫星组件
 tooltip.advancedrocketry.itemdata.type=§f类型：
 tooltip.advancedrocketry.itemdata.data=§f数据存储量：
 tooltip.advancedrocketry.itemdataunit.shift.1=§f令卫星数据存储量增加1000
