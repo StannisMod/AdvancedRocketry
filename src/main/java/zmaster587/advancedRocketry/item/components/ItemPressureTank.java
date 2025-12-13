@@ -52,13 +52,13 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
         final int capMb = Math.max(0, getCapacity(stack));
         final net.minecraftforge.fluids.FluidStack fs = zmaster587.libVulpes.util.FluidUtils.getFluidForItem(stack);
 
-        final String fluidName = (fs != null && fs.getFluid() != null) ? fs.getLocalizedName() : "Empty";
+        final String fluidName = (fs != null && fs.getFluid() != null) ? fs.getLocalizedName() : I18n.format("tooltip.advancedrocketry.fluidtank.empty");
         final int amount = (fs != null) ? fs.amount : 0;
 
         // Match main tank style
-        list.add(TextFormatting.DARK_PURPLE + "Space Suit Component");
-        list.add("Fluid: " + fluidName);
-        list.add("Level: " + amount + "/" + capMb + " mB");
+        list.add(I18n.format("tooltip.advancedrocketry.itemdata.header"));
+        list.add(I18n.format("tooltip.advancedrocketry.fluidtank.fluid") + fluidName);
+        list.add(I18n.format("tooltip.advancedrocketry.fluidtank.level") + amount + "/" + capMb + " mB");
 
         // SHIFT block
         if (GuiScreen.isShiftKeyDown()) {
