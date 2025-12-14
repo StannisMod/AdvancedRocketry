@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.satellite;
 
 import zmaster587.advancedRocketry.api.DataStorage;
+import zmaster587.libVulpes.LibVulpes;
 
 public class SatelliteMassScanner extends SatelliteData {
 
@@ -12,7 +13,7 @@ public class SatelliteMassScanner extends SatelliteData {
 
     @Override
     public String getName() {
-        return "Mass Scanner";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.massscanner");
     }
 
     @Override
