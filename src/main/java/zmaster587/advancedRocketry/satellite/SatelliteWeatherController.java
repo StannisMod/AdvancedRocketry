@@ -27,6 +27,7 @@ import zmaster587.advancedRocketry.item.ItemWeatherController;
 import zmaster587.advancedRocketry.network.PacketAirParticle;
 import zmaster587.advancedRocketry.network.PacketFluidParticle;
 import zmaster587.advancedRocketry.util.BiomeHandler;
+import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.api.IUniversalEnergy;
 import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.util.HashedBlockPosition;
@@ -72,7 +73,7 @@ public class SatelliteWeatherController extends SatelliteBase {
 
     @Override
     public String getName() {
-        return "Weather Satellite";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.weather");
     }
 
     @Override
