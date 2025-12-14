@@ -211,8 +211,13 @@ public class ModuleSatelliteTerminal extends ModuleBase {
         } else if (status == 2) {
             msg = LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.toofar");
         } else {
-            msg = LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.info")
-                + "\nPower gen.: " + ppt + "\nData: " + data + "/" + max;
+            String info    = LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.info");
+            String power   = LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.power");
+            String dataLbl = LibVulpes.proxy.getLocalizedString("msg.satctrlcenter.data");
+
+            msg = info
+                + "\n" + power + " " + ppt
+                + "\n" + dataLbl + " " + data + "/" + max;
         }
 
         if (satName != null && !satName.isEmpty()) {
