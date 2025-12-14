@@ -147,13 +147,20 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                         world.getWorldInfo().setRaining(true);
                     }
 
+                    // Clamp to avoid IllegalArgumentException in Random#nextInt(0 or negative)
+                    final int thunderProlong = props.thunderProlongationLength > 0 ? props.thunderProlongationLength : 12000;
+                    final int thunderStart   = props.thunderStartLength > 0 ? props.thunderStartLength : 168000;
+                    final int rainProlong    = props.rainProlongationLength > 0 ? props.rainProlongationLength : 12000;
+                    final int rainStart      = props.rainStartLength > 0 ? props.rainStartLength : 168000;
+
+
                     int k2 = world.getWorldInfo().getThunderTime();
 
                     if (k2 <= 0) {
                         if (world.getWorldInfo().isThundering()) {
-                            world.getWorldInfo().setThunderTime(world.rand.nextInt(getDimensionProperties().thunderProlongationLength) + 3600);
+                            world.getWorldInfo().setThunderTime(world.rand.nextInt(thunderProlong) + 3600);
                         } else {
-                            world.getWorldInfo().setThunderTime(world.rand.nextInt(getDimensionProperties().thunderStartLength) + 12000);
+                            world.getWorldInfo().setThunderTime(world.rand.nextInt(thunderStart) + 12000);
                         }
                     } else {
                         --k2;
@@ -168,9 +175,9 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
 
                     if (l2 <= 0) {
                         if (world.getWorldInfo().isRaining()) {
-                            world.getWorldInfo().setRainTime(world.rand.nextInt(getDimensionProperties().rainProlongationLength) + 12000);
+                            world.getWorldInfo().setRainTime(world.rand.nextInt(rainProlong) + 12000);
                         } else {
-                            world.getWorldInfo().setRainTime(world.rand.nextInt(getDimensionProperties().rainStartLength) + 12000);
+                            world.getWorldInfo().setRainTime(world.rand.nextInt(rainStart) + 12000);
                         }
                     } else {
                         --l2;
@@ -181,6 +188,7 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                         }
                     }
                 }
+
 
                 world.prevThunderingStrength = world.thunderingStrength;
 

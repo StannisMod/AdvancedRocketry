@@ -707,7 +707,7 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         nbt.setInteger("posX", posX);
         nbt.setInteger("posY", posZ);
         nbt.setBoolean("created", created);
-        nbt.setInteger("alitude", altitude);
+        nbt.setInteger("altitude", altitude);
         nbt.setInteger("spawnX", spawnLocation.x);
         nbt.setInteger("spawnY", spawnLocation.y);
         nbt.setInteger("spawnZ", spawnLocation.z);

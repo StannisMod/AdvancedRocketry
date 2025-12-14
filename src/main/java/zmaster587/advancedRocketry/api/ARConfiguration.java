@@ -87,6 +87,8 @@ public class ARConfiguration {
     public boolean rocketRequireFuel = true;
     @ConfigProperty
     public boolean canBeFueledByHand = true;
+    @ConfigProperty(needsSync = true)
+    public boolean nuclearRocketsRespectArtifactGating = true;
     @ConfigProperty
     public boolean enableNausea = true;
     @ConfigProperty
@@ -152,6 +154,8 @@ public class ARConfiguration {
     public boolean advancedVFX;
     @ConfigProperty
     public boolean enableLaserDrill;
+    @ConfigProperty
+    public boolean enableOrbitalRegistry;
     @ConfigProperty
     public int spaceSuitOxygenTime;
     @ConfigProperty
@@ -378,7 +382,7 @@ public class ARConfiguration {
         arConfig.crystalliserMaximumGravity = (float) config.get(Configuration.CATEGORY_GENERAL, "crystalliserMaximumGravity", 0f, "Maximum gravity the crystalliser will function at. Use 0.0 to disable!").getDouble();
         arConfig.enableLaserDrill = config.get(Configuration.CATEGORY_GENERAL, "EnableLaserDrill", true, "Enables the laser drill machine").getBoolean();
         arConfig.spaceLaserPowerMult = (float) config.get(Configuration.CATEGORY_GENERAL, "LaserDrillPowerMultiplier", 1d, "Power multiplier for the laser drill machine").getDouble();
-        arConfig.laserDrillPlanet = config.get(Configuration.CATEGORY_GENERAL, "laserDrillPlanet", false, "If true the orbital laser will actually mine blocks on the planet below").getBoolean();
+        arConfig.laserDrillPlanet = config.get(Configuration.CATEGORY_GENERAL, "laserDrillPlanet", false, "If true the orbital laser will actually mine blocks on the planet below, (false makes it a VoidMiner with improved performance especially when using Void Cobble: ON in the GUI)").getBoolean();
         String[] str = config.getStringList("spaceLaserDimIdBlackList", Configuration.CATEGORY_GENERAL, new String[]{}, "Laser drill will not mine these dimension");
         arConfig.enableTerraforming = config.get(Configuration.CATEGORY_GENERAL, "EnableTerraforming", true, "Enables terraforming items and blocks").getBoolean();
         arConfig.terraformSpeed = config.get(Configuration.CATEGORY_GENERAL, "terraformMult", 1f, "Multplier for atmosphere change speed").getDouble();
@@ -388,6 +392,9 @@ public class ARConfiguration {
         arConfig.allowTerraformNonAR = config.get(Configuration.CATEGORY_GENERAL, "allowTerraformingNonARWorlds", false, "If true dimensions not added by AR can be terraformed, including the overworld").getBoolean();
         arConfig.enableGravityController = config.get(Configuration.CATEGORY_GENERAL, "enableGravityMachine", true, "If false the gravity controller cannot be built or used").getBoolean();
         arConfig.allowNonArBiomesInTerraforming = config.get(Configuration.CATEGORY_GENERAL, "allowNonArBiomesInTerraforming", false, "non-ar biomes from mods with custom world gen can not be decorated in terraforming. If you want fully decorated terraforming with only default biomes, set this to false").getBoolean();
+        arConfig.enableOrbitalRegistry = config.get(Configuration.CATEGORY_GENERAL,"EnableOrbitalRegistry",true, "Enables the orbital registry machine").getBoolean();
+
+
 
         //Oxygen
         arConfig.enableOxygen = config.get(OXYGEN, "EnableAtmosphericEffects", true, "If true, allows players being hurt due to lack of oxygen and allows effects from non-standard atmosphere types").getBoolean();
@@ -463,6 +470,7 @@ public class ARConfiguration {
         //Rockets
         arConfig.rocketRequireFuel = config.get(ROCKET, "rocketsRequireFuel", true, "Set to false if rockets should not require fuel to fly").getBoolean();
         arConfig.canBeFueledByHand = config.get(ROCKET, "canBeFueledByHand", true, "Set to false if rockets should not be able to be fueled by and and will require a fueling station").getBoolean();
+        arConfig.nuclearRocketsRespectArtifactGating = config.get(ROCKET, "nuclearRocketsRespectArtifactGating", true, "Nuclear rocket should respect artifact gating for planets").getBoolean();
         liquidMonopropellant = config.get(ROCKET, "rocketFuels", new String[]{"rocketfuel;10"}, "List of fluid names for fluids that can be used as rocket monopropellants").getStringList();
         liquidBipropellantFuel = config.get(ROCKET, "rocketBipropellants", new String[]{"hydrogen;10"}, "List of fluid names for fluids that can be used as rocket bipropellant fuels").getStringList();
         liquidBipropellantOxidizer = config.get(ROCKET, "rocketOxidizers", new String[]{"oxygen;10"}, "List of fluid names for fluids that can be used as rocket bipropellant oxidizers").getStringList();

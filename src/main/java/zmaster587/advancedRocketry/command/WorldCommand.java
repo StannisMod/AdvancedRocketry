@@ -28,6 +28,7 @@ import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
+import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemData;
 import zmaster587.advancedRocketry.item.ItemMultiData;
 import zmaster587.advancedRocketry.item.ItemStationChip;
@@ -176,15 +177,16 @@ public class WorldCommand implements ICommand {
                 return;
             }
 
-            if (!stack.isEmpty() && stack.getItem() instanceof ItemData) {
-                ItemData item = (ItemData) stack.getItem();
-                int dataAmount = item.getMaxData(stack.getItemDamage());
+            if (!stack.isEmpty() && stack.getItem() instanceof IDataItem) {
+                IDataItem item = (IDataItem) stack.getItem();
+
+                int dataAmount = item.getMaxData(stack);
                 DataType dataType;
 
                 try {
                     dataType = DataType.valueOf(cmdstring[1].toUpperCase(Locale.ENGLISH));
                 } catch (IllegalArgumentException e) {
-                    sender.sendMessage(new TextComponentString("Did you mean: /advrocketry" + cmdstring[0] + " [datatype] [amountFill]"));
+                    sender.sendMessage(new TextComponentString("Did you mean: /advrocketry " + cmdstring[0] + " [datatype] [amountFill]"));
                     sender.sendMessage(new TextComponentString("Not a valid datatype"));
                     StringBuilder value = new StringBuilder();
                     for (DataType data : DataType.values()) {
@@ -192,21 +194,23 @@ public class WorldCommand implements ICommand {
                             value.append(data.name().toLowerCase()).append(", ");
                         }
                     }
-
                     sender.sendMessage(new TextComponentString("Try " + value));
                     return;
                 }
-                if (cmdstring.length >= 3)
+
+                if (cmdstring.length >= 3) {
                     try {
                         dataAmount = Integer.parseInt(cmdstring[2]);
                     } catch (NumberFormatException e) {
-                        sender.sendMessage(new TextComponentString("Did you mean: /advrocketry" + cmdstring[0] + " [datatype] [amountFill]"));
+                        sender.sendMessage(new TextComponentString("Did you mean: /advrocketry " + cmdstring[0] + " [datatype] [amountFill]"));
                         sender.sendMessage(new TextComponentString("Not a valid number"));
                         return;
                     }
+                }
 
                 item.setData(stack, dataAmount, dataType);
                 sender.sendMessage(new TextComponentString("Data filled!"));
+            
             } else if (!stack.isEmpty() && stack.getItem() instanceof ItemMultiData) {
                 ItemMultiData item = (ItemMultiData) stack.getItem();
                 int dataAmount = item.getMaxData(stack);

@@ -62,6 +62,14 @@ public final class TooltipInjector {
         KEY_BY_ID.put("advancedrocketry:structuretower", "tooltip.advancedrocketry.structuretower");
         KEY_BY_SUFFIX.put("structuretower",             "tooltip.advancedrocketry.structuretower");
 
+         // ---- Structure Machine ----
+        KEY_BY_ID.put("libvulpes:structuremachine", "tooltip.libvulpes.structuremachine");
+        KEY_BY_SUFFIX.put("structuremachine",             "tooltip.libvulpes.structuremachine");
+        
+        // ---- Structure Tower ----
+        KEY_BY_ID.put("libvulpes:advstructuremachine", "tooltip.libvulpes.advstructuremachine");
+        KEY_BY_SUFFIX.put("advstructuremachine",             "tooltip.libvulpes.advstructuremachine");
+
         // --- ItemUpgrade (meta-based) 6 Space Suit Components---
         KEY_RESOLVER_BY_ID.put("advancedrocketry:itemupgrade",
                 s -> "tooltip.advancedrocketry.itemupgrade." + s.getItemDamage());
@@ -207,6 +215,11 @@ public final class TooltipInjector {
         KEY_BY_ID.put("advancedrocketry:solararraypanel",    "tooltip.advancedrocketry.solararraypanel");
         KEY_BY_SUFFIX.put("solararraypanel",                  "tooltip.advancedrocketry.solararraypanel");
 
+        // Advanced Data Bus
+        KEY_BY_ID.put("advancedrocketry:databusbig",    "tooltip.advancedrocketry.databusbig");
+        KEY_BY_SUFFIX.put("databusbig",                  "tooltip.advancedrocketry.databusbig");
+
+
         // ---- BlockARHatch (registered as advancedrocketry:loader), meta 0..6 ----
         KEY_RESOLVER_BY_ID.put("advancedrocketry:loader", s -> {
             final int v = s.getMetadata() & 7; // strip redstone/state bit
@@ -258,6 +271,9 @@ public final class TooltipInjector {
 
         KEY_BY_ID.put("advancedrocketry:centrifuge",         "tooltip.advancedrocketry.centrifuge");
         KEY_BY_SUFFIX.put("centrifuge",                       "tooltip.advancedrocketry.centrifuge");
+
+        KEY_BY_ID.put("advancedrocketry:orbitalregistry",         "tooltip.advancedrocketry.orbitalregistry");
+        KEY_BY_SUFFIX.put("orbitalRegistry",                       "tooltip.advancedrocketry.orbitalregistry");
 
         // ---- Aux / Huge ----
         KEY_BY_ID.put("advancedrocketry:warpcore",           "tooltip.advancedrocketry.warpcore");
@@ -344,7 +360,6 @@ public final class TooltipInjector {
 
         // itemLens
         KEY_BY_ID.put("advancedrocketry:lens",          "tooltip.advancedrocketry.itemlens");
-        KEY_BY_SUFFIX.put("lens",                       "tooltip.advancedrocketry.itemlens");
 
         // Integrated Circuit (IC)
         KEY_BY_ID.put("advancedrocketry:ic",           "tooltip.advancedrocketry.circuitic");
@@ -370,10 +385,17 @@ public final class TooltipInjector {
         KEY_BY_SUFFIX.put("stationbuilder",              "tooltip.advancedrocketry.stationassembler");
         KEY_BY_SUFFIX.put("stationAssembler",            "tooltip.advancedrocketry.stationassembler");
 
-        // Deployable Rocket Assembler (unmanned vehicle)
+        // Station Deployable Rocket Assembler (Unmanned Vehicle)
         KEY_BY_ID.put("advancedrocketry:deployablerocketbuilder", "tooltip.advancedrocketry.deployablerocketassembler");
         KEY_BY_SUFFIX.put("deployablerocketbuilder",              "tooltip.advancedrocketry.deployablerocketassembler");
         KEY_BY_SUFFIX.put("deployableRocketAssembler",            "tooltip.advancedrocketry.deployablerocketassembler");
+
+        // ---- LibVulpes blocks ----
+        KEY_BY_ID.put("libvulpes:coalgenerator", "tooltip.advancedrocketry.libvulpes.coalgenerator"); 
+        KEY_BY_ID.put("libvulpes:hatch", "tooltip.advancedrocketry.libvulpes.hatch");
+        KEY_BY_ID.put("libvulpes:forgepowerinput", "tooltip.advancedrocketry.libvulpes.forgepowerinput"); 
+        KEY_BY_ID.put("libvulpes:forgepoweroutput", "tooltip.advancedrocketry.libvulpes.forgepoweroutput"); 
+        KEY_BY_ID.put("libvulpes:creativepowerbattery", "tooltip.advancedrocketry.libvulpes.creativepowerbattery");
 
         // ---- Fuel Tanks ----
         // Monopropellant Fuel Tank

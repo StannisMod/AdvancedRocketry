@@ -27,6 +27,7 @@ import javax.annotation.Nullable;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 
 public class TileAtmosphereDetector extends TileEntity implements ITickable, IModularInventory, IButtonInventory, INetworkMachine {
 
@@ -66,24 +67,51 @@ public class TileAtmosphereDetector extends TileEntity implements ITickable, IMo
         return (oldState.getBlock() != newSate.getBlock());
     }
 
+
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
         List<ModuleBase> btns = new LinkedList<>();
 
-        Iterator<IAtmosphere> atmIter = AtmosphereRegister.getInstance().getAtmosphereList().iterator();
+        Iterator<IAtmosphere> atmIter = AtmosphereRegister.getInstance()
+                .getAtmosphereList().iterator();
 
         int i = 0;
         while (atmIter.hasNext()) {
             IAtmosphere atm = atmIter.next();
-            btns.add(new ModuleButton(60, 4 + i * 24, i, LibVulpes.proxy.getLocalizedString(atm.getUnlocalizedName()), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
+            // Build a translation key from the internal ID
+            String key = "msg.atmosphere." + atm.getUnlocalizedName().toLowerCase(Locale.ROOT);
+
+            // Ask for the localized string
+            String label = LibVulpes.proxy.getLocalizedString(key);
+
+            // If no translation exists, LibVulpes will return the key;
+            // fall back to the raw ID so nothing breaks.
+            if (label.equals(key)) {
+                label = atm.getUnlocalizedName();
+            }
+
+            btns.add(new ModuleButton(
+                    60,
+                    4 + i * 24,
+                    i,
+                    label,
+                    this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild
+            ));
             i++;
         }
 
-        ModuleContainerPan panningContainer = new ModuleContainerPan(5, 20, btns, new LinkedList<>(), zmaster587.libVulpes.inventory.TextureResources.starryBG, 160, 100, 0, 500);
+        ModuleContainerPan panningContainer = new ModuleContainerPan(
+                5, 20, btns, new LinkedList<>(),
+                zmaster587.libVulpes.inventory.TextureResources.starryBG,
+                160, 100, 0, 500
+        );
         modules.add(panningContainer);
         return modules;
     }
+
 
     @Override
     public String getModularInventoryName() {

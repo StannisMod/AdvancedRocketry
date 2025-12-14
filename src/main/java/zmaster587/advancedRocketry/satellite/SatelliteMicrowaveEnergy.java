@@ -34,7 +34,7 @@ public class SatelliteMicrowaveEnergy extends SatelliteBase implements IUniversa
 
     @Override
     public String getName() {
-        return "Microwave Energy Satellite";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.solar");
     }
 
     @Override

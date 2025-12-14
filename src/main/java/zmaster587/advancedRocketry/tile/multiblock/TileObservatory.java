@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.inventory.modules.ModuleData;
 import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
+import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemData;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
@@ -38,6 +39,7 @@ import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.tile.multiblock.TileMultiBlock;
 import zmaster587.libVulpes.tile.multiblock.TileMultiPowerConsumer;
+import zmaster587.libVulpes.tile.multiblock.TilePlaceholder;
 import zmaster587.libVulpes.util.EmbeddedInventory;
 
 import javax.annotation.Nonnull;
@@ -46,6 +48,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
+import java.util.Map;
 
 public class TileObservatory extends TileMultiPowerConsumer implements IModularInventory, IDataInventory, IGuiCallback {
 
@@ -53,6 +56,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private java.util.HashSet<Integer> printedButtonsThisSeed = new java.util.HashSet<>();
     private long printedSetSeed = -1; // track which seed the set belongs to
 
+    private final java.util.Map<Long, NBTTagCompound> savedDataBusNbt = new java.util.HashMap<>();
     final static int openTime = 100;
     final static int observationTime = 1000;
     private static final Block[] lens = {AdvancedRocketryBlocks.blockLens, Blocks.GLASS};
@@ -118,22 +122,106 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return openProgress / (float) openTime;
     }
 
+    private void snapshotDataBusesBeforeTeardown() {
+        savedDataBusNbt.clear();
+
+        final Object[][][] struct = getStructure();
+        if (struct == null || world == null) return;
+
+        final zmaster587.libVulpes.util.Vector3F<Integer> off = getControllerOffset(struct);
+        final EnumFacing front = getFrontDirection(world.getBlockState(pos));
+
+        for (int y = 0; y < struct.length; y++) {
+            for (int z = 0; z < struct[0].length; z++) {
+                for (int x = 0; x < struct[0][0].length; x++) {
+                    if (struct[y][z][x] == null) continue;
+
+                    int gx = pos.getX() + (x - off.x) * front.getFrontOffsetZ()
+                                    - (z - off.z) * front.getFrontOffsetX();
+                    int gy = pos.getY() - y + off.y;
+                    int gz = pos.getZ() - (x - off.x) * front.getFrontOffsetX()
+                                    - (z - off.z) * front.getFrontOffsetZ();
+                    BlockPos bp = new BlockPos(gx, gy, gz);
+
+                    TileEntity te = world.getTileEntity(bp);
+                    if (te instanceof zmaster587.libVulpes.tile.multiblock.TilePlaceholder) {
+                        te = ((zmaster587.libVulpes.tile.multiblock.TilePlaceholder) te).getReplacedTileEntity();
+                    }
+
+                    if (te instanceof zmaster587.advancedRocketry.tile.hatch.TileDataBus) {
+                        NBTTagCompound tag = new NBTTagCompound();
+                        te.writeToNBT(tag);
+                        savedDataBusNbt.put(bp.toLong(), tag);
+                    }
+                }
+            }
+        }
+    }
+
+    private void restoreDataBusesAfterTeardown() {
+        if (world == null || savedDataBusNbt.isEmpty()) return;
+
+        try {
+            for (Map.Entry<Long, NBTTagCompound> e : savedDataBusNbt.entrySet()) {
+                BlockPos bp = BlockPos.fromLong(e.getKey());
+                TileEntity te = world.getTileEntity(bp);
+
+                if (te instanceof TilePlaceholder) {
+                    te = ((TilePlaceholder) te).getReplacedTileEntity();
+                }
+
+                if (te instanceof TileDataBus) {
+                    TileDataBus bus = (TileDataBus) te;
+                    bus.readFromNBT(e.getValue());
+                    bus.lockData(null);
+                    bus.markDirty();
+                    world.notifyBlockUpdate(bp, world.getBlockState(bp), world.getBlockState(bp), 3);
+                }
+            }
+        } finally {
+            savedDataBusNbt.clear();
+        }
+    }
+
+
     @Override
     protected void integrateTile(TileEntity tile) {
         super.integrateTile(tile);
 
         if (tile instanceof TileDataBus) {
-            dataCables.add((TileDataBus) tile);
-            ((TileDataBus) tile).lockData(((TileDataBus) tile).getDataObject().getDataType());
+            TileDataBus bus = (TileDataBus) tile;
+            dataCables.add(bus);
+
+            DataType type = bus.getDataObject().getDataType();
+
+            // If bus already has a meaningful type, preserve it.
+            if (type != null && type != DataType.UNDEFINED) {
+                bus.lockData(type);
+            } else {
+                // Default untyped buses to DISTANCE
+                bus.lockData(DataType.DISTANCE);
+            }
         }
     }
 
+
     @Override
-    public void deconstructMultiBlock(World world, BlockPos destroyedPos,
-                                      boolean blockBroken, IBlockState state) {
-        super.deconstructMultiBlock(world, destroyedPos, blockBroken, state);
+    public void deconstructMultiBlock(World worldIn, BlockPos destroyedPos,
+                                    boolean blockBroken, IBlockState state) {
+
+        if (!worldIn.isRemote) {
+            snapshotDataBusesBeforeTeardown();
+        }
+
+        super.deconstructMultiBlock(worldIn, destroyedPos, blockBroken, state);
+
+        if (!worldIn.isRemote) {
+            restoreDataBusesAfterTeardown();
+        }
+
         viewDistance = 0;
     }
+
 
     @Override
     protected void replaceStandardBlock(BlockPos newPos, IBlockState state,
@@ -383,7 +471,13 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
                 float time = asteroidSmol.timeMultiplier;
 
-                buttonList.add(new ModuleText(0, 24 * (1 + (g / 2)), String.format("%s\n%.2fx", "Time:", time), 0x2f2f2f));
+                String timeLabel = LibVulpes.proxy.getLocalizedString("msg.observetory.text.time");
+                buttonList.add(new ModuleText(
+                        0,
+                        24 * (1 + (g / 2)),
+                        String.format("%s\n%.2fx", timeLabel, time),
+                        0x2f2f2f
+                ));
             }
 
 
@@ -548,15 +642,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             PacketHandler.sendToServer(new PacketMachine(this, BUTTON_PRESS));
         }
         if (buttonId == 2) {
-
-            //for(TileDataBus bus : getDataBus()) {
+            PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
+            /*/for(TileDataBus bus : getDataBus()) {
             if (extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, false) == dataConsumedPerRefresh) {
                 lastSeed = world.getTotalWorldTime() / 100;
                 lastButton = -1;
                 lastType = "";
                 PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
             }
-            //}
+            /}*/
         }
     }
 
@@ -720,9 +814,27 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     }
 
     @Override
-    public boolean isItemValidForSlot(int p_94041_1_, @Nonnull ItemStack p_94041_2_) {
-        return inv.isItemValidForSlot(p_94041_1_, p_94041_2_);
+    public boolean isItemValidForSlot(int slot, @Nonnull ItemStack stack) {
+        if (stack.isEmpty()) return false;
+
+        // data chip slots
+        if (slot == 0 || slot == 3 || slot == 4) {
+            return stack.getItem() instanceof IDataItem;
+        }
+
+        // asteroid chip input slot (if that's your intended one)
+        if (slot == 1) {
+            return stack.getItem() instanceof ItemAsteroidChip;
+        }
+
+        // output slot(s)
+        if (slot == 2) {
+            return false;
+        }
+
+        return true;
     }
+
 
     @Override
     public int extractData(int maxAmount, DataType type, EnumFacing dir, boolean commit) {
@@ -742,20 +854,49 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
     @Override
     public void loadData(int id) {
-        int chipSlot = !inv.getStackInSlot(0).isEmpty() ? 0 : !inv.getStackInSlot(3).isEmpty() ? 3 : 4;
-        ItemStack dataChip = !inv.getStackInSlot(0).isEmpty() ? inv.getStackInSlot(0) : !inv.getStackInSlot(3).isEmpty() ? inv.getStackInSlot(3) : inv.getStackInSlot(4);
+        int chipSlot = !inv.getStackInSlot(0).isEmpty() ? 0
+                : !inv.getStackInSlot(3).isEmpty() ? 3
+                : 4;
 
-        if (dataChip != ItemStack.EMPTY && dataChip.getItem() instanceof ItemData && dataChip.getCount() == 1) {
+        ItemStack dataChip = !inv.getStackInSlot(0).isEmpty() ? inv.getStackInSlot(0)
+                : !inv.getStackInSlot(3).isEmpty() ? inv.getStackInSlot(3)
+                : inv.getStackInSlot(4);
 
-            ItemData dataItem = (ItemData) dataChip.getItem();
-            DataStorage data = dataItem.getDataStorage(dataChip);
+        if (!dataChip.isEmpty() && dataChip.getItem() instanceof IDataItem && dataChip.getCount() == 1) {
 
-            for (TileDataBus tile : dataCables) {
-                if (doesSlotIndexMatchDataType(data.getDataType(), chipSlot))
-                    dataItem.removeData(dataChip, tile.addData(Math.min(tile.getDataObject().getMaxData() - tile.getData(), data.getData()), data.getDataType(), EnumFacing.UP, true), DataStorage.DataType.UNDEFINED);
+            IDataItem dataItem = (IDataItem) dataChip.getItem();
+            DataStorage chipData = dataItem.getDataStorage(dataChip);
+            DataType chipType = chipData.getDataType();
+
+            if (doesSlotIndexMatchDataType(chipType, chipSlot)) {
+
+                for (TileDataBus tile : dataCables) {
+
+                    // Only push into buses that match the chip's type by design
+                    if (tile.getDataObject().getDataType() != chipType &&
+                            tile.getDataObject().getDataType() != DataType.UNDEFINED) {
+                        continue;
+                    }
+
+                    int remaining = chipData.getData();
+                    if (remaining <= 0) break;
+
+                    int space = tile.getDataObject().getMaxData() - tile.getData();
+                    if (space <= 0) continue;
+
+                    int toMove = Math.min(space, remaining);
+
+                    int accepted = tile.addData(toMove, chipType, EnumFacing.UP, true);
+                    if (accepted > 0) {
+                        // IMPORTANT: decrement the LOCAL chipData so the next bus
+                        // doesn't see the original amount
+                        chipData.removeData(accepted, true);
+                    }
+                }
+
+                // Write the final state back to the item once
+                dataItem.setData(dataChip, chipData.getData(), chipData.getDataType());
             }
-
-            //dataItem.setData(dataChip, data.getData(), data.getData() != 0 ? data.getDataType() : DataType.UNDEFINED);
         }
 
         if (world.isRemote) {
@@ -763,29 +904,44 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
     }
 
+
     @Override
     public void storeData(int id) {
-        int chipSlot = !inv.getStackInSlot(0).isEmpty() ? 0 : !inv.getStackInSlot(3).isEmpty() ? 3 : 4;
-        ItemStack dataChip = !inv.getStackInSlot(0).isEmpty() ? inv.getStackInSlot(0) : !inv.getStackInSlot(3).isEmpty() ? inv.getStackInSlot(3) : inv.getStackInSlot(4);
+        int chipSlot = !inv.getStackInSlot(0).isEmpty() ? 0
+                : !inv.getStackInSlot(3).isEmpty() ? 3
+                : 4;
 
-        if (dataChip != ItemStack.EMPTY && dataChip.getItem() instanceof ItemData && dataChip.getCount() == 1) {
+        ItemStack dataChip = !inv.getStackInSlot(0).isEmpty() ? inv.getStackInSlot(0)
+                : !inv.getStackInSlot(3).isEmpty() ? inv.getStackInSlot(3)
+                : inv.getStackInSlot(4);
 
-            ItemData dataItem = (ItemData) dataChip.getItem();
-            DataStorage data = dataItem.getDataStorage(dataChip);
+        if (!dataChip.isEmpty() && dataChip.getItem() instanceof IDataItem && dataChip.getCount() == 1) {
+
+            IDataItem dataItem = (IDataItem) dataChip.getItem();
+            DataStorage chipData = dataItem.getDataStorage(dataChip);
 
             for (TileDataBus tile : dataCables) {
-                DataStorage.DataType dataType = tile.getDataObject().getDataType();
-                if (doesSlotIndexMatchDataType(dataType, chipSlot))
-                    data.addData(tile.extractData(data.getMaxData() - data.getData(), data.getDataType(), EnumFacing.UP, true), dataType, true);
+                DataType busType = tile.getDataObject().getDataType();
+
+                if (!doesSlotIndexMatchDataType(busType, chipSlot)) continue;
+
+                int remainingCap = chipData.getMaxData() - chipData.getData();
+                if (remainingCap <= 0) break;
+
+                int pulled = tile.extractData(remainingCap, chipData.getDataType(), EnumFacing.UP, true);
+                if (pulled > 0) {
+                    chipData.addData(pulled, busType, true);
+                }
             }
 
-            dataItem.setData(dataChip, data.getData(), data.getDataType());
+            dataItem.setData(dataChip, chipData.getData(), chipData.getDataType());
         }
 
         if (world.isRemote) {
             PacketHandler.sendToServer(new PacketMachine(this, (byte) -1));
         }
     }
+
 
     @Override
     @Nullable
@@ -830,6 +986,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastButton = -1;
         lastType = "";
         ModuleContainerPanYOnlyWithScrollCache.clearScrollCache(); // static GUI cache
+        savedDataBusNbt.clear();
     }
 
     @Override
@@ -837,6 +994,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         super.onChunkUnload();
         dataCables.clear();
         ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+        savedDataBusNbt.clear();
     }
 
     @Override

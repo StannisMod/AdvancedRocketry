@@ -44,6 +44,10 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(turnRocketUp);
         ClientRegistry.registerKeyBinding(turnRocketDown);
     }
+    //Getters for keybindings
+    public static KeyBinding getOpenRocketUI() {
+        return openRocketUI;
+    }
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
@@ -62,12 +66,20 @@ public class KeyBindings {
 				PacketHandler.sendToServer(new PacketEntity(rocket, (byte)EntityRocket.PacketType.LAUNCH.ordinal()));
 				rocket.launch();
 			}*/
-
+ 
         if (player.getRidingEntity() != null && player.getRidingEntity() instanceof EntityRocket) {
             EntityRocket rocket = (EntityRocket) player.getRidingEntity();
+            /* spacehammercode : janky in large packs
             if (Minecraft.getMinecraft().inGameHasFocus && player.equals(Minecraft.getMinecraft().player)) {
                 if (!rocket.isInFlight() && Keyboard.isKeyDown(Keyboard.KEY_SPACE)) {
 
+                    rocket.prepareLaunch();
+                }
+                */
+            if (Minecraft.getMinecraft().inGameHasFocus && player.equals(Minecraft.getMinecraft().player)) {
+                if (!rocket.isInFlight()
+                        && Keyboard.getEventKey() == Keyboard.KEY_SPACE
+                        && Keyboard.getEventKeyState()) {
                     rocket.prepareLaunch();
                 }
                 rocket.onTurnLeft(turnRocketLeft.isKeyDown());

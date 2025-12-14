@@ -179,21 +179,31 @@ public class TileLandingPad extends TileInventoryHatch implements ILinkableTile,
 
     @SubscribeEvent
     public void onRocketDismantle(RocketDismantleEvent event) {
-        if (!world.isRemote && world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) {
+        if (world == null || world.isRemote || world.provider == null) return;
+        if (world.provider.getDimension() != ARConfiguration.getCurrentConfig().spaceDimId) return;
 
-            EntityRocketBase rocket = (EntityRocketBase) event.getEntity();
-            AxisAlignedBB bbCache = new AxisAlignedBB(this.getPos().add(-1, 0, -1), this.getPos().add(1, 2, 1));
+        // Make sure this is actually a rocket
+        if (!(event.getEntity() instanceof EntityRocketBase)) return;
 
-            if (bbCache.intersects(rocket.getEntityBoundingBox())) {
+        EntityRocketBase rocket = (EntityRocketBase) event.getEntity();
+        AxisAlignedBB rocketBB = rocket.getEntityBoundingBox();
+        if (rocketBB == null) return; // don't explode if some mod messes with AABBs
 
-                ISpaceObject spaceObj = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+        AxisAlignedBB bbCache = new AxisAlignedBB(
+            this.getPos().add(-1, 0, -1),
+            this.getPos().add(1, 2, 1)
+        );
 
-                if (spaceObj instanceof SpaceStationObject) {
-                    ((SpaceStationObject) spaceObj).setPadStatus(pos, false);
-                }
-            }
+        if (!bbCache.intersects(rocketBB)) return;
+
+        ISpaceObject spaceObj =
+            SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+
+        if (spaceObj instanceof SpaceStationObject) {
+            ((SpaceStationObject) spaceObj).setPadStatus(pos, false);
         }
     }
+
 
     public void registerTileWithStation(World world, BlockPos pos) {
         if (!world.isRemote && world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) {

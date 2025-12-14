@@ -370,7 +370,7 @@ public class TileRocketMonitoringStation extends TileEntity
         if (!world.isRemote) {
             final int dim = rocket.world.provider.getDimension();
             final int eid = rocket.getEntityId();
-            final double rx = rocket.posX, ry = rocket.posY, rz = rocket.posZ;
+            // final double rx = rocket.posX, ry = rocket.posY, rz = rocket.posZ;
 
             final zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType ft =
                     rocket.getRocketFuelType();
@@ -751,7 +751,7 @@ public class TileRocketMonitoringStation extends TileEntity
 
         if (tabModule.getTab() == 0) {
             // === STATUS TAB ===
-            modules.add(new ModuleButton(20, 40, 0, "Launch!", this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+            modules.add(new ModuleButton(20, 40, 0, LibVulpes.proxy.getLocalizedString("msg.monitoringStation.buttonLaunch"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
 
             if (world.isRemote) {
                 launchStatus = new ModuleText(88, 92, "", 0xFFFFFF22, true); // centered

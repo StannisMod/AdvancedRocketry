@@ -92,14 +92,22 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
     private boolean terraformingstatus;
     boolean client_first_loop = true; // for render bug on client
     //private Ticket ticket; // this is useless anyway because it would not load the energy supply system and the laser would run out of energy
-
+    
+    // Performance tweaks
+    private int lastTfDim = Integer.MIN_VALUE;
+    private boolean voidCobble;
+    private ModuleButton voidCobbleBtn;
     int last_orbit_dim;
+    private final boolean voidMiningMode;
+
     TerraformingHelper t;
     WorldServer orbitWorld;
 
 
     public TileOrbitalLaserDrill() {
         super();
+
+        this.voidMiningMode = !ARConfiguration.getCurrentConfig().laserDrillPlanet;
 
         terraformingstatus = false;
         client_first_loop = true;
@@ -109,13 +117,33 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         yCenter = 0;
         numSteps = 0;
         prevDir = null;
-        resetBtn = new ModuleButton(40, 20, 2, LibVulpes.proxy.getLocalizedString("msg.spacelaser.reset"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 34, 20);
+
+        resetBtn = new ModuleButton(
+                40, 20, 2,
+                LibVulpes.proxy.getLocalizedString("msg.spacelaser.reset"),
+                this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                34, 20
+        );
+
+        // Only meaningful in void-mining mode (from config)
+        voidCobbleBtn = new ModuleButton(
+                50, 60,
+                3,     // buttonId
+                LibVulpes.proxy.getLocalizedString("msg.spacelaser.voidcobble"),
+                this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                85, 20
+        );
+
         positionText = new ModuleText(83, 63, "empty... shit!", 0x0b0b0b);
         updateText = new ModuleText(83, 63, "also empty...", 0x0b0b0b);
         xtext = new ModuleText(83, 33, "X:", 0x0b0b0b);
         ztext = new ModuleText(83, 43, "Z:", 0x0b0b0b);
-        no_targets_text = new ModuleText(21, 43, "", 0x0b0b0b);
-        no_targets_text.setText("No target found!\nGo down and survey the area!");
+        String ntLine1 = LibVulpes.proxy.getLocalizedString("msg.spacelaser.notarget1");
+        String ntLine2 = LibVulpes.proxy.getLocalizedString("msg.spacelaser.notarget2");
+        String ntText  = ntLine1 + "\n" + ntLine2;
+        no_targets_text = new ModuleText(21, 43, ntText, 0x0b0b0b);
         locationX = new ModuleNumericTextbox(this, 93, 31, 50, 10, 16);
         locationZ = new ModuleNumericTextbox(this, 93, 41, 50, 10, 16);
         tickSinceLastOperation = 0;
@@ -127,6 +155,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             this.miningDrill = new MiningDrill();
         else
             this.miningDrill = new VoidDrill();
+
         this.terraformingDrill = new terraformingdrill();
         this.drill = miningDrill;
 
@@ -134,7 +163,12 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         finished = false;
         isJammed = false;
         mode = MODE.SINGLE;
+
+        // If we ever need to set initial voidCobble from config, do it here
+        updateVoidCobbleButtonVisuals();
     }
+
+
 
     @Override
     public Object[][][] getStructure() {
@@ -172,7 +206,8 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         if (id == 15) {
             out.writeInt(this.laserX);
             out.writeInt(this.laserZ);
-        }else if (id == 11){
+        }
+        else if (id == 11){
             out.writeInt(mode.ordinal());
             out.writeInt(this.xCenter);
             out.writeInt(this.yCenter);
@@ -180,6 +215,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             out.writeInt(this.laserZ);
             out.writeBoolean(this.isRunning);
             out.writeBoolean(terraformingstatus);
+            out.writeBoolean(voidCobble);
         }
         else if (id == 12) {
             out.writeBoolean(isRunning);
@@ -209,6 +245,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             nbt.setInteger("currentZ", in.readInt());
             nbt.setBoolean("isRunning", in.readBoolean());
             nbt.setBoolean("terraformingstatus", in.readBoolean());
+            nbt.setBoolean("voidCobble", in.readBoolean());
         }
         else if (id == 12) {
             nbt.setBoolean("isRunning", in.readBoolean());
@@ -233,75 +270,92 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id,
-                               NBTTagCompound nbt) {
+                            NBTTagCompound nbt) {
 
         super.useNetworkData(player, side, id, nbt);
+
         if (id == 15) {
             laserZ = nbt.getInteger("currentZ");
             laserX = nbt.getInteger("currentX");
-            positionText.setText("position:\n"+this.laserX+" : "+this.laserZ);
-        }else if (id == 11){
+            positionText.setText("position:\n" + this.laserX + " : " + this.laserZ);
+        } else if (id == 11) {
             resetSpiral();
             this.isRunning = nbt.getBoolean("isRunning");
             mode = MODE.values()[nbt.getInteger("mode")];
+            if (voidMiningMode && mode != MODE.SINGLE) {
+                mode = MODE.SINGLE;
+            }            
             xCenter = nbt.getInteger("newX");
             yCenter = nbt.getInteger("newZ");
             laserZ = nbt.getInteger("currentZ");
             laserX = nbt.getInteger("currentX");
-            positionText.setText("position:\n"+this.laserX+" : "+this.laserZ);
+            positionText.setText("position:\n" + this.laserX + " : " + this.laserZ);
             updateText.setText(this.getMode().toString());
             locationX.setText(String.valueOf(this.xCenter));
             locationZ.setText(String.valueOf(this.yCenter));
-            //System.out.println("reset client:"+xCenter+":"+yCenter+":"+mode);
             resetBtn.setColor(0xf0f0f0);
             check_is_terraforming_update_gui();
 
             this.terraformingstatus = nbt.getBoolean("terraformingstatus");
+            this.voidCobble = nbt.getBoolean("voidCobble");
             client_update_tf_info();
-            //System.out.println("is running: "+ isRunning);
 
 
-        }
-       else if (id == 12) {
+            if (voidCobbleBtn != null) {
+                updateVoidCobbleButtonVisuals();
+            }
+
+        } else if (id == 12) {
             this.isRunning = nbt.getBoolean("isRunning");
-       }
-       else if (id == 16){
+        } else if (id == 16) {
             this.terraformingstatus = nbt.getBoolean("terraformingstatus");
             client_update_tf_info();
+        } else if (id == 14) {
+            resetSpiral();
+            mode = MODE.values()[nbt.getInteger("mode")];
+            xCenter = nbt.getInteger("newX");
+            yCenter = nbt.getInteger("newZ");
+            laserZ = yCenter;
+            laserX = xCenter;
 
-        }
-        else if (id == 14){
-           resetSpiral();
-           mode = MODE.values()[nbt.getInteger("mode")];
-           xCenter = nbt.getInteger("newX");
-           yCenter = nbt.getInteger("newZ");
-           laserZ = yCenter;
-           laserX = xCenter;
-           //System.out.println("reset:"+xCenter+":"+yCenter+":"+mode);
-           // do all the reset stuff
             if (drill != null) {
                 drill.deactivate();
             }
             finished = false;
             setRunning(false);
 
-            if (mode == MODE.T_FORM){
+            if (mode == MODE.T_FORM) {
                 this.drill = this.terraformingDrill;
-            }else {
+            } else {
                 this.drill = this.miningDrill;
             }
 
-           checkjam();
-           checkCanRun();
-            //update clients on new data
-           PacketHandler.sendToNearby(new PacketMachine(this, (byte) 11), this.world.provider.getDimension(), pos, 2048);
-       }
-        else if (id == 13)
-            //update clients on new data
-            PacketHandler.sendToNearby(new PacketMachine(this, (byte) 11), this.world.provider.getDimension(), pos, 2048);
+            checkjam();
+            checkCanRun();
+            PacketHandler.sendToNearby(new PacketMachine(this, (byte) 11),
+                    this.world.provider.getDimension(), pos, 2048);
+
+        } else if (id == 13) {
+            PacketHandler.sendToNearby(new PacketMachine(this, (byte) 11),
+                    this.world.provider.getDimension(), pos, 2048);
+
+        } else if (id == 17) {
+            // **IMPORTANT**: only act on server
+            if (!world.isRemote) {
+                this.voidCobble = !this.voidCobble;
+                if (miningDrill instanceof VoidDrill) {
+                    ((VoidDrill) miningDrill).setVoidCobble(voidCobble);
+                }
+                // push new state to clients
+                PacketHandler.sendToNearby(new PacketMachine(this, (byte) 11),
+                        this.world.provider.getDimension(), pos, 2048);
+                markDirty();
+            }
+        }
 
         markDirty();
     }
+
 
     public void transferItems(IInventory inventorySource, IItemHandler inventoryTarget) {
         for (int i = 0; i < inventorySource.getSizeInventory(); i++) {
@@ -430,7 +484,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             tickSinceLastOperation++;
 
 
-            if (mode != MODE.T_FORM) {
+            if (mode != MODE.T_FORM && isJammed) {
                 checkjam();
             }
             checkCanRun();
@@ -513,7 +567,10 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         if (this.drill != null) {
             this.drill.deactivate();
         }
-        //ForgeChunkManager.releaseTicket(ticket);
+        orbitWorld = null;
+        t = null;
+        last_orbit_dim = 0;
+        lastTfDim = Integer.MIN_VALUE;
     }
 
     @Override
@@ -522,6 +579,10 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             this.drill.deactivate();
         }
         isRunning = false;
+        orbitWorld = null;
+        t = null;
+        last_orbit_dim = 0;
+        lastTfDim = Integer.MIN_VALUE;
     }
 
     @Override
@@ -541,7 +602,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         super.writeToNBT(nbt);
 
 
-
+        nbt.setBoolean("voidCobble", voidCobble);
         nbt.setInteger("laserX", laserX);
         nbt.setInteger("laserZ", laserZ);
         nbt.setByte("mode", (byte) mode.ordinal());
@@ -566,6 +627,10 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         laserX = nbt.getInteger("laserX");
         laserZ = nbt.getInteger("laserZ");
         mode = MODE.values()[nbt.getByte("mode")];
+        // If config says we are in void-mining mode, force SINGLE
+        if (voidMiningMode && mode != MODE.SINGLE) {
+            mode = MODE.SINGLE;
+        }
         this.isJammed = nbt.getBoolean("jammed");
 
         xCenter = nbt.getInteger("CenterX");
@@ -582,18 +647,19 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         }else {
             this.drill = this.miningDrill;
         }
-    }
-
+        voidCobble = nbt.getBoolean("voidCobble");
+        if (miningDrill instanceof VoidDrill) {
+            ((VoidDrill) miningDrill).setVoidCobble(voidCobble);
+        }
+    }        
+    
     /**
      * Take items from internal inventory
      */
     public void checkjam() {
-
-
+        // Only called when isJammed == true
         if (this.one_hatch_empty()) {
             this.isJammed = false;
-        }else{
-            this.isJammed = true;
         }
     }
 
@@ -626,7 +692,20 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
 
 
     public void checkCanRun() {
-        if (world.isRemote) return; // client has no business here
+        if (world.isRemote) return;
+
+        // Read redstone once and reuse it
+        final int redstonePower = world.isBlockIndirectlyGettingPowered(getPos());
+
+        // Fast path for void-mining: if there is no redstone, don't even bother
+        // with space station / dimension logic.
+        if (voidMiningMode && redstonePower == 0) {
+            if (isRunning) {
+                drill.deactivate();
+                setRunning(false);
+            }
+            return;
+        }
 
         ISpaceObject spaceObject =  SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(this.pos);
         if(spaceObject == null){
@@ -638,54 +717,53 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         }
         int orbitDimId = spaceObject.getOrbitingPlanetId();
 
-        if (orbitDimId != last_orbit_dim ||orbitWorld== null || t == null){
+        // Ensure orbitWorld exists when you might activate a drill
+        if (orbitDimId != last_orbit_dim || orbitWorld == null) {
             last_orbit_dim = orbitDimId;
+
             if (!DimensionManager.isDimensionRegistered(orbitDimId)) {
-                if (isRunning) {
-                    drill.deactivate();
-                    setRunning(false);
-                }
+                if (isRunning) { drill.deactivate(); setRunning(false); }
                 return;
             }
 
-                orbitWorld = DimensionManager.getWorld(orbitDimId);
+            orbitWorld = DimensionManager.getWorld(orbitDimId);
             if (orbitWorld == null) {
                 DimensionManager.initDimension(orbitDimId);
                 orbitWorld = DimensionManager.getWorld(orbitDimId);
                 if (orbitWorld == null) {
-                    if (isRunning) {
-                        drill.deactivate();
-                        setRunning(false);
-                    }
+                    if (isRunning) { drill.deactivate(); setRunning(false); }
                     return;
                 }
             }
-            t = terraformingDrill.get_my_helper(orbitWorld);
         }
 
+        if (mode == MODE.T_FORM) {
+            if (t == null || lastTfDim != orbitDimId) {
+                t = terraformingDrill.get_my_helper(orbitWorld);
+                lastTfDim = orbitDimId;
+            }
 
-
-        if (!t.has_blocks_in_tf_queue()) {
+            boolean hasQueue = t != null && t.has_blocks_in_tf_queue();
+            if (terraformingstatus != hasQueue) {
+                terraformingstatus = hasQueue;
+                PacketHandler.sendToAll(new PacketMachine(this, (byte) 16));
+            }
+        } else {
             if (terraformingstatus) {
                 terraformingstatus = false;
                 PacketHandler.sendToAll(new PacketMachine(this, (byte) 16));
-
-            }
-        } else {
-            if (!terraformingstatus) {
-                terraformingstatus = true;
-                PacketHandler.sendToAll(new PacketMachine(this, (byte) 16));
             }
         }
 
 
+
         //Laser  redstone power, not be jammed, and be in orbit and energy to function
-        if ((mode == MODE.T_FORM && (t==null ||!t.has_blocks_in_tf_queue())) || this.finished || (this.isJammed && mode != MODE.T_FORM) || world.isBlockIndirectlyGettingPowered(getPos()) == 0 || unableToRun()) {
+        if ((mode == MODE.T_FORM && (t==null ||!t.has_blocks_in_tf_queue())) || this.finished || (this.isJammed && mode != MODE.T_FORM) || redstonePower == 0 || unableToRun()) {
             if (isRunning) {
                 drill.deactivate();
                 setRunning(false);
             }
-        } else if (world.isBlockIndirectlyGettingPowered(getPos()) > 0) {
+        } else if (redstonePower > 0) {
 
 
             if (orbitDimId == SpaceObjectManager.WARPDIMID)
@@ -769,38 +847,75 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
 
     }
 
+    private void updateVoidCobbleButtonVisuals() {
+        if (voidCobbleBtn == null) return;
+
+        String key = voidCobble
+                ? "msg.spacelaser.voidcobble.on"
+                : "msg.spacelaser.voidcobble.off";
+
+        voidCobbleBtn.setText(LibVulpes.proxy.getLocalizedString(key));
+        voidCobbleBtn.setColor(voidCobble ? 0x90ff90 : 0xf0f0f0);
+    }
+
+
+
+
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
 
+        // --- VOID-MINING SIMPLIFIED GUI ---
+        if (voidMiningMode) {
+            if (world.isRemote) {
+                // Ask server for current state (mode, running, voidCobble, etc.)
+                PacketHandler.sendToServer(new PacketMachine(this, (byte) 13));
+
+                // Lore text: two lines, joined with '\n' in Java
+                String line1 = LibVulpes.proxy.getLocalizedString("msg.spacelaser.voidmining.line1");
+                String line2 = LibVulpes.proxy.getLocalizedString("msg.spacelaser.voidmining.line2");
+                String lore  = line1 + "\n" + line2;
+
+                modules.add(new ModuleText(35, 30, lore, 0x0b0b0b));
+
+                // Void cobble toggle button
+                updateVoidCobbleButtonVisuals();
+                modules.add(voidCobbleBtn);
+            }
+
+            // Power bar is still useful
+            modules.add(new ModulePower(11, 25, batteries));
+            return modules;
+        }
+
+        // --- ORIGINAL PLANET-MINING GUI  ---
         if (world.isRemote) {
             //request update on information
             PacketHandler.sendToServer(new PacketMachine(this, (byte) 13));
 
             modules.add(updateText = new ModuleText(110, 20, this.getMode().toString(), 0x0b0b0b, true));
 
-
             modules.add(locationX);
             modules.add(locationZ);
-
 
             modules.add(xtext);
             modules.add(ztext);
 
             modules.add(no_targets_text);
-
             modules.add(positionText);
-
-            //modules.add(new ModuleImage(8, 16, TextureResources.laserGuiBG));
+            // modules.add(new ModuleImage(8, 16, TextureResources.laserGuiBG));
         }
 
-        modules.add(new ModuleButton(83, 20, 0, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonLeft, 5, 8));
-        modules.add(new ModuleButton(137, 20, 1, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonRight, 5, 8));
+        modules.add(new ModuleButton(83, 20, 0, "", this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonLeft, 5, 8));
+        modules.add(new ModuleButton(137, 20, 1, "", this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonRight, 5, 8));
         modules.add(resetBtn);
         modules.add(new ModulePower(11, 25, batteries));
 
         return modules;
     }
+
 
     @Override
     public String getModularInventoryName() {
@@ -845,9 +960,25 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         } else if (buttonId == 2) {
             PacketHandler.sendToServer(new PacketMachine(this, (byte) 14));
             return;
+        } else if (buttonId == 3) {
+            // Ask server to toggle voidCobble (no payload needed)
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) 17));
+            return;
         } else
             return;
     }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+
+        if (!world.isRemote) {
+            if (drill != null) {
+                drill.deactivate();
+            }
+            isRunning = false;
+        }
+    }    
 
     @Override
     @SideOnly(Side.CLIENT)

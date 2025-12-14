@@ -1082,7 +1082,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
                 BlockPos p = i.pos.getBlockPos();
                 iterator_2.remove(); // Safe removal during iteration
                 World world = (net.minecraftforge.common.DimensionManager.getWorld(getId()));
-                world.notifyNeighborsOfStateChange(p, world.getBlockState(p).getBlock(), false);
+                if (world != null) {
+                    world.notifyNeighborsOfStateChange(p, world.getBlockState(p).getBlock(), false);
+                }
             }
         }
 
@@ -1627,12 +1629,28 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         volcanoFrequencyMultiplier = nbt.getFloat("volcanoFrequencyMultiplier");
 
         // Custom weather info
-        rainStartLength = nbt.getInteger("rainStartLength");
-        thunderStartLength = nbt.getInteger("thunderStartLength");
-        rainProlongationLength = nbt.getInteger("rainProlongationLength");
-        thunderProlongationLength = nbt.getInteger("thunderProlongationLength");
-        rainMarker = nbt.getInteger("rainMarker");
-        thunderMarker = nbt.getInteger("thunderMarker");
+        if (nbt.hasKey("rainStartLength", NBT.TAG_INT))
+            rainStartLength = nbt.getInteger("rainStartLength");
+        if (nbt.hasKey("thunderStartLength", NBT.TAG_INT))
+            thunderStartLength = nbt.getInteger("thunderStartLength");
+        if (nbt.hasKey("rainProlongationLength", NBT.TAG_INT))
+            rainProlongationLength = nbt.getInteger("rainProlongationLength");
+        if (nbt.hasKey("thunderProlongationLength", NBT.TAG_INT))
+            thunderProlongationLength = nbt.getInteger("thunderProlongationLength");
+
+        if (nbt.hasKey("rainMarker", NBT.TAG_INT))
+            rainMarker = nbt.getInteger("rainMarker");
+        if (nbt.hasKey("thunderMarker", NBT.TAG_INT))
+            thunderMarker = nbt.getInteger("thunderMarker");
+
+        // Sanity clamp
+        if (rainStartLength <= 0) rainStartLength = 168000;
+        if (thunderStartLength <= 0) thunderStartLength = 168000;
+        if (rainProlongationLength <= 0) rainProlongationLength = 12000;
+        if (thunderProlongationLength <= 0) thunderProlongationLength = 12000;
+        // Clamp markers to documented range
+        rainMarker = MathHelper.clamp(rainMarker, -1, 1);
+        thunderMarker = MathHelper.clamp(thunderMarker, -1, 1);
 
 
         //Hierarchy
