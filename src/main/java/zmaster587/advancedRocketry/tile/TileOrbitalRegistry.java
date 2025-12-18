@@ -10,6 +10,7 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.util.EnumFacing;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fml.relauncher.Side;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
@@ -17,7 +18,6 @@ import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.inventory.TextureResources;
-import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
 import zmaster587.advancedRocketry.item.ItemOreScanner;
 import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.item.ItemStationChip;
@@ -849,19 +849,13 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         }
 
         if (!satButtons.isEmpty()) {
-            ModuleContainerPanYOnlyWithScrollCache panLeft =
-                    new ModuleContainerPanYOnlyWithScrollCache(
-                            baseX, baseY,
-                            satButtons, new LinkedList<>(),
-                            null,
-                            sizeX - 2, sizeY,
-                            0, -48,
-                            0, 72
-                    );
-            modules.add(panLeft);
+            modules.add(AdvancedRocketry.proxy.createScrollListPan(
+                    baseX, baseY,
+                    satButtons,
+                    sizeX, sizeY
+            ));
         }
     }
-
 
     private void buildSatelliteDetailWindow(List<ModuleBase> modules, int startX, int startY) {
     int x = startX;
@@ -982,19 +976,13 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         }
 
         if (!stationButtons.isEmpty()) {
-            ModuleContainerPanYOnlyWithScrollCache panLeft =
-                    new ModuleContainerPanYOnlyWithScrollCache(
-                            baseX, baseY,
-                            stationButtons, new LinkedList<>(),
-                            null,
-                            sizeX - 2, sizeY,
-                            0, -48,
-                            0, 72
-                    );
-            modules.add(panLeft);
+            modules.add(AdvancedRocketry.proxy.createScrollListPan(
+                    baseX, baseY,
+                    stationButtons,
+                    sizeX, sizeY
+            ));
         }
     }
-
       
     private void buildStationDetailWindow(List<ModuleBase> modules, int startX, int startY) {
         int x = startX;
@@ -1121,12 +1109,16 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
     public void onInventoryButtonPressed(int buttonId) {
         // Client → server via PacketMachine
         if (world != null && world.isRemote) {
+            if (buttonId == GUI_BUTTON_SCAN) {
+                // Reset scroll immediately on the client
+                AdvancedRocketry.proxy.clearScrollCache();
+                PacketHandler.sendToServer(new PacketMachine(this, NET_BUTTON_SCAN));
+                return;
+            }
+
             if (buttonId == GUI_BUTTON_WRITE) {
                 PacketHandler.sendToServer(new PacketMachine(this, NET_BUTTON_WRITE_CHIP));
-
-            } else if (buttonId == GUI_BUTTON_SCAN) {
-                PacketHandler.sendToServer(new PacketMachine(this, NET_BUTTON_SCAN));
-
+                return;
             } else if (buttonId >= SAT_LIST_OFFSET && buttonId < STATION_LIST_OFFSET) {
                 // NEW: update client-side selection immediately
                 lastSatButton = buttonId;
@@ -1235,8 +1227,6 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 } else {
                     rescanStations();
                 }
-                // List contents changed → reset scroll cache
-                ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
 
                 markDirty();
                 world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
@@ -1472,13 +1462,17 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         lastStationButton = -1;
 
         // Critical: reset static scroll cache so containers don't reuse old offsets
-        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+        if (world != null && world.isRemote) {
+            AdvancedRocketry.proxy.clearScrollCache();
+        }
+
     }
 
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
-        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+        if (world != null && world.isRemote) {
+            AdvancedRocketry.proxy.clearScrollCache();
+        }
     }
-
 }
