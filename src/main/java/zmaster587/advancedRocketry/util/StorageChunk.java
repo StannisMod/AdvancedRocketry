@@ -111,8 +111,16 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     private static boolean isLiquidContainerBlock(TileEntity tile) {
+        // Prefer real sides for compatibility
+        for (EnumFacing f : EnumFacing.VALUES) {
+            if (tile.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, f)) {
+                return true;
+            }
+        }
+        // Fallback for unsided/internal handlers
         return tile.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
     }
+
 
     public void setWeight(int weight) {
         this.weight = weight;
