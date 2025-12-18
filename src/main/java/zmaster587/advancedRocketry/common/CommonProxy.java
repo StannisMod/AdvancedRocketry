@@ -9,9 +9,13 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
+import zmaster587.libVulpes.inventory.modules.ModuleBase;
+import zmaster587.libVulpes.inventory.modules.ModuleContainerPanYOnly;
 import zmaster587.advancedRocketry.network.PacketLaserGun;
 import zmaster587.advancedRocketry.network.PacketStationUpdate;
 import zmaster587.libVulpes.network.PacketHandler;
+import java.util.List;
+import java.util.LinkedList;
 
 public class CommonProxy {
 
@@ -23,6 +27,36 @@ public class CommonProxy {
 
     public void registerEventHandlers() {
 
+    }
+
+
+    public ModuleBase createScrollListPan(
+            int baseX, int baseY,
+            List<ModuleBase> list,
+            int sizeX, int sizeY
+    ) {
+        return new ModuleContainerPanYOnly(
+                baseX, baseY,
+                list, new LinkedList<>(),
+                null,
+                sizeX - 2, sizeY,
+                0, -48,
+                0, 72
+        );
+    }
+
+    /** Generic clear for any UI scroll cache (no-op on server) */
+    public void clearScrollCache() {
+        // no-op on server/common
+    }
+
+    // Keep existing Observatory API working (optional wrappers)
+    public ModuleBase createObservatoryAsteroidListPan(int baseX, int baseY, List<ModuleBase> list2, int sizeX, int sizeY) {
+        return createScrollListPan(baseX, baseY, list2, sizeX, sizeY);
+    }
+
+    public void clearObservatoryScrollCache() {
+        clearScrollCache();
     }
 
     public void spawnParticle(String particle, World world, double x, double y,
