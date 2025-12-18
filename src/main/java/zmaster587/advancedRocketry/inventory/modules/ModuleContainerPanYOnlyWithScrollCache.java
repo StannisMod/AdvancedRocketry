@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@SideOnly(Side.CLIENT)
 public class ModuleContainerPanYOnlyWithScrollCache extends ModuleContainerPanYOnly {
 
     // ===== Single-slot global cache (latest write wins; no memory growth) =====
@@ -27,7 +28,6 @@ public class ModuleContainerPanYOnlyWithScrollCache extends ModuleContainerPanYO
     private static final AtomicInteger GLOBAL_SCROLL = new AtomicInteger(NO_SCROLL);
 
     // ===== Track live instances so the event handler can find "this" without editing GuiModular =====
-    @SideOnly(Side.CLIENT)
     private static final CopyOnWriteArrayList<WeakReference<ModuleContainerPanYOnlyWithScrollCache>> LIVE =
             new CopyOnWriteArrayList<>();
 
