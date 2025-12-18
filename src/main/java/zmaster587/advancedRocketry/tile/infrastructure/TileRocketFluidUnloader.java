@@ -101,7 +101,7 @@ public class TileRocketFluidUnloader extends TileRocketFluidLoader implements II
             if (drained != null && drained.amount > 0) {
                 getFluidTank().fill(drained, true);
                 doupdate = true;
-                break; // one transfer per 20 ticks
+                break; // one transfer per <TRANSFER_INTERVAL_TICKS> ticks
             }
         }
 
