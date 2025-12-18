@@ -51,7 +51,7 @@ public class TileRocketFluidLoader extends TileFluidHatch implements IInfrastruc
     RedstoneState inputstate;
     private String[] sideStateNames;
     ModuleBlockSideSelector sideSelectorModule;
-    protected static final int TRANSFER_INTERVAL_TICKS = 20;
+    protected static final int TRANSFER_INTERVAL_TICKS = 10;
     protected int transferCooldown = 0;
 
     public TileRocketFluidLoader() {
