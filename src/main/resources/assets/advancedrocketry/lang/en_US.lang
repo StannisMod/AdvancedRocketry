@@ -307,7 +307,7 @@ msg.observetory.text.observabledistance=Observable distance:
 msg.observetory.text.missionTime=Mission Time:
 msg.observetory.text.time=Time:
 msg.observetory.req.open=Observatory must be open (night, clear sky, sky access) or be in space!
-msg.observetory.print.already=You already have a chip for this asteroid!
+msg.observetory.print.already=You already printed a chip for this asteroid!
 
 # Atmosphere detector GUI labels
 msg.atmosphere.air=Normal Air
@@ -381,9 +381,9 @@ msg.guidanceComputerHatch.ejectonstationlanding=Allow Ejection of Station Chips
 msg.guidanceComputerHatch.link=You program the linker with the fluid loader at
 msg.fluidLoader.loadingState=Loading State: 
 msg.fluidLoader.allowLoading=Allow Loading: 
-msg.fluidLoader.allowredstoneinput=Allow redstone input
-msg.fluidLoader.allowredstoneoutput=Allow redstone output
-msg.fluidLoader.none=None
+msg.fluidLoader.allowredstoneinput=Redstone Input (Red)
+msg.fluidLoader.allowredstoneoutput=Redstone Output (Blue)
+msg.fluidLoader.none=Disabled (Green)
 msg.fluidLoader.link=You program the linker with the fluid loader at: 
 msg.rocketLoader.loadingState=Loading State: 
 msg.rocketLoader.allowLoading=Allow Loading: 
@@ -457,12 +457,13 @@ msg.stationgravctrl.tgtalt=Target Gravity:
 msg.stationgravctrl.alt=Artificial Gravity: 
 msg.stationorientctrl.alt=Angular Velocity: 
 msg.stationorientctrl.tgtalt=Target Ang Vel:
+msg.station.anchored=§cAnchored!
 msg.warpmon.tab.warp=Warp Selection
 msg.warpmon.tab.data=Data
 msg.warpmon.tab.tracking=Planet Tracking
 msg.warpmon.selectplanet=Select Planet
 msg.warpmon.corestatus=Core Status:
-msg.warpmon.anchored=Station is anchored!
+msg.warpmon.anchored=Anchored!
 msg.warpmon.nowhere=Nowhere to go
 msg.warpmon.missingart=Missing Artifact
 msg.warpmon.ready=Ready!
@@ -1310,7 +1311,9 @@ tooltip.advancedrocketry.railgun.alt.1="The railgun is not powerful enough to tr
 # Space Elevator Controller
 tooltip.advancedrocketry.spaceelevatorctrl=Controls the Space Elevator
 tooltip.advancedrocketry.spaceelevatorctrl.shift.1=§bUse Holo-Projector!
-
+tooltip.advancedrocketry.spaceelevatorctrl.shift.2=§fAnchors station
+tooltip.advancedrocketry.spaceelevatorctrl.alt.1=§fNeeds air above (Planetside), air below (Stationside)
+tooltip.advancedrocketry.spaceelevatorctrl.alt.2=§cUse Linker
 # Atmosphere Terraformer
 tooltip.advancedrocketry.atmosterraformer=Changes Atmospheric pressure on an entire planet
 tooltip.advancedrocketry.atmosterraformer.shift.1=§bUse Holo-Projector!
