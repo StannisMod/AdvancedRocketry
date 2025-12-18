@@ -307,7 +307,7 @@ msg.observetory.text.observabledistance=可观测距离：
 msg.observetory.text.missionTime=任务时间：
 msg.observetory.text.time=时间：
 msg.observetory.req.open=瞭望台必须满足开放条件（夜晚、天气晴朗、可观测天空）或位于空间站中！
-msg.observetory.print.already=此小行星已存在对应芯片！
+msg.observetory.print.already=你已为此小行星写入了一个芯片！
 
 # Atmosphere detector GUI labels
 msg.atmosphere.air=正常空气
@@ -381,9 +381,9 @@ msg.guidanceComputerHatch.ejectonstationlanding=允许弹出空间站芯片
 msg.guidanceComputerHatch.link=已将流体装载器写入链接器，位置：
 msg.fluidLoader.loadingState=装载状态：
 msg.fluidLoader.allowLoading=允许装载：
-msg.fluidLoader.allowredstoneinput=允许红石输入
-msg.fluidLoader.allowredstoneoutput=允许红石输出
-msg.fluidLoader.none=无
+msg.fluidLoader.allowredstoneinput=红石输入（红色）
+msg.fluidLoader.allowredstoneoutput=红石输出（蓝色）
+msg.fluidLoader.none=已禁用（绿色）
 msg.fluidLoader.link=已将流体装载器写入链接器，位置：
 msg.rocketLoader.loadingState=装载状态：
 msg.rocketLoader.allowLoading=允许装载：
@@ -457,12 +457,13 @@ msg.stationgravctrl.tgtalt=目标重力：
 msg.stationgravctrl.alt=人造重力：
 msg.stationorientctrl.alt=角速度：
 msg.stationorientctrl.tgtalt=目标角速度：
+msg.station.anchored=§c已锚定！
 msg.warpmon.tab.warp=跃迁选择
 msg.warpmon.tab.data=数据
 msg.warpmon.tab.tracking=星球追踪
 msg.warpmon.selectplanet=选择星球
 msg.warpmon.corestatus=核心状态:
-msg.warpmon.anchored=空间站已锚定！
+msg.warpmon.anchored=已锚定！
 msg.warpmon.nowhere=无可用目的地
 msg.warpmon.missingart=缺少工件
 msg.warpmon.ready=就绪！
@@ -1310,7 +1311,9 @@ tooltip.advancedrocketry.railgun.alt.1=“轨道炮的威力不足以在行星�
 # Space Elevator Controller
 tooltip.advancedrocketry.spaceelevatorctrl=用于控制太空电梯
 tooltip.advancedrocketry.spaceelevatorctrl.shift.1=§b使用全息投影器！
-
+tooltip.advancedrocketry.spaceelevatorctrl.shift.2=§f锚定太空站
+tooltip.advancedrocketry.spaceelevatorctrl.alt.1=§f星球端需要上方有空气，空间站端需要下方有空气
+tooltip.advancedrocketry.spaceelevatorctrl.alt.2=§c使用链接器
 # Atmosphere Terraformer
 tooltip.advancedrocketry.atmosterraformer=改变整颗星球的大气压
 tooltip.advancedrocketry.atmosterraformer.shift.1=§b使用全息投影器！
