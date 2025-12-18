@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.tile.infrastructure;
 
 import micdoodle8.mods.galacticraft.core.network.PacketEntityUpdate;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
@@ -15,6 +16,8 @@ import zmaster587.libVulpes.util.INetworkMachine;
 import zmaster587.libVulpes.util.ZUtils.RedstoneState;
 
 import java.util.List;
+
+import javax.annotation.Nullable;
 
 public class TileRocketFluidUnloader extends TileRocketFluidLoader implements IInfrastructure, ITickable, IButtonInventory, INetworkMachine {
 
@@ -32,48 +35,82 @@ public class TileRocketFluidUnloader extends TileRocketFluidLoader implements II
         return "tile.loader.4.name";
     }
 
+    @Nullable
+    private static IFluidHandler getBestDrainHandler(TileEntity te, int probeAmount) {
+        // Try null side first
+        IFluidHandler h = te.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+        if (h != null) {
+            FluidStack probe = h.drain(probeAmount, false);
+            if (probe != null && probe.amount > 0) return h;
+        }
+
+        // Then try all faces
+        for (EnumFacing f : EnumFacing.VALUES) {
+            h = te.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, f);
+            if (h == null) continue;
+
+            FluidStack probe = h.drain(probeAmount, false);
+            if (probe != null && probe.amount > 0) return h;
+        }
+
+        return null;
+    }
 
     @Override
     public void update() {
-        //Move fluids
-        if (!world.isRemote && rocket != null) {
+        if (world.isRemote || rocket == null) return;
 
-            boolean isAllowToOperate = (inputstate == RedstoneState.OFF || isStateActive(inputstate, getStrongPowerForSides(world, getPos())));
-
-            List<TileEntity> tiles = rocket.storage.getFluidTiles();
-            boolean rocketFluidFull = false;
-
-            boolean doupdate = false;
-            //Function returns if something can be moved
-            for (TileEntity tile : tiles) {
-                IFluidHandler handler = tile.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
-
-                //See if we have anything to fill because redstone output
-                FluidStack rocketFluid = handler.drain(1, false);
-                if (handler.fill(rocketFluid, false) > 0)
-                    rocketFluidFull = true;
-
-                if (isAllowToOperate) {
-                    boolean shouldOperate;
-                    if (getFluidTank().getFluid() != null)
-                        shouldOperate = getFluidTank().fill(handler.drain(new FluidStack(getFluidTank().getFluid(), getFluidTank().getCapacity() - getFluidTank().getFluidAmount()), false), false) > 0;
-                    else
-                        shouldOperate = getFluidTank().fill(handler.drain(getFluidTank().getCapacity(), false), false) > 0;
-
-                    if (shouldOperate) {
-                        doupdate = true;
-                        getFluidTank().fill(handler.drain(Math.max(50, getFluidTank().getCapacity() - getFluidTank().getFluidAmount()), true), true);
-                    }
-                }
-            }
-            if (doupdate) {
-                PacketHandler.sendToNearby(new PacketEntity(rocket, (byte) 9987), world.provider.getDimension(), getPos(), 128);
-            }
-
-            //Update redstone state
-            setRedstoneState(!rocketFluidFull);
-
+        if (transferCooldown > 0) {
+            transferCooldown--;
+            return;
         }
-    }
+        transferCooldown = TRANSFER_INTERVAL_TICKS;
 
+        boolean isAllowToOperate = (inputstate == RedstoneState.OFF
+                || isStateActive(inputstate, getStrongPowerForSides(world, getPos())));
+
+        List<TileEntity> tiles = rocket.storage.getFluidTiles();
+
+        boolean rocketHasDrainableFluidSomewhere = false;
+        boolean doupdate = false;
+
+        for (TileEntity tile : tiles) {
+            if (tile == null || tile.isInvalid()) continue;
+
+            IFluidHandler drainHandler = getBestDrainHandler(tile, 1);
+            if (drainHandler == null) continue;
+
+            // redstone probe: does rocket have any drainable fluid?
+            FluidStack probe = drainHandler.drain(1, false);
+            if (probe != null && probe.amount > 0) {
+                rocketHasDrainableFluidSomewhere = true;
+            }
+
+            if (!isAllowToOperate) continue;
+
+            int space = getFluidTank().getCapacity() - getFluidTank().getFluidAmount();
+            if (space <= 0) continue;
+
+            FluidStack simulated = drainHandler.drain(space, false);
+            if (simulated == null || simulated.amount <= 0) continue;
+
+            int accepted = getFluidTank().fill(simulated, false);
+            if (accepted <= 0) continue;
+
+            FluidStack drained = drainHandler.drain(accepted, true);
+            if (drained != null && drained.amount > 0) {
+                getFluidTank().fill(drained, true);
+                doupdate = true;
+                break; // one transfer per 20 ticks
+            }
+        }
+
+        if (doupdate) {
+            PacketHandler.sendToNearby(new PacketEntity(rocket, (byte) 9987),
+                    world.provider.getDimension(), getPos(), 128);
+            markDirty();
+        }
+
+        setRedstoneState(!rocketHasDrainableFluidSomewhere);
+    }
 }
