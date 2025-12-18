@@ -37,6 +37,7 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
     private FluidTank tank;
     private List<BlockPos> cache;
     private Fluid lastFluidType = null;
+    private int localTick = 0;
 
     public TilePump() {
         super(1000);
@@ -49,9 +50,10 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
     private final IFluidHandler fluidCap = new FluidCapability(this);
 
     private boolean shouldRunThisTick(int interval) {
-        // world time is long; 0 mod interval fires once per interval
-        return interval <= 1 || (world.getWorldTime() % interval) == 0;
+        return interval <= 1 || (localTick % interval) == 0;
     }
+
+
 
     public int getPowerPerOperation() {
         return 100;
@@ -74,8 +76,10 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
 
     @Override
     public void update() {
-        if (world.isRemote) return;
+        if (world == null || world.isRemote) return;
 
+        localTick++;
+        if (localTick == Integer.MIN_VALUE) localTick = 0;
         // Drop stale plan if accepted fluid changed
         Fluid cur = tank.getFluid() == null ? null : tank.getFluid().getFluid();
         if (cur != lastFluidType) {
@@ -84,7 +88,6 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
         }
 
         if (isRedstoneDisabled()) {
-            // optional: cache.clear();
             return;
         }
 
@@ -195,9 +198,14 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
         if (!cache.isEmpty())
             return cache.remove(0);
 
-        BlockPos currentPos = new MutableBlockPos(getPos().down());
-        while (world.isAirBlock(currentPos))
-            currentPos = currentPos.down();
+        MutableBlockPos currentPos = new MutableBlockPos(pos);
+        currentPos.move(EnumFacing.DOWN);
+
+        while (currentPos.getY() > 0 && world.isAirBlock(currentPos)) {
+            currentPos.move(EnumFacing.DOWN);
+        }
+        if (currentPos.getY() <= 0) return null; // nothing below
+        if (!world.isBlockLoaded(currentPos)) return null;
 
         Block worldBlock = world.getBlockState(currentPos).getBlock();
 
@@ -223,7 +231,12 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
 
         while (!queue.isEmpty()) {
             BlockPos next = queue.poll();
+
             if (visited.contains(next) || next.getDistance(pos.getX(), pos.getY(), pos.getZ()) > RANGE)
+                continue;
+
+            // Robust: never force-load chunks during a flood fill
+            if (!world.isBlockLoaded(next))
                 continue;
 
             IBlockState state = world.getBlockState(next);
@@ -284,9 +297,14 @@ public class TilePump extends TileEntityRFConsumer implements IFluidHandler, IMo
         // must have a drainable source available; if not, try to populate cache now (cheap probe)
         if (cache.isEmpty()) {
             // very small, one-shot version of your getNextBlockLocation() to populate cache
-            BlockPos currentPos = new MutableBlockPos(getPos().down());
-            while (world.isAirBlock(currentPos))
-                currentPos = ((MutableBlockPos) currentPos).down();
+            MutableBlockPos currentPos = new MutableBlockPos(pos);
+            currentPos.move(EnumFacing.DOWN);
+
+            while (currentPos.getY() > 0 && world.isAirBlock(currentPos)) {
+                currentPos.move(EnumFacing.DOWN);
+            }
+            if (currentPos.getY() <= 0) return false; // nothing below
+            if (!world.isBlockLoaded(currentPos)) return false;
 
             if (canFitFluid(currentPos)) {
                 Fluid target = null;
