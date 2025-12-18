@@ -50,6 +50,8 @@ import zmaster587.advancedRocketry.entity.*;
 import zmaster587.advancedRocketry.entity.fx.*;
 import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.event.RocketEventHandler;
+import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
+import zmaster587.libVulpes.inventory.modules.ModuleBase;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.TileFluidTank;
@@ -72,6 +74,8 @@ import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.LinkedList;
+import java.util.List;
 
 @Mod.EventBusSubscriber(value = Side.CLIENT)
 public class ClientProxy extends CommonProxy {
@@ -477,6 +481,38 @@ public class ClientProxy extends CommonProxy {
         protected ModelResourceLocation getModelResourceLocation(@Nullable IBlockState iBlockState) {
             return location;
         }
+    }
+
+
+    @Override
+    public ModuleBase createScrollListPan(
+            int baseX, int baseY,
+            List<ModuleBase> list,
+            int sizeX, int sizeY
+    ) {
+        return new ModuleContainerPanYOnlyWithScrollCache(
+                baseX, baseY,
+                list, new LinkedList<>(),
+                null,
+                sizeX - 2, sizeY,
+                0, -48,
+                0, 72
+        );
+    }
+
+    @Override
+    public void clearScrollCache() {
+        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+    }
+
+    @Override
+    public ModuleBase createObservatoryAsteroidListPan(int baseX, int baseY, List<ModuleBase> list2, int sizeX, int sizeY) {
+        return createScrollListPan(baseX, baseY, list2, sizeX, sizeY);
+    }
+
+    @Override
+    public void clearObservatoryScrollCache() {
+        clearScrollCache();
     }
 
     private static class FluidItemMeshDefinition implements ItemMeshDefinition {
