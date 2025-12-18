@@ -13,6 +13,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
@@ -20,7 +21,6 @@ import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.inventory.modules.ModuleData;
-import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
 import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemData;
@@ -44,6 +44,9 @@ import zmaster587.libVulpes.util.EmbeddedInventory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -52,16 +55,12 @@ import java.util.Map;
 
 public class TileObservatory extends TileMultiPowerConsumer implements IModularInventory, IDataInventory, IGuiCallback {
 
-    // Dont allow duplicate chipwrites for the same seed + button
-    private java.util.HashSet<Integer> printedButtonsThisSeed = new java.util.HashSet<>();
-    private long printedSetSeed = -1; // track which seed the set belongs to
-
     private final java.util.Map<Long, NBTTagCompound> savedDataBusNbt = new java.util.HashMap<>();
     final static int openTime = 100;
     final static int observationTime = 1000;
     private static final Block[] lens = {AdvancedRocketryBlocks.blockLens, Blocks.GLASS};
     private static final Object[][][] structure = new Object[][][]{
-
+    
             {{null, null, null, null, null},
                     {null, LibVulpesBlocks.blockStructureBlock, lens, LibVulpesBlocks.blockStructureBlock, null},
                     {null, LibVulpesBlocks.blockStructureBlock, LibVulpesBlocks.blockStructureBlock, LibVulpesBlocks.blockStructureBlock, null},
@@ -96,7 +95,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final short LIST_OFFSET = 100;
     private static final byte PROCESS_CHIP = 12;
     private static final byte SEED_CHANGE = 13;
-    private final int dataConsumedPerRefresh = 100;
+    private static final byte SYNC_PRINTED = 14;
+    private static final byte REQUEST_REOPEN = 15;
+    private static final byte SYNC_SEED = 16;
+    private final int dataConsumedPerRefresh = 100; // Distance data consumed per scan
+    private boolean pendingReopenAfterSeedSync = false;
+    // Dont allow duplicate chipwrites for the same seed + button
+    private java.util.HashSet<Integer> printedButtonsThisSeed = new java.util.HashSet<>();
+    private long printedSetSeed = -1; // track which seed the set belongs to
     int openProgress;
     EmbeddedInventory inv = new EmbeddedInventory(5);
     private int viewDistance;
@@ -336,6 +342,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
     @Override
     protected void readNetworkData(NBTTagCompound nbt) {
+        long prevSeed = this.lastSeed;
         super.readNetworkData(nbt);
         openProgress = nbt.getInteger("openProgress");
         isOpen = nbt.getBoolean("isOpen");
@@ -348,8 +355,10 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         printedButtonsThisSeed.clear();
         int[] arr = nbt.getIntArray("printedButtons");
         if (arr != null) for (int v : arr) printedButtonsThisSeed.add(v);
+        if (world != null && world.isRemote && prevSeed != lastSeed) {
+            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();      
+        }        
     }
-
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
@@ -421,28 +430,19 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 25, 120, 1, "",
                 this,
                 zmaster587.libVulpes.inventory.TextureResources.buttonNull,
-                // default tooltip (will be replaced conditionally below)
                 LibVulpes.proxy.getLocalizedString("msg.observetory.text.processdiscovery"),
                 17, 17
             );
 
-            // `isOpen` is synchronized to client via writeNetworkData/readNetworkData, so safe to read here.
             boolean alreadyPrinted = (lastButton != -1) && printedButtonsThisSeed.contains(lastButton);
 
             if (!isOpen) {
                 processBtn.setToolTipText(LibVulpes.proxy.getLocalizedString("msg.observetory.req.open"));
-                processBtn.setEnabled(true);
             } else if (alreadyPrinted) {
                 processBtn.setToolTipText(LibVulpes.proxy.getLocalizedString("msg.observetory.print.already"));
-                processBtn.setEnabled(false); // <--
             } else {
                 processBtn.setToolTipText(LibVulpes.proxy.getLocalizedString("msg.observetory.text.processdiscovery"));
-                processBtn.setEnabled(true);
             }
-
-
-            // Keep it enabled so the tooltip renders (ModuleButton.isMouseOver checks enabled)
-            processBtn.setEnabled(true);
 
             modules.add(processBtn);
 
@@ -485,10 +485,13 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             int totalAmountAllowed = 10;
             float totalWeight = 0;
 
+            List<String> keys = new ArrayList<>(ARConfiguration.getCurrentConfig().asteroidTypes.keySet());
+            Collections.sort(keys);
+
             List<Asteroid> viableTypes = new LinkedList<>();
-            for (String str : ARConfiguration.getCurrentConfig().asteroidTypes.keySet()) {
+            for (String str : keys) {
                 Asteroid asteroid = ARConfiguration.getCurrentConfig().asteroidTypes.get(str);
-                if (asteroid.distance <= getMaxDistance()) {
+                if (asteroid != null && asteroid.distance <= getMaxDistance()) {
                     totalWeight += asteroid.getProbability();
                     viableTypes.add(asteroid);
                 }
@@ -557,16 +560,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
             // ---- LEFT asteroid list: wheel-enabled + cached
             if (lastSeed != -1) {
-                ModuleContainerPanYOnlyWithScrollCache panLeft = new ModuleContainerPanYOnlyWithScrollCache(
-                    baseX, baseY,
-                    list2, new LinkedList<>(),
-                    null,
-                    sizeX - 2, sizeY,   // (screen width minus 2 like original)
-                    0, -48,             // paddingX, paddingY
-                    0, 72               // containerSizeX, containerSizeY
-                );
-                modules.add(panLeft); // LEFT FIRST to consume wheel
+                modules.add(zmaster587.advancedRocketry.AdvancedRocketry.proxy
+                    .createObservatoryAsteroidListPan(baseX, baseY, list2, sizeX, sizeY));
             }
+
+
 
             // ---- RIGHT composition pane: parent class (drag-only; wheel will be 0 after left consumes it)
             ModuleContainerPanYOnly panRight = new ModuleContainerPanYOnly(
@@ -632,7 +630,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         super.onInventoryButtonPressed(buttonId);
 
         if (buttonId == 1) {
-            //Begin discovery processing
+            // Client: prevent packet spam
+            if (world != null && world.isRemote) {
+                boolean alreadyPrinted = (lastButton != -1) && printedButtonsThisSeed.contains(lastButton);
+                if (!isOpen || alreadyPrinted || lastButton == -1) {
+                    return;
+                }
+            }
+
+            // Server-side protection is in PROCESS_CHIP 
             PacketHandler.sendToServer(new PacketMachine(this, PROCESS_CHIP));
         }
 
@@ -641,103 +647,130 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             lastType = buttonType.get(lastButton - LIST_OFFSET);
             PacketHandler.sendToServer(new PacketMachine(this, BUTTON_PRESS));
         }
-        if (buttonId == 2) {
-            PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
-            /*/for(TileDataBus bus : getDataBus()) {
-            if (extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, false) == dataConsumedPerRefresh) {
-                lastSeed = world.getTotalWorldTime() / 100;
-                lastButton = -1;
-                lastType = "";
-                PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
+        if (buttonId == 2) {         
+            if (world != null && world.isRemote) {
+                pendingReopenAfterSeedSync = true;
             }
-            /}*/
+            PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
+
         }
     }
 
 
     @Override
-    public void useNetworkData(EntityPlayer player, Side side, byte id,
-                               NBTTagCompound nbt) {
+    public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         super.useNetworkData(player, side, id, nbt);
 
-        if (id == -1)
-            storeData(-1);
-        if (id == -2)
-            loadData(-2);
-        else if (id == TAB_SWITCH && !world.isRemote) {
-            tabModule.setTab(nbt.getShort("tab"));
-            player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
-        }
-        else if (id == BUTTON_PRESS && !world.isRemote) {
-            lastButton = nbt.getShort("button");
-            lastType = buttonType.get(lastButton - LIST_OFFSET);
-            markDirty();
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
-            player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
-        }
-        else if (id == SEED_CHANGE) {
-            if (extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, false) >= dataConsumedPerRefresh) {
-                lastSeed = world.getTotalWorldTime() / 100;
-                lastButton = -1;
-                lastType = "";
-                
-                printedButtonsThisSeed.clear();
-                printedSetSeed = lastSeed;
+        if (id == SYNC_PRINTED && world != null && world.isRemote) {
+            printedSetSeed = nbt.getLong("ps");
 
-                // Clear scroll cache when scanning new data
-                ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
-                
-                extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, true);
-                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
-                markDirty();
-                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            printedButtonsThisSeed.clear();
+            for (int v : nbt.getIntArray("pb")) printedButtonsThisSeed.add(v);
+
+            lastSeed = nbt.getLong("ls");
+            lastButton = nbt.getInteger("lb");
+            isOpen = nbt.getBoolean("io");
+            return;
+        }
+        if (id == SYNC_SEED && world != null && world.isRemote) {
+            lastSeed = nbt.getLong("ls");
+            lastButton = nbt.getInteger("lb");
+            lastType = ""; // since scan resets it
+            isOpen = nbt.getBoolean("io");
+
+            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
+
+            if (pendingReopenAfterSeedSync) {
+                pendingReopenAfterSeedSync = false;
+                PacketHandler.sendToServer(new PacketMachine(this, REQUEST_REOPEN));
             }
+            return;
         }
-        else if (id == PROCESS_CHIP && !world.isRemote) {
 
-            // Keep printed set aligned with current seed (covers edge cases like load)
-            if (printedSetSeed != lastSeed) {
-                printedButtonsThisSeed.clear();
-                printedSetSeed = lastSeed;
-            }
+        if (id == -1) { storeData(-1); return; }
+        if (id == -2) { loadData(-2);  return; }
 
-            // Hard block duplicates for this scan/selection
-            if (lastButton != -1 && printedButtonsThisSeed.contains(lastButton)) {
-                // No status message; just refresh UI so tooltip updates
-                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
-                markDirty();
-                if (player != null) {
-                    player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+        // --- server-side handlers only ---
+        if (!world.isRemote) {
+
+            if (id == TAB_SWITCH) {
+                tabModule.setTab(nbt.getShort("tab"));
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                         getWorld(), pos.getX(), pos.getY(), pos.getZ());
-                }
-                return;
             }
-
-            if (inv.getStackInSlot(2).isEmpty() && isOpen && hasEnergy(500) && lastButton != -1) {
-                ItemStack stack = inv.decrStackSize(1, 1);
-                if (stack != ItemStack.EMPTY && stack.getItem() instanceof ItemAsteroidChip) {
-                    ((ItemAsteroidChip)(stack.getItem())).setUUID(stack, lastSeed + lastButton);
-                    ((ItemAsteroidChip)(stack.getItem())).setType(stack, lastType);
-                    ((ItemAsteroidChip)(stack.getItem())).setMaxData(stack, 1000);
-                    inv.setInventorySlotContents(2, stack);
-
-                    useEnergy(500);
-
-                    // Mark this selection as consumed for this seed
-                    printedButtonsThisSeed.add(lastButton);
-
-                    // Sync + rebuild GUI so tooltip and button state update immediately
+            else if (id == BUTTON_PRESS) {
+                lastButton = nbt.getShort("button");
+                lastType = buttonType.get(lastButton - LIST_OFFSET);
+                markDirty();
+                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                        getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == SEED_CHANGE) {
+                if (extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, false) >= dataConsumedPerRefresh) {
+                    lastSeed = world.getTotalWorldTime() / 100;
+                    lastButton = -1;
+                    lastType = "";
+                    
+                    printedButtonsThisSeed.clear();
+                    printedSetSeed = lastSeed;
+                    PacketHandler.sendToPlayer(new PacketMachine(this, SYNC_SEED), player);
+                    extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.UP, true);
                     markDirty();
+                    IBlockState st = world.getBlockState(pos);
+                    world.notifyBlockUpdate(pos, st, st, 2);
+                }
+            }
+            else if (id == PROCESS_CHIP) {
+
+                // Keep printed set aligned with current seed
+                if (printedSetSeed != lastSeed) {
+                    printedButtonsThisSeed.clear();
+                    printedSetSeed = lastSeed;
+                }
+
+                // Hard block duplicates for this scan
+                if (lastButton != -1 && printedButtonsThisSeed.contains(lastButton)) {
+                    // No status message; just refresh UI so tooltip updates
                     world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+                    markDirty();
                     if (player != null) {
                         player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                             getWorld(), pos.getX(), pos.getY(), pos.getZ());
                     }
+                    return;
+                }
+
+                if (inv.getStackInSlot(2).isEmpty() && isOpen && hasEnergy(500) && lastButton != -1) {
+                    ItemStack stack = inv.decrStackSize(1, 1);
+                    if (stack != ItemStack.EMPTY && stack.getItem() instanceof ItemAsteroidChip) {
+                        ((ItemAsteroidChip)(stack.getItem())).setUUID(stack, lastSeed + lastButton);
+                        ((ItemAsteroidChip)(stack.getItem())).setType(stack, lastType);
+                        ((ItemAsteroidChip)(stack.getItem())).setMaxData(stack, 1000);
+                        inv.setInventorySlotContents(2, stack);
+
+                        useEnergy(500);
+
+                        // Mark this selection as consumed for this seed
+                        printedButtonsThisSeed.add(lastButton);
+                        PacketHandler.sendToPlayer(new PacketMachine(this, SYNC_PRINTED), player);
+
+                        markDirty();
+                        world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+
+                        // reopen 1 tick later to avoid cross-channel ordering race
+                        ((WorldServer) world).addScheduledTask(() -> player.openGui(
+                                LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                                getWorld(), pos.getX(), pos.getY(), pos.getZ()
+                        ));
+                    }
                 }
             }
+            else if (id == REQUEST_REOPEN) {
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                    getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
         }
-
-
     }
 
     @Override
@@ -748,6 +781,22 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             out.writeShort(tabModule.getTab());
         else if (id == BUTTON_PRESS)
             out.writeShort(lastButton);
+
+        if (id == SYNC_PRINTED) {
+            out.writeLong(printedSetSeed);
+            out.writeInt(printedButtonsThisSeed.size());
+            for (int b : printedButtonsThisSeed) out.writeInt(b);
+            out.writeLong(lastSeed);
+            out.writeInt(lastButton);
+            out.writeBoolean(isOpen);
+        }  
+        if (id == SYNC_SEED) {
+            out.writeLong(lastSeed);
+            out.writeInt(lastButton);
+            out.writeBoolean(isOpen);
+            out.writeBoolean(getMachineEnabled());
+            // lastType optional; you set it "" on scan, so you can skip it
+        }
     }
 
     @Override
@@ -760,6 +809,22 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         else if (packetId == BUTTON_PRESS)
             nbt.setShort("button", in.readShort());
 
+        if (packetId == SYNC_PRINTED) {
+            nbt.setLong("ps", in.readLong());
+            int n = in.readInt();
+            int[] arr = new int[n];
+            for (int i=0;i<n;i++) arr[i] = in.readInt();
+            nbt.setIntArray("pb", arr);
+            nbt.setLong("ls", in.readLong());
+            nbt.setInteger("lb", in.readInt());
+            nbt.setBoolean("io", in.readBoolean());
+        }
+        if (packetId == SYNC_SEED) {
+            nbt.setLong("ls", in.readLong());
+            nbt.setInteger("lb", in.readInt());
+            nbt.setBoolean("io", in.readBoolean());
+            nbt.setBoolean("en", in.readBoolean());
+        }
     }
 
     @Override
@@ -985,7 +1050,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastSeed = -1;
         lastButton = -1;
         lastType = "";
-        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache(); // static GUI cache
+        if (world != null && world.isRemote) {
+            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
+        }
+
+
         savedDataBusNbt.clear();
     }
 
@@ -993,7 +1062,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     public void onChunkUnload() {
         super.onChunkUnload();
         dataCables.clear();
-        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+        if (world != null && world.isRemote) {
+            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
+        }
+
+
         savedDataBusNbt.clear();
     }
 
