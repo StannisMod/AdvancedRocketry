@@ -12,6 +12,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.network.PacketSpaceStationInfo;
 import zmaster587.advancedRocketry.network.PacketStationUpdate;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
@@ -29,13 +30,14 @@ public class TileStationOrientationController extends TileEntity implements ITic
 
     private int[] progress;
     private long lastRotSyncTick = -5;
-
+    private ModuleText anchoredWarning;
     private ModuleText moduleAngularVelocity, numThrusters, maxAngularAcceleration, targetRotations;
 
     public TileStationOrientationController() {
         moduleAngularVelocity = new ModuleText(6, 15, LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.alt"), 0xaa2020);
         //numThrusters = new ModuleText(10, 25, "Number Of Thrusters: ", 0xaa2020);
         targetRotations = new ModuleText(6, 25, LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.tgtalt"), 0x202020);
+        anchoredWarning = new ModuleText(6, 35, "", 0xaa2020);
         progress = new int[3];
 
         progress[0] = getTotalProgress(0) / 2;
@@ -46,27 +48,35 @@ public class TileStationOrientationController extends TileEntity implements ITic
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
+        if (!world.isRemote) {
+            ISpaceObject so = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+            if (so instanceof SpaceStationObject) {
+                PacketHandler.sendToPlayer(new PacketSpaceStationInfo(so.getId(), (SpaceStationObject) so), player);
+            }
+        }        
         modules.add(moduleAngularVelocity);
         //modules.add(numThrusters);
         //modules.add(maxAngularAcceleration);
         modules.add(targetRotations);
-
+        modules.add(anchoredWarning);
+        
         modules.add(new ModuleText(10, 54, "X:", 0x202020));
         modules.add(new ModuleText(10, 69, "Y:", 0x202020)); //AYYYY
 
         modules.add(new ModuleSlider(24, 50, 0, TextureResources.doubleWarningSideBarIndicator, this));
         modules.add(new ModuleSlider(24, 65, 1, TextureResources.doubleWarningSideBarIndicator, this));
-        modules.add(new ModuleButton(25, 35, 2, LibVulpes.proxy.getLocalizedString("msg.spacelaser.reset"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 36, 15));
+        modules.add(new ModuleButton(128, 35, 2, LibVulpes.proxy.getLocalizedString("msg.spacelaser.reset"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 36, 15));
         //modules.add(new ModuleSlider(24, 35, 2, TextureResources.doubleWarningSideBarIndicator, (ISliderBar)this));
 
         // inline updater that runs only while GUI is open
         modules.add(new ModuleBase(0, 0) {
             private SpaceStationObject cached;
             private int cachedId = Integer.MIN_VALUE;
-
+            
             private int lastVelX = Integer.MIN_VALUE, lastVelY = Integer.MIN_VALUE, lastVelZ = Integer.MIN_VALUE;
             private int lastTgtX = Integer.MIN_VALUE, lastTgtY = Integer.MIN_VALUE, lastTgtZ = Integer.MIN_VALUE;
-
+            private int lastAnchored = Integer.MIN_VALUE;
+            private final String anchoredText = LibVulpes.proxy.getLocalizedString("msg.station.anchored");
             private final String prefixVel = LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.alt");
             private final String prefixTgt = LibVulpes.proxy.getLocalizedString("msg.stationorientctrl.tgtalt");
 
@@ -96,6 +106,13 @@ public class TileStationOrientationController extends TileEntity implements ITic
             @Override
             public void renderBackground(GuiContainer gui, int x, int y, int mouseX, int mouseY, FontRenderer font) {
                 if (!ensureStation()) return;
+
+                boolean anchored = cached.isAnchored();
+                int anchoredKey = anchored ? 1 : 0;
+                if (anchoredKey != lastAnchored) {
+                    anchoredWarning.setText(anchored ? anchoredText : "");
+                    lastAnchored = anchoredKey;
+                }
 
                 double dX = cached.getDeltaRotation(EnumFacing.EAST);
                 double dY = cached.getDeltaRotation(EnumFacing.UP);
