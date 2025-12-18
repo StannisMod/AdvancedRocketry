@@ -13,6 +13,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.network.PacketSpaceStationInfo;
 import zmaster587.advancedRocketry.network.PacketStationUpdate;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
@@ -36,8 +37,10 @@ public class TileStationAltitudeController extends TileEntity implements IModula
     private ModuleText moduleGrav, numGravPylons, maxGravBuildSpeed, targetGrav;
     private ModuleRedstoneOutputButton redstoneControl;
     private boolean wasChanging = false;
+    private ModuleText anchoredWarning;
     public TileStationAltitudeController() {
         moduleGrav = new ModuleText(6, 15, "Altitude: ", 0xaa2020);
+        anchoredWarning = new ModuleText(6, 45, "", 0xaa2020);
         //numGravPylons = new ModuleText(10, 25, "Number Of Thrusters: ", 0xaa2020);
         //maxGravBuildSpeed = new ModuleText(6, 25, LibVulpes.proxy.getLocalizedString("msg.stationaltctrl.maxaltrate"), 0xaa2020);
         targetGrav = new ModuleText(6, 35, LibVulpes.proxy.getLocalizedString("msg.stationaltctrl.tgtalt"), 0x202020);
@@ -48,11 +51,17 @@ public class TileStationAltitudeController extends TileEntity implements IModula
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
+        if (!world.isRemote) {
+            ISpaceObject so = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
+            if (so instanceof SpaceStationObject) {
+                PacketHandler.sendToPlayer(new PacketSpaceStationInfo(so.getId(), (SpaceStationObject) so), player);
+            }
+        }
         modules.add(moduleGrav);
         //modules.add(numThrusters);
         //modules.add(maxGravBuildSpeed);
-
         modules.add(targetGrav);
+        modules.add(anchoredWarning);
         modules.add(new ModuleSlider(6, 60, 0, TextureResources.doubleWarningSideBarIndicator, this));
         modules.add(redstoneControl);
 
@@ -64,8 +73,10 @@ public class TileStationAltitudeController extends TileEntity implements IModula
             // last shown keys (ints in Km)
             private int lastAltKm = Integer.MIN_VALUE;
             private int lastTgtKm = Integer.MIN_VALUE;
+            private int lastAnchored = Integer.MIN_VALUE;
 
             // localized prefixes (cache per GUI session)
+            private final String anchoredText = LibVulpes.proxy.getLocalizedString("msg.station.anchored");
             private final String prefixAlt = LibVulpes.proxy.getLocalizedString("msg.stationaltctrl.alt");
             private final String prefixTgt = LibVulpes.proxy.getLocalizedString("msg.stationaltctrl.tgtalt");
 
@@ -88,8 +99,15 @@ public class TileStationAltitudeController extends TileEntity implements IModula
 
             @Override
             public void renderBackground(GuiContainer gui, int x, int y, int mouseX, int mouseY, FontRenderer font) {
-                // Only runs while the GUI is visible → zero idle cost when closed.
                 if (!ensureStation()) return;
+
+                // Anchored status
+                boolean anchored = cached.isAnchored();
+                int anchoredKey = anchored ? 1 : 0;
+                if (anchoredKey != lastAnchored) {
+                    anchoredWarning.setText(anchored ? anchoredText : "");
+                    lastAnchored = anchoredKey;
+                }
 
                 // Compute display keys (Km as ints)
                 int curAltKm = (int)Math.round(cached.getOrbitalDistance() * 200.0 + 100.0);
