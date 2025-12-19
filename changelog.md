@@ -42,7 +42,7 @@ Changelog 2.2.2
   - Docking pads blocking rocket dismantle
   - Space-to-launch only triggers on "down" press (fixes heavy modpacks launching issues)
   - Negative/null weather timers crash
-  - Observatory databuses: type could become undefined; now keeps contents on deconstruction
+  - Observatory databuses: type could become LOCKED as undefined; now keeps contents on deconstruction
   - Observatory server scan + stale asteroid list fixes
   - Rare NPE when starID changes / missing
 
