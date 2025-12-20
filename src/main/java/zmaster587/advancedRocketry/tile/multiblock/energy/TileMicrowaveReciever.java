@@ -143,6 +143,25 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
         connectedSatellites = new LinkedList<>(new LinkedHashSet<>(list));
     }
 
+    private List<Long> getConnectedSatellitesLive() {
+        if (itemInPorts == null) return java.util.Collections.emptyList();
+
+        // refresh TE references (libVulpes replaces TEs during multiblock build/load)
+        List<IInventory> ports = getItemInPorts();
+
+        java.util.LinkedHashSet<Long> set = new java.util.LinkedHashSet<>();
+        for (IInventory inv : ports) {
+            if (inv == null) continue;
+            for (int i = 0; i < inv.getSizeInventory(); i++) {
+                ItemStack stack = inv.getStackInSlot(i);
+                if (!stack.isEmpty() && stack.getItem() instanceof ItemSatelliteIdentificationChip) {
+                    set.add(SatelliteRegistry.getSatelliteId(stack));
+                }
+            }
+        }
+        return new java.util.ArrayList<>(set);
+    }
+
     @Override
     public boolean attemptCompleteStructure(IBlockState state) {
         if (!world.isRemote) {
@@ -188,7 +207,6 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
         }
 
         //Checks whenever a station changes dimensions or when the multiblock is intialized - ie any time the multipler could concieveably change
-        // --- BEGIN mirror SatelliteTerminal style) ---
         final int curDim = world.provider.getDimension();
         final int spaceDim = ARConfiguration.getCurrentConfig().spaceDimId;
 
@@ -220,7 +238,6 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
             }
         }
         // If we're in space but station==null (early ticks), keep previous multiplier and carry on.
-        // --- END robust insolation block ---
 
         if (!isComplete())
             return;
@@ -252,7 +269,6 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
             }
         }
 
-        // --- BEGIN  (mirrors SatelliteTerminal) ---
         final int dimId = world.provider.getDimension();
         final boolean dimOk = DimensionManager.getInstance().isDimensionCreated(dimId) || dimId == 0;
 
@@ -268,30 +284,26 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
 
             int energyReceived = 0;
 
-            if (enabled && props != null && connectedSatellites != null && !connectedSatellites.isEmpty()) {
-                // Snapshot to avoid concurrent modification
-                final LinkedHashSet<Long> sats = new LinkedHashSet<>(connectedSatellites); 
+            final List<Long> sats = enabled && props != null ? getConnectedSatellitesLive() : java.util.Collections.emptyList();
 
-                // Resolve “here” dim exactly like SatelliteTerminal
-                final int hereDim = DimensionManager.getEffectiveDimId(world, pos).getId();
-
+            if (!sats.isEmpty()) {
                 for (long lng : sats) {
                     final SatelliteBase sat = props.getSatellite(lng);
                     if (sat == null) continue;
 
-                    // Range/link check (same logic as Terminal)
                     final int satDim = sat.getDimensionId();
-                    final boolean inRange = PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(satDim, hereDim);
-                    if (!inRange) continue;
+                    final int hereDim = DimensionManager.getEffectiveDimId(world, pos).getId();
+                    if (!PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(satDim, hereDim)) continue;
 
                     if (sat instanceof IUniversalEnergyTransmitter) {
                         energyReceived += ((IUniversalEnergyTransmitter) sat).transmitEnergy(EnumFacing.UP, false);
                     }
                 }
 
-                // 520W = 1 RF/t -> 2 RF/t @ 100%; scale by insolation
-                energyReceived = (int) Math.round(energyReceived * (2 * insolationPowerMultiplier));
+                // scale by insolation (your existing logic)
+                energyReceived = (int)Math.round(energyReceived * (2 * insolationPowerMultiplier));
             }
+
 
             powerMadeLastTick = energyReceived;
 
@@ -378,14 +390,6 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
 
-        // ---- satellites ----
-        int[] intArray = new int[connectedSatellites.size() * 2];
-        for (int i = 0; i < connectedSatellites.size() * 2; i += 2) {
-            intArray[i]   = (connectedSatellites.get(i / 2)).intValue();
-            intArray[i+1] = (int)((connectedSatellites.get(i / 2) >>> 32));
-        }
-        nbt.setIntArray("satilliteList", intArray);
-
         // ---- saved hatch inventories ----
         NBTTagList hatchList = new NBTTagList();
         if (savedHatchInv != null && !savedHatchInv.isEmpty()) {
@@ -415,13 +419,6 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
-
-        // ---- satellites ----
-        int[] intArray = nbt.getIntArray("satilliteList");
-        connectedSatellites.clear();
-        for (int i = 0; i < intArray.length; i += 2) {
-            connectedSatellites.add(intArray[i] | (((long) intArray[i + 1]) << 32));
-        }
 
         // ---- saved hatch inventories ----
         savedHatchInv.clear(); 
