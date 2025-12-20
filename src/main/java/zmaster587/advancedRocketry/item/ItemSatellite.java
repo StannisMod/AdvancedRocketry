@@ -106,7 +106,14 @@ public class ItemSatellite extends ItemIdWithName {
             int dataStorage, powerGeneration, powerStorage;
             float weight;
 
-            list.add(getName(stack));
+            String display = getName(stack); // fallback (may be key)
+            SatelliteBase base = SatelliteRegistry.getNewSatellite(props.getSatelliteType());
+            if (base != null) display = base.getName();
+
+            // translate if it’s a key; if not, returns input unchanged
+            display = net.minecraft.client.resources.I18n.format(display);
+
+            list.add(display);
             list.add("ID: " + props.getId());
 
             if (SatelliteProperties.Property.BATTERY.isOfType(props.getPropertyFlag())) {
