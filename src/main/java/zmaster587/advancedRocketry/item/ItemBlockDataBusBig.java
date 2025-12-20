@@ -15,6 +15,7 @@ import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBusBig;
 
@@ -25,7 +26,8 @@ import java.util.List;
 public class ItemBlockDataBusBig extends ItemBlock implements IDataItem {
 
     // Keep this local and explicit
-    private static final int BIG_MAX_DATA = 2000 * 4;
+    private static final int BASE_MAX_DATA = 2000; // match TileDataBus base
+    private static final int DEFAULT_MULT = 4;
 
     public ItemBlockDataBusBig(Block block) {
         super(block);
@@ -35,10 +37,32 @@ public class ItemBlockDataBusBig extends ItemBlock implements IDataItem {
 
     // ---- IDataItem ----
 
+    private static int getConfiguredMultSafe() {
+        int mult = DEFAULT_MULT;
+
+        try {
+            ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+            if (cfg != null) mult = cfg.dataBusBigMultiplier;
+        } catch (Throwable ignored) {}
+
+        if (mult < 1) mult = 1;
+        else if (mult > 20) mult = 20;
+
+        return mult;
+    }
+
+    private static int computeMaxData() {
+        int mult = getConfiguredMultSafe();
+        long maxLong = (long) BASE_MAX_DATA * (long) mult;
+        return maxLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) maxLong;
+    }
+
     @Override
     public int getMaxData(@Nonnull ItemStack stack) {
-        return BIG_MAX_DATA;
+        return computeMaxData();
     }
+
+
 
     @Override
     @Nonnull
@@ -118,7 +142,9 @@ public class ItemBlockDataBusBig extends ItemBlock implements IDataItem {
 
         NBTTagCompound tag = stack.getTagCompound();
         if (tag != null) {
-            bus.getDataObject().readFromNBT(tag);
+            NBTTagCompound teTag = bus.writeToNBT(new NBTTagCompound());
+            teTag.merge(tag);
+            bus.readFromNBT(teTag);
             bus.markDirty();
             world.notifyBlockUpdate(pos, newState, newState, 3);
         }
