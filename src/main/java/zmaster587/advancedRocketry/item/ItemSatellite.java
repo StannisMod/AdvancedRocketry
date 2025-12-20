@@ -8,18 +8,53 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
+import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.util.EmbeddedInventory;
 import zmaster587.libVulpes.util.ZUtils;
 
 import javax.annotation.Nonnull;
 import java.util.List;
+import java.util.Locale;
 
 public class ItemSatellite extends ItemIdWithName {
 
     private static final int CORE_SLOT = 0;
     private static final int FIRST_MOD_SLOT = 1;
     private static final int LAST_MOD_SLOT  = 6;
+
+    /**
+     * Math from SatelliteData:
+     *   collectionTime = (int) (200 / Math.sqrt(0.1 * powerConsumption));
+     * and fallback:
+     *   if (collectionTime == 0) collectionTime = 200;
+     */
+    private static int calcCollectionTimeTicks(int powerGeneration) {
+        if (powerGeneration <= 0) return 0;
+        int ct = (int) (200.0 / Math.sqrt(0.1 * (double) powerGeneration));
+        return (ct == 0) ? 200 : ct;
+    }
+
+    /** SatelliteData produces 1 data per collectionTime ticks; 20 ticks/sec. */
+    private static double calcDataPerSecond(int powerGeneration) {
+        int ct = calcCollectionTimeTicks(powerGeneration);
+        if (ct <= 0) return 0.0;
+        return 20.0 / (double) ct;
+    }
+
+    private static String makeDataGenLine(double dataPerSec) {
+        // Stable decimal separator regardless of OS locale
+        String val = String.format(Locale.ROOT, "%.3f", dataPerSec);
+
+        // Preferred: vanilla I18n formatting (client-side tooltip)
+        String localized = net.minecraft.client.resources.I18n.format("msg.itemsatellite.datagen", val);
+
+        // If lang key is missing, I18n returns the key itself; degrade gracefully
+        if ("msg.itemsatellite.datagen".equals(localized)) {
+            return "Data gen: " + val + "/s";
+        }
+        return localized;
+    }
 
     //Guarding inventory to ensure only valid items are placed in slots.
     public static class SatelliteModuleInventory extends EmbeddedInventory {
@@ -136,7 +171,13 @@ public class ItemSatellite extends ItemIdWithName {
                     ? LibVulpes.proxy.getLocalizedString("msg.itemsatellite.data") + ZUtils.formatNumber(dataStorage)
                     : ChatFormatting.YELLOW + LibVulpes.proxy.getLocalizedString("msg.itemsatellite.nodata"));
             }
+            // Data gen line only meaningful when the satellite has BOTH power generation and data storage.
+            int pg = props.getPowerGeneration();
+            int maxData = props.getMaxDataStorage();
 
+            if (base instanceof SatelliteData && pg > 0 && maxData > 0) {
+                list.add(makeDataGenLine(calcDataPerSecond(pg)));
+            }
             weight = props.getWeight();
             list.add((weight > 0f)
                 ? LibVulpes.proxy.getLocalizedString("msg.itemsatellite.weight") + weight
@@ -159,21 +200,31 @@ public class ItemSatellite extends ItemIdWithName {
         int flags = 0;
         int powerGen = 0, powerStor = 0, dataMax = 0;
         float weight = 0f;
+        boolean showDataGenPreview = false;
 
         // Core first: flags + preview type name (no weight from core)
         ItemStack core = inv.getStackInSlot(CORE_SLOT);
+
+        String satType = "";
+        SatelliteBase satBase = null;
+
         if (!core.isEmpty()) {
             SatelliteProperties cp = SatelliteRegistry.getSatelliteProperty(core);
             if (cp != null) {
                 flags |= cp.getPropertyFlag();
-                String satType = cp.getSatelliteType();
-                SatelliteBase satBase = SatelliteRegistry.getNewSatellite(satType);
+                satType = cp.getSatelliteType() == null ? "" : cp.getSatelliteType();
+                satBase = SatelliteRegistry.getNewSatellite(satType);
+
                 if (satBase != null) {
                     // Show same display name users will see after assembly
                     list.add(satBase.getName());
                 }
             }
         }
+
+        // Preview: show for "type empty" OR data collectors
+        showDataGenPreview = satType.isEmpty() || (satBase instanceof SatelliteData);
+
 
         // Modules: stats + weight
         for (int i = FIRST_MOD_SLOT; i <= LAST_MOD_SLOT; i++) {
@@ -210,6 +261,10 @@ public class ItemSatellite extends ItemIdWithName {
                 ? LibVulpes.proxy.getLocalizedString("msg.itemsatellite.data") + ZUtils.formatNumber(dataMax)
                 : ChatFormatting.YELLOW + LibVulpes.proxy.getLocalizedString("msg.itemsatellite.nodata"));
         }
+        // Preview data gen line (same semantics + same formula as runtime)
+        if (showDataGenPreview && powerGen > 0 && dataMax > 0) {
+            list.add(makeDataGenLine(calcDataPerSecond(powerGen)));
+        }       
         if (weight > 0f) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.itemsatellite.weight") + weight);
         }
