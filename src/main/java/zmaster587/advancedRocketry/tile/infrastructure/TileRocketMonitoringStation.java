@@ -14,6 +14,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
@@ -950,6 +951,41 @@ public class TileRocketMonitoringStation extends TileEntity
         return "container.monitoringstation";
     }
 
+    @SideOnly(Side.CLIENT)
+    private static String trAbortReason(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+
+        // Support "key|arg1|arg2" (easy to emit server-side)
+        final String delim = "|";
+        String key = raw;
+        Object[] args = null;
+
+        if (raw.indexOf(delim) >= 0) {
+            String[] parts = raw.split("\\|", -1);
+            if (parts.length > 0) {
+                key = parts[0];
+                if (parts.length > 1) {
+                    args = new Object[parts.length - 1];
+                    System.arraycopy(parts, 1, args, 0, args.length);
+                }
+            }
+        }
+
+        String out;
+        if (args != null) {
+            out = net.minecraft.util.text.translation.I18n.translateToLocalFormatted(key, args);
+        } else {
+            out = net.minecraft.util.text.translation.I18n.translateToLocal(key);
+        }
+
+        // If missing, vanilla returns the key unchanged — fall back to original raw
+        if (out == null || out.isEmpty() || out.equals(key)) {
+            return raw;
+        }
+        return out;
+    }
+
+
     @Override
     public float getNormallizedProgress(int id) {
         if (world.isRemote) {
@@ -966,8 +1002,12 @@ public class TileRocketMonitoringStation extends TileEntity
                     case 3: header = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.orbit");     break;
                     case 4: header = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.deorbiting"); break;
                     case 5: header = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.landed");    break;
-                    case 6: header = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.aborted");
-                        if (lastAbortReason != null && !lastAbortReason.isEmpty()) {detail = lastAbortReason;} break;
+                    case 6:
+                        header = LibVulpes.proxy.getLocalizedString("msg.monitoringStation.aborted");
+                        if (lastAbortReason != null && !lastAbortReason.isEmpty()) {
+                            detail = trAbortReason(lastAbortReason);
+                        }
+                        break;
                     default:
                         header = "";
                 }
