@@ -125,6 +125,8 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
     // Tab module (0 = satellites, 1 = stations)
     private final ModuleTab tabModule;
 
+    private static final String CHIP_PLANET_NAME_KEY = "name";
+
     private static class SatEntry {
         long   id;
         int    dimId;
@@ -163,6 +165,24 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         );
     }
 
+
+    private void stampChipPlanetInfo(@Nonnull ItemStack stack, @Nonnull SatelliteBase sat) {
+        if (stack.isEmpty()) return;
+
+        NBTTagCompound nbt = stack.getTagCompound();
+        if (nbt == null) nbt = new NBTTagCompound();
+
+        int dimId = sat.getDimensionId();
+        nbt.setInteger("dimId", dimId);
+
+        DimensionProperties props =
+                zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().getDimensionProperties(dimId);
+        if (props != null) {
+            nbt.setString(CHIP_PLANET_NAME_KEY, props.getName());
+        }
+
+        stack.setTagCompound(nbt);
+    }
     /* ------------------------------------------------------------------------
      *  Multiblock basics
      * --------------------------------------------------------------------- */
@@ -191,15 +211,13 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
      * --------------------------------------------------------------------- */
 
     private int getEffectiveSatDim() {
-        if (world == null) {
-            return satDimId;
-        }
+        if (world == null) return satDimId;
+
         int eff = DimensionManager.getEffectiveDimId(world, pos).getId();
-        if (satDimId == 0) {
-            satDimId = eff;
-        }
-        return satDimId;
+        satDimId = eff;
+        return eff;
     }
+
 
     // Blacklist for "satellites" that should not appear in the orbital registry
     private static final java.util.Set<String> SAT_BLACKLIST =
@@ -275,7 +293,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 continue;
             }
             /* UNCOMMENT TO EXCLUDE MISSIONS FROM ORBITAL REGISTRY
-            BLACKLIST OVER SHOULD HOLD FOR NOW
+            ,but BLACKLIST OVER SHOULD HOLD FOR NOW
             if (sat instanceof zmaster587.advancedRocketry.api.IMission) {
                 continue;
             }
@@ -560,6 +578,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             }
 
             scanner.setSatelliteID(source, selectedSatId);
+            stampChipPlanetInfo(source, sat);
             setInventorySlotContents(SLOT_CHIP_OUT, source);
 
             markDirty();
@@ -574,6 +593,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         }
 
         ItemStack programmed = sat.getControllerItemStack(source, props);
+        stampChipPlanetInfo(programmed, sat);
         setInventorySlotContents(SLOT_CHIP_OUT, programmed);
 
         markDirty();
