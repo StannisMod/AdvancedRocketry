@@ -246,6 +246,7 @@ error.rocket.destinationNotExist=所选空间站不存在。
 error.rocket.partsWornOut=关键部件损坏，发射中止。
 error.rocket.aborted=发射中止。
 error.rocket.gatedArtifactMissing=缺失工件。（玩家物品栏中）
+error.rocket.gatedArtifactMissingWithItem=缺失所需工件：%sx %s（玩家物品栏中）
 error.rocket.outsideStarSystem=星际航行需要星际飞船。
 error.rocket.outsidePlanetarySystem=行星航行需要核动力火箭。
 
@@ -541,6 +542,7 @@ msg.itemsatellite.microwavestatus=收集能量
 msg.itemsatellite.data=数据存储：
 msg.itemsatellite.nodata=无数据存储！
 msg.itemsatellite.empty=空框架
+msg.itemsatellite.datagen=数据产出：%s/s
 msg.itemsatellite.weight=框架重量：
 msg.itemsatellite.noweight=重量计算错误
 msg.itemsatellite.unassembled=未组装（预览）
@@ -617,6 +619,7 @@ msg.chat.nostation1=你在空间站醒来，隐约觉得上次那场深空漫步
 msg.chat.nostation2=也许你应该在再次越过明确合理且绝对的界限之前先思考一下，而不是在事情出错后自认为是个好主意且不是你的错
 msg.chat.nostation3=你必须在空间站上才能进入此维度，但目前尚未建造任何空间站！
 
+# Orbital Registry
 msg.orbitalregistry.tab.satellites=卫星：
 msg.orbitalregistry.tab.stations=空间站：
 msg.orbitalregistry.text.details=详细信息：
@@ -624,6 +627,7 @@ msg.orbitalregistry.text.satellites=卫星
 msg.orbitalregistry.text.stations=空间站
 msg.orbitalregistry.text.nosel=选择一个对象
 msg.orbitalregistry.text.notfound=未找到
+msg.orbitalregistry.text.sat.datagen=数据产出：
 msg.orbitalregistry.scan.tooltip=更新此列表
 msg.orbitalregistry.writechip.ok=点击编程芯片！
 msg.orbitalregistry.writechip.no=无法为此对象编程
@@ -650,6 +654,7 @@ msg.orbitalregistry.text.anchored.no=否
 msg.orbitalregistry.text.system=星系：
 msg.orbitalregistry.text.system.none=无
 msg.orbitalregistry.text.system.unknown=未知
+
 # SatelliteDetails power fields
 msg.orbitalregistry.text.sat.pwrgen=能量产出：
 msg.orbitalregistry.text.sat.pwrstore=能量存储：
