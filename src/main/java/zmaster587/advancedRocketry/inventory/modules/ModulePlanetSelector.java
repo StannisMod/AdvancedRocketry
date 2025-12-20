@@ -8,11 +8,11 @@ import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
-import net.minecraft.client.resources.I18n;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IContainerListener;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.text.translation.I18n;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -105,16 +105,17 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
         stellarView = false;
 
         staticModuleList.add(new ModuleButton(0, 0, Constants.INVALID_PLANET,
-                I18n.format("msg.advancedrocketry.planetselector.up"),
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.up"),
                 this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
 
         staticModuleList.add(new ModuleButton(0, 18, Constants.INVALID_PLANET + 1,
-                I18n.format("msg.advancedrocketry.planetselector.select"),
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.select"),
                 this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
 
         staticModuleList.add(new ModuleButton(0, 36, Constants.INVALID_PLANET + 2,
-                I18n.format("msg.advancedrocketry.planetselector.planet.list"),
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.planet.list"),
                 this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
 
         ModuleDualProgressBar progressBar;
 
@@ -218,9 +219,9 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                             "",
                             this,
                             new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
-                            I18n.format("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
+                            I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
                                     + "\n" +
-                                    I18n.format("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                                    I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
                             displaySize,
                             displaySize));
                     button.setSound("buttonBlipA");
@@ -235,9 +236,9 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                     "",
                     this,
                     new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
-                    I18n.format("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
+                    I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
                             + "\n" +
-                            I18n.format("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                            I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
                     displaySize, displaySize));
 
             
@@ -278,9 +279,9 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                         "",
                         this,
                         new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
-                        I18n.format("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
                                 + "\n" +
-                        I18n.format("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
                         displaySize, displaySize
                 ));
 
@@ -299,9 +300,9 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                 "",
                 this,
                 new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
-                I18n.format("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
+                I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
                         + "\n" +
-                        I18n.format("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
                 displaySize, displaySize
         ));
 
@@ -375,9 +376,9 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
 
         planetList.add(button = new ModuleButtonPlanet(
                 offsetX, offsetY, planet.getId(), "", this, planet,
-                I18n.format("msg.advancedrocketry.planetselector.planet.tooltip.name", planet.getName())
+                I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.planet.tooltip.name", planet.getName())
                         + "\n" +
-                        I18n.format("msg.advancedrocketry.planetselector.planet.tooltip.moons.count", planet.getChildPlanets().size()),
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.planet.tooltip.moons.count", planet.getChildPlanets().size()),
                 displaySize, displaySize));
         button.setSound("buttonBlipA");
 
@@ -502,6 +503,7 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
     }
 
     @Override
+    @SideOnly(Side.CLIENT)
     public void renderForeground(int guiOffsetX, int guiOffsetY, int mouseX,
                                  int mouseY, float zLevel, GuiContainer gui, FontRenderer font) {
         super.renderForeground(guiOffsetX, guiOffsetY, mouseX, mouseY, zLevel, gui,
