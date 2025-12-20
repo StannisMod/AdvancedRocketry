@@ -69,6 +69,8 @@ public class ARConfiguration {
     public double asteroidTBIBurnMult = 1.0;
     @ConfigProperty(needsSync = true)
     public double warpTBIBurnMult = 10.0;
+    @ConfigProperty(needsSync = true)
+    public int dataBusBigMultiplier = 4;
     @ConfigProperty
     public int MoonId = Constants.INVALID_PLANET;
     @ConfigProperty(needsSync = true)
@@ -374,6 +376,7 @@ public class ARConfiguration {
         arConfig.blockTankCapacity = (float) config.get(Configuration.CATEGORY_GENERAL, "blockTankCapacity", 1.0f, "Multiplier for the pressurized tank's (block) capacity", 0, Float.MAX_VALUE).getDouble();
         arConfig.blockEnergyHatchCapacityMultiplier = (float) config.get(Configuration.CATEGORY_GENERAL, "blockEnergyHatchCapacityMultiplier", 1.0f, "Multiplier for the energy hatch capacity", 0, Float.MAX_VALUE).getDouble();
         arConfig.blockLiquidHatchCapacityMultiplier = (float) config.get(Configuration.CATEGORY_GENERAL, "blockLiquidHatchCapacityMultiplier", 1.0f, "Multiplier for the liquid hatch (in/out) capacity", 0, Float.MAX_VALUE).getDouble();
+        arConfig.dataBusBigMultiplier = config.getInt("dataBusBigMultiplier", Configuration.CATEGORY_GENERAL, 4, 1, 20, "Multiplier applied to the Data Bus (Big) max data capacity. (Base=2000 -> default= 4 * 2000 = 8000)");
 
         //Enriched Lava in the centrifuge
         arConfig.lavaCentrifugeOutputs = config.getStringList("lavaCentrifugeOutputs", Configuration.CATEGORY_GENERAL, new String[]{"nuggetCopper:100", "nuggetIron:100", "nuggetTin:100", "nuggetLead:100", "nuggetSilver:100", "nuggetGold:75", "nuggetDiamond:10", "nuggetUranium:10", "nuggetIridium:1"}, "Outputs and chances of objects from Enriched Lava in the Centrifuge.  Format: <oredictionaryEntry>:<weight>.  Larger weights are more frequent");
@@ -528,7 +531,6 @@ public class ARConfiguration {
         arConfig.generateCraters = config.get(WORLDGEN, "generateCraters", true, "If true then low pressure planets will have meteor craters.  Note: setting this option to false overrides 'generageCraters' in the planetDefs.xml").getBoolean();
         arConfig.generateVolcanos = config.get(WORLDGEN, "generateVolcanos", true, "If true then very hot planets planets will volcanos.  Note: setting this option to false overrides 'generateVolcanos' in the planetDefs.xml").getBoolean();
         arConfig.generateVanillaStructures = config.getBoolean("generateVanillaStructures", WORLDGEN, false, "Enable to allow structures like villages and mineshafts to generate on planets with a breathable atmosphere.  Note, setting this to false will override 'generateStructures' in the planetDefs.xml");
-
 
         //Load laser dimid blacklists
         for (String s : str) {
