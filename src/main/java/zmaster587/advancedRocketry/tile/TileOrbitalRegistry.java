@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.item.ItemOreScanner;
 import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.item.ItemStationChip;
+import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
 import zmaster587.advancedRocketry.util.StationLandingLocation;
@@ -134,6 +135,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         int    powerGen;
         int    powerStorage;
         long   maxData;
+        boolean generatesData;
     }
 
     private static class StationEntry {
@@ -209,7 +211,17 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
     /* ------------------------------------------------------------------------
      *  Helpers / scans
      * --------------------------------------------------------------------- */
+    private static int calcCollectionTimeTicks(int powerGeneration) {
+        if (powerGeneration <= 0) return 0;
+        int ct = (int) (200.0 / Math.sqrt(0.1 * (double) powerGeneration));
+        return (ct == 0) ? 200 : ct;
+    }
 
+    private static double calcDataPerSecond(int powerGeneration) {
+        int ct = calcCollectionTimeTicks(powerGeneration);
+        if (ct <= 0) return 0.0;
+        return 20.0 / (double) ct;
+    }
     private int getEffectiveSatDim() {
         if (world == null) return satDimId;
 
@@ -218,7 +230,10 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         return eff;
     }
 
-
+    private int peekEffectiveSatDimForDisplay() {
+        if (world == null) return satDimId;
+        return DimensionManager.getEffectiveDimId(world, pos).getId();
+    }
     // Blacklist for "satellites" that should not appear in the orbital registry
     private static final java.util.Set<String> SAT_BLACKLIST =
             java.util.Collections.unmodifiableSet(
@@ -260,7 +275,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             entry.powerGen     = 0;
             entry.powerStorage = 0;
             entry.maxData      = 0;
-
+            entry.generatesData = (sat instanceof SatelliteData);
             try {
                 zmaster587.advancedRocketry.api.satellite.SatelliteProperties sProps = sat.getProperties();
                 if (sProps != null) {
@@ -809,10 +824,14 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                     LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.satellites"),
                     0x2d2d2d
             ));
+            String detailsLabel = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.details");
+            String dimLabel     = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.dimid");
+            String detailsTitle = detailsLabel + " " + dimLabel + " " + peekEffectiveSatDimForDisplay();
+
             modules.add(new ModuleText(
                     OBS_DETAIL_BASE_X - 5,
                     18,
-                    LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.details"),
+                    detailsTitle,
                     0x2d2d2d
             ));
 
@@ -919,11 +938,13 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
     modules.add(new ModuleText(x, y, typeLine, 0x2d2d2d));
     y += 10;
 
+    /* Moved to header for now
     // ----- Dim: <raw dim id> -----
     String dimLabel = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.dimid"); // "Dim:"
     String dimLine  = dimLabel + " " + selected.dimId;
     modules.add(new ModuleText(x, y, dimLine, 0x2d2d2d));
     y += 10;
+    */
 
     // ----- Orbiting: <resolved dimension/planet name or 'None'> -----
     String orbitLabel = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.orbit"); // "Orbiting:"
@@ -954,6 +975,19 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         modules.add(new ModuleText(x, y, maxDataLabel + " " + selected.maxData, 0x2d2d2d));
         y += 10;
     }
+    // ----- Data gen: <x/s> ----- (only if meaningful)
+    if (selected.generatesData && selected.powerGen > 0 && selected.maxData > 0) {
+        double dps = calcDataPerSecond(selected.powerGen);
+        String dpsStr = String.format(java.util.Locale.ROOT, "%.3f", dps);
+
+        String prefix = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.sat.datagen");
+        if (prefix == null || prefix.isEmpty() || prefix.equals("msg.orbitalregistry.text.sat.datagen")) {
+            prefix = "Data gen:";
+        }
+
+        modules.add(new ModuleText(x, y, prefix + " " + dpsStr + "/s", 0x2d2d2d));
+        y += 10;
+    }   
 }
    
 
@@ -1293,7 +1327,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         nbt.setLong("selectedSatId", selectedSatId);
         nbt.setInteger("lastStationButton", lastStationButton);
         nbt.setInteger("selectedStationId", selectedStationId);
-
+        
         // Satellite cache
         NBTTagList satList = new NBTTagList();
         for (SatEntry e : satCache) {
@@ -1304,6 +1338,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             tag.setInteger("powerGen", e.powerGen);
             tag.setInteger("powerStorage", e.powerStorage);
             tag.setLong("maxData", e.maxData);
+            tag.setBoolean("generatesData", e.generatesData);
             satList.appendTag(tag);
         }
         nbt.setTag("satCache", satList);
@@ -1345,6 +1380,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 e.powerGen    = tag.getInteger("powerGen");
                 e.powerStorage= tag.getInteger("powerStorage");
                 e.maxData     = tag.getLong("maxData");
+                e.generatesData = tag.getBoolean("generatesData");
                 satCache.add(e);
             }
         }
