@@ -503,13 +503,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return super.getTextOverlay();
     }
 
-    // Artifact gating
-    private boolean isPlanetGated(DimensionProperties props) {
-        if (props == null) return false;
-        List<ItemStack> req = props.getRequiredArtifacts();
-        return req != null && !req.isEmpty();
-    }
-
     @Nullable
     private EntityPlayer getPilot() {
         for (Entity e : getPassengers()) {
@@ -518,89 +511,77 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return null;
     }
 
-    private boolean pilotHasGateArtifacts(EntityPlayer pilot, DimensionProperties destProps) {
-        if (destProps == null) return false;
+    @Nonnull
+    private ItemStack getGateArtifact(@Nullable DimensionProperties destProps) {
+        if (destProps == null) return ItemStack.EMPTY;
 
-        List<ItemStack> required = destProps.getRequiredArtifacts();
-        if (required == null || required.isEmpty()) return true;
+        List<ItemStack> req = destProps.getRequiredArtifacts();
+        if (req == null || req.isEmpty()) return ItemStack.EMPTY;
 
-        for (ItemStack req : required) {
-            if (!hasRequiredStack(pilot, req)) return false;
-        }
-        return true;
+        // Contract: always exactly 1 artifact
+        return req.get(0);
     }
 
-    private boolean hasRequiredStack(EntityPlayer pilot, ItemStack req) {
-        if (req.isEmpty()) return true;
+    private boolean pilotHasArtifact(@Nullable EntityPlayer pilot, @Nonnull ItemStack req) {
+        if (pilot == null || req.isEmpty()) return false;
 
-        // main inventory
-        for (ItemStack have : pilot.inventory.mainInventory) {
-            if (matchesRequirement(have, req)) return true;
-        }
-        // armor
-        for (ItemStack have : pilot.inventory.armorInventory) {
-            if (matchesRequirement(have, req)) return true;
-        }
-        // offhand
-        for (ItemStack have : pilot.inventory.offHandInventory) {
-            if (matchesRequirement(have, req)) return true;
-        }
+        for (ItemStack have : pilot.inventory.mainInventory)  if (matchesRequirement(have, req)) return true;
+        for (ItemStack have : pilot.inventory.armorInventory) if (matchesRequirement(have, req)) return true;
+        for (ItemStack have : pilot.inventory.offHandInventory) if (matchesRequirement(have, req)) return true;
 
         return false;
     }
 
-    private boolean matchesRequirement(ItemStack have, ItemStack req) {
-        return !have.isEmpty()
-                && have.getItem() == req.getItem()
-                && (req.getItemDamage() == OreDictionary.WILDCARD_VALUE
-                    || have.getItemDamage() == req.getItemDamage())
-                && have.getCount() >= req.getCount();
+    private boolean matchesRequirement(@Nonnull ItemStack have, @Nonnull ItemStack req) {
+        if (have.isEmpty()) return false;
+        if (have.getItem() != req.getItem()) return false;
+
+        // meta / wildcard
+        int rMeta = req.getItemDamage();
+        if (rMeta != OreDictionary.WILDCARD_VALUE && have.getItemDamage() != rMeta) return false;
+
+        // OPTIONAL: require NBT match if your artifact uses NBT (uncomment if needed)
+        // if (req.hasTagCompound() && !NBTTagCompound.areNBTEquals(req.getTagCompound(), have.getTagCompound())) return false;
+
+        return have.getCount() >= req.getCount();
     }
 
-    @Nullable
-    private ItemStack getFirstMissingGateArtifact(@Nullable EntityPlayer pilot, @Nullable DimensionProperties destProps) {
-        if (pilot == null || destProps == null) return null;
-
-        List<ItemStack> required = destProps.getRequiredArtifacts();
-        if (required == null || required.isEmpty()) return null;
-
-        for (ItemStack req : required) {
-            if (!hasRequiredStack(pilot, req)) {
-                return req;
-            }
-        }
-        return null;
-    }
-
-    private String getGateArtifactError(@Nullable EntityPlayer pilot, @Nullable DimensionProperties destProps) {
-        String base = LibVulpes.proxy.getLocalizedString("error.rocket.gatedArtifactMissing");
-
-        ItemStack missing = getFirstMissingGateArtifact(pilot, destProps);
-        if (missing == null || missing.isEmpty()) return base;
-
-        // Keep it simple: show the in-game display name
-        return base + ": " + missing.getCount() + "x " + missing.getDisplayName();
-    }
 
     
-    private void setError(String error) {
-        this.errorStr = error;
+    private static String packReason(String key, Object... args) {
+        if (args == null || args.length == 0) return key;
+
+        StringBuilder sb = new StringBuilder(key);
+        for (Object a : args) {
+            sb.append('|');
+            String s = String.valueOf(a);
+            // Avoid breaking the delimiter if an arg contains '|'
+            sb.append(s.replace("|", "/"));
+        }
+        return sb.toString();
+    }
+
+    private void setError(String key, Object... args) {
+        this.errorStr = key;
         this.lastErrorTime = this.world.getTotalWorldTime();
 
         if (!world.isRemote) {
-            // notify riders only
             for (Entity e : this.getPassengers()) {
                 if (e instanceof EntityPlayerMP) {
-                    ((EntityPlayerMP) e).sendMessage(new TextComponentString(error));
+                    ((EntityPlayerMP) e).sendMessage(
+                        new net.minecraft.util.text.TextComponentTranslation(key, args)
+                    );
                 }
             }
-            // post an event the monitor already consumes
-            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketAbortEvent(this, error));
 
-            // stop countdown if it was running
+            // send key + args to monitoring station
+            String packed = packReason(key, args);
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketAbortEvent(this, packed));
+
             this.dataManager.set(LAUNCH_COUNTER, -1);
         }
     }
+
 
     @Override
     public void setPosition(double x, double y,
@@ -2092,7 +2073,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             destinationDimId = storage.getDestinationDimId(world.provider.getDimension(), (int) this.posX, (int) this.posZ);
 
             if (!(DimensionManager.getInstance().canTravelTo(destinationDimId) || (destinationDimId == Constants.INVALID_PLANET && storage.getSatelliteHatches().size() != 0))) {
-                setError(LibVulpes.proxy.getLocalizedString("error.rocket.cannotGetThere"));
+                setError("error.rocket.cannotGetThere");
                 return;
             }
 
@@ -2107,7 +2088,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 if (spaceObject != null)
                     finalDest = spaceObject.getOrbitingPlanetId();
                 else {
-                    setError(LibVulpes.proxy.getLocalizedString("error.rocket.destinationNotExist"));
+                    setError("error.rocket.destinationNotExist");
                     return;
                 }
             }
@@ -2138,24 +2119,29 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 }
 
                 // Artifact gating: only when arriving from outside the planetary system
-                if (enforceGating && isPlanetGated(destProps) && outsidePlanetarySystem) {
+                ItemStack artifact = getGateArtifact(destProps);
+
+                if (enforceGating && !artifact.isEmpty() && outsidePlanetarySystem) {
                     EntityPlayer pilot = getPilot();
-                    if (pilot == null || !pilotHasGateArtifacts(pilot, destProps)) {
-                        setError(getGateArtifactError(pilot, destProps));
+                    if (!pilotHasArtifact(pilot, artifact)) {
+                        setError("error.rocket.gatedArtifactMissingWithItem",
+                                artifact.getCount(),
+                                artifact.getDisplayName());
                         return;
                     }
                 }
 
 
+
                 // Nuclear cannot cross stars
                 if (isNuclear && !sameStar) {
-                    setError(LibVulpes.proxy.getLocalizedString("error.rocket.outsideStarSystem"));
+                    setError("error.rocket.outsideStarSystem");
                     return;
                 }
 
                 // Non-nuclear cannot go outside planetary system
                 if (!isNuclear && outsidePlanetarySystem) {
-                    setError(LibVulpes.proxy.getLocalizedString("error.rocket.outsidePlanetarySystem"));
+                    setError("error.rocket.outsidePlanetarySystem");
                     return;
                 }
             }
@@ -2163,7 +2149,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
 
         if (this.stats.getWeight() >= this.stats.getThrust()) {
-            setError(LibVulpes.proxy.getLocalizedString("error.rocket.tooHeavy"));
+            setError("error.rocket.tooHeavy");
             return; // hard stop; no silent fall-through
         }
 
@@ -2173,7 +2159,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         
         // Enough fuel for the mission?
         if (!hasMissionFuelFor(destinationDimId)) {
-            setError(LibVulpes.proxy.getLocalizedString("error.rocket.notEnoughMissionFuel"));
+            setError("error.rocket.notEnoughMissionFuel");
             return;
         }
         
