@@ -542,6 +542,7 @@ msg.itemsatellite.microwavestatus=Collecting Power
 msg.itemsatellite.data=Data Storage: 
 msg.itemsatellite.nodata=No Data Storage!
 msg.itemsatellite.empty=Empty Chassis
+msg.itemsatellite.datagen=Data gen: %s/s
 msg.itemsatellite.weight=Chassis weight: 
 msg.itemsatellite.noweight=Error in weight calculation
 msg.itemsatellite.unassembled=Not assembled (preview)
@@ -618,6 +619,7 @@ msg.chat.nostation1=You wake up on the space station with a lingering feeling th
 msg.chat.nostation2=Maybe you should think before overstepping clearly logical and absolute boundaries again then deciding it was a good idea and not your fault if things go wrong
 msg.chat.nostation3=You must be on a space station to be in this dimension, and none have been created!
 
+# Orbital Registry
 msg.orbitalregistry.tab.satellites=Satellites:
 msg.orbitalregistry.tab.stations=Space Stations:
 msg.orbitalregistry.text.details=Details:
@@ -625,6 +627,7 @@ msg.orbitalregistry.text.satellites=Satellites
 msg.orbitalregistry.text.stations=Space Stations
 msg.orbitalregistry.text.nosel=Select an object
 msg.orbitalregistry.text.notfound=Not found
+msg.orbitalregistry.text.sat.datagen=Data gen:
 msg.orbitalregistry.scan.tooltip=Update this list
 msg.orbitalregistry.writechip.ok=Click to program chip!
 msg.orbitalregistry.writechip.no=Cannot program this
@@ -651,6 +654,7 @@ msg.orbitalregistry.text.anchored.no=No
 msg.orbitalregistry.text.system=System:
 msg.orbitalregistry.text.system.none=None
 msg.orbitalregistry.text.system.unknown=Unknown
+
 # SatelliteDetails power fields
 msg.orbitalregistry.text.sat.pwrgen=Pwr Gen:
 msg.orbitalregistry.text.sat.pwrstore=Pwr Store:
