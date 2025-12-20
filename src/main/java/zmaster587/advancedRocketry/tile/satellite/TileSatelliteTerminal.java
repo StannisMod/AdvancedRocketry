@@ -453,7 +453,6 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         nextAutoDlTick = 0L;
     }
 
-    // Clear caches if the block/TE is invalidated (broken/replaced)
     @Override
     public void invalidate() {
         super.invalidate();
