@@ -246,6 +246,7 @@ error.rocket.destinationNotExist=Selected space station does not exist.
 error.rocket.partsWornOut=Critical parts are worn out — launch aborted.
 error.rocket.aborted=Launch aborted.
 error.rocket.gatedArtifactMissing=Missing Artifact. (Player Inventory)
+error.rocket.gatedArtifactMissingWithItem=Missing required artifact: %sx %s (Player Inventory)
 error.rocket.outsideStarSystem=Interstellar travel requires a Starship.
 error.rocket.outsidePlanetarySystem=Planetary travel requires a Nuclear Rocket.
 
