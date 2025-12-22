@@ -4,11 +4,14 @@ Changelog 2.2.2
   - Orbital Registry
     - Scans existing stations/starships/satellites, shows info, prints new chips
     - Prevents losing the last chip / reduces need for backups
-    - Only checks current dimension
+    - Only checks current Dimension (spacestation ->body below)
   - Advanced Databus
     - Works like DataUnit AND Databus
-    - Stores more data (less transceiver spaghetti / better performance for buffers)
+    - Capacity= 2000 * 4 = 8000 (default)
     - Keeps data when broken (NOT a "Satellite Component")
+
+-ItemSatellite
+  - Added to tooltip: "Data gen: x/s"
 
 - Rocket
   - Added hint: "Press <Keybind> to open GUI" when riding rockets
@@ -24,11 +27,19 @@ Changelog 2.2.2
   - No Controller = true idle
 
 - Orbital Laser Drill
-  - laserDrillPlanet=false: simpler GUI + "void cobble" toggle (huge performance boost)
+  - laserDrillPlanet=false: simpler GUI + "void cobble" toggle (big performance boost)
   - Early-outs when not constructed / no redstone etc (idle = idle)
 
 - Station Controllers
   - GUI shows if station is anchored
+
+- Observatory
+  - Databuses: type could become undefined; now keeps contents on deconstruction
+  - Server scanning fixed
+  - Stale lists fixed
+
+- Area Gravity Controller
+  - Added explanation for the 6 squares in GUI
 
 - Rocket Loader/Unloader + Fluid Loader/Unloader
   - Accepts most modded tanks/inventories
@@ -37,14 +48,14 @@ Changelog 2.2.2
 - Config
   - nuclearRocketsRespectArtifactGating=true
   - EnableOrbitalRegistry=true
+  - dataBusBigMultiplier = 4
 
 - Bugfix
   - Docking pads blocking rocket dismantle
-  - Space-to-launch only triggers on "down" press (fixes heavy modpacks launching issues)
+  - Space-to-launch only triggers on "down" press (fixes heavy modpacks)
   - Negative/null weather timers crash
-  - Observatory databuses: type could become LOCKED as undefined; now keeps contents on deconstruction
-  - Observatory server scan + stale asteroid list fixes
-  - Rare NPE when starID changes / missing
+  - Rare NPE when corrupt / missing starID
+  - Solar Satellites sending wrong values to receiver
 
 - Tooltips
   - Further polished
@@ -54,7 +65,6 @@ Changelog 2.2.2
   - English polished
   - Many hardcoded English strings fixed
  
-
 Changelog 2.2.1-1:
 
 -Terraforming Terminal:
