@@ -424,9 +424,9 @@ msg.biomescanner.gas=哈，是气体环境，对吧？
 msg.biomescanner.star=要是我的传感器有遮阳板就好了
 msg.gravitycontroller.radius=半径：
 msg.gravitycontroller.targetgrav=目标重力：
-msg.gravitycontroller.none=复位
-msg.gravitycontroller.activeset=激活：设置
-msg.gravitycontroller.activeadd=激活：添加
+msg.gravitycontroller.none=无作用力
+msg.gravitycontroller.activeadd=添加作用力（合并各方向）
+msg.gravitycontroller.activeset=添加作用力（合并各方向）+升力
 msg.gravitycontroller.targetdir.1=目标->
 msg.gravitycontroller.targetdir.2=方向
 msg.railgun.transfermin=最小传输尺寸
@@ -721,6 +721,7 @@ tooltip.advancedrocketry.oxidizerfueltank.alt.1=§f双组元推进剂火箭需�
 
 # Nuclear Fuel Tank
 tooltip.advancedrocketry.nuclearfueltank=§c火箭的组成部分
+tooltip.advancedrocketry.nuclearfueltank.1=§6可进行行星航行！
 tooltip.advancedrocketry.nuclearfueltank.shift.1=§f可容纳：§b%s
 tooltip.advancedrocketry.nuclearfueltank.alt.1=§f需要§b核热堆芯§f和§b核热发动机
 
@@ -731,13 +732,15 @@ tooltip.advancedrocketry.monopropmotor.alt.1=查看加油站的JEI页面
 
 # Nuclear Core
 tooltip.advancedrocketry.nuclearcore=§c火箭的组成部分
+tooltip.advancedrocketry.nuclearcore.1=§6可进行行星航行！
 tooltip.advancedrocketry.nuclearcore.shift.1=必须直接放置在核热发动机
 tooltip.advancedrocketry.nuclearcore.shift.2=或其他核热堆芯正上方。
 tooltip.advancedrocketry.nuclearcore.alt.1=垂直放置规则不适用于
 tooltip.advancedrocketry.nuclearcore.alt.2=无人载具（气体任务火箭）
 
 # Nuclear rocketengine
-tooltip.advancedrocketry.nuclearmotor=§c火箭的组成部分 §6可进行行星航行！
+tooltip.advancedrocketry.nuclearmotor=§c火箭的组成部分
+tooltip.advancedrocketry.nuclearmotor.1=§6可进行行星航行！
 tooltip.advancedrocketry.nuclearmotor.shift.1=§f使用§b工质
 tooltip.advancedrocketry.nuclearmotor.shift.2=正上方需存在核热堆芯。
 tooltip.advancedrocketry.nuclearmotor.alt.1=查看加油站的JEI页面
@@ -814,10 +817,10 @@ tooltip.advancedrocketry.monitoringstation.shift.2=§f需连接至§4火箭组�
 tooltip.advancedrocketry.monitoringstation.alt.1=§b任务将在进入轨道后激活！
 
 # Satellite Terminal
-tooltip.advancedrocketry.satellitemonitor=用于与卫星通信
-tooltip.advancedrocketry.satellitemonitor.shift.1=放入卫星芯片
-tooltip.advancedrocketry.satellitemonitor.shift.2=下载数据
-tooltip.advancedrocketry.satellitemonitor.alt.1=§f通过无线收发器或数据单元传输并自动下载数据
+tooltip.advancedrocketry.satellitecontrolcenter=用于与卫星通信
+tooltip.advancedrocketry.satellitecontrolcenter.shift.1=放入卫星芯片
+tooltip.advancedrocketry.satellitecontrolcenter.shift.2=下载数据
+tooltip.advancedrocketry.satellitecontrolcenter.alt.1=§f通过无线收发器或数据单元传输并自动下载数据
 
 # Satellite Builder
 tooltip.advancedrocketry.satellitebuilder=用于组装卫星
@@ -829,10 +832,7 @@ tooltip.advancedrocketry.satellitebuilder.alt.2=核心组件+其他组件
 # Orbital Registry
 tooltip.advancedrocketry.orbitalregistry=追踪太空中的人造物体
 tooltip.advancedrocketry.orbitalregistry.shift.1=§f可写入新芯片！
-tooltip.advancedrocketry.orbitalregistry.shift.2=
 tooltip.advancedrocketry.orbitalregistry.alt.1=§f在§4卫星终端§f中使用芯片以销毁卫星
-tooltip.advancedrocketry.orbitalregistry.alt.2=
-
 
 ### Infrastructure
 ## BlockARHatch
