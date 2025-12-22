@@ -62,7 +62,7 @@ import java.util.List;
 public class TileOrbitalRegistry extends TileMultiPowerConsumer
         implements IModularInventory, IButtonInventory, IGuiCallback, IInventory {
 
-    // Simple 1x2 structure, same pattern as TileSatelliteBuilder
+    // Simple 1x1 structure
     public static final Object[][][] structure = new Object[][][] {
             { { 'c' } }
     };
@@ -105,7 +105,12 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
     private static final byte NET_BUTTON_WRITE_CHIP   = 12;
     private static final byte NET_BUTTON_SCAN         = 13;
     private static final byte NET_BUTTON_SELECT_STAT  = 14;
+    private static final byte NET_REQUEST_REOPEN       = 15;
 
+    // Synced “version” that changes whenever scan results change
+    private int scanNonce = 0;
+    // Client-only flag
+    private boolean pendingReopenAfterScan = false;
     // Inventory
     private final EmbeddedInventory inv;
 
@@ -728,7 +733,18 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 this,
                 SLOT_CHIP_OUT, SLOT_CHIP_OUT + 1));
 
-        // Progress bar behind the write button
+        ModuleButton scanBtn = new ModuleButton(
+                110, OBS_CHIP_Y,
+                GUI_BUTTON_SCAN,
+                LibVulpes.proxy.getLocalizedString("msg.observetory.scan.button"),
+                this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.scan.tooltip"),
+                64, 18
+        );
+        modules.add(scanBtn);
+
+        // Progress bar
         modules.add(new ModuleProgress(
                 OBS_CHIP_X + 20, OBS_CHIP_Y,
                 0,
@@ -753,22 +769,9 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         WriteCheck wc = checkWrite();
         writeBtn.setToolTipText(LibVulpes.proxy.getLocalizedString(wc.tooltipKey));
 
-
         modules.add(writeBtn);
 
-        ModuleButton scanBtn = new ModuleButton(
-                110, OBS_CHIP_Y,
-                GUI_BUTTON_SCAN,
-                LibVulpes.proxy.getLocalizedString("msg.observetory.scan.button"),
-                this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
-                LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.scan.tooltip"),
-                64, 18
-        );
-        modules.add(scanBtn);
-
         // ----- WINDOWS (left list + right detail)  -----
-
         final int listBaseX = OBS_LIST_BASE_X;
         final int listBaseY = OBS_LIST_BASE_Y;
         final int listSizeX = OBS_LIST_SIZE_X;
@@ -1164,8 +1167,8 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         // Client → server via PacketMachine
         if (world != null && world.isRemote) {
             if (buttonId == GUI_BUTTON_SCAN) {
-                // Reset scroll immediately on the client
                 AdvancedRocketry.proxy.clearScrollCache();
+                pendingReopenAfterScan = true;
                 PacketHandler.sendToServer(new PacketMachine(this, NET_BUTTON_SCAN));
                 return;
             }
@@ -1281,9 +1284,15 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 } else {
                     rescanStations();
                 }
-
+                scanNonce++;
+                selectedSatId = -1L;
+                lastSatButton = -1;
+                selectedStationId = -1;
+                lastStationButton = -1;
                 markDirty();
                 world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+                //player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(), getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            } else if (id == NET_REQUEST_REOPEN) {
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                         getWorld(), pos.getX(), pos.getY(), pos.getZ());
             }
@@ -1302,9 +1311,20 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
 
     @Override
     protected void readNetworkData(NBTTagCompound nbt) {
+        int prevNonce = this.scanNonce;
         super.readNetworkData(nbt);
         readCommonNBT(nbt);
+
+        // Client: only reopen AFTER we have the new cache NBT
+        if (world != null && world.isRemote
+        && pendingReopenAfterScan
+        && prevNonce != this.scanNonce
+        && net.minecraft.client.Minecraft.getMinecraft().currentScreen instanceof zmaster587.libVulpes.inventory.GuiModular) {
+            pendingReopenAfterScan = false;
+            PacketHandler.sendToServer(new PacketMachine(this, NET_REQUEST_REOPEN));
+        }
     }
+
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
@@ -1327,7 +1347,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         nbt.setLong("selectedSatId", selectedSatId);
         nbt.setInteger("lastStationButton", lastStationButton);
         nbt.setInteger("selectedStationId", selectedStationId);
-        
+        nbt.setInteger("scanNonce", scanNonce);
         // Satellite cache
         NBTTagList satList = new NBTTagList();
         for (SatEntry e : satCache) {
@@ -1367,7 +1387,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         selectedSatId    = nbt.getLong("selectedSatId");
         lastStationButton = nbt.getInteger("lastStationButton");
         selectedStationId = nbt.getInteger("selectedStationId");
-
+        scanNonce = nbt.getInteger("scanNonce");
         satCache.clear();
         if (nbt.hasKey("satCache")) {
             NBTTagList satList = nbt.getTagList("satCache", Constants.NBT.TAG_COMPOUND);
