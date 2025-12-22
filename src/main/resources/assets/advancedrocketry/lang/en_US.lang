@@ -424,9 +424,9 @@ msg.biomescanner.gas=nyehhh, Gassy, ain't it?
 msg.biomescanner.star=If only my sensors had sunshades
 msg.gravitycontroller.radius=Radius: 
 msg.gravitycontroller.targetgrav=Target Gravity:
-msg.gravitycontroller.none=Unset
-msg.gravitycontroller.activeset=Active: set
-msg.gravitycontroller.activeadd=Active: add
+msg.gravitycontroller.none=No Force
+msg.gravitycontroller.activeadd=Add Force (combine sides)
+msg.gravitycontroller.activeset=Add Force (combine sides) + lift
 msg.gravitycontroller.targetdir.1=Target->
 msg.gravitycontroller.targetdir.2=Direction
 msg.railgun.transfermin=Min Transfer Size
@@ -721,6 +721,7 @@ tooltip.advancedrocketry.oxidizerfueltank.alt.1=§fBipropellant Rocket requires 
 
 # Nuclear Fuel Tank
 tooltip.advancedrocketry.nuclearfueltank=§cPart of Rocket
+tooltip.advancedrocketry.nuclearfueltank.1=§6Allows planetary travel!
 tooltip.advancedrocketry.nuclearfueltank.shift.1=§fHolds: §b%s
 tooltip.advancedrocketry.nuclearfueltank.alt.1=§fRequires §bNuclear Core§f and §bNuclear Engine
 
@@ -731,13 +732,15 @@ tooltip.advancedrocketry.monopropmotor.alt.1=Check Fueling Station JEI-page
 
 # Nuclear Core
 tooltip.advancedrocketry.nuclearcore=§cPart of Rocket
+tooltip.advancedrocketry.nuclearcore.1=§6Allows planetary travel!
 tooltip.advancedrocketry.nuclearcore.shift.1=Needs to be directly on top of a
 tooltip.advancedrocketry.nuclearcore.shift.2=Nuclear Engine or another Nuclear Core.
 tooltip.advancedrocketry.nuclearcore.alt.1=Vertical placement rules doesn't apply
 tooltip.advancedrocketry.nuclearcore.alt.2=for Unmanned Vehicles (Gas Mission rockets)
 
 # Nuclear rocketengine
-tooltip.advancedrocketry.nuclearmotor=§cPart of Rocket §6Allows planetary travel!
+tooltip.advancedrocketry.nuclearmotor=§cPart of Rocket
+tooltip.advancedrocketry.nuclearmotor.1=§6Allows planetary travel!
 tooltip.advancedrocketry.nuclearmotor.shift.1=§fUses §bWorking fluid
 tooltip.advancedrocketry.nuclearmotor.shift.2=Needs Nuclear Core directly above.
 tooltip.advancedrocketry.nuclearmotor.alt.1=Check Fueling Station JEI-page
@@ -814,10 +817,10 @@ tooltip.advancedrocketry.monitoringstation.shift.2=§fLink to §4Rocket Assemble
 tooltip.advancedrocketry.monitoringstation.alt.1=§bMissions becomes active when orbit reached!
 
 # Satellite Terminal
-tooltip.advancedrocketry.satellitemonitor=Communicates with Satellites
-tooltip.advancedrocketry.satellitemonitor.shift.1=Insert Satellite Chip
-tooltip.advancedrocketry.satellitemonitor.shift.2=Download Data
-tooltip.advancedrocketry.satellitemonitor.alt.1=§fTransfer and Auto-Download Data with Wireless Tranciever or Data Unit
+tooltip.advancedrocketry.satellitecontrolcenter=Communicates with Satellites
+tooltip.advancedrocketry.satellitecontrolcenter.shift.1=Insert Satellite Chip
+tooltip.advancedrocketry.satellitecontrolcenter.shift.2=Download Data
+tooltip.advancedrocketry.satellitecontrolcenter.alt.1=§fTransfer and Auto-Download Data with Wireless Tranciever or Data Unit
 
 # Satellite Builder
 tooltip.advancedrocketry.satellitebuilder=Assembles Satellites
@@ -829,10 +832,7 @@ tooltip.advancedrocketry.satellitebuilder.alt.2=core component + other component
 # Orbital Registry
 tooltip.advancedrocketry.orbitalregistry=Tracks man-made objects in space
 tooltip.advancedrocketry.orbitalregistry.shift.1=§fPrints new Chips!
-tooltip.advancedrocketry.orbitalregistry.shift.2=
 tooltip.advancedrocketry.orbitalregistry.alt.1=§fTo destroy a Satellite use chip in §4Satellite Terminal
-tooltip.advancedrocketry.orbitalregistry.alt.2=
-
 
 ### Infrastructure
 ## BlockARHatch
