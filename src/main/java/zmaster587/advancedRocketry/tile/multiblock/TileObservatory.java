@@ -424,8 +424,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             //ADD io slots
             modules.add(new ModuleTexturedSlotArray(5, 120, this, 1, 2, TextureResources.idChip));
             modules.add(new ModuleOutputSlotArray(45, 120, this, 2, 3));
+
+            ModuleButton scanButton = new ModuleButton(100, 120, 2, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.button"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.tooltip"), 64, 18);
+            scanButton.setColor(extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.DOWN, false) == dataConsumedPerRefresh ? 0x00ff00 : 0xff0000);
+            modules.add(scanButton);
+
             modules.add(new ModuleProgress(25, 120, 0, new ProgressBarImage(217, 0, 17, 17, 234, 0, EnumFacing.DOWN, TextureResources.progressBars), this));
-            
             ModuleButton processBtn = new ModuleButton(
                 25, 120, 1, "",
                 this,
@@ -446,17 +450,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
             modules.add(processBtn);
 
-            ModuleButton scanButton = new ModuleButton(100, 120, 2, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.button"), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, LibVulpes.proxy.getLocalizedString("msg.observetory.scan.tooltip"), 64, 18);
-
-            scanButton.setColor(extractData(dataConsumedPerRefresh, DataType.DISTANCE, EnumFacing.DOWN, false) == dataConsumedPerRefresh ? 0x00ff00 : 0xff0000);
-
-            modules.add(scanButton);
-
-
             List<ModuleBase> list2 = new LinkedList<>();
             List<ModuleBase> buttonList = new LinkedList<>();
             buttonType.clear();
-
 
             int g = 0;
             Asteroid asteroidSmol;
@@ -479,7 +475,6 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                         0x2f2f2f
                 ));
             }
-
 
             //Calculate Types
             int totalAmountAllowed = 10;
@@ -507,7 +502,6 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 }
             }
 
-
             for (int i = 0; i < finalList.size(); i++) {
                 Asteroid asteroid = finalList.get(i);
 
@@ -521,10 +515,8 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 buttonType.put(i, asteroid.getName());
             }
 
-
             modules.add(new ModuleText(10, 18, LibVulpes.proxy.getLocalizedString("msg.observetory.text.asteroids"), 0x2d2d2d));
             modules.add(new ModuleText(105, 18, LibVulpes.proxy.getLocalizedString("msg.observetory.text.composition"), 0x2d2d2d));
-
 
             //Ore display
             int baseX = 122;
