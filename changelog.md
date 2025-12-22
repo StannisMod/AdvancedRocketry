@@ -10,7 +10,7 @@ Changelog 2.2.2
     - Capacity= 2000 * 4 = 8000 (default)
     - Keeps data when broken (NOT a "Satellite Component")
 
--ItemSatellite
+- ItemSatellite
   - Added to tooltip: "Data gen: x/s"
 
 - Rocket
