@@ -65,7 +65,7 @@ Changelog 2.2.2
   - English polished
   - Many hardcoded English strings fixed
  
-thanks to (ZY, Hades, Xonazeth, and all reports and feedback)
+thanks to (ZY, Hades21_21, Xonazeth, and all reports and feedback)
 (RoughlyEnoughIDs 2.2.4 is now compatible with AR again) thanks to jchung
  
 Changelog 2.2.1-1:
