@@ -7,10 +7,14 @@ import mezz.jei.api.recipe.IRecipeCategoryRegistration;
 import net.minecraft.item.ItemStack;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.block.BlockSmallPlatePress;
 import zmaster587.advancedRocketry.integration.jei.arcFurnace.ArcFurnaceCategory;
 import zmaster587.advancedRocketry.integration.jei.arcFurnace.ArcFurnaceRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.arcFurnace.ArcFurnaceRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.asteroids.AsteroidCategory;
+import zmaster587.advancedRocketry.integration.jei.asteroids.AsteroidRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.asteroids.AsteroidRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.centrifuge.CentrifugeCategory;
 import zmaster587.advancedRocketry.integration.jei.centrifuge.CentrifugeRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.centrifuge.CentrifugeRecipeMaker;
@@ -32,6 +36,9 @@ import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStation
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheCategory;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.orbitalLaserDrill.OrbitalLaserDrillCategory;
+import zmaster587.advancedRocketry.integration.jei.orbitalLaserDrill.OrbitalLaserDrillRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.orbitalLaserDrill.OrbitalLaserDrillRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.platePresser.PlatePressCategory;
 import zmaster587.advancedRocketry.integration.jei.platePresser.PlatePressRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.platePresser.PlatePressRecipeMaker;
@@ -80,6 +87,8 @@ public class ARPlugin implements IModPlugin {
     public static final String fuelingStationUUID = "zmaster587.AR.fuelingStation";
     public static final String co2ScrubberUUID = "zmaster587.AR.co2scrubber";
     public static final String stationAssemblerUUID = "zmaster587.AR.stationAssembler";
+    public static final String orbitalLaserDrillUUID = "zmaster587.AR.orbitalLaserDrill";
+    public static final String asteroidsUUID = "zmaster587.AR.asteroids";
     public static IJeiHelpers jeiHelpers;
 
     //AR machines can reload recipes. We still need this for JEI to be up-to-date
@@ -87,6 +96,12 @@ public class ARPlugin implements IModPlugin {
     public static void reload() {
         jeiHelpers.reload();
     }
+
+    private static boolean isVoidDrillJeiEnabled() {
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        return cfg.enableLaserDrill && !cfg.laserDrillPlanet;
+    }
+
 
     @Override
     public void registerCategories(IRecipeCategoryRegistration registry) {
@@ -108,10 +123,18 @@ public class ARPlugin implements IModPlugin {
             new SatelliteBuilderCategory(guiHelper),
             new FuelingStationCategory(guiHelper),
             new Co2ScrubberCategory(guiHelper),
-            new StationAssemblerCategory(guiHelper)
+            new StationAssemblerCategory(guiHelper),
+            new AsteroidCategory(guiHelper)
         );
+        // ---- Orbital Laser Drill (VoidDrill mode only) ----
+        final boolean voidDrillJei = isVoidDrillJeiEnabled();
+        if (voidDrillJei) {
+            registry.addRecipeCategories(new OrbitalLaserDrillCategory(guiHelper));
+        }
     }
 
+
+    
     @Override
     public void register(IModRegistry registry) {
 
@@ -157,7 +180,8 @@ public class ARPlugin implements IModPlugin {
                 new SatelliteBuilderRecipeHandler(),
                 new FuelingStationRecipeHandler(),
                 new Co2ScrubberRecipeHandler(),
-                new StationAssemblerRecipeHandler()
+                new StationAssemblerRecipeHandler(),
+                new AsteroidRecipeHandler()
             );
 
         registry.addRecipes(RollingMachineRecipeMaker.getMachineRecipes(jeiHelpers, TileRollingMachine.class), rollingMachineUUID);
@@ -175,6 +199,8 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipes(FuelingStationRecipeMaker.getMachineRecipes(jeiHelpers, TileFuelingStation.class), fuelingStationUUID);
         registry.addRecipes(Co2ScrubberRecipeMaker.getRecipes(jeiHelpers), co2ScrubberUUID);
         registry.addRecipes(StationAssemblerRecipeMaker.getMachineRecipes(jeiHelpers, TileStationAssembler.class),stationAssemblerUUID);
+        registry.addRecipes(AsteroidRecipeMaker.getRecipes(jeiHelpers), asteroidsUUID);
+
 
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockRollingMachine), rollingMachineUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockLathe), latheUUID);
@@ -202,5 +228,17 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxidizerFuelTank),     fuelingStationUUID); // oxidizer
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockNuclearFuelTank),      fuelingStationUUID); // working fluid
 
+        // Asteroids (catalyst): observatory and asteroid chip are what players associate with this system
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockObservatory), asteroidsUUID);
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryItems.itemAsteroidChip), asteroidsUUID);
+
+        // ---- Orbital Laser Drill (VoidDrill mode only) ----
+        // Voiddrill means laserdrillPlanet is false
+        final boolean voidDrillJei = isVoidDrillJeiEnabled();
+        if (voidDrillJei) {
+            registry.addRecipeHandlers(new OrbitalLaserDrillRecipeHandler());
+            registry.addRecipes(OrbitalLaserDrillRecipeMaker.getRecipes(jeiHelpers), orbitalLaserDrillUUID);
+            registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockSpaceLaser), orbitalLaserDrillUUID);
+        }
     }
 }
