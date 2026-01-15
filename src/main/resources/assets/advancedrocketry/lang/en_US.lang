@@ -693,6 +693,8 @@ jei.sb.copy.source=Source
 jei.sb.copy.output=New Copy
 jei.sb.assemblyhint=Atleast one solar panel
 jei.sb.copychiphint=Make backups!
+jei.ar.asteroids=Asteroids
+
 
 jei.ar.fuel.role.monopropellant=Monopropellant Fuel
 jei.ar.fuel.role.biprop_fuel=Bipropellant Fuel
