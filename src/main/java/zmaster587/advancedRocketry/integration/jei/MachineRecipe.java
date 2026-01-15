@@ -93,7 +93,22 @@ public class MachineRecipe implements IRecipeWrapper {
         String powerString = String.format("%s %d RF/t", powerLabel, energy);
         fontRendererObj.drawString(powerString, 0, 55, Color.black.getRGB());
 
-        String timeString = String.format("%s %d s", timeLabel, time / 20);
-        fontRendererObj.drawString(timeString, recipeWidth - 55, 55, Color.black.getRGB());
+        // --- Time formatting: ticks if below 1 second, otherwise seconds ---
+        final int ticksPerSecond = 20;
+
+        String timeValue;
+        if (time < ticksPerSecond) {
+            // 1..19 ticks
+            timeValue = String.format("%d ticks", time);
+        } else {
+            // 20 ticks -> 1 s, 40 ticks -> 2 s, etc.
+            timeValue = String.format("%d s", time / ticksPerSecond);
+        }
+
+        String timeString = String.format("%s %s", timeLabel, timeValue);
+
+        // Right-align the time string
+        int x = recipeWidth - fontRendererObj.getStringWidth(timeString);
+        fontRendererObj.drawString(timeString, x, 55, Color.black.getRGB());
     }
 }
