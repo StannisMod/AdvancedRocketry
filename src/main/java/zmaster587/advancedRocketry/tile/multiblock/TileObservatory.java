@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.inventory.modules.ModuleData;
+import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemData;
@@ -459,9 +460,23 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             if (lastButton != -1 && lastType != null && !lastType.isEmpty() && (asteroidSmol = ARConfiguration.getCurrentConfig().asteroidTypes.get(lastType)) != null) {
                 List<StackEntry> harvestList = asteroidSmol.getHarvest(lastSeed + lastButton, Math.max(1 - ((Math.min(getDataAmt(DataType.COMPOSITION), 2000) + Math.min(getDataAmt(DataType.MASS), 2000)) / 4000f), 0));
                 for (StackEntry entry : harvestList) {
-                    //buttonList.add(new ModuleButton((g % 3)*24, 24*(g/3), -2, "",this, TextureResources.tabData, 24, 24));
-                    buttonList.add(new ModuleSlotButton((g % 2) * 24 + 1, 24 * (g / 2) + 1, -2, this, entry.stack, entry.midpoint + " +/-  " + entry.variablility, getWorld()));
-                    buttonList.add(new ModuleText((g % 2) * 24 + 1, 24 * (g / 2) + 1, entry.midpoint + "\n+/- " + entry.variablility, 0xFFFFFF, 0.5f));
+                    ItemStack s = entry.stack;
+                    String tip = entry.midpoint + " +/-  " + entry.variablility;
+
+                    int sx = (g % 2) * 24 + 1;
+                    int sy = 24 * (g / 2) + 1;
+
+                    // If stack is empty, still show a slot button (optional), but don't crash.
+                    if (!s.isEmpty() && Block.getBlockFromItem(s.getItem()) != Blocks.AIR) {
+                        buttonList.add(new ModuleSlotButton(sx, sy, -2, this, s, tip, getWorld()));
+                    } else {
+                        buttonList.add(new ModuleItemSlotButton(sx, sy, -2, this, s, tip));
+                    }
+
+                    buttonList.add(new ModuleText(sx, sy,
+                            entry.midpoint + "\n+/- " + entry.variablility,
+                            0xFFFFFF, 0.5f));
+
                     g++;
                 }
 
