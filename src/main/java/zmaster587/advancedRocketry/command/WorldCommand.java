@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryAPI;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
+import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.api.dimension.IDimensionProperties;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
@@ -33,8 +34,10 @@ import zmaster587.advancedRocketry.item.ItemData;
 import zmaster587.advancedRocketry.item.ItemMultiData;
 import zmaster587.advancedRocketry.item.ItemStationChip;
 import zmaster587.advancedRocketry.network.PacketDimInfo;
+import zmaster587.advancedRocketry.network.PacketSpaceStationInfo;
 import zmaster587.advancedRocketry.network.PacketStellarInfo;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
+import zmaster587.advancedRocketry.stations.SpaceStationObject;
 import zmaster587.advancedRocketry.unit.IngameTestOrchestrator;
 import zmaster587.advancedRocketry.world.util.TeleporterNoPortal;
 import zmaster587.advancedRocketry.world.util.TeleporterNoPortalSeekBlock;
@@ -135,6 +138,113 @@ public class WorldCommand implements ICommand {
         } else
             sender.sendMessage(new TextComponentString("Held block cannot be added to sealed block list"));
     }
+
+    private void commandCreate(ICommandSender sender, String[] cmdstring) {
+
+        if (cmdstring.length < 2 || cmdstring[1].equalsIgnoreCase("help")) {
+            sender.sendMessage(new TextComponentString("/advrocketry create station <orbitDimId> [playerName] [tp]"));
+            sender.sendMessage(new TextComponentString("Creates a new station orbiting <orbitDimId> and generates a 3x3 cobble platform."));
+            return;
+        }
+
+        if (!cmdstring[1].equalsIgnoreCase("station")) {
+            sender.sendMessage(new TextComponentString("Usage: /advrocketry create station <orbitDimId> [playerName] [tp]"));
+            return;
+        }
+
+        if (cmdstring.length < 3) {
+            sender.sendMessage(new TextComponentString("Usage: /advrocketry create station <orbitDimId> [playerName] [tp]"));
+            return;
+        }
+
+        final int orbitDimId;
+        try {
+            orbitDimId = Integer.parseInt(cmdstring[2]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage(new TextComponentString("Invalid orbitDimId: " + cmdstring[2]));
+            return;
+        }
+
+        // Validate orbit target (avoid NPE inside SpaceStationObject#setOrbitingBody)
+        if (orbitDimId != Constants.INVALID_PLANET &&
+                zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().getDimensionProperties(orbitDimId) == null) {
+            sender.sendMessage(new TextComponentString("No AR DimensionProperties for dimId " + orbitDimId));
+            sender.sendMessage(new TextComponentString("Tip: /advrocketry planet list"));
+            return;
+        }
+
+        // Optional player + tp flag parsing
+        EntityPlayerMP player = null;
+        int idx = 3;
+
+        if (cmdstring.length > idx && !cmdstring[idx].equalsIgnoreCase("tp")) {
+            EntityPlayer p = getPlayerByName(cmdstring[idx]);
+            if (p instanceof EntityPlayerMP) player = (EntityPlayerMP) p;
+            if (player == null) {
+                sender.sendMessage(new TextComponentString("Player not found: " + cmdstring[idx]));
+                return;
+            }
+            idx++;
+        }
+
+        if (player == null && sender.getCommandSenderEntity() instanceof EntityPlayerMP) {
+            player = (EntityPlayerMP) sender.getCommandSenderEntity();
+        }
+
+        final boolean teleport = (cmdstring.length > idx && cmdstring[idx].equalsIgnoreCase("tp"));
+
+        // Create + register station
+        SpaceStationObject station = new SpaceStationObject();
+
+        // MUST be true BEFORE registerSpaceObject sends PacketSpaceStationInfo
+        station.beginTransition(0); // created=true
+
+        SpaceObjectManager.getSpaceManager().registerSpaceObject(station, orbitDimId); // now the packet is correct
+
+        int stationId = station.getId();
+        HashedBlockPosition spawn = station.getSpawnLocation();
+
+
+        // Ensure space world exists
+        int spaceDim = ARConfiguration.getCurrentConfig().spaceDimId;
+        if (net.minecraftforge.common.DimensionManager.getWorld(spaceDim) == null) {
+            net.minecraftforge.common.DimensionManager.initDimension(spaceDim);
+        }
+        WorldServer spaceWorld = sender.getServer().getWorld(spaceDim);
+
+        // Load chunk and build a 3x3 cobble platform under spawn
+        BlockPos spawnPos = new BlockPos(spawn.x, spawn.y, spawn.z);
+        spaceWorld.getChunkFromBlockCoords(spawnPos);
+
+        BlockPos base = spawnPos.down();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                spaceWorld.setBlockState(base.add(dx, 0, dz), Blocks.COBBLESTONE.getDefaultState(), 2);
+            }
+        }
+        // Ensure the spawn block is clear
+        spaceWorld.setBlockState(spawnPos, Blocks.AIR.getDefaultState(), 2);
+
+        // Give a station chip
+        if (player != null) {
+            ItemStack chip = new ItemStack(AdvancedRocketryItems.itemSpaceStationChip);
+            ItemStationChip.setUUID(chip, stationId);
+            player.inventory.addItemStackToInventory(chip);
+        }
+        sender.sendMessage(new TextComponentString(
+                "Created station ID " + stationId + " orbiting dim " + orbitDimId +
+                " (space @ " + spawn.x + "," + spawn.y + "," + spawn.z + ")"
+        ));
+
+        // Optional teleport
+        if (teleport && player != null) {
+            if (player.world.provider.getDimension() != spaceDim) {
+                player.getServer().getPlayerList().transferPlayerToDimension(player, spaceDim, new TeleporterNoPortal(spaceWorld));
+            }
+            player.setPositionAndUpdate(spawn.x + 0.5, spawn.y + 2, spawn.z + 0.5);
+        }
+    }
+
 
     private void commandGiveStation(ICommandSender sender, String[] cmdstring) {
         if (cmdstring.length < 2 || cmdstring[1].equalsIgnoreCase("help")) {
@@ -857,6 +967,7 @@ public class WorldCommand implements ICommand {
             sender.sendMessage(new TextComponentString("planet"));
             sender.sendMessage(new TextComponentString("fillData"));
             sender.sendMessage(new TextComponentString("goto"));
+            sender.sendMessage(new TextComponentString("create"));
             sender.sendMessage(new TextComponentString("star"));
             sender.sendMessage(new TextComponentString("fetch"));
             sender.sendMessage(new TextComponentString("giveStation"));
@@ -880,6 +991,9 @@ public class WorldCommand implements ICommand {
                 break;
             case "addsolidblockoverride":
                 commandAddSolidBlockOverride(sender, string);
+                break;
+            case "create":
+                commandCreate(sender, string);
                 break;
             case "givestation":
                 commandGiveStation(sender, string);
@@ -935,6 +1049,7 @@ public class WorldCommand implements ICommand {
             list.add("beginTest");
             list.add("planet");
             list.add("goto");
+            list.add("create");
             list.add("fetch");
             list.add("star");
             list.add("fillData");
@@ -960,6 +1075,10 @@ public class WorldCommand implements ICommand {
                     if (str.startsWith(string[1]))
                         list.add(str);
                 }
+            }
+            if (string[0].equalsIgnoreCase("create")) {
+                if ("station".startsWith(string[1].toLowerCase())) list.add("station");
+                return list;
             }
         } else if ((string[1].equalsIgnoreCase("get") || string[1].equalsIgnoreCase("set")) && string[0].equalsIgnoreCase("planet") && string.length == 3) {
             for (Field field : DimensionProperties.class.getFields()) {
