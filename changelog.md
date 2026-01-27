@@ -1,3 +1,20 @@
+Changelog 2.2.2.1
+
+- OreMissions
+	- Adds support for more modded inventories
+- Observatory
+	- Correctly render items in Asteroids window
+- JEI integration
+	- Machinerecipe: Show Time in Ticks if its less than 1 sec
+	- Orbital Laser Drill:(only global list for now)
+	- Asteroids
+
+- New admin command:
+	- /advancedrocketry create station <orbitdimid> <player> [tp]
+	- Creates a SpaceStation (3x3 cobble) and saves it to orbit
+		- Optional command: <playerid> tp
+		- "/advancedrocketry create station 0 tp" will tp player to a New station orbiting Dim0
+
 Changelog 2.2.2
 
 - New Blocks
