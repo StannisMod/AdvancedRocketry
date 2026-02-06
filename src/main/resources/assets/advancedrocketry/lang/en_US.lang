@@ -1391,6 +1391,7 @@ tooltip.advancedrocketry.deployablerocketassembler.alt.2=Check wiki if unsure!
 
 # Hovercraft
 tooltip.advancedrocketry.hovercraft=Long lasting dilithium Power source. It'll probably outlive you.
+tooltip.advancedrocketry.hovercraft.alt.1=§fCheck steering in controls
 
 # Thermite
 tooltip.advancedrocketry.thermite=Known for generating intense heat!
