@@ -92,8 +92,8 @@ public class KeyBindings {
         if (player.getRidingEntity() != null && player.getRidingEntity() instanceof EntityHoverCraft) {
             EntityHoverCraft hoverCraft = (EntityHoverCraft) player.getRidingEntity();
             if (Minecraft.getMinecraft().inGameHasFocus && player.equals(Minecraft.getMinecraft().player)) {
-                hoverCraft.onTurnLeft(turnRocketLeft.isKeyDown());
-                hoverCraft.onTurnRight(turnRocketRight.isKeyDown());
+                //hoverCraft.onTurnLeft(turnRocketLeft.isKeyDown());
+                //hoverCraft.onTurnRight(turnRocketRight.isKeyDown());
                 hoverCraft.onUp(turnRocketUp.isKeyDown());
                 hoverCraft.onDown(turnRocketDown.isKeyDown());
             }
