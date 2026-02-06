@@ -12,6 +12,7 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.entity.EntityRocket.PacketType;
 import zmaster587.libVulpes.interfaces.INetworkEntity;
@@ -35,11 +36,21 @@ public class EntityHoverCraft extends Entity implements IInventory, INetworkEnti
     protected int currentBurnTime;
     //Used to calculate rendering stuffs
     protected EmbeddedInventory inv;
-    private boolean turningLeft, turningRight, turningUp, turningDownforWhat;
+    private boolean turningUp, turningDownforWhat;
+
+    // Client only, used for interpolation
+    @SideOnly(Side.CLIENT)
+    private int lerpSteps;
+    @SideOnly(Side.CLIENT)
+    private double lerpX, lerpY, lerpZ;
+    @SideOnly(Side.CLIENT)
+    private float lerpYaw, lerpPitch;
+
     public EntityHoverCraft(World par1World) {
         super(par1World);
         inv = new EmbeddedInventory(1);
         setSize(2.5f, 1f);
+        this.stepHeight = 1.0f;
     }
 
     public EntityHoverCraft(World par1World, double par2, double par4, double par6) {
@@ -54,8 +65,34 @@ public class EntityHoverCraft extends Entity implements IInventory, INetworkEnti
         this.prevPosX = par2;
         this.prevPosY = par4;
         this.prevPosZ = par6;
-        inv = new EmbeddedInventory(1);
     }
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void setPositionAndRotationDirect(double x, double y, double z, float yaw, float pitch,
+                                            int posRotationIncrements, boolean teleport) {
+
+        double dx = x - this.posX;
+        double dy = y - this.posY;
+        double dz = z - this.posZ;
+
+        // Snap only for large real teleports
+        if (teleport && (dx*dx + dy*dy + dz*dz) > (16.0 * 16.0)) {
+            this.setPosition(x, y, z);
+            this.rotationYaw = this.prevRotationYaw = yaw;
+            this.rotationPitch = this.prevRotationPitch = pitch;
+            this.lerpSteps = 0;
+            return;
+        }
+
+        this.lerpX = x;
+        this.lerpY = y;
+        this.lerpZ = z;
+        this.lerpYaw = yaw;
+        this.lerpPitch = pitch;
+        this.lerpSteps = Math.max(posRotationIncrements, 3);
+    }
+
+
 
     @Override
     public double getYOffset() {
@@ -147,54 +184,152 @@ public class EntityHoverCraft extends Entity implements IInventory, INetworkEnti
     public void setInventorySlotContents(int slot, @Nonnull ItemStack itemstack) {
         inv.setInventorySlotContents(slot, itemstack);
     }
-
-    public void onTurnRight(boolean state) {
-        turningRight = state;
-        PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.TURNUPDATE.ordinal()));
+    @Override
+    public Entity getControllingPassenger() {
+        return this.getPassengers().isEmpty() ? null : this.getPassengers().get(0);
     }
 
-    public void onTurnLeft(boolean state) {
-        turningLeft = state;
-        PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.TURNUPDATE.ordinal()));
+    @Override
+    public boolean canPassengerSteer() {
+        return getControllingPassenger() instanceof EntityPlayer;
     }
 
     public void onUp(boolean state) {
+        if (turningUp == state) return;
         turningUp = state;
-        PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.TURNUPDATE.ordinal()));
+        PacketHandler.sendToServer(new PacketEntity(this, (byte) PacketType.TURNUPDATE.ordinal()));
     }
 
     public void onDown(boolean state) {
+        if (turningDownforWhat == state) return;
         turningDownforWhat = state;
-        PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.TURNUPDATE.ordinal()));
+        PacketHandler.sendToServer(new PacketEntity(this, (byte) PacketType.TURNUPDATE.ordinal()));
     }
+
 
     @Override
     public void onUpdate() {
         super.onUpdate();
 
-        if (this.getPassengers().isEmpty())
-            this.turningDownforWhat = true;
+        if (world.isRemote) {
+            if (isLocallyControlled()) {
+                // Apply small server correction first (prevents drift/jitter)
+                clientLerpDriverCorrection();
+                Entity ctrl = getControllingPassenger();
+                if (ctrl instanceof EntityPlayer) {
+                    tickPhysics((EntityPlayer) ctrl);
+                }
+            } else {
+                clientLerp();
+            }
+            return;
+        }
 
-        this.rotationYaw += (turningRight ? 5 : 0) - (turningLeft ? 5 : 0);
-        double acc = this.getPassengerMovingForward() * MAX_ACCELERATION;
-        //RCS mode, steer like boat
-        float yawAngle = (float) (this.rotationYaw * Math.PI / 180f);
-        this.motionX += acc * MathHelper.sin(-yawAngle);
+        // server authoritative
+        Entity ctrl = getControllingPassenger();
+        if (ctrl instanceof EntityPlayer) {
+            tickPhysics((EntityPlayer) ctrl);
+            if (Math.abs(motionX) + Math.abs(motionY) + Math.abs(motionZ) > 1e-5) {
+                this.velocityChanged = true;
+            }
+        } else {
+            // bleed off motion & still move so state is consistent
+            this.motionX *= 0.8;
+            this.motionY *= 0.8;
+            this.motionZ *= 0.8;
+            this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
+            if (Math.abs(motionX) + Math.abs(motionY) + Math.abs(motionZ) > 1e-5) {
+                this.velocityChanged = true;
+            }
+        }
+    }
+
+    @SideOnly(Side.CLIENT)
+    private void clientLerpDriverCorrection() {
+        if (lerpSteps > 0) {
+            double dx = lerpX - posX;
+            double dy = lerpY - posY;
+            double dz = lerpZ - posZ;
+
+            if (dx*dx + dy*dy + dz*dz < 1e-4) {
+                lerpSteps = 0;
+                return;
+            }
+
+            this.setPosition(posX + dx * 0.2, posY + dy * 0.2, posZ + dz * 0.2);
+
+            float dyaw = MathHelper.wrapDegrees(lerpYaw - rotationYaw);
+            this.rotationYaw += dyaw * 0.2f;
+            this.rotationYaw = MathHelper.wrapDegrees(this.rotationYaw);
+
+            this.rotationPitch += (lerpPitch - rotationPitch) * 0.2f;
+        }
+    }
+
+    @SideOnly(Side.CLIENT)
+    private boolean isLocallyControlled() {
+        Entity ctrl = getControllingPassenger();
+        if (!(ctrl instanceof EntityPlayer)) return false;
+        return net.minecraft.client.Minecraft.getMinecraft().player == ctrl;
+    }
+
+    @SideOnly(Side.CLIENT)
+    private void clientLerp() {
+        if (lerpSteps > 0) {
+            double nx = posX + (lerpX - posX) / lerpSteps;
+            double ny = posY + (lerpY - posY) / lerpSteps;
+            double nz = posZ + (lerpZ - posZ) / lerpSteps;
+
+            float dyaw = MathHelper.wrapDegrees(lerpYaw - rotationYaw);
+            rotationYaw += dyaw / lerpSteps;
+            rotationYaw = MathHelper.wrapDegrees(rotationYaw);
+
+            rotationPitch += (lerpPitch - rotationPitch) / lerpSteps;
+
+            lerpSteps--;
+            setPosition(nx, ny, nz);
+        }
+    }
+
+
+    private void tickPhysics(EntityPlayer rider) {
+        // Boat-like turning + throttle
+        float forward = MathHelper.clamp(rider.moveForward, -1f, 1f);    // W/S
+        float strafe  = MathHelper.clamp(rider.moveStrafing, -1f, 1f);   // A/D
+
+        this.rotationYaw += strafe * 4.0f; // turn rate tweak
+        this.rotationYaw = MathHelper.wrapDegrees(this.rotationYaw); // keep in -180..180 range
+
+        double acc = forward * MAX_ACCELERATION;
+        float yawRad = (float) Math.toRadians(this.rotationYaw);
+
+        this.motionX += (-acc) * MathHelper.sin(yawRad);
+        this.motionZ += ( acc) * MathHelper.cos(yawRad);
+
+        // vertical: keep your packet booleans if you want
         this.motionY += (turningUp ? MAX_ACCELERATION : 0) - (turningDownforWhat ? MAX_ACCELERATION : 0);
-        this.motionZ += acc * MathHelper.cos(-yawAngle);
+
+        // drag
         this.motionX *= 0.9;
         this.motionY *= 0.9;
         this.motionZ *= 0.9;
 
-        if (this.getPosition().getY() > MAX_HEIGHT * 1.1)
-            this.motionY = 0;
-        else if (this.getPosition().getY() > MAX_HEIGHT)
-            this.motionY *= 0.1;
-        if (this.getRidingEntity() != null)
-            this.getRidingEntity().fallDistance = 0;
-        this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
+        // clamps
+        double h = Math.sqrt(this.motionX * this.motionX + this.motionZ * this.motionZ);
+        if (h > HORIZONTAL_VMAX) {
+            double s = HORIZONTAL_VMAX / h;
+            this.motionX *= s;
+            this.motionZ *= s;
+        }
+        this.motionY = MathHelper.clamp(this.motionY, -VERTICAL_VMAX, VERTICAL_VMAX);
 
+        // height cap
+        if (this.posY > MAX_HEIGHT * 1.1) this.motionY = 0;
+        else if (this.posY > MAX_HEIGHT) this.motionY *= 0.1;
+
+        this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
     }
+
 
     public float getPassengerMovingForward() {
 
@@ -207,37 +342,31 @@ public class EntityHoverCraft extends Entity implements IInventory, INetworkEnti
     }
 
     @Override
-    public void readDataFromNetwork(ByteBuf in, byte packetId,
-                                    NBTTagCompound nbt) {
+    public void readDataFromNetwork(ByteBuf in, byte packetId, NBTTagCompound nbt) {
         if (packetId == PacketType.TURNUPDATE.ordinal()) {
-            nbt.setBoolean("left", in.readBoolean());
-            nbt.setBoolean("right", in.readBoolean());
             nbt.setBoolean("up", in.readBoolean());
             nbt.setBoolean("down", in.readBoolean());
         }
     }
 
+
     @Override
     public void writeDataToNetwork(ByteBuf out, byte id) {
         if (id == PacketType.TURNUPDATE.ordinal()) {
-            out.writeBoolean(turningLeft);
-            out.writeBoolean(turningRight);
             out.writeBoolean(turningUp);
             out.writeBoolean(turningDownforWhat);
         }
     }
 
-    @Override
-    public void useNetworkData(EntityPlayer player, Side side, byte id,
-                               NBTTagCompound nbt) {
 
+    @Override
+    public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (id == PacketType.TURNUPDATE.ordinal()) {
-            this.turningLeft = nbt.getBoolean("left");
-            this.turningRight = nbt.getBoolean("right");
             this.turningUp = nbt.getBoolean("up");
             this.turningDownforWhat = nbt.getBoolean("down");
         }
     }
+
 
     @Override
     public boolean isEmpty() {
