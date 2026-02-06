@@ -359,7 +359,7 @@ public class AdvancedRocketry {
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARPlanetUIButton"), EntityUIButton.class, "ARPlanetUIButton", 6, this, 64, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARStarUIButton"), EntityUIStar.class, "ARStarUIButton", 7, this, 64, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARSpaceElevatorCapsule"), EntityElevatorCapsule.class, "ARSpaceElevatorCapsule", 8, this, 64, 20, true);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", 9, this, 64, 3, true);
+        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", 9, this, 64, 1, true);
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
