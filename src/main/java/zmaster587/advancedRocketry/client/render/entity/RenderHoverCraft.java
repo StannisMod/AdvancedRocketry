@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.entity.Render;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.MathHelper;
 import net.minecraftforge.fml.client.registry.IRenderFactory;
 import org.lwjgl.opengl.GL11;
 import zmaster587.advancedRocketry.backwardCompat.ModelFormatException;
@@ -55,12 +56,17 @@ public class RenderHoverCraft extends Render<EntityHoverCraft> implements IRende
 
     @Override
     public void doRender(EntityHoverCraft entity, double x, double y, double z,
-                         float entityYaw, float partialTicks) {
-
+                        float entityYaw, float partialTicks) {
 
         GL11.glPushMatrix();
         GL11.glTranslated(x, y + 1, z);
-        GL11.glRotated(180 - entityYaw, 0, 1, 0);
+
+        // Wrapped yaw interpolation (prevents 179 -> -179 spin)
+        float yaw = entity.prevRotationYaw
+                + MathHelper.wrapDegrees(entity.rotationYaw - entity.prevRotationYaw) * partialTicks;
+
+        GL11.glRotated(180.0f - yaw, 0, 1, 0);
+
         bindTexture(hovercraftTexture);
         hoverCraft.renderAll();
 
