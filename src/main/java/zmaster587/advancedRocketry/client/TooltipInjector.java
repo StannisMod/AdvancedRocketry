@@ -181,6 +181,8 @@ public final class TooltipInjector {
         KEY_BY_ID.put("advancedrocketry:sawblade",        "tooltip.advancedrocketry.sawblade");
         KEY_BY_ID.put("advancedrocketry:vacuumlaser", "tooltip.advancedrocketry.vacuumlaser");
         
+        KEY_BY_ID.put("advancedrocketry:hovercraft", "tooltip.advancedrocketry.hovercraft");
+
         // ---- Pump ----
         KEY_BY_ID.put("advancedrocketry:blockpump", "tooltip.advancedrocketry.pump");
 
