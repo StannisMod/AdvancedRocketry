@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.world;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.*;
+import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -12,22 +13,20 @@ import javax.annotation.Nullable;
 public class CustomDerivedWorldInfo extends WorldInfo {
 
     private final WorldInfo delegate;
-    private World world;
-    private WorldInfoSavedData saveHandler;
+    private final WorldInfoSavedData saveHandler;
 
-    public CustomDerivedWorldInfo(WorldInfo worldInfoIn) {
-        this.delegate = worldInfoIn;
-    }
+    public CustomDerivedWorldInfo(World world) {
+        this.delegate = world.getWorldInfo();
 
-    public void setWorld(World world) {
-        this.world = world;
-    }
-
-    private WorldInfoSavedData getSaveHandler() {
+        MapStorage worldStorage = world.getPerWorldStorage();
+        WorldInfoSavedData saveHandler = (WorldInfoSavedData) worldStorage.getOrLoadData(WorldInfoSavedData.class, WorldInfoSavedData.NAME);
         if (saveHandler == null) {
-            saveHandler = (WorldInfoSavedData) world.getPerWorldStorage().getOrLoadData(WorldInfoSavedData.class, "WorldInfoSavedData");
+            this.saveHandler = new WorldInfoSavedData(this);
+            worldStorage.setData(WorldInfoSavedData.NAME, this.saveHandler);
+        } else {
+            this.saveHandler = saveHandler;
+            this.saveHandler.updateWorldInfo(this);
         }
-        return saveHandler;
     }
 
     public NBTTagCompound cloneNBTCompound(@Nullable NBTTagCompound nbt) {
@@ -177,39 +176,34 @@ public class CustomDerivedWorldInfo extends WorldInfo {
     @Override
     public void setCleanWeatherTime(int cleanWeatherTimeIn) {
         super.setCleanWeatherTime(cleanWeatherTimeIn);
-        this.getSaveHandler().markDirty();
+        saveHandler.markDirty();
     }
 
     @Override
     public void setRainTime(int time) {
         super.setRainTime(time);
-        this.getSaveHandler().markDirty();
+        saveHandler.markDirty();
     }
 
     @Override
     public void setThunderTime(int time) {
         super.setThunderTime(time);
-        this.getSaveHandler().markDirty();
+        saveHandler.markDirty();
     }
 
     @Override
     public void setRaining(boolean isRaining) {
         super.setRaining(isRaining);
-        this.getSaveHandler().markDirty();
+        saveHandler.markDirty();
     }
 
     @Override
     public void setThundering(boolean thunderingIn) {
         super.setThundering(thunderingIn);
-        this.getSaveHandler().markDirty();
+        saveHandler.markDirty();
     }
 
-    public NBTTagCompound addWeatherData(NBTTagCompound compound) {
-        compound.setInteger("clearWeatherTime", getCleanWeatherTime());
-        compound.setInteger("rainTime", getRainTime());
-        compound.setInteger("thunderTime", getThunderTime());
-        compound.setBoolean("raining", isRaining());
-        compound.setBoolean("thundering", isThundering());
-        return compound;
+    public void injectWeatherData(WorldInfo targetInfo) {
+        saveHandler.updateWorldInfo(targetInfo);
     }
 }
