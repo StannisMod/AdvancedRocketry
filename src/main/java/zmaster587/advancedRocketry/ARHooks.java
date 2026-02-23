@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.command.*;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.integrated.IntegratedServer;
@@ -72,7 +73,7 @@ public class ARHooks {
     public static void loadAllWorlds(MinecraftServer server, String saveName, String worldNameIn, long seed, WorldType type, String generatorOptions) {
         server.convertMapIfNeeded(saveName);
         server.setUserMessage("menu.loadingLevel");
-        ISaveHandler isavehandler = server.anvilConverterForAnvilFile.getSaveLoader(saveName, true);
+        ISaveHandler isavehandler = server.getActiveAnvilConverter().getSaveLoader(saveName, true);
         server.setResourcePackFromWorld(server.getFolderName(), isavehandler);
         WorldInfo worldinfo = isavehandler.loadWorldInfo();
         WorldSettings worldsettings;
@@ -107,7 +108,7 @@ public class ARHooks {
             net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(new net.minecraftforge.event.world.WorldEvent.Load(world));
         }
 
-        server.playerList.setPlayerManager(new WorldServer[]{overWorld});
+        server.getPlayerList().setPlayerManager(new WorldServer[]{overWorld});
         server.setDifficultyForAllWorlds(server.getDifficulty());
         server.initialWorldChunkLoad();
     }
@@ -141,7 +142,7 @@ public class ARHooks {
         server.getPlayerList().setPlayerManager(new WorldServer[]{overWorld});
 
         if (overWorld.getWorldInfo().getDifficulty() == null) {
-            server.setDifficultyForAllWorlds(server.mc.gameSettings.difficulty);
+            server.setDifficultyForAllWorlds(Minecraft.getMinecraft().gameSettings.difficulty);
         }
 
         server.initialWorldChunkLoad();
