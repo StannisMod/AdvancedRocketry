@@ -1176,6 +1176,12 @@ public class AdvancedRocketry {
     }
 
     @EventHandler
+    public void serverAboutToStart(FMLServerAboutToStartEvent event) {
+        // Populate dimension properties before worlds get loaded
+        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
+    }
+
+    @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new WorldCommand());
 
@@ -1274,8 +1280,6 @@ public class AdvancedRocketry {
             }
         }
         //End open and load ore files
-
-        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
     }
 
 
