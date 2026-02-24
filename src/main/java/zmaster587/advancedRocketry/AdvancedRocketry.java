@@ -76,6 +76,7 @@ import zmaster587.advancedRocketry.event.CableTickHandler;
 import zmaster587.advancedRocketry.event.EntityEventHandler;
 import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.event.WorldEvents;
+import zmaster587.advancedRocketry.event.WorldInfoHandler;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
 import zmaster587.advancedRocketry.item.*;
@@ -1117,6 +1118,8 @@ public class AdvancedRocketry {
 
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
+        // Async weather info injection
+        MinecraftForge.EVENT_BUS.register(new WorldInfoHandler());
 
         CableTickHandler cable = new CableTickHandler();
         MinecraftForge.EVENT_BUS.register(cable);
