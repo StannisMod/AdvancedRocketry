@@ -9,9 +9,6 @@
     "credits": "${mod_credits}",
     "url": "${mod_url}",
     "updateJSON": "${mod_update_json}",
-    "logoFile": "${mod_logo_path}",
-    "useDependencyInformation": true,
-    "requiredMods": ["${required_mods}"],
-    "dependencies": ["${mod_dependencies}"]
+    "logoFile": "${mod_logo_path}"
   }
 ]

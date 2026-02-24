@@ -298,6 +298,17 @@ enchantment.advancedrocketry.spacebreathing.desc=Allows the piece of armor to fo
 
 machine.tooltip.smallplatepress=Requires obsidian two blocks below to function
 
+# Commands
+commands.advancedrocketry.notnumeric=%s is not a numeric id
+commands.advancedrocketry.invaliddest=%s %s does not exist!
+
+commands.advancedrocketry.goto.usage=Use /advancedrocketry goto help for more information on goto subcommands.
+commands.advancedrocketry.goto.dimension.usage=goto dimension <dimId> - teleports the player to the supplied dimension
+commands.advancedrocketry.goto.station.usage=goto station <station ID> - teleports the player to the supplied station
+
+commands.advancedrocketry.weather.usage=/advancedrocketry weather <clear|rain|thunder> [duration in seconds]
+commands.advancedrocketry.weather.invalid=Current dimension (%s) is not an Advanced Rocketry planet!
+
 msg.crystalliser.gravityTooHigh=Gravity is not low enough!
 msg.observetory.scan.tooltip=Scans for new asteroids, consumes 100 distance data
 msg.observetory.scan.button=Scan!

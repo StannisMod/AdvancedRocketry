@@ -48,6 +48,7 @@ import net.minecraftforge.oredict.OreDictionary;
 import net.minecraftforge.oredict.OreDictionary.OreRegisterEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import zmaster587.advancedRocketry.advancedrocketry.Tags;
 import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.capability.CapabilitySpaceArmor;
@@ -64,6 +65,7 @@ import zmaster587.advancedRocketry.block.plant.BlockLightwoodPlanks;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodWood;
 import zmaster587.advancedRocketry.capability.CapabilityProtectiveArmor;
+import zmaster587.advancedRocketry.command.ARCommand;
 import zmaster587.advancedRocketry.command.WorldCommand;
 import zmaster587.advancedRocketry.common.CommonProxy;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
@@ -154,7 +156,7 @@ import java.util.*;
 import java.util.Map.Entry;
 
 
-@Mod(modid = "advancedrocketry")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = Constants.DEPENDENCIES)
 public class AdvancedRocketry {
 
     public static final RecipeHandler machineRecipes = new RecipeHandler();
@@ -1187,6 +1189,7 @@ public class AdvancedRocketry {
     @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new WorldCommand());
+        event.registerServerCommand(new ARCommand());
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();

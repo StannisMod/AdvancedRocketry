@@ -172,8 +172,6 @@ processResources {
     inputs.property 'mod_url', propertyString('mod_url')
     inputs.property 'mod_update_json', propertyString('mod_update_json')
     inputs.property 'mod_logo_path', propertyString('mod_logo_path')
-    inputs.property 'required_mods', propertyString('required_mods')
-    inputs.property 'mod_dependencies', propertyString('mod_dependencies')
     inputs.property 'mixin_refmap', propertyString('mixin_refmap')
     inputs.property 'mixin_package', propertyString('mixin_package')
     inputs.property 'mixin_configs', propertyStringList('mixin_configs').join(' ')
@@ -192,8 +190,6 @@ processResources {
                 'mod_url': propertyString('mod_url'),
                 'mod_update_json': propertyString('mod_update_json'),
                 'mod_logo_path': propertyString('mod_logo_path'),
-                'required_mods': propertyString('required_mods'),
-                'mod_dependencies': propertyString('mod_dependencies'),
                 'mixin_refmap': propertyString('mixin_refmap'),
                 'mixin_package': propertyString('mixin_package')
         )

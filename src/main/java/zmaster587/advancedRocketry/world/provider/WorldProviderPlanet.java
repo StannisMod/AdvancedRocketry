@@ -39,7 +39,6 @@ import javax.annotation.Nullable;
 import java.util.Set;
 
 public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProvider {
-    private boolean worldInfoSet = false;
 
 /*@Override
 	protected void registerWorldChunkManager() {

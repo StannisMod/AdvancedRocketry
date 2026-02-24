@@ -956,6 +956,12 @@ public class WorldCommand implements ICommand {
         }
     }
 
+    private void commandWeatherSet(ICommandSender sender, String[] args) {
+        if (args.length > 1) {
+
+        }
+    }
+
     @Override
     @ParametersAreNonnullByDefault
     public void execute(MinecraftServer server, ICommandSender sender, String[] string) {

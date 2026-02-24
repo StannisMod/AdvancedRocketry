@@ -1,14 +1,32 @@
 package zmaster587.advancedRocketry.event;
 
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+import net.minecraft.command.CommandWeather;
+import net.minecraft.command.ICommand;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 import net.minecraft.world.storage.DerivedWorldInfo;
 import net.minecraft.world.storage.WorldInfo;
+import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import zmaster587.advancedRocketry.AdvancedRocketry;
+import zmaster587.advancedRocketry.advancedrocketry.Tags;
+import zmaster587.advancedRocketry.command.sub.weather.WeatherCommand;
 import zmaster587.advancedRocketry.world.CustomDerivedWorldInfo;
 import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
 
+import java.util.HashMap;
+import java.util.Set;
+import java.util.StringJoiner;
+
 public class WorldInfoHandler {
+    private final Set<Class<? extends ICommand>> commandRedirects = new ReferenceOpenHashSet<>();
+
+    public WorldInfoHandler() {
+        commandRedirects.add(CommandWeather.class);
+    }
+
     @SubscribeEvent
     public void injectCustomWorldInfo(WorldEvent.Load event) {
         World world = event.getWorld();
@@ -25,5 +43,29 @@ public class WorldInfoHandler {
             // Inject the raw properties into the world info
             customInfo.injectWeatherData(existingInfo);
         }
+    }
+
+    @SubscribeEvent
+    public void redirectCommand(CommandEvent event) {
+        MinecraftServer server = event.getSender().getServer();
+        if (server == null) return;
+
+        Class<? extends ICommand> commandType = event.getCommand().getClass();
+        if (!commandRedirects.contains(commandType)
+                || !(event.getSender().getEntityWorld().provider instanceof WorldProviderPlanet)) {
+            return;
+        }
+
+        String command = event.getCommand().getName();
+        StringJoiner joiner = new StringJoiner(" ");
+        joiner.add(Tags.MOD_ID + "_n").add(command);
+        for (String param : event.getParameters()) {
+            joiner.add(param);
+        }
+        String newCommand = joiner.toString();
+
+        AdvancedRocketry.logger.debug("Redirecting command '/{}' to AR variant '/{}'", command, newCommand);
+        event.setCanceled(true);
+        server.getCommandManager().executeCommand(event.getSender(), newCommand);
     }
 }
