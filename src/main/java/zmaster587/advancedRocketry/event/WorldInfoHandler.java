@@ -12,11 +12,9 @@ import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.advancedrocketry.Tags;
-import zmaster587.advancedRocketry.command.sub.weather.WeatherCommand;
 import zmaster587.advancedRocketry.world.CustomDerivedWorldInfo;
 import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
 
-import java.util.HashMap;
 import java.util.Set;
 import java.util.StringJoiner;
 

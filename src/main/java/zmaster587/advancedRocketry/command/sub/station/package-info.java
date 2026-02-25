@@ -1,6 +1,6 @@
 @ParametersAreNonnullByDefault
 @MethodsReturnNonnullByDefault
-package zmaster587.advancedRocketry.command.sub.weather;
+package zmaster587.advancedRocketry.command.sub.station;
 
 import mcp.MethodsReturnNonnullByDefault;
 

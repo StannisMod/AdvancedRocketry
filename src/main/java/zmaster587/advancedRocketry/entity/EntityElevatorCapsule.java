@@ -17,6 +17,7 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.util.ITeleporter;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.AdvancedRocketry;
@@ -27,7 +28,7 @@ import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.tile.multiblock.TileSpaceElevator;
 import zmaster587.advancedRocketry.util.DimensionBlockPosition;
 import zmaster587.advancedRocketry.util.TransitionEntity;
-import zmaster587.advancedRocketry.world.util.TeleporterNoPortal;
+import zmaster587.advancedRocketry.world.util.BasicTeleporter;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.interfaces.INetworkEntity;
 import zmaster587.libVulpes.network.PacketEntity;
@@ -183,7 +184,7 @@ public class EntityElevatorCapsule extends Entity implements INetworkEntity {
             WorldServer worldserver1 = minecraftserver.getWorld(dimensionIn);
             this.setPosition(posX, y, posZ);
 
-            Teleporter teleporter = new TeleporterNoPortal(worldserver1);
+            ITeleporter teleporter = new BasicTeleporter(getPosition());
             Entity entity = changeDimension(dimensionIn, teleporter);
 
             if (entity == null)

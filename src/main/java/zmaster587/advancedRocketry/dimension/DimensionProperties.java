@@ -40,12 +40,19 @@ import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.VulpineMath;
 import zmaster587.libVulpes.util.ZUtils;
 
+import javax.annotation.Nullable;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 
 public class DimensionProperties implements Cloneable, IDimensionProperties {
 
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
     /**
      * Contains default graphic {@link ResourceLocation} to display for different planet types
      */
@@ -57,6 +64,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final ResourceLocation planetRingShadow = new ResourceLocation("advancedrocketry:textures/planets/ringShadow.png");
     public static final ResourceLocation shadow = new ResourceLocation("advancedrocketry:textures/planets/shadow.png");
     public static final ResourceLocation shadow3 = new ResourceLocation("advancedrocketry:textures/planets/shadow3.png");
+
     public static final int MAX_ATM_PRESSURE = 1600;
     public static final int MIN_ATM_PRESSURE = 0;
     public static final int MAX_DISTANCE = Integer.MAX_VALUE;
@@ -65,6 +73,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final int MIN_GRAVITY = 0;
     public static final int WEATHER_START_LENGTH = 168000;
     public static final int WEATHER_PROLONGATION_LENGTH = 12000;
+
     //True if dimension is managed and created by AR (false otherwise)
     public boolean isNativeDimension;
     public boolean skyRenderOverride;
@@ -2439,6 +2448,62 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         public ResourceLocation getResourceLEO() {
             return resourceLEO;
+        }
+    }
+
+    /**
+     * Used to get/set properties by command.
+     */
+    public static class PropLookup {
+        private final DimensionProperties props;
+
+        public PropLookup(DimensionProperties props) {
+            this.props = props;
+        }
+
+        @Nullable
+        public MethodHandle getPropertyGetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectGetter(field.get());
+        }
+
+        @Nullable
+        public MethodHandle getPropertySetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectSetter(field.get());
+        }
+
+        public static List<String> getPropertyNames(boolean fromSet) {
+            return Arrays.stream(DimensionProperties.class.getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> {
+                        // Only primitives or Strings (and array variants) can be set by command
+                        if (fromSet) {
+                            Class<?> type = f.getType();
+                            if (type.isArray()) {
+                                type = type.getComponentType();
+                            }
+                            return type.isPrimitive() || type.equals(String.class);
+                        }
+                        return true;
+                    })
+                    .map(Field::getName)
+                    .collect(Collectors.toList());
         }
     }
 }

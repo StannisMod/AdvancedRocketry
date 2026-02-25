@@ -1,7 +1,6 @@
-package zmaster587.advancedRocketry.command.sub.weather;
+package zmaster587.advancedRocketry.command.sub.redirect;
 
 import com.google.common.base.Preconditions;
-import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
@@ -9,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.storage.WorldInfo;
+import zmaster587.advancedRocketry.command.sub.ARCommand;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
 
@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
-public class WeatherCommand extends CommandBase {
+public class WeatherCommand extends ARCommand {
     @Override
     public String getName() {
         return "weather";
@@ -72,10 +72,10 @@ public class WeatherCommand extends CommandBase {
                 worldinfo.setThunderTime(i);
                 worldinfo.setRaining(true);
                 worldinfo.setThundering(false);
-                notifyCommandListener(sender, this, "commands.weather.rain", new Object[0]);
+                notifyCommandListener(sender, this, "commands.weather.rain");
             } else {
                 if (!"thunder".equalsIgnoreCase(args[0])) {
-                    throw new WrongUsageException("commands.weather.usage", new Object[0]);
+                    throw new WrongUsageException("commands.weather.usage");
                 }
                 // Check if thunder is allowed
                 if (props.getThunderMarker() == -1) {
@@ -88,14 +88,17 @@ public class WeatherCommand extends CommandBase {
                 worldinfo.setThunderTime(i);
                 worldinfo.setRaining(true);
                 worldinfo.setThundering(true);
-                notifyCommandListener(sender, this, "commands.weather.thunder", new Object[0]);
+                notifyCommandListener(sender, this, "commands.weather.thunder");
             }
         } else {
-            throw new WrongUsageException("commands.weather.usage", new Object[0]);
+            throw new WrongUsageException("commands.weather.usage");
         }
     }
 
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
-        return args.length == 1 ? getListOfStringsMatchingLastWord(args, "clear", "rain", "thunder") : Collections.emptyList();
+        if (args.length == 1) {
+            return getListOfStringsMatchingLastWord(args, "clear", "rain", "thunder");
+        }
+        return Collections.emptyList();
     }
 }

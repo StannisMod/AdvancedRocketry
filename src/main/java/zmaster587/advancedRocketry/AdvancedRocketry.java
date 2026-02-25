@@ -65,8 +65,7 @@ import zmaster587.advancedRocketry.block.plant.BlockLightwoodPlanks;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodWood;
 import zmaster587.advancedRocketry.capability.CapabilityProtectiveArmor;
-import zmaster587.advancedRocketry.command.ARCommand;
-import zmaster587.advancedRocketry.command.WorldCommand;
+import zmaster587.advancedRocketry.command.ARCommandRoot;
 import zmaster587.advancedRocketry.common.CommonProxy;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
@@ -141,7 +140,6 @@ import zmaster587.libVulpes.tile.TileMaterial;
 import zmaster587.libVulpes.tile.energy.TilePlugBase;
 import zmaster587.libVulpes.tile.multiblock.TileMultiBlock;
 import zmaster587.libVulpes.tile.multiblock.hatch.TileFluidHatch;
-import zmaster587.libVulpes.tile.multiblock.hatch.TileInventoryHatch;
 import zmaster587.libVulpes.util.FluidUtils;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.InputSyncHandler;
@@ -1188,8 +1186,7 @@ public class AdvancedRocketry {
 
     @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
-        event.registerServerCommand(new WorldCommand());
-        event.registerServerCommand(new ARCommand());
+        event.registerServerCommand(new ARCommandRoot());
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();

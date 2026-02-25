@@ -1,23 +1,24 @@
-package zmaster587.advancedRocketry.command.sub.teleport;
+package zmaster587.advancedRocketry.command.sub.station;
 
 import net.minecraft.command.ICommandSender;
 import net.minecraftforge.server.command.CommandTreeBase;
 import net.minecraftforge.server.command.CommandTreeHelp;
 
-public class GoToCommand extends CommandTreeBase {
-    public GoToCommand() {
-        addSubcommand(new GoToDimensionCommand());
-        addSubcommand(new GoToStationCommand());
+public class StationCommand extends CommandTreeBase {
+    public StationCommand() {
+        addSubcommand(new CreateStationCommand());
+        addSubcommand(new GiveStationCommand());
+
         addSubcommand(new CommandTreeHelp(this));
     }
 
     @Override
     public String getName() {
-        return "goto";
+        return "station";
     }
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "commands.advancedrocketry.goto.usage";
+        return "commands.advancedrocketry.station.usage";
     }
 }
