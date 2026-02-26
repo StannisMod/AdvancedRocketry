@@ -48,6 +48,7 @@ import net.minecraftforge.oredict.OreDictionary;
 import net.minecraftforge.oredict.OreDictionary.OreRegisterEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import zmaster587.advancedRocketry.advancedrocketry.Tags;
 import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.capability.CapabilitySpaceArmor;
@@ -64,7 +65,7 @@ import zmaster587.advancedRocketry.block.plant.BlockLightwoodPlanks;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodWood;
 import zmaster587.advancedRocketry.capability.CapabilityProtectiveArmor;
-import zmaster587.advancedRocketry.command.WorldCommand;
+import zmaster587.advancedRocketry.command.ARCommandRoot;
 import zmaster587.advancedRocketry.common.CommonProxy;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
@@ -76,6 +77,7 @@ import zmaster587.advancedRocketry.event.CableTickHandler;
 import zmaster587.advancedRocketry.event.EntityEventHandler;
 import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.event.WorldEvents;
+import zmaster587.advancedRocketry.event.WorldInfoHandler;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
 import zmaster587.advancedRocketry.item.*;
@@ -138,7 +140,6 @@ import zmaster587.libVulpes.tile.TileMaterial;
 import zmaster587.libVulpes.tile.energy.TilePlugBase;
 import zmaster587.libVulpes.tile.multiblock.TileMultiBlock;
 import zmaster587.libVulpes.tile.multiblock.hatch.TileFluidHatch;
-import zmaster587.libVulpes.tile.multiblock.hatch.TileInventoryHatch;
 import zmaster587.libVulpes.util.FluidUtils;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.InputSyncHandler;
@@ -153,7 +154,7 @@ import java.util.*;
 import java.util.Map.Entry;
 
 
-@Mod(modid = "advancedrocketry")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = Constants.DEPENDENCIES)
 public class AdvancedRocketry {
 
     public static final RecipeHandler machineRecipes = new RecipeHandler();
@@ -1117,6 +1118,8 @@ public class AdvancedRocketry {
 
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
+        // Async weather info injection
+        MinecraftForge.EVENT_BUS.register(new WorldInfoHandler());
 
         CableTickHandler cable = new CableTickHandler();
         MinecraftForge.EVENT_BUS.register(cable);
@@ -1176,8 +1179,14 @@ public class AdvancedRocketry {
     }
 
     @EventHandler
+    public void serverAboutToStart(FMLServerAboutToStartEvent event) {
+        // Populate dimension properties before worlds get loaded
+        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
+    }
+
+    @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
-        event.registerServerCommand(new WorldCommand());
+        event.registerServerCommand(new ARCommandRoot());
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();
@@ -1274,8 +1283,6 @@ public class AdvancedRocketry {
             }
         }
         //End open and load ore files
-
-        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
     }
 
 

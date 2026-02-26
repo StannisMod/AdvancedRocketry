@@ -40,8 +40,7 @@ import java.util.Set;
 
 public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProvider {
 
-
-	/*@Override
+/*@Override
 	protected void registerWorldChunkManager() {
 		//this.worldChunkMgr = new WorldChunkManagerHell(BiomeGenBase.extremeHills, 0.0f);
 		this.worldChunkMgr = new ChunkManagerPlanet(getSeed(), planetWorldType);
@@ -115,6 +114,10 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
     @Override
     public void updateWeather() {
         DimensionProperties props = getDimensionProperties();
+        if (!props.usesCustomWorldInfo()) {
+            super.updateWeather();
+            return;
+        }
 
         // Totally override weather cycle
         if (world.provider.hasSkyLight()) {
@@ -122,6 +125,7 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                 boolean flag = world.getGameRules().getBoolean("doWeatherCycle");
 
                 if (flag) {
+                    // No rain or thunder
                     if (props.getRainMarker() == -1 && props.getThunderMarker() == -1) {
                         world.getWorldInfo().setRaining(false);
                         world.getWorldInfo().setRainTime(0);
@@ -148,10 +152,10 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                     }
 
                     // Clamp to avoid IllegalArgumentException in Random#nextInt(0 or negative)
-                    final int thunderProlong = props.thunderProlongationLength > 0 ? props.thunderProlongationLength : 12000;
-                    final int thunderStart   = props.thunderStartLength > 0 ? props.thunderStartLength : 168000;
-                    final int rainProlong    = props.rainProlongationLength > 0 ? props.rainProlongationLength : 12000;
-                    final int rainStart      = props.rainStartLength > 0 ? props.rainStartLength : 168000;
+                    final int thunderProlong = props.getThunderProlongationLength() > 0 ? props.getThunderProlongationLength() : 12000;
+                    final int thunderStart   = props.getThunderStartLength() > 0 ? props.getThunderStartLength() : 168000;
+                    final int rainProlong    = props.getRainProlongationLength() > 0 ? props.getRainProlongationLength() : 12000;
+                    final int rainStart      = props.getRainStartLength() > 0 ? props.getRainStartLength() : 168000;
 
 
                     int k2 = world.getWorldInfo().getThunderTime();

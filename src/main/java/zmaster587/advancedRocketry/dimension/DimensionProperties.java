@@ -40,12 +40,19 @@ import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.VulpineMath;
 import zmaster587.libVulpes.util.ZUtils;
 
+import javax.annotation.Nullable;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 
 public class DimensionProperties implements Cloneable, IDimensionProperties {
 
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
     /**
      * Contains default graphic {@link ResourceLocation} to display for different planet types
      */
@@ -57,12 +64,16 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final ResourceLocation planetRingShadow = new ResourceLocation("advancedrocketry:textures/planets/ringShadow.png");
     public static final ResourceLocation shadow = new ResourceLocation("advancedrocketry:textures/planets/shadow.png");
     public static final ResourceLocation shadow3 = new ResourceLocation("advancedrocketry:textures/planets/shadow3.png");
+
     public static final int MAX_ATM_PRESSURE = 1600;
     public static final int MIN_ATM_PRESSURE = 0;
     public static final int MAX_DISTANCE = Integer.MAX_VALUE;
     public static final int MIN_DISTANCE = 1;
     public static final int MAX_GRAVITY = 400;
     public static final int MIN_GRAVITY = 0;
+    public static final int WEATHER_START_LENGTH = 168000;
+    public static final int WEATHER_PROLONGATION_LENGTH = 12000;
+
     //True if dimension is managed and created by AR (false otherwise)
     public boolean isNativeDimension;
     public boolean skyRenderOverride;
@@ -101,10 +112,11 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public List<ItemStack> requiredArtifacts;
 
     // Custom weather properties
-    public int rainStartLength = 168000;
-    public int thunderStartLength = 168000;
-    public int rainProlongationLength = 12000;
-    public int thunderProlongationLength = 12000;
+    private boolean customWorldInfo = false;
+    private int rainStartLength = WEATHER_START_LENGTH;
+    private int thunderStartLength = WEATHER_START_LENGTH;
+    private int rainProlongationLength = WEATHER_PROLONGATION_LENGTH;
+    private int thunderProlongationLength = WEATHER_PROLONGATION_LENGTH;
     private int rainMarker;  // -1 - never rain, 1 - always rain, 0 - regular weather
     private int thunderMarker;  // -1 - never thunder, 1 - always thunder, 0 - regular weather
 
@@ -220,22 +232,6 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         //dont need this here because the terraforming terminal will re-create it anyway
         //this.chunkMgrTerraformed = new ChunkManagerPlanet(net.minecraftforge.common.DimensionManager.getWorld(id), net.minecraftforge.common.DimensionManager.getWorld(getId()).getWorldInfo().getGeneratorOptions(), getTerraformedBiomes());
-    }
-
-    public int getRainMarker() {
-        return rainMarker;
-    }
-
-    public int getThunderMarker() {
-        return thunderMarker;
-    }
-
-    public void setRainMarker(int marker) {
-        this.rainMarker = marker;
-    }
-
-    public void setThunderMarker(int marker) {
-        this.thunderMarker = marker;
     }
 
     public void load_terraforming_helper(boolean reset) {
@@ -1630,27 +1626,27 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         // Custom weather info
         if (nbt.hasKey("rainStartLength", NBT.TAG_INT))
-            rainStartLength = nbt.getInteger("rainStartLength");
+            setRainStartLength(nbt.getInteger("rainStartLength"));
         if (nbt.hasKey("thunderStartLength", NBT.TAG_INT))
-            thunderStartLength = nbt.getInteger("thunderStartLength");
+            setThunderStartLength(nbt.getInteger("thunderStartLength"));
         if (nbt.hasKey("rainProlongationLength", NBT.TAG_INT))
-            rainProlongationLength = nbt.getInteger("rainProlongationLength");
+            setRainProlongationLength(nbt.getInteger("rainProlongationLength"));
         if (nbt.hasKey("thunderProlongationLength", NBT.TAG_INT))
-            thunderProlongationLength = nbt.getInteger("thunderProlongationLength");
+            setThunderProlongationLength(nbt.getInteger("thunderProlongationLength"));
 
         if (nbt.hasKey("rainMarker", NBT.TAG_INT))
-            rainMarker = nbt.getInteger("rainMarker");
+            setRainMarker(nbt.getInteger("rainMarker"));
         if (nbt.hasKey("thunderMarker", NBT.TAG_INT))
-            thunderMarker = nbt.getInteger("thunderMarker");
+            setThunderMarker(nbt.getInteger("thunderMarker"));
 
         // Sanity clamp
-        if (rainStartLength <= 0) rainStartLength = 168000;
-        if (thunderStartLength <= 0) thunderStartLength = 168000;
-        if (rainProlongationLength <= 0) rainProlongationLength = 12000;
-        if (thunderProlongationLength <= 0) thunderProlongationLength = 12000;
+        if (getRainStartLength() <= 0) setRainStartLength(WEATHER_START_LENGTH);
+        if (getThunderStartLength() <= 0) setThunderStartLength(WEATHER_START_LENGTH);
+        if (getRainProlongationLength() <= 0) setRainProlongationLength(WEATHER_PROLONGATION_LENGTH);
+        if (getThunderProlongationLength() <= 0) setThunderProlongationLength(WEATHER_PROLONGATION_LENGTH);
         // Clamp markers to documented range
-        rainMarker = MathHelper.clamp(rainMarker, -1, 1);
-        thunderMarker = MathHelper.clamp(thunderMarker, -1, 1);
+        setRainMarker(MathHelper.clamp(getRainMarker(), -1, 1));
+        setThunderMarker(MathHelper.clamp(getThunderMarker(), -1, 1));
 
 
         //Hierarchy
@@ -1970,12 +1966,12 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         nbt.setFloat("volcanoFrequencyMultiplier", volcanoFrequencyMultiplier);
 
         // Custom weather data
-        nbt.setInteger("rainStartLength", rainStartLength);
-        nbt.setInteger("thunderStartLength", thunderStartLength);
-        nbt.setInteger("rainProlongationLength", rainProlongationLength);
-        nbt.setInteger("thunderProlongationLength", thunderProlongationLength);
-        nbt.setInteger("rainMarker", rainMarker);
-        nbt.setInteger("thunderMarker", thunderMarker);
+        nbt.setInteger("rainStartLength", getRainStartLength());
+        nbt.setInteger("thunderStartLength", getThunderStartLength());
+        nbt.setInteger("rainProlongationLength", getRainProlongationLength());
+        nbt.setInteger("thunderProlongationLength", getThunderProlongationLength());
+        nbt.setInteger("rainMarker", getRainMarker());
+        nbt.setInteger("thunderMarker", getThunderMarker());
 
         //Hierarchy
         if (!childPlanets.isEmpty()) {
@@ -2243,6 +2239,81 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         return skyColor;
     }
 
+    public boolean usesCustomWorldInfo() {
+        return customWorldInfo;
+    }
+
+    public void updateCustomWorldInfo() {
+        boolean isDefault = getRainStartLength() == getThunderStartLength() && getRainStartLength() == WEATHER_START_LENGTH
+                && getRainProlongationLength() == getThunderProlongationLength() && getRainProlongationLength() == WEATHER_PROLONGATION_LENGTH
+                && getRainMarker() == 0 && getThunderMarker() == 0;
+        customWorldInfo = !isDefault;
+    }
+
+    //<editor-fold desc="Custom weather">
+    public int getRainStartLength()
+    {
+        return rainStartLength;
+    }
+
+    public void setRainStartLength(int rainStartLength)
+    {
+        this.rainStartLength = rainStartLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getThunderStartLength()
+    {
+        return thunderStartLength;
+    }
+
+    public void setThunderStartLength(int thunderStartLength)
+    {
+        this.thunderStartLength = thunderStartLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getRainProlongationLength()
+    {
+        return rainProlongationLength;
+    }
+
+    public void setRainProlongationLength(int rainProlongationLength)
+    {
+        this.rainProlongationLength = rainProlongationLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getThunderProlongationLength()
+    {
+        return thunderProlongationLength;
+    }
+
+    public void setThunderProlongationLength(int thunderProlongationLength)
+    {
+        this.thunderProlongationLength = thunderProlongationLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getRainMarker() {
+        return rainMarker;
+    }
+
+    public int getThunderMarker() {
+        return thunderMarker;
+    }
+
+    public void setRainMarker(int marker) {
+        this.rainMarker = marker;
+        updateCustomWorldInfo();
+    }
+
+    public void setThunderMarker(int marker) {
+        this.thunderMarker = marker;
+        updateCustomWorldInfo();
+    }
+    //</editor-fold>
+
     /**
      * Temperatures are stored in Kelvin
      * This facilitates precise temperature calculations and specifications
@@ -2377,6 +2448,62 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         public ResourceLocation getResourceLEO() {
             return resourceLEO;
+        }
+    }
+
+    /**
+     * Used to get/set properties by command.
+     */
+    public static class PropLookup {
+        private final DimensionProperties props;
+
+        public PropLookup(DimensionProperties props) {
+            this.props = props;
+        }
+
+        @Nullable
+        public MethodHandle getPropertyGetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectGetter(field.get());
+        }
+
+        @Nullable
+        public MethodHandle getPropertySetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectSetter(field.get());
+        }
+
+        public static List<String> getPropertyNames(boolean fromSet) {
+            return Arrays.stream(DimensionProperties.class.getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> {
+                        // Only primitives or Strings (and array variants) can be set by command
+                        if (fromSet) {
+                            Class<?> type = f.getType();
+                            if (type.isArray()) {
+                                type = type.getComponentType();
+                            }
+                            return type.isPrimitive() || type.equals(String.class);
+                        }
+                        return true;
+                    })
+                    .map(Field::getName)
+                    .collect(Collectors.toList());
         }
     }
 }

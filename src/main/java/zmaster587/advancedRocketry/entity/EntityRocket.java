@@ -37,6 +37,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.ForgeChunkManager.Type;
+import net.minecraftforge.common.util.ITeleporter;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidTank;
@@ -79,7 +80,7 @@ import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.util.*;
-import zmaster587.advancedRocketry.world.util.TeleporterNoPortal;
+import zmaster587.advancedRocketry.world.util.BasicTeleporter;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.client.util.ProgressBarImage;
 import zmaster587.libVulpes.gui.CommonResources;
@@ -2302,7 +2303,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             WorldServer worldserver1 = minecraftserver.getWorld(dimensionIn);
             this.setPosition(posX, y, posZ);
 
-            Teleporter teleporter = new TeleporterNoPortal(worldserver1);
+            ITeleporter teleporter = new BasicTeleporter(getPosition());
             Entity entity = changeDimension(dimensionIn, teleporter);
 
             if (entity == null)

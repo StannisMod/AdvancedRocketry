@@ -270,10 +270,10 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PERIOD, properties.rotationalPeriod));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_ATMDENSITY, properties.getAtmosphereDensity()));
         // Custom weather properties
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_START_LENGTH, properties.rainStartLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_PROLONGATION_LENGTH, properties.rainProlongationLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_START_LENGTH, properties.thunderStartLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.thunderProlongationLength));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_START_LENGTH, properties.getRainStartLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_PROLONGATION_LENGTH, properties.getRainProlongationLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_START_LENGTH, properties.getThunderStartLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.getThunderProlongationLength()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_MARKER, properties.getRainMarker()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_MARKER, properties.getThunderMarker()));
 
@@ -602,14 +602,14 @@ public class XMLPlanetLoader {
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_SKYOVERRIDE))
                 properties.skyRenderOverride = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_START_LENGTH))
-                properties.rainStartLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setRainStartLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             // TODO Create default values for new fields
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_PROLONGATION_LENGTH))
-                properties.rainProlongationLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setRainProlongationLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_START_LENGTH))
-                properties.thunderStartLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setThunderStartLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_PROLONGATION_LENGTH))
-                properties.thunderProlongationLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setThunderProlongationLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_MARKER))
                 properties.setRainMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_MARKER))
