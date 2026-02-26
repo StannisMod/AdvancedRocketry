@@ -1,5 +1,7 @@
-Changelog 2.2.2.2
+Changelog 2.2.3
 
+- Hovercraft
+  - Smoother hovercrafting
 
 Changelog 2.2.2.1
 
