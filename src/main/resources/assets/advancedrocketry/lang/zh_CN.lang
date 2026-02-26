@@ -298,6 +298,88 @@ enchantment.advancedrocketry.spacebreathing.desc=令盔甲部件形成气密密�
 
 machine.tooltip.smallplatepress=需要下方两格处存在黑曜石才可工作
 
+# Commands
+commands.advancedrocketry.invalid=%s %s不存在！
+
+commands.advancedrocketry.dev.usage=/advancedrocketry dev help - （仅限开发者使用）列出子命令。
+commands.advancedrocketry.dev.dumpbiomes.usage=dumpBiomes - 将生物群系信息转存到BiomeDump.txt
+commands.advancedrocketry.dev.dumpbiomes.success=文件'BiomeDump.txt'已写入到当前目录
+commands.advancedrocketry.dev.runtests.usage=runTests - 运行系统测试，仅用于调试！
+
+commands.advancedrocketry.filldata.usage=/advancedrocketry fillData <数据类型> <装填数量>
+commands.advancedrocketry.filldata.invalid=非有效数据类型，请尝试以下类型：
+commands.advancedrocketry.filldata.success=数据已装填！
+commands.advancedrocketry.filldata.wrongtype=不匹配已存储的数据类型，未对数据做出任何更改
+
+commands.advancedrocketry.goto.usage=/advancedrocketry goto help - 列出子命令。
+commands.advancedrocketry.goto.dimension.usage=goto dimension <维度ID> - 将玩家传送到指定维度
+commands.advancedrocketry.goto.station.usage=goto station <空间站ID> - 将玩家传送到指定空间站
+
+commands.advancedrocketry.planet.usage=/advancedrocketry planet help - 列出子命令。
+commands.advancedrocketry.planet.reset.usage=planet reset [维度ID]
+commands.advancedrocketry.planet.list.usage=planet list
+commands.advancedrocketry.planet.list.dimensions=维度：
+commands.advancedrocketry.planet.list.entry=维度%d：%s
+commands.advancedrocketry.planet.delete.usage=planet delete <维度ID>
+commands.advancedrocketry.planet.delete.success=维度%d已删除！
+commands.advancedrocketry.planet.delete.invalid=目标世界中还有玩家存在：
+commands.advancedrocketry.planet.generate.usage=planet generate <恒星ID:行星ID> [moon] [gas] <名称> <大气随机值> <距离随机值> <重力随机值> [大气基准值] [距离基准值] [重力基准值]
+commands.advancedrocketry.planet.generate.invalid=维度%s生成失败！
+commands.advancedrocketry.planet.generate.success=维度%s生成成功！
+commands.advancedrocketry.planet.set.usage=planet set [维度ID] <属性名称> <属性值>
+commands.advancedrocketry.planet.set.success=已成功将维度%d的%s属性设置为%s
+commands.advancedrocketry.planet.set.invalid=属性查找失败，请检查日志
+commands.advancedrocketry.planet.set.mismatch=无法将类型为%2$s的%1$s属性设置为值%3$s
+commands.advancedrocketry.planet.set.wronglength=数组属性长度为%d，但传入了%d个值
+commands.advancedrocketry.planet.get.usage=planet get [维度ID] <属性名称> <属性值>
+commands.advancedrocketry.planet.get.success=%s=%s
+
+commands.advancedrocketry.star.usage=/advancedrocketry star help - 列出子命令。
+commands.advancedrocketry.star.action.temp.get=温度：%d
+commands.advancedrocketry.star.action.temp.set=温度设置为：%d
+commands.advancedrocketry.star.action.planets.get=绕该恒星运行的星球：
+commands.advancedrocketry.star.action.planets.get.entry=ID：%d : %s
+commands.advancedrocketry.star.action.pos.get=位置：%d, %d
+commands.advancedrocketry.star.action.pos.set=位置设置为：%d, %d
+commands.advancedrocketry.star.list.usage=star list
+commands.advancedrocketry.star.list.entry=恒星ID：%d   名称：%s  星球数量：%d
+commands.advancedrocketry.star.get.usage=star get <temp:planets:pos> <恒星ID>
+commands.advancedrocketry.star.set.usage=star set <temp:pos> <恒星ID>
+commands.advancedrocketry.star.set.temp.usage=star set temp <恒星ID> <温度>
+commands.advancedrocketry.star.set.pos.usage=star set pos <恒星ID> <x> <z>
+commands.advancedrocketry.star.generate.usage=star generate <名称> <温度> <x> <z>
+commands.advancedrocketry.star.generate.success=已添加恒星！
+commands.advancedrocketry.star.generate.invalid=我怎么就装不下这么多恒星！（要么是你的恒星数量多得离谱，要么是真出大问题了！）
+
+commands.advancedrocketry.station.usage=/advancedrocketry station help - 列出子命令。
+commands.advancedrocketry.station.create.usage=create <轨道维度ID> [玩家名称] [tp] - 创建一个绕<轨道维度ID>运行的新空间站，并生成一个3x3的圆石平台。若提供[玩家名称]，将给予目标玩家一个对应的空间站ID芯片。若指定[tp]参数，则同时将该玩家传送至空间站。
+commands.advancedrocketry.station.create.invalid=维度ID %s 没有对应的高级火箭DimensionProperties
+commands.advancedrocketry.station.create.tip=提示：/advancedrocketry planet list
+commands.advancedrocketry.station.create.success=已创建绕维度%2$d运行，ID为%1$d的空间站（space @ %3$d, %4$d, %5$d）
+commands.advancedrocketry.station.give.usage=give <空间站ID> [玩家名称] - 给予你（或指定<玩家名称>的玩家）一个ID为<空间站ID>的空间站
+
+commands.advancedrocketry.fetch.usage=/advancedrocketry fetch <玩家名称> - 将指定<玩家名称>的玩家从任意维度传送到你的位置
+
+commands.advancedrocketry.reloadrecipes.usage=/advancedrocketry reloadRecipes - 从config文件夹中的XML文件重载配方
+commands.advancedrocketry.reloadrecipes.error1=发生严重错误！可能导致配方损坏
+commands.advancedrocketry.reloadrecipes.error2=请检查日志！
+commands.advancedrocketry.reloadrecipes.error3=你可以通过修复XML文件，或重启游戏来解决此错误
+
+commands.advancedrocketry.setgravity.usage=/advancedrocketry setGravity <系数> [玩家名称] - 将你的重力（或指定[玩家名称]的玩家）设置为<系数>，其中1代表地球重力，0代表星球默认重力
+
+commands.advancedrocketry.addtorch.usage=/advancedrocketry addTorch - 将当前手持的方块添加到无大气环境中会掉落的物体列表中
+commands.advancedrocketry.addtorch.invalid=手持方块无法添加到火把列表
+commands.advancedrocketry.addtorch.exists=%s早已在火把列表中了
+commands.advancedrocketry.addtorch.success=%s已添加到火把列表
+
+commands.advancedrocketry.addsealant.usage=/advancedrocketry addSealant - 将当前手持的方块添加到可密封方块列表中
+commands.advancedrocketry.addsealant.invalid=手持方块无法添加到密封方块列表
+commands.advancedrocketry.addsealant.exists=%s早已在密封方块列表中了
+commands.advancedrocketry.addsealant.success=%s已添加到密封方块列表
+
+commands.advancedrocketry.weather.usage=/advancedrocketry weather <clear|rain|thunder> [持续时间（秒）]
+commands.advancedrocketry.weather.invalid=当前维度（%s）不是高级火箭的星球！
+
 msg.crystalliser.gravityTooHigh=重力过高！
 msg.observetory.scan.tooltip=扫描新的小行星，消耗100距离数据
 msg.observetory.scan.button=扫描！
@@ -693,6 +775,8 @@ jei.sb.copy.source=来源
 jei.sb.copy.output=新副本
 jei.sb.assemblyhint=至少需要一块太阳能板
 jei.sb.copychiphint=记得做好备份！
+jei.ar.asteroids=小行星
+
 
 jei.ar.fuel.role.monopropellant=单组元推进剂燃料
 jei.ar.fuel.role.biprop_fuel=双组元推进剂燃料
@@ -1389,6 +1473,7 @@ tooltip.advancedrocketry.deployablerocketassembler.alt.2=如果不确定，请�
 
 # Hovercraft
 tooltip.advancedrocketry.hovercraft=使用持久耐用的双锂动力源。可能比你的寿命还长。
+tooltip.advancedrocketry.hovercraft.alt.1=§f检查按键绑定中的转向按键
 
 # Thermite
 tooltip.advancedrocketry.thermite=以产生高温而闻名！
