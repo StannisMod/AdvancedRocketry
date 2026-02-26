@@ -56,7 +56,7 @@ public class WorldInfoHandler {
 
         String command = event.getCommand().getName();
         StringJoiner joiner = new StringJoiner(" ");
-        joiner.add(Tags.MOD_ID + "_n").add(command);
+        joiner.add(Tags.MOD_ID).add(command);
         for (String param : event.getParameters()) {
             joiner.add(param);
         }
