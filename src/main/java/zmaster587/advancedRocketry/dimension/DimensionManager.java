@@ -35,11 +35,15 @@ import zmaster587.libVulpes.network.PacketHandler;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.zip.GZIPOutputStream;
 
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static zmaster587.advancedRocketry.dimension.DimensionProperties.proxylists;
 
@@ -632,21 +636,29 @@ public class DimensionManager implements IGalaxy {
         String xmlOutput = XMLPlanetLoader.writeXML(this);
 
         try {
-            File planetXMLOutput = new File(getCurrentSaveRootDirectory(), filePath + worldXML);
-            planetXMLOutput.createNewFile();
+            File planetXMLOutput = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory(), filePath + worldXML);
 
-            File tmpFileXml = File.createTempFile("ARXMLdata_", ".DAT", getCurrentSaveRootDirectory());
-            FileOutputStream bufOutStream = new FileOutputStream(tmpFileXml);
-            bufOutStream.write(xmlOutput.getBytes());
+            // ensure directory exists
+            File xmlDir = planetXMLOutput.getParentFile();
+            if (xmlDir != null) xmlDir.mkdirs();
 
-            //Commit to OS, tell OS to commit to disk, release and close stream
-            bufOutStream.flush();
-            bufOutStream.getFD().sync();
-            bufOutStream.close();
+            // temp file MUST be in same directory for atomic move to work reliably
+            File tmpFileXml = new File(xmlDir, planetXMLOutput.getName() + ".tmp");
 
-            //Temp file was written OK, commit
-            Files.copy(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING);
-            tmpFileXml.delete();
+            try (FileOutputStream bufOutStream = new FileOutputStream(tmpFileXml)) {
+                bufOutStream.write(xmlOutput.getBytes(StandardCharsets.UTF_8));
+                bufOutStream.flush();
+                bufOutStream.getFD().sync();
+            }
+
+            // commit: atomic swap if supported, fallback to non-atomic move if not supported
+            try {
+                Files.move(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING, ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING);
+            }
+            // best-effort cleanup if something went wrong mid-commit
+            if (tmpFileXml.exists()) tmpFileXml.delete();
 
             File file = new File(getCurrentSaveRootDirectory(), filePath + tempFile);
             file.createNewFile();

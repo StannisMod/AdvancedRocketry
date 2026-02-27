@@ -1,7 +1,19 @@
 Changelog 2.2.3
 
-- Hovercraft
-  - Smoother Hovercrafting
+- Asteroid Dimension: 
+  - fixed corrupt chunks; 
+  - removed black shadows/spots
+
+- Planetdefs.xml: 
+  - improved save behavior to reduce XML corruption
+
+- aSync weather (2.1.5) now only applies to native planets (improves compatibility; avoids AR overriding world info/custom dimensions)
+- Hovercraft: feels smoother
+- Cleaned up commands (and made translatable)
+- Updated Chinese localization
+
+huge thanks to jchung
+(and Thermo, ZY, Hades and all other feedback)
 
 Changelog 2.2.2.1
 

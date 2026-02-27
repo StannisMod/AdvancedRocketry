@@ -270,10 +270,8 @@ public class ChunkProviderAsteroids extends ChunkProviderPlanet {
         this.rand.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
         ChunkPrimer chunkprimer = new ChunkPrimer();
 
-        //this.makeasteroids(x, z, chunkprimer);
         this.prepareHeights(x, z, 0, chunkprimer);
         this.prepareHeights(x + 500, z + 500, 100, chunkprimer);
-        //this.genNetherCaves.generate(this.world, x, z, chunkprimer);
 
         Chunk chunk = new Chunk(this.world, chunkprimer, x, z);
         Biome[] abiome = this.world.getBiomeProvider().getBiomes(null, x * 16, z * 16, 16, 16);
@@ -283,7 +281,9 @@ public class ChunkProviderAsteroids extends ChunkProviderPlanet {
             abyte[i] = (byte) Biome.getIdForBiome(abiome[i]);
         }
 
-        chunk.setLightPopulated(true);
+        // this making the black spots... ?
+        //chunk.setLightPopulated(true);
+        chunk.generateSkylightMap();
         return chunk;
     }
 
@@ -322,7 +322,7 @@ public class ChunkProviderAsteroids extends ChunkProviderPlanet {
 
     @Override
     public void populate(int x, int z) {
-        net.minecraftforge.event.ForgeEventFactory.onChunkPopulate(false, this, this.world, this.rand, x, z, false);
+        net.minecraftforge.event.ForgeEventFactory.onChunkPopulate(true, this, this.world, this.rand, x, z, false);
 
         OreGenProperties oreGenProperties = DimensionManager.getInstance().getDimensionProperties(this.world.provider.getDimension()).getOreGenProperties(this.world);
 
@@ -331,8 +331,7 @@ public class ChunkProviderAsteroids extends ChunkProviderPlanet {
                 new CustomizableOreGen(entry).generate(rand, x, z, this.world, this, this.world.getChunkProvider());
             }
         }
-
+        net.minecraftforge.event.ForgeEventFactory.onChunkPopulate(false, this, this.world, this.rand, x, z, false);
         BlockFalling.fallInstantly = false;
-
     }
 }
