@@ -1,3 +1,9 @@
+Changelog 2.2.4
+
+- Hovercraft: inverted steering fixed
+- FuelRegistry: compatibility issue affecting some cross-mod fluids
+- Classtransformer: strengthen EntityPlayer ASM anchor for J21+ environments
+
 Changelog 2.2.3
 
 - Asteroid Dimension: 
@@ -107,7 +113,7 @@ Changelog 2.2.1-1:
 -Terraforming Terminal:
   - GUI: fixed header saying "Satellite Terminal" and polished text
   - Hide internal RF Storage since it uses the satellites Power anyway (avoids confusion)
--Other
+- Other
   - Added more tooltips
   - Polished tooltips from last update (thanks to Xonazeth!)
 

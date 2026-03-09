@@ -297,7 +297,7 @@ public class EntityHoverCraft extends Entity implements IInventory, INetworkEnti
         float forward = MathHelper.clamp(rider.moveForward, -1f, 1f);    // W/S
         float strafe  = MathHelper.clamp(rider.moveStrafing, -1f, 1f);   // A/D
 
-        this.rotationYaw += strafe * 4.0f; // turn rate tweak
+        this.rotationYaw -= strafe * 4.0f; // turn rate tweak
         this.rotationYaw = MathHelper.wrapDegrees(this.rotationYaw); // keep in -180..180 range
 
         double acc = forward * MAX_ACCELERATION;

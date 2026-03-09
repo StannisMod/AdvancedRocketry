@@ -113,7 +113,7 @@ public class FuelRegistry {
          */
         public boolean addFuel(@Nonnull FuelEntry entry) {
             entry.type = this;
-            return !fuels.add(entry);
+            return fuels.add(entry);
         }
 
         /**
@@ -143,7 +143,7 @@ public class FuelRegistry {
                 return false;
 
             for (FuelEntry fuel : fuels) {
-                if (fuel.fuel == obj)
+                if (fuel.fuelMatches(obj))
                     return true;
             }
 
@@ -203,14 +203,20 @@ public class FuelRegistry {
          * @return true if the passed object is indeed the same fuel
          */
         public boolean fuelMatches(@Nullable Object obj) {
-            if (obj == null || fuel.getClass() != obj.getClass())
+            if (obj == null)
                 return false;
-            else if (fuel instanceof ItemStack) {
+
+            if (fuel instanceof ItemStack && obj instanceof ItemStack) {
                 return ItemStack.areItemStacksEqual((ItemStack) fuel, (ItemStack) obj);
-            } else if (fuel instanceof Fluid) {
-                return fuel.equals(obj);
-            } else
+            } else if (fuel instanceof Fluid && obj instanceof Fluid) {
+                Fluid a = (Fluid) fuel;
+                Fluid b = (Fluid) obj;
+                String an = a.getName();
+                String bn = b.getName();
+                return a == b || (an != null && an.equals(bn));
+            } else {
                 return false;
+            }
         }
 
         //Override equals(Object), each the itemstack or fluid determines the entry
@@ -224,6 +230,23 @@ public class FuelRegistry {
                 return super.equals(obj);
             }
             return false;
+        }
+        @Override
+        public int hashCode() {
+            int result = (type != null ? type.hashCode() : 0);
+
+            if (fuel instanceof ItemStack) {
+                ItemStack stack = (ItemStack) fuel;
+                result = 31 * result + stack.getItem().hashCode();
+                result = 31 * result + stack.getMetadata();
+                result = 31 * result + (stack.hasTagCompound() ? stack.getTagCompound().hashCode() : 0);
+            } else if (fuel instanceof Fluid) {
+                Fluid fluid = (Fluid) fuel;
+                String name = fluid.getName();
+                result = 31 * result + (name != null ? name.hashCode() : 0);
+            }
+
+            return result;
         }
     }
 }
