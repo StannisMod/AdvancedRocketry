@@ -28,10 +28,9 @@ The goal of this fork is to improve stability, expand usability for pack develop
 | Resource | Link |
 |---|---|
 | CurseForge Download | [Advanced Rocketry - Reworked](https://www.curseforge.com/minecraft/mc-mods/advanced-rocketry-2) |
-| Original Repository | [Advanced-Rocketry/AdvancedRocketry](https://github.com/Advanced-Rocketry/AdvancedRocketry) |
 | Wiki Documentation | [Advanced Rocketry Wiki](http://arwiki.dmodoomsirius.me/) |
 | Change Log | [`CHANGELOG.md`](./CHANGELOG.md) |
-| Planetdefs Documentation | [Readme](https://github.com/kaduvill/AdvancedRocketry/blob/1.12/XML_PLANETDEFS_README.md)|
+| Planetdefs Documentation | [XML_PLANETDEFS_README.md](./XML_PLANETDEFS_README.md)|
 ### planetDefs.xml Reference
 
 For pack makers and advanced users, this repository also includes a reference for configuring `planetDefs.xml`:
@@ -44,5 +43,6 @@ Place the file at:
 
 ```text
 config/advancedRocketry/planetDefs.xml
+
 
 
