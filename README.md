@@ -36,7 +36,7 @@ The goal of this fork is to improve stability, expand usability for pack develop
 
 For pack makers and advanced users, this repository also includes a reference for configuring `planetDefs.xml`:
 
-**[Advanced Rocketry planetDefs.xml Reference](https://github.com/kaduvill/AdvancedRocketry/blob/1.12/XML_PLANETDEFS_README.md)**
+**[planetDefs.xml Documentation](https://github.com/kaduvill/AdvancedRocketry/blob/1.12/XML_PLANETDEFS_README.md)**
 
 This document explains how `planetDefs.xml` is structured and which tags and attributes are currently supported by this fork.
 
@@ -44,3 +44,4 @@ Place the file at:
 
 ```text
 config/advancedRocketry/planetDefs.xml
+
