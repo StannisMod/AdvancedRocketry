@@ -1,3 +1,10 @@
+Changelog 2.2.5
+
+- Commands:
+  - "/ar create station" fixed 
+- Documentation updated:
+  - Inside advancedrocketry.cfg
+
 Changelog 2.2.4
 
 - Hovercraft: inverted steering fixed

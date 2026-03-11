@@ -41,7 +41,7 @@ public class CreateStationCommand extends ARCommand {
         if (args.length < 1 || args.length > 3) {
             throw wrongUsage(sender);
         }
-        int orbitDimId = parseInt(args[1]);
+        int orbitDimId = parseInt(args[0]);
         DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(orbitDimId);
         if (orbitDimId != Constants.INVALID_PLANET &&
                 props == DimensionManager.overworldProperties && orbitDimId != props.getId()) {
@@ -50,7 +50,7 @@ public class CreateStationCommand extends ARCommand {
         }
         // Optional player + tp flag parsing
         EntityPlayerMP player = null;
-        int idx = 2;
+        int idx = 1;
 
         if (args.length > idx && !args[idx].equalsIgnoreCase("tp")) {
             player = getPlayer(server, sender, args[idx]);
@@ -101,23 +101,31 @@ public class CreateStationCommand extends ARCommand {
                 stationId, orbitDimId, spawn.x, spawn.y, spawn.z));
 
         // Optional teleport
-        if (teleport && player.world.provider.getDimension() != spaceDim) {
-            player.changeDimension(spaceDim, new BasicTeleporter(spawnPos));
+        if (teleport) {
+            if (player.world.provider.getDimension() != spaceDim) {
+                player.changeDimension(spaceDim, new BasicTeleporter(spawnPos));
+            } else {
+                player.setPositionAndUpdate(spawn.x + 0.5, spawn.y + 2, spawn.z + 0.5);
+            }
         }
     }
 
     @Override
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
+        if (args.length == 2) {
+            if ("tp".startsWith(args[1].toLowerCase())) {
+                return Collections.singletonList("tp");
+            }
+            return getListOfStringsMatchingLastWord(args, server.getOnlinePlayerNames());
+        }
         if (args.length == 3) {
             return Collections.singletonList("tp");
-        } if (args.length == 2) {
-            return getListOfStringsMatchingLastWord(args, server.getOnlinePlayerNames());
         }
         return Collections.emptyList();
     }
 
     @Override
     public boolean isUsernameIndex(String[] args, int index) {
-        return args.length == 2 && index == 2;
+        return index == 1;
     }
 }
