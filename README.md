@@ -2,8 +2,6 @@
 
 A maintained fork of **Advanced Rocketry** for **Minecraft 1.12.2**.
 
-> Continued development, fixes, and improvements for Advanced Rocketry live here.
-
 ---
 
 ## Download
@@ -29,6 +27,7 @@ This repository exists to keep the mod alive, improve stability, and deliver bug
 | Original Repository | [Advanced-Rocketry/AdvancedRocketry](https://github.com/Advanced-Rocketry/AdvancedRocketry) |
 | Wiki Documentation | [Advanced Rocketry Wiki](http://arwiki.dmodoomsirius.me/) |
 | Change Log | [`CHANGELOG.md`](./CHANGELOG.md) |
+
 
 ---
 
@@ -68,3 +67,4 @@ This fork exists to continue development and keep the mod available for the comm
 ## Support
 
 If you run into a bug or want to contribute improvements, please use this repository’s issue tracker and pull requests.
+
