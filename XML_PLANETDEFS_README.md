@@ -397,7 +397,9 @@ Accepted values:
 - `false`
 
 Notes:
-- If true, the custom AR sky renderer is skipped for that dimension
+- This tag only disables AR's custom planet sky for this planet
+- Also affected by the global client config option `planetSkyOverride`
+  - If `planetSkyOverride=false` in the config, AR's custom planet sky is already disabled globally and this tag has no additional effect
 
 #### `<hasShading>`
 Controls planet decoration rendering override.
@@ -630,7 +632,7 @@ Notes:
 ### 6.4 Biomes
 
 #### `<biomeIds>`
-Biome list for the planet.
+Biome list for the planet. Overrides the automatic biome-selection
 
 Accepted entry formats:
 - numeric biome ID
@@ -646,9 +648,11 @@ Examples:
 ```
 
 Notes:
-- If a weight is omitted, default weight is `30`
-- If a provided weight is `0`, the loader resets it to `30`
+- If a weight is omitted or `0`, default weight is `30`
 - Resource locations are preferred over old numeric IDs
+- If `<biomeIds>` is omitted, the planet falls back to automatic biome selection
+  - Automatic biome selection is affected by global biome-related config and biome lists, including logic such as blacklist handling and `maxBiomesPerPlanet`
+- If `<biomeIds>` is provided, the loader uses that explicit biome list instead of automatic biome selection
 
 #### `<craterBiomeWeights>`
 Per-biome crater frequency list.
@@ -694,6 +698,13 @@ Accepted values:
 - `true`
 - `false`
 
+
+Notes:
+- This flag is also gated by the global config option `generateCraters`
+  - If the global config is `false`, crater generation is disabled globally regardless of this XML value
+  - If the global config is `true`, this tag can still disable craters for an individual planet
+- Actual crater generation also depends on atmospheric conditions
+
 #### `<generateGeodes>`
 Enable/disable geode generation.
 
@@ -704,6 +715,11 @@ Enable/disable geode generation.
 Accepted values:
 - `true`
 - `false`
+
+Notes:
+- This flag is also gated by the global config option `generateGeodes`
+  - If the global config is `false`, geode generation is disabled globally regardless of this XML value
+  - If the global config is `true`, this tag can still disable geodes for an individual planet
 
 #### `<generateVolcanos>`
 Enable/disable volcano generation.
@@ -717,7 +733,10 @@ Accepted values:
 - `false`
 
 Notes:
-- Tag spelling in code is `generateVolcanos`
+- Canonical spelling in the current code is `generateVolcanos`
+- This flag is also gated by the global config option `generateVolcanos`
+  - If the global config is `false`, volcano generation is disabled globally regardless of this XML value
+  - If the global config is `true`, this tag can still disable volcanos for an individual planet
 
 #### `<generateStructures>`
 Enable/disable structure generation.
@@ -730,6 +749,11 @@ Accepted values:
 - `true`
 - `false`
 
+Notes:
+- This flag is also gated by the global config option `generateVanillaStructures`
+  - If the global config is `false`, vanilla/map-feature structures are disabled on all planets regardless of this XML value
+  - If the global config is `true`, this tag can still disable structures for an individual planet
+- Structure generation also requires the planet to be habitable/breathable
 #### `<generateCaves>`
 Enable/disable cave generation.
 
@@ -781,25 +805,33 @@ Example:
 
 ```xml
 <oreGen>
-    <ore block="minecraft:iron_ore" minHeight="1" maxHeight="64" clumpSize="8" chancePerChunk="20" />
-    <ore block="minecraft:gold_ore" minHeight="1" maxHeight="32" clumpSize="6" chancePerChunk="8" />
+  <ore block="minecraft:iron_ore" minHeight="1" maxHeight="64" clumpSize="8" chancePerChunk="20" />
+  <ore block="minecraft:gold_ore" minHeight="1" maxHeight="32" clumpSize="6" chancePerChunk="8" />
 </oreGen>
 ```
 
 Important:
 - The loader reads ore data from `<ore>` attributes
 - Do not use nested child tags inside `<ore>`
+- Per-planet `<oreGen>` overrides the fallback ore mapping from `oreConfig.xml`
 
 Behavior:
-- A non-empty per-planet `<oreGen>` gives that planet AR custom ore generation
-  - On such planets, `OreGenEvent.GenerateMinable` is denied for: `COAL`, `DIAMOND`, `EMERALD`, `GOLD`, `IRON`, `LAPIS`, `QUARTZ`, `REDSTONE`, and `CUSTOM`
-  - Biome surface and normal decoration still continue if relevant
-  - An empty `<oreGen>` does not count; at least one valid `<ore>` entry is required
+- A non-empty per-planet `<oreGen>` gives that planet custom AR ore properties
+  - `oreConfig.xml` is only used if the planet does not define its own `<oreGen>`
+- If a planet has ore properties from either per-planet `<oreGen>` or matching `oreConfig.xml`, AR denies these `OreGenEvent.GenerateMinable` types on that planet:
+  - `COAL`  - `DIAMOND`  - `EMERALD`  - `GOLD`  - `IRON`  - `LAPIS`  - `QUARTZ`  - `REDSTONE`  - `CUSTOM`
+- Because AR’s own config-driven ore generator (`Copper`, `Tin`, `Rutile`, `Aluminum`, `Iridium`, `Dilithium`) uses `CUSTOM`, those ores are also suppressed on such planets
+- In practice, this means per-planet ore properties replace AR’s normal config ore generation on that planet rather than adding to it
+- An empty `<oreGen>` does not count; at least one valid `<ore>` entry is required for this behavior
+- Mods that generate ores through other paths may still bypass this
 
-Note:
-- This deny list is based on the current code and applies to ores generated through that event path; mods using other generation paths may still bypass it
+Precedence:
+- Per-planet `<oreGen>` in `planetDefs.xml` has highest priority
+- If `<oreGen>` is absent on that planet, AR falls back to matching entries from `oreConfig.xml`
+- If either of those supplies ore properties for the planet, AR’s normal config-driven ore generation is suppressed on that planet
+- If neither per-planet `<oreGen>` nor `oreConfig.xml` provides ore properties, AR falls back to its normal global config-driven ore generation
+- `<fillerblock>` also has a way of disabling normal oregen
 
-`<ore>` attributes:
 
 ##### `block`
 Block registry name. Required.
@@ -901,6 +933,7 @@ For item entries:
 Notes:
 - Invalid ore names or item ids are ignored with warnings
 - The raw string is preserved internally as `laserDrillOresRaw`
+- This is not tested vs JEI-integration
 
 #### `<geodeOres>`
 Geode ore whitelist.
