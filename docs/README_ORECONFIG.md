@@ -6,17 +6,8 @@ Path:
 
 `config/advRocketry/oreConfig.xml`
 
-Code basis:
-- `XMLOreLoader`
-- `OreGenProperties`
-- `DimensionProperties`
-- `ChunkProviderPlanet`
-- `ChunkProviderCavePlanet`
-- `CustomizableOreGen`
-- `OreGenerator`
-- `PlanetEventHandler`
-- `AdvancedRocketry`
-- `ARConfiguration`
+
+**Template** found here [`TEMPLATE_oreconfig.xml`](docs/TEMPLATE_oreconfig.xml)
 
 ---
 
@@ -70,15 +61,7 @@ If a planet gets ore properties from either `planetDefs.xml` or `oreConfig.xml`,
 
 On such planets, `PlanetEventHandler.onWorldGen(...)` denies these `OreGenEvent.GenerateMinable` types:
 
-- `COAL`
-- `DIAMOND`
-- `EMERALD`
-- `GOLD`
-- `IRON`
-- `LAPIS`
-- `QUARTZ`
-- `REDSTONE`
-- `CUSTOM`
+- `COAL`- `DIAMOND`- `EMERALD`- `GOLD`- `IRON`- `LAPIS`- `QUARTZ`- `REDSTONE`- `CUSTOM`
 
 Because AR’s own config ore generator posts `CUSTOM`, AR config ores are also suppressed there. In practice, custom ore properties replace AR normal config ore generation on that planet rather than adding on top.
 
