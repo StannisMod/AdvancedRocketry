@@ -23,6 +23,11 @@ public class FillDataCommand extends ARCommand {
     }
 
     @Override
+    public List<String> getAliases() {
+        return Arrays.asList("filldata", "fd");
+    }
+
+    @Override
     public String getUsage(ICommandSender sender) {
         return "commands.advancedrocketry.filldata.usage";
     }

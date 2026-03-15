@@ -1,9 +1,21 @@
 Changelog 2.2.5
 
-- Commands:
-  - "/ar create station" fixed 
+- Commands
+  - Fixed `addsealant` and `addtorch`
+  - Fixed `create station`
+  - Added `d` and `dim` aliases for `/ar goto dimension`
+  - Added `s` aliases for `/ar goto station`
+  - Added `fd` aliases for `/ar fillData`
+  - Added support for lowercase all subcommands
+- OreConfig.xml (oreloader)
+  - Oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
+  - Internal oreconfig priority changed: `p+t > p > t > fallback`
 - Documentation updated:
   - Inside advancedrocketry.cfg
+  - XML_PLANETDEFS_README.md
+  - XML_ORECONFIG_README.md
+  - TEMPLATE_planetdefs.xml
+  - TEMPLATE_oreconfig.xml
 
 Changelog 2.2.4
 

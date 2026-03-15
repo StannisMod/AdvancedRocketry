@@ -9,6 +9,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.TextComponentTranslation;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 
+import java.util.Arrays;
+import java.util.List;
+
 public class AddTorchCommand extends ARCommand {
     @Override
     public String getName() {
@@ -16,13 +19,17 @@ public class AddTorchCommand extends ARCommand {
     }
 
     @Override
+    public List<String> getAliases() {
+        return Arrays.asList("addtorch");
+    }
+    @Override
     public String getUsage(ICommandSender sender) {
         return "commands.advancedrocketry.addtorch.usage";
     }
 
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
-        if (args.length != 1) {
+        if (args.length != 0) {
             throw wrongUsage(sender);
         }
         EntityPlayerMP player = getCommandSenderAsPlayer(sender);

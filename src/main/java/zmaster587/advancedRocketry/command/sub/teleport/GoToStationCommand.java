@@ -11,10 +11,18 @@ import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.world.util.BasicTeleporter;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 
+import java.util.Collections;
+import java.util.List;
+
 public class GoToStationCommand extends ARCommand {
     @Override
     public String getName() {
         return "station";
+    }
+
+    @Override
+    public List<String> getAliases() {
+        return Collections.singletonList("s");
     }
 
     @Override
@@ -39,7 +47,7 @@ public class GoToStationCommand extends ARCommand {
             HashedBlockPosition vec = spaceObject.getSpawnLocation();
             player.setPositionAndUpdate(vec.x, vec.y, vec.z);
         } else {
-            throw invalidValue(getName(), dim);
+            throw invalidValue(getName(), stationId); // station <stationIs> doesnt exist
         }
     }
 }

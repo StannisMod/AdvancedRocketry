@@ -28,7 +28,7 @@ The goal of this fork is to improve stability, expand usability for both players
 - **CurseForge:** [Advanced Rocketry - Reworked](https://www.curseforge.com/minecraft/mc-mods/advanced-rocketry-2)
 - **Wiki Documentation:** [Advanced Rocketry Wiki](http://arwiki.dmodoomsirius.me/)
 - **Change Log:** [`CHANGELOG.md`](./CHANGELOG.md)
-- **PlanetDefs Documentation**[`XML_PLANETDEFS_README.md`](./XML_PLANETDEFS_README.md)
+- **PlanetDefs Documentation**[`XML_PLANETDEFS_README.md`](docs/README_PLANETDEFS.md)
 
 
 For pack makers and advanced users, this repository also includes a dedicated reference for configuring `planetDefs.xml`:
@@ -65,7 +65,7 @@ Bug fixes, balance changes, and other improvements are tracked in:
 
 ## Credits
 
-Full credit to the original **Advanced Rocketry** developers for creating the foundation of this project.
+Full credit goes to the original [**Advanced Rocketry**](https://github.com/Advanced-Rocketry/AdvancedRocketry) developers, along with the maintainers of previous forks, for laying the foundation of this project.
 
 This fork exists to continue development and keep the mod available and useful for the modded Minecraft community.
 

@@ -10,6 +10,9 @@ import net.minecraft.util.text.TextComponentTranslation;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.util.SealableBlockHandler;
 
+import java.util.Arrays;
+import java.util.List;
+
 public class AddSealantCommand extends ARCommand {
     @Override
     public String getName() {
@@ -17,13 +20,17 @@ public class AddSealantCommand extends ARCommand {
     }
 
     @Override
+    public List<String> getAliases() {
+        return Arrays.asList("addsealant");
+    }
+    @Override
     public String getUsage(ICommandSender sender) {
         return "commands.advancedrocketry.addsealant.usage";
     }
 
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
-        if (args.length != 1) {
+        if (args.length != 0) {
             throw wrongUsage(sender);
         }
         EntityPlayerMP player = getCommandSenderAsPlayer(sender);

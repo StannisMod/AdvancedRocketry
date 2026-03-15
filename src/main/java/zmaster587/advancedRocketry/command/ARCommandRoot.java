@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.command;
 import net.minecraft.command.ICommandSender;
 import net.minecraftforge.server.command.CommandTreeBase;
 import net.minecraftforge.server.command.CommandTreeHelp;
+import zmaster587.advancedRocketry.command.sub.AddSealantCommand;
 import zmaster587.advancedRocketry.command.sub.AddTorchCommand;
 import zmaster587.advancedRocketry.command.sub.FillDataCommand;
 import zmaster587.advancedRocketry.command.sub.ReloadRecipesCommand;
@@ -29,6 +30,7 @@ public class ARCommandRoot extends CommandTreeBase {
         aliases.add("ar");
 
         addSubcommand(new WeatherCommand());
+        addSubcommand(new AddSealantCommand());
         addSubcommand(new AddTorchCommand());
         addSubcommand(new ReloadRecipesCommand());
         addSubcommand(new SetGravityCommand());

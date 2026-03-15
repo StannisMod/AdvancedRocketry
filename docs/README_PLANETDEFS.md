@@ -279,35 +279,107 @@ Planet icon basename.
 <planet name="Oceanus" customIcon="waterworld">
 ```
 
-Available built-in icons with both normal and LEO textures present:
-- `asteroid`
-- `carbonworld`
-- `desertworld`
-- `earthlike`
-- `gasgiantblue`
-- `gasgiantbrown`
-- `gasgiantred`
-- `iceworld`
-- `lava`
-- `marslike`
-- `moon`
-- `venusian`
-- `waterworld`
 
-Additional normal-only texture basenames present in the current resources:
-- `asteroid_a`
-- `asteroid_b`
-- `asteroid_c`
-- `spoopy`
- 
-Notes:
-- Special-case behavior for  `void`: it renders that body at size `0` in the system map
+## Built-in `customIcon` values
 
-Example:
+These are the built-in planet icon basenames currently present in:
 
-```xml
-<planet name="Oceanus" customIcon="waterworld">
-```
+`src/main/resources/assets/advancedrocketry/textures/planets/`
+
+### Standard icons
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/asteroid.png" width="96"><br>
+      <code>asteroid</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/carbonworld.png" width="96"><br>
+      <code>carbonworld</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/desertworld.png" width="96"><br>
+      <code>desertworld</code>
+    </td>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/Earthlike.png" width="96"><br>
+      <code>earthlike</code>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/GasGiantBlue.png" width="96"><br>
+      <code>gasgiantblue</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/gasgiantbrown.png" width="96"><br>
+      <code>gasgiantbrown</code>
+    </td>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/GasGiantred.png" width="96"><br>
+      <code>gasgiantred</code>
+    </td>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/IceWorld.png" width="96"><br>
+      <code>iceworld</code>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/Lava.png" width="96"><br>
+      <code>lava</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/marslike.png" width="96"><br>
+      <code>marslike</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/moon.png" width="96"><br>
+      <code>moon</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/venusian.png" width="96"><br>
+      <code>venusian</code>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/WaterWorld.png" width="96"><br>
+      <code>waterworld</code>
+    </td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
+### Additional normal-only textures
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/asteroid_a.png" width="96"><br>
+      <code>asteroid_a</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/asteroid_b.png" width="96"><br>
+      <code>asteroid_b</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/asteroid_c.png" width="96"><br>
+      <code>asteroid_c</code>
+    </td>
+    <td align="center">
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/spoopy.png" width="96"><br>
+      <code>spoopy</code>
+    </td>
+  </tr>
+</table>
+
+### Special case
+
+- `customIcon="void"` is handled specially in the system map and renders the body at size `0`.
+
 ### 5.3.1 Adding your own `customIcon`
 
 Resource pack should provide:
@@ -1425,25 +1497,18 @@ The current attribute name is:
 numPlanets="..."
 ```
 
-### 11.2 `oreGen` uses attributes on `<ore>`
-Current loader expects:
-
-```xml
-<ore block="..." minHeight="..." maxHeight="..." clumpSize="..." chancePerChunk="..." />
-```
-
-### 11.3 `groupMax` is currently not reliable
+### 10.2 `groupMax` is currently not reliable
 Current parser bug:
 - `groupMax` is not read correctly
 - `groupMin` is mistakenly used for both min and max group size
 
 
-### 11.5 Some author-facing fields from old exports are not real XML inputs
+### 10.3 Some author-facing fields from old exports are not real XML inputs
 Do not treat exported values such as `avgTemperature` as reliable author-controlled XML settings unless separately confirmed in code.
 
 ---
 
-## 12. Fields Intentionally Not Documented Here
+## 11. Fields Intentionally Not Documented Here
 
 This document intentionally excludes fields that were not confirmed as meaningful current XML inputs from the reviewed code.
 
@@ -1454,7 +1519,7 @@ Examples:
 
 ---
 
-## 13. Full Example
+## 12. Full Example
 
 ```xml
 <galaxy>
@@ -1507,7 +1572,7 @@ Examples:
 
 ---
 
-## 14. Revision Notes
+## 13. Resources
+App to help build universe. https://github.com/DaIsimsiz/planetDefs-Builder/releases
 
-If more files are reviewed later, the following sections are the most likely candidates for expansion:
-- deeper worldgen behavior for crater/geode/volcano toggles
+)

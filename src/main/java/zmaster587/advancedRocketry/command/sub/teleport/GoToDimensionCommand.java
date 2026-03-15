@@ -8,10 +8,18 @@ import net.minecraftforge.common.DimensionManager;
 import zmaster587.advancedRocketry.command.sub.ARCommand;
 import zmaster587.advancedRocketry.world.util.TeleporterSeekBlock;
 
+import java.util.Arrays;
+import java.util.List;
+
 public class GoToDimensionCommand extends ARCommand {
     @Override
     public String getName() {
         return "dimension";
+    }
+
+    @Override
+    public List<String> getAliases() {
+        return Arrays.asList("dim", "d");
     }
 
     @Override
