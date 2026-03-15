@@ -4,8 +4,8 @@ Changelog 2.2.5
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`
   - Added `d` and `dim` aliases for `/ar goto dimension`
-  - Added `s` aliases for `/ar goto station`
-  - Added `fd` aliases for `/ar fillData`
+  - Added `s` alias for `/ar goto station`
+  - Added `fd` alias for `/ar fillData`
   - Added support for lowercase all subcommands
 - OreConfig.xml (oreloader)
   - Overall oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
