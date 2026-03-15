@@ -7,7 +7,7 @@ Path:
 `config/advRocketry/oreConfig.xml`
 
 
-**Template** found here [`TEMPLATE_oreconfig.xml`](docs/TEMPLATE_oreconfig.xml)
+**Template** found here [`TEMPLATE_oreconfig.xml`](TEMPLATE_oreconfig.xml)
 
 ---
 

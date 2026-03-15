@@ -6,6 +6,10 @@ Place the file at:
 
 `config/advancedRocketry/planetDefs.xml`
 
+
+**Template** found here [`TEMPLATE_planetdefs.xml`](TEMPLATE_planetdefs.xml)
+
+
 This reference tries to document all fields that are loaded from planetdefs and used by the current code.
 
 ---
