@@ -8,8 +8,9 @@ Changelog 2.2.5
   - Added `fd` aliases for `/ar fillData`
   - Added support for lowercase all subcommands
 - OreConfig.xml (oreloader)
-  - Oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
-  - Internal oreconfig priority changed: `p+t > p > t > fallback`
+  - Overall oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
+  - Internal oreconfig priority changed: `p+t > p > t > config + vanilla/modded`
+    - Added "Pressure + Temperature" excact match
 - Documentation updated:
   - Inside advancedrocketry.cfg
   - XML_PLANETDEFS_README.md
