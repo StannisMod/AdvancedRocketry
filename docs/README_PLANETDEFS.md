@@ -296,29 +296,29 @@ Built-in planet icon basenames:
 <table>
   <tr>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/asteroid.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/asteroid.png" width="96"><br>
       <code>asteroid</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/carbonworld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/carbonworld.png" width="96"><br>
       <code>carbonworld</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/desertworld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/desertworld.png" width="96"><br>
       <code>desertworld</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/Earthlike.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/Earthlike.png" width="96"><br>
       <code>earthlike</code>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/GasGiantBlue.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/GasGiantBlue.png" width="96"><br>
       <code>gasgiantblue</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/gasgiantbrown.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/gasgiantbrown.png" width="96"><br>
       <code>gasgiantbrown</code>
     </td>
     <td align="center">
@@ -326,31 +326,31 @@ Built-in planet icon basenames:
       <code>gasgiantred</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/IceWorld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/IceWorld.png" width="96"><br>
       <code>iceworld</code>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/Lava.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/Lava.png" width="96"><br>
       <code>lava</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/marslike.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/marslike.png" width="96"><br>
       <code>marslike</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/moon.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/moon.png" width="96"><br>
       <code>moon</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/venusian.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/venusian.png" width="96"><br>
       <code>venusian</code>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/WaterWorld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/WaterWorld.png" width="96"><br>
       <code>waterworld</code>
     </td>
     <td></td>
