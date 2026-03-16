@@ -308,13 +308,13 @@ Built-in planet icon basenames:
       <code>desertworld</code>
     </td>
     <td align="center">
-      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/Earthlike.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/earthlike.png" width="96"><br>
       <code>earthlike</code>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/GasGiantBlue.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/gasgiantblue.png" width="96"><br>
       <code>gasgiantblue</code>
     </td>
     <td align="center">
@@ -322,17 +322,17 @@ Built-in planet icon basenames:
       <code>gasgiantbrown</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/GasGiantred.png" width="96"><br>
+      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/gasgiantred.png" width="96"><br>
       <code>gasgiantred</code>
     </td>
     <td align="center">
-      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/IceWorld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/iceworld.png" width="96"><br>
       <code>iceworld</code>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/Lava.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/lava.png" width="96"><br>
       <code>lava</code>
     </td>
     <td align="center">
@@ -350,7 +350,7 @@ Built-in planet icon basenames:
   </tr>
   <tr>
     <td align="center">
-      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/WaterWorld.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/waterworld.png" width="96"><br>
       <code>waterworld</code>
     </td>
     <td></td>
