@@ -148,7 +148,7 @@ When more than one entry could match a planet, the effective priority is:
 Practical consequence:
 
 - an exact combined entry like `<oreGen pressure="1" temp="4">` overrides both the `pressure="1"` entry and the `temp="4"` entry
-- When both a matching pressure-only entry and a matching temp-only entry exist, current matching behavior prefers the pressure-only entry.
+- When both a matching pressure-only entry and a matching temp-only entry exist,  matching behavior prefers the pressure-only entry.
 - if all pressure classes are defined, temp-only entries will usually never be reached
 - temp-only entries are most useful when a matching pressure-only entry does not exist
 

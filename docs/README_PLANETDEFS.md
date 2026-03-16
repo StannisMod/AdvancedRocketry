@@ -1,6 +1,6 @@
 # Advanced Rocketry `planetDefs.xml` Reference
 
-This document explains how `planetDefs.xml` is structured and which tags and attributes are currently supported by this fork.
+This document explains how `planetDefs.xml` is structured and which tags and attributes are supported.
 
 Place the file at:
 
@@ -10,7 +10,7 @@ Place the file at:
 **Template** found here [`TEMPLATE_planetdefs.xml`](TEMPLATE_planetdefs.xml)
 
 
-This reference tries to document all fields that are loaded from planetdefs and used by the current code.
+This reference tries to document all fields that are loaded from planetdefs.
 
 ---
 
@@ -91,7 +91,7 @@ Examples:
 This document intentionally excludes fields that are only exported/written but not meaningfully loaded from XML.
 
 Example:
-- `avgTemperature` is written by XML export code, but it is not a meaningful author-controlled XML input in the files reviewed, because temperature is recomputed after load
+- `avgTemperature` is written by XML export code, but it is not a meaningful author-controlled XML input because temperature is recomputed after load
 
 ---
 
@@ -262,7 +262,8 @@ Explicit dimension ID.
 ```xml
 <planet name="Earth" DIMID="99">
 ```
-
+Note:
+- Case sensitive, canonical "DIMID"
 #### `dimMapping`
 Makes a planet out of a non-native dimension.
 
@@ -286,7 +287,7 @@ Planet icon basename.
 
 ## Built-in `customIcon` values
 
-These are the built-in planet icon basenames currently present in:
+Built-in planet icon basenames:
 
 `src/main/resources/assets/advancedrocketry/textures/planets/`
 
@@ -502,7 +503,7 @@ Atmosphere density value.
 
 Meaning:
 - `100` is Earthlike
-- Values above `75` are generally treated as breathable in the reviewed code
+- Values above `75` are generally treated as breathable in the code
 - Atmosphere density influences weather, fog, cloud height, and temperature calculations
 
 Loader clamp:
@@ -565,7 +566,7 @@ Loader clamp:
 
 Notes:
 - For planets orbiting stars, this affects temperature
-- For moons, the current code uses parent-star distance for solar temperature
+- For moons, code uses parent-star distance for solar temperature
 
 #### `<orbitalTheta>`
 Starting angular displacement in degrees.
@@ -664,7 +665,7 @@ Ring angle integer.
 ```
 
 Notes:
-- The current XML loader uses direct `Integer.parseInt(...)` here
+- XML loader uses direct `Integer.parseInt(...)` here
 - Use a valid integer
 
 #### `<ringColor>`
@@ -809,7 +810,7 @@ Accepted values:
 - `false`
 
 Notes:
-- Canonical spelling in the current code is `generateVolcanos`
+- Canonical spelling is `generateVolcanos`
 - This flag is also gated by the global config option `generateVolcanos`
   - If the global config is `false`, volcano generation is disabled globally regardless of this XML value
   - If the global config is `true`, this tag can still disable volcanos for an individual planet
@@ -1044,7 +1045,7 @@ Ocean block override.
 
 Notes:
 - Value is a block resource location
-- No metadata is supported here in the XML loader path reviewed
+- No metadata is supported here in the XML loader
 
 
 This setting is a full terrain base-material override, not a decorative or secondary filler
@@ -1345,7 +1346,7 @@ Use attribute-based `<ore />` entries:
 </oreGen>
 ```
 
-Do not rely on nested child tags inside `<ore>` for current loading behavior.
+Do not rely on nested child tags inside `<ore>` for loading behavior.
 
 
 
@@ -1495,7 +1496,7 @@ Do not rely on nested child tags inside `<ore>` for current loading behavior.
 ## 10. Common Pitfalls
 
 ### 10.1 `numPlanets`, not `numPlanet`
-The current attribute name is:
+Attribute name is:
 
 ```xml
 numPlanets="..."
@@ -1514,7 +1515,7 @@ Do not treat exported values such as `avgTemperature` as reliable author-control
 
 ## 11. Fields Intentionally Not Documented Here
 
-This document intentionally excludes fields that were not confirmed as meaningful current XML inputs from the reviewed code.
+This document intentionally excludes fields that were not confirmed as meaningful current XML inputs.
 
 Examples:
 - fields only written by export code
