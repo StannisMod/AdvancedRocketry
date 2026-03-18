@@ -8,10 +8,17 @@ import net.minecraftforge.common.MinecraftForge;
 import zmaster587.advancedRocketry.command.sub.ARCommand;
 import zmaster587.advancedRocketry.unit.IngameTestOrchestrator;
 
+import java.util.Collections;
+import java.util.List;
+
 public class RunTestsCommand extends ARCommand {
     @Override
     public String getName() {
         return "runTests";
+    }
+
+    public List<String> getAliases() {
+        return Collections.singletonList("runtests");
     }
 
     @Override

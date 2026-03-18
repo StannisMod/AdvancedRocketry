@@ -10,6 +10,7 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.IntStream;
 
@@ -21,8 +22,9 @@ public class ReloadRecipesCommand extends ARCommand {
 
     @Override
     public List<String> getAliases() {
-        return Arrays.asList("reloadrecipes");
+        return Collections.singletonList("reloadrecipes");
     }
+
     @Override
     public String getUsage(ICommandSender sender) {
         return "commands.advancedrocketry.reloadrecipes.usage";

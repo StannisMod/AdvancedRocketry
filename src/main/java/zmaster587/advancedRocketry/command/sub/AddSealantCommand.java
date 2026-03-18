@@ -10,7 +10,7 @@ import net.minecraft.util.text.TextComponentTranslation;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.util.SealableBlockHandler;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class AddSealantCommand extends ARCommand {
@@ -21,8 +21,9 @@ public class AddSealantCommand extends ARCommand {
 
     @Override
     public List<String> getAliases() {
-        return Arrays.asList("addsealant");
+        return Collections.singletonList("addsealant");
     }
+
     @Override
     public String getUsage(ICommandSender sender) {
         return "commands.advancedrocketry.addsealant.usage";

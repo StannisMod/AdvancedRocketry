@@ -1,11 +1,11 @@
 <galaxy>
     <star name="Sol" temp="100" x="0" y="0" size="1.0" numPlanets="3" numGasGiants="1">
-        <planet name="Earth" DIMID="0" Dimmapped="">
+        <planet name="Earth" DIMID="0" dimMapping="" customIcon="earthlike">
             <fogColor>1,1,1</fogColor>
             <skyColor>0,0,1</skyColor>
             <atmosphereDensity>100</atmosphereDensity>
             <gravitationalMultiplier>100</gravitationalMultiplier>
-            <orbitalDistance>1000</orbitalDistance>
+            <orbitalDistance>120</orbitalDistance>
             <orbitalTheta>180</orbitalTheta>
             <rotationalPeriod>24000</rotationalPeriod>
             <biomeIds>0</biomeIds>
@@ -14,7 +14,7 @@
                 <fogColor>1.0,1.0,1.0</fogColor>
                 <skyColor>1.0,1.0,1.0</skyColor>
                 <gravitationalMultiplier>16</gravitationalMultiplier>
-                <orbitalDistance>100</orbitalDistance>
+                <orbitalDistance>45</orbitalDistance>
                 <orbitalPhi>0</orbitalPhi>
                 <rotationalPeriod>36000</rotationalPeriod>
                 <atmosphereDensity>0</atmosphereDensity>

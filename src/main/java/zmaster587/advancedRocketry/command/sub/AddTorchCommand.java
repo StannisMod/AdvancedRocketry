@@ -9,7 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.TextComponentTranslation;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class AddTorchCommand extends ARCommand {
@@ -20,7 +20,7 @@ public class AddTorchCommand extends ARCommand {
 
     @Override
     public List<String> getAliases() {
-        return Arrays.asList("addtorch");
+        return Collections.singletonList("addtorch");
     }
     @Override
     public String getUsage(ICommandSender sender) {
