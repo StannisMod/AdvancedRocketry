@@ -80,6 +80,7 @@ import zmaster587.advancedRocketry.event.WorldEvents;
 import zmaster587.advancedRocketry.event.WorldInfoHandler;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
+import zmaster587.advancedRocketry.integration.theoneprobe.TopIntegration;
 import zmaster587.advancedRocketry.item.*;
 import zmaster587.advancedRocketry.item.components.ItemJetpack;
 import zmaster587.advancedRocketry.item.components.ItemPressureTank;
@@ -295,7 +296,8 @@ public class AdvancedRocketry {
         AdvancedRocketryAPI.atomsphereSealHandler = SealableBlockHandler.INSTANCE;
         ((SealableBlockHandler) AdvancedRocketryAPI.atomsphereSealHandler).loadDefaultData();
 
-
+        // The One Probe integration
+        TopIntegration.register();
         //Configuration  ---------------------------------------------------------------------------------------------
 
         config = new Configuration(new File(event.getModConfigurationDirectory(), "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/advancedRocketry.cfg"));

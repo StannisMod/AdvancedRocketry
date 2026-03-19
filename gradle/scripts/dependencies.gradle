@@ -5,6 +5,10 @@ repositories {
         name 'JEI'
         url 'https://dvs1.progwml6.com/files/maven/'
     }
+    maven {
+        name 'ModMaven'
+        url 'https://modmaven.dev/'
+    }
     // Other repositories described by default:
     // CleanroomMC: https://maven.cleanroommc.com
     exclusiveContent {
@@ -75,6 +79,9 @@ dependencies {
     runtimeOnly rfg.deobf("mezz.jei:jei_1.12.2:${jeiVersion}")
 
     implementation rfg.deobf('curse.maven:lib-vulpes-1038780:5732205')
+
+    compileOnly rfg.deobf("mcjty.theoneprobe:TheOneProbe-1.12:1.12-1.4.28-17")
+    runtimeOnly rfg.deobf("mcjty.theoneprobe:TheOneProbe-1.12:1.12-1.4.28-17")
 
     compileOnly rfg.deobf('curse.maven:galacticraft-legacy-564236:4671122')
     compileOnly rfg.deobf('curse.maven:matter-overdrive-557428:6439254')
