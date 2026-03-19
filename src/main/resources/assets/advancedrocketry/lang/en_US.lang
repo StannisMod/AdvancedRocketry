@@ -1084,7 +1084,7 @@ tooltip.advancedrocketry.warpcontroller.alt.2=(You made it this far! check wiki 
 # CarbonScrubberCartridge
 tooltip.advancedrocketry.scrubbercart=Used in CO₂ Scrubber
 tooltip.advancedrocketry.scrubbercart.shift.1=Purifies air at the cost of durability.
-tooltip.advancedrocketry.atmanalyzer.alt.1=Should last more than 24h
+tooltip.advancedrocketry.scrubbercart.alt.1=Should last more than 24h
 
 # Seal Detector
 tooltip.advancedrocketry.sealdetector=Detects if a block is airtight
@@ -1418,7 +1418,7 @@ tooltip.advancedrocketry.spacelaser.shift.1=§bUse Holo-Projector!
 tooltip.advancedrocketry.spacelaser.alt.1=§fRequires Redstone to run
 
 # Force Field Projector
-tooltip.advancedrocketry.forcefieldprojector=Projeccts up to 32 blocks away!
+tooltip.advancedrocketry.forcefieldprojector=Projects up to 32 blocks away!
 tooltip.advancedrocketry.forcefieldprojector.shift.1=§fActivate with Redstone
 
 # Vacuum Laser
