@@ -783,6 +783,32 @@ jei.ar.fuel.role.oxidizer=Oxidizer
 jei.ar.fuel.role.working_fluid=Working Fluid
 jei.ar.stationAssembler.newStationChipHint=§cThis Points to the new Station!
 
+# TOP-integration
+
+msg.top.advancedrocketry.guidance.noComputer=No Guidance Computer
+msg.top.advancedrocketry.guidance.noDestination=No Destination
+msg.top.advancedrocketry.guidance.unprogrammed=Unprogrammed
+msg.top.advancedrocketry.guidance.station=Station %1$s
+msg.top.advancedrocketry.guidance.asteroidWithId=%1$s (%2$s)
+msg.top.advancedrocketry.guidance.orbit=Orbit
+msg.top.advancedrocketry.guidance.space=Space
+msg.top.advancedrocketry.guidance.pad= / Pad %1$s
+
+msg.top.advancedrocketry.fuel.label=Fuel
+msg.top.advancedrocketry.fuel.oxidizer=Oxidizer
+msg.top.advancedrocketry.fuel.workingFluid=Working Fluid
+msg.top.advancedrocketry.fuel.notSet=Not set
+msg.top.advancedrocketry.fuel.unknownFluid=Unknown fluid
+
+msg.top.advancedrocketry.rocket.monopropellant=Monopropellant Rocket
+msg.top.advancedrocketry.rocket.bipropellant=Bipropellant Rocket
+msg.top.advancedrocketry.rocket.nuclear=Nuclear Rocket
+msg.top.advancedrocketry.modname=Advanced Rocketry
+
+
+#########################
+##### TOOLTIP STUFF #####
+#########################
 # Generic hint
 tooltip.advancedrocketry.hold_shift=Hold §eShift§7 for details
 tooltip.advancedrocketry.hold_alt=Hold §eAlt§7 for advanced tips

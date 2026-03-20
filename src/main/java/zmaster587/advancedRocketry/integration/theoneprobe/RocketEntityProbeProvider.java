@@ -9,6 +9,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
@@ -19,12 +20,18 @@ import zmaster587.advancedRocketry.api.StatsRocket;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
-import zmaster587.advancedRocketry.item.ItemStationChip;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.item.ItemAsteroidChip;
+import zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip;
+import zmaster587.advancedRocketry.item.ItemStationChip;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.advancedRocketry.util.StationLandingLocation;
+import zmaster587.libVulpes.items.ItemLinker;
+import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.util.Vector3F;
+
+import java.util.Locale;
 
 public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
 
@@ -46,25 +53,41 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         if (mainFuel != null) {
             switch (mainFuel) {
                 case LIQUID_MONOPROPELLANT:
-                    addFuelSection(probeInfo, "Fuel", stats.getFuelFluid(), "Monopropellant",
+                    addFuelSection(
+                            probeInfo,
+                            tr("msg.top.advancedrocketry.fuel.label"),
+                            stats.getFuelFluid(),
                             rocket.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT),
-                            rocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT));
+                            rocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT)
+                    );
                     break;
 
                 case LIQUID_BIPROPELLANT:
-                    addFuelSection(probeInfo, "Fuel", stats.getFuelFluid(), "Bipropellant Fuel",
+                    addFuelSection(
+                            probeInfo,
+                            tr("msg.top.advancedrocketry.fuel.label"),
+                            stats.getFuelFluid(),
                             rocket.getFuelAmount(FuelType.LIQUID_BIPROPELLANT),
-                            rocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT));
+                            rocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT)
+                    );
 
-                    addFuelSection(probeInfo, "Oxidizer", stats.getOxidizerFluid(), "Oxidizer",
+                    addFuelSection(
+                            probeInfo,
+                            tr("msg.top.advancedrocketry.fuel.oxidizer"),
+                            stats.getOxidizerFluid(),
                             rocket.getFuelAmount(FuelType.LIQUID_OXIDIZER),
-                            rocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER));
+                            rocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER)
+                    );
                     break;
 
                 case NUCLEAR_WORKING_FLUID:
-                    addFuelSection(probeInfo, "Working Fluid", stats.getWorkingFluid(), "Working Fluid",
+                    addFuelSection(
+                            probeInfo,
+                            tr("msg.top.advancedrocketry.fuel.workingFluid"),
+                            stats.getWorkingFluid(),
                             rocket.getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID),
-                            rocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID));
+                            rocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID)
+                    );
                     break;
             }
         }
@@ -74,6 +97,14 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         }
     }
 
+    private static String tr(String key) {
+        return LibVulpes.proxy.getLocalizedString(key);
+    }
+
+    private static String trf(String key, Object... args) {
+        return new TextComponentTranslation(key, args).getUnformattedText();
+    }
+
     private static void addGuidanceInfo(IProbeInfo probeInfo, EntityRocket rocket) {
         if (rocket.storage == null) {
             return;
@@ -81,53 +112,100 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
 
         TileGuidanceComputer gc = rocket.storage.getGuidanceComputer();
         if (gc == null) {
-            probeInfo.text("Guidance Computer: Missing");
+            probeInfo.text(tr("msg.top.advancedrocketry.guidance.noComputer"));
             return;
         }
 
         ItemStack stack = gc.getStackInSlot(0);
-
-        IProbeInfo row = probeInfo.horizontal();
         if (stack.isEmpty()) {
-            row.text("Guidance Computer: Empty");
-        } else {
-            row.item(stack, probeInfo.defaultItemStyle().width(16).height(16));
-            row.itemLabel(stack);
+            probeInfo.text(tr("msg.top.advancedrocketry.guidance.noDestination"));
+            return;
         }
 
-        probeInfo.text("Destination: " + getCurrentLaunchDestinationText(rocket, gc, stack));
+        String primaryText = getGuidancePrimaryText(rocket, gc, stack);
+
+        IProbeInfo row = probeInfo.horizontal();
+        row.item(stack, probeInfo.defaultItemStyle().width(16).height(16));
+        row.text(primaryText);
+    }
+
+    private static String getGuidancePrimaryText(EntityRocket rocket, TileGuidanceComputer gc, ItemStack stack) {
+        if (stack.getItem() instanceof ItemAsteroidChip) {
+            ItemAsteroidChip chip = (ItemAsteroidChip) stack.getItem();
+            String type = chip.getType(stack);
+            Long uuid = chip.getUUID(stack);
+
+            if (uuid == null || type == null || type.isEmpty()) {
+                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+            }
+
+            return trf(
+                    "msg.top.advancedrocketry.guidance.asteroidWithId",
+                    type,
+                    ItemAsteroidChip.shortDisplayId(uuid, type)
+            );
+        }
+
+        if (stack.getItem() instanceof ItemStationChip) {
+            int stationId = ItemStationChip.getUUID(stack);
+            if (stationId == 0) {
+                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+            }
+            return trf("msg.top.advancedrocketry.guidance.station", stationId);
+        }
+
+        if (stack.getItem() instanceof ItemPlanetIdentificationChip) {
+            ItemPlanetIdentificationChip chip = (ItemPlanetIdentificationChip) stack.getItem();
+
+            if (!chip.hasValidDimension(stack)) {
+                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+            }
+
+            if (chip.getDimensionProperties(stack) == null) {
+                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+            }
+
+            return chip.getDimensionProperties(stack).getName();
+        }
+
+        if (isLinker(stack)) {
+            if (isUnprogrammedLinker(stack)) {
+                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+            }
+            return getCurrentLaunchDestinationText(rocket, gc, stack);
+        }
+
+        String resolved = getCurrentLaunchDestinationText(rocket, gc, stack);
+        if (resolved.equals(tr("msg.top.advancedrocketry.guidance.unprogrammed"))) {
+            return resolved;
+        }
+
+        return stripTrailingCoords(resolved);
     }
 
     private static String getCurrentLaunchDestinationText(EntityRocket rocket, TileGuidanceComputer gc, ItemStack stack) {
         int currentDim = rocket.world.provider.getDimension();
-
         int destDim = rocket.storage.getDestinationDimId(currentDim, (int) rocket.posX, (int) rocket.posZ);
 
         if (stack.isEmpty()
                 && ARConfiguration.getCurrentConfig().experimentalSpaceFlight
                 && destDim != Constants.INVALID_PLANET) {
-            return "Orbit";
+            return tr("msg.top.advancedrocketry.guidance.orbit");
         }
 
         if (destDim == Constants.INVALID_PLANET || destDim == SpaceObjectManager.WARPDIMID) {
-            return "Not programmed";
+            return tr("msg.top.advancedrocketry.guidance.unprogrammed");
         }
 
-        // Special-case station chips:
-        // if the rocket would launch to the space dimension, the actual target station
-        // is stored on the chip UUID, not in destDim.
         if (stack.getItem() instanceof ItemStationChip
                 && destDim == ARConfiguration.getCurrentConfig().spaceDimId) {
-
             int stationId = ItemStationChip.getUUID(stack);
             if (stationId != 0) {
-                return "Station " + stationId;
+                return trf("msg.top.advancedrocketry.guidance.station", stationId);
             }
-
-            return "Unprogrammed Station Chip";
+            return tr("msg.top.advancedrocketry.guidance.unprogrammed");
         }
 
-        // Must happen after getDestinationDimId() for side-effect-sensitive cases.
         Vector3F<Float> loc = rocket.storage.getDestinationCoordinates(destDim, false);
 
         if (destDim == ARConfiguration.getCurrentConfig().spaceDimId) {
@@ -136,17 +214,18 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
                         .getSpaceStationFromBlockCoords(new BlockPos(loc.x, loc.y, loc.z));
 
                 if (station != null) {
-                    String text = "Station " + station.getId();
+                    String text = trf("msg.top.advancedrocketry.guidance.station", station.getId());
 
                     StationLandingLocation pad = gc.getLandingLocation(station.getId());
                     if (pad != null) {
-                        text += " / Pad " + pad;
+                        text += trf("msg.top.advancedrocketry.guidance.pad", pad);
                     }
 
                     return text;
                 }
             }
-            return "Space";
+
+            return tr("msg.top.advancedrocketry.guidance.space");
         }
 
         String text = DimensionManager.getInstance().getDimensionProperties(destDim).getName();
@@ -157,29 +236,56 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         }
 
         if (loc != null) {
-            text += String.format(" (%.0f, %.0f)", loc.x, loc.z);
-        } else {
-            text += " (coords unknown)";
+            text += String.format(Locale.ROOT, " (%.0f, %.0f)", loc.x, loc.z);
         }
 
         return text;
     }
 
-    private static void addFuelSection(IProbeInfo probeInfo, String label, String registryName, String fallbackName, int amount, int capacity) {
+
+
+    private static boolean isLinker(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() instanceof ItemLinker;
+    }
+
+    private static boolean isUnprogrammedLinker(ItemStack stack) {
+        return isLinker(stack) && !ItemLinker.isSet(stack);
+    }
+
+    private static String stripTrailingCoords(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        return text.replaceAll("\\s*\\((-?\\d+(?:\\.\\d+)?),\\s*(-?\\d+(?:\\.\\d+)?)\\)$", "");
+    }
+
+    private static void addFuelSection(IProbeInfo probeInfo, String label, String registryName, int amount, int capacity) {
         if (capacity <= 0) {
             return;
         }
 
-        probeInfo.text(label + ": " + getPrettyFluidName(registryName, fallbackName));
-        probeInfo.progress(amount, capacity,
+        String fluidDisplayName = getPrettyFluidName(registryName);
+
+        if (fluidDisplayName != null) {
+            probeInfo.text(label + ": " + fluidDisplayName);
+        } else if (amount > 0) {
+            probeInfo.text(label + ": " + tr("msg.top.advancedrocketry.fuel.unknownFluid"));
+        } else {
+            probeInfo.text(label + ":");
+        }
+
+        probeInfo.progress(
+                amount,
+                capacity,
                 probeInfo.defaultProgressStyle()
                         .suffix(" mB")
-                        .numberFormat(NumberFormat.COMMAS));
+                        .numberFormat(NumberFormat.COMMAS)
+        );
     }
 
-    private static String getPrettyFluidName(String registryName, String fallbackName) {
+    private static String getPrettyFluidName(String registryName) {
         if (registryName == null || registryName.isEmpty() || "null".equals(registryName)) {
-            return fallbackName;
+            return null;
         }
 
         Fluid fluid = FluidRegistry.getFluid(registryName);
@@ -192,62 +298,5 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         } catch (Exception e) {
             return fluid.getName();
         }
-    }
-
-    private static String getDestinationFromChip(ItemStack stack, TileGuidanceComputer gc) {
-        if (stack.isEmpty()) {
-            return null;
-        }
-
-        // Preferred:
-        // if your station-chip item class has a real getter for station id/name, use that here.
-        // Example idea:
-        // if (stack.getItem() instanceof ItemStationChip) {
-        //     int stationId = ((ItemStationChip) stack.getItem()).getStationId(stack);
-        //     String text = "Station " + stationId;
-        //     StationLandingLocation pad = gc.getLandingLocation(stationId);
-        //     if (pad != null) text += " / Pad " + pad;
-        //     return text;
-        // }
-
-        // Fallback:
-        String displayName = stack.getDisplayName();
-        if (displayName != null && displayName.toLowerCase().contains("station")) {
-            String text = simplifyStationChipName(displayName);
-
-            Integer stationId = extractStationId(displayName);
-            if (stationId != null) {
-                StationLandingLocation pad = gc.getLandingLocation(stationId);
-                if (pad != null) {
-                    text += " / Pad " + pad;
-                }
-            }
-
-            return text;
-        }
-
-        return null;
-    }
-
-    private static String simplifyStationChipName(String displayName) {
-        String text = displayName;
-
-        text = text.replace("Space Station #", "Station ");
-        text = text.replace("Space Station ", "Station ");
-        text = text.replace(" ID Chip", "");
-        text = text.trim();
-
-        return text;
-    }
-
-    private static Integer extractStationId(String displayName) {
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)").matcher(displayName);
-        if (m.find()) {
-            try {
-                return Integer.parseInt(m.group(1));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return null;
     }
 }
