@@ -8,7 +8,6 @@ import mcjty.theoneprobe.api.ProbeMode;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
@@ -36,22 +35,51 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
             return;
         }
 
-        BlockPos pos = hitData.getPos();
-        TileEntity tile = world.getTileEntity(pos);
-
-        if (tile instanceof TileDataBus) {
-            addDataStorageInfo(probeInfo, ((TileDataBus) tile).getDataObject());
-            return;
-        }
-
-        if (tile instanceof TileSatelliteTerminal) {
-            addDataStorageInfo(probeInfo, ((TileSatelliteTerminal) tile).getDataObject());
+        TileEntity tile = world.getTileEntity(hitData.getPos());
+        if (tile == null) {
             return;
         }
 
         if (tile instanceof TileWirelessTransciever) {
             addWirelessDataInfo(probeInfo, (TileWirelessTransciever) tile);
+            return;
         }
+
+        DataStorage storage = getDataStorage(tile);
+        if (storage != null) {
+            addCommonDataInfo(probeInfo, storage, true);
+        }
+    }
+
+    private static DataStorage getDataStorage(TileEntity tile) {
+        if (tile instanceof TileDataBus) {
+            return ((TileDataBus) tile).getDataObject();
+        }
+
+        if (tile instanceof TileSatelliteTerminal) {
+            return ((TileSatelliteTerminal) tile).getDataObject();
+        }
+
+        return null;
+    }
+    private static String getModeTextPadded(boolean extractMode) {
+        String mode = tr(extractMode
+                ? "msg.top.advancedrocketry.data.mode.extract"
+                : "msg.top.advancedrocketry.data.mode.insert");
+
+        if (!extractMode) {
+            mode += " ";
+        }
+
+        return mode;
+    }
+    private static String getLinkStatusBadge(boolean linked) {
+        return (linked
+                ? net.minecraft.util.text.TextFormatting.GREEN
+                : net.minecraft.util.text.TextFormatting.RED)
+                + tr(linked
+                ? "msg.top.advancedrocketry.data.link.linked"
+                : "msg.top.advancedrocketry.data.link.unlinked");
     }
 
     private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransciever tile) {
@@ -60,69 +88,36 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
             return;
         }
 
-
-
         probeInfo.text(
                 tr("msg.top.advancedrocketry.data.mode")
                         + ": "
-                        + tr(tile.isExtractModeWireless()
-                        ? "msg.top.advancedrocketry.data.mode.extract"
-                        : "msg.top.advancedrocketry.data.mode.insert")
+                        + getModeTextPadded(tile.isExtractModeWireless())
+                        + "    "
+                        + getLinkStatusBadge(tile.isLinkedWireless())
         );
 
-        probeInfo.text(
-                tr("msg.top.advancedrocketry.data.link")
-                        + ": "
-                        + tr(tile.isLinkedWireless()
-                        ? "msg.top.advancedrocketry.data.link.linked"
-                        : "msg.top.advancedrocketry.data.link.unlinked")
-        );
-
-        DataType type = storage.getDataType();
-        probeInfo.text(
-                tr("msg.top.advancedrocketry.data.type")
-                        + ": "
-                        + tr(type.toString())
-        );
-        int current = storage.getData();
-        int max = Math.max(1, storage.getMaxData());
-
-        probeInfo.progress(
-                current,
-                max,
-                probeInfo.defaultProgressStyle()
-                        .borderColor(DATA_BORDER_COLOR)
-                        .backgroundColor(DATA_BACKGROUND_COLOR)
-                        .filledColor(DATA_FILLED_COLOR)
-                        .alternateFilledColor(DATA_ALT_FILLED_COLOR)
-                        .height(12)
-                        .width(100)
-                        .showText(true)
-                        .numberFormat(NumberFormat.COMMAS)
-                        .suffix(" Data")
-        );
+        addCommonDataInfo(probeInfo, storage, false);
     }
 
-    private static void addDataStorageInfo(IProbeInfo probeInfo, TileDataBus bus) {
-        addDataStorageInfo(probeInfo, bus.getDataObject());
-    }
-
-    private static void addDataStorageInfo(IProbeInfo probeInfo, TileSatelliteTerminal terminal) {
-        addDataStorageInfo(probeInfo, terminal.getDataObject());
-    }
-
-    private static void addDataStorageInfo(IProbeInfo probeInfo, DataStorage storage) {
+    private static void addCommonDataInfo(IProbeInfo probeInfo, DataStorage storage, boolean showLockedLine) {
         if (storage == null) {
             return;
         }
 
-        DataType type = storage.getDataType();
         probeInfo.text(
                 tr("msg.top.advancedrocketry.data.type")
                         + ": "
-                        + tr(type.toString())
+                        + getDataTypeText(storage.getDataType())
         );
 
+        addDataBar(probeInfo, storage);
+
+        if (showLockedLine && storage.isLocked()) {
+            probeInfo.text(tr("msg.top.advancedrocketry.data.locked"));
+        }
+    }
+
+    private static void addDataBar(IProbeInfo probeInfo, DataStorage storage) {
         int current = storage.getData();
         int max = Math.max(1, storage.getMaxData());
 
@@ -138,12 +133,16 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
                         .width(100)
                         .showText(true)
                         .numberFormat(NumberFormat.COMMAS)
-                        .suffix(" Data")
+                        .suffix(" " + tr("msg.top.advancedrocketry.data.label"))
         );
+    }
 
-        if (storage.isLocked()) {
-            probeInfo.text(tr("msg.top.advancedrocketry.data.locked"));
+    private static String getDataTypeText(DataType type) {
+        if (type == null) {
+            return tr("data.undefined.name");
         }
+
+        return tr(type.toString());
     }
 
     private static String tr(String key) {
