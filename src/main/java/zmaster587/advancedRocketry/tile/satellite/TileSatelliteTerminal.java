@@ -74,7 +74,9 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         return false;
     }
 
-
+    public final DataStorage getDataObject() {
+        return data;
+    }
 
     // Link+power check using an already-looked-up satellite
     private boolean hasLinkAndPower(@Nonnull SatelliteBase sat) {

@@ -44,8 +44,18 @@ public class TileWirelessTransciever extends TileEntity implements INetworkMachi
     private int phase = -1; // Fixed phase per tile to spread load
     private ModuleText netIdLabel; // Show network ID (label)
     private final DataStorage uiBuffer = new DataStorage(); // UI-only, never used for logic
-    
-    
+
+    public final DataStorage getUiBufferObject() {
+        return uiBuffer;
+    }
+
+    public boolean isLinkedWireless() {
+        return networkID != -1;
+    }
+
+    public int getWirelessNetworkId() {
+        return networkID;
+    }
     
     // Avoid per-call allocations from DataType.values()
     // needs update if DataType enum changes

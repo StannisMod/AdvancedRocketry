@@ -35,6 +35,11 @@ import java.util.Locale;
 
 public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
 
+    private static final int FUEL_BORDER_COLOR = 0xFF555555;
+    private static final int FUEL_BACKGROUND_COLOR = 0xFF000000;
+    private static final int FUEL_FILLED_COLOR = 0xFF284892;
+    private static final int FUEL_ALT_FILLED_COLOR = 0xFF162F69;
+
     @Override
     public String getID() {
         return "advancedrocketry:rocket_entity";
@@ -49,51 +54,10 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         EntityRocket rocket = (EntityRocket) entity;
         StatsRocket stats = rocket.getRocketStats();
 
-        FuelType mainFuel = rocket.getRocketFuelType();
-        if (mainFuel != null) {
-            switch (mainFuel) {
-                case LIQUID_MONOPROPELLANT:
-                    addFuelSection(
-                            probeInfo,
-                            tr("msg.top.advancedrocketry.fuel.label"),
-                            stats.getFuelFluid(),
-                            rocket.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT),
-                            rocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT)
-                    );
-                    break;
-
-                case LIQUID_BIPROPELLANT:
-                    addFuelSection(
-                            probeInfo,
-                            tr("msg.top.advancedrocketry.fuel.label"),
-                            stats.getFuelFluid(),
-                            rocket.getFuelAmount(FuelType.LIQUID_BIPROPELLANT),
-                            rocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT)
-                    );
-
-                    addFuelSection(
-                            probeInfo,
-                            tr("msg.top.advancedrocketry.fuel.oxidizer"),
-                            stats.getOxidizerFluid(),
-                            rocket.getFuelAmount(FuelType.LIQUID_OXIDIZER),
-                            rocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER)
-                    );
-                    break;
-
-                case NUCLEAR_WORKING_FLUID:
-                    addFuelSection(
-                            probeInfo,
-                            tr("msg.top.advancedrocketry.fuel.workingFluid"),
-                            stats.getWorkingFluid(),
-                            rocket.getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID),
-                            rocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID)
-                    );
-                    break;
-            }
-        }
+        addGuidanceInfo(probeInfo, rocket);
 
         if (mode == ProbeMode.EXTENDED) {
-            addGuidanceInfo(probeInfo, rocket);
+            addFuelInfo(probeInfo, rocket, stats);
         }
     }
 
@@ -258,6 +222,52 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         }
         return text.replaceAll("\\s*\\((-?\\d+(?:\\.\\d+)?),\\s*(-?\\d+(?:\\.\\d+)?)\\)$", "");
     }
+    private static void addFuelInfo(IProbeInfo probeInfo, EntityRocket rocket, StatsRocket stats) {
+        FuelType mainFuel = rocket.getRocketFuelType();
+        if (mainFuel == null) {
+            return;
+        }
+
+        switch (mainFuel) {
+            case LIQUID_MONOPROPELLANT:
+                addFuelSection(
+                        probeInfo,
+                        tr("msg.top.advancedrocketry.fuel.label"),
+                        stats.getFuelFluid(),
+                        rocket.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT),
+                        rocket.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT)
+                );
+                break;
+
+            case LIQUID_BIPROPELLANT:
+                addFuelSection(
+                        probeInfo,
+                        tr("msg.top.advancedrocketry.fuel.label"),
+                        stats.getFuelFluid(),
+                        rocket.getFuelAmount(FuelType.LIQUID_BIPROPELLANT),
+                        rocket.getFuelCapacity(FuelType.LIQUID_BIPROPELLANT)
+                );
+
+                addFuelSection(
+                        probeInfo,
+                        tr("msg.top.advancedrocketry.fuel.oxidizer"),
+                        stats.getOxidizerFluid(),
+                        rocket.getFuelAmount(FuelType.LIQUID_OXIDIZER),
+                        rocket.getFuelCapacity(FuelType.LIQUID_OXIDIZER)
+                );
+                break;
+
+            case NUCLEAR_WORKING_FLUID:
+                addFuelSection(
+                        probeInfo,
+                        tr("msg.top.advancedrocketry.fuel.workingFluid"),
+                        stats.getWorkingFluid(),
+                        rocket.getFuelAmount(FuelType.NUCLEAR_WORKING_FLUID),
+                        rocket.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID)
+                );
+                break;
+        }
+    }
 
     private static void addFuelSection(IProbeInfo probeInfo, String label, String registryName, int amount, int capacity) {
         if (capacity <= 0) {
@@ -278,6 +288,13 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
                 amount,
                 capacity,
                 probeInfo.defaultProgressStyle()
+                        .borderColor(FUEL_BORDER_COLOR)
+                        .backgroundColor(FUEL_BACKGROUND_COLOR)
+                        .filledColor(FUEL_FILLED_COLOR)
+                        .alternateFilledColor(FUEL_ALT_FILLED_COLOR)
+                        .height(12)
+                        .width(100)
+                        .showText(true)
                         .suffix(" mB")
                         .numberFormat(NumberFormat.COMMAS)
         );

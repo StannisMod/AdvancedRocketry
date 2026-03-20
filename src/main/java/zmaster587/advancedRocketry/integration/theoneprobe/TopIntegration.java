@@ -29,6 +29,7 @@ public class TopIntegration {
         public Void apply(ITheOneProbe top) {
             top.registerEntityDisplayOverride(new RocketEntityDisplayOverride());
             top.registerEntityProvider(new RocketEntityProbeProvider());
+            top.registerProvider(new DataBlockProbeProvider());
             return null;
         }
     }
