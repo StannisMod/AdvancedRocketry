@@ -789,11 +789,10 @@ jei.ar.stationAssembler.newStationChipHint=§cThis Points to the new Station!
 msg.top.advancedrocketry.guidance.noComputer=No Guidance Computer
 msg.top.advancedrocketry.guidance.noDestination=No Destination
 msg.top.advancedrocketry.guidance.unprogrammed=Unprogrammed
-msg.top.advancedrocketry.guidance.station=Station %1$s
-msg.top.advancedrocketry.guidance.asteroidWithId=%1$s (%2$s)
+msg.top.advancedrocketry.guidance.station=Station
 msg.top.advancedrocketry.guidance.orbit=Orbit
 msg.top.advancedrocketry.guidance.space=Space
-msg.top.advancedrocketry.guidance.pad= / Pad %1$s
+msg.top.advancedrocketry.guidance.pad=/ Pad
 
 msg.top.advancedrocketry.fuel.label=Fuel
 msg.top.advancedrocketry.fuel.oxidizer=Oxidizer
@@ -803,6 +802,7 @@ msg.top.advancedrocketry.fuel.unknownFluid=Unknown fluid
 msg.top.advancedrocketry.rocket.monopropellant=Monopropellant Rocket
 msg.top.advancedrocketry.rocket.bipropellant=Bipropellant Rocket
 msg.top.advancedrocketry.rocket.nuclear=Nuclear Rocket
+msg.top.advancedrocketry.harvest.gas=Gas
 msg.top.advancedrocketry.modname=Advanced Rocketry
 
 msg.top.advancedrocketry.data.label=Data
@@ -812,7 +812,6 @@ msg.top.advancedrocketry.data.locked=Locked
 msg.top.advancedrocketry.data.mode=Mode
 msg.top.advancedrocketry.data.mode.insert=Insert
 msg.top.advancedrocketry.data.mode.extract=Extract
-msg.top.advancedrocketry.data.link=Link
 msg.top.advancedrocketry.data.link.linked=Linked
 msg.top.advancedrocketry.data.link.unlinked=Unlinked
 

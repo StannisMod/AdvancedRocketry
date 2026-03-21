@@ -9,7 +9,6 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
@@ -21,6 +20,7 @@ import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.entity.EntityStationDeployedRocket;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip;
 import zmaster587.advancedRocketry.item.ItemStationChip;
@@ -28,7 +28,6 @@ import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.advancedRocketry.util.StationLandingLocation;
 import zmaster587.libVulpes.items.ItemLinker;
-import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.util.Vector3F;
 
 import java.util.Locale;
@@ -62,14 +61,15 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
     }
 
     private static String tr(String key) {
-        return LibVulpes.proxy.getLocalizedString(key);
-    }
-
-    private static String trf(String key, Object... args) {
-        return new TextComponentTranslation(key, args).getUnformattedText();
+        return IProbeInfo.STARTLOC + key + IProbeInfo.ENDLOC;
     }
 
     private static void addGuidanceInfo(IProbeInfo probeInfo, EntityRocket rocket) {
+        if (rocket instanceof EntityStationDeployedRocket) {
+            addHarvestInfo(probeInfo, (EntityStationDeployedRocket) rocket);
+            return;
+        }
+
         if (rocket.storage == null) {
             return;
         }
@@ -103,11 +103,7 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
                 return tr("msg.top.advancedrocketry.guidance.unprogrammed");
             }
 
-            return trf(
-                    "msg.top.advancedrocketry.guidance.asteroidWithId",
-                    type,
-                    ItemAsteroidChip.shortDisplayId(uuid, type)
-            );
+            return type + " (" + ItemAsteroidChip.shortDisplayId(uuid, type) + ")";
         }
 
         if (stack.getItem() instanceof ItemStationChip) {
@@ -115,7 +111,7 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
             if (stationId == 0) {
                 return tr("msg.top.advancedrocketry.guidance.unprogrammed");
             }
-            return trf("msg.top.advancedrocketry.guidance.station", stationId);
+            return tr("msg.top.advancedrocketry.guidance.station") + " " + stationId;
         }
 
         if (stack.getItem() instanceof ItemPlanetIdentificationChip) {
@@ -165,7 +161,7 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
                 && destDim == ARConfiguration.getCurrentConfig().spaceDimId) {
             int stationId = ItemStationChip.getUUID(stack);
             if (stationId != 0) {
-                return trf("msg.top.advancedrocketry.guidance.station", stationId);
+                return tr("msg.top.advancedrocketry.guidance.station") + " " + stationId;
             }
             return tr("msg.top.advancedrocketry.guidance.unprogrammed");
         }
@@ -178,11 +174,11 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
                         .getSpaceStationFromBlockCoords(new BlockPos(loc.x, loc.y, loc.z));
 
                 if (station != null) {
-                    String text = trf("msg.top.advancedrocketry.guidance.station", station.getId());
+                    String text = tr("msg.top.advancedrocketry.guidance.station") + " " + station.getId();
 
                     StationLandingLocation pad = gc.getLandingLocation(station.getId());
                     if (pad != null) {
-                        text += trf("msg.top.advancedrocketry.guidance.pad", pad);
+                        text += " " + tr("msg.top.advancedrocketry.guidance.pad") + " " + pad;
                     }
 
                     return text;
@@ -310,10 +306,32 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
             return registryName;
         }
 
+        return getFluidDisplayName(fluid);
+    }
+
+    private static String getFluidDisplayName(Fluid fluid) {
         try {
-            return fluid.getLocalizedName(new FluidStack(fluid, 1));
+            return tr(fluid.getUnlocalizedName(new FluidStack(fluid, 1)));
         } catch (Exception e) {
-            return fluid.getName();
+            try {
+                return tr(fluid.getUnlocalizedName());
+            } catch (Exception ignored) {
+                return fluid.getName();
+            }
         }
+    }
+
+    private static void addHarvestInfo(IProbeInfo probeInfo, EntityStationDeployedRocket rocket) {
+        Fluid gas = rocket.getSelectedHarvestGas();
+        if (gas == null) {
+            return;
+        }
+
+        probeInfo.text(
+                tr("msg.top.advancedrocketry.harvest.gas")
+                        + ": "
+                        + net.minecraft.util.text.TextFormatting.AQUA
+                        + getFluidDisplayName(gas)
+        );
     }
 }

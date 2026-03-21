@@ -818,7 +818,7 @@ public class TileWarpController extends TileEntity implements ITickable, IModula
     public void loadData(int id) {
         ItemStack stack = ItemStack.EMPTY;
 
-        //Use an unused datatype for now
+        // Use an unused datatype for now
         DataType type = DataType.HUMIDITY;
 
         if (id == 0) {
@@ -832,11 +832,15 @@ public class TileWarpController extends TileEntity implements ITickable, IModula
             type = DataType.COMPOSITION;
         }
 
-
         if (!stack.isEmpty() && stack.getItem() instanceof IDataItem) {
-            ItemData item = (ItemData) stack.getItem();
-            if (item.getDataType(stack) == type)
-                item.removeData(stack, this.addData(item.getData(stack), item.getDataType(stack), EnumFacing.UP, true), type);
+            IDataItem item = (IDataItem) stack.getItem();
+
+            if (item.getDataType(stack) == type) {
+                int moved = this.addData(item.getData(stack), type, EnumFacing.UP, true);
+                if (moved > 0) {
+                    item.removeData(stack, moved, type);
+                }
+            }
         }
 
         if (world.isRemote) {

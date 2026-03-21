@@ -691,4 +691,21 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
         gasId = nbt.getShort("gas");
     }
+
+    // TOP integration
+    @javax.annotation.Nullable
+    public net.minecraftforge.fluids.Fluid getSelectedHarvestGas() {
+        DimensionProperties props = DimensionManager.getEffectiveDimId(world, this.getPosition());
+
+        if (props == null || !props.isGasGiant() || props.getHarvestableGasses().isEmpty()) {
+            return null;
+        }
+
+        int idx = gasId;
+        if (idx < 0 || idx >= props.getHarvestableGasses().size()) {
+            idx = 0;
+        }
+
+        return props.getHarvestableGasses().get(idx);
+    }
 }

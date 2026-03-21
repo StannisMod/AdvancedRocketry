@@ -14,7 +14,6 @@ import zmaster587.advancedRocketry.api.DataStorage.DataType;
 import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
 import zmaster587.advancedRocketry.tile.satellite.TileSatelliteTerminal;
-import zmaster587.libVulpes.LibVulpes;
 
 public class DataBlockProbeProvider implements IProbeInfoProvider {
 
@@ -133,7 +132,7 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
                         .width(100)
                         .showText(true)
                         .numberFormat(NumberFormat.COMMAS)
-                        .suffix(" " + tr("msg.top.advancedrocketry.data.label"))
+                        .suffix(" Data")
         );
     }
 
@@ -146,6 +145,6 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
     }
 
     private static String tr(String key) {
-        return LibVulpes.proxy.getLocalizedString(key);
+        return IProbeInfo.STARTLOC + key + IProbeInfo.ENDLOC;
     }
 }

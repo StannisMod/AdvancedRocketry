@@ -10,7 +10,6 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.entity.EntityRocket;
-import zmaster587.libVulpes.LibVulpes;
 
 public class RocketEntityDisplayOverride implements IEntityDisplayOverride {
 
@@ -24,12 +23,12 @@ public class RocketEntityDisplayOverride implements IEntityDisplayOverride {
 
         EntityRocket rocket = (EntityRocket) entity;
         probeInfo.text(TextStyleClass.NAME + getRocketDisplayName(rocket));
-        probeInfo.text(TextStyleClass.MODNAME + "Advanced Rocketry");
+        probeInfo.text(TextStyleClass.MODNAME + tr("msg.top.advancedrocketry.modname"));
         return true;
     }
 
     private static String tr(String key) {
-        return LibVulpes.proxy.getLocalizedString(key);
+        return IProbeInfo.STARTLOC + key + IProbeInfo.ENDLOC;
     }
 
     private static String getRocketDisplayName(EntityRocket rocket) {
