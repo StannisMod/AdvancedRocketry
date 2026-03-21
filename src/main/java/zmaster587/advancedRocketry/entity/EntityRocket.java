@@ -2716,7 +2716,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
                 int ii = 0;
                 for (TileBrokenPart part : storage.getBrokenBlocks()) {
-                    serviceMonitorList.add(new ModuleBrokenPart((ii % 5) * 18, (ii / 5) * 18, part.getDrop()));
+                    serviceMonitorList.add(new ModuleBrokenPart(1 + (ii % 5) * 18, 1 + (ii / 5) * 18, part.getDrop()));
                     ii++;
                 }
 
@@ -2733,7 +2733,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 TileEntity tile = tiles.get(i);
                 IBlockState state = storage.getBlockState(tile.getPos());
                 try {
-                    panModules.add(new ModuleSlotButton(18 * (i % 4), 18 * (i / 4), i + tilebuttonOffset, this, new ItemStack(state.getBlock(), 1, state.getBlock().getMetaFromState(state)), world));
+                    panModules.add(new ModuleSlotButton(1 + 18 * (i % 4), 1 + 18 * (i / 4), i + tilebuttonOffset, this, new ItemStack(state.getBlock(), 1, state.getBlock().getMetaFromState(state)), world));
                 } catch (NullPointerException e) {
 
                 }
@@ -2824,6 +2824,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
         return modules;
     }
+
 
     @Override
     public String getModularInventoryName() {

@@ -1,5 +1,12 @@
 Changelog 2.2.5
 
+- Rocket
+  - fixed GUI slot rendering
+- The One Probe (TOP) - integration (QoL)
+  - Rocket shows destination + fuelbar(s)
+  - Gas-mission rocket shows Gas selection from GUI + fuelbar(s)
+  - Databus, Advanced Databus, Satellite Terminal shows Datatype and amountbar
+  - Wireless Transceiver shows Insert/Extract + Linked/Unlinked
 - Commands
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`
@@ -10,7 +17,8 @@ Changelog 2.2.5
 - OreConfig.xml (oreloader)
   - Overall oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
   - Internal oreconfig priority changed: `p+t > p > t > config + vanilla/modded`
-    - Added "Pressure + Temperature" excact match
+    - Added "Pressure + Temperature" exact match, otherwise same.
+
 - Documentation updated:
   - Inside advancedrocketry.cfg
   - XML_PLANETDEFS_README.md
@@ -48,8 +56,8 @@ Changelog 2.2.2.1
 - Observatory
 	- Correctly render items in Asteroids window
 - JEI integration
-	- Machinerecipe: Show Time in Ticks if its less than 1 sec
-	- Orbital Laser Drill:(only global list for now)
+	- Machinerecipe: Show Time in Ticks if it's less than 1 sec
+	- Orbital Laser Drill: (only global list for now)
 	- Asteroids
 
 - New admin command:
