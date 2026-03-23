@@ -371,10 +371,15 @@ GL11.glPopMatrix();
             GL11.glPopMatrix();
         }
         GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glDepthMask(false);
+        GL11.glDepthMask(true);
         GL11.glPopMatrix();
 
+        // proper reset to fix render-glitch in warpcontrollor gui
         GlStateManager.color(1f, 1f, 1f, 1f);
+        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+        GlStateManager.depthMask(true);
     }
 
     private void renderStars() {
