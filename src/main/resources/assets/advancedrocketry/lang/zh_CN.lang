@@ -796,7 +796,7 @@ msg.top.advancedrocketry.guidance.pad=/发射台
 
 msg.top.advancedrocketry.fuel.label=燃料
 msg.top.advancedrocketry.fuel.oxidizer=氧化剂
-msg.top.advancedrocketry.fuel.workingFluid=公质
+msg.top.advancedrocketry.fuel.workingFluid=工质
 msg.top.advancedrocketry.fuel.unknownFluid=未知流体
 
 msg.top.advancedrocketry.rocket.monopropellant=单组元推进剂火箭
