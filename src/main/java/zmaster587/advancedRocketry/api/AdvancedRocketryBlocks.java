@@ -93,7 +93,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockBeacon;
     public static Block blockLightwoodPlanks;
     public static Block blockThermiteTorch;
-    public static Block blockTransciever;
+    public static Block blockTransceiver;
     public static Block blockMoonTurfDark;
     public static Block blockBlackHoleGenerator;
     public static Block blockEnrichedLavaFluid;

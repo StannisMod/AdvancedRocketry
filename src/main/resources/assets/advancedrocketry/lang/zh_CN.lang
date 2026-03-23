@@ -129,7 +129,7 @@ tile.pipeSeal.name=密封管
 tile.spaceElevatorController.name=太空电梯
 tile.beacon.name=信标
 tile.thermiteTorch.name=铝热剂火把
-tile.wirelessTransciever.name=无线收发器
+tile.wirelessTransceiver.name=无线收发器
 tile.blackholegenerator.name=黑洞发电机
 tile.pump.name=流体泵
 tile.centrifuge.name=离心机
@@ -658,11 +658,11 @@ msg.entity.rocket.clear=清除
 msg.entity.rocket.rcs=RCS模式
 msg.entity.rocket.none=未选择
 msg.entity.rocket.openGuiHint=按%s键打开火箭GUI
-msg.wirelessTransciever.extract=提取
-msg.wirelessTransciever.insert=插入
-msg.wirelessTransciever.type=类型：%s
-msg.wirelessTransciever.network=网络：
-msg.wirelessTransciever.network.unlinked=未链接
+msg.wirelessTransceiver.extract=提取
+msg.wirelessTransceiver.insert=插入
+msg.wirelessTransceiver.type=类型：%s
+msg.wirelessTransceiver.network=网络：
+msg.wirelessTransceiver.network.unlinked=未链接
 
 msg.advancedrocketry.planetselector.up=<< 上一级
 msg.advancedrocketry.planetselector.select=选择
@@ -989,7 +989,7 @@ tooltip.advancedrocketry.fluidtank.fluid=流体：
 tooltip.advancedrocketry.fluidtank.level=液位：
 tooltip.advancedrocketry.fluidtank.shift.1=§c与上下的储罐连接构成大型储罐
 
-# Wireless Transciever
+# Wireless Transceiver
 tooltip.advancedrocketry.transceiver=传输§6数据
 tooltip.advancedrocketry.transceiver.shift.1=§f使用§c链接器§f创建网络
 tooltip.advancedrocketry.transceiver.shift.2=§f支持连接多个收发器

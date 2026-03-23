@@ -124,7 +124,7 @@ tile.pipeSeal.name=Putkitiiviste
 tile.spaceElevatorController.name=Avaruushissi
 tile.beacon.name=Merkkivalo
 tile.thermiteTorch.name=Termiittisoihtu
-tile.wirelessTransciever.name=Langaton Lähetin-Vastaanotin
+tile.wirelessTransceiver.name=Langaton Lähetin-Vastaanotin
 tile.blackholegenerator.name=Musta Aukko Generaattori
 tile.pump.name=Nestepumppu
 tile.centrifuge.name=Sentrifugi
@@ -210,7 +210,7 @@ data.composition.name=Koostumus
 data.atmospheredensity.name=Ilmakehän Tiheys
 data.mass.name=Massa
 
-fluid.oxygenHappi
+fluid.oxygen=Happi
 fluid.hydrogen=Vety
 fluid.nitrogen=Typpi
 fluid.rocketFuel=Rakettipolttoaine
@@ -455,7 +455,7 @@ msg.entity.rocket.seldst=Valitse Määränpää
 msg.entity.rocket.clear=Tyhjennä
 msg.entity.rocket.rcs=RCS Moodi
 msg.entity.rocket.none=Ei Valittu
-msg.wirelessTransciever.extract=ota talteen
+msg.wirelessTransceiver.extract=ota talteen
 
 msg.powerunit.rfpertick=FE/t
 msg.linker.error.firstMachine=Tämän täytyy olla ensimmäinen yhdistettävä laite!

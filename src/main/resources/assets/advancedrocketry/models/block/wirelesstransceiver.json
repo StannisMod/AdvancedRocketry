@@ -14,8 +14,8 @@
         }
     ],
     "textures": {
-	"particle": "advancedrocketry:blocks/wirelesstransciever_front",
-        "wool": "advancedrocketry:blocks/wirelesstransciever_front",
-        "notwool": "advancedrocketry:blocks/wirelesstransciever_rear"
+	"particle": "advancedrocketry:blocks/wirelesstransceiver_front",
+        "wool": "advancedrocketry:blocks/wirelesstransceiver_front",
+        "notwool": "advancedrocketry:blocks/wirelesstransceiver_rear"
     }
 }

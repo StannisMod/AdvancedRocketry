@@ -100,7 +100,7 @@ public class ModuleWirelessBufferBar extends ModuleBase {
 
             // "Type: %s" with translated type
             String typeName = net.minecraft.client.resources.I18n.format(data.getDataType().toString());
-            tt.add(net.minecraft.client.resources.I18n.format("msg.wirelessTransciever.type", typeName));
+            tt.add(net.minecraft.client.resources.I18n.format("msg.wirelessTransceiver.type", typeName));
 
 
             this.drawTooltip(gui, tt, mouseX, mouseY, zLevel, font);

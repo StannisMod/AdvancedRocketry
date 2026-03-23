@@ -11,7 +11,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
-import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
+import zmaster587.advancedRocketry.tile.TileWirelessTransceiver;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
 import zmaster587.advancedRocketry.tile.satellite.TileSatelliteTerminal;
 
@@ -39,8 +39,8 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
             return;
         }
 
-        if (tile instanceof TileWirelessTransciever) {
-            addWirelessDataInfo(probeInfo, (TileWirelessTransciever) tile);
+        if (tile instanceof TileWirelessTransceiver) {
+            addWirelessDataInfo(probeInfo, (TileWirelessTransceiver) tile);
             return;
         }
 
@@ -81,7 +81,7 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
                 : "msg.top.advancedrocketry.data.link.unlinked");
     }
 
-    private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransciever tile) {
+    private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransceiver tile) {
         DataStorage storage = tile.getUiBufferObject();
         if (storage == null) {
             return;

@@ -20,6 +20,7 @@ import zmaster587.advancedRocketry.inventory.modules.ModuleSatellite;
 import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.satellite.SatelliteData;
+import zmaster587.advancedRocketry.tile.TileWirelessTransceiver;
 import zmaster587.advancedRocketry.util.IDataInventory;
 import zmaster587.advancedRocketry.util.PlanetaryTravelHelper;
 
@@ -65,9 +66,9 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
             if (!world.isBlockLoaded(mpos)) continue;
 
             TileEntity te = world.getTileEntity(mpos);
-            if (te instanceof zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever) {
-                zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever w =
-                    (zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever) te;
+            if (te instanceof TileWirelessTransceiver) {
+                TileWirelessTransceiver w =
+                    (TileWirelessTransceiver) te;
                 if (w.isEnabledWireless() && w.isExtractModeWireless()) return true;
             }
         }
