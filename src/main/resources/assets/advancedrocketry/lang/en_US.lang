@@ -502,7 +502,7 @@ msg.terraformingterminal.insertchip.line1=Place a Biome Changer Remote
 msg.terraformingterminal.insertchip.line2=here to make the Satellite
 msg.terraformingterminal.insertchip.line3=terraform the entire planet
 msg.biomescanner.gas=nyehhh, Gassy, ain't it?
-msg.biomescanner.star=If only my sensors had sunshades
+msg.biomescanner.star=If i only had sunshades...
 msg.gravitycontroller.radius=Radius: 
 msg.gravitycontroller.targetgrav=Target Gravity:
 msg.gravitycontroller.none=No Force
@@ -1423,9 +1423,9 @@ tooltip.advancedrocketry.beacon=Long-range signal beacon
 tooltip.advancedrocketry.beacon.shift.1=§bUse Holo-Projector!
 
 # Biome Scanner
-tooltip.advancedrocketry.biomescan=Scans planetary biomes
+tooltip.advancedrocketry.biomescan=Scans planetary biomes below
 tooltip.advancedrocketry.biomescan.shift.1=§bUse Holo-Projector!
-
+tooltip.advancedrocketry.biomescan.alt.1=§cNeeds air below!
 # Railgun
 tooltip.advancedrocketry.railgun=Shoots Items into space
 tooltip.advancedrocketry.railgun.shift.1=§bUse Holo-Projector!

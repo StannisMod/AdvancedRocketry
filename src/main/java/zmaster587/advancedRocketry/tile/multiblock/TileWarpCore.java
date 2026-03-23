@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.tile.multiblock;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.ITickable;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -18,7 +19,7 @@ import zmaster587.libVulpes.util.ZUtils;
 
 import javax.annotation.Nonnull;
 
-public class TileWarpCore extends TileMultiBlock {
+public class TileWarpCore extends TileMultiBlock implements ITickable {
     public static final Object[][][] structure = {
             {{"blockWarpCoreRim", "blockWarpCoreRim", "blockWarpCoreRim"},
                     {"blockWarpCoreRim", 'I', "blockWarpCoreRim"},
@@ -33,7 +34,9 @@ public class TileWarpCore extends TileMultiBlock {
                     {"blockWarpCoreRim", "blockWarpCoreRim", "blockWarpCoreRim"}},
 
     };
+
     private SpaceStationObject station;
+    private boolean inventoryDirty;
 
     private SpaceStationObject getSpaceObject() {
         if (station == null && world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) {
@@ -54,36 +57,64 @@ public class TileWarpCore extends TileMultiBlock {
         return pos.compareTo(this.pos) == 0;
     }
 
-
     @Override
     public void onInventoryUpdated() {
-        //Needs completion
-        if (itemInPorts.isEmpty() /*&& !worldObj.isRemote*/) {
+        if (world == null || world.isRemote)
+            return;
+
+        inventoryDirty = true;
+    }
+
+    @Override
+    public void update() {
+        if (world == null || world.isRemote || !inventoryDirty)
+            return;
+
+        inventoryDirty = false;
+
+        if (itemInPorts.isEmpty()) {
             attemptCompleteStructure(world.getBlockState(pos));
         }
 
-        if (getSpaceObject() == null || (getSpaceObject().getMaxFuelAmount() - getSpaceObject().getFuelAmount()) < ARConfiguration.getCurrentConfig().fuelPointsPerDilithium)
+        SpaceStationObject obj = getSpaceObject();
+        if (obj == null)
             return;
-        for (IInventory inv : itemInPorts) {
-            for (int p = 0; p < 64; p++) { // add multiple dilithium if possible until full
-                for (int i = 0; i < inv.getSizeInventory(); i++) {
-                    ItemStack stack = inv.getStackInSlot(i).copy();
-                    stack.setCount(1);
-                    int amt = 0;
-                    if (!stack.isEmpty() && ZUtils.isItemInOreDict(stack, "gemDilithium")) {
-                        if (!world.isRemote)
-                            amt = getSpaceObject().addFuel(ARConfiguration.getCurrentConfig().fuelPointsPerDilithium);
-                        inv.decrStackSize(i, amt / ARConfiguration.getCurrentConfig().fuelPointsPerDilithium);
-                        inv.markDirty();
 
-                        //If full
-                        if (getSpaceObject().getMaxFuelAmount() - getSpaceObject().getFuelAmount() < ARConfiguration.getCurrentConfig().fuelPointsPerDilithium)
-                            return;
-                    }
+        int perDilithium = ARConfiguration.getCurrentConfig().fuelPointsPerDilithium;
+        if ((obj.getMaxFuelAmount() - obj.getFuelAmount()) < perDilithium)
+            return;
+
+        for (IInventory inv : itemInPorts) {
+            for (int i = 0; i < inv.getSizeInventory(); i++) {
+                ItemStack stack = inv.getStackInSlot(i);
+                if (stack.isEmpty())
+                    continue;
+
+                ItemStack test = stack.copy();
+                test.setCount(1);
+
+                if (!ZUtils.isItemInOreDict(test, "gemDilithium"))
+                    continue;
+
+                while (!inv.getStackInSlot(i).isEmpty()
+                        && (obj.getMaxFuelAmount() - obj.getFuelAmount()) >= perDilithium) {
+
+                    int amt = obj.addFuel(perDilithium);
+                    int toConsume = amt / perDilithium;
+
+                    if (toConsume <= 0)
+                        return;
+
+                    inv.decrStackSize(i, toConsume);
+                    inv.markDirty();
                 }
+
+                if ((obj.getMaxFuelAmount() - obj.getFuelAmount()) < perDilithium)
+                    return;
             }
         }
     }
+
     @Override
     public String getMachineName() {
         return AdvancedRocketryBlocks.blockWarpCore.getLocalizedName();
@@ -92,8 +123,6 @@ public class TileWarpCore extends TileMultiBlock {
     @Override
     @Nonnull
     public AxisAlignedBB getRenderBoundingBox() {
-
         return new AxisAlignedBB(pos.add(-2, -2, -2), pos.add(2, 2, 2));
     }
-
 }

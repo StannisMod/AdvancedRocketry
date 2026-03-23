@@ -100,7 +100,7 @@ public class TileBiomeScanner extends TileMultiPowerConsumer {
                     }
                 }
                 //Relying on a bug, is this safe?
-                ModuleContainerPan pan = new ModuleContainerPan(0, 16, list2, new LinkedList<>(), null, 148, 110, 0, -64, 0, 1000);
+                ModuleContainerPan pan = new ModuleContainerPan(4, 16, list2, new LinkedList<>(), null, 160, 110, 0, -64, 0, 1000);
                 list.add(pan);
             } else
                 list.add(new ModuleText(32, 16, ChatFormatting.OBFUSCATED + "Foxes, that is all", 0x202020));
