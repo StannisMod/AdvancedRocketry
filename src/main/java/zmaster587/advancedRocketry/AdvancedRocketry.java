@@ -1275,6 +1275,7 @@ public class AdvancedRocketry {
 
     @EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
+        zmaster587.advancedRocketry.wirelessdata.NetworkRegistry.clear();
         zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().onServerStopped();
         SpaceObjectManager.getSpaceManager().onServerStopped();
         zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId = Constants.INVALID_PLANET;

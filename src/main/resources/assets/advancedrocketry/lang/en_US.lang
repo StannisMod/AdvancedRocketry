@@ -805,6 +805,7 @@ msg.top.advancedrocketry.modname=Advanced Rocketry
 msg.top.advancedrocketry.data.label=Data
 msg.top.advancedrocketry.data.type=Type
 msg.top.advancedrocketry.data.locked=Locked
+msg.top.advancedrocketry.data.network=Network ID
 
 msg.top.advancedrocketry.data.mode=Mode
 msg.top.advancedrocketry.data.mode.insert=Insert

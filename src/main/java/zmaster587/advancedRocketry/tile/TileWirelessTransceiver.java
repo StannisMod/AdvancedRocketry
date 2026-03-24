@@ -82,7 +82,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         uiBuffer.setData(0, DataType.UNDEFINED);
 
         modeToggle = new ModuleToggleSwitch(
-                50, 50, PACKET_MODE,
+                50, 60, PACKET_MODE,
                 LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.extract"),
                 this,
                 TextureResources.buttonGeneric,
@@ -100,7 +100,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         );
 
         netIdLabel = new ModuleText(
-                40, 22,
+                45, 32,
                 LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.network") + "-",
                 0x000000
         );
@@ -178,7 +178,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         }
 
         if (netIdLabel != null) {
-            String label = LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.network");
+            String label = LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.network") + " ";
             String value = networkID == UNLINKED_NETWORK_ID
                     ? LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.network.unlinked")
                     : Integer.toString(networkID);
@@ -302,19 +302,29 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
 
         TileWirelessTransceiver other = (TileWirelessTransceiver) otherTile;
         HandlerDataNetwork manager = nets();
+        if (manager == null) {
+            return false;
+        }
 
         if (networkID == UNLINKED_NETWORK_ID && other.networkID == UNLINKED_NETWORK_ID) {
             int newId = manager.getNewNetworkID();
-            networkID = newId;
-            other.networkID = newId;
-        } else if (networkID == UNLINKED_NETWORK_ID) {
-            networkID = other.networkID;
-        } else if (other.networkID == UNLINKED_NETWORK_ID) {
-            other.networkID = networkID;
+            setWirelessNetworkId(newId);
+            other.leaveNetwork();
+            other.setWirelessNetworkId(newId);
+
+        } else if (networkID == UNLINKED_NETWORK_ID && other.networkID != UNLINKED_NETWORK_ID) {
+            int newId = manager.getNewNetworkID();
+            other.leaveNetwork();
+            other.setWirelessNetworkId(newId);
+            setWirelessNetworkId(newId);
+
+        } else if (networkID != UNLINKED_NETWORK_ID && other.networkID == UNLINKED_NETWORK_ID) {
+            other.leaveNetwork();
+            other.setWirelessNetworkId(networkID);
+
         } else if (networkID != other.networkID) {
-            int merged = manager.mergeNetworks(networkID, other.networkID);
-            networkID = merged;
-            other.networkID = merged;
+            other.leaveNetwork();
+            other.setWirelessNetworkId(networkID);
         }
 
         joinNetwork();

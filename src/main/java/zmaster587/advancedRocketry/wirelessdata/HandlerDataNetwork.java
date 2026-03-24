@@ -64,7 +64,19 @@ public class HandlerDataNetwork {
         }
 
         int current = id;
-        while ((next = redirects.get(current)) != null) {
+        Set<Integer> visited = new java.util.HashSet<>();
+
+        while (true) {
+            if (!visited.add(current)) {
+                // Corrupt redirect cycle; break safely and return original id.
+                return id;
+            }
+
+            next = redirects.get(current);
+            if (next == null) {
+                break;
+            }
+
             current = next;
         }
 
