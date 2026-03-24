@@ -11,7 +11,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
-import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
+import zmaster587.advancedRocketry.tile.TileWirelessTransceiver;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
 import zmaster587.advancedRocketry.tile.satellite.TileSatelliteTerminal;
 
@@ -39,8 +39,8 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
             return;
         }
 
-        if (tile instanceof TileWirelessTransciever) {
-            addWirelessDataInfo(probeInfo, (TileWirelessTransciever) tile);
+        if (tile instanceof TileWirelessTransceiver) {
+            addWirelessDataInfo(probeInfo, (TileWirelessTransceiver) tile);
             return;
         }
 
@@ -61,17 +61,8 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
 
         return null;
     }
-    private static String getModeTextPadded(boolean extractMode) {
-        String mode = tr(extractMode
-                ? "msg.top.advancedrocketry.data.mode.extract"
-                : "msg.top.advancedrocketry.data.mode.insert");
 
-        if (!extractMode) {
-            mode += " ";
-        }
 
-        return mode;
-    }
     private static String getLinkStatusBadge(boolean linked) {
         return (linked
                 ? net.minecraft.util.text.TextFormatting.GREEN
@@ -81,19 +72,41 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
                 : "msg.top.advancedrocketry.data.link.unlinked");
     }
 
-    private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransciever tile) {
+    private static String getNetworkIdText(int networkId) {
+        return net.minecraft.util.text.TextFormatting.GRAY
+                + tr("msg.top.advancedrocketry.data.network")
+                + ": "
+                + net.minecraft.util.text.TextFormatting.YELLOW
+                + Integer.toString(networkId);
+    }
+
+    private static String getColoredModeText(boolean extractMode) {
+        return (extractMode
+                ? net.minecraft.util.text.TextFormatting.GOLD
+                : net.minecraft.util.text.TextFormatting.AQUA)
+                + tr(extractMode
+                ? "msg.top.advancedrocketry.data.mode.extract"
+                : "msg.top.advancedrocketry.data.mode.insert");
+    }
+
+    private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransceiver tile) {
         DataStorage storage = tile.getUiBufferObject();
         if (storage == null) {
             return;
         }
 
+        boolean linked = tile.isLinkedWireless();
+
         probeInfo.text(
-                tr("msg.top.advancedrocketry.data.mode")
-                        + ": "
-                        + getModeTextPadded(tile.isExtractModeWireless())
+                getColoredModeText(tile.isExtractModeWireless())
+                        + net.minecraft.util.text.TextFormatting.RESET
                         + "    "
-                        + getLinkStatusBadge(tile.isLinkedWireless())
+                        + getLinkStatusBadge(linked)
         );
+
+        if (linked) {
+            probeInfo.text(getNetworkIdText(tile.getWirelessNetworkId()));
+        }
 
         addCommonDataInfo(probeInfo, storage, false);
     }

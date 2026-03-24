@@ -97,8 +97,6 @@ tile.wulfentite.name=Orange Crystal Block
 tile.amethyst.name=Violet Crystal Block
 tile.gravityControl.name=Station Gravity Controller
 tile.drill.name=Drill
-tile.dataPipe.name=Data Cable(Deprecated)
-tile.liquidPipe.name=Liquid Pipe(Deprecated)
 tile.rfOutput.name=Redstone Flux Output Plug
 tile.microwaveReciever.name=Microwave Receiver
 tile.solarPanel.name=Solar Panel
@@ -111,7 +109,6 @@ tile.pressurizedTank.name=Pressurized Tank
 tile.gasIntake.name=Gas Intake
 tile.atmosphereTerraformer.name=Atmosphere Terraformer
 tile.circleLight.name=Station Light
-tile.energyPipe.name=Energy Pipe(Deprecated)
 tile.solarGenerator.name=Solar Generator
 tile.stationMarker.name=Station Docking Port
 tile.qcrucible.name=Quartz Crucible
@@ -129,7 +126,7 @@ tile.pipeSeal.name=Pipe Seal
 tile.spaceElevatorController.name=Space Elevator
 tile.beacon.name=Beacon
 tile.thermiteTorch.name=Thermite Torch
-tile.wirelessTransciever.name=Wireless Transceiver
+tile.wirelessTransceiver.name=Wireless Transceiver
 tile.blackholegenerator.name=Black Hole Generator
 tile.pump.name=Fluid Pump
 tile.centrifuge.name=Centrifuge
@@ -502,7 +499,7 @@ msg.terraformingterminal.insertchip.line1=Place a Biome Changer Remote
 msg.terraformingterminal.insertchip.line2=here to make the Satellite
 msg.terraformingterminal.insertchip.line3=terraform the entire planet
 msg.biomescanner.gas=nyehhh, Gassy, ain't it?
-msg.biomescanner.star=If only my sensors had sunshades
+msg.biomescanner.star=If i only had sunshades...
 msg.gravitycontroller.radius=Radius: 
 msg.gravitycontroller.targetgrav=Target Gravity:
 msg.gravitycontroller.none=No Force
@@ -657,11 +654,11 @@ msg.entity.rocket.clear=Clear
 msg.entity.rocket.rcs=RCS Mode
 msg.entity.rocket.none=None Selected
 msg.entity.rocket.openGuiHint=Press %s to open Rocket GUI
-msg.wirelessTransciever.extract=extract
-msg.wirelessTransciever.insert=insert
-msg.wirelessTransciever.type=Type: %s
-msg.wirelessTransciever.network=Network: 
-msg.wirelessTransciever.network.unlinked=Unlinked
+msg.wirelessTransceiver.extract=extract
+msg.wirelessTransceiver.insert=insert
+msg.wirelessTransceiver.type=Type: %s
+msg.wirelessTransceiver.network=Network:
+msg.wirelessTransceiver.network.unlinked=Unlinked
 
 msg.advancedrocketry.planetselector.up=<< Up
 msg.advancedrocketry.planetselector.select=Select
@@ -808,6 +805,7 @@ msg.top.advancedrocketry.modname=Advanced Rocketry
 msg.top.advancedrocketry.data.label=Data
 msg.top.advancedrocketry.data.type=Type
 msg.top.advancedrocketry.data.locked=Locked
+msg.top.advancedrocketry.data.network=Network ID
 
 msg.top.advancedrocketry.data.mode=Mode
 msg.top.advancedrocketry.data.mode.insert=Insert
@@ -1023,7 +1021,7 @@ tooltip.advancedrocketry.fluidtank.fluid=Fluid:
 tooltip.advancedrocketry.fluidtank.level=Level: 
 tooltip.advancedrocketry.fluidtank.shift.1=§cConnects to tanks above or below to make a bigger tank
 
-# Wireless Transciever
+# Wireless Transceiver
 tooltip.advancedrocketry.transceiver=Transfers §6Data
 tooltip.advancedrocketry.transceiver.shift.1=§fUse §cLinker§f to create Networks
 tooltip.advancedrocketry.transceiver.shift.2=§fSupports multiple Tranceivers
@@ -1423,9 +1421,9 @@ tooltip.advancedrocketry.beacon=Long-range signal beacon
 tooltip.advancedrocketry.beacon.shift.1=§bUse Holo-Projector!
 
 # Biome Scanner
-tooltip.advancedrocketry.biomescan=Scans planetary biomes
+tooltip.advancedrocketry.biomescan=Scans planetary biomes below
 tooltip.advancedrocketry.biomescan.shift.1=§bUse Holo-Projector!
-
+tooltip.advancedrocketry.biomescan.alt.1=§cNeeds air below!
 # Railgun
 tooltip.advancedrocketry.railgun=Shoots Items into space
 tooltip.advancedrocketry.railgun.shift.1=§bUse Holo-Projector!

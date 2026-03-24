@@ -565,6 +565,7 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                 GL11.glColor4f(1f, 1f, 1f, 1f);
                 GL11.glPopMatrix();
                 GL11.glLineStipple(5, (short) 0xFFFF);
+                GL11.glDisable(GL11.GL_LINE_STIPPLE);
             }
         }
 

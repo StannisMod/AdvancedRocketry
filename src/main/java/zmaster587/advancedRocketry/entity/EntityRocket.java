@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.entity;
 
 import io.netty.buffer.ByteBuf;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockSand;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
@@ -29,7 +30,7 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
-import net.minecraft.world.Teleporter;
+import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
@@ -2733,7 +2734,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 TileEntity tile = tiles.get(i);
                 IBlockState state = storage.getBlockState(tile.getPos());
                 try {
-                    panModules.add(new ModuleSlotButton(1 + 18 * (i % 4), 1 + 18 * (i / 4), i + tilebuttonOffset, this, new ItemStack(state.getBlock(), 1, state.getBlock().getMetaFromState(state)), world));
+                    Block block = state.getBlock();
+                    ItemStack display = new ItemStack(block, 1, block.damageDropped(state));
+
+                    if (!display.isEmpty()) {
+                        panModules.add(new ModuleSlotButton(
+                                1 + 18 * (i % 4),
+                                1 + 18 * (i / 4),
+                                i + tilebuttonOffset,
+                                this,
+                                display,
+                                world
+                        ));
+                    }
                 } catch (NullPointerException e) {
 
                 }

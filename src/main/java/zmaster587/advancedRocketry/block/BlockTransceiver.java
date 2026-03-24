@@ -23,7 +23,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class BlockTransciever extends BlockTile {
+public class BlockTransceiver extends BlockTile {
 
     public static final PropertyDirection FACING = PropertyDirection.create("facing");
 
@@ -34,7 +34,7 @@ public class BlockTransciever extends BlockTile {
     private static final AxisAlignedBB AABB_U = new AxisAlignedBB(.25, .75, .25, .75, 1.00, .75);
     private static final AxisAlignedBB AABB_D = new AxisAlignedBB(.25, 0.00, .25, .75, .25, .75);
 
-    public BlockTransciever(Class<? extends TileEntity> tileClass, int guiId) {
+    public BlockTransceiver(Class<? extends TileEntity> tileClass, int guiId) {
         super(tileClass, guiId);
         this.setDefaultState(
             this.blockState.getBaseState()
