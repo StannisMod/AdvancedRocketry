@@ -147,6 +147,7 @@ public class XMLOreLoader {
         return oreGen.getOreEntries().isEmpty() ? null : oreGen;
     }
 
+    /* unused deprecated
     public static String writeXML(OreGenProperties gen, int numTabs) {
 
         String outputString;
@@ -160,6 +161,7 @@ public class XMLOreLoader {
 
         return outputString;
     }
+    */
 
     private static Node createTextNode(Document doc, String nodeName, double nodeText) {
         return createTextNode(doc, nodeName, Double.toString(nodeText));
@@ -181,23 +183,23 @@ public class XMLOreLoader {
     }
 
     public static Node writeOreEntryXML(Document doc, OreGenProperties gen) {
-
         Element oreGen = doc.createElement("oreGen");
 
         for (OreEntry ore : gen.getOreEntries()) {
             int meta = ore.getBlockState().getBlock().getMetaFromState(ore.getBlockState());
 
             Element oreElement = doc.createElement("ore");
-            oreElement.appendChild(createTextNode(doc, "block", ore.getBlockState().getBlock().getRegistryName().toString()));
-            oreElement.appendChild(createTextNode(doc, "minHeight", ore.getMinHeight()));
-            oreElement.appendChild(createTextNode(doc, "maxHeight", ore.getMaxHeight()));
-            oreElement.appendChild(createTextNode(doc, "clumpSize", ore.getClumpSize()));
-            oreElement.appendChild(createTextNode(doc, "chancePerChunk", ore.getClumpSize()));
-            if (meta != 0)
-                oreElement.appendChild(createTextNode(doc, "meta", meta));
+            oreElement.setAttribute("block", ore.getBlockState().getBlock().getRegistryName().toString());
+            oreElement.setAttribute("minHeight", Integer.toString(ore.getMinHeight()));
+            oreElement.setAttribute("maxHeight", Integer.toString(ore.getMaxHeight()));
+            oreElement.setAttribute("clumpSize", Integer.toString(ore.getClumpSize()));
+            oreElement.setAttribute("chancePerChunk", Integer.toString(ore.getChancePerChunk()));
 
+            if (meta != 0) {
+                oreElement.setAttribute("meta", Integer.toString(meta));
+            }
+            oreGen.appendChild(oreElement);
         }
-
         return oreGen;
     }
 

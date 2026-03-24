@@ -7,7 +7,6 @@ import zmaster587.advancedRocketry.api.satellite.IDataHandler;
 import zmaster587.libVulpes.util.SingleEntry;
 
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 public class DataNetwork {
@@ -27,16 +26,8 @@ public class DataNetwork {
         return new DataNetwork(id);
     }
 
-    public int getNetworkID() {
-        return networkID;
-    }
-
-    public Set<Entry<TileEntity, EnumFacing>> getSources() {
-        return sources;
-    }
-
-    public Set<Entry<TileEntity, EnumFacing>> getSinks() {
-        return sinks;
+    public boolean isEmpty() {
+        return sources.isEmpty() && sinks.isEmpty();
     }
 
     public void addSource(TileEntity tile, EnumFacing dir) {
@@ -76,20 +67,6 @@ public class DataNetwork {
                 set.remove(entry);
                 return;
             }
-        }
-    }
-
-    public void merge(DataNetwork other) {
-        if (other == null || other == this) {
-            return;
-        }
-
-        for (Entry<TileEntity, EnumFacing> entry : other.getSources()) {
-            addSource(entry.getKey(), entry.getValue());
-        }
-
-        for (Entry<TileEntity, EnumFacing> entry : other.getSinks()) {
-            addSink(entry.getKey(), entry.getValue());
         }
     }
 
