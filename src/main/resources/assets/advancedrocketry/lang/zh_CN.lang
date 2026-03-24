@@ -97,8 +97,6 @@ tile.wulfentite.name=橙水晶方块
 tile.amethyst.name=紫水晶方块
 tile.gravityControl.name=空间站重力控制器
 tile.drill.name=钻头
-tile.dataPipe.name=数据线（弃用）
-tile.liquidPipe.name=流体管道（弃用）
 tile.rfOutput.name=RF输出端口
 tile.microwaveReciever.name=微波接收器
 tile.solarPanel.name=太阳能板
@@ -111,7 +109,6 @@ tile.pressurizedTank.name=加压储罐
 tile.gasIntake.name=气体收集器
 tile.atmosphereTerraformer.name=大气改造器
 tile.circleLight.name=空间站光源
-tile.energyPipe.name=能量管道（弃用）
 tile.solarGenerator.name=太阳能发电机
 tile.stationMarker.name=空间站对接口
 tile.qcrucible.name=石英坩埚
@@ -129,7 +126,7 @@ tile.pipeSeal.name=密封管
 tile.spaceElevatorController.name=太空电梯
 tile.beacon.name=信标
 tile.thermiteTorch.name=铝热剂火把
-tile.wirelessTransciever.name=无线收发器
+tile.wirelessTransceiver.name=无线收发器
 tile.blackholegenerator.name=黑洞发电机
 tile.pump.name=流体泵
 tile.centrifuge.name=离心机
@@ -502,7 +499,7 @@ msg.terraformingterminal.insertchip.line1=在此处放入生物群系
 msg.terraformingterminal.insertchip.line2=变换器遥控终端来让
 msg.terraformingterminal.insertchip.line3=卫星改造整颗星球
 msg.biomescanner.gas=哈，是气体环境，对吧？
-msg.biomescanner.star=要是我的传感器有遮阳板就好了
+msg.biomescanner.star=要是我有太阳镜就好了……
 msg.gravitycontroller.radius=半径：
 msg.gravitycontroller.targetgrav=目标重力：
 msg.gravitycontroller.none=无作用力
@@ -657,11 +654,11 @@ msg.entity.rocket.clear=清除
 msg.entity.rocket.rcs=RCS模式
 msg.entity.rocket.none=未选择
 msg.entity.rocket.openGuiHint=按%s键打开火箭GUI
-msg.wirelessTransciever.extract=提取
-msg.wirelessTransciever.insert=插入
-msg.wirelessTransciever.type=类型：%s
-msg.wirelessTransciever.network=网络：
-msg.wirelessTransciever.network.unlinked=未链接
+msg.wirelessTransceiver.extract=提取
+msg.wirelessTransceiver.insert=插入
+msg.wirelessTransceiver.type=类型：%s
+msg.wirelessTransceiver.network=网络：
+msg.wirelessTransceiver.network.unlinked=未链接
 
 msg.advancedrocketry.planetselector.up=<< 上一级
 msg.advancedrocketry.planetselector.select=选择
@@ -1023,7 +1020,7 @@ tooltip.advancedrocketry.fluidtank.fluid=流体：
 tooltip.advancedrocketry.fluidtank.level=液位：
 tooltip.advancedrocketry.fluidtank.shift.1=§c与上下的储罐连接构成大型储罐
 
-# Wireless Transciever
+# Wireless Transceiver
 tooltip.advancedrocketry.transceiver=传输§6数据
 tooltip.advancedrocketry.transceiver.shift.1=§f使用§c链接器§f创建网络
 tooltip.advancedrocketry.transceiver.shift.2=§f支持连接多个收发器
@@ -1423,8 +1420,9 @@ tooltip.advancedrocketry.beacon=远程信标
 tooltip.advancedrocketry.beacon.shift.1=§b使用全息投影器！
 
 # Biome Scanner
-tooltip.advancedrocketry.biomescan=扫描星球的生物群系
+tooltip.advancedrocketry.biomescan=扫描下方星球的生物群系
 tooltip.advancedrocketry.biomescan.shift.1=§b使用全息投影器！
+tooltip.advancedrocketry.biomescan.alt.1=§c下方需要有空气！
 
 # Railgun
 tooltip.advancedrocketry.railgun=将物品发射到太空
