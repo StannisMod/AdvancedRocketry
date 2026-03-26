@@ -774,6 +774,10 @@ jei.sb.assemblyhint=Atleast one solar panel
 jei.sb.copychiphint=Make backups!
 jei.ar.asteroids=Asteroids
 
+jei.advancedrocketry.gasgiants.title=Gas Missions
+jei.advancedrocketry.gasgiants.orbiting=Orbiting %s
+jei.advancedrocketry.gasgiants.harvestcap=Harvest cap: %s mB/mission
+jei.advancedrocketry.gasgiants.harvestcap.infinite=Harvest cap: Infinite
 
 jei.ar.fuel.role.monopropellant=Monopropellant Fuel
 jei.ar.fuel.role.biprop_fuel=Bipropellant Fuel

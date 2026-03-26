@@ -7,6 +7,7 @@ import mezz.jei.api.gui.IGuiItemStackGroup;
 import mezz.jei.api.ingredients.IIngredients;
 import mezz.jei.api.recipe.IRecipeCategory;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraftforge.fluids.FluidStack;
@@ -15,7 +16,6 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 
 import java.text.NumberFormat;
 import java.util.List;
-import java.util.Locale;
 
 public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
 
@@ -25,9 +25,6 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
     public static final int GRID_Y = 2;
     public static final int CELL = 18;
     public static final int MAX_SLOTS = 9;
-
-    public static final int MACHINE_X = 6;   // was 8
-    public static final int MACHINE_Y = 31;
 
     private static IDrawable sharedSlotFrame;
 
@@ -50,13 +47,14 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
 
         if (cfg.gasHarvestInfinite) {
-            return TextFormatting.AQUA + "Harvest cap: Infinite";
+            return TextFormatting.AQUA + I18n.format("jei.advancedrocketry.gasgiants.harvestcap.infinite");
         }
 
         long capMb = Math.round(64000D * cfg.gasHarvestAmountMultiplier);
-        return TextFormatting.AQUA + "Harvest cap: "
-                + NumberFormat.getIntegerInstance(Locale.US).format(capMb)
-                + " mB/mission";
+        return TextFormatting.AQUA + I18n.format(
+                "jei.advancedrocketry.gasgiants.harvestcap",
+                NumberFormat.getIntegerInstance().format(capMb)
+        );
     }
 
     @Override
@@ -66,7 +64,7 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
 
     @Override
     public String getTitle() {
-        return "Gas Missions";
+        return I18n.format("jei.advancedrocketry.gasgiants.title");
     }
 
     @Override
@@ -89,7 +87,7 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
         IGuiItemStackGroup items = layout.getItemStacks();
         IGuiFluidStackGroup fluids = layout.getFluidStacks();
 
-        items.init(0, true, MACHINE_X, MACHINE_Y);
+        items.init(0, true, 6, 32);
         items.set(0, wrapper.getMachineStack());
 
         List<FluidStack> gasList = wrapper.getFluids();
@@ -111,17 +109,12 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
 
             tooltip.add("");
             tooltip.add(TextFormatting.YELLOW + wrapper.getPlanetName());
-
-            if (wrapper.getStarName() != null && !wrapper.getStarName().isEmpty()) {
-                tooltip.add(TextFormatting.GRAY + "Orbiting " + wrapper.getStarName());
-            }
-
             tooltip.add(getHarvestCapTooltip());
         });
     }
 
     @Override
     public void drawExtras(Minecraft minecraft) {
-        slotFrame.draw(minecraft, MACHINE_X, MACHINE_Y);
+        slotFrame.draw(minecraft, 6, 32);
     }
 }

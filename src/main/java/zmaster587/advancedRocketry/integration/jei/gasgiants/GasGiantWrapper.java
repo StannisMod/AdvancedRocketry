@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.fluids.FluidStack;
@@ -100,13 +101,17 @@ public class GasGiantWrapper implements IRecipeWrapper {
 
         fr.drawString(fr.trimStringToWidth(planetName, 64), 24, 7, mainColor);
 
-        String orbitLine = "Orbiting " + (starName.isEmpty() ? "Unknown" : starName);
-        String orbitTrimmed = fr.trimStringToWidth(orbitLine, 84);
-
-        GlStateManager.pushMatrix();
-        GlStateManager.scale(0.75f, 0.75f, 1.0f);
-        fr.drawString(orbitTrimmed, (int)(24 / 0.75f), (int)(19 / 0.75f), hintColor);
-        GlStateManager.popMatrix();
+        if (!starName.isEmpty()) {
+            GlStateManager.pushMatrix();
+            GlStateManager.scale(0.75f, 0.75f, 1.0f);
+            fr.drawString(
+                    I18n.format("jei.advancedrocketry.gasgiants.orbiting", starName),
+                    Math.round(25 / 0.75f),
+                    Math.round(16 / 0.75f),
+                    hintColor
+            );
+            GlStateManager.popMatrix();
+        }
 
         IDrawable slotFrame = GasGiantCategory.getSharedSlotFrame();
         if (slotFrame != null) {

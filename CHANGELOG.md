@@ -1,8 +1,9 @@
 Changelog 2.2.5
 
-- Wireless Transceiver (will disappear from worlds)
+- Wireless Transceiver (WARNING! will disappear from worlds)
   - Network ids start from 1 (server authoritative)
-  - Linking is easier to sort and use, TOP integration will help tons
+  - TOP integration will help tons with sorting and usage
+  - Cleaned out all old cable code for easier maintaining
 - Rocket
     - 1px GUI slot rendering fixed
     - Player is properly immune during rocket-teleportation
@@ -11,6 +12,8 @@ Changelog 2.2.5
 - WarpController
   - Fixed a crash when trying to use advanced Databus in GUI
   - Fixed render issue in hotbar/inventory due to GL-state leak
+- JEI - integration
+  - Gas Missions has jeipages
 - The One Probe (TOP) - integration (QoL):
   - Rocket shows destination + fuelbar(s)
   - Gas-mission rocket shows Gas selection from GUI + fuelbar(s)
