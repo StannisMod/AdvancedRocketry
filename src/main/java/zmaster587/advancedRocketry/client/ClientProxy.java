@@ -66,6 +66,9 @@ import zmaster587.libVulpes.entity.fx.FxErrorBlock;
 import zmaster587.libVulpes.inventory.modules.ModuleContainerPan;
 import zmaster587.libVulpes.tile.TileSchematic;
 
+import net.minecraftforge.fml.common.FMLCommonHandler;
+import zmaster587.advancedRocketry.integration.jei.JeiClientTickHandler;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -292,6 +295,8 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new DelayedParticleRenderingEventHandler());
         MinecraftForge.EVENT_BUS.register(ModuleContainerPan.class);
         MinecraftForge.EVENT_BUS.register(new RenderComponents());
+
+        FMLCommonHandler.instance().bus().register(new JeiClientTickHandler());
     }
 
     @Override
