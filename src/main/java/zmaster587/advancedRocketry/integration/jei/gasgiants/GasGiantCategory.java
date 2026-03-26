@@ -26,6 +26,9 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
     public static final int CELL = 18;
     public static final int MAX_SLOTS = 9;
 
+    public static final int MACHINE_X = 6;   // was 8
+    public static final int MACHINE_Y = 31;
+
     private static IDrawable sharedSlotFrame;
 
     private final IDrawable background;
@@ -86,7 +89,7 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
         IGuiItemStackGroup items = layout.getItemStacks();
         IGuiFluidStackGroup fluids = layout.getFluidStacks();
 
-        items.init(0, true, 8, 19);
+        items.init(0, true, MACHINE_X, MACHINE_Y);
         items.set(0, wrapper.getMachineStack());
 
         List<FluidStack> gasList = wrapper.getFluids();
@@ -108,13 +111,17 @@ public class GasGiantCategory implements IRecipeCategory<GasGiantWrapper> {
 
             tooltip.add("");
             tooltip.add(TextFormatting.YELLOW + wrapper.getPlanetName());
-            tooltip.add(TextFormatting.GRAY + "Dim " + wrapper.getDimId());
+
+            if (wrapper.getStarName() != null && !wrapper.getStarName().isEmpty()) {
+                tooltip.add(TextFormatting.GRAY + "Orbiting " + wrapper.getStarName());
+            }
+
             tooltip.add(getHarvestCapTooltip());
         });
     }
 
     @Override
     public void drawExtras(Minecraft minecraft) {
-        slotFrame.draw(minecraft, 8, 19);
+        slotFrame.draw(minecraft, MACHINE_X, MACHINE_Y);
     }
 }

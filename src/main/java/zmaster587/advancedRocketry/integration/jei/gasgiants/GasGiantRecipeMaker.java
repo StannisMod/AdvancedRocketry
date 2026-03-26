@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.integration.jei.gasgiants;
 import mezz.jei.api.IJeiHelpers;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
+import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 
@@ -49,6 +50,12 @@ public class GasGiantRecipeMaker {
                     ? ("DIM " + props.getId())
                     : props.getName();
 
+            String starName = "";
+            StellarBody star = props.getStar();
+            if (star != null && star.getName() != null) {
+                starName = star.getName();
+            }
+
             Set<String> seenFluidNames = new LinkedHashSet<>();
             List<FluidStack> fluids = new ArrayList<>();
 
@@ -63,7 +70,13 @@ public class GasGiantRecipeMaker {
             }
 
             if (!fluids.isEmpty()) {
-                out.add(new GasGiantWrapper(props.getId(), planetName, fluids));
+                out.add(new GasGiantWrapper(
+                        props.getId(),
+                        planetName,
+                        starName,
+                        props.getPlanetIcon(),
+                        fluids
+                ));
             }
         }
 
@@ -77,5 +90,9 @@ public class GasGiantRecipeMaker {
         });
 
         return out;
+    }
+
+    public static List<GasGiantWrapper> getMachineRecipes(IJeiHelpers helpers, Class<?> ignored) {
+        return getRecipes(helpers);
     }
 }

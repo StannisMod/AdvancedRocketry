@@ -5,8 +5,10 @@ import mezz.jei.api.ingredients.IIngredients;
 import mezz.jei.api.recipe.IRecipeWrapper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.fluids.FluidStack;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 
@@ -18,12 +20,16 @@ public class GasGiantWrapper implements IRecipeWrapper {
 
     private final int dimId;
     private final String planetName;
+    private final String starName;
+    private final ResourceLocation planetIcon;
     private final List<FluidStack> fluids;
     private final ItemStack machineStack;
 
-    public GasGiantWrapper(int dimId, String planetName, List<FluidStack> fluids) {
+    public GasGiantWrapper(int dimId, String planetName, String starName, ResourceLocation planetIcon, List<FluidStack> fluids) {
         this.dimId = dimId;
         this.planetName = planetName;
+        this.starName = starName == null ? "" : starName;
+        this.planetIcon = planetIcon;
         this.machineStack = new ItemStack(AdvancedRocketryBlocks.blockDeployableRocketBuilder);
 
         this.fluids = new ArrayList<>();
@@ -42,6 +48,14 @@ public class GasGiantWrapper implements IRecipeWrapper {
 
     public String getPlanetName() {
         return planetName;
+    }
+
+    public String getStarName() {
+        return starName;
+    }
+
+    public ResourceLocation getPlanetIcon() {
+        return planetIcon;
     }
 
     public List<FluidStack> getFluids() {
@@ -72,10 +86,27 @@ public class GasGiantWrapper implements IRecipeWrapper {
     @Override
     public void drawInfo(Minecraft minecraft, int recipeWidth, int recipeHeight, int mouseX, int mouseY) {
         FontRenderer fr = minecraft.fontRenderer;
-        int color = 0x404040;
+        int mainColor = 0x404040;
+        int hintColor = 0x7A7A7A; // subtler than main line
 
-        fr.drawString(fr.trimStringToWidth(planetName, 58), 30, 10, color);
-        fr.drawString("Dim: " + dimId, 30, 24, color);
+        if (planetIcon != null) {
+            GlStateManager.pushMatrix();
+            GlStateManager.color(1f, 1f, 1f, 1f);
+            GlStateManager.enableBlend();
+            minecraft.getTextureManager().bindTexture(planetIcon);
+            Gui.drawModalRectWithCustomSizedTexture(4, 4, 0, 0, 16, 16, 16, 16);
+            GlStateManager.popMatrix();
+        }
+
+        fr.drawString(fr.trimStringToWidth(planetName, 64), 24, 7, mainColor);
+
+        String orbitLine = "Orbiting " + (starName.isEmpty() ? "Unknown" : starName);
+        String orbitTrimmed = fr.trimStringToWidth(orbitLine, 84);
+
+        GlStateManager.pushMatrix();
+        GlStateManager.scale(0.75f, 0.75f, 1.0f);
+        fr.drawString(orbitTrimmed, (int)(24 / 0.75f), (int)(19 / 0.75f), hintColor);
+        GlStateManager.popMatrix();
 
         IDrawable slotFrame = GasGiantCategory.getSharedSlotFrame();
         if (slotFrame != null) {
@@ -87,7 +118,7 @@ public class GasGiantWrapper implements IRecipeWrapper {
             GlStateManager.disableLighting();
 
             for (int i = 0; i < slotCount; i++) {
-                int col = 2 - (i % 3); // right-to-left
+                int col = 2 - (i % 3);
                 int row = i / 3;
 
                 int x = GasGiantCategory.GRID_X + col * GasGiantCategory.CELL;
