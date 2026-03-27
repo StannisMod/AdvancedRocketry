@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/piston_head",
+  "textures": {
+    "platform": "advancedrocketry:blocks/platepresser_bottom",
+    "side": "advancedrocketry:blocks/platepresser_side",
+    "unsticky": "advancedrocketry:blocks/platepresser_bottom"
+  }
+}
