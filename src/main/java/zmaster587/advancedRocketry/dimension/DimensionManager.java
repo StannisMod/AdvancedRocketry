@@ -804,20 +804,12 @@ public class DimensionManager implements IGalaxy {
                     File dir = new File(localFile.getAbsolutePath().substring(0, localFile.getAbsolutePath().length() - localFile.getName().length()));
 
                     //File cannot exist due to if check #42
-                    if ((dir.exists() || dir.mkdir()) && localFile.createNewFile()) {
-                        char[] buffer = new char[1024];
-
-                        FileReader reader = new FileReader(file);
-                        FileWriter writer = new FileWriter(localFile);
-                        int numChars;
-                        while ((numChars = reader.read(buffer)) > 0) {
-                            writer.write(buffer, 0, numChars);
-                        }
-
-                        reader.close();
-                        writer.close();
+                    if ((dir.exists() || dir.mkdirs())) {
+                        Files.copy(file.toPath(), localFile.toPath(), REPLACE_EXISTING);
                         logger.info("Copy success!");
-                    } else logger.warn("Unable to create file " + localFile.getAbsolutePath());
+                    } else {
+                        logger.warn("Unable to create directory " + dir.getAbsolutePath());
+                    }
                 } catch (IOException e) {
                     logger.warn("Unable to write file " + localFile.getAbsolutePath());
                 }

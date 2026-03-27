@@ -142,8 +142,9 @@ import zmaster587.libVulpes.util.SingleEntry;
 import javax.annotation.Nonnull;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.Map.Entry;
 
@@ -1190,8 +1191,8 @@ public class AdvancedRocketry {
             try {
                 file.createNewFile();
                 BufferedWriter stream;
-                stream = new BufferedWriter(new FileWriter(file));
-                stream.write("<Asteroids>"
+                stream = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8);
+                stream.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Asteroids>"
                         + "\n\t<asteroid name=\"Small Asteroid\" distance=\"10\" mass=\"200\" massVariability=\"0.5\" minLevel=\"0\" probability=\"20\" richness=\"0.3\" richnessVariability=\"0.5\">"
                         + "\n\t\t<ore itemStack=\"minecraft:iron_ore\" chance=\"15\" />"
                         + "\n\t\t<ore itemStack=\"minecraft:gold_ore\" chance=\"10\" />"
@@ -1238,8 +1239,8 @@ public class AdvancedRocketry {
 
                 file.createNewFile();
                 BufferedWriter stream;
-                stream = new BufferedWriter(new FileWriter(file));
-                stream.write("<OreConfig>\n</OreConfig>");
+                stream = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8);
+                stream.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<OreConfig>\n</OreConfig>");
                 stream.close();
             } catch (IOException e) {
                 e.printStackTrace();

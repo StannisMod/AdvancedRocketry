@@ -322,7 +322,7 @@ Built-in planet icon basenames:
       <code>gasgiantbrown</code>
     </td>
     <td align="center">
-      <img src="./src/main/resources/assets/advancedrocketry/textures/planets/gasgiantred.png" width="96"><br>
+      <img src="../src/main/resources/assets/advancedrocketry/textures/planets/gasgiantred.png" width="96"><br>
       <code>gasgiantred</code>
     </td>
     <td align="center">

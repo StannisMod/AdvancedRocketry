@@ -1,24 +1,40 @@
 Changelog 2.2.5
 
+- Wireless Transceiver (WARNING! will disappear from worlds)
+  - Network ids start from 1 (server authoritative)
+  - TOP integration will help tons with sorting and usage
+  - Cleaned out all old cable code for easier maintaining
 - Rocket
-  - fixed GUI slot rendering
-- The One Probe (TOP) - integration (QoL)
+    - 1px GUI slot rendering fixed
+    - Player is properly immune during rocket-teleportation
+- WarpCore:
+  - Fixed stale GUI when inserting dilithium into inputhatch
+- WarpController
+  - Fixed a crash when trying to use advanced Databus in GUI
+  - Fixed render issue in hotbar/inventory due to GL-state leak
+- JEI - integration
+  - Gas Missions has jeipages
+- The One Probe (TOP) - integration (QoL):
   - Rocket shows destination + fuelbar(s)
   - Gas-mission rocket shows Gas selection from GUI + fuelbar(s)
   - Databus, Advanced Databus, Satellite Terminal shows Datatype and amountbar
-  - Wireless Transceiver shows Insert/Extract + Linked/Unlinked
-- Commands
+  - Wireless Transceiver shows Insert/Extract + Linked/Unlinked + Network ID:
+- BiomeScanner:
+  - Small cleanup in GUI and Tooltip
+- Commands:
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`
   - Added `d` and `dim` aliases for `/ar goto dimension`
   - Added `s` alias for `/ar goto station`
   - Added `fd` alias for `/ar fillData`
   - Added support for lowercase all subcommands
-- OreConfig.xml (oreloader)
-  - Overall oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
-  - Internal oreconfig priority changed: `p+t > p > t > config + vanilla/modded`
-    - Added "Pressure + Temperature" exact match, otherwise same.
-
+- XML handling
+  - XML output now uses explicit UTF-8 instead of the system default charset.
+  - Fixed `planetDefs.xml` saving so per-planet `<oreGen>` data is preserved in the world save. (bug from 2019)
+  - OreConfig.xml (oreloader)
+    - Overall oregen priority unchanged: `planetdefs > oreconfig > config + vanilla/modded`
+    - Internal oreconfig priority changed: `p+t > p > t > config + vanilla/modded`
+      - Added "Pressure + Temperature" exact match, otherwise same.
 - Documentation updated:
   - Inside advancedrocketry.cfg
   - XML_PLANETDEFS_README.md

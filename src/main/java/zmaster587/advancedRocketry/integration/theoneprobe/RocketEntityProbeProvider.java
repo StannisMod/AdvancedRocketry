@@ -9,6 +9,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
@@ -34,10 +35,15 @@ import java.util.Locale;
 
 public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
 
+    // Fuelbar colors
     private static final int FUEL_BORDER_COLOR = 0xFF555555;
     private static final int FUEL_BACKGROUND_COLOR = 0xFF000000;
     private static final int FUEL_FILLED_COLOR = 0xFF284892;
     private static final int FUEL_ALT_FILLED_COLOR = 0xFF162F69;
+
+    // Guidance text colors
+    private static final TextFormatting GUIDANCE_UNSET_COLOR = TextFormatting.GRAY;
+    private static final TextFormatting GUIDANCE_RESOLVED_COLOR = TextFormatting.YELLOW;
 
     @Override
     public String getID() {
@@ -64,6 +70,18 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         return IProbeInfo.STARTLOC + key + IProbeInfo.ENDLOC;
     }
 
+    private static String color(TextFormatting formatting, String text) {
+        return formatting.toString() + text + TextFormatting.RESET;
+    }
+
+    private static String unset(String key) {
+        return color(GUIDANCE_UNSET_COLOR, tr(key));
+    }
+
+    private static String resolved(String text) {
+        return color(GUIDANCE_RESOLVED_COLOR, text);
+    }
+
     private static void addGuidanceInfo(IProbeInfo probeInfo, EntityRocket rocket) {
         if (rocket instanceof EntityStationDeployedRocket) {
             addHarvestInfo(probeInfo, (EntityStationDeployedRocket) rocket);
@@ -76,13 +94,13 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
 
         TileGuidanceComputer gc = rocket.storage.getGuidanceComputer();
         if (gc == null) {
-            probeInfo.text(tr("msg.top.advancedrocketry.guidance.noComputer"));
+            probeInfo.text(unset("msg.top.advancedrocketry.guidance.noComputer"));
             return;
         }
 
         ItemStack stack = gc.getStackInSlot(0);
         if (stack.isEmpty()) {
-            probeInfo.text(tr("msg.top.advancedrocketry.guidance.noDestination"));
+            probeInfo.text(unset("msg.top.advancedrocketry.guidance.noDestination"));
             return;
         }
 
@@ -100,47 +118,54 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
             Long uuid = chip.getUUID(stack);
 
             if (uuid == null || type == null || type.isEmpty()) {
-                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+                return unset("msg.top.advancedrocketry.guidance.unprogrammed");
             }
 
-            return type + " (" + ItemAsteroidChip.shortDisplayId(uuid, type) + ")";
+            return resolved(type + " (" + ItemAsteroidChip.shortDisplayId(uuid, type) + ")");
         }
 
         if (stack.getItem() instanceof ItemStationChip) {
             int stationId = ItemStationChip.getUUID(stack);
             if (stationId == 0) {
-                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+                return unset("msg.top.advancedrocketry.guidance.unprogrammed");
             }
-            return tr("msg.top.advancedrocketry.guidance.station") + " " + stationId;
+            return resolved(tr("msg.top.advancedrocketry.guidance.station") + " " + stationId);
         }
 
         if (stack.getItem() instanceof ItemPlanetIdentificationChip) {
             ItemPlanetIdentificationChip chip = (ItemPlanetIdentificationChip) stack.getItem();
 
             if (!chip.hasValidDimension(stack)) {
-                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+                return unset("msg.top.advancedrocketry.guidance.unprogrammed");
             }
 
             if (chip.getDimensionProperties(stack) == null) {
-                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+                return unset("msg.top.advancedrocketry.guidance.unprogrammed");
             }
 
-            return chip.getDimensionProperties(stack).getName();
+            return resolved(chip.getDimensionProperties(stack).getName());
         }
 
         if (isLinker(stack)) {
             if (isUnprogrammedLinker(stack)) {
-                return tr("msg.top.advancedrocketry.guidance.unprogrammed");
+                return unset("msg.top.advancedrocketry.guidance.unprogrammed");
             }
-            return getCurrentLaunchDestinationText(rocket, gc, stack);
+            return colorizeResolvedState(getCurrentLaunchDestinationText(rocket, gc, stack));
         }
 
-        String resolved = getCurrentLaunchDestinationText(rocket, gc, stack);
-        if (resolved.equals(tr("msg.top.advancedrocketry.guidance.unprogrammed"))) {
-            return resolved;
+        String resolvedText = getCurrentLaunchDestinationText(rocket, gc, stack);
+        if (resolvedText.equals(tr("msg.top.advancedrocketry.guidance.unprogrammed"))) {
+            return unset("msg.top.advancedrocketry.guidance.unprogrammed");
         }
 
-        return stripTrailingCoords(resolved);
+        return resolved(stripTrailingCoords(resolvedText));
+    }
+
+    private static String colorizeResolvedState(String text) {
+        if (text.equals(tr("msg.top.advancedrocketry.guidance.unprogrammed"))) {
+            return unset("msg.top.advancedrocketry.guidance.unprogrammed");
+        }
+        return resolved(text);
     }
 
     private static String getCurrentLaunchDestinationText(EntityRocket rocket, TileGuidanceComputer gc, ItemStack stack) {
@@ -202,8 +227,6 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         return text;
     }
 
-
-
     private static boolean isLinker(ItemStack stack) {
         return !stack.isEmpty() && stack.getItem() instanceof ItemLinker;
     }
@@ -218,6 +241,7 @@ public class RocketEntityProbeProvider implements IProbeInfoEntityProvider {
         }
         return text.replaceAll("\\s*\\((-?\\d+(?:\\.\\d+)?),\\s*(-?\\d+(?:\\.\\d+)?)\\)$", "");
     }
+
     private static void addFuelInfo(IProbeInfo probeInfo, EntityRocket rocket, StatsRocket stats) {
         FuelType mainFuel = rocket.getRocketFuelType();
         if (mainFuel == null) {

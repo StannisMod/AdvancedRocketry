@@ -26,6 +26,9 @@ public class AtmosphereNeedsSuit extends AtmosphereType {
 
     @Override
     public boolean isImmune(EntityLivingBase player) {
+        if (player.getEntityData().getLong("arRocketTransferGrace") > player.world.getTotalWorldTime()) {
+            return true;
+        }
 
         if (Loader.isModLoaded("matteroverdrive")) {
             if(MatterOvedriveIntegration.isAndroidNeedNoOxygen(player)) return true;

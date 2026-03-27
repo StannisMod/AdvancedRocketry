@@ -19,6 +19,7 @@ public class CompatibilityMgr {
         gregtechLoaded = Loader.isModLoaded("gregtech_addon");
     }
 
+    /*
     public static void reloadRecipes() {
         try {
             Class<?> clazz = Class.forName("mezz.jei.api.BlankModPlugin");
@@ -27,4 +28,5 @@ public class CompatibilityMgr {
             //Hush
         }
     }
+    */
 }

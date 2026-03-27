@@ -43,7 +43,7 @@ public class ReloadRecipesCommand extends ARCommand {
 
             sender.sendMessage(new TextComponentString("Recipes reloaded"));
 
-            CompatibilityMgr.reloadRecipes();
+            //CompatibilityMgr.reloadRecipes();
         } catch (Exception e) {
             e.printStackTrace();
             ITextComponent message = new TextComponentString("");

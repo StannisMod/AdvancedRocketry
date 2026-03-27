@@ -34,7 +34,9 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -139,8 +141,6 @@ public class XMLPlanetLoader {
         Element galaxyElement = doc.createElement(ELEMENT_GALAXY);
         doc.appendChild(galaxyElement);
 
-        //galaxy.
-
         Collection<StellarBody> stars = galaxy.getStars();
 
         for (StellarBody star : stars) {
@@ -154,7 +154,6 @@ public class XMLPlanetLoader {
             nodeStar.setAttribute(ATTR_SIZE, Float.toString(star.getSize()));
             nodeStar.setAttribute(ATTR_NUMPLANETS, "0");
             nodeStar.setAttribute(ATTR_NUMGASPLANETS, "0");
-
 
             for (StellarBody star2 : star.getSubStars()) {
                 Element nodeSubStar = doc.createElement(ELEMENT_STAR);
@@ -180,25 +179,26 @@ public class XMLPlanetLoader {
         try {
             transformer = transformerFactory.newTransformer();
         } catch (TransformerConfigurationException e) {
-            //TODO: error handling
             return "";
         }
+
         transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty(OutputKeys.ENCODING, StandardCharsets.UTF_8.name());
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
         transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+
         DOMSource source = new DOMSource(doc);
-
-        OutputStream stream = new ByteArrayOutputStream();
-
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
         StreamResult result = new StreamResult(stream);
+
         try {
             transformer.transform(source, result);
         } catch (TransformerException e) {
-            //TODO: error handling
             e.printStackTrace();
             return "";
         }
 
-        return stream.toString();
+        return new String(stream.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static Node createTextNode(Document doc, String nodeName, double nodeText) {

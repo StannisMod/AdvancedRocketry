@@ -207,21 +207,6 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         return EnumFacing.SOUTH;
     }
 
-    private DataNetwork getExistingNetwork() {
-        if (world == null || world.isRemote || networkID == UNLINKED_NETWORK_ID) return null;
-
-        HandlerDataNetwork manager = nets();
-        if (manager == null) return null;
-
-        int resolvedId = manager.resolveNetworkID(networkID);
-        if (resolvedId != networkID) {
-            setWirelessNetworkId(resolvedId);
-        }
-
-        if (!manager.doesNetworkExist(resolvedId)) return null;
-        return manager.getNetwork(resolvedId);
-    }
-
     private DataNetwork getOrCreateNetwork() {
         if (world == null || world.isRemote || networkID == UNLINKED_NETWORK_ID) return null;
 
@@ -237,9 +222,20 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
     }
 
     private void leaveNetwork() {
-        DataNetwork network = getExistingNetwork();
+        if (world == null || world.isRemote || networkID == UNLINKED_NETWORK_ID) {
+            return;
+        }
+
+        HandlerDataNetwork manager = nets();
+        if (manager == null) {
+            return;
+        }
+
+        int resolvedId = manager.resolveNetworkID(networkID);
+        DataNetwork network = manager.getNetwork(resolvedId);
         if (network != null) {
             network.removeFromAll(this);
+            manager.removeIfEmpty(resolvedId);
         }
     }
 
@@ -416,14 +412,6 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         return nbt;
     }
 
-    public boolean canExtract(EnumFacing dir, TileEntity tile) {
-        return tile instanceof IDataHandler;
-    }
-
-    public boolean canInject(EnumFacing dir, TileEntity tile) {
-        return tile instanceof IDataHandler;
-    }
-
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new ArrayList<>(4);
@@ -486,6 +474,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         int extracted = data.extractData(maxAmount, type, dir, commit);
         if (commit && extracted > 0) {
             syncUiBufferFromMultiData();
+            markDirty();
         }
         return extracted;
     }
@@ -497,6 +486,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         int added = data.addData(maxAmount, type, dir, commit);
         if (commit && added > 0) {
             syncUiBufferFromMultiData();
+            markDirty();
         }
         return added;
     }

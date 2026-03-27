@@ -5,6 +5,7 @@ import mezz.jei.api.gui.IAdvancedGuiHandler;
 import mezz.jei.api.ingredients.IIngredientBlacklist;
 import mezz.jei.api.recipe.IRecipeCategoryRegistration;
 import net.minecraft.item.ItemStack;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.api.ARConfiguration;
@@ -33,6 +34,9 @@ import zmaster587.advancedRocketry.integration.jei.electrolyser.ElectrolyzerReci
 import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationCategory;
 import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.fuelingStation.FuelingStationRecipeMaker;
+import zmaster587.advancedRocketry.integration.jei.gasgiants.GasGiantCategory;
+import zmaster587.advancedRocketry.integration.jei.gasgiants.GasGiantRecipeHandler;
+import zmaster587.advancedRocketry.integration.jei.gasgiants.GasGiantRecipeMaker;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheCategory;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.lathe.LatheRecipeMaker;
@@ -60,11 +64,18 @@ import zmaster587.advancedRocketry.integration.jei.satelliteBuilder.SatelliteBui
 import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerCategory;
 import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerRecipeHandler;
 import zmaster587.advancedRocketry.integration.jei.stationAssembler.StationAssemblerRecipeMaker;
-import zmaster587.advancedRocketry.tile.TileStationAssembler;
 import zmaster587.advancedRocketry.tile.infrastructure.TileFuelingStation;
 import zmaster587.advancedRocketry.tile.multiblock.machine.*;
 import zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder;
+import zmaster587.advancedRocketry.tile.TileStationAssembler;
+import zmaster587.advancedRocketry.tile.TileUnmannedVehicleAssembler;
 import zmaster587.libVulpes.inventory.GuiModular;
+
+import mezz.jei.api.IRecipeRegistry;
+import net.minecraft.client.Minecraft;
+import zmaster587.advancedRocketry.integration.jei.gasgiants.GasGiantWrapper;
+
+import java.util.ArrayList;
 
 import javax.annotation.Nonnull;
 import java.awt.*;
@@ -89,14 +100,63 @@ public class ARPlugin implements IModPlugin {
     public static final String stationAssemblerUUID = "zmaster587.AR.stationAssembler";
     public static final String orbitalLaserDrillUUID = "zmaster587.AR.orbitalLaserDrill";
     public static final String asteroidsUUID = "zmaster587.AR.asteroids";
+    public static final String gasGiantsUUID = GasGiantCategory.UID;
     public static IJeiHelpers jeiHelpers;
 
+    private static IJeiRuntime jeiRuntime;
+    private static final List<GasGiantWrapper> currentGasGiantRecipes = new ArrayList<>();
+    private static boolean gasRefreshQueued = false;
+
+
+
+    @Override
+    public void onRuntimeAvailable(IJeiRuntime runtime) {
+        jeiRuntime = runtime;
+        AdvancedRocketry.logger.info("[JEI][GasGiants] onRuntimeAvailable");
+    }
+
+    public static void requestGasGiantRefresh() {
+        gasRefreshQueued = true;
+    }
+    public static boolean hasQueuedGasGiantRefresh() {
+        return gasRefreshQueued;
+    }
+    public static void tryApplyQueuedGasGiantRefresh() {
+        if (!gasRefreshQueued) return;
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null) return;
+        if (jeiRuntime == null) return;
+
+        IRecipeRegistry recipeRegistry = jeiRuntime.getRecipeRegistry();
+        if (recipeRegistry == null) return;
+
+        AdvancedRocketry.logger.info("[JEI][GasGiants] removing old recipes count=" + currentGasGiantRecipes.size());
+        for (GasGiantWrapper recipe : currentGasGiantRecipes) {
+            recipeRegistry.removeRecipe(recipe, gasGiantsUUID);
+        }
+        currentGasGiantRecipes.clear();
+
+        List<GasGiantWrapper> rebuilt = GasGiantRecipeMaker.getRecipes(jeiHelpers);
+        AdvancedRocketry.logger.info("[JEI][GasGiants] rebuilt recipe count=" + rebuilt.size());
+
+        for (GasGiantWrapper recipe : rebuilt) {
+            AdvancedRocketry.logger.info("[JEI][GasGiants] adding recipe dim=" + recipe.getDimId() + " planet=" + recipe.getPlanetName());
+            recipeRegistry.addRecipe(recipe, gasGiantsUUID);
+        }
+        currentGasGiantRecipes.addAll(rebuilt);
+
+        gasRefreshQueued = false;
+        AdvancedRocketry.logger.info("[JEI][GasGiants] applied runtime recipe refresh, count=" + currentGasGiantRecipes.size());
+    }
+
+    /* newer JEI doesnt have this
     //AR machines can reload recipes. We still need this for JEI to be up-to-date
     @SuppressWarnings("deprecation")
     public static void reload() {
         jeiHelpers.reload();
     }
-
+    */
     private static boolean isVoidDrillJeiEnabled() {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
         return cfg.enableLaserDrill && !cfg.laserDrillPlanet;
@@ -107,7 +167,8 @@ public class ARPlugin implements IModPlugin {
     public void registerCategories(IRecipeCategoryRegistration registry) {
         jeiHelpers = registry.getJeiHelpers();
         IGuiHelper guiHelper = jeiHelpers.getGuiHelper();
-
+        //debug
+        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] registerCategories called");
         registry.addRecipeCategories(
             new RollingMachineCategory(guiHelper),
             new LatheCategory(guiHelper),
@@ -124,7 +185,8 @@ public class ARPlugin implements IModPlugin {
             new FuelingStationCategory(guiHelper),
             new Co2ScrubberCategory(guiHelper),
             new StationAssemblerCategory(guiHelper),
-            new AsteroidCategory(guiHelper)
+            new AsteroidCategory(guiHelper),
+            new GasGiantCategory(guiHelper)
         );
         // ---- Orbital Laser Drill (VoidDrill mode only) ----
         final boolean voidDrillJei = isVoidDrillJeiEnabled();
@@ -134,10 +196,11 @@ public class ARPlugin implements IModPlugin {
     }
 
 
-    
+
     @Override
     public void register(IModRegistry registry) {
-
+        //debug
+        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] register called");
         registry.addAdvancedGuiHandlers(new IAdvancedGuiHandler<GuiModular>() {
             @Override
             @Nonnull
@@ -181,7 +244,8 @@ public class ARPlugin implements IModPlugin {
                 new FuelingStationRecipeHandler(),
                 new Co2ScrubberRecipeHandler(),
                 new StationAssemblerRecipeHandler(),
-                new AsteroidRecipeHandler()
+                new AsteroidRecipeHandler(),
+                new GasGiantRecipeHandler()
             );
 
         registry.addRecipes(RollingMachineRecipeMaker.getMachineRecipes(jeiHelpers, TileRollingMachine.class), rollingMachineUUID);
@@ -200,7 +264,12 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipes(Co2ScrubberRecipeMaker.getRecipes(jeiHelpers), co2ScrubberUUID);
         registry.addRecipes(StationAssemblerRecipeMaker.getMachineRecipes(jeiHelpers, TileStationAssembler.class),stationAssemblerUUID);
         registry.addRecipes(AsteroidRecipeMaker.getRecipes(jeiHelpers), asteroidsUUID);
-
+        /*//remove this?
+        registry.addRecipes(
+                GasGiantRecipeMaker.getMachineRecipes(jeiHelpers, TileUnmannedVehicleAssembler.class),
+                gasGiantsUUID
+        );
+*/
 
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockRollingMachine), rollingMachineUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockLathe), latheUUID);
@@ -220,7 +289,7 @@ public class ARPlugin implements IModPlugin {
         // Co2 Scrubber catalysts
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockCO2Scrubber),  co2ScrubberUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxygenVent),   co2ScrubberUUID);
-        
+
         // One tab: Fueling Station + Tank-type catalysts (mono / biprop fuel / oxidizer / working fluid)
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockFuelingStation), fuelingStationUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockFuelTank),             fuelingStationUUID); // mono
@@ -228,9 +297,12 @@ public class ARPlugin implements IModPlugin {
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockOxidizerFuelTank),     fuelingStationUUID); // oxidizer
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockNuclearFuelTank),      fuelingStationUUID); // working fluid
 
-        // Asteroids (catalyst): observatory and asteroid chip are what players associate with this system
+        // Asteroids: observatory and asteroid chip are what players associate with this system
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockObservatory), asteroidsUUID);
         registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryItems.itemAsteroidChip), asteroidsUUID);
+
+        // Gas missions use the Unmanned Vehicle Assembler / Deployable Rocket Builder
+        registry.addRecipeCatalyst(new ItemStack(AdvancedRocketryBlocks.blockDeployableRocketBuilder), gasGiantsUUID);
 
         // ---- Orbital Laser Drill (VoidDrill mode only) ----
         // Voiddrill means laserdrillPlanet is false
