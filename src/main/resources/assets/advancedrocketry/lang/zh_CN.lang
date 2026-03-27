@@ -774,6 +774,10 @@ jei.sb.assemblyhint=至少需要一块太阳能板
 jei.sb.copychiphint=记得做好备份！
 jei.ar.asteroids=小行星
 
+jei.advancedrocketry.gasgiants.title=气体任务
+jei.advancedrocketry.gasgiants.orbiting=轨道环绕%s
+jei.advancedrocketry.gasgiants.harvestcap=采集上限：每次任务%s mB
+jei.advancedrocketry.gasgiants.harvestcap.infinite=采集上限：无限
 
 jei.ar.fuel.role.monopropellant=单组元推进剂燃料
 jei.ar.fuel.role.biprop_fuel=双组元推进剂燃料
