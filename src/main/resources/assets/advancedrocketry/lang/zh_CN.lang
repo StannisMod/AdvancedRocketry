@@ -97,8 +97,6 @@ tile.wulfentite.name=橙水晶方块
 tile.amethyst.name=紫水晶方块
 tile.gravityControl.name=空间站重力控制器
 tile.drill.name=钻头
-tile.dataPipe.name=数据线（弃用）
-tile.liquidPipe.name=流体管道（弃用）
 tile.rfOutput.name=RF输出端口
 tile.microwaveReciever.name=微波接收器
 tile.solarPanel.name=太阳能板
@@ -111,7 +109,6 @@ tile.pressurizedTank.name=加压储罐
 tile.gasIntake.name=气体收集器
 tile.atmosphereTerraformer.name=大气改造器
 tile.circleLight.name=空间站光源
-tile.energyPipe.name=能量管道（弃用）
 tile.solarGenerator.name=太阳能发电机
 tile.stationMarker.name=空间站对接口
 tile.qcrucible.name=石英坩埚
@@ -283,8 +280,7 @@ advancement.beerOnTheSun.desc=你需要更多的TNT才能进入轨道
 advancement.suitedUp=穿戴整齐
 advancement.suitedUp.desc=穿好全套太空服
 
-
-
+# Controls - options
 key.controls.advancedrocketry=高级火箭（Advanced Rocketry）
 key.openRocketUI=打开火箭界面
 key.toggleJetpack=开关飞行背包
@@ -303,17 +299,17 @@ commands.advancedrocketry.invalid=%s %s不存在！
 
 commands.advancedrocketry.dev.usage=/advancedrocketry dev help - （仅限开发者使用）列出子命令。
 commands.advancedrocketry.dev.dumpbiomes.usage=dumpBiomes - 将生物群系信息转存到BiomeDump.txt
-commands.advancedrocketry.dev.dumpbiomes.success=文件'BiomeDump.txt'已写入到当前目录
+commands.advancedrocketry.dev.dumpbiomes.success=文件'BiomeDump.txt'已写入到实例目录
 commands.advancedrocketry.dev.runtests.usage=runTests - 运行系统测试，仅用于调试！
 
-commands.advancedrocketry.filldata.usage=/advancedrocketry fillData <数据类型> <装填数量>
+commands.advancedrocketry.filldata.usage=/advancedrocketry fillData <数据类型> <装填数量> (别名：fd)
 commands.advancedrocketry.filldata.invalid=非有效数据类型，请尝试以下类型：
 commands.advancedrocketry.filldata.success=数据已装填！
 commands.advancedrocketry.filldata.wrongtype=不匹配已存储的数据类型，未对数据做出任何更改
 
 commands.advancedrocketry.goto.usage=/advancedrocketry goto help - 列出子命令。
-commands.advancedrocketry.goto.dimension.usage=goto dimension <维度ID> - 将玩家传送到指定维度
-commands.advancedrocketry.goto.station.usage=goto station <空间站ID> - 将玩家传送到指定空间站
+commands.advancedrocketry.goto.dimension.usage=goto dimension <维度ID> (别名：d, dim) - 将玩家传送到指定维度
+commands.advancedrocketry.goto.station.usage=goto station <空间站ID> (别名：s) - 将玩家传送到指定空间站
 
 commands.advancedrocketry.planet.usage=/advancedrocketry planet help - 列出子命令。
 commands.advancedrocketry.planet.reset.usage=planet reset [维度ID]
@@ -367,12 +363,12 @@ commands.advancedrocketry.reloadrecipes.error3=你可以通过修复XML文件，
 
 commands.advancedrocketry.setgravity.usage=/advancedrocketry setGravity <系数> [玩家名称] - 将你的重力（或指定[玩家名称]的玩家）设置为<系数>，其中1代表地球重力，0代表星球默认重力
 
-commands.advancedrocketry.addtorch.usage=/advancedrocketry addTorch - 将当前手持的方块添加到无大气环境中会掉落的物体列表中
+commands.advancedrocketry.addtorch.usage=/advancedrocketry addTorch - 将手持方块添加到无大气环境中会掉落的物体列表中
 commands.advancedrocketry.addtorch.invalid=手持方块无法添加到火把列表
 commands.advancedrocketry.addtorch.exists=%s早已在火把列表中了
 commands.advancedrocketry.addtorch.success=%s已添加到火把列表
 
-commands.advancedrocketry.addsealant.usage=/advancedrocketry addSealant - 将当前手持的方块添加到可密封方块列表中
+commands.advancedrocketry.addsealant.usage=/advancedrocketry addSealant - 将手持方块添加到可用于气密密封的方块列表中
 commands.advancedrocketry.addsealant.invalid=手持方块无法添加到密封方块列表
 commands.advancedrocketry.addsealant.exists=%s早已在密封方块列表中了
 commands.advancedrocketry.addsealant.success=%s已添加到密封方块列表
@@ -503,7 +499,7 @@ msg.terraformingterminal.insertchip.line1=在此处放入生物群系
 msg.terraformingterminal.insertchip.line2=变换器遥控终端来让
 msg.terraformingterminal.insertchip.line3=卫星改造整颗星球
 msg.biomescanner.gas=哈，是气体环境，对吧？
-msg.biomescanner.star=要是我的传感器有遮阳板就好了
+msg.biomescanner.star=要是我有太阳镜就好了……
 msg.gravitycontroller.radius=半径：
 msg.gravitycontroller.targetgrav=目标重力：
 msg.gravitycontroller.none=无作用力
@@ -681,6 +677,7 @@ msg.powerunit.rfpertick=RF/t
 msg.linker.error.firstMachine=这台机器必须第一个被链接！
 msg.linker.program=坐标已写入链接器
 msg.linker.success=已成功链接
+msg.linker.sameblock=无法将无线收发器与自身链接。
 msg.notenoughpower=能量不足！
 msg.empty=空
 msg.yes=是
@@ -777,6 +774,10 @@ jei.sb.assemblyhint=至少需要一块太阳能板
 jei.sb.copychiphint=记得做好备份！
 jei.ar.asteroids=小行星
 
+jei.advancedrocketry.gasgiants.title=气体任务
+jei.advancedrocketry.gasgiants.orbiting=轨道环绕%s
+jei.advancedrocketry.gasgiants.harvestcap=采集上限：每次任务%s mB
+jei.advancedrocketry.gasgiants.harvestcap.infinite=采集上限：无限
 
 jei.ar.fuel.role.monopropellant=单组元推进剂燃料
 jei.ar.fuel.role.biprop_fuel=双组元推进剂燃料
@@ -784,6 +785,40 @@ jei.ar.fuel.role.oxidizer=氧化剂
 jei.ar.fuel.role.working_fluid=工质
 jei.ar.stationAssembler.newStationChipHint=§c此芯片指向新的空间站！
 
+# TOP-integration
+
+msg.top.advancedrocketry.guidance.noComputer=无导航计算机
+msg.top.advancedrocketry.guidance.noDestination=无目的地
+msg.top.advancedrocketry.guidance.unprogrammed=未编写
+msg.top.advancedrocketry.guidance.station=空间站
+msg.top.advancedrocketry.guidance.orbit=轨道
+msg.top.advancedrocketry.guidance.space=太空
+msg.top.advancedrocketry.guidance.pad=/发射台
+
+msg.top.advancedrocketry.fuel.label=燃料
+msg.top.advancedrocketry.fuel.oxidizer=氧化剂
+msg.top.advancedrocketry.fuel.workingFluid=工质
+msg.top.advancedrocketry.fuel.unknownFluid=未知流体
+
+msg.top.advancedrocketry.rocket.monopropellant=单组元推进剂火箭
+msg.top.advancedrocketry.rocket.bipropellant=双组元推进剂火箭
+msg.top.advancedrocketry.rocket.nuclear=核热火箭
+msg.top.advancedrocketry.harvest.gas=气体
+msg.top.advancedrocketry.modname=高级火箭
+
+msg.top.advancedrocketry.data.label=数据
+msg.top.advancedrocketry.data.type=类型
+msg.top.advancedrocketry.data.locked=已锁定
+
+msg.top.advancedrocketry.data.mode=模式
+msg.top.advancedrocketry.data.mode.insert=插入
+msg.top.advancedrocketry.data.mode.extract=提取
+msg.top.advancedrocketry.data.link.linked=已链接
+msg.top.advancedrocketry.data.link.unlinked=未链接
+
+#########################
+##### TOOLTIP STUFF #####
+#########################
 # Generic hint
 tooltip.advancedrocketry.hold_shift=按住§eShift§7查看详细信息
 tooltip.advancedrocketry.hold_alt=按住§eAlt§7查看高级提示
@@ -1085,7 +1120,7 @@ tooltip.advancedrocketry.warpcontroller.alt.2=（你已经做到了！去看看W
 # CarbonScrubberCartridge
 tooltip.advancedrocketry.scrubbercart=用于二氧化碳净化器
 tooltip.advancedrocketry.scrubbercart.shift.1=消耗耐久净化空气。
-tooltip.advancedrocketry.atmanalyzer.alt.1=应该能使用超过24小时
+tooltip.advancedrocketry.scrubbercart.alt.1=应该能使用超过24小时
 
 # Seal Detector
 tooltip.advancedrocketry.sealdetector=检测方块是否具有气密性
@@ -1389,8 +1424,9 @@ tooltip.advancedrocketry.beacon=远程信标
 tooltip.advancedrocketry.beacon.shift.1=§b使用全息投影器！
 
 # Biome Scanner
-tooltip.advancedrocketry.biomescan=扫描星球的生物群系
+tooltip.advancedrocketry.biomescan=扫描下方星球的生物群系
 tooltip.advancedrocketry.biomescan.shift.1=§b使用全息投影器！
+tooltip.advancedrocketry.biomescan.alt.1=§c下方需要有空气！
 
 # Railgun
 tooltip.advancedrocketry.railgun=将物品发射到太空
