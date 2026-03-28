@@ -38,7 +38,6 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.zip.GZIPOutputStream;
@@ -645,6 +644,7 @@ public class DimensionManager implements IGalaxy {
             // temp file MUST be in same directory for atomic move to work reliably
             File tmpFileXml = new File(xmlDir, planetXMLOutput.getName() + ".tmp");
 
+            if (tmpFileXml.exists()) tmpFileXml.delete();
             try (FileOutputStream bufOutStream = new FileOutputStream(tmpFileXml)) {
                 bufOutStream.write(xmlOutput.getBytes(StandardCharsets.UTF_8));
                 bufOutStream.flush();
@@ -661,26 +661,37 @@ public class DimensionManager implements IGalaxy {
             if (tmpFileXml.exists()) tmpFileXml.delete();
 
             File file = new File(getCurrentSaveRootDirectory(), filePath + tempFile);
-            file.createNewFile();
 
-            //Getting real sick of my planet file getting toasted during debug...
-            File tmpFile = File.createTempFile("dimprops", ".DAT", getCurrentSaveRootDirectory());
-            FileOutputStream tmpFileOut = new FileOutputStream(tmpFile);
-            DataOutputStream outStream = new DataOutputStream(new BufferedOutputStream(new GZIPOutputStream(tmpFileOut)));
-            try {
-                //Closes output stream internally without flush... why tho...
+            // ensure directory exists
+            File dataDir = file.getParentFile();
+            if (dataDir != null) dataDir.mkdirs();
+
+            // temp file must be in same directory as target for atomic move to be useful
+            File tmpFile = new File(dataDir, file.getName() + ".tmp");
+            if (tmpFile.exists()) tmpFile.delete();
+
+            try (FileOutputStream tmpFileOut = new FileOutputStream(tmpFile);
+                 DataOutputStream outStream = new DataOutputStream(
+                         new BufferedOutputStream(new GZIPOutputStream(tmpFileOut)))) {
+
                 CompressedStreamTools.write(nbt, outStream);
-
-                //Open in append mode to make sure the file syncs, hacky AF
                 outStream.flush();
                 tmpFileOut.getFD().sync();
-                outStream.close();
+            }
 
-                Files.copy(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING);
-                tmpFile.delete();
-
+            try {
+                Files.move(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING, ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                try {
+                    Files.move(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING);
+                } catch (Exception e2) {
+                    AdvancedRocketry.logger.error("Cannot save advanced rocketry planet file, you may be able to find backups in " + getCurrentSaveRootDirectory());
+                    if (tmpFile.exists()) tmpFile.delete();
+                    e2.printStackTrace();
+                }
             } catch (Exception e) {
                 AdvancedRocketry.logger.error("Cannot save advanced rocketry planet file, you may be able to find backups in " + getCurrentSaveRootDirectory());
+                if (tmpFile.exists()) tmpFile.delete();
                 e.printStackTrace();
             }
 

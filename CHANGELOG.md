@@ -1,34 +1,49 @@
 Changelog 2.2.5
 
-- Wireless Transceiver (WARNING! will disappear from worlds)
-  - Network ids start from 1 (server authoritative)
-  - TOP integration will help tons with sorting and usage
-  - Cleaned out all old cable code for easier maintaining
+- Wireless Transceiver *(warning: existing world instances will disappear)*
+  - Network IDs now start at 1 and are server-authoritative
+  - Added TOP integration for easier usage and sorting
+  - (Removed legacy cable code for easier maintenance)
+
+- Small Plate Press
+  - Fixed texture and animation issue while operating
+  - Can now safely support buttons and levers
+  - Added tooltips
+
 - Rocket
-    - 1px GUI slot rendering fixed
-    - Player is properly immune during rocket-teleportation
-- WarpCore:
-  - Fixed stale GUI when inserting dilithium into inputhatch
-- WarpController
-  - Fixed a crash when trying to use advanced Databus in GUI
-  - Fixed render issue in hotbar/inventory due to GL-state leak
-- JEI - integration
-  - Gas Missions has jeipages
-- The One Probe (TOP) - integration (QoL):
-  - Rocket shows destination + fuelbar(s)
-  - Gas-mission rocket shows Gas selection from GUI + fuelbar(s)
-  - Databus, Advanced Databus, Satellite Terminal shows Datatype and amountbar
-  - Wireless Transceiver shows Insert/Extract + Linked/Unlinked + Network ID:
-- BiomeScanner:
-  - Small cleanup in GUI and Tooltip
-- Commands:
+  - Fixed 1px GUI slot rendering issue
+  - Players are now properly immune during rocket teleportation
+
+- Warp Core
+  - Fixed stale GUI when inserting dilithium into the input hatch
+
+- Warp Controller
+  - Fixed crash when using the Advanced Databus in the GUI
+  - Fixed hotbar/inventory rendering issue caused by GL state leak
+
+- JEI Integration
+  - Added JEI pages for Gas Missions
+
+- The One Probe (TOP) Integration
+  - Rockets now show destination and fuel bars
+  - Gas Mission rockets now show selected gas and fuel bars
+  - Databus, Advanced Databus, and Satellite Terminal now show data type and amount bar
+  - Wireless Transceiver now shows insert/extract mode, link status, and network ID
+
+- Biome Scanner
+  - Cleaned up GUI and tooltip
+
+- Commands
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`
   - Added `d` and `dim` aliases for `/ar goto dimension`
   - Added `s` alias for `/ar goto station`
   - Added `fd` alias for `/ar fillData`
-  - Added support for lowercase all subcommands
-- XML handling
+  - Added lowercase support for all subcommands
+  - Removed legacy reloadJei command
+
+- Save Paths and XML Handling
+  - Improved saving to reduce risk of `temp.dat` corruption, (would lead to loss of spaceobject on bad crashes)
   - XML output now uses explicit UTF-8 instead of the system default charset.
   - Fixed `planetDefs.xml` saving so per-planet `<oreGen>` data is preserved in the world save. (bug from 2019)
   - OreConfig.xml (oreloader)
