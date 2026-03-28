@@ -1,7 +1,6 @@
 package zmaster587.advancedRocketry.block;
 
 import com.google.common.collect.Lists;
-import com.mojang.realmsclient.gui.ChatFormatting;
 import net.minecraft.block.*;
 import net.minecraft.block.state.BlockFaceShape;
 import net.minecraft.block.state.BlockPistonStructureHelper;
@@ -25,7 +24,6 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.client.TooltipInjector;
-import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.interfaces.IRecipe;
 import zmaster587.libVulpes.recipe.RecipesMachine;
 
@@ -34,9 +32,9 @@ import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import java.util.List;
 
-public class BlockSmallPlatePress extends BlockPistonBase {
+public class BlockPlatePress extends BlockPistonBase {
 
-    public BlockSmallPlatePress() {
+    public BlockPlatePress() {
         super(false);
     }
 
@@ -192,7 +190,7 @@ public class BlockSmallPlatePress extends BlockPistonBase {
 
             if (extending) {
                 IBlockState pressHeadState =
-                        AdvancedRocketryBlocks.blockSmallPlatePressHead.getDefaultState()
+                        AdvancedRocketryBlocks.blockPlatePressHead.getDefaultState()
                                 .withProperty(BlockPistonExtension.FACING, direction)
                                 .withProperty(BlockPistonExtension.TYPE, BlockPistonExtension.EnumPistonType.DEFAULT)
                                 .withProperty(BlockPistonExtension.SHORT, Boolean.FALSE);
@@ -214,7 +212,7 @@ public class BlockSmallPlatePress extends BlockPistonBase {
             }
 
             if (extending) {
-                worldIn.notifyNeighborsOfStateChange(blockpos2, AdvancedRocketryBlocks.blockSmallPlatePressHead, true);
+                worldIn.notifyNeighborsOfStateChange(blockpos2, AdvancedRocketryBlocks.blockPlatePressHead, true);
                 worldIn.notifyNeighborsOfStateChange(pos, this, true);
             }
 
@@ -273,7 +271,7 @@ public class BlockSmallPlatePress extends BlockPistonBase {
     @Override
     public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
         int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
-        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.smallplatepress", insertAt);
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.platepress", insertAt);
     }
 
 }

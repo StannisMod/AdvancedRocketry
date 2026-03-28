@@ -67,7 +67,7 @@ tile.concrete.name=Concrete
 tile.lathe.name=Lathe
 tile.rollingMachine.name=Rolling Machine
 tile.planetSelector.name=Planet Selector
-tile.smallplatepress.name=Small Plate Press
+tile.platepress.name=Small Plate Press
 tile.placeHolder.name=Machine
 tile.stationAssembler.name=Space Station Assembler
 tile.electrolyser.name=Electrolyser
@@ -1528,9 +1528,9 @@ tooltip.advancedrocketry.lasergun.shift.1=§dInfinite uses
 tooltip.advancedrocketry.lasergun.alt.1=§fHarvestlevel: §bDiamond
 tooltip.advancedrocketry.lasergun.alt.2=§fRange: §b50 blocks
 
-tooltip.advancedrocketry.smallplatepress=§cAlso breaks oreblocks
-tooltip.advancedrocketry.smallplatepress.shift.1=§fRequires obsidian two blocks below to function
-tooltip.advancedrocketry.smallplatepress.alt.1=§fActivate with redstone
+tooltip.advancedrocketry.platepress=§cAlso breaks oreblocks
+tooltip.advancedrocketry.platepress.shift.1=§fRequires obsidian two blocks below to function
+tooltip.advancedrocketry.platepress.alt.1=§fActivate with redstone
 
 ## Crafting items
 tooltip.advancedrocketry.sawbladeiron=§3Crafting Item

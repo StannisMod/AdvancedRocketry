@@ -12,9 +12,9 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 
 import javax.annotation.Nonnull;
 
-public class BlockSmallPlatePressHead extends BlockPistonExtension {
+public class BlockPlatePressHead extends BlockPistonExtension {
 
-    public BlockSmallPlatePressHead() {
+    public BlockPlatePressHead() {
         super();
     }
 
@@ -22,7 +22,7 @@ public class BlockSmallPlatePressHead extends BlockPistonExtension {
         BlockPos basePos = headPos.offset(headState.getValue(FACING).getOpposite());
         IBlockState baseState = world.getBlockState(basePos);
 
-        return baseState.getBlock() == AdvancedRocketryBlocks.blockSmallPlatePress
+        return baseState.getBlock() == AdvancedRocketryBlocks.blockPlatePress
                 && baseState.getValue(BlockPistonBase.FACING) == headState.getValue(FACING)
                 && baseState.getValue(BlockPistonBase.EXTENDED);
     }
@@ -44,7 +44,7 @@ public class BlockSmallPlatePressHead extends BlockPistonExtension {
         BlockPos basePos = pos.offset(state.getValue(FACING).getOpposite());
         IBlockState baseState = world.getBlockState(basePos);
 
-        if (baseState.getBlock() == AdvancedRocketryBlocks.blockSmallPlatePress
+        if (baseState.getBlock() == AdvancedRocketryBlocks.blockPlatePress
                 && baseState.getValue(BlockPistonBase.FACING) == state.getValue(FACING)
                 && baseState.getValue(BlockPistonBase.EXTENDED)) {
 
@@ -62,6 +62,6 @@ public class BlockSmallPlatePressHead extends BlockPistonExtension {
     @Override
     @Nonnull
     public ItemStack getItem(World world, BlockPos pos, IBlockState state) {
-        return new ItemStack(AdvancedRocketryBlocks.blockSmallPlatePress);
+        return new ItemStack(AdvancedRocketryBlocks.blockPlatePress);
     }
 }

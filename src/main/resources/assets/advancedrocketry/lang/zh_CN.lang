@@ -67,7 +67,7 @@ tile.concrete.name=混凝土
 tile.lathe.name=车床
 tile.rollingMachine.name=卷板机
 tile.planetSelector.name=星球选择器
-tile.smallplatepress.name=小型压板器
+tile.platepress.name=小型压板器
 tile.placeHolder.name=机器
 tile.stationAssembler.name=空间站组装机
 tile.electrolyser.name=电解器
@@ -292,7 +292,6 @@ key.turnRocketDown=向下移动载具
 
 enchantment.advancedrocketry.spacebreathing.desc=令盔甲部件形成气密密封
 
-machine.tooltip.smallplatepress=需要下方两格处存在黑曜石才可工作
 
 # Commands
 commands.advancedrocketry.invalid=%s %s不存在！
@@ -1529,6 +1528,9 @@ tooltip.advancedrocketry.lasergun=§c远程挖掘工具
 tooltip.advancedrocketry.lasergun.shift.1=§d无限耐久
 tooltip.advancedrocketry.lasergun.alt.1=§f挖掘等级：§b钻石
 tooltip.advancedrocketry.lasergun.alt.2=§f范围：§b50格
+
+# Small Plate Press
+tooltip.advancedrocketry.platepress=需要下方两格处存在黑曜石才可工作
 
 ## Crafting items
 tooltip.advancedrocketry.sawbladeiron=§3合成用物品

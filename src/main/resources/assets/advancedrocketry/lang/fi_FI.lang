@@ -62,7 +62,7 @@ tile.concrete.name=Betoni
 tile.lathe.name=Sorvi
 tile.rollingMachine.name=Rullauskone
 tile.planetSelector.name=Planeettavalitsin
-tile.smallplatepress.name=Pieni Levypuristin
+tile.platepress.name=Pieni Levypuristin
 tile.placeHolder.name=Laite
 tile.stationAssembler.name=Avaruusasemakokoaja
 tile.electrolyser.name=Elektrolysaattori
@@ -269,7 +269,7 @@ key.turnRocketDown=Laske Kulkuneuvoa Alas
 
 enchantment.advancedrocketry.spacebreathing.desc=Mahdollistaa haarniskan palan luomaan ilmanpitävän eristeen
 
-tooltip.advancedrocketry.smallplatepress=Tarvitsee obsidiaani kaksi kuutiota alapuolella toimiakseen
+tooltip.advancedrocketry.platepress=Tarvitsee obsidiaani kaksi kuutiota alapuolella toimiakseen
 
 msg.crystalliser.gravityTooHigh=Painovoima ei ole tarpeeksi alhainen!
 msg.observetory.scan.tooltip=Skannaa uusia asteroideja, käyttää 100 etäisyys dataa

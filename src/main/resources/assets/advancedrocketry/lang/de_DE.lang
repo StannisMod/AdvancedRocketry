@@ -41,7 +41,7 @@ tile.hotDryturf.name=Oxidierter Eisensand
 tile.concrete.name=Asphalttile.lathe.name=Drechselbank
 tile.rollingMachine.name=Walzenmaschine
 tile.planetSelector.name=Planetenwähler
-tile.smallplatepress.name=Kleine Plattenpresse
+tile.platepress.name=Kleine Plattenpresse
 tile.placeHolder.name=Maschine
 tile.stationAssembler.name=Raumstationsmonteur
 tile.electrolyser.name=Elektrolyseur

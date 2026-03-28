@@ -19,7 +19,7 @@ public class PlatePressCategory extends MachineCategoryTemplate<PlatePressWrappe
 
     @Override
     public String getTitle() {
-        return LibVulpes.proxy.getLocalizedString("tile.smallplatepress.name");
+        return LibVulpes.proxy.getLocalizedString("tile.platepress.name");
     }
 
     @Override

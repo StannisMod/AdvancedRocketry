@@ -40,8 +40,8 @@ public class AdvancedRocketryBlocks {
     public static Block blockSawBlade;
     public static Block blockConcrete;
     public static Block blockRollingMachine;
-    public static Block blockSmallPlatePress;
-    public static Block blockSmallPlatePressHead;
+    public static Block blockPlatePress;
+    public static Block blockPlatePressHead;
     public static Block blockStationBuilder;
     public static Block blockElectrolyser;
     public static Block blockOxygenFluid;
