@@ -22,10 +22,12 @@ import zmaster587.advancedRocketry.wirelessdata.DataNetwork;
 import zmaster587.advancedRocketry.wirelessdata.HandlerDataNetwork;
 import zmaster587.advancedRocketry.wirelessdata.NetworkRegistry;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.inventory.modules.ModuleNumericTextboxWithTooltip;
 import zmaster587.advancedRocketry.inventory.modules.ModuleWirelessBufferBar;
 import zmaster587.advancedRocketry.world.util.MultiData;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.interfaces.ILinkableTile;
+import zmaster587.libVulpes.inventory.modules.IGuiCallback;
 import zmaster587.libVulpes.inventory.modules.IModularInventory;
 import zmaster587.libVulpes.inventory.modules.IToggleButton;
 import zmaster587.libVulpes.inventory.modules.ModuleBase;
@@ -40,18 +42,20 @@ import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TileWirelessTransceiver extends TileEntity implements INetworkMachine, IModularInventory, ILinkableTile, IDataHandler, ITickable, IToggleButton {
+public class TileWirelessTransceiver extends TileEntity implements INetworkMachine, IModularInventory, ILinkableTile, IDataHandler, ITickable, IToggleButton, IGuiCallback {
 
     private static final int DEFAULT_TRANSFER_INTERVAL_TICKS = 20;
     private static final int DEFAULT_BUFFER_CAPACITY = 100;
+    private static final int DEFAULT_PRIORITY = 0;
     private static final int UNLINKED_NETWORK_ID = -1;
+
     private static final int PACKET_MODE = 0;
     private static final int PACKET_ENABLED = 1;
+    private static final int PACKET_PRIORITY = 2;
+
     private static final int BLOCK_UPDATE_FLAGS = 3;
     private static final EnumFacing NETWORK_SIDE = EnumFacing.UP;
 
-    // Avoid repeated DataType.values() allocations in hot paths.
-    // Update this list if the enum changes.
     private static final DataType[] TYPES = {
             DataType.DISTANCE,
             DataType.HUMIDITY,
@@ -67,10 +71,14 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
     private final ModuleToggleSwitch modeToggle;
     private final ModuleToggleSwitch enabledToggle;
     private final ModuleText netIdLabel;
+    private final ModuleText priorityLabel;
+
+    private ModuleNumericTextboxWithTooltip priorityTextbox;
 
     private int transferIntervalTicks = DEFAULT_TRANSFER_INTERVAL_TICKS;
     private int phase = -1;
     private int networkID = UNLINKED_NETWORK_ID;
+    private int priority = DEFAULT_PRIORITY;
 
     private boolean extractMode;
     private boolean enabled;
@@ -106,6 +114,13 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         );
         netIdLabel.setAlwaysOnTop(true);
 
+        priorityLabel = new ModuleText(
+                45, 46,
+                LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.priority"),
+                0x000000
+        );
+        priorityLabel.setAlwaysOnTop(true);
+
         extractMode = modeToggle.getState();
         enabled = enabledToggle.getState();
 
@@ -131,6 +146,10 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
 
     public boolean isExtractModeWireless() {
         return extractMode;
+    }
+
+    public int getWirelessPriority() {
+        return priority;
     }
 
     private HandlerDataNetwork nets() {
@@ -183,6 +202,18 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
                     ? LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.network.unlinked")
                     : Integer.toString(networkID);
             netIdLabel.setText(label + value);
+        }
+
+        if (priorityTextbox != null && world != null && world.isRemote) {
+            try {
+                String currentText = priorityTextbox.getText();
+                String targetText = Integer.toString(priority);
+                if (!targetText.equals(currentText)) {
+                    priorityTextbox.setText(targetText);
+                }
+            } catch (Throwable ignored) {
+                // Some libVulpes textbox implementations only fully initialize client-side GUI state.
+            }
         }
     }
 
@@ -245,9 +276,9 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
 
         network.removeFromAll(this);
         if (extractMode) {
-            network.addSource(this, NETWORK_SIDE);
+            network.addSource(this, NETWORK_SIDE, priority);
         } else {
-            network.addSink(this, NETWORK_SIDE);
+            network.addSink(this, NETWORK_SIDE, priority);
         }
     }
 
@@ -261,6 +292,37 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
 
         if (world != null && !world.isRemote) {
             markDirtyAndSyncBlock();
+        }
+    }
+
+    public void setWirelessPriority(int newPriority) {
+        if (priority == newPriority) {
+            return;
+        }
+
+        priority = newPriority;
+        syncWidgetsFromFields();
+
+        if (world != null && !world.isRemote) {
+            joinNetwork();
+            markDirtyAndSyncBlock();
+        }
+    }
+
+    private Integer tryParsePriority(String text) {
+        if (text == null) {
+            return null;
+        }
+
+        String trimmed = text.trim();
+        if (trimmed.isEmpty() || "-".equals(trimmed)) {
+            return null;
+        }
+
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -395,6 +457,7 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         extractMode = nbt.getBoolean("mode");
         enabled = nbt.getBoolean("enabled");
         networkID = nbt.getInteger("networkID");
+        priority = nbt.hasKey("priority") ? nbt.getInteger("priority") : DEFAULT_PRIORITY;
         data.readFromNBT(nbt);
 
         syncUiBufferFromMultiData();
@@ -408,17 +471,34 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         nbt.setBoolean("mode", extractMode);
         nbt.setBoolean("enabled", enabled);
         nbt.setInteger("networkID", networkID);
+        nbt.setInteger("priority", priority);
         data.writeToNBT(nbt);
         return nbt;
     }
 
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
-        List<ModuleBase> modules = new ArrayList<>(4);
+        if (priorityTextbox == null) {
+            priorityTextbox = new ModuleNumericTextboxWithTooltip(
+                    this,
+                    116, 44,
+                    30, 12,
+                    10,
+                    LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.priority.tooltip.1"),
+                    LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.priority.tooltip.2"),
+                    LibVulpes.proxy.getLocalizedString("msg.wirelessTransceiver.priority.tooltip.3")
+            );
+        }
+
+        List<ModuleBase> modules = new ArrayList<>(6);
         modules.add(modeToggle);
         modules.add(enabledToggle);
         modules.add(netIdLabel);
+        modules.add(priorityLabel);
+        modules.add(priorityTextbox);
         modules.add(new ModuleWirelessBufferBar(14, 22, uiBuffer));
+
+        syncWidgetsFromFields();
         return modules;
     }
 
@@ -438,17 +518,28 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
             out.writeBoolean(extractMode);
         } else if (id == PACKET_ENABLED) {
             out.writeBoolean(enabled);
+        } else if (id == PACKET_PRIORITY) {
+            out.writeInt(priority);
         }
     }
 
     @Override
     public void readDataFromNetwork(ByteBuf in, byte packetId, NBTTagCompound nbt) {
-        nbt.setBoolean("state", in.readBoolean());
+        if (packetId == PACKET_PRIORITY) {
+            nbt.setInteger("priority", in.readInt());
+        } else {
+            nbt.setBoolean("state", in.readBoolean());
+        }
     }
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (!side.isServer()) return;
+
+        if (id == PACKET_PRIORITY) {
+            setWirelessPriority(nbt.getInteger("priority"));
+            return;
+        }
 
         boolean state = nbt.getBoolean("state");
 
@@ -569,5 +660,20 @@ public class TileWirelessTransceiver extends TileEntity implements INetworkMachi
         if (world != null && !world.isRemote) {
             markDirtyAndSyncBlock();
         }
+    }
+
+    @Override
+    public void onModuleUpdated(ModuleBase module) {
+        if (module != priorityTextbox || world == null || !world.isRemote) {
+            return;
+        }
+
+        Integer parsed = tryParsePriority(priorityTextbox.getText());
+        if (parsed == null || parsed == priority) {
+            return;
+        }
+
+        priority = parsed;
+        PacketHandler.sendToServer(new PacketMachine(this, (byte) PACKET_PRIORITY));
     }
 }

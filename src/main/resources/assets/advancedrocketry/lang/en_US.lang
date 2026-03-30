@@ -657,6 +657,11 @@ msg.wirelessTransceiver.insert=insert
 msg.wirelessTransceiver.type=Type: %s
 msg.wirelessTransceiver.network=Network:
 msg.wirelessTransceiver.network.unlinked=Unlinked
+msg.wirelessTransceiver.priority=Priority
+msg.wirelessTransceiver.priority.tooltip.1=Higher priority fills/empties first.
+msg.wirelessTransceiver.priority.tooltip.2=Same priority shares evenly.
+msg.wirelessTransceiver.priority.tooltip.3=Default: 0
+
 
 msg.advancedrocketry.planetselector.up=<< Up
 msg.advancedrocketry.planetselector.select=Select
