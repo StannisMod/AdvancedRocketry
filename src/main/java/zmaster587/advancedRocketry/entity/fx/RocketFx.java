@@ -163,6 +163,7 @@ public class RocketFx extends Particle {
         GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
         GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
     }
 
     public boolean shouldDisableDepth() {

@@ -125,6 +125,7 @@ public class InverseTrailFx extends Particle {
         GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
         GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
     }
 
     @Override
