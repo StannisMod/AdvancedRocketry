@@ -2164,7 +2164,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public float getGeodeMultiplier() {
-        return volcanoFrequencyMultiplier;
+        return geodeFrequencyMultiplier;
     }
 
     public void setGeodeMultiplier(float geodeFrequencyMultiplier) {

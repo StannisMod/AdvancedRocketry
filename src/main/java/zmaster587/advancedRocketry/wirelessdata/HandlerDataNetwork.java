@@ -1,11 +1,18 @@
 package zmaster587.advancedRocketry.wirelessdata;
 
-
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 public class HandlerDataNetwork {
+
+    private static final int ACTIVE_INTERVAL_TICKS = 10;
+    private static final int IDLE_INTERVAL_TICKS = 20;
+    private static final int COLD_INTERVAL_TICKS = 100;
+
+    private static final long IDLE_BACKOFF_THRESHOLD_TICKS = 200L;
+    private static final long COLD_BACKOFF_THRESHOLD_TICKS = 2000L;
 
     private final Map<Integer, DataNetwork> networks = new HashMap<>();
     private final Map<Integer, Integer> redirects = new HashMap<>();
@@ -13,6 +20,11 @@ public class HandlerDataNetwork {
 
     private int nextNetworkId = 1;
 
+    /**
+     * Internal scheduler time for network scheduling/backoff.
+     * This does not need persistence; it is only used to space runtime work.
+     */
+    private long schedulerTick = 0L;
 
     public HandlerDataNetwork(WirelessNetworkSavedData saveData) {
         this.saveData = saveData;
@@ -93,9 +105,60 @@ public class HandlerDataNetwork {
     }
 
     public void tickAllNetworks() {
-        for (DataNetwork network : networks.values()) {
-            network.tick();
+        schedulerTick++;
+
+        for (Entry<Integer, DataNetwork> entry : networks.entrySet()) {
+            int networkId = entry.getKey();
+            DataNetwork network = entry.getValue();
+
+            // Keep runtime eligibility state in sync with loaded source/sink membership.
+            network.updateSchedulingState(schedulerTick);
+
+            // Skip one-sided networks entirely. This is stricter than the old behavior,
+            // where they were still visited and then early-returned in DataNetwork.tick().
+            if (!network.hasSourcesAndSinks()) {
+                continue;
+            }
+
+            long idleAge = network.getIdleAge(schedulerTick);
+            int interval = getIntervalForIdleAge(idleAge);
+
+            if (!shouldTickNetwork(networkId, interval)) {
+                continue;
+            }
+
+            // Scale transfer budget with the interval so average wireless throughput
+            // stays roughly aligned with the previous 1-per-tick behavior.
+            boolean moved = network.tick(interval);
+
+            if (moved) {
+                // Any successful move restores the network immediately to active cadence,
+                // because future idle age is now measured from this tick.
+                network.noteSuccessfulTransfer(schedulerTick);
+            }
         }
+    }
+
+    private int getIntervalForIdleAge(long idleAge) {
+        if (idleAge >= COLD_BACKOFF_THRESHOLD_TICKS) {
+            return COLD_INTERVAL_TICKS;
+        }
+
+        if (idleAge >= IDLE_BACKOFF_THRESHOLD_TICKS) {
+            return IDLE_INTERVAL_TICKS;
+        }
+
+        return ACTIVE_INTERVAL_TICKS;
+    }
+
+    private boolean shouldTickNetwork(int networkId, int interval) {
+        if (interval <= 1) {
+            return true;
+        }
+
+        // Phase by network id to spread work across ticks and avoid spikes when many
+        // networks share the same interval bucket.
+        return Math.floorMod(schedulerTick + networkId, (long) interval) == 0L;
     }
 
     private int allocateNextNetworkId() {

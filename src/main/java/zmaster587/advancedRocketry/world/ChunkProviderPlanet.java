@@ -179,9 +179,12 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             geodeGenerator = null;
 
         if (dimProps.canGenerateVolcanos() && ARConfiguration.getCurrentConfig().generateVolcanos) {
-            volcanoGenerator = new MapGenVolcano((int) (800 * dimProps.getVolcanoMultiplier()));
-        } else
+            float mult = dimProps.getVolcanoMultiplier();
+            int chance = Math.max(1, Math.round(15f / mult));
+            volcanoGenerator = new MapGenVolcano(chance);
+        } else {
             volcanoGenerator = null;
+        }
 
         if (!dimProps.canGenerateCaves()) {
             caveGenerator = null;

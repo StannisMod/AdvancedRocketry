@@ -33,6 +33,10 @@ Changelog 2.2.5
 - Biome Scanner
   - Cleaned up GUI and tooltip
 
+- Other
+  - Leaky GLState fixed (revealed by 3-way incompat (https://github.com/dercodeKoenig/AdvancedRocketry/issues/74))
+  - <volcanoFrequencyMultiplier> works in planetdefs again.
+    -(also fixed geodefrequencymultiplier wrongly using this entry on first launch wrongly saving)
 - Commands
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`

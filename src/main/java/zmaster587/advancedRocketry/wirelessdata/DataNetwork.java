@@ -18,6 +18,23 @@ public class DataNetwork {
 
     private final int networkID;
 
+    /**
+     * Scheduler state:
+     *
+     * - lastSuccessfulTransferTick:
+     *   Real scheduler tick when this network last moved any data.
+     *
+     * - firstEligibleTick:
+     *   Real scheduler tick when this network first became eligible to transfer
+     *   (has at least one loaded source and one loaded sink) before ever having
+     *   performed a successful transfer.
+     *
+     * This lets idle backoff be based on real elapsed ticks, not "number of polls".
+     */
+    private long lastSuccessfulTransferTick = -1L;
+    private long firstEligibleTick = -1L;
+    private boolean transferEligible = false;
+
     private DataNetwork(int networkID) {
         this.networkID = networkID;
     }
@@ -28,6 +45,10 @@ public class DataNetwork {
 
     public boolean isEmpty() {
         return sources.isEmpty() && sinks.isEmpty();
+    }
+
+    public boolean hasSourcesAndSinks() {
+        return !sources.isEmpty() && !sinks.isEmpty();
     }
 
     public void addSource(TileEntity tile, EnumFacing dir) {
@@ -70,12 +91,62 @@ public class DataNetwork {
         }
     }
 
-    public void tick() {
-        final int amountPerTransfer = 1;
+    /**
+     * Called by the handler every scheduler tick so eligibility transitions
+     * are tracked using real elapsed ticks.
+     */
+    public void updateSchedulingState(long currentTick) {
+        boolean eligibleNow = hasSourcesAndSinks();
+
+        if (eligibleNow) {
+            if (!transferEligible) {
+                transferEligible = true;
+
+                // Start the idle-age baseline the first time this network becomes
+                // actually eligible to transfer before any successful transfer exists.
+                if (lastSuccessfulTransferTick < 0L) {
+                    firstEligibleTick = currentTick;
+                }
+            }
+        } else {
+            transferEligible = false;
+
+            // If the network has never transferred successfully, and it loses eligibility,
+            // drop the bootstrap baseline so a later re-eligibility starts fresh.
+            if (lastSuccessfulTransferTick < 0L) {
+                firstEligibleTick = -1L;
+            }
+        }
+    }
+
+    /**
+     * Returns real elapsed scheduler ticks since last successful transfer.
+     * Before the first successful transfer, this falls back to elapsed ticks
+     * since the network first became eligible to transfer.
+     */
+    public long getIdleAge(long currentTick) {
+        long referenceTick = lastSuccessfulTransferTick >= 0L ? lastSuccessfulTransferTick : firstEligibleTick;
+        return referenceTick >= 0L ? Math.max(0L, currentTick - referenceTick) : 0L;
+    }
+
+    public void noteSuccessfulTransfer(long currentTick) {
+        lastSuccessfulTransferTick = currentTick;
+    }
+
+    /**
+     * amountPerTransfer is the per-endpoint budget for this scheduled network tick.
+     * This should scale with the scheduling interval so average throughput stays similar.
+     *
+     * @return true if any data moved this tick
+     */
+    public boolean tick(int amountPerTransfer) {
+        int transferBudget = Math.max(1, amountPerTransfer);
 
         if (sources.isEmpty() || sinks.isEmpty()) {
-            return;
+            return false;
         }
+
+        boolean movedAnything = false;
 
         for (DataType type : DATA_TYPES) {
             if (type == DataType.UNDEFINED) {
@@ -92,7 +163,7 @@ public class DataNetwork {
                 }
 
                 IDataHandler handler = (IDataHandler) tile;
-                demand += handler.addData(amountPerTransfer, type, entry.getValue(), false);
+                demand += handler.addData(transferBudget, type, entry.getValue(), false);
             }
 
             for (Entry<TileEntity, EnumFacing> entry : sources) {
@@ -102,13 +173,15 @@ public class DataNetwork {
                 }
 
                 IDataHandler handler = (IDataHandler) tile;
-                supply += handler.extractData(amountPerTransfer, type, entry.getValue(), false);
+                supply += handler.extractData(transferBudget, type, entry.getValue(), false);
             }
 
             int moved = Math.min(supply, demand);
             if (moved <= 0) {
                 continue;
             }
+
+            movedAnything = true;
 
             int remainingToInsert = moved;
             for (Entry<TileEntity, EnumFacing> entry : sinks) {
@@ -140,5 +213,7 @@ public class DataNetwork {
                 remainingToExtract -= handler.extractData(remainingToExtract, type, entry.getValue(), true);
             }
         }
+
+        return movedAnything;
     }
 }

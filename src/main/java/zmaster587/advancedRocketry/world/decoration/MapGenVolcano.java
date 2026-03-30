@@ -20,7 +20,7 @@ public class MapGenVolcano extends MapGenBase {
     @Override
     protected void recursiveGenerate(World world, int chunkX, int chunkZ, int p_180701_4_, int p_180701_5_, ChunkPrimer chunkPrimerIn) {
 
-        chancePerChunk = 15;
+        //chancePerChunk = 15;
 
         if (rand.nextInt(chancePerChunk) == Math.abs(chunkX) % chancePerChunk && rand.nextInt(chancePerChunk) == Math.abs(chunkZ) % chancePerChunk) {
 

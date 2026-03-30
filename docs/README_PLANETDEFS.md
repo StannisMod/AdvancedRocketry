@@ -1037,7 +1037,7 @@ Notes:
 - Invalid names are filtered out
 
 #### `<oceanBlock>`
-Ocean block override.
+Ocean block override. (sea block)
 
 ```xml
 <oceanBlock>minecraft:water</oceanBlock>

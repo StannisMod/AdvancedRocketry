@@ -111,7 +111,8 @@ public class ARPlugin implements IModPlugin {
     @Override
     public void onRuntimeAvailable(IJeiRuntime runtime) {
         jeiRuntime = runtime;
-        AdvancedRocketry.logger.info("[JEI][GasGiants] onRuntimeAvailable");
+        //debug
+        //AdvancedRocketry.logger.info("[JEI][GasGiants] onRuntimeAvailable");
     }
 
     public static void requestGasGiantRefresh() {
@@ -130,23 +131,23 @@ public class ARPlugin implements IModPlugin {
         IRecipeRegistry recipeRegistry = jeiRuntime.getRecipeRegistry();
         if (recipeRegistry == null) return;
 
-        AdvancedRocketry.logger.info("[JEI][GasGiants] removing old recipes count=" + currentGasGiantRecipes.size());
+        //AdvancedRocketry.logger.info("[JEI][GasGiants] removing old recipes count=" + currentGasGiantRecipes.size());
         for (GasGiantWrapper recipe : currentGasGiantRecipes) {
             recipeRegistry.removeRecipe(recipe, gasGiantsUUID);
         }
         currentGasGiantRecipes.clear();
 
         List<GasGiantWrapper> rebuilt = GasGiantRecipeMaker.getRecipes(jeiHelpers);
-        AdvancedRocketry.logger.info("[JEI][GasGiants] rebuilt recipe count=" + rebuilt.size());
+        //AdvancedRocketry.logger.info("[JEI][GasGiants] rebuilt recipe count=" + rebuilt.size());
 
         for (GasGiantWrapper recipe : rebuilt) {
-            AdvancedRocketry.logger.info("[JEI][GasGiants] adding recipe dim=" + recipe.getDimId() + " planet=" + recipe.getPlanetName());
+            //AdvancedRocketry.logger.info("[JEI][GasGiants] adding recipe dim=" + recipe.getDimId() + " planet=" + recipe.getPlanetName());
             recipeRegistry.addRecipe(recipe, gasGiantsUUID);
         }
         currentGasGiantRecipes.addAll(rebuilt);
 
         gasRefreshQueued = false;
-        AdvancedRocketry.logger.info("[JEI][GasGiants] applied runtime recipe refresh, count=" + currentGasGiantRecipes.size());
+        //AdvancedRocketry.logger.info("[JEI][GasGiants] applied runtime recipe refresh, count=" + currentGasGiantRecipes.size());
     }
 
     /* newer JEI doesnt have this
@@ -167,7 +168,7 @@ public class ARPlugin implements IModPlugin {
         jeiHelpers = registry.getJeiHelpers();
         IGuiHelper guiHelper = jeiHelpers.getGuiHelper();
         //debug
-        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] registerCategories called");
+        //zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] registerCategories called");
         registry.addRecipeCategories(
             new RollingMachineCategory(guiHelper),
             new LatheCategory(guiHelper),
@@ -199,7 +200,7 @@ public class ARPlugin implements IModPlugin {
     @Override
     public void register(IModRegistry registry) {
         //debug
-        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] register called");
+        //zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[JEI][GasGiants] register called");
         registry.addAdvancedGuiHandlers(new IAdvancedGuiHandler<GuiModular>() {
             @Override
             @Nonnull
