@@ -4,6 +4,7 @@ Changelog 2.2.5
   - Network IDs now start at 1 and are server-authoritative
   - Added TOP integration for easier usage and sorting
   - (Removed legacy cable code for easier maintenance)
+  - Priority
 
 - Small Plate Press
   - Fixed texture and animation issue while operating
@@ -37,6 +38,7 @@ Changelog 2.2.5
   - Leaky GLState fixed (revealed by 3-way incompat (https://github.com/dercodeKoenig/AdvancedRocketry/issues/74))
   - <volcanoFrequencyMultiplier> works in planetdefs again.
     -(also fixed geodefrequencymultiplier wrongly using this entry on first launch wrongly saving)
+  
 - Commands
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`

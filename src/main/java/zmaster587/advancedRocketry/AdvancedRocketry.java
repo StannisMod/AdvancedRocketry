@@ -290,8 +290,10 @@ public class AdvancedRocketry {
         AdvancedRocketryAPI.atomsphereSealHandler = SealableBlockHandler.INSTANCE;
         ((SealableBlockHandler) AdvancedRocketryAPI.atomsphereSealHandler).loadDefaultData();
 
+        // Integrations
         // The One Probe integration
         TopIntegration.register();
+
         //Configuration  ---------------------------------------------------------------------------------------------
 
         config = new Configuration(new File(event.getModConfigurationDirectory(), "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/advancedRocketry.cfg"));
