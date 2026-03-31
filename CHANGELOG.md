@@ -36,9 +36,9 @@ Changelog 2.2.5
 
 - Other
   - Leaky GLState fixed (revealed by 3-way incompat (https://github.com/dercodeKoenig/AdvancedRocketry/issues/74))
-  - <volcanoFrequencyMultiplier> works in planetdefs again.
-    -(also fixed geodefrequencymultiplier wrongly using this entry on first launch wrongly saving)
-  
+  - Restored support for `<volcanoFrequencyMultiplier>` in `planetDefs.xml`.
+  - Fixed a first-load/save bug where `geodeFrequencyMultiplier` would be written from the volcano multiplier.
+
 - Commands
   - Fixed `addsealant` and `addtorch`
   - Fixed `create station`
