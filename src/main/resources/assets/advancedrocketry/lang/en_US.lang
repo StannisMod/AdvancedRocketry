@@ -1535,7 +1535,7 @@ tooltip.advancedrocketry.lasergun.shift.1=§dInfinite uses
 tooltip.advancedrocketry.lasergun.alt.1=§fHarvestlevel: §bDiamond
 tooltip.advancedrocketry.lasergun.alt.2=§fRange: §b50 blocks
 
-tooltip.advancedrocketry.platepress=§cAlso breaks oreblocks
+tooltip.advancedrocketry.platepress=§cManual grinding and pressing
 tooltip.advancedrocketry.platepress.shift.1=§fRequires obsidian two blocks below to function
 tooltip.advancedrocketry.platepress.alt.1=§fActivate with redstone
 

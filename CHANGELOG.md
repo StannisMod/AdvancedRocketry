@@ -25,7 +25,7 @@ Changelog 2.2.5
 - JEI Integration
   - Added JEI pages for Gas Missions
 
-- The One Probe (TOP) Integration
+- The One Probe (TOP) and Waila Integration
   - Rockets now show destination and fuel bars
   - Gas Mission rockets now show selected gas and fuel bars
   - Databus, Advanced Databus, and Satellite Terminal now show data type and amount bar
