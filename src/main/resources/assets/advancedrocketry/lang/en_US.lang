@@ -797,11 +797,13 @@ msg.top.advancedrocketry.guidance.station=Station
 msg.top.advancedrocketry.guidance.orbit=Orbit
 msg.top.advancedrocketry.guidance.space=Space
 msg.top.advancedrocketry.guidance.pad=/ Pad
+msg.top.advancedrocketry.guidance.destination=Destination:
 
 msg.top.advancedrocketry.fuel.label=Fuel
 msg.top.advancedrocketry.fuel.oxidizer=Oxidizer
 msg.top.advancedrocketry.fuel.workingFluid=Working Fluid
 msg.top.advancedrocketry.fuel.unknownFluid=Unknown fluid
+msg.top.advancedrocketry.fuel.noFuel=Empty
 
 msg.top.advancedrocketry.rocket.monopropellant=Monopropellant Rocket
 msg.top.advancedrocketry.rocket.bipropellant=Bipropellant Rocket

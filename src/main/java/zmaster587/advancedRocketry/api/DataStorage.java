@@ -1,8 +1,8 @@
 package zmaster587.advancedRocketry.api;
 
-import net.minecraft.nbt.NBTTagCompound;
-
 import java.util.Locale;
+
+import net.minecraft.nbt.NBTTagCompound;
 
 public class DataStorage {
 
@@ -169,13 +169,23 @@ public class DataStorage {
     }
 
     public enum DataType {
-        UNDEFINED,
-        DISTANCE,
-        HUMIDITY,
-        TEMPERATURE,
-        COMPOSITION,
-        ATMOSPHEREDENSITY,
-        MASS;
+        UNDEFINED(0),
+        DISTANCE(1),
+        HUMIDITY(2),
+        TEMPERATURE(3),
+        COMPOSITION(4),
+        ATMOSPHEREDENSITY(5),
+        MASS(6);
+
+        public final int id;
+
+        DataType(int id) {
+            this.id = id;
+        }
+
+        public static DataType getById(int id) {
+            return DataType.values()[id];
+        }
 
         public String toString() {
             return "data." + name().toLowerCase(Locale.ENGLISH) + ".name";

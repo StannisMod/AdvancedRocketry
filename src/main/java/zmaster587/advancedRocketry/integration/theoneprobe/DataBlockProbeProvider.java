@@ -3,24 +3,20 @@ package zmaster587.advancedRocketry.integration.theoneprobe;
 import mcjty.theoneprobe.api.IProbeHitData;
 import mcjty.theoneprobe.api.IProbeInfo;
 import mcjty.theoneprobe.api.IProbeInfoProvider;
-import mcjty.theoneprobe.api.NumberFormat;
 import mcjty.theoneprobe.api.ProbeMode;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.DataStorage;
-import zmaster587.advancedRocketry.api.DataStorage.DataType;
+import zmaster587.advancedRocketry.integration.dataloaders.AbstractDataContext;
+import zmaster587.advancedRocketry.integration.dataloaders.DataBlockDataLoader;
+import zmaster587.advancedRocketry.integration.dataloaders.DataBlockDataLoaderServer;
+import zmaster587.advancedRocketry.integration.dataloaders.WirelessTransceiverDataLoader;
+import zmaster587.advancedRocketry.integration.dataloaders.WirelessTransceiverDataLoaderServer;
 import zmaster587.advancedRocketry.tile.TileWirelessTransceiver;
-import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
-import zmaster587.advancedRocketry.tile.satellite.TileSatelliteTerminal;
 
 public class DataBlockProbeProvider implements IProbeInfoProvider {
-
-    private static final int DATA_BORDER_COLOR = 0xFF555555;
-    private static final int DATA_BACKGROUND_COLOR = 0xFF000000;
-    private static final int DATA_FILLED_COLOR = 0xFF1FA51F;
-    private static final int DATA_ALT_FILLED_COLOR = 0xFF137013;
 
     @Override
     public String getID() {
@@ -39,125 +35,18 @@ public class DataBlockProbeProvider implements IProbeInfoProvider {
             return;
         }
 
+        AbstractDataContext topContext = new TOPDataContext(probeInfo);
+        boolean showLockedLine = true;
         if (tile instanceof TileWirelessTransceiver) {
-            addWirelessDataInfo(probeInfo, (TileWirelessTransceiver) tile);
-            return;
+            WirelessTransceiverDataLoader loader = new WirelessTransceiverDataLoaderServer((TileWirelessTransceiver) tile);
+            loader.addWirelessDataInfo(topContext);
+            showLockedLine = false;
         }
 
-        DataStorage storage = getDataStorage(tile);
+        DataStorage storage = DataBlockDataLoader.getDataStorage(tile);
         if (storage != null) {
-            addCommonDataInfo(probeInfo, storage, true);
+            DataBlockDataLoader loader = new DataBlockDataLoaderServer(storage);
+            loader.addCommonDataInfo(topContext, showLockedLine);
         }
-    }
-
-    private static DataStorage getDataStorage(TileEntity tile) {
-        if (tile instanceof TileDataBus) {
-            return ((TileDataBus) tile).getDataObject();
-        }
-
-        if (tile instanceof TileSatelliteTerminal) {
-            return ((TileSatelliteTerminal) tile).getDataObject();
-        }
-
-        return null;
-    }
-
-
-    private static String getLinkStatusBadge(boolean linked) {
-        return (linked
-                ? net.minecraft.util.text.TextFormatting.GREEN
-                : net.minecraft.util.text.TextFormatting.RED)
-                + tr(linked
-                ? "msg.top.advancedrocketry.data.link.linked"
-                : "msg.top.advancedrocketry.data.link.unlinked");
-    }
-
-    private static String getNetworkIdText(int networkId) {
-        return net.minecraft.util.text.TextFormatting.GRAY
-                + tr("msg.top.advancedrocketry.data.network")
-                + ": "
-                + net.minecraft.util.text.TextFormatting.YELLOW
-                + Integer.toString(networkId);
-    }
-
-    private static String getColoredModeText(boolean extractMode) {
-        return (extractMode
-                ? net.minecraft.util.text.TextFormatting.GOLD
-                : net.minecraft.util.text.TextFormatting.AQUA)
-                + tr(extractMode
-                ? "msg.top.advancedrocketry.data.mode.extract"
-                : "msg.top.advancedrocketry.data.mode.insert");
-    }
-
-    private static void addWirelessDataInfo(IProbeInfo probeInfo, TileWirelessTransceiver tile) {
-        DataStorage storage = tile.getUiBufferObject();
-        if (storage == null) {
-            return;
-        }
-
-        boolean linked = tile.isLinkedWireless();
-
-        probeInfo.text(
-                getColoredModeText(tile.isExtractModeWireless())
-                        + net.minecraft.util.text.TextFormatting.RESET
-                        + "    "
-                        + getLinkStatusBadge(linked)
-        );
-
-        if (linked) {
-            probeInfo.text(getNetworkIdText(tile.getWirelessNetworkId()));
-        }
-
-        addCommonDataInfo(probeInfo, storage, false);
-    }
-
-    private static void addCommonDataInfo(IProbeInfo probeInfo, DataStorage storage, boolean showLockedLine) {
-        if (storage == null) {
-            return;
-        }
-
-        probeInfo.text(
-                tr("msg.top.advancedrocketry.data.type")
-                        + ": "
-                        + getDataTypeText(storage.getDataType())
-        );
-
-        addDataBar(probeInfo, storage);
-
-        if (showLockedLine && storage.isLocked()) {
-            probeInfo.text(tr("msg.top.advancedrocketry.data.locked"));
-        }
-    }
-
-    private static void addDataBar(IProbeInfo probeInfo, DataStorage storage) {
-        int current = storage.getData();
-        int max = Math.max(1, storage.getMaxData());
-
-        probeInfo.progress(
-                current,
-                max,
-                probeInfo.defaultProgressStyle()
-                        .borderColor(DATA_BORDER_COLOR)
-                        .backgroundColor(DATA_BACKGROUND_COLOR)
-                        .filledColor(DATA_FILLED_COLOR)
-                        .alternateFilledColor(DATA_ALT_FILLED_COLOR)
-                        .height(12)
-                        .width(100)
-                        .showText(true)
-                        .numberFormat(NumberFormat.COMMAS)
-                        .suffix(" Data")
-        );
-    }
-
-    private static String getDataTypeText(DataType type) {
-        if (type == null) {
-            return tr("data.undefined.name");
-        }
-
-        return tr(type.toString());
-    }
-
-    private static String tr(String key) {
-        return IProbeInfo.STARTLOC + key + IProbeInfo.ENDLOC;
     }
 }

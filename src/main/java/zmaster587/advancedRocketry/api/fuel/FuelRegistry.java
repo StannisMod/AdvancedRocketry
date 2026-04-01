@@ -1,11 +1,12 @@
 package zmaster587.advancedRocketry.api.fuel;
 
-import net.minecraft.item.ItemStack;
-import net.minecraftforge.fluids.Fluid;
+import java.util.HashSet;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.HashSet;
+
+import net.minecraft.item.ItemStack;
+import net.minecraftforge.fluids.Fluid;
 
 public class FuelRegistry {
 
@@ -92,19 +93,25 @@ public class FuelRegistry {
     }
 
     public enum FuelType {
-        LIQUID_MONOPROPELLANT,        //Used in ground to space rockets
-        LIQUID_BIPROPELLANT,
-        LIQUID_OXIDIZER,
-        NUCLEAR_WORKING_FLUID,
-        ION,        //Used in satellites
-        WARP,        //Used in interstellar missions
-        IMPULSE;    //Used in interplanetary missions
+        LIQUID_MONOPROPELLANT(0),        //Used in ground to space rockets
+        LIQUID_BIPROPELLANT(1),
+        LIQUID_OXIDIZER(2),
+        NUCLEAR_WORKING_FLUID(3),
+        ION(4),        //Used in satellites
+        WARP(5),        //Used in interstellar missions
+        IMPULSE(6);    //Used in interplanetary missions
 
         //Stores a fuel entry for each type of fuel
         final HashSet<FuelEntry> fuels;
+        public final int id;
 
-        FuelType() {
+        FuelType(int id) {
             fuels = new HashSet<>();
+            this.id = id;
+        }
+
+        public static FuelType getById(int id) {
+            return FuelType.values()[id];
         }
 
         /**
