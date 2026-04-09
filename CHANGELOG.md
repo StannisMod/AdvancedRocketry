@@ -1,3 +1,7 @@
+Changelog 2.2.5hotfix
+
+- SmallPlatePress naming reverted. should restore compat
+
 Changelog 2.2.5
 
 - Wireless Transceiver *(warning: existing world instances will disappear)*
