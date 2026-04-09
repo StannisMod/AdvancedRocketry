@@ -441,7 +441,7 @@ public class AdvancedRocketry {
         LibVulpes.registerRecipeHandler(TileElectricArcFurnace.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/ElectricArcFurnace.xml");
         LibVulpes.registerRecipeHandler(TileLathe.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/Lathe.xml");
         LibVulpes.registerRecipeHandler(TileRollingMachine.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/RollingMachine.xml");
-        LibVulpes.registerRecipeHandler(BlockPlatePress.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/SmallPlatePress.xml");
+        LibVulpes.registerRecipeHandler(BlockSmallPlatePress.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/SmallPlatePress.xml");
         LibVulpes.registerRecipeHandler(TileCentrifuge.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/Centrifuge.xml");
         LibVulpes.registerRecipeHandler(TilePrecisionLaserEtcher.class, event.getModConfigurationDirectory().getAbsolutePath() + "/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/PrecisionLaserEtcher.xml");
 
@@ -624,8 +624,8 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockQuartzCrucible = new BlockQuartzCrucible().setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockSawBlade = new BlockMotor(Material.IRON, 1f).setCreativeTab(tabAdvRocketry).setUnlocalizedName("sawBlade").setHardness(2f);
         //Singleblock machines
-        AdvancedRocketryBlocks.blockPlatePress = new BlockPlatePress().setUnlocalizedName("platepress").setCreativeTab(tabAdvRocketry).setHardness(2f);
-        AdvancedRocketryBlocks.blockPlatePressHead = new BlockPlatePressHead().setUnlocalizedName("platepress_head").setHardness(2f);
+        AdvancedRocketryBlocks.blockPlatePress = new BlockSmallPlatePress().setUnlocalizedName("platepress").setCreativeTab(tabAdvRocketry).setHardness(2f);
+        AdvancedRocketryBlocks.blockPlatePressHead = new BlockSmallPlatePressHead().setUnlocalizedName("platepress_head").setHardness(2f);
         AdvancedRocketryBlocks.blockForceFieldProjector = new BlockForceFieldProjector(Material.IRON).setUnlocalizedName("forceFieldProjector").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockForceField = new BlockForceField(Material.BARRIER).setBlockUnbreakable().setResistance(6000000.0F).setUnlocalizedName("forceField");
         AdvancedRocketryBlocks.blockVacuumLaser = new BlockVacuumLaser(Material.IRON).setUnlocalizedName("vacuumLaser").setCreativeTab(tabAdvRocketry).setHardness(4f);

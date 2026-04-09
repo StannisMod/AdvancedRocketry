@@ -32,9 +32,9 @@ import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import java.util.List;
 
-public class BlockPlatePress extends BlockPistonBase {
+public class BlockSmallPlatePress extends BlockPistonBase {
 
-    public BlockPlatePress() {
+    public BlockSmallPlatePress() {
         super(false);
     }
 

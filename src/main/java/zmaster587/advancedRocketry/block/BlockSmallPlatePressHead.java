@@ -12,9 +12,9 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 
 import javax.annotation.Nonnull;
 
-public class BlockPlatePressHead extends BlockPistonExtension {
+public class BlockSmallPlatePressHead extends BlockPistonExtension {
 
-    public BlockPlatePressHead() {
+    public BlockSmallPlatePressHead() {
         super();
     }
 
