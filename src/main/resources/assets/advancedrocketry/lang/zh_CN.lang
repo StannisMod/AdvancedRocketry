@@ -292,7 +292,6 @@ key.turnRocketDown=向下移动载具
 
 enchantment.advancedrocketry.spacebreathing.desc=令盔甲部件形成气密密封
 
-
 # Commands
 commands.advancedrocketry.invalid=%s %s不存在！
 
@@ -658,6 +657,11 @@ msg.wirelessTransceiver.insert=插入
 msg.wirelessTransceiver.type=类型：%s
 msg.wirelessTransceiver.network=网络：
 msg.wirelessTransceiver.network.unlinked=未链接
+msg.wirelessTransceiver.priority=优先级
+msg.wirelessTransceiver.priority.tooltip.1=高优先级将优先填充/排空。
+msg.wirelessTransceiver.priority.tooltip.2=相同优先级下将平均分配。
+msg.wirelessTransceiver.priority.tooltip.3=默认：0
+
 
 msg.advancedrocketry.planetselector.up=<< 上一级
 msg.advancedrocketry.planetselector.select=选择
@@ -793,11 +797,13 @@ msg.top.advancedrocketry.guidance.station=空间站
 msg.top.advancedrocketry.guidance.orbit=轨道
 msg.top.advancedrocketry.guidance.space=太空
 msg.top.advancedrocketry.guidance.pad=/发射台
+msg.top.advancedrocketry.guidance.destination=目的地：
 
 msg.top.advancedrocketry.fuel.label=燃料
 msg.top.advancedrocketry.fuel.oxidizer=氧化剂
 msg.top.advancedrocketry.fuel.workingFluid=工质
 msg.top.advancedrocketry.fuel.unknownFluid=未知流体
+msg.top.advancedrocketry.fuel.noFuel=空
 
 msg.top.advancedrocketry.rocket.monopropellant=单组元推进剂火箭
 msg.top.advancedrocketry.rocket.bipropellant=双组元推进剂火箭
@@ -808,6 +814,7 @@ msg.top.advancedrocketry.modname=高级火箭
 msg.top.advancedrocketry.data.label=数据
 msg.top.advancedrocketry.data.type=类型
 msg.top.advancedrocketry.data.locked=已锁定
+msg.top.advancedrocketry.data.network=网络ID
 
 msg.top.advancedrocketry.data.mode=模式
 msg.top.advancedrocketry.data.mode.insert=插入
@@ -1426,7 +1433,6 @@ tooltip.advancedrocketry.beacon.shift.1=§b使用全息投影器！
 tooltip.advancedrocketry.biomescan=扫描下方星球的生物群系
 tooltip.advancedrocketry.biomescan.shift.1=§b使用全息投影器！
 tooltip.advancedrocketry.biomescan.alt.1=§c下方需要有空气！
-
 # Railgun
 tooltip.advancedrocketry.railgun=将物品发射到太空
 tooltip.advancedrocketry.railgun.shift.1=§b使用全息投影器！
@@ -1529,8 +1535,9 @@ tooltip.advancedrocketry.lasergun.shift.1=§d无限耐久
 tooltip.advancedrocketry.lasergun.alt.1=§f挖掘等级：§b钻石
 tooltip.advancedrocketry.lasergun.alt.2=§f范围：§b50格
 
-# Small Plate Press
-tooltip.advancedrocketry.platepress=需要下方两格处存在黑曜石才可工作
+tooltip.advancedrocketry.platepress=§c也可破坏矿石方块
+tooltip.advancedrocketry.platepress.shift.1=§f需要下方两格处存在黑曜石才可工作
+tooltip.advancedrocketry.platepress.alt.1=§f使用红石信号激活
 
 ## Crafting items
 tooltip.advancedrocketry.sawbladeiron=§3合成用物品
