@@ -1,3 +1,8 @@
+Changelog 2.2.6
+- Void Drill
+  - Fixed old copy-pasta logic causing the drill to load the planet below even in void-mining mode.
+  - Improved performance during frequent on/off power cycling.
+  
 Changelog 2.2.5hotfix
 
 - SmallPlatePress naming reverted. should restore compat

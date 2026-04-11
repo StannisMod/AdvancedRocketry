@@ -567,6 +567,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         if (this.drill != null) {
             this.drill.deactivate();
         }
+        clearVoidDrillCache();
         orbitWorld = null;
         t = null;
         last_orbit_dim = 0;
@@ -578,6 +579,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         if (this.drill != null) {
             this.drill.deactivate();
         }
+        clearVoidDrillCache();
         isRunning = false;
         orbitWorld = null;
         t = null;
@@ -718,7 +720,7 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         int orbitDimId = spaceObject.getOrbitingPlanetId();
 
         // Ensure orbitWorld exists when you might activate a drill
-        if (orbitDimId != last_orbit_dim || orbitWorld == null) {
+        if (!voidMiningMode && (orbitDimId != last_orbit_dim || orbitWorld == null)) {
             last_orbit_dim = orbitDimId;
 
             if (!DimensionManager.isDimensionRegistered(orbitDimId)) {
@@ -735,6 +737,30 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
                     return;
                 }
             }
+        }
+        if (voidMiningMode) {
+            if (terraformingstatus) {
+                terraformingstatus = false;
+                PacketHandler.sendToAll(new PacketMachine(this, (byte) 16));
+            }
+
+            if (miningDrill instanceof VoidDrill) {
+                ((VoidDrill) miningDrill).setSourceDimId(orbitDimId);
+            }
+            if (this.finished
+                    || this.isJammed
+                    || redstonePower == 0
+                    || unableToRun()) {
+                if (isRunning) {
+                    drill.deactivate();
+                    setRunning(false);
+                }
+            } else if (orbitDimId != SpaceObjectManager.WARPDIMID && !isRunning) {
+                // No getWorld()/initDimension() here on purpose.
+                setRunning(drill.activate(null, laserX, laserZ));
+            }
+
+            return;
         }
 
         if (mode == MODE.T_FORM) {
@@ -773,12 +799,6 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
 
 
             //Laser will be on at this point
-
-            //if (ticket == null) {
-            //    ticket = ForgeChunkManager.requestTicket(AdvancedRocketry.instance, this.world, Type.NORMAL);
-            //    if (ticket != null)
-            //        ForgeChunkManager.forceChunk(ticket, new ChunkPos(getPos().getX() / 16 - (getPos().getX() < 0 ? 1 : 0), getPos().getZ() / 16 - (getPos().getZ() < 0 ? 1 : 0)));
-            //}
             if (!isRunning) {
 
                 // load dimension i guess
@@ -976,9 +996,10 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
             if (drill != null) {
                 drill.deactivate();
             }
+            clearVoidDrillCache();
             isRunning = false;
         }
-    }    
+    }
 
     @Override
     @SideOnly(Side.CLIENT)
@@ -986,6 +1007,11 @@ public class TileOrbitalLaserDrill extends TileMultiPowerConsumer implements IGu
         return 320 * 320;
     }
 
+    private void clearVoidDrillCache() {
+        if (miningDrill instanceof VoidDrill) {
+            ((VoidDrill) miningDrill).clearOreCache();
+        }
+    }
 
     public enum MODE {
         SINGLE,
