@@ -1,3 +1,6 @@
+Changelog 2.2.7
+- AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
+
 Changelog 2.2.6
 - Void Drill
   - Fixed old copy-pasta logic causing the drill to load the planet below even in void-mining mode.
