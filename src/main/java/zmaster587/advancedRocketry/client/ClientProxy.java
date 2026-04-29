@@ -66,6 +66,12 @@ import zmaster587.libVulpes.entity.fx.FxErrorBlock;
 import zmaster587.libVulpes.inventory.modules.ModuleContainerPan;
 import zmaster587.libVulpes.tile.TileSchematic;
 
+import net.minecraft.util.text.TextComponentTranslation;
+import zmaster587.advancedRocketry.api.IAtmosphere;
+import zmaster587.advancedRocketry.client.gui.ModuleSelectableAtmosphereButton;
+import zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector;
+
+
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import zmaster587.advancedRocketry.integration.jei.JeiClientTickHandler;
 
@@ -524,6 +530,23 @@ public class ClientProxy extends CommonProxy {
         @Override
         public ModelResourceLocation getModelLocation(@Nonnull ItemStack stack) {
             return location;
+        }
+    }
+
+    // atmosphere detector
+
+    @Override
+    public ModuleBase createAtmosphereDetectorButton(int offsetX, int offsetY, int buttonId, IAtmosphere atmosphere, String text, TileAtmosphereDetector detector, ResourceLocation[] buttonImages) {
+        return new ModuleSelectableAtmosphereButton(offsetX, offsetY, buttonId, atmosphere, text, detector, buttonImages);
+    }
+
+    @Override
+    public void sendClientStatusMessage(String translationKey, Object... args) {
+        if (Minecraft.getMinecraft().player != null) {
+            Minecraft.getMinecraft().player.sendStatusMessage(
+                    new TextComponentTranslation(translationKey, args),
+                    true
+            );
         }
     }
 }

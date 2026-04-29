@@ -3,17 +3,22 @@ package zmaster587.advancedRocketry.common;
 import net.minecraft.entity.Entity;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
+import zmaster587.advancedRocketry.api.IAtmosphere;
+import zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector;
 import zmaster587.libVulpes.inventory.modules.ModuleBase;
+import zmaster587.libVulpes.inventory.modules.ModuleButton;
 import zmaster587.libVulpes.inventory.modules.ModuleContainerPanYOnly;
 import zmaster587.advancedRocketry.network.PacketLaserGun;
 import zmaster587.advancedRocketry.network.PacketStationUpdate;
 import zmaster587.libVulpes.network.PacketHandler;
+
 import java.util.List;
 import java.util.LinkedList;
 
@@ -141,5 +146,15 @@ public class CommonProxy {
 
     public zmaster587.advancedRocketry.dimension.DimensionManager getDimensionManager() {
         return dimensionManagerServer;
+    }
+
+    // atmosphere detector
+
+    public ModuleBase createAtmosphereDetectorButton(int offsetX, int offsetY, int buttonId, IAtmosphere atmosphere, String text, TileAtmosphereDetector detector, ResourceLocation[] buttonImages) {
+        return new ModuleButton(offsetX, offsetY, buttonId, text, detector, buttonImages);
+    }
+
+    public void sendClientStatusMessage(String translationKey, Object... args) {
+        // Dedicated server: no-op
     }
 }

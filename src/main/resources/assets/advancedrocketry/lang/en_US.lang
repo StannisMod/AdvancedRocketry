@@ -400,7 +400,8 @@ msg.atmosphere.highpressurenoo2=High Pressure (No O₂)
 msg.atmosphere.superhighpressurenoo2=Super High Pressure (No O₂)
 msg.atmosphere.veryhotnoo2=Very Hot (No O₂)
 msg.atmosphere.superheatednooxygen=Superheated (No O₂)
-
+msg.advancedrocketry.atmosphereDetector.selected=Selected atmosphere: %s
+msg.advancedrocketry.atmosphereDetector.alreadySelected=Already selected atmosphere: %s
 
 msg.tooltip.data=Data
 msg.tooltip.asteroidselection=Asteroid Selection
