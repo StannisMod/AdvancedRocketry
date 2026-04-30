@@ -400,7 +400,8 @@ msg.atmosphere.highpressurenoo2=高压无氧
 msg.atmosphere.superhighpressurenoo2=超高压无氧
 msg.atmosphere.veryhotnoo2=高温无氧
 msg.atmosphere.superheatednooxygen=过热无氧
-
+msg.advancedrocketry.atmosphereDetector.selected=已选择大气：%s
+msg.advancedrocketry.atmosphereDetector.alreadySelected=已选择过该大气：%s
 
 msg.tooltip.data=数据
 msg.tooltip.asteroidselection=小行星选择
@@ -450,6 +451,7 @@ msg.monitoringStation.aborted=已中止！
 msg.monitoringStation.returningToDock=返回停靠点
 msg.monitoringStation.noLinkedRocket=未链接任何火箭！
 
+msg.guidanceComputer.backtorocket=返回火箭
 msg.guidanceComputerHatch.loadingState=装载状态：
 msg.guidanceComputerHatch.ejectonlanding=着陆时自动弹出
 msg.guidanceComputerHatch.ejectonsatlanding=允许弹出卫星芯片
@@ -1410,6 +1412,9 @@ tooltip.advancedrocketry.libvulpes.creativepowerbattery=§d无限能源
 tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.1=§c多方块结构的组成部分
 tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.2=§b使用全息投影器！
 tooltip.advancedrocketry.libvulpes.coalgenerator=§c燃烧固体燃料
+tooltip.advancedrocketry.libvulpes.linker.shift.1=§f潜行+右击以链接（对空气执行该操作以重置）
+tooltip.advancedrocketry.libvulpes.linker.alt.1=§f将§c基础设备§f链接至火箭。
+tooltip.advancedrocketry.libvulpes.linker.alt.2=§f作为导航芯片使用时，先链接至§e停靠台§f，再放入§e导航计算机§f中。
 
 
 # Planet Analyser
@@ -1493,7 +1498,7 @@ tooltip.libvulpes.advstructuremachine.shift.1=§b使用全息投影器！
 # Rocket Assembler
 tooltip.advancedrocketry.rocketassembler=§c搭建火箭
 tooltip.advancedrocketry.rocketassembler.shift.1=§b需要发射台+结构塔结构
-tooltip.advancedrocketry.rocketassembler.shift.2=§f将所有基础设备连接至此方块，使它们自动与发射台上的火箭连接
+tooltip.advancedrocketry.rocketassembler.shift.2=§f将基础设备连接至此方块，使它们自动与发射台上的火箭连接
 tooltip.advancedrocketry.rocketassembler.alt.1=§f将此方块放置在比发射台高1格的位置，连接底部边角且朝向与发射台方块相反
 
 # Station Assembler
