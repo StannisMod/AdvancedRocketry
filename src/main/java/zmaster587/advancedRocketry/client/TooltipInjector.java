@@ -51,6 +51,7 @@ public final class TooltipInjector {
                 s -> new Object[] { ARConfiguration.getCurrentConfig().oxygenVentSize });
 
         KEY_BY_ID.put("advancedrocketry:carbonscrubbercartridge", "tooltip.advancedrocketry.scrubbercart");
+        KEY_BY_ID.put("libvulpes:linker", "tooltip.advancedrocketry.libvulpes.linker");
 
 
         // ---- Structure Tower ----

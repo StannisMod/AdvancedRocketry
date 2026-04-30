@@ -17,9 +17,9 @@ entity.hovercraft.name=Hovercraft
 tile.landingPad.name=Landing Pad
 tile.seat.name=Seat
 tile.pad.name=Launch Pad
-tile.servicestation.name=Service station
+tile.servicestation.name=Service Station
 tile.servicemonitor.name=Service monitor
-tile.invhatch.name=Storage hatch
+tile.invhatch.name=Storage Hatch
 tile.structuretower.name=Structure Tower
 tile.rocketAssembler.name=Rocket Assembling Machine
 tile.turf.name=Moon Turf
@@ -31,7 +31,7 @@ tile.spaceLaser.name=Orbital Laser Drill
 tile.Crystallizer.name=Crystallizer
 tile.blastBrick.name=HeatProof Brick
 tile.blastFurnaceController.name=HeatProof Furnace Controller
-tile.fuelStation.name=Fueling station
+tile.fuelStation.name=Fueling Station
 tile.databusbig.name=Advanced Databus
 tile.loader.0.name=Databus
 tile.loader.1.name=Satellite Bay
@@ -57,7 +57,7 @@ tile.lightwoodlog.name=Lightwood Wood
 tile.lightwoodsapling.name=Lightwood Sapling
 tile.lightwoodleaves.name=Lightwood Leaves
 tile.lightwoodplanks.name=Lightwood planks
-tile.chipStorage.name=Satellite Id Storage
+tile.chipStorage.name=Satellite ID Storage
 tile.planetanalyser.name=Astrobody Data Processor
 tile.lunaranalyser.name=Lunar Analyser
 tile.guidanceComputer.name=Guidance Computer
@@ -162,13 +162,13 @@ item.satellitePrimaryFunction.3.name=Microwave Transmitter
 item.satellitePrimaryFunction.4.name=Ore Mapper
 item.satellitePrimaryFunction.5.name=Biome Changer
 item.satellitePrimaryFunction.6.name=Weather Controller
-item.satelliteIdChip.name=Satellite Id Chip
-item.planetIdChip.name=Planet Id Chip
+item.satelliteIdChip.name=Satellite ID Chip
+item.planetIdChip.name=Planet ID Chip
 item.asteroidChip.name=Asteroid Chip
 item.miscpart.0.name=User Interface
 item.miscpart.1.name=Carbon Brick
 item.station.name=Space Station Container
-item.stationChip.name=Space Station Id Chip
+item.stationChip.name=Space Station ID Chip
 item.stationchip.openmenu=Sneak right-click to open configuration menu
 item.spaceHelmet.name=Space Suit Helmet
 item.spaceChest.name=Space Suit Chest-Piece
@@ -209,7 +209,7 @@ item.elevatorChip.name=Space Elevator Chip
 
 container.satellite=Satellite Bay
 container.monitoringstation=Monitoring Station
-container.invhatch=Storage hatch
+container.invhatch=Storage Hatch
 
 material.TitaniumAluminide.name=Titanium Aluminide
 material.TitaniumIridium.name=Titanium Iridium Alloy
@@ -267,15 +267,15 @@ advancement.moonLanding=Moon Landing!
 advancement.moonLanding.desc=Land on the moon
 advancement.oneSmallStep=One Small Step...
 advancement.oneSmallStep.desc=Be the first to land on the moon!
-advancement.weReallyWentToTheMoon=We Really Went to the moon!
+advancement.weReallyWentToTheMoon=We Really Went to the Moon!
 advancement.weReallyWentToTheMoon.desc=Find the Apollo 11 landing site on the Moon
 advancement.dilithium=Dilithium
 advancement.dilithium.desc=Find Dilithium ore
 advancement.givingItAllShesGot=Giving it all she's got!
 advancement.givingItAllShesGot.desc=Fly in a Warp Capable ship
 advancement.flightOfThePhoenix=Flight of the Phoenix
-advancement.flightOfThePhoenix.desc=Build and fly the first warp capable ship
-advancement.beerOnTheSun=Adult Beverages on the sun
+advancement.flightOfThePhoenix.desc=Build and fly the first warp-capable ship
+advancement.beerOnTheSun=Adult Beverages on the Sun
 advancement.beerOnTheSun.desc=You'll need more TNT to get to orbit
 advancement.suitedUp=Suited Up
 advancement.suitedUp.desc=Wear a full spacesuit
@@ -346,7 +346,7 @@ commands.advancedrocketry.star.generate.success=Star added!
 commands.advancedrocketry.star.generate.invalid=Why can't I hold all these stars! (either you have an insane number of stars or something really broke!)
 
 commands.advancedrocketry.station.usage=/advancedrocketry station help - lists subcommands.
-commands.advancedrocketry.station.create.usage=create <orbitDimId> [playerName] [tp] - Creates a new station orbiting <orbitDimId> and generates a 3x3 cobble platform. If [playerName] is provided, the player will be given a corresponding station id chip. If [tp] is specified, they will also be teleported to the station.
+commands.advancedrocketry.station.create.usage=create <orbitDimId> [playerName] [tp] - Creates a new station orbiting <orbitDimId> and generates a 3x3 cobble platform. If [playerName] is provided, the player will be given a corresponding station ID chip. If [tp] is specified, they will also be teleported to the station.
 commands.advancedrocketry.station.create.invalid=No AR DimensionProperties for dimId %s
 commands.advancedrocketry.station.create.tip=Tip: /advancedrocketry planet list
 commands.advancedrocketry.station.create.success=Created station ID %d orbiting dim %d (space @ %d, %d, %d)
@@ -366,7 +366,7 @@ commands.advancedrocketry.addtorch.invalid=Held block cannot be added to torch l
 commands.advancedrocketry.addtorch.exists=%s is already in the torch list
 commands.advancedrocketry.addtorch.success=%s added to the torch list
 
-commands.advancedrocketry.addsealant.usage=/advancedrocketry addSealant - Adds held block to the list of blocks that be used as airtight seal
+commands.advancedrocketry.addsealant.usage=/advancedrocketry addSealant - Adds held block to the list of blocks that can be used as airtight seal
 commands.advancedrocketry.addsealant.invalid=Held block cannot be added to sealed block list
 commands.advancedrocketry.addsealant.exists=%s is already in the sealed block list
 commands.advancedrocketry.addsealant.success=%s added to the sealed block list
@@ -429,7 +429,7 @@ msg.fuelingStation.link=You program the linker with the fueling station at
 
 msg.monitoringStation.buttonLaunch=Launch!
 msg.monitoringStation.missionProgressNA=Mission Progress: N/A
-msg.monitoringStation.missionNoActiveMission=No Active Missions..
+msg.monitoringStation.missionNoActiveMission=No Active Missions...
 msg.monitoringStation.mission.type.gas=Gas Collection Mission
 msg.monitoringStation.mission.type.ore=Asteroid Mining Mission
 msg.monitoringStation.mission.target.default=Harvest: (pending)
@@ -523,10 +523,10 @@ msg.satctrlcenter.destroysat=Destroy Satellite
 msg.satctrlcenter.connect=Download
 msg.satctrlcenter.data=Data:
 msg.satctrlcenter.power=Power gen.:
-msg.satctrlcenter.autodl_hint=Automatic with Wireless Tranciever (Extract)
+msg.satctrlcenter.autodl_hint=Automatic with Wireless Transceiver (Extract)
 msg.satbuilder.writesecondchip=Write to Secondary Chip
-msg.dockingport.target=Target Id
-msg.dockingport.me=My Id
+msg.dockingport.target=Target ID
+msg.dockingport.me=My ID
 msg.planetholo.size=Hologram Size:
 msg.stationaltctrl.maxaltrate=Max Altitude Change Rate: 
 msg.stationaltctrl.tgtalt=Target Altitude:
@@ -598,7 +598,7 @@ msg.itemorescanner.maxzoom=Max zoom:
 msg.itemorescanner.filter=Can filter ore: 
 msg.itemorescanner.value=Value: 
 msg.itemplanetidchip.planetname=Planet Name: 
-msg.itemplanetidchip.stationid=Station Id: 
+msg.itemplanetidchip.stationid=Station ID:
 msg.itemplanetidchip.artifacts=Artifacts:
 msg.vent.trace=Oxygen Trace
 
@@ -681,7 +681,7 @@ msg.advancedrocketry.planetselector.planet.tooltip.moons.count=Moons: %d
 msg.powerunit.rfpertick=RF/t
 msg.linker.error.firstMachine=This must be the first machine to link!
 msg.linker.program=Coordinates programmed into Linker
-msg.linker.success=Linked Sucessfully
+msg.linker.success=Linked Successfully
 msg.linker.sameblock=You can't link a wireless transceiver to itself.
 msg.notenoughpower=Not Enough Power!
 msg.empty=Empty
@@ -775,7 +775,7 @@ jei.machinerecipe.time=Time:
 jei.sb.satellitepreview=Ready for orbit!
 jei.sb.copy.source=Source
 jei.sb.copy.output=New Copy
-jei.sb.assemblyhint=Atleast one solar panel
+jei.sb.assemblyhint=At least one solar panel
 jei.sb.copychiphint=Make backups!
 jei.ar.asteroids=Asteroids
 
@@ -788,7 +788,7 @@ jei.ar.fuel.role.monopropellant=Monopropellant Fuel
 jei.ar.fuel.role.biprop_fuel=Bipropellant Fuel
 jei.ar.fuel.role.oxidizer=Oxidizer
 jei.ar.fuel.role.working_fluid=Working Fluid
-jei.ar.stationAssembler.newStationChipHint=§cThis Points to the new Station!
+jei.ar.stationAssembler.newStationChipHint=§cThis points to the new Station!
 
 # TOP-integration
 
@@ -862,7 +862,7 @@ tooltip.advancedrocketry.nuclearcore=§cPart of Rocket
 tooltip.advancedrocketry.nuclearcore.1=§6Allows planetary travel!
 tooltip.advancedrocketry.nuclearcore.shift.1=Needs to be directly on top of a
 tooltip.advancedrocketry.nuclearcore.shift.2=Nuclear Engine or another Nuclear Core.
-tooltip.advancedrocketry.nuclearcore.alt.1=Vertical placement rules doesn't apply
+tooltip.advancedrocketry.nuclearcore.alt.1=Vertical placement rules don't apply
 tooltip.advancedrocketry.nuclearcore.alt.2=for Unmanned Vehicles (Gas Mission rockets)
 
 # Nuclear rocketengine
@@ -941,13 +941,13 @@ tooltip.advancedrocketry.terraformer.alt.2=§fPowered by Satellite
 tooltip.advancedrocketry.monitoringstation=§cInfrastructure
 tooltip.advancedrocketry.monitoringstation.shift.1=Launch with Redstone Signal!
 tooltip.advancedrocketry.monitoringstation.shift.2=§fLink to §4Rocket Assembler/Dockingpad§f or §4Rocket
-tooltip.advancedrocketry.monitoringstation.alt.1=§bMissions becomes active when orbit reached!
+tooltip.advancedrocketry.monitoringstation.alt.1=§bMissions become active when orbit is reached!
 
 # Satellite Terminal
 tooltip.advancedrocketry.satellitecontrolcenter=Communicates with Satellites
 tooltip.advancedrocketry.satellitecontrolcenter.shift.1=Insert Satellite Chip
 tooltip.advancedrocketry.satellitecontrolcenter.shift.2=Download Data
-tooltip.advancedrocketry.satellitecontrolcenter.alt.1=§fTransfer and Auto-Download Data with Wireless Tranciever or Data Unit
+tooltip.advancedrocketry.satellitecontrolcenter.alt.1=§fTransfer and Auto-Download Data with Wireless Transceiver or Data Unit
 
 # Satellite Builder
 tooltip.advancedrocketry.satellitebuilder=Assembles Satellites
@@ -1035,7 +1035,7 @@ tooltip.advancedrocketry.fluidtank.shift.1=§cConnects to tanks above or below t
 # Wireless Transceiver
 tooltip.advancedrocketry.transceiver=Transfers §6Data
 tooltip.advancedrocketry.transceiver.shift.1=§fUse §cLinker§f to create Networks
-tooltip.advancedrocketry.transceiver.shift.2=§fSupports multiple Tranceivers
+tooltip.advancedrocketry.transceiver.shift.2=§fSupports multiple Transceivers
 tooltip.advancedrocketry.transceiver.alt.1=§fExtractmode toggles autodownload from Terminal
 tooltip.advancedrocketry.transceiver.alt.2=§o(reinsert chip if stale)
 
@@ -1103,7 +1103,7 @@ tooltip.advancedrocketry.altitudectrl.alt.2=Redstone control
 tooltip.advancedrocketry.scrubber=Place next to Oxygen Vent
 tooltip.advancedrocketry.scrubber.shift.1=Reduces Oxygen use (max 2)
 tooltip.advancedrocketry.scrubber.alt.1=Each scrubber halves O₂ use, increases Power use.
-tooltip.advancedrocketry.scrubber.alt.2=With 2 Scrubbers Oxygen Vent won't use Oxygen.
+tooltip.advancedrocketry.scrubber.alt.2=With 2 Scrubbers, Oxygen Vent won't use Oxygen.
 
 # Oxygen Vent
 tooltip.advancedrocketry.oxygenvent=Creates breathable air in sealed rooms.
@@ -1254,7 +1254,7 @@ tooltip.advancedrocketry.weathercontrollerremote=§bShift-Right Click to open GU
 tooltip.advancedrocketry.weathercontrollerremote.shift.1=§fRight-click in hand to use
 tooltip.advancedrocketry.weathercontrollerremote.alt.1=Combine with Weather Controller when assembling
 tooltip.advancedrocketry.weathercontrollerremote.mode.rain=§eMode: Rain - Fills small basins in the terrain with water
-tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Drys all water in a radius of 16
+tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Dries all water in a radius of 16
 tooltip.advancedrocketry.weathercontrollerremote.mode.flood=§eMode: Flood - Floods area with a radius of 16 with water
 
 
@@ -1262,7 +1262,7 @@ tooltip.advancedrocketry.weathercontrollerremote.mode.flood=§eMode: Flood - Flo
 tooltip.advancedrocketry.biomechangerremote=§bShift-Right Click to open GUI
 tooltip.advancedrocketry.biomechangerremote.shift.1=§fRight-click in hand to transform a 20×20 area
 tooltip.advancedrocketry.biomechangerremote.shift.2=§f"Scan Biome" stores the Biome you're standing in to satellite’s memory.
-tooltip.advancedrocketry.biomechangerremote.alt.1=§6Satellite needs alot of power
+tooltip.advancedrocketry.biomechangerremote.alt.1=§6Satellite needs a lot of power
 tooltip.advancedrocketry.biomechangerremote.alt.2=§fUsed in §cTerraforming Terminal§f and§c Atmosphere Terraformer
 
 # Ore Scanner
@@ -1310,7 +1310,7 @@ tooltip.advancedrocketry.stationchip.alt.1=§4Insert programmed Chip in Guidance
 tooltip.advancedrocketry.stationchip.namelabel=Name: 
 
 # Planet Chip
-tooltip.advancedrocketry.planetidchip=§bReprogammable!
+tooltip.advancedrocketry.planetidchip=§bReprogrammable!
 tooltip.advancedrocketry.planetidchip.shift.1=§fInsert Chip in §4Guidance Computer§7
 tooltip.advancedrocketry.planetidchip.shift.2=§fSet destination in Rocket GUI to program it.
 tooltip.advancedrocketry.planetidchip.alt.1=§4Doublecheck that this is programmed before Launch!
@@ -1412,10 +1412,13 @@ tooltip.advancedrocketry.libvulpes.creativepowerbattery=§dInfinite Power
 tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.1=§cPart of Multiblock
 tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.2=§bUse Holo-Projector!
 tooltip.advancedrocketry.libvulpes.coalgenerator=§cBurns solid fuels
+tooltip.advancedrocketry.libvulpes.linker.shift.1=§fSneak+Right-click to link, (Use in air to reset.)
+tooltip.advancedrocketry.libvulpes.linker.alt.1=§fLinks §cinfrastructure§f to rockets.
+tooltip.advancedrocketry.libvulpes.linker.alt.2=§fTo use as Guidance Chip, link to §eDocking Pad§f, then place in §eGuidance Computer§f.
 
 
 # Planet Analyser
-tooltip.advancedrocketry.planetanalyser=Processeses data and writes it to Asteroid Chip
+tooltip.advancedrocketry.planetanalyser=Processes data and writes it to Asteroid Chip
 tooltip.advancedrocketry.planetanalyser.shift.1=§bUse Holo-Projector!
 
 # Centrifuge
@@ -1473,7 +1476,7 @@ tooltip.advancedrocketry.vacuumlaser.shift.1=§bUse Holo-Projector!
 # Pump
 tooltip.advancedrocketry.pump=Searches for fluid directly below
 tooltip.advancedrocketry.pump.shift.1=§cPulls from the connected pool within 64 blocks.
-tooltip.advancedrocketry.pump.alt.1=§fAutoejects to nearby tank
+tooltip.advancedrocketry.pump.alt.1=§fAuto-ejects to nearby tank
 tooltip.advancedrocketry.pump.alt.2=Redstone turns it off
 
 # Parts for Multiblock
@@ -1495,7 +1498,7 @@ tooltip.libvulpes.advstructuremachine.shift.1=§bUse Holo-Projector!
 # Rocket Assembler
 tooltip.advancedrocketry.rocketassembler=§cBuilds Rockets
 tooltip.advancedrocketry.rocketassembler.shift.1=§bRequires Launch Pad + Structure Tower Structure
-tooltip.advancedrocketry.rocketassembler.shift.2=§fConnecting all infrastructure to this lets them autoconnect to Rocket on Pad
+tooltip.advancedrocketry.rocketassembler.shift.2=§fConnecting infrastructure here lets it auto-connect to Rockets on the Pad
 tooltip.advancedrocketry.rocketassembler.alt.1=§fPlace this 1 block higher than Launch Pad, connecting lower corners and facing opposite of the Launch Pad square
 
 # Station Assembler
@@ -1511,11 +1514,11 @@ tooltip.advancedrocketry.packedstructure.shift.1=§eRemember to set the rocket's
 tooltip.advancedrocketry.deployablerocketassembler=§cBuilds Rockets on Space Stations
 tooltip.advancedrocketry.deployablerocketassembler.shift.1=§bRequires Structure Tower blocks
 tooltip.advancedrocketry.deployablerocketassembler.shift.2=§fUsed for §6Gas Missions§7
-tooltip.advancedrocketry.deployablerocketassembler.alt.1=§fPlace this in the middle of upside down T facing outwards in space, then a horizontal support outwards from the top of tower.
+tooltip.advancedrocketry.deployablerocketassembler.alt.1=§fPlace this in the middle of an upside-down T facing outward in space, then add horizontal support from the tower top.
 tooltip.advancedrocketry.deployablerocketassembler.alt.2=Check wiki if unsure!
 
 # Hovercraft
-tooltip.advancedrocketry.hovercraft=Long lasting dilithium Power source. It'll probably outlive you.
+tooltip.advancedrocketry.hovercraft=Long-lasting dilithium power source. It'll probably outlive you.
 tooltip.advancedrocketry.hovercraft.alt.1=§fCheck steering in controls
 
 # Thermite
@@ -1529,12 +1532,12 @@ tooltip.advancedrocketry.thermitetorch.shift.1=§fUsed in low or no Atmosphere
 tooltip.advancedrocketry.jackhammer=§cVery Fast Mining Tool
 tooltip.advancedrocketry.jackhammer.1=It'll probably outlive you, (if you change bolts)
 tooltip.advancedrocketry.jackhammer.shift.1=§fRepair with §6Titanium Rod
-tooltip.advancedrocketry.jackhammer.alt.1=§fHarvestlevel: §bDiamond
+tooltip.advancedrocketry.jackhammer.alt.1=§fHarvest level: §bDiamond
 
 # Basic basicLaserGun
 tooltip.advancedrocketry.lasergun=§cRanged Mining Tool
 tooltip.advancedrocketry.lasergun.shift.1=§dInfinite uses
-tooltip.advancedrocketry.lasergun.alt.1=§fHarvestlevel: §bDiamond
+tooltip.advancedrocketry.lasergun.alt.1=§fHarvest level: §bDiamond
 tooltip.advancedrocketry.lasergun.alt.2=§fRange: §b50 blocks
 
 tooltip.advancedrocketry.platepress=§cManual grinding and pressing
