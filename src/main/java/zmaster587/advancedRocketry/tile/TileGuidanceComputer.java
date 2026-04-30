@@ -7,6 +7,9 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.common.util.Constants.NBT;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.Constants;
@@ -19,14 +22,18 @@ import zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip;
 import zmaster587.advancedRocketry.item.ItemSatelliteIdentificationChip;
 import zmaster587.advancedRocketry.item.ItemStationChip;
 import zmaster587.advancedRocketry.item.ItemStationChip.LandingLocation;
+import zmaster587.advancedRocketry.network.PacketBackToRocketGui;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
 import zmaster587.advancedRocketry.util.PlanetaryTravelHelper;
+import zmaster587.advancedRocketry.util.RocketGuiNavigation;
 import zmaster587.advancedRocketry.util.StationLandingLocation;
 import zmaster587.libVulpes.api.LibVulpesItems;
+import zmaster587.libVulpes.inventory.modules.IButtonInventory;
 import zmaster587.libVulpes.inventory.modules.IModularInventory;
 import zmaster587.libVulpes.inventory.modules.ModuleBase;
 import zmaster587.libVulpes.items.ItemLinker;
+import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.tile.multiblock.hatch.TileInventoryHatch;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.Vector3F;
@@ -36,7 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class TileGuidanceComputer extends TileInventoryHatch implements IModularInventory {
+public class TileGuidanceComputer extends TileInventoryHatch implements IModularInventory, IButtonInventory {
 
     private int destinationId;
     private Vector3F<Float> landingPos;
@@ -53,7 +60,20 @@ public class TileGuidanceComputer extends TileInventoryHatch implements IModular
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
-        return super.getModules(ID, player);
+        List<ModuleBase> modules = super.getModules(ID, player);
+        RocketGuiNavigation.addBackButtonIfApplicable(modules, player, this);
+        return modules;
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void onInventoryButtonPressed(int buttonId) {
+        if (buttonId == RocketGuiNavigation.BUTTON_BACK_TO_ROCKET) {
+            PacketHandler.sendToServer(new PacketBackToRocketGui(
+                    this.world.provider.getDimension(),
+                    this.pos
+            ));
+        }
     }
 
     @Override

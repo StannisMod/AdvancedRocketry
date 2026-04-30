@@ -107,10 +107,6 @@ repositories {
         name 'CleanroomMC Maven'
         url 'https://maven.cleanroommc.com'
     }
-    maven {
-        name 'CurseMaven'
-        url 'https://cursemaven.com'
-    }
 }
 
 dependencies {
@@ -147,10 +143,6 @@ dependencies {
     if (propertyBool('enable_junit_testing')) {
         testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    }
-    // Optional Mouse Tweaks API annotations, e.g. @MouseTweaksIgnore
-    compileOnly(rfg.deobf("curse.maven:mouse-tweaks-unofficial-461660:5876158")) {
-        transitive = false
     }
 }
 

@@ -2631,6 +2631,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         } else if (id > BUTTON_ID_OFFSET) {
             TileEntity tile = storage.getGUITiles().get(id - BUTTON_ID_OFFSET - tilebuttonOffset);
 
+            RocketGuiNavigation.rememberIfGuidanceComputer(player, this, tile);
             //Welcome to super hack time with packets
             //Due to the fact the client uses the player's current world to open the gui, we have to move the client between worlds for a bit
             PacketHandler.sendToPlayer(new PacketEntity(this, (byte) PacketType.CHANGEWORLD.ordinal()), player);
@@ -2929,12 +2930,24 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.OPENPLANETSELECTION.ordinal()));
                 break;
             default:
-                PacketHandler.sendToServer(new PacketEntity(this, (byte) (buttonId + BUTTON_ID_OFFSET)));
-                //Minecraft.getMinecraft().thePlayer.closeScreen();
-
                 if (buttonId < STATION_LOC_OFFSET) {
                     TileEntity tile = storage.getGUITiles().get(buttonId - tilebuttonOffset);
-                    storage.getBlockState(tile.getPos()).getBlock().onBlockActivated(storage.world, tile.getPos(), storage.getBlockState(tile.getPos()), Minecraft.getMinecraft().player, EnumHand.MAIN_HAND, EnumFacing.DOWN, 0, 0, 0);
+
+                    PacketHandler.sendToServer(new PacketEntity(this, (byte) (buttonId + BUTTON_ID_OFFSET)));
+
+                    storage.getBlockState(tile.getPos()).getBlock().onBlockActivated(
+                            storage.world,
+                            tile.getPos(),
+                            storage.getBlockState(tile.getPos()),
+                            Minecraft.getMinecraft().player,
+                            EnumHand.MAIN_HAND,
+                            EnumFacing.DOWN,
+                            0,
+                            0,
+                            0
+                    );
+                } else {
+                    PacketHandler.sendToServer(new PacketEntity(this, (byte) (buttonId + BUTTON_ID_OFFSET)));
                 }
         }
     }

@@ -451,6 +451,7 @@ msg.monitoringStation.aborted=Aborted!
 msg.monitoringStation.returningToDock=Returning to dock
 msg.monitoringStation.noLinkedRocket=Not Linked to any Rocket!
 
+msg.guidanceComputer.backtorocket=Back to Rocket
 msg.guidanceComputerHatch.loadingState=Loading State: 
 msg.guidanceComputerHatch.ejectonlanding=Auto Eject Upon Landing
 msg.guidanceComputerHatch.ejectonsatlanding=Allow Ejection of Satellite Chips

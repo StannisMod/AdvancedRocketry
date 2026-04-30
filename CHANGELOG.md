@@ -1,5 +1,6 @@
 Changelog 2.2.7
 - AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
+- "Back to Rocket" button for GuidanceComputer (QoL)
 
 Changelog 2.2.6
 - Void Drill
