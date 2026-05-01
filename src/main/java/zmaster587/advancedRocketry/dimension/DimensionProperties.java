@@ -159,17 +159,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private int generatorType;
     //public int target_sea_level;
 
-
     @SidedProxy(serverSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.serverlists", clientSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.clientlists")
     public static Afuckinginterface proxylists;
-
 
 
     public List<ChunkPos> terraformingChunksAlreadyAdded;
 
     //class
-
-
     public List<watersourcelocked> water_source_locked_positions;
 
     //public boolean water_can_exist;
@@ -228,10 +224,6 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terraformingChunksAlreadyAdded = new ArrayList<>();
 
         ringAngle = 70;
-
-
-        //dont need this here because the terraforming terminal will re-create it anyway
-        //this.chunkMgrTerraformed = new ChunkManagerPlanet(net.minecraftforge.common.DimensionManager.getWorld(id), net.minecraftforge.common.DimensionManager.getWorld(getId()).getWorldInfo().getGeneratorOptions(), getTerraformedBiomes());
     }
 
     public void load_terraforming_helper(boolean reset) {
@@ -1174,8 +1166,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      * @return a list of biomes allowed to spawn in this dimension
      */
     public List<Biome> getViableBiomes(boolean not_terraforming) {
-        Random random = new Random(System.nanoTime());
         List<Biome> viableBiomes = new ArrayList<>();
+
+        if (!hasSurface()) {
+            return viableBiomes;
+        }
+
+        Random random = new Random(System.nanoTime());
 
         if (atmosphereDensity > AtmosphereTypes.LOW.value && random.nextInt(3) == 0 && not_terraforming) {
             List<Biome> list = new LinkedList<>(AdvancedRocketryBiomes.instance.getSingleBiome());
@@ -1511,22 +1508,66 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             }
         }
 
-        //Load biomes
-        if (nbt.hasKey("biomes")) {
+        // Load biomes
+        // New format: registry names, safe vs biome ID drift across modpack versions.
+        // Legacy format: integer biome IDs, kept only for old temp.dat compatibility.
+        //
+        // If biomeNames exists, it is authoritative. Do not also read legacy integer IDs.
+        if (nbt.hasKey("biomeNames", NBT.TAG_LIST)) {
+
+            NBTTagList biomeNames = nbt.getTagList("biomeNames", NBT.TAG_STRING);
+            int[] biomeWeights = nbt.getIntArray("weights");
+
+            List<BiomeEntry> biomesList = new ArrayList<>();
+
+            for (int i = 0; i < biomeNames.tagCount(); i++) {
+                String biomeNameString = biomeNames.getStringTagAt(i);
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+
+                try {
+                    ResourceLocation biomeName = new ResourceLocation(biomeNameString);
+                    Biome biome = Biome.REGISTRY.getObject(biomeName);
+
+                    if (biome != null && biome.getRegistryName() != null && biome.getRegistryName().equals(biomeName)) {
+                        biomesList.add(new BiomeEntry(biome, weight));
+                    } else {
+                        AdvancedRocketry.logger.warn("Unknown biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                    }
+                } catch (RuntimeException e) {
+                    AdvancedRocketry.logger.warn("Invalid biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                }
+            }
 
             allowedBiomes.clear();
+            allowedBiomes.addAll(biomesList);
+
+            if (allowedBiomes.isEmpty()) {
+                AdvancedRocketry.logger.error("No valid biomeNames resolved for DIMID " + getId() + ". This planet has an empty allowed biome list.");
+            }
+        }
+        else if (nbt.hasKey("biomes", NBT.TAG_INT_ARRAY)) {
+
+            allowedBiomes.clear();
+
             int[] biomeIds = nbt.getIntArray("biomes");
             int[] biomeWeights = nbt.getIntArray("weights");
-            //Old handling
+
             if (biomeWeights.length == 0) {
                 biomeWeights = new int[biomeIds.length];
                 Arrays.fill(biomeWeights, 30);
             }
+
             List<BiomeEntry> biomesList = new ArrayList<>();
 
-
             for (int i = 0; i < biomeIds.length; i++) {
-                biomesList.add(new BiomeEntry(AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]), biomeWeights[i]));
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+                Biome biome = AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]);
+
+                if (biome != null) {
+                    biomesList.add(new BiomeEntry(biome, weight));
+                } else {
+                    AdvancedRocketry.logger.warn("Unknown legacy biome ID " + biomeIds[i] + " for DIMID " + getId() + ", skipping");
+                }
             }
 
             allowedBiomes.addAll(biomesList);
@@ -1869,15 +1910,33 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         }
 
 
-        if (!allowedBiomes.isEmpty()) {
-            int[] biomeId = new int[allowedBiomes.size()];
+        // Only save planet-generation biomes for AR-owned dimensions with real surfaces.
+        // Non-native dimensions are metadata/proxies, and gas giants/stars do not use biome generation.
+        if (isNativeDimension && hasSurface() && !allowedBiomes.isEmpty()) {
+            NBTTagList biomeNames = new NBTTagList();
             int[] weights = new int[allowedBiomes.size()];
-            for (int i = 0; i < allowedBiomes.size(); i++) {
-                biomeId[i] = Biome.getIdForBiome(allowedBiomes.get(i).biome);
-                weights[i] = allowedBiomes.get(i).itemWeight;
+            int validCount = 0;
+
+            for (BiomeEntry entry : allowedBiomes) {
+                ResourceLocation biomeName = entry.biome != null ? Biome.REGISTRY.getNameForObject(entry.biome) : null;
+
+                if (biomeName != null) {
+                    biomeNames.appendTag(new NBTTagString(biomeName.toString()));
+                    weights[validCount] = entry.itemWeight;
+                    validCount++;
+                } else {
+                    AdvancedRocketry.logger.warn("Cannot save unnamed/null biome for DIMID " + getId() + ", skipping");
+                }
             }
-            nbt.setIntArray("biomes", biomeId);
-            nbt.setIntArray("weights", weights);
+
+            if (!biomeNames.hasNoTags()) {
+                if (validCount != weights.length) {
+                    weights = Arrays.copyOf(weights, validCount);
+                }
+
+                nbt.setTag("biomeNames", biomeNames);
+                nbt.setIntArray("weights", weights);
+            }
         }
 
         if (!craterBiomeWeights.isEmpty()) {

@@ -671,12 +671,16 @@ public class DimensionManager implements IGalaxy {
             if (tmpFile.exists()) tmpFile.delete();
 
             try (FileOutputStream tmpFileOut = new FileOutputStream(tmpFile);
-                 DataOutputStream outStream = new DataOutputStream(
-                         new BufferedOutputStream(new GZIPOutputStream(tmpFileOut)))) {
+                 BufferedOutputStream bufferedOut = new BufferedOutputStream(tmpFileOut);
+                 GZIPOutputStream gzipOut = new GZIPOutputStream(bufferedOut);
+                 DataOutputStream outStream = new DataOutputStream(gzipOut)) {
 
                 CompressedStreamTools.write(nbt, outStream);
-                outStream.flush();
-                tmpFileOut.getFD().sync();
+
+                outStream.flush();       // push DataOutputStream into gzip
+                gzipOut.finish();        // write gzip footer
+                bufferedOut.flush();     // push compressed bytes to file stream
+                tmpFileOut.getFD().sync(); // sync complete gzip file
             }
 
             try {

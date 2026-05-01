@@ -1,6 +1,19 @@
 Changelog 2.2.7
 - AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
 - "Back to Rocket" button for GuidanceComputer (QoL)
+- StorageChunk now replaces corrupt blocks with air instead of losing stations/rockets.
+- Planet biome save handling:
+  - Planet biomes are now saved by registry name instead of numeric ID, preventing biome drift after modpack changes.
+  - Old numeric-ID `temp.dat` biomes still load and migrate on next save.
+  - Biome lists are only saved/generated for native AR surface dimensions, skipping gas giants and stars.
+- Some cleaning in config:
+  - `resetPlanetsFromXML` now _only_ lives under `Planet {}`.
+  - Existing `general.resetPlanetsFromXML` entries can be safely removed from configs.
+  - `ResetOnlyOnce` now correctly controls the active XML reload flag.
+  - Improved comments for geode, crater, volcano, and structure generation settings so their global override behavior is clearer.
+- Langfile:
+  - Added Linker hints
+  - Cleaned up ~10 typos
 
 Changelog 2.2.6
 - Void Drill
