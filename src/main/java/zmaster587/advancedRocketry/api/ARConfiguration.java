@@ -447,10 +447,6 @@ public class ARConfiguration {
         //Planet
         arConfig.planetsMustBeDiscovered = config.get(PLANET, "planetsMustBeDiscovered", false, "Planets must be discovered in the warp controller before being visible").getBoolean();
         arConfig.planetDiscoveryChance = config.get(PLANET, "planetDiscoveryChance", 5, "Chance of planet discovery in the warp controller, chance is 1/n", 1, Integer.MAX_VALUE).getInt();
-        boolean resetResetFromXml = config.getBoolean("ResetOnlyOnce", PLANET, true, "Setting this to false will prevent resetPlanetsFromXML from being set to false upon world reload.  Recommended for those who want to force ALL saves to ALWAYS use the planetDefs XML in the /config folder.  Essentially that 'Are you sure you're sure' option.  If resetPlanetsFromXML is false, this option does nothing.");
-        //Reset to false
-        if (resetResetFromXml)
-            config.get(PLANET, "resetPlanetsFromXML", false, "Reload planet definitions from config XML on this restart.").set(false);
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
@@ -522,14 +518,14 @@ public class ARConfiguration {
         orbitalLaserOres = config.get(WORLDGEN, "laserDrillOres", new String[]{}, "List of ores allowed to be mined by the laser drill if surface drilling is disabled.  Ores can be specified by just the oreName:<size> (oredict) or by modid:block:meta:<size> where size is stacksize and optional").getStringList();
         //Geode
         arConfig.geodeOresBlackList = config.get(WORLDGEN, "geodeOres_blacklist", false, "Treat geodeOres as a blacklist.").getBoolean();
-        arConfig.generateGeodes = config.get(WORLDGEN, "generateGeodes", true, "Generate ore-containing geodes on high-pressure planets.").getBoolean();
+        arConfig.generateGeodes = config.get(WORLDGEN, "generateGeodes", true, "Globally enable geode generation. Note: setting this option to false overrides 'generateGeodes' in the planetDefs.xml").getBoolean();
         arConfig.geodeBaseSize = config.get(WORLDGEN, "geodeBaseSize", 36, "Average geode size.").getInt();
         arConfig.geodeVariation = config.get(WORLDGEN, "geodeVariation", 24, "Geode size variation.").getInt();
         geodeOres = config.get(WORLDGEN, "geodeOres", new String[]{"oreIron", "oreGold", "oreCopper", "oreTin", "oreRedstone"}, "List of ores allowed in geodes. (oredict names)").getStringList();
         //Other structures
-        arConfig.generateCraters = config.get(WORLDGEN, "generateCraters", true, "Generate meteor craters on low-pressure planets.  Note: setting this option to false overrides 'generateCraters' in the planetDefs.xml").getBoolean();
-        arConfig.generateVolcanos = config.get(WORLDGEN, "generateVolcanos", true, "Generate volcanoes on very hot planets.  Note: setting this option to false overrides 'generateVolcanos' in the planetDefs.xml").getBoolean();
-        arConfig.generateVanillaStructures = config.getBoolean("generateVanillaStructures", WORLDGEN, false, "Allow vanilla structures on planets with breathable air.  Note: setting this to false will override 'generateStructures' in the planetDefs.xml");
+        arConfig.generateCraters = config.get(WORLDGEN, "generateCraters", true, "Globally enable meteor craters on low-pressure planets.  Note: setting this option to false overrides 'generateCraters' in the planetDefs.xml").getBoolean();
+        arConfig.generateVolcanos = config.get(WORLDGEN, "generateVolcanos", true, "Globally enable volcanoes on very hot planets.  Note: setting this option to false overrides 'generateVolcanos' in the planetDefs.xml").getBoolean();
+        arConfig.generateVanillaStructures = config.getBoolean("generateVanillaStructures", WORLDGEN, false, "Globally enable vanilla structures on planets with breathable air.  Note: setting this to false will override 'generateStructures' in the planetDefs.xml");
 
         //Load laser dimid blacklists
         for (String s : str) {
