@@ -517,7 +517,18 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ || blocks[x][y][z] == null) {
             return Blocks.AIR.getDefaultState();
         }
-        return blocks[x][y][z].getStateFromMeta(metas[x][y][z]);
+        try {
+            return blocks[x][y][z].getStateFromMeta(metas[x][y][z]);
+        } catch (Throwable e) {
+            AdvancedRocketry.logger.warn(
+                    "StorageChunk getBlockState: invalid meta {} for block {} at {},{},{}. Returning air.",
+                    metas[x][y][z],
+                    blocks[x][y][z].getRegistryName(),
+                    x, y, z,
+                    e
+            );
+            return Blocks.AIR.getDefaultState();
+        }
     }
 
     public void setBlockState(BlockPos pos, IBlockState state) {
@@ -529,7 +540,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         int z = pos.getZ();
 
         blocks[x][y][z] = state.getBlock();
-        metas[x][y][z] = (short) state.getBlock().getMetaFromState(state);
+        metas[x][y][z] = getSafeMetaFromState(state, "setBlockState", x, y, z);
     }
 
     public void rotateBy(EnumFacing dir) {
@@ -738,11 +749,19 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         for (int x = 0; x < sizeX; x++) {
             for (int y = 0; y < sizeY; y++) {
                 for (int z = 0; z < sizeZ; z++) {
-                    blocks[x][y][z] = Block.getBlockById(blockId[z + (sizeZ * y) + (sizeZ * sizeY * x)]);
-                    metas[x][y][z] = (short) metasId[z + (sizeZ * y) + (sizeZ * sizeY * x)];
+                    int index = z + (sizeZ * y) + (sizeZ * sizeY * x);
 
-                    chunk.setBlockState(new BlockPos(x, y, z), this.blocks[x][y][z].getStateFromMeta(this.metas[x][y][z]));
-                    world.checkLightFor(EnumSkyBlock.BLOCK, new BlockPos(x, y, z));
+                    int id = index < blockId.length ? blockId[index] : 0;
+                    int meta = index < metasId.length ? metasId[index] : 0;
+
+                    IBlockState state = getSafeStateFromIdMeta(id, meta, "readFromNBT", x, y, z);
+
+                    blocks[x][y][z] = state.getBlock();
+                    metas[x][y][z] = getSafeMetaFromState(state, "readFromNBT", x, y, z);
+
+                    BlockPos pos = new BlockPos(x, y, z);
+                    chunk.setBlockState(pos, state);
+                    world.checkLightFor(EnumSkyBlock.BLOCK, pos);
                 }
             }
         }
@@ -823,7 +842,21 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 for (int y = 0; y < sizeY; y++) {
 
                     if (blocks[x][y][z] != Blocks.AIR) {
-                        world.setBlockState(new BlockPos(xCoord + x, yCoord + y, zCoord + z), blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
+                        try {
+                            world.setBlockState(
+                                    new BlockPos(xCoord + x, yCoord + y, zCoord + z),
+                                    blocks[x][y][z].getStateFromMeta(metas[x][y][z]),
+                                    2
+                            );
+                        } catch (Throwable e) {
+                            AdvancedRocketry.logger.warn(
+                                    "StorageChunk pasteInWorld: invalid meta {} for block {} at {},{},{}. Skipping block.",
+                                    metas[x][y][z],
+                                    blocks[x][y][z].getRegistryName(),
+                                    x, y, z,
+                                    e
+                            );
+                        }
                     }
                 }
             }
@@ -893,8 +926,33 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 || z + side.getFrontOffsetZ() < 0 || z + side.getFrontOffsetZ() >= sizeZ)
             return false;
 
-        return blocks[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()].isSideSolid(blocks[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()].getStateFromMeta(metas[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()]), this, pos.offset(side), side.getOpposite());
+        int sx = x + side.getFrontOffsetX();
+        int sy = y + side.getFrontOffsetY();
+        int sz = z + side.getFrontOffsetZ();
 
+        Block block = blocks[sx][sy][sz];
+
+        if (block == null) {
+            return false;
+        }
+
+        try {
+            return block.isSideSolid(
+                    block.getStateFromMeta(metas[sx][sy][sz]),
+                    this,
+                    pos.offset(side),
+                    side.getOpposite()
+            );
+        } catch (Throwable e) {
+            AdvancedRocketry.logger.warn(
+                    "StorageChunk isSideSolid: invalid meta {} for block {} at {},{},{}. Returning false.",
+                    metas[sx][sy][sz],
+                    block.getRegistryName(),
+                    sx, sy, sz,
+                    e
+            );
+            return false;
+        }
     }
 
     public List<TileSatelliteHatch> getSatelliteHatches() {
@@ -1134,8 +1192,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public void readFromNetwork(ByteBuf in) {
-        //System.out.println("read from network");
-
         finalized = false;
         PacketBuffer buffer = new PacketBuffer(in);
 
@@ -1153,11 +1209,17 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             for (int y = 0; y < sizeY; y++) {
                 for (int z = 0; z < sizeZ; z++) {
 
-                    this.blocks[x][y][z] = Block.getBlockById(buffer.readInt());
-                    this.metas[x][y][z] = buffer.readShort();
+                    int id = buffer.readInt();
+                    int meta = buffer.readShort();
 
-                    chunk.setBlockState(new BlockPos(x, y, z), this.blocks[x][y][z].getStateFromMeta(this.metas[x][y][z]));
-                    world.checkLightFor(EnumSkyBlock.BLOCK,new BlockPos(x, y, z));
+                    IBlockState state = getSafeStateFromIdMeta(id, meta, "readFromNetwork", x, y, z);
+
+                    this.blocks[x][y][z] = state.getBlock();
+                    this.metas[x][y][z] = getSafeMetaFromState(state, "readFromNetwork", x, y, z);
+
+                    BlockPos pos = new BlockPos(x, y, z);
+                    chunk.setBlockState(pos, state);
+                    world.checkLightFor(EnumSkyBlock.BLOCK, pos);
                 }
             }
         }
@@ -1206,5 +1268,47 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     @Nonnull
     public WorldType getWorldType() {
         return WorldType.CUSTOMIZED;
+    }
+
+    private static IBlockState getSafeStateFromIdMeta(int blockId, int meta, String source, int x, int y, int z) {
+        Block block = Block.getBlockById(blockId);
+
+        if (block == null) {
+            AdvancedRocketry.logger.warn(
+                    "StorageChunk {}: missing block id {} at {},{},{}. Replacing with air.",
+                    source, blockId, x, y, z
+            );
+            return Blocks.AIR.getDefaultState();
+        }
+
+        try {
+            return block.getStateFromMeta(meta);
+        } catch (Throwable e) {
+            AdvancedRocketry.logger.warn(
+                    "StorageChunk {}: invalid meta {} for block {} at {},{},{}. Replacing with default state.",
+                    source, meta, block.getRegistryName(), x, y, z, e
+            );
+
+            try {
+                return block.getDefaultState();
+            } catch (Exception ignored) {
+                return Blocks.AIR.getDefaultState();
+            }
+        }
+    }
+
+    private static short getSafeMetaFromState(IBlockState state, String source, int x, int y, int z) {
+        try {
+            return (short) state.getBlock().getMetaFromState(state);
+        } catch (Throwable e) {
+            AdvancedRocketry.logger.warn(
+                    "StorageChunk {}: could not get meta from block {} at {},{},{}. Using meta 0.",
+                    source,
+                    state.getBlock().getRegistryName(),
+                    x, y, z,
+                    e
+            );
+            return 0;
+        }
     }
 }
