@@ -70,11 +70,16 @@ public class TileRocketMonitoringStation extends TileEntity
         if (world == null || world.isRemote || rocket == null) return;
         this.expectedRocketId     = rocket.getEntityId();
         this.expectedRocketExpiry = world.getTotalWorldTime() + 40; // ~2 seconds
-    }    
+    }
 
     EntityRocketBase linkedRocket;
     IMission mission;
     ModuleText missionText;
+
+    // Client-side: mission id arrived before the satellite object existed locally
+    private long pendingMissionId = -1L;
+    private int pendingMissionResolveTick = 0;
+    private boolean missionGuiRefreshQueued = false;
 
     // Cached redstone state from neighbor callbacks (don’t poll every tick)
     private boolean isPoweredCached = false, initPower = false;
@@ -118,7 +123,7 @@ public class TileRocketMonitoringStation extends TileEntity
     private ModuleTab tabModule;
     // Event bus registration flag
     private boolean registeredBus = false;
-    
+
     private void pushState() {
         if (world != null && !world.isRemote) {
             markDirty();
@@ -638,9 +643,30 @@ public class TileRocketMonitoringStation extends TileEntity
 
         if (nbt.hasKey("missionID")) {
             long id = nbt.getLong("missionID");
-            SatelliteBase sat = DimensionManager.getInstance().getSatellite(id);
-            if (sat instanceof IMission) {
-                mission = (IMission) sat;
+
+            if (id == -1L) {
+                mission = null;
+                pendingMissionId = -1L;
+                pendingMissionResolveTick = 0;
+                missionGuiRefreshQueued = false;
+            } else {
+                boolean hadMission = mission != null;
+
+                SatelliteBase sat = DimensionManager.getInstance().getSatellite(id);
+                if (sat instanceof IMission) {
+                    mission = (IMission) sat;
+                    pendingMissionId = -1L;
+                    pendingMissionResolveTick = 0;
+
+                    if (world != null && world.isRemote && !hadMission) {
+                        missionGuiRefreshQueued = true;
+                    }
+                } else {
+                    // The TE update can arrive before PacketSatellite/PacketSatellitesUpdate.
+                    // Keep the id and resolve it later on the client.
+                    pendingMissionId = id;
+                    pendingMissionResolveTick = 0;
+                }
             }
         }
         uiStatus = nbt.getInteger("uiStatus");
@@ -685,7 +711,38 @@ public class TileRocketMonitoringStation extends TileEntity
         return nbt;
     }
 
+    @SideOnly(Side.CLIENT)
+    private void updateClientMissionLink() {
+        if (tabModule == null || tabModule.getTab() != 1) {
+            return;
+        }
 
+        if (pendingMissionId != -1L) {
+            if (++pendingMissionResolveTick >= 10) {
+                pendingMissionResolveTick = 0;
+
+                SatelliteBase sat = DimensionManager.getInstance().getSatellite(pendingMissionId);
+                if (sat instanceof IMission) {
+                    mission = (IMission) sat;
+                    pendingMissionId = -1L;
+
+                    if (missionText != null) {
+                        setMissionText();
+                    }
+
+                    missionGuiRefreshQueued = true;
+                }
+            }
+        }
+
+        if (missionGuiRefreshQueued) {
+            missionGuiRefreshQueued = false;
+
+            if (Minecraft.getMinecraft().player != null) {
+                PacketHandler.sendToServer(new PacketMachine(this, TAB_SWITCH));
+            }
+        }
+    }
     // --- LibVulpes network bridge  ---
 
     @Override
@@ -783,16 +840,25 @@ public class TileRocketMonitoringStation extends TileEntity
             // If there is NO mission: show a single centered line and exit early
             if (!hasMission) {
                 modules.add(new ModuleText(
-                    88, 72,
-                    LibVulpes.proxy.getLocalizedString("msg.monitoringStation.missionNoActiveMission"),
-                    0x2b2b2b,   // color
-                    true        // centered
+                        88, 72,
+                        LibVulpes.proxy.getLocalizedString("msg.monitoringStation.missionNoActiveMission"),
+                        0x2b2b2b,
+                        true
                 ));
+
+                // Client-side GUI-only mission resolver poll.
+                // Missions sync live without ticking every loaded monitor tile.
+                modules.add(new ModuleProgress(
+                        -1000, -1000, 7,
+                        TextureResources.progressToMission,
+                        this
+                ));
+
                 if (!world.isRemote) {
                     PacketHandler.sendToPlayer(new PacketMachine(this, (byte)1), player);
                     pushState();
                 }
-                return modules; 
+                return modules;
             }
 
             // ---- Has mission: structured list ----
@@ -989,6 +1055,9 @@ public class TileRocketMonitoringStation extends TileEntity
     @Override
     public float getNormallizedProgress(int id) {
         if (world.isRemote) {
+            if (id == 7) {
+                updateClientMissionLink();
+                return 0f;}
             // Status tab label
             if (launchStatus != null && uiStatus != lastUiStatusShown) {
                 lastUiStatusShown = uiStatus;

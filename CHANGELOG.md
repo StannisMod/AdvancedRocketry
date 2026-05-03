@@ -1,7 +1,12 @@
 Changelog 2.2.7
 - AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
 - "Back to Rocket" button for GuidanceComputer (QoL)
-- StorageChunk now replaces corrupt blocks with air instead of losing stations/rockets.
+- Missions:
+  - Clear corrupt/stale missions cleanly on load. (fixes a rare case of satellite/station loss), also just cleaner for your save.
+  - Fixed a disconnect when running mission on server and opening missiontab in rocket monitor.
+  - Missiontab now correctly updates when rocket reaches orbit and mission is active.
+- Commands:
+  - added `/advancedrocketry fillData chip`,(/ar fd chip) to fill a Programmed Asteroidchip in hand with 1000 of each Datatype.
 - Planet biome save handling:
   - Planet biomes are now saved by registry name instead of numeric ID, preventing biome drift after modpack changes.
   - Old numeric-ID `temp.dat` biomes still load and migrate on next save.
@@ -11,6 +16,8 @@ Changelog 2.2.7
   - Existing `general.resetPlanetsFromXML` entries can be safely removed from configs.
   - `ResetOnlyOnce` now correctly controls the active XML reload flag.
   - Improved comments for geode, crater, volcano, and structure generation settings so their global override behavior is clearer.
+- JEI:
+  - GasGiants: added bucketversions as "hidden outputs"
 - Langfile:
   - Added Linker hints
   - Cleaned up ~10 typos

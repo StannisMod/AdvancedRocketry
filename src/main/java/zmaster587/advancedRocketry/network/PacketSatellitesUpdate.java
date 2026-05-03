@@ -6,7 +6,9 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.network.ByteBufUtils;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
+import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.libVulpes.network.BasePacket;
@@ -40,19 +42,52 @@ public class PacketSatellitesUpdate extends BasePacket {
     @Override
     public void readClient(final ByteBuf byteBuf) {
 
-        if (FMLCommonHandler.instance().getEffectiveSide().isServer()){
-            System.out.println("readclient was called on server side (this should never happen) - returning");
-            return;}
+        if (FMLCommonHandler.instance().getEffectiveSide().isServer()) {
+            return;
+        }
 
-        //System.out.println("readclient was called on client");
         int dimNumber = byteBuf.readInt();
-
         NBTTagCompound compound = ByteBufUtils.readTag(byteBuf);
+
+        if (compound == null) {
+            return;
+        }
 
         DimensionProperties prop = DimensionManager.getInstance().getDimensionProperties(dimNumber);
 
+        if (prop == null) {
+            AdvancedRocketry.logger.warn("Received satellite update for unknown dim {}", dimNumber);
+            return;
+        }
+
         for (String key : compound.getKeySet()) {
-            prop.getSatellite(Long.parseLong(key)).readFromNBT(compound.getCompoundTag(key));
+            long satelliteId;
+
+            try {
+                satelliteId = Long.parseLong(key);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+
+            NBTTagCompound satTag = compound.getCompoundTag(key);
+            SatelliteBase satellite = prop.getSatellite(satelliteId);
+
+            if (satellite == null) {
+                satellite = SatelliteRegistry.createFromNBT(satTag);
+
+                if (satellite == null) {
+                    AdvancedRocketry.logger.warn(
+                            "Could not create satellite {} in dim {} from update packet",
+                            satelliteId,
+                            dimNumber
+                    );
+                    continue;
+                }
+
+                prop.addSatellite(satellite);
+            } else {
+                satellite.readFromNBT(satTag);
+            }
         }
     }
 
