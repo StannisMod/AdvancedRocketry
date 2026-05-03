@@ -300,7 +300,9 @@ commands.advancedrocketry.dev.dumpbiomes.usage=dumpBiomes - Dumps biome info to 
 commands.advancedrocketry.dev.dumpbiomes.success=The file 'BiomeDump.txt' has been written to the instance directory
 commands.advancedrocketry.dev.runtests.usage=runTests - Runs rocket tests for debug only!
 
-commands.advancedrocketry.filldata.usage=/advancedrocketry fillData <data type> <fill amount> (alias: fd)
+commands.advancedrocketry.filldata.usage=/ar fillData <type> <amount> OR /ar fillData chip (alias: fd)
+commands.advancedrocketry.filldata.chip.notheld=Hold an asteroid chip in your main hand to use /ar fillData chip
+commands.advancedrocketry.filldata.chip.success=Filled asteroid chip with %s data in composition, mass, and distance
 commands.advancedrocketry.filldata.invalid=Not a valid datatype, try one of the following:
 commands.advancedrocketry.filldata.success=Data filled!
 commands.advancedrocketry.filldata.wrongtype=Type does not match stored type, data unchanged
