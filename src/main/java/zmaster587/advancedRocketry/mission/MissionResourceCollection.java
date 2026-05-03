@@ -35,6 +35,12 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
     int worldId;
     NBTTagCompound missionPersistantNBT;
 
+
+    // If world loads with an invalid RocketStorage (rocket stored in mission) remove it cleanly.
+    boolean invalidRocketStorage;
+    private int completionCheckTimer; // Don't check every tick if a mission should complete
+    private static final int MISSION_COMPLETION_TICKS = 60;
+
     public MissionResourceCollection() {
         infrastructureCoords = new LinkedList<>();
         missionPersistantNBT = new NBTTagCompound();
@@ -115,10 +121,67 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
     @Override
     public void tickEntity() {
-        if (getProgress(DimensionManager.getWorld(getDimensionId())) >= 1 && !DimensionManager.getWorld(0).isRemote) {
+        if (invalidRocketStorage) {
+            setDead();
+            return;
+        }
+
+        if (++completionCheckTimer < MISSION_COMPLETION_TICKS) {
+            return;
+        }
+        completionCheckTimer = 0;
+
+        World overworld = DimensionManager.getWorld(0);
+        if (overworld == null || overworld.isRemote) {
+            return;
+        }
+
+        World launchWorld = DimensionManager.getWorld(launchDimension);
+        if (launchWorld == null) {
+            return;
+        }
+
+        if (getProgress(overworld) >= 1) {
             setDead();
             onMissionComplete();
         }
+    }
+
+    private void abandonInvalidMission(String reason, Throwable cause) {
+        invalidRocketStorage = true;
+
+        AdvancedRocketry.logger.error(
+                "Removed corrupt Advanced Rocketry mission: missionClass={} satelliteId={} reason={} launchDim={} startDim={} launchPos={},{},{} durationTicks={} elapsedTicks={}",
+                this.getClass().getName(),
+                this.getId(),
+                reason,
+                launchDimension,
+                worldId,
+                x, y, z,
+                duration,
+                Math.max(0L, AdvancedRocketry.proxy.getWorldTimeUniversal(0) - startWorldTime),
+                cause
+        );
+
+        try {
+            World world = DimensionManager.getWorld(launchDimension);
+            if (world != null && infrastructureCoords != null) {
+                for (HashedBlockPosition inf : infrastructureCoords) {
+                    TileEntity tile = world.getTileEntity(new BlockPos(inf.x, inf.y, inf.z));
+                    if (tile instanceof IInfrastructure) {
+                        ((IInfrastructure) tile).unlinkMission();
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            AdvancedRocketry.logger.warn(
+                    "Failed to unlink infrastructure while removing corrupt mission {}",
+                    this.getId(),
+                    t
+            );
+        }
+
+        setDead();
     }
 
     public void writeToNBT(NBTTagCompound nbt) {
@@ -127,11 +190,13 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
         nbt.setTag("persist", missionPersistantNBT);
 
         NBTTagCompound nbt2 = new NBTTagCompound();
-        rocketStats.writeToNBT(nbt2);
+        if (rocketStats != null) {
+            rocketStats.writeToNBT(nbt2);}
         nbt.setTag("rocketStats", nbt2);
 
         nbt2 = new NBTTagCompound();
-        rocketStorage.writeToNBT(nbt2);
+        if (!invalidRocketStorage && rocketStorage != null) {
+            rocketStorage.writeToNBT(nbt2);}
         nbt.setTag("rocketStorage", nbt2);
 
         nbt.setDouble("launchPosX", x);
@@ -162,9 +227,6 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
         rocketStats = new StatsRocket();
         rocketStats.readFromNBT(nbt.getCompoundTag("rocketStats"));
 
-        rocketStorage = new StorageChunk();
-        rocketStorage.readFromNBT(nbt.getCompoundTag("rocketStorage"));
-
         x = nbt.getDouble("launchPosX");
         y = nbt.getDouble("launchPosY");
         z = nbt.getDouble("launchPosZ");
@@ -179,7 +241,18 @@ public abstract class MissionResourceCollection extends SatelliteBase implements
 
         for (int i = 0; i < tagList.tagCount(); i++) {
             int[] coords = tagList.getCompoundTagAt(i).getIntArray("loc");
-            infrastructureCoords.add(new HashedBlockPosition(coords[0], coords[1], coords[2]));
+            if (coords.length >= 3) {
+                infrastructureCoords.add(new HashedBlockPosition(coords[0], coords[1], coords[2]));
+            }
+        }
+        rocketStorage = new StorageChunk();
+        NBTTagCompound storageNbt = nbt.getCompoundTag("rocketStorage");
+
+        try {
+            rocketStorage.readFromNBT(storageNbt);
+        } catch (Throwable e) {
+            rocketStorage = new StorageChunk();
+            abandonInvalidMission("rocketStorage failed to deserialize", e);
         }
     }
 

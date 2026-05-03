@@ -181,7 +181,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         //stats.reset_no_fuel();
         stats.reset_no_fuel();// Oh Quarter... you can not keep adding engine and seat locations every launch
         final boolean isSD = (this.entity instanceof zmaster587.advancedRocketry.entity.EntityStationDeployedRocket);
-                
+
         float weight = 0;
 
         for (int yCurr = 0; yCurr <= this.sizeY; yCurr++) {
@@ -232,7 +232,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         }
 
                         if (block instanceof IFuelTank) {
-                             if (block instanceof BlockBipropellantFuelTank) {
+                            if (block instanceof BlockBipropellantFuelTank) {
                                 fuelCapacityBipropellant += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
                             } else if (block instanceof BlockOxidizerFuelTank) {
                                 fuelCapacityOxidizer += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
@@ -271,7 +271,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         if (block.getUnlocalizedName().contains("servicemonitor")) {
                             hasServiceMonitor = true;
                         }
-                    }    
+                    }
                 }
             }
         }
@@ -302,7 +302,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         outer:
         for (TileEntity te : this.getFluidTiles()) {
             net.minecraftforge.fluids.capability.IFluidHandler fh =
-                te.getCapability(net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+                    te.getCapability(net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
             if (fh == null) continue;
 
             net.minecraftforge.fluids.capability.IFluidTankProperties[] props = fh.getTankProperties();
@@ -501,10 +501,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public List<TileEntity> getGUITiles() {
-
-		/*TileEntity guidanceComputer = getGuidanceComputer();
-		if(guidanceComputer != null)
-			list.add(getGuidanceComputer());*/
         return new LinkedList<>(inventoryTiles);
     }
 
@@ -517,30 +513,19 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ || blocks[x][y][z] == null) {
             return Blocks.AIR.getDefaultState();
         }
-        try {
-            return blocks[x][y][z].getStateFromMeta(metas[x][y][z]);
-        } catch (Throwable e) {
-            AdvancedRocketry.logger.warn(
-                    "StorageChunk getBlockState: invalid meta {} for block {} at {},{},{}. Returning air.",
-                    metas[x][y][z],
-                    blocks[x][y][z].getRegistryName(),
-                    x, y, z,
-                    e
-            );
-            return Blocks.AIR.getDefaultState();
-        }
+        return blocks[x][y][z].getStateFromMeta(metas[x][y][z]);
     }
 
     public void setBlockState(BlockPos pos, IBlockState state) {
 
-//        System.out.println("Block "+pos.getX()+":"+pos.getY()+":"+pos.getZ()+" set to "+state.getBlock().getUnlocalizedName());
+        // System.out.println("Block "+pos.getX()+":"+pos.getY()+":"+pos.getZ()+" set to "+state.getBlock().getUnlocalizedName());
 
         int x = pos.getX();
         int y = pos.getY();
         int z = pos.getZ();
 
         blocks[x][y][z] = state.getBlock();
-        metas[x][y][z] = getSafeMetaFromState(state, "setBlockState", x, y, z);
+        metas[x][y][z] = (short) state.getBlock().getMetaFromState(state);
     }
 
     public void rotateBy(EnumFacing dir) {
@@ -688,40 +673,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         nbt.setTag("idList", idList);
         nbt.setTag("metaList", metaList);
         nbt.setTag("tiles", tileList);
-
-
-		/*for(int x = 0; x < sizeX; x++) {
-			for(int y = 0; y < sizeY; y++) {
-				for(int z = 0; z < sizeZ; z++) {
-
-					idList.appendTag(new NBTTagInt(Block.getIdFromBlock(blocks[x][y][z])));
-					metaList.appendTag(new NBTTagInt(metas[x][y][z]));
-
-					//NBTTagCompound tag = new NBTTagCompound();
-					tag.setInteger("block", Block.getIdFromBlock(blocks[x][y][z]));
-					tag.setShort("meta", metas[x][y][z]);
-
-					NBTTagCompound tileNbtData = null;
-
-					for(TileEntity tile : tileEntities) {
-						NBTTagCompound tileNbt = new NBTTagCompound();
-
-						tile.writeToNBT(tileNbt);
-
-						if(tileNbt.getInteger("x") == x && tileNbt.getInteger("y") == y && tileNbt.getInteger("z") == z){
-							tileNbtData = tileNbt;
-							break;
-						}
-					}
-
-					if(tileNbtData != null)
-						tag.setTag("tile", tileNbtData);
-
-					nbt.setTag(String.format("%d.%d.%d", x,y,z), tag);
-				}
-
-			}
-		}*/
     }
 
     public void readFromNBT(NBTTagCompound nbt) {
@@ -740,6 +691,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         tileEntities.clear();
         inventoryTiles.clear();
         liquidTiles.clear();
+        pos2te.clear();
         chunk = new Chunk(world, 0, 0);
 
         int[] blockId = nbt.getIntArray("idList");
@@ -749,19 +701,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         for (int x = 0; x < sizeX; x++) {
             for (int y = 0; y < sizeY; y++) {
                 for (int z = 0; z < sizeZ; z++) {
-                    int index = z + (sizeZ * y) + (sizeZ * sizeY * x);
+                    blocks[x][y][z] = Block.getBlockById(blockId[z + (sizeZ * y) + (sizeZ * sizeY * x)]);
+                    metas[x][y][z] = (short) metasId[z + (sizeZ * y) + (sizeZ * sizeY * x)];
 
-                    int id = index < blockId.length ? blockId[index] : 0;
-                    int meta = index < metasId.length ? metasId[index] : 0;
-
-                    IBlockState state = getSafeStateFromIdMeta(id, meta, "readFromNBT", x, y, z);
-
-                    blocks[x][y][z] = state.getBlock();
-                    metas[x][y][z] = getSafeMetaFromState(state, "readFromNBT", x, y, z);
-
-                    BlockPos pos = new BlockPos(x, y, z);
-                    chunk.setBlockState(pos, state);
-                    world.checkLightFor(EnumSkyBlock.BLOCK, pos);
+                    chunk.setBlockState(new BlockPos(x, y, z), this.blocks[x][y][z].getStateFromMeta(this.metas[x][y][z]));
+                    world.checkLightFor(EnumSkyBlock.BLOCK, new BlockPos(x, y, z));
                 }
             }
         }
@@ -772,6 +716,10 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
             try {
                 TileEntity tile = ZUtils.createTile(tileList.getCompoundTagAt(i));
+                if (tile == null) {
+                    AdvancedRocketry.logger.warn("Rocket missing Tile (was a mod removed?)");
+                    continue;
+                }
                 tile.setWorld(world);
 
                 if (isInventoryBlock(tile)) {
@@ -792,43 +740,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             }
 
         }
-
-		/*for(int x = 0; x < sizeX; x++) {
-			for(int y = 0; y < sizeY; y++) {
-				for(int z = 0; z < sizeZ; z++) {
-
-
-
-					NBTTagCompound tag = (NBTTagCompound)nbt.getTag(String.format("%d.%d.%d", x,y,z));
-
-					if(!tag.hasKey("block"))
-						continue;
-					int blockId = tag.getInteger("block");
-					blocks[x][y][z] = Block.getBlockById(blockId);
-					metas[x][y][z] = tag.getShort("meta");
-
-
-					if(blockId != 0 && blocks[x][y][z] == Blocks.air) {
-						AdvancedRocketry.logger.warn("Removed pre-existing block with id " + blockId + " from a rocket (Was a mod removed?)");
-					}
-					else if(tag.hasKey("tile")) {
-
-						if(blocks[x][y][z].hasTileEntity(metas[x][y][z])) {
-							TileEntity tile = TileEntity.createAndLoadEntity(tag.getCompoundTag("tile"));
-							tile.setWorldObj(world);
-
-							tileEntities.add(tile);
-
-							//Machines would throw a wrench in the works
-							if(isUsableBlock(tile)) {
-								inventories.add((IInventory)tile);
-								usableTiles.add(tile);
-							}
-						}
-					}
-				}
-			}
-		}*/
         this.chunk.generateSkylightMap();
     }
 
@@ -842,21 +753,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 for (int y = 0; y < sizeY; y++) {
 
                     if (blocks[x][y][z] != Blocks.AIR) {
-                        try {
-                            world.setBlockState(
-                                    new BlockPos(xCoord + x, yCoord + y, zCoord + z),
-                                    blocks[x][y][z].getStateFromMeta(metas[x][y][z]),
-                                    2
-                            );
-                        } catch (Throwable e) {
-                            AdvancedRocketry.logger.warn(
-                                    "StorageChunk pasteInWorld: invalid meta {} for block {} at {},{},{}. Skipping block.",
-                                    metas[x][y][z],
-                                    blocks[x][y][z].getRegistryName(),
-                                    x, y, z,
-                                    e
-                            );
-                        }
+                        world.setBlockState(new BlockPos(xCoord + x, yCoord + y, zCoord + z), blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
                     }
                 }
             }
@@ -926,33 +823,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 || z + side.getFrontOffsetZ() < 0 || z + side.getFrontOffsetZ() >= sizeZ)
             return false;
 
-        int sx = x + side.getFrontOffsetX();
-        int sy = y + side.getFrontOffsetY();
-        int sz = z + side.getFrontOffsetZ();
+        return blocks[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()].isSideSolid(blocks[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()].getStateFromMeta(metas[x + side.getFrontOffsetX()][y + side.getFrontOffsetY()][z + side.getFrontOffsetZ()]), this, pos.offset(side), side.getOpposite());
 
-        Block block = blocks[sx][sy][sz];
-
-        if (block == null) {
-            return false;
-        }
-
-        try {
-            return block.isSideSolid(
-                    block.getStateFromMeta(metas[sx][sy][sz]),
-                    this,
-                    pos.offset(side),
-                    side.getOpposite()
-            );
-        } catch (Throwable e) {
-            AdvancedRocketry.logger.warn(
-                    "StorageChunk isSideSolid: invalid meta {} for block {} at {},{},{}. Returning false.",
-                    metas[sx][sy][sz],
-                    block.getRegistryName(),
-                    sx, sy, sz,
-                    e
-            );
-            return false;
-        }
     }
 
     public List<TileSatelliteHatch> getSatelliteHatches() {
@@ -1192,6 +1064,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public void readFromNetwork(ByteBuf in) {
+        //System.out.println("read from network");
+
         finalized = false;
         PacketBuffer buffer = new PacketBuffer(in);
 
@@ -1202,6 +1076,12 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
         this.blocks = new Block[sizeX][sizeY][sizeZ];
         this.metas = new short[sizeX][sizeY][sizeZ];
+
+        tileEntities.clear();
+        inventoryTiles.clear();
+        liquidTiles.clear();
+        pos2te.clear();
+
         chunk = new Chunk(world, 0, 0);
 
 
@@ -1209,17 +1089,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             for (int y = 0; y < sizeY; y++) {
                 for (int z = 0; z < sizeZ; z++) {
 
-                    int id = buffer.readInt();
-                    int meta = buffer.readShort();
+                    this.blocks[x][y][z] = Block.getBlockById(buffer.readInt());
+                    this.metas[x][y][z] = buffer.readShort();
 
-                    IBlockState state = getSafeStateFromIdMeta(id, meta, "readFromNetwork", x, y, z);
-
-                    this.blocks[x][y][z] = state.getBlock();
-                    this.metas[x][y][z] = getSafeMetaFromState(state, "readFromNetwork", x, y, z);
-
-                    BlockPos pos = new BlockPos(x, y, z);
-                    chunk.setBlockState(pos, state);
-                    world.checkLightFor(EnumSkyBlock.BLOCK, pos);
+                    chunk.setBlockState(new BlockPos(x, y, z), this.blocks[x][y][z].getStateFromMeta(this.metas[x][y][z]));
+                    world.checkLightFor(EnumSkyBlock.BLOCK,new BlockPos(x, y, z));
                 }
             }
         }
@@ -1229,6 +1103,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 NBTTagCompound nbt = buffer.readCompoundTag();
 
                 TileEntity tile = ZUtils.createTile(nbt);
+                if (tile == null) {
+                    AdvancedRocketry.logger.warn("Rocket missing Tile while reading from network");
+                    continue;
+                }
+
                 tile.setWorld(world);
                 this.addTileEntity(tile);
 
@@ -1246,7 +1125,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 e.printStackTrace();
             }
         }
-
         hasServiceMonitor = buffer.readBoolean();
 
         //We are now ready to render
@@ -1268,47 +1146,5 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     @Nonnull
     public WorldType getWorldType() {
         return WorldType.CUSTOMIZED;
-    }
-
-    private static IBlockState getSafeStateFromIdMeta(int blockId, int meta, String source, int x, int y, int z) {
-        Block block = Block.getBlockById(blockId);
-
-        if (block == null) {
-            AdvancedRocketry.logger.warn(
-                    "StorageChunk {}: missing block id {} at {},{},{}. Replacing with air.",
-                    source, blockId, x, y, z
-            );
-            return Blocks.AIR.getDefaultState();
-        }
-
-        try {
-            return block.getStateFromMeta(meta);
-        } catch (Throwable e) {
-            AdvancedRocketry.logger.warn(
-                    "StorageChunk {}: invalid meta {} for block {} at {},{},{}. Replacing with default state.",
-                    source, meta, block.getRegistryName(), x, y, z, e
-            );
-
-            try {
-                return block.getDefaultState();
-            } catch (Exception ignored) {
-                return Blocks.AIR.getDefaultState();
-            }
-        }
-    }
-
-    private static short getSafeMetaFromState(IBlockState state, String source, int x, int y, int z) {
-        try {
-            return (short) state.getBlock().getMetaFromState(state);
-        } catch (Throwable e) {
-            AdvancedRocketry.logger.warn(
-                    "StorageChunk {}: could not get meta from block {} at {},{},{}. Using meta 0.",
-                    source,
-                    state.getBlock().getRegistryName(),
-                    x, y, z,
-                    e
-            );
-            return 0;
-        }
     }
 }
