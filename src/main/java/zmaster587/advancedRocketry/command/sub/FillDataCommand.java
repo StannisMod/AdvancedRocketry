@@ -11,12 +11,22 @@ import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextComponentTranslation;
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.item.IDataItem;
+import zmaster587.advancedRocketry.item.ItemAsteroidChip;
 import zmaster587.advancedRocketry.item.ItemMultiData;
 
 import javax.annotation.Nullable;
 import java.util.*;
 
 public class FillDataCommand extends ARCommand {
+    private static final int ASTEROID_CHIP_FILL_AMOUNT = 1000;
+
+    private static final EnumSet<DataStorage.DataType> ASTEROID_CHIP_DATA_TYPES =
+            EnumSet.of(
+                    DataStorage.DataType.COMPOSITION,
+                    DataStorage.DataType.MASS,
+                    DataStorage.DataType.DISTANCE
+            );
+
     @Override
     public String getName() {
         return "fillData";
@@ -34,11 +44,31 @@ public class FillDataCommand extends ARCommand {
 
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        EntityPlayerMP player = getCommandSenderAsPlayer(sender);
+        ItemStack stack = player.getHeldItem(EnumHand.MAIN_HAND);
+
+        if (args.length == 1 && "chip".equalsIgnoreCase(args[0])) {
+            if (stack.isEmpty() || !(stack.getItem() instanceof ItemAsteroidChip)) {
+                throw new CommandException("commands.advancedrocketry.filldata.chip.notheld");
+            }
+
+            ItemAsteroidChip item = (ItemAsteroidChip) stack.getItem();
+
+            for (DataStorage.DataType dataType : ASTEROID_CHIP_DATA_TYPES) {
+                item.setData(stack, ASTEROID_CHIP_FILL_AMOUNT, dataType);
+            }
+
+            sender.sendMessage(new TextComponentTranslation(
+                    "commands.advancedrocketry.filldata.chip.success",
+                    ASTEROID_CHIP_FILL_AMOUNT
+            ));
+            return;
+        }
+
         if (args.length != 2) {
             throw wrongUsage(sender);
         }
-        EntityPlayerMP player = getCommandSenderAsPlayer(sender);
-        ItemStack stack = player.getHeldItem(EnumHand.MAIN_HAND);
+
         if (!stack.isEmpty() && (stack.getItem() instanceof IDataItem || stack.getItem() instanceof ItemMultiData)) {
             DataStorage.DataType dataType;
 
@@ -72,12 +102,17 @@ public class FillDataCommand extends ARCommand {
     @Override
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            String[] possible = Arrays.stream(DataStorage.DataType.values())
+            List<String> possible = new ArrayList<>();
+            possible.add("chip");
+
+            Arrays.stream(DataStorage.DataType.values())
                     .filter(data -> !data.name().equals("UNDEFINED"))
                     .map(data -> data.name().toLowerCase())
-                    .toArray(String[]::new);
+                    .forEach(possible::add);
+
             return getListOfStringsMatchingLastWord(args, possible);
         }
+
         return Collections.emptyList();
     }
 }
