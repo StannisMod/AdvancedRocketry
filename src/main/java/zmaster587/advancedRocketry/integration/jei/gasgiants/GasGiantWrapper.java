@@ -10,7 +10,9 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidUtil;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 
 import java.util.ArrayList;
@@ -67,6 +69,25 @@ public class GasGiantWrapper implements IRecipeWrapper {
         return copy;
     }
 
+    public List<ItemStack> getFluidBucketStacks() {
+        List<ItemStack> buckets = new ArrayList<>();
+
+        for (FluidStack fluid : fluids) {
+            if (fluid == null || fluid.getFluid() == null) continue;
+
+            FluidStack bucketFluid = fluid.copy();
+            bucketFluid.amount = Fluid.BUCKET_VOLUME;
+
+            ItemStack bucket = FluidUtil.getFilledBucket(bucketFluid);
+
+            if (!bucket.isEmpty()) {
+                buckets.add(bucket);
+            }
+        }
+
+        return buckets;
+    }
+
     public ItemStack getMachineStack() {
         return machineStack;
     }
@@ -82,6 +103,15 @@ public class GasGiantWrapper implements IRecipeWrapper {
                 mezz.jei.api.ingredients.VanillaTypes.FLUID,
                 getFluids()
         );
+
+        List<ItemStack> bucketOutputs = getFluidBucketStacks();
+
+        if (!bucketOutputs.isEmpty()) {
+            ingredients.setOutputs(
+                    mezz.jei.api.ingredients.VanillaTypes.ITEM,
+                    bucketOutputs
+            );
+        }
     }
 
     @Override
