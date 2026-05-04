@@ -14,7 +14,10 @@ public class AdvancedRocketryPlugin implements IFMLLoadingPlugin {
 
     @Override
     public String[] getASMTransformerClass() {
-        return new String[]{ClassTransformer.class.getName()};
+        return new String[]{
+                ClassTransformer.class.getName(),
+                "zmaster587.advancedRocketry.asm.compat.plustic.PlusTiCPacketReleaseEntityTransformer"
+        };
     }
 
     @Override

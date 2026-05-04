@@ -18,6 +18,9 @@ Changelog 2.2.7
   - Improved comments for geode, crater, volcano, and structure generation settings so their global override behavior is clearer.
 - JEI:
   - GasGiants: added bucketversions as "hidden outputs"
+- Compatibility:
+  - Fixed Advanced Rocketry rockets being rotated when released from PlusTiC Portly tools.
+    - Config boolean: `Compatibility.enablePlusTiCPortlyRocketCompat` default:true.
 - Langfile:
   - Added Linker hints
   - Cleaned up ~10 typos

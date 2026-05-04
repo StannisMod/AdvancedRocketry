@@ -51,12 +51,19 @@ public class ARConfiguration {
     private final static String MISSION = "Resource Collection Missions";
     private final static String PERFORMANCE = "Performance";
     private final static String CLIENT = "Client";
+    private final static String COMPAT = "Compatibility";
     public static Logger logger = LogManager.getLogger(Constants.modId);
 
     private static String[] sealableBlockWhiteList, sealableBlockBlackList, breakableTorches, blackListRocketBlocksStr, harvestableGasses, spawnableGasses, entityList, geodeOres, blackHoleGeneratorTiming, orbitalLaserOres, liquidMonopropellant, liquidBipropellantFuel, liquidBipropellantOxidizer, liquidNuclearWorkingFluid;
     private static ARConfiguration currentConfig = new ARConfiguration();
     private static ARConfiguration diskConfig;
     private static boolean usingServerConfig = false;
+
+    // ASM compat fix for PlusTiC Portly tools rotating Advanced Rocketry rockets on release.
+    // Do not sync: this is a local coremod/transformer safety toggle.
+    @ConfigProperty
+    public boolean enablePlusTiCPortlyRocketCompat = true;
+
     //Only to be set in preinit
     public net.minecraftforge.common.config.Configuration config;
     @ConfigProperty(needsSync = true)
@@ -397,7 +404,8 @@ public class ARConfiguration {
         arConfig.allowNonArBiomesInTerraforming = config.get(Configuration.CATEGORY_GENERAL, "allowNonArBiomesInTerraforming", false, "non-AR biomes from mods with custom world gen cannot be decorated in terraforming. If you want fully decorated terraforming with only default biomes, set this to false").getBoolean();
         arConfig.enableOrbitalRegistry = config.get(Configuration.CATEGORY_GENERAL,"EnableOrbitalRegistry",true, "Enable the orbital registry.").getBoolean();
 
-
+        // Compatibility
+        arConfig.enablePlusTiCPortlyRocketCompat = config.getBoolean("enablePlusTiCPortlyRocketCompat", COMPAT,true,"Enables a narrow ASM compatibility patch for PlusTiC Portly tools releasing Advanced Rocketry rockets. " + "Disable this if it causes crashes or compatibility issues. " + "This only has an effect when PlusTiC is installed.");
 
         //Oxygen
         arConfig.enableOxygen = config.get(OXYGEN, "EnableAtmosphericEffects", true, "Enable damage from lack of oxygen and effects from non-standard atmospheres.").getBoolean();
