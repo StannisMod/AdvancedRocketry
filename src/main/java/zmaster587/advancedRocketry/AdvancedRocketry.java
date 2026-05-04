@@ -178,6 +178,7 @@ public class AdvancedRocketry {
         FluidRegistry.enableUniversalBucket(); // Must be called before preInit
     }
 
+    //CONFIG-stuff here to make sure we load early enough
     private boolean resetFromXml;
 
     //Biome registry.
