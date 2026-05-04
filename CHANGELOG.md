@@ -21,9 +21,10 @@ Changelog 2.2.7
 - Compatibility:
   - Fixed Advanced Rocketry rockets being rotated when released from PlusTiC Portly tools.
     - Config boolean: `Compatibility.enablePlusTiCPortlyRocketCompat` default:true.
-- Langfile:
+- Langfile :
   - Added Linker hints
-  - Cleaned up ~10 typos
+  - Cleaned up ~10 typos in (en_US)
+  - Updated Chinese
 
 Changelog 2.2.6
 - Void Drill
