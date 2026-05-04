@@ -2631,7 +2631,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         } else if (id > BUTTON_ID_OFFSET) {
             TileEntity tile = storage.getGUITiles().get(id - BUTTON_ID_OFFSET - tilebuttonOffset);
 
-            RocketGuiNavigation.rememberIfGuidanceComputer(player, this, tile);
+            RocketGuiNavigation.rememberIfRocketGuiReturnTile(player, this, tile);
             //Welcome to super hack time with packets
             //Due to the fact the client uses the player's current world to open the gui, we have to move the client between worlds for a bit
             PacketHandler.sendToPlayer(new PacketEntity(this, (byte) PacketType.CHANGEWORLD.ordinal()), player);

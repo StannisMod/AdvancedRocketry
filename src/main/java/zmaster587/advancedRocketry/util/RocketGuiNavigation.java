@@ -8,6 +8,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.WorldServer;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.inventory.TextureResources;
@@ -42,13 +43,18 @@ public final class RocketGuiNavigation {
 
     private RocketGuiNavigation() {}
 
-    public static void rememberIfGuidanceComputer(EntityPlayer player, EntityRocket rocket, TileEntity tile) {
+    public static void rememberIfRocketGuiReturnTile(EntityPlayer player, EntityRocket rocket, TileEntity tile) {
         if (player == null || rocket == null || tile == null) return;
         if (player.world == null || player.world.isRemote) return;
 
-        if (tile instanceof TileGuidanceComputer) {
+        if (isRocketGuiReturnTile(tile)) {
             remember(player, rocket, tile);
         }
+    }
+
+    private static boolean isRocketGuiReturnTile(TileEntity tile) {
+        return tile instanceof TileGuidanceComputer
+                || tile instanceof TileSatelliteHatch;
     }
 
     private static void remember(EntityPlayer player, EntityRocket rocket, TileEntity sourceTile) {

@@ -1,6 +1,6 @@
 Changelog 2.2.7
 - AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
-- "Back to Rocket" button for GuidanceComputer (QoL)
+- "Back to Rocket" button for GuidanceComputer/Satellite Bay (QoL)
 - Missions:
   - Clear corrupt/stale missions cleanly on load. (fixes a rare case of satellite/station loss), also just cleaner for your save.
   - Fixed a disconnect when running mission on server and opening missiontab in rocket monitor.

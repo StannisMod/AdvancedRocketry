@@ -978,8 +978,8 @@ tooltip.advancedrocketry.hatch.databus.alt.1=§fClears Data when broken
 
 # TileSatelliteHatch
 tooltip.advancedrocketry.hatch.satellite=§cPart of Rocket
-tooltip.advancedrocketry.hatch.satellite.shift.1=Used to put payloads in orbit
-tooltip.advancedrocketry.hatch.satellite.shift.2=Remember to set target planet for orbit!
+tooltip.advancedrocketry.hatch.satellite.shift.1=§fUsed to put payloads in orbit
+tooltip.advancedrocketry.hatch.satellite.shift.2=§bRemember to set target planet for orbit!
 tooltip.advancedrocketry.hatch.satellite.alt.1=§fUsed in §4Station Assembler§f to pack and store the Station
 
 # TileRocketUnloader
