@@ -1,3 +1,12 @@
+Changelog 2.2.8
+- Nuclear rocket gating:
+  - Fixed station-return softlock for stations orbiting gated planets.
+    - Added `nuclearRocketsRequireArtifactForGatedStations` config.
+      - Default: `false` — stations are exempt, under the notion that one would have to have used the artifact to move station there, and it's probably now sitting in the WarpController.artifact-tab..
+      - `true` — strict multiplayer option: require artifacts for gated stations too.
+- Langfile:
+  - fixed 1 missing entry + small cleanups
+
 Changelog 2.2.7
 - AtmosphereDetector show and tell player selection. (overhaul, aligned with new holo-projector GUI (libvulpes 0.5.2))
 - "Back to Rocket" button for GuidanceComputer/Satellite Bay (QoL)

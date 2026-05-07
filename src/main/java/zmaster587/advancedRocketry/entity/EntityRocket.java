@@ -2079,6 +2079,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 return;
             }
 
+            boolean destinationIsSpaceStation = false;
             int finalDest = destinationDimId;
             if (destinationDimId == ARConfiguration.getCurrentConfig().spaceDimId) {
                 ISpaceObject spaceObject = null;
@@ -2087,9 +2088,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 if (vec != null)
                     spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(new BlockPos(vec.x, vec.y, vec.z));
 
-                if (spaceObject != null)
+                if (spaceObject != null) {
+                    destinationIsSpaceStation = true;
                     finalDest = spaceObject.getOrbitingPlanetId();
-                else {
+                } else {
                     setError("error.rocket.destinationNotExist");
                     return;
                 }
@@ -2114,25 +2116,26 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 boolean sameStar  = destProps.getStarId() == srcProps.getStarId();
                 boolean outsidePlanetarySystem = !PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(finalDest, thisDimId);
 
-                // Only skip gating for nuclear rockets when config says so
-                boolean enforceGating = true;
-                if (isNuclear) {
-                    enforceGating = ARConfiguration.getCurrentConfig().nuclearRocketsRespectArtifactGating;
-                }
+                // Nuclear artifact gating only.
+                // Normal rockets never care about artifacts; their range is limited separately.
+                if (isNuclear && ARConfiguration.getCurrentConfig().nuclearRocketsRespectArtifactGating) {
+                    ItemStack artifact = getGateArtifact(destProps);
 
-                // Artifact gating: only when arriving from outside the planetary system
-                ItemStack artifact = getGateArtifact(destProps);
+                    // Stations orbiting gated planets might require artifact. (config Boolean)
+                    boolean stationArtifactExempt =
+                            destinationIsSpaceStation &&
+                                    !ARConfiguration.getCurrentConfig().nuclearRocketsRequireArtifactForGatedStations;
 
-                if (enforceGating && !artifact.isEmpty() && outsidePlanetarySystem) {
-                    EntityPlayer pilot = getPilot();
-                    if (!pilotHasArtifact(pilot, artifact)) {
-                        setError("error.rocket.gatedArtifactMissingWithItem",
-                                artifact.getCount(),
-                                artifact.getDisplayName());
-                        return;
+                    if (!stationArtifactExempt && !artifact.isEmpty() && outsidePlanetarySystem) {
+                        EntityPlayer pilot = getPilot();
+                        if (!pilotHasArtifact(pilot, artifact)) {
+                            setError("error.rocket.gatedArtifactMissingWithItem",
+                                    artifact.getCount(),
+                                    artifact.getDisplayName());
+                            return;
+                        }
                     }
                 }
-
 
 
                 // Nuclear cannot cross stars

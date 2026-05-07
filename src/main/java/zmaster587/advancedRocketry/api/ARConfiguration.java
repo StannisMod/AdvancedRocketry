@@ -98,6 +98,8 @@ public class ARConfiguration {
     public boolean canBeFueledByHand = true;
     @ConfigProperty(needsSync = true)
     public boolean nuclearRocketsRespectArtifactGating = true;
+    @ConfigProperty(needsSync = true)
+    public boolean nuclearRocketsRequireArtifactForGatedStations = false;
     @ConfigProperty
     public boolean enableNausea = true;
     @ConfigProperty
@@ -478,6 +480,7 @@ public class ARConfiguration {
         arConfig.rocketRequireFuel = config.get(ROCKET, "rocketsRequireFuel", true, "Require fuel for rockets to fly.").getBoolean();
         arConfig.canBeFueledByHand = config.get(ROCKET, "canBeFueledByHand", true, "Allow rockets to be fueled by hand.").getBoolean();
         arConfig.nuclearRocketsRespectArtifactGating = config.get(ROCKET, "nuclearRocketsRespectArtifactGating", true, "Nuclear rocket should respect artifact gating for planets").getBoolean();
+        arConfig.nuclearRocketsRequireArtifactForGatedStations = config.get(ROCKET, "nuclearRocketsRequireArtifactForGatedStations", false, "If true, nuclear rockets that respect artifact gating also require the artifact when targeting a space station inside a gated planetary system. " + "If false, station destinations are exempt to avoid soft-locking players who left the artifact in the station or warp controller." + "This is meant as a Multiplayer / Server strictness-option").getBoolean();
         liquidMonopropellant = config.get(ROCKET, "rocketFuels", new String[]{"rocketfuel;10"}, "List of fluid names for valid monopropellants").getStringList();
         liquidBipropellantFuel = config.get(ROCKET, "rocketBipropellants", new String[]{"hydrogen;10"}, "List of fluid names for valid bipropellant fuels").getStringList();
         liquidBipropellantOxidizer = config.get(ROCKET, "rocketOxidizers", new String[]{"oxygen;10"}, "List of fluid names for valid bipropellant oxidizers").getStringList();
