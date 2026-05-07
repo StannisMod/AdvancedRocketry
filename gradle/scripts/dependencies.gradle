@@ -82,7 +82,7 @@ dependencies {
     runtimeOnly rfg.deobf("mezz.jei:jei_1.12.2:${jeiVersion}")
 
     // Local deobfuscated/dev LibVulpes for compiling Advanced Rocketry
-    implementation files("${rootDir}/libs/libvulpes-0.5.2-dev.jar")
+    implementation files("${rootDir}/libs/libvulpes-0.5.3-dev.jar")
     //implementation rfg.deobf('curse.maven:lib-vulpes-1038780:5732205')
 
     compileOnly rfg.deobf("mcjty.theoneprobe:TheOneProbe-1.12:1.12-1.4.28-17")
