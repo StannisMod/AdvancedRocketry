@@ -13,6 +13,7 @@ entity.advancedRocketry.rocket.name=Rocket
 entity.rocket.name=Rocket
 entity.deployedRocket.name=Rocket
 entity.hovercraft.name=Hovercraft
+entity.ARPlanetUIItem.name=Holographic Body
 
 tile.landingPad.name=Landing Pad
 tile.seat.name=Seat
@@ -1416,7 +1417,7 @@ tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.2=§bUse Holo-Proj
 tooltip.advancedrocketry.libvulpes.coalgenerator=§cBurns solid fuels
 tooltip.advancedrocketry.libvulpes.linker.shift.1=§fSneak+Right-click to link, (Use in air to reset.)
 tooltip.advancedrocketry.libvulpes.linker.alt.1=§fLinks §cinfrastructure§f to rockets.
-tooltip.advancedrocketry.libvulpes.linker.alt.2=§fTo use as Guidance Chip, link to §eDocking Pad§f, then place in §eGuidance Computer§f.
+tooltip.advancedrocketry.libvulpes.linker.alt.2=§fTo use as Guidance Chip, link to §eDocking Pad§f, then place in §eGuidance Computer§f
 
 
 # Planet Analyser
