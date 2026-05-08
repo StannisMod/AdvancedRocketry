@@ -14,6 +14,7 @@ entity.rocket.name=Rocket
 entity.deployedRocket.name=Rocket
 entity.hovercraft.name=Hovercraft
 entity.ARPlanetUIItem.name=Holographic Body
+entity.ARStarUIButton.name=Holographic Star
 
 tile.landingPad.name=Landing Pad
 tile.seat.name=Seat
