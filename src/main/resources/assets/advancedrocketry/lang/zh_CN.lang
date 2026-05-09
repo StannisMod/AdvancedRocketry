@@ -13,6 +13,8 @@ entity.advancedRocketry.rocket.name=火箭
 entity.rocket.name=火箭
 entity.deployedRocket.name=火箭
 entity.hovercraft.name=气垫船
+entity.ARPlanetUIItem.name=全息星体
+entity.ARStarUIButton.name=全息恒星
 
 tile.landingPad.name=着陆台
 tile.seat.name=座位
@@ -300,7 +302,9 @@ commands.advancedrocketry.dev.dumpbiomes.usage=dumpBiomes - 将生物群系信�
 commands.advancedrocketry.dev.dumpbiomes.success=文件'BiomeDump.txt'已写入到实例目录
 commands.advancedrocketry.dev.runtests.usage=runTests - 运行系统测试，仅用于调试！
 
-commands.advancedrocketry.filldata.usage=/advancedrocketry fillData <数据类型> <装填数量> (别名：fd)
+commands.advancedrocketry.filldata.usage=/ar fillData <数据类型> <装填数量> 或 /ar fillData chip (别名：fd)
+commands.advancedrocketry.filldata.chip.notheld=主手持有小行星芯片来使用命令 /ar fillData chip
+commands.advancedrocketry.filldata.chip.success=已向小行星芯片装填了有关成分、质量和距离的%s数据
 commands.advancedrocketry.filldata.invalid=非有效数据类型，请尝试以下类型：
 commands.advancedrocketry.filldata.success=数据已装填！
 commands.advancedrocketry.filldata.wrongtype=不匹配已存储的数据类型，未对数据做出任何更改
@@ -976,8 +980,8 @@ tooltip.advancedrocketry.hatch.databus.alt.1=§f破坏时清空数据
 
 # TileSatelliteHatch
 tooltip.advancedrocketry.hatch.satellite=§c火箭的组成部分
-tooltip.advancedrocketry.hatch.satellite.shift.1=用于将有效载荷送入轨道
-tooltip.advancedrocketry.hatch.satellite.shift.2=记得设定轨道的目标星球！
+tooltip.advancedrocketry.hatch.satellite.shift.1=§f用于将有效载荷送入轨道
+tooltip.advancedrocketry.hatch.satellite.shift.2=§b记得设定轨道的目标星球！
 tooltip.advancedrocketry.hatch.satellite.alt.1=§f可在§4空间站组装机§f中用于封装和存储空间站
 
 # TileRocketUnloader
@@ -1414,7 +1418,7 @@ tooltip.advancedrocketry.libvulpes.creativepowerbattery.shift.2=§b使用全息�
 tooltip.advancedrocketry.libvulpes.coalgenerator=§c燃烧固体燃料
 tooltip.advancedrocketry.libvulpes.linker.shift.1=§f潜行+右击以链接（对空气执行该操作以重置）
 tooltip.advancedrocketry.libvulpes.linker.alt.1=§f将§c基础设备§f链接至火箭。
-tooltip.advancedrocketry.libvulpes.linker.alt.2=§f作为导航芯片使用时，先链接至§e停靠台§f，再放入§e导航计算机§f中。
+tooltip.advancedrocketry.libvulpes.linker.alt.2=§f作为导航芯片使用时，先链接至§e停靠台§f，再放入§e导航计算机§f中
 
 
 # Planet Analyser
