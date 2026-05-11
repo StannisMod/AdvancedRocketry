@@ -78,11 +78,32 @@ public class AtmosphereHandler {
      */
     public static void unregisterWorld(int dimId) {
         AtmosphereHandler handler = dimensionOxygen.remove(dimId);
-        if (ARConfiguration.getCurrentConfig().enableOxygen && handler != null) {
+
+        if (handler != null) {
+            handler.blobs.clear();
 
             MinecraftForge.EVENT_BUS.unregister(handler);
             FMLCommonHandler.instance().bus().unregister(handler);
         }
+    }
+
+    /**
+     * Proper Clearing on ServerStopped
+     */
+    public static void clear() {
+        for (AtmosphereHandler handler : new LinkedList<>(dimensionOxygen.values())) {
+            if (handler != null) {
+                handler.blobs.clear();
+
+                MinecraftForge.EVENT_BUS.unregister(handler);
+                FMLCommonHandler.instance().bus().unregister(handler);
+            }
+        }
+        dimensionOxygen.clear();
+        prevAtmosphere.clear();
+        currentAtm = null;
+        currentPressure = 0;
+        lastSuffocationTime = Integer.MIN_VALUE;
     }
 
     /**

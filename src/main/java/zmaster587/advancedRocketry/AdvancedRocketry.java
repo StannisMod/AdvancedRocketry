@@ -1291,6 +1291,7 @@ public class AdvancedRocketry {
         zmaster587.advancedRocketry.wirelessdata.NetworkRegistry.clear();
         zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().onServerStopped();
         SpaceObjectManager.getSpaceManager().onServerStopped();
+        zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.clear();
         zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId = Constants.INVALID_PLANET;
         ((BlockSeal) AdvancedRocketryBlocks.blockPipeSealer).clearMap();
         DimensionManager.dimOffset = config.getInt("minDimension", "Planet", 2, -127, 8000, "Dimensions including and after this number are allowed to be made into planets");
