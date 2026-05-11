@@ -52,6 +52,9 @@ public class InverseTrailFx extends Particle {
     float rotationXY;
     float rotationXZ;
 
+    public World getParticleWorld() {
+        return this.world;
+    }
 
     @Override
     public void renderParticle(BufferBuilder worldRendererIn, Entity entityIn,

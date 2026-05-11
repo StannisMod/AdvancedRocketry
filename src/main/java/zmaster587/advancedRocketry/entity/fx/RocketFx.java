@@ -66,6 +66,10 @@ public class RocketFx extends Particle {
         this(world, x, y, z, motx, moty, motz, 1.0f);
     }
 
+    public World getParticleWorld() {
+        return this.world;
+    }
+
     @Override
     public int getFXLayer() {
         return 0;
