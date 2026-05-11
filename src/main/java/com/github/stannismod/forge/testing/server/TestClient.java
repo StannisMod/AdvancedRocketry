@@ -99,6 +99,13 @@ public final class TestClient implements Closeable {
                         return captured;
                     }
                 } else {
+                    // Short-circuit: if the underlying process died before printing the
+                    // marker, no amount of waiting will help. Return the captured tail
+                    // immediately so callers see the actual crash instead of a timeout.
+                    if (!process.isAlive()) {
+                        throw new AssertionError("Server process exited (code=" + process.exitValue()
+                                + ") before marker '" + token + "' appeared. Recent output: " + tail());
+                    }
                     long remainingNanos = deadlineNanos - System.nanoTime();
                     long waitMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
                     transcript.wait(Math.min(waitMillis, 250L));

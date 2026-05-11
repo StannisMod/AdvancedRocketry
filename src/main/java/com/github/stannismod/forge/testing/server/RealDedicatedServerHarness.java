@@ -67,12 +67,35 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         }
     }
 
+    /**
+     * System property naming the launcher main class. Default {@code GradleStartServer}
+     * (RFG / FG4 layout). Set to e.g. {@code net.minecraftforge.legacydev.MainServer}
+     * for ForgeGradle 6 projects.
+     */
+    public static final String PROP_LAUNCHER_CLASS = "forge.test.launcher.class.server";
+
+    /**
+     * System property naming the assets dir passed via {@code --assetsDir}. Default
+     * resolves to {@code <gradle-user-home>/caches/retro_futura_gradle/assets} for
+     * RFG. Set to {@code <gradle-user-home>/caches/forge_gradle/assets} for FG6.
+     * Ignored when {@link #PROP_LEGACY_ARGS} is {@code false}.
+     */
+    public static final String PROP_ASSETS_DIR = "forge.test.assets.dir";
+
+    /**
+     * System property toggling the RFG-style {@code --version / --assetsDir / --username / ...}
+     * arg list. Default {@code true} (RFG behavior). Set to {@code false} for
+     * launchers that take no args (e.g. FG6's {@code MainServer} which reads cwd).
+     */
+    public static final String PROP_LEGACY_ARGS = "forge.test.launcher.legacyArgs";
+
     private static Process launchServer(Path root, int port) throws IOException {
         String javaExe = System.getProperty("java.home");
         Path javaBinary = javaExe == null
                 ? Paths.get("java.exe")
                 : Paths.get(javaExe, "bin", "java.exe");
-        Path assetsDir = gradleUserHome().resolve("caches").resolve("retro_futura_gradle").resolve("assets");
+        String launcherClass = System.getProperty(PROP_LAUNCHER_CLASS, "GradleStartServer");
+        boolean legacyArgs = Boolean.parseBoolean(System.getProperty(PROP_LEGACY_ARGS, "true"));
 
         List<String> command = new ArrayList<>();
         command.add(javaBinary.toString());
@@ -80,30 +103,42 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         command.add("-Dforge.test.server=true");
         command.add("-cp");
         command.add(Objects.requireNonNull(System.getProperty("java.class.path"), "java.class.path"));
-        command.add("GradleStartServer");
-        command.add("--nogui");
-        command.add("--gameDir");
-        command.add(root.toAbsolutePath().toString());
-        command.add("--assetsDir");
-        command.add(assetsDir.toAbsolutePath().toString());
-        command.add("--version");
-        command.add("FML_DEV");
-        command.add("--assetIndex");
-        command.add("1.12.2");
-        command.add("--username");
-        command.add("Developer");
-        command.add("--accessToken");
-        command.add("FML");
-        command.add("--userProperties");
-        command.add("{}");
-        command.add("--uuid");
-        command.add(UUID.randomUUID().toString().replace("-", ""));
-        command.add("--port");
-        command.add(String.valueOf(port));
-        command.add("--universe");
-        command.add(root.toAbsolutePath().toString());
-        command.add("--world");
-        command.add("world");
+        command.add(launcherClass);
+
+        if (legacyArgs) {
+            String assetsDirProp = System.getProperty(PROP_ASSETS_DIR);
+            Path assetsDir = assetsDirProp != null
+                    ? Paths.get(assetsDirProp)
+                    : gradleUserHome().resolve("caches").resolve("retro_futura_gradle").resolve("assets");
+            command.add("--nogui");
+            command.add("--gameDir");
+            command.add(root.toAbsolutePath().toString());
+            command.add("--assetsDir");
+            command.add(assetsDir.toAbsolutePath().toString());
+            command.add("--version");
+            command.add("FML_DEV");
+            command.add("--assetIndex");
+            command.add("1.12.2");
+            command.add("--username");
+            command.add("Developer");
+            command.add("--accessToken");
+            command.add("FML");
+            command.add("--userProperties");
+            command.add("{}");
+            command.add("--uuid");
+            command.add(UUID.randomUUID().toString().replace("-", ""));
+            command.add("--port");
+            command.add(String.valueOf(port));
+            command.add("--universe");
+            command.add(root.toAbsolutePath().toString());
+            command.add("--world");
+            command.add("world");
+        } else {
+            // FG6's net.minecraftforge.legacydev.MainServer takes no args — it reads
+            // working directory + server.properties. Port comes from server.properties
+            // (already written by bootstrapServerFiles) and gameDir is the cwd.
+            command.add("--nogui");
+        }
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(root.toFile());

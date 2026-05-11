@@ -85,10 +85,27 @@ public final class RealClientHarness implements AutoCloseable {
         }
     }
 
+    /**
+     * System property naming the client launcher main class. Default {@code GradleStart}
+     * (RFG / FG4 layout). Set to {@code mcp.client.Start} for ForgeGradle 6 projects.
+     *
+     * <p>See also {@code forge.test.assets.dir} and {@code forge.test.launcher.legacyArgs}
+     * documented on {@code RealDedicatedServerHarness}.</p>
+     */
+    public static final String PROP_LAUNCHER_CLASS = "forge.test.launcher.class.client";
+
+    public static final String PROP_ASSETS_DIR = "forge.test.assets.dir";
+    public static final String PROP_LEGACY_ARGS = "forge.test.launcher.legacyArgs";
+
     private static Process launchClient(Path root, int serverPort, int controlPort, Path clientLogFile) throws IOException {
         Path javaBinary = resolveJavaBinary();
-        Path assetsDir = gradleUserHome().resolve("caches").resolve("retro_futura_gradle").resolve("assets");
+        String assetsDirProp = System.getProperty(PROP_ASSETS_DIR);
+        Path assetsDir = assetsDirProp != null
+                ? Paths.get(assetsDirProp)
+                : gradleUserHome().resolve("caches").resolve("retro_futura_gradle").resolve("assets");
         Path nativesDir = resolveNativesDir();
+        String launcherClass = System.getProperty(PROP_LAUNCHER_CLASS, "GradleStart");
+        boolean legacyArgs = Boolean.parseBoolean(System.getProperty(PROP_LEGACY_ARGS, "true"));
 
         String currentClassPath = Objects.requireNonNull(System.getProperty("java.class.path"), "java.class.path");
         Path libDir = Files.createTempDirectory(root, "client-libs-");
@@ -103,35 +120,41 @@ public final class RealClientHarness implements AutoCloseable {
         javaArgs.add("-Dforge.test.client.logFile=" + clientLogFile.toAbsolutePath());
         javaArgs.add("-cp");
         javaArgs.add(launcherClassPath);
-        javaArgs.add("GradleStart");
+        javaArgs.add(launcherClass);
         javaArgs.add("--server");
         javaArgs.add("127.0.0.1");
         javaArgs.add("--port");
         javaArgs.add(String.valueOf(serverPort));
         javaArgs.add("--gameDir");
         javaArgs.add(root.toAbsolutePath().toString());
-        javaArgs.add("--assetsDir");
-        javaArgs.add(assetsDir.toAbsolutePath().toString());
-        javaArgs.add("--resourcePackDir");
-        javaArgs.add(root.resolve("resourcepacks").toAbsolutePath().toString());
-        javaArgs.add("--version");
-        javaArgs.add("FML_DEV");
-        javaArgs.add("--assetIndex");
-        javaArgs.add("1.12.2");
-        javaArgs.add("--username");
-        javaArgs.add(CLIENT_USERNAME);
-        javaArgs.add("--accessToken");
-        javaArgs.add("FML");
-        javaArgs.add("--userProperties");
-        javaArgs.add("{}");
-        javaArgs.add("--profileProperties");
-        javaArgs.add("{}");
-        javaArgs.add("--uuid");
-        javaArgs.add(UUID.nameUUIDFromBytes(("OfflinePlayer:" + CLIENT_USERNAME).getBytes(StandardCharsets.UTF_8)).toString().replace("-", ""));
-        javaArgs.add("--width");
-        javaArgs.add("640");
-        javaArgs.add("--height");
-        javaArgs.add("480");
+
+        if (legacyArgs) {
+            javaArgs.add("--assetsDir");
+            javaArgs.add(assetsDir.toAbsolutePath().toString());
+            javaArgs.add("--resourcePackDir");
+            javaArgs.add(root.resolve("resourcepacks").toAbsolutePath().toString());
+            javaArgs.add("--version");
+            javaArgs.add("FML_DEV");
+            javaArgs.add("--assetIndex");
+            javaArgs.add("1.12.2");
+            javaArgs.add("--username");
+            javaArgs.add(CLIENT_USERNAME);
+            javaArgs.add("--accessToken");
+            javaArgs.add("FML");
+            javaArgs.add("--userProperties");
+            javaArgs.add("{}");
+            javaArgs.add("--profileProperties");
+            javaArgs.add("{}");
+            javaArgs.add("--uuid");
+            javaArgs.add(UUID.nameUUIDFromBytes(("OfflinePlayer:" + CLIENT_USERNAME).getBytes(StandardCharsets.UTF_8)).toString().replace("-", ""));
+            javaArgs.add("--width");
+            javaArgs.add("640");
+            javaArgs.add("--height");
+            javaArgs.add("480");
+        }
+        // FG6's mcp.client.Start prepends its own --version/--accessToken/--assetsDir/
+        // --assetIndex/--userProperties defaults; only --server/--port/--gameDir
+        // (above) need to be supplied externally.
 
         List<String> command = new ArrayList<>();
         command.add(javaBinary.toString());
