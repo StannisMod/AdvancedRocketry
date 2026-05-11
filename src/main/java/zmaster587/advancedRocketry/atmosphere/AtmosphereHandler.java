@@ -1,7 +1,5 @@
 package zmaster587.advancedRocketry.atmosphere;
 
-import net.minecraft.block.BlockLeaves;
-import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
