@@ -1,0 +1,591 @@
+package com.github.stannismod.forge.testing.client.bridge;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.gui.GuiButton;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.client.gui.inventory.GuiContainer;
+import net.minecraft.client.multiplayer.PlayerControllerMP;
+import net.minecraft.network.play.client.CPacketHeldItemChange;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.EnumHand;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
+import org.lwjgl.input.Keyboard;
+
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.Callable;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+public final class ForgeTestClientBootstrap {
+
+    private static final AtomicBoolean STARTED = new AtomicBoolean(false);
+    private static final AtomicLong CLIENT_TICKS = new AtomicLong(0L);
+
+    private ForgeTestClientBootstrap() {
+    }
+
+    public static void bootstrap() {
+        if (!STARTED.compareAndSet(false, true)) {
+            return;
+        }
+
+        installClientLogFile();
+        FMLCommonHandler.instance().bus().register(new TickCounter());
+        Thread bridgeThread = new Thread(ForgeTestClientBootstrap::runBridge, "forge-test-client-bridge");
+        bridgeThread.setDaemon(true);
+        bridgeThread.start();
+    }
+
+    private static void installClientLogFile() {
+        String logFile = System.getProperty("forge.test.client.logFile");
+        if (logFile == null || logFile.trim().isEmpty()) {
+            return;
+        }
+
+        try {
+            File file = new File(logFile);
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists()) {
+                // Best effort only.
+                parent.mkdirs();
+            }
+
+            PrintStream originalOut = System.out;
+            PrintStream originalErr = System.err;
+            PrintStream fileStream = new PrintStream(new FileOutputStream(file, true), true, StandardCharsets.UTF_8.name());
+            PrintStream teeOut = new PrintStream(new TeeOutputStream(originalOut, fileStream), true, StandardCharsets.UTF_8.name());
+            PrintStream teeErr = new PrintStream(new TeeOutputStream(originalErr, fileStream), true, StandardCharsets.UTF_8.name());
+            System.setOut(teeOut);
+            System.setErr(teeErr);
+            System.out.println("Forge test client bootstrap logging installed: " + file.getAbsolutePath());
+        } catch (IOException exception) {
+            exception.printStackTrace();
+        }
+    }
+
+    private static void runBridge() {
+        Integer port = Integer.getInteger("forge.test.client.port");
+        if (port == null || port <= 0) {
+            return;
+        }
+
+        Socket socket = null;
+        try {
+            socket = connectWithRetry(port.intValue());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+            writer.write("READY");
+            writer.newLine();
+            writer.flush();
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                JsonObject response;
+                try {
+                    JsonElement parsed = new JsonParser().parse(line);
+                    if (!parsed.isJsonObject()) {
+                        response = error("Malformed command payload");
+                    } else {
+                        response = handleCommand(parsed.getAsJsonObject());
+                    }
+                } catch (RuntimeException exception) {
+                    response = error(exception.getMessage() == null ? exception.toString() : exception.getMessage());
+                }
+
+                writer.write(response.toString());
+                writer.newLine();
+                writer.flush();
+            }
+        } catch (IOException exception) {
+            exception.printStackTrace();
+        } finally {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                    // Nothing left to do.
+                }
+            }
+        }
+    }
+
+    private static Socket connectWithRetry(int port) throws IOException {
+        IOException last = null;
+        long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(2);
+
+        while (System.nanoTime() < deadline) {
+            try {
+                Socket socket = new Socket();
+                socket.connect(new InetSocketAddress("127.0.0.1", port), 1000);
+                return socket;
+            } catch (IOException exception) {
+                last = exception;
+                try {
+                    Thread.sleep(200L);
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for test bridge socket", interruptedException);
+                }
+            }
+        }
+
+        throw new IOException("Timed out connecting Forge test bridge", last);
+    }
+
+    private static JsonObject handleCommand(JsonObject request) {
+        String command = request.has("command") ? request.get("command").getAsString() : "";
+        switch (command) {
+            case "wait_world":
+                waitForWorld();
+                return ok();
+            case "wait_ticks":
+                return waitTicks(request);
+            case "select_hotbar":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    int slot = boundedInt(request, "slot", 0, 8);
+                    mc.player.inventory.currentItem = slot;
+                    mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+                    JsonObject response = ok();
+                    response.addProperty("selectedHotbar", slot);
+                    return response;
+                });
+            case "right_click_block":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    EntityPlayerSP player = requirePlayer(mc);
+                    PlayerControllerMP controller = mc.playerController;
+                    BlockPos pos = new BlockPos(requireInt(request, "x"), requireInt(request, "y"), requireInt(request, "z"));
+                    EnumFacing face = EnumFacing.valueOf(requireString(request, "face").toUpperCase(Locale.ROOT));
+                    EnumHand hand = EnumHand.valueOf(requireString(request, "hand").toUpperCase(Locale.ROOT));
+                    Vec3d hit = new Vec3d(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+                    controller.processRightClickBlock(player, mc.world, pos, face, hit, hand);
+                    return ok();
+                });
+            case "click_screen_point":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    GuiScreen screen = mc.currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to click");
+                    }
+                    invokeMouseClicked(screen, requireInt(request, "x"), requireInt(request, "y"), boundedInt(request, "button", 0, 2));
+                    return ok();
+                });
+            case "click_button":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    GuiScreen screen = mc.currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to click");
+                    }
+                    int index = boundedInt(request, "index", 0, Integer.MAX_VALUE);
+                    List<?> buttons = buttonList(screen);
+                    if (index < 0 || index >= buttons.size()) {
+                        throw new IllegalArgumentException("Button index " + index + " is out of range");
+                    }
+                    GuiButton button = (GuiButton) buttons.get(index);
+                    invokeMouseClicked(screen, button.x + button.width / 2, button.y + button.height / 2, 0);
+                    return ok();
+                });
+            case "click_button_ratio":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    GuiScreen screen = mc.currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to click");
+                    }
+                    int index = boundedInt(request, "index", 0, Integer.MAX_VALUE);
+                    double ratio = request.has("ratio") ? request.get("ratio").getAsDouble() : 0.5D;
+                    ratio = Math.max(0.0D, Math.min(1.0D, ratio));
+                    List<?> buttons = buttonList(screen);
+                    if (index < 0 || index >= buttons.size()) {
+                        throw new IllegalArgumentException("Button index " + index + " is out of range");
+                    }
+                    GuiButton button = (GuiButton) buttons.get(index);
+                    int x = button.x + 2 + (int) Math.round((button.width - 8 - 4) * ratio);
+                    int y = button.y + button.height / 2;
+                    invokeMouseClicked(screen, x, y, 0);
+                    return ok();
+                });
+            case "drag_screen_point":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    GuiScreen screen = mc.currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to drag");
+                    }
+                    int startX = requireInt(request, "startX");
+                    int startY = requireInt(request, "startY");
+                    int endX = requireInt(request, "endX");
+                    int endY = requireInt(request, "endY");
+                    int button = boundedInt(request, "button", 0, 2);
+                    invokeMouseClicked(screen, startX, startY, button);
+                    for (int step = 1; step <= 8; step++) {
+                        int x = startX + (int) Math.round((endX - startX) * (step / 8.0D));
+                        int y = startY + (int) Math.round((endY - startY) * (step / 8.0D));
+                        invokeMouseClickMove(screen, x, y, button, step * 50L);
+                    }
+                    invokeMouseReleased(screen, endX, endY, button);
+                    return ok();
+                });
+            case "focus_field":
+                return runOnClientThread(() -> {
+                    GuiScreen screen = Minecraft.getMinecraft().currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to focus");
+                    }
+                    String fieldName = requireString(request, "field");
+                    GuiTextField textField = textField(screen, fieldName);
+                    textField.setFocused(true);
+                    textField.setCursorPositionEnd();
+                    return ok();
+                });
+            case "type_text":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    GuiScreen screen = mc.currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to type into");
+                    }
+                    String text = requireString(request, "text");
+                    for (int i = 0; i < text.length(); i++) {
+                        char typed = text.charAt(i);
+                        invokeKeyTyped(screen, typed, 0);
+                    }
+                    if (request.has("pressEnter") && request.get("pressEnter").getAsBoolean()) {
+                        invokeKeyTyped(screen, '\n', Keyboard.KEY_RETURN);
+                    }
+                    return ok();
+                });
+            case "close_screen":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.player != null) {
+                        mc.player.closeScreen();
+                    } else {
+                        mc.displayGuiScreen(null);
+                    }
+                    return ok();
+                });
+            case "report_state":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    response.addProperty("worldReady", mc.world != null && mc.player != null);
+                    response.addProperty("screen", mc.currentScreen == null ? "" : mc.currentScreen.getClass().getName());
+                    response.addProperty("ticks", CLIENT_TICKS.get());
+                    response.addProperty("screenWidth", mc.currentScreen == null ? 0 : mc.currentScreen.width);
+                    response.addProperty("screenHeight", mc.currentScreen == null ? 0 : mc.currentScreen.height);
+                    response.addProperty("guiLeft", 0);
+                    response.addProperty("guiTop", 0);
+                    response.addProperty("guiXSize", 0);
+                    response.addProperty("guiYSize", 0);
+                    if (mc.currentScreen instanceof net.minecraft.client.gui.inventory.GuiContainer) {
+                        net.minecraft.client.gui.inventory.GuiContainer containerScreen = (net.minecraft.client.gui.inventory.GuiContainer) mc.currentScreen;
+                        response.addProperty("guiLeft", intField(containerScreen, "guiLeft"));
+                        response.addProperty("guiTop", intField(containerScreen, "guiTop"));
+                        response.addProperty("guiXSize", intField(containerScreen, "xSize"));
+                        response.addProperty("guiYSize", intField(containerScreen, "ySize"));
+                    }
+                    if (mc.player != null) {
+                        response.addProperty("selectedHotbar", mc.player.inventory.currentItem);
+                        response.addProperty("playerX", mc.player.posX);
+                        response.addProperty("playerY", mc.player.posY);
+                        response.addProperty("playerZ", mc.player.posZ);
+                        response.addProperty("health", mc.player.getHealth());
+                        response.addProperty("heldItem", mc.player.getHeldItemMainhand().isEmpty()
+                                ? ""
+                                : String.valueOf(mc.player.getHeldItemMainhand().getItem().getRegistryName()));
+                    }
+                    if (mc.currentScreen instanceof GuiContainer) {
+                        response.addProperty("container", mc.currentScreen.getClass().getName());
+                    }
+                    return response;
+                });
+            case "block_state":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    BlockPos pos = new BlockPos(requireInt(request, "x"), requireInt(request, "y"), requireInt(request, "z"));
+                    JsonObject response = ok();
+                    if (mc.world == null) {
+                        response.addProperty("block", "");
+                        response.addProperty("tile", "");
+                        response.addProperty("loaded", false);
+                        return response;
+                    }
+                    response.addProperty("loaded", mc.world.isBlockLoaded(pos));
+                    if (mc.world.isBlockLoaded(pos)) {
+                        response.addProperty("block", String.valueOf(mc.world.getBlockState(pos).getBlock().getRegistryName()));
+                        response.addProperty("tile", mc.world.getTileEntity(pos) == null
+                                ? ""
+                                : mc.world.getTileEntity(pos).getClass().getName());
+                    } else {
+                        response.addProperty("block", "");
+                        response.addProperty("tile", "");
+                    }
+                    return response;
+                });
+            case "shutdown":
+                return runOnClientThread(() -> {
+                    Minecraft.getMinecraft().shutdown();
+                    return ok();
+                });
+            default:
+                return error("Unknown command: " + command);
+        }
+    }
+
+    private static JsonObject waitTicks(JsonObject request) {
+        int ticks = boundedInt(request, "ticks", 0, 1000000);
+        long start = CLIENT_TICKS.get();
+        long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(2);
+
+        while (CLIENT_TICKS.get() - start < ticks) {
+            if (System.nanoTime() > deadline) {
+                return error("Timed out waiting for " + ticks + " client ticks");
+            }
+            try {
+                Thread.sleep(25L);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return error("Interrupted while waiting for ticks");
+            }
+        }
+        return ok();
+    }
+
+    private static void waitForWorld() {
+        long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            try {
+                Boolean ready = runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    return mc.world != null && mc.player != null && mc.player.connection != null;
+                });
+                if (Boolean.TRUE.equals(ready)) {
+                    return;
+                }
+                Thread.sleep(100L);
+            } catch (RuntimeException exception) {
+                throw exception;
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for the client world to load", interruptedException);
+            }
+        }
+        throw new IllegalStateException("Timed out waiting for the client world to load");
+    }
+
+    private static <T> T runOnClientThread(Callable<T> callable) {
+        Minecraft mc = Minecraft.getMinecraft();
+        FutureTask<T> task = new FutureTask<>(callable);
+        mc.addScheduledTask(task);
+        try {
+            return task.get(2, TimeUnit.MINUTES);
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    private static EntityPlayerSP requirePlayer(Minecraft mc) {
+        if (mc.player == null) {
+            throw new IllegalStateException("Client player is not available");
+        }
+        return mc.player;
+    }
+
+    private static JsonObject ok() {
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        return response;
+    }
+
+    private static JsonObject error(String message) {
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", false);
+        response.addProperty("error", message == null ? "unknown" : message);
+        return response;
+    }
+
+    private static int requireInt(JsonObject object, String key) {
+        if (!object.has(key)) {
+            throw new IllegalArgumentException("Missing required key: " + key);
+        }
+        return object.get(key).getAsInt();
+    }
+
+    private static int boundedInt(JsonObject object, String key, int min, int max) {
+        int value = requireInt(object, key);
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String requireString(JsonObject object, String key) {
+        if (!object.has(key)) {
+            throw new IllegalArgumentException("Missing required key: " + key);
+        }
+        return object.get(key).getAsString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<GuiButton> buttonList(GuiScreen screen) {
+        try {
+            java.lang.reflect.Field field = GuiScreen.class.getDeclaredField("buttonList");
+            field.setAccessible(true);
+            return (List<GuiButton>) field.get(screen);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to access GUI button list", exception);
+        }
+    }
+
+    private static void invokeMouseClicked(GuiScreen screen, int x, int y, int button) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "mouseClicked", int.class, int.class, int.class);
+            method.setAccessible(true);
+            method.invoke(screen, x, y, button);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to click GUI point", exception);
+        }
+    }
+
+    private static void invokeKeyTyped(GuiScreen screen, char typedChar, int keyCode) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "keyTyped", char.class, int.class);
+            method.setAccessible(true);
+            method.invoke(screen, typedChar, keyCode);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to type into GUI", exception);
+        }
+    }
+
+    private static void invokeMouseClickMove(GuiScreen screen, int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "mouseClickMove", int.class, int.class, int.class, long.class);
+            method.setAccessible(true);
+            method.invoke(screen, mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to drag GUI point", exception);
+        }
+    }
+
+    private static void invokeMouseReleased(GuiScreen screen, int mouseX, int mouseY, int state) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "mouseReleased", int.class, int.class, int.class);
+            method.setAccessible(true);
+            method.invoke(screen, mouseX, mouseY, state);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to release GUI point", exception);
+        }
+    }
+
+    private static java.lang.reflect.Method findMethod(Class<?> type, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredMethod(methodName, parameterTypes);
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchMethodException(methodName);
+    }
+
+    private static GuiTextField textField(GuiScreen screen, String fieldName) {
+        try {
+            java.lang.reflect.Field field = screen.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object value = field.get(screen);
+            if (!(value instanceof GuiTextField)) {
+                throw new IllegalStateException("Field '" + fieldName + "' is not a GuiTextField");
+            }
+            return (GuiTextField) value;
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to access GUI text field '" + fieldName + "'", exception);
+        }
+    }
+
+    private static int intField(Object target, String fieldName) {
+        try {
+            java.lang.reflect.Field field = findField(target.getClass(), fieldName);
+            field.setAccessible(true);
+            return field.getInt(target);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to access integer field '" + fieldName + "' on " + target.getClass().getName(), exception);
+        }
+    }
+
+    private static java.lang.reflect.Field findField(Class<?> type, String fieldName) throws NoSuchFieldException {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException(fieldName);
+    }
+
+    private static final class TickCounter {
+        @SubscribeEvent
+        public void onClientTick(TickEvent.ClientTickEvent event) {
+            if (event.phase == TickEvent.Phase.END) {
+                CLIENT_TICKS.incrementAndGet();
+            }
+        }
+    }
+
+    private static final class TeeOutputStream extends OutputStream {
+        private final OutputStream first;
+        private final OutputStream second;
+
+        private TeeOutputStream(OutputStream first, OutputStream second) {
+            this.first = first;
+            this.second = second;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            first.write(b);
+            second.write(b);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            first.write(b, off, len);
+            second.write(b, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            first.flush();
+            second.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                first.close();
+            } finally {
+                second.close();
+            }
+        }
+    }
+}
+

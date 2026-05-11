@@ -1,0 +1,7 @@
+dependencies {
+    api 'io.netty:netty-all:4.1.9.Final'
+    api 'com.google.code.gson:gson:2.8.0'
+    api 'net.java.dev.jna:jna:4.4.0'
+
+    testImplementation 'junit:junit:4.13.2'
+}

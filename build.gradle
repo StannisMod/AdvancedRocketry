@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'base'
+    id 'eclipse'
+    id 'maven-publish'
+    id 'com.gtnewhorizons.retrofuturagradle' version '1.4.0'
+}
+
+group = 'com.github.stannismod.forge'
+version = '0.1.0'
+
+base {
+    archivesName = 'forge-test-framework'
+}
+
+sourceCompatibility = targetCompatibility = '1.8'
+
+java {
+    withSourcesJar()
+}
+
+minecraft {
+    mcVersion = '1.12.2'
+    username = 'Developer'
+    useDependencyAccessTransformers = true
+}
+
+if (file('repositories.gradle').exists()) {
+    apply from: 'repositories.gradle'
+}
+
+if (file('dependencies.gradle').exists()) {
+    apply from: 'dependencies.gradle'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+}
+
+test {
+    useJUnit()
+    testLogging {
+        events 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}
