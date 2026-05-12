@@ -3,5 +3,10 @@ dependencies {
     api 'com.google.code.gson:gson:2.8.0'
     api 'net.java.dev.jna:jna:4.4.0'
 
+    // JUnit base classes (AbstractHeadlessServerTest / AbstractClientE2ETest) compile
+    // against JUnit 4 annotations but the framework jar itself doesn't bundle JUnit —
+    // consumers add it on their own test classpath.
+    compileOnly 'junit:junit:4.13.2'
+
     testImplementation 'junit:junit:4.13.2'
 }

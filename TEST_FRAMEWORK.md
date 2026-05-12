@@ -4,10 +4,11 @@ This project contains reusable testing infrastructure for Forge 1.12.2 mod verif
 
 ## Layers
 
-- `com.github.stannismod.forge.testing` contains the generic scenario runner.
+- `com.github.stannismod.forge.testing.junit` — **primary API**: JUnit 4 base classes (`AbstractHeadlessServerTest`, `AbstractClientE2ETest`) that wrap the harness lifecycle in `@Before` / `@After`. Each test method gets a fresh harness; parallelism is delegated to Gradle's `maxParallelForks`.
 - `com.github.stannismod.forge.testing.server` starts and controls a real dedicated server process.
 - `com.github.stannismod.forge.testing.client` starts and controls a real client process through a socket bridge.
 - `com.github.stannismod.forge.testing.client.bridge` runs inside the client JVM and translates test commands into real client-thread actions.
+- `com.github.stannismod.forge.testing` — **legacy standalone runner** (`HeadlessGameTest` / `TestRegistry` / `TestOrchestrator` / `TestBootstrap` / `TestReportWriter`). Kept for non-JUnit use cases (CI `main()` invocations, custom runners). New consumers should prefer the JUnit base classes.
 
 ## Generic Scenario Runner
 
