@@ -19,24 +19,70 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
     private final int port;
     private final TestClient client;
     private final Thread readerThread;
+    private final boolean cleanupOnClose;
 
-    private RealDedicatedServerHarness(Path root, int port, TestClient client, Thread readerThread) {
+    private RealDedicatedServerHarness(Path root, int port, TestClient client, Thread readerThread,
+                                       boolean cleanupOnClose) {
         this.root = root;
         this.port = port;
         this.client = client;
         this.readerThread = readerThread;
+        this.cleanupOnClose = cleanupOnClose;
     }
 
+    /**
+     * Starts a fresh server in a temporary work directory. The directory is
+     * deleted recursively when {@link #close()} is called — use this for
+     * scenarios that don't need to inspect or reuse the world after close.
+     */
     public static RealDedicatedServerHarness start() throws IOException, InterruptedException {
         Path root = Files.createTempDirectory("forge-dedicated-server-");
+        return startInternal(root, /*bootstrap=*/true, /*cleanupOnClose=*/true);
+    }
+
+    /**
+     * Starts a server using the supplied work directory.
+     *
+     * <p>Useful for persistence-restart scenarios: start a fresh server, mutate
+     * world state, close it, then start again with the same {@code root} to
+     * verify the state survived save/load.</p>
+     *
+     * @param root           directory to use as the server's gameDir / world root.
+     *                       If empty, framework files (eula.txt, server.properties)
+     *                       are bootstrapped automatically. If it contains a
+     *                       {@code server.properties} from a previous run, the
+     *                       file is rewritten with a fresh port; the rest of the
+     *                       directory (world, config, mods) is preserved.
+     * @param cleanupOnClose if {@code true}, recursively deletes {@code root} on
+     *                       {@link #close()}. Pass {@code false} when you intend
+     *                       to restart against the same dir.
+     */
+    public static RealDedicatedServerHarness startWith(Path root, boolean cleanupOnClose)
+            throws IOException, InterruptedException {
+        Files.createDirectories(root);
+        boolean bootstrap = !Files.exists(root.resolve("eula.txt"));
+        return startInternal(root, bootstrap, cleanupOnClose);
+    }
+
+    private static RealDedicatedServerHarness startInternal(Path root, boolean bootstrap,
+                                                            boolean cleanupOnClose)
+            throws IOException, InterruptedException {
         int port = reservePort();
-        bootstrapServerFiles(root, port);
+        if (bootstrap) {
+            bootstrapServerFiles(root, port);
+        } else {
+            // Reuse existing world/config; rewrite server.properties with a fresh
+            // port so we don't collide with any other running test JVM.
+            Files.write(root.resolve("server.properties"),
+                    buildServerProperties(port).getBytes(StandardCharsets.UTF_8));
+        }
         Process process = launchServer(root, port);
 
         List<String> transcript = new ArrayList<>();
         Thread readerThread = startReader(process, transcript);
         TestClient client = new TestClient(process, TestClient.newWriter(process), transcript);
-        RealDedicatedServerHarness harness = new RealDedicatedServerHarness(root, port, client, readerThread);
+        RealDedicatedServerHarness harness = new RealDedicatedServerHarness(
+                root, port, client, readerThread, cleanupOnClose);
         client.awaitOutputContaining("For help, type \"help\" or \"?\"", Duration.ofMinutes(3));
         return harness;
     }
@@ -63,7 +109,9 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
             }
-            deleteRecursively(root);
+            if (cleanupOnClose) {
+                deleteRecursively(root);
+            }
         }
     }
 
