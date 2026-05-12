@@ -4,24 +4,22 @@ This project contains reusable testing infrastructure for Forge 1.12.2 mod verif
 
 ## Layers
 
-- `com.github.stannismod.forge.testing.junit` — **primary API**: JUnit 4 base classes (`AbstractHeadlessServerTest`, `AbstractClientE2ETest`) that wrap the harness lifecycle in `@Before` / `@After`. Each test method gets a fresh harness; parallelism is delegated to Gradle's `maxParallelForks`.
+- `com.github.stannismod.forge.testing.junit` — JUnit 4 base classes (`AbstractHeadlessServerTest`, `AbstractClientE2ETest`) that wrap the harness lifecycle in `@Before` / `@After`. Each test method gets a fresh harness; parallelism is delegated to Gradle's `maxParallelForks`.
 - `com.github.stannismod.forge.testing.server` starts and controls a real dedicated server process.
 - `com.github.stannismod.forge.testing.client` starts and controls a real client process through a socket bridge.
 - `com.github.stannismod.forge.testing.client.bridge` runs inside the client JVM and translates test commands into real client-thread actions.
-- `com.github.stannismod.forge.testing` — **legacy standalone runner** (`HeadlessGameTest` / `TestRegistry` / `TestOrchestrator` / `TestBootstrap` / `TestReportWriter`). Kept for non-JUnit use cases (CI `main()` invocations, custom runners). New consumers should prefer the JUnit base classes.
 
-## Generic Scenario Runner
+The framework is a library — there is no built-in scenario runner, registry,
+or report writer. Consumers use JUnit's runner (via Gradle's `Test` task) for
+discovery, execution, parallelism, filtering and reporting.
 
-A reusable headless scenario implements `HeadlessGameTest`:
+## JUnit Base Classes
 
-- `setUp(TestContext)` prepares per-case state.
-- `tick(TestContext)` advances the scenario and returns `RUNNING`, `PASSED`, `FAILED`, or `SKIPPED`.
-- `tearDown(TestContext)` releases per-case state.
-- `timeoutTicks()` prevents stuck scenarios.
+`AbstractHeadlessServerTest` provides a single `RealDedicatedServerHarness` for each test method via `@Before` / `@After`. `harness()` and `client()` are exposed to subclass methods. The class is opt-in gated by the `forge.test.harness.enabled` system property — when unset, every test SKIPS via `org.junit.Assume`.
 
-`TestRegistry` stores scenarios. `TestOrchestrator` runs them one by one in isolated work directories. `TestBootstrap` combines orchestration and report writing. `TestReportWriter` writes `summary.txt` and `summary.json`.
+`AbstractClientE2ETest` does the same for a paired server + `RealClientHarness`, exposing `server()`, `serverClient()`, `clientHarness()` and `bot()`. Gated by both `forge.test.harness.enabled` and `forge.test.client.enabled`.
 
-`TestContext` provides a per-scenario work directory, notes, and an attribute map for sharing state between setup, ticks, and teardown.
+Scenarios that need to manage two harness lifecycles against the same workDir (persistence-restart tests, fixture-write-before-start tests) skip the base classes and call `RealDedicatedServerHarness.startWith(workDir, cleanupOnClose)` directly from a plain `@Test` method with manual `@Before` / `@After`.
 
 ## Dedicated Server Harness
 
