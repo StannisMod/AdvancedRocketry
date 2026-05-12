@@ -23,8 +23,7 @@ public class SoundRocketEngine extends MovingSound {
         if (rocket == null
                 || rocket.isDead
                 || mc.world == null
-                || rocket.world != mc.world
-                || mc.world.getEntityByID(rocket.getEntityId()) != rocket) {
+                || rocket.world != mc.world) {
             this.donePlaying = true;
             this.rocket = null;
             this.volume = 0f;
