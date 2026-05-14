@@ -13,6 +13,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -57,8 +58,26 @@ public final class RealClientHarness implements AutoCloseable {
             return new RealClientHarness(root, process, bot, clientLogFile);
         } catch (Exception exception) {
             shutdownProcess(process);
+            // Capture the client log tail BEFORE deleting the temp dir —
+            // otherwise the diagnostic is always empty.
+            String logTail = tailFile(clientLogFile);
+            // Preserve the FULL client log at a stable location so the whole
+            // startup (FML mod discovery, resource-pack registration, …) can
+            // be inspected after the temp dir is gone.
+            Path preservedLog = null;
+            try {
+                if (Files.isRegularFile(clientLogFile)) {
+                    preservedLog = Paths.get(System.getProperty("java.io.tmpdir"),
+                            "forge-test-client-last.log");
+                    Files.copy(clientLogFile, preservedLog, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException ignored) {
+                // Best-effort only.
+            }
             deleteRecursively(root);
-            throw new IOException("Failed to start real client harness. Recent client log:\n" + tailFile(clientLogFile), exception);
+            throw new IOException("Failed to start real client harness."
+                    + (preservedLog != null ? " Full log: " + preservedLog : "")
+                    + "\nRecent client log:\n" + logTail, exception);
         }
     }
 
@@ -97,6 +116,44 @@ public final class RealClientHarness implements AutoCloseable {
     public static final String PROP_ASSETS_DIR = "forge.test.assets.dir";
     public static final String PROP_LEGACY_ARGS = "forge.test.launcher.legacyArgs";
 
+    /**
+     * System property naming the directory that holds the extracted LWJGL
+     * natives ({@code lwjgl64.dll} / {@code lwjgl.dll} / jinput, openal …).
+     *
+     * <p>Default resolution scans the RFG / FG4 cache layout
+     * ({@code ~/.gradle/caches/minecraft/net/minecraft/natives/1.12.2}). FG6
+     * does not populate that path — it extracts natives into the project's
+     * {@code build/natives} directory instead. FG6 projects must set this
+     * property to {@code <project>/build/natives}.</p>
+     */
+    public static final String PROP_NATIVES_DIR = "forge.test.client.nativesDir";
+
+    /**
+     * Prefix for per-child environment variable overrides applied to the
+     * spawned client JVM.
+     *
+     * <p>Every system property named {@code forge.test.client.env.<NAME>} is
+     * applied as the environment variable {@code <NAME>} on the client
+     * process, overriding whatever the test JVM inherited.</p>
+     *
+     * <p>This exists because {@code AbstractClientE2ETest} runs a dedicated
+     * server harness AND a client in the same test JVM. The server harness
+     * inherits the test JVM's environment (which a FG6 build script populates
+     * from the {@code runServer} run-config — {@code mainClass}, {@code tweakClass},
+     * etc.). The client needs the {@code runClient} run-config's values for
+     * those same variables. Since both can't inherit one environment, the
+     * build script forwards the client's variables through this prefixed
+     * property channel and the harness applies them only to the client
+     * process.</p>
+     *
+     * <p>Example (build script):
+     * {@code systemProperty("forge.test.client.env.mainClass", "net.minecraft.client.main.Main")}</p>
+     *
+     * <p>RFG projects typically need none of this — RFG sets a single
+     * project-wide environment that works for both server and client.</p>
+     */
+    public static final String PROP_CLIENT_ENV_PREFIX = "forge.test.client.env.";
+
     private static Process launchClient(Path root, int serverPort, int controlPort, Path clientLogFile) throws IOException {
         Path javaBinary = resolveJavaBinary();
         String assetsDirProp = System.getProperty(PROP_ASSETS_DIR);
@@ -118,6 +175,10 @@ public final class RealClientHarness implements AutoCloseable {
         javaArgs.add("-Djava.library.path=" + nativesDir.toAbsolutePath());
         javaArgs.add("-Dorg.lwjgl.librarypath=" + nativesDir.toAbsolutePath());
         javaArgs.add("-Dforge.test.client.logFile=" + clientLogFile.toAbsolutePath());
+        // Allow LWJGL to fall back to a software GL pipeline if the vendor
+        // driver can't provide a stable context — keeps the harness alive on
+        // machines whose GL driver crashes on legacy MC 1.12 rendering.
+        javaArgs.add("-Dorg.lwjgl.opengl.Display.allowSoftwareOpenGL=true");
         javaArgs.add("-cp");
         javaArgs.add(launcherClassPath);
         javaArgs.add(launcherClass);
@@ -160,22 +221,56 @@ public final class RealClientHarness implements AutoCloseable {
         command.add(javaBinary.toString());
         command.addAll(javaArgs);
 
-        if (WINDOWS) {
+        // Always spawn via ProcessBuilder + LoggedProcess so the client's
+        // stdout/stderr is pumped into clientLogFile. The earlier native
+        // CreateProcessW path (launchWindowsClient) gave process-group
+        // isolation but discarded all client output — which makes any
+        // early-startup crash (classpath, natives, launchwrapper) completely
+        // undiagnosable. A test child dying with its parent is correct cleanup
+        // anyway, so the native path is no longer worth its blind spot.
+        //
+        // Set -Dforge.test.client.nativeLaunch=true to opt back into the old
+        // native path (no stdout capture).
+        boolean nativeLaunch = WINDOWS
+                && Boolean.parseBoolean(System.getProperty("forge.test.client.nativeLaunch", "false"));
+        if (nativeLaunch) {
             try {
                 return launchWindowsClient(root, javaBinary, javaArgs);
             } catch (IOException nativeLaunchFailure) {
-                ProcessBuilder fallback = new ProcessBuilder(command);
-                fallback.directory(root.toFile());
-                fallback.redirectErrorStream(true);
-                Process process = fallback.start();
-                return new LoggedProcess(process, clientLogFile);
+                // fall through to the logged ProcessBuilder path
             }
         }
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(root.toFile());
         builder.redirectErrorStream(true);
-        return builder.start();
+        applyClientEnvOverrides(builder);
+        Process process = builder.start();
+        return new LoggedProcess(process, clientLogFile);
+    }
+
+    /**
+     * Applies every {@code -Dforge.test.client.env.<NAME>=<value>} system
+     * property as the environment variable {@code <NAME>} on the client
+     * process. Used by FG6 build scripts to feed the client its own
+     * {@code runClient} run-config (mainClass / tweakClass / asset paths)
+     * instead of inheriting the server harness's environment.
+     *
+     * <p>A {@code JAVA_TOOL_OPTIONS} override is honoured here too — a FG6
+     * build script that forwards the {@code runClient} {@code -D} flags packs
+     * them into {@code forge.test.client.env.JAVA_TOOL_OPTIONS}, which then
+     * cleanly replaces the inherited (server) {@code JAVA_TOOL_OPTIONS}.</p>
+     */
+    private static void applyClientEnvOverrides(ProcessBuilder builder) {
+        Map<String, String> childEnv = builder.environment();
+        for (String name : System.getProperties().stringPropertyNames()) {
+            if (name.startsWith(PROP_CLIENT_ENV_PREFIX)) {
+                String envName = name.substring(PROP_CLIENT_ENV_PREFIX.length());
+                if (!envName.isEmpty()) {
+                    childEnv.put(envName, System.getProperty(name));
+                }
+            }
+        }
     }
 
     private static ClientBot awaitClientBot(java.net.ServerSocket serverSocket) throws IOException {
@@ -304,11 +399,39 @@ public final class RealClientHarness implements AutoCloseable {
     }
 
     private static void bootstrapClientFiles(Path root) throws IOException {
+        // Conservative GL settings — the test client only needs to reach the
+        // in-world handshake, never to render anything pretty. Aggressive GL
+        // features (VBOs, FBOs, fancy graphics) are the usual trigger for
+        // EXCEPTION_ACCESS_VIOLATION crashes inside flaky vendor GL drivers
+        // (notably Intel integrated GPUs running legacy MC 1.12 OpenGL).
         List<String> options = new ArrayList<>();
         options.add("pauseOnLostFocus:false");
-        options.add("fboEnable:true");
-        options.add("renderDistance:8");
+        options.add("fboEnable:false");
+        options.add("useVbo:false");
+        options.add("renderDistance:2");
+        options.add("fancyGraphics:false");
+        options.add("ao:0");
+        options.add("enableVsync:false");
+        options.add("maxFps:30");
+        options.add("particles:2");
+        options.add("mipmapLevels:0");
         Files.write(root.resolve("options.txt"), options, StandardCharsets.UTF_8);
+
+        // Disable FML's splash-screen progress window. Two reasons:
+        //   1. SplashProgress.<clinit> → createResourcePack NPEs during
+        //      Minecraft.init() in stripped-down test runtimes (the resource
+        //      pack discovery path assumes a fully-populated mods/ layout that
+        //      a harness game dir doesn't have) — a hard crash before the
+        //      client ever reaches the title screen.
+        //   2. The splash window spins up its own GL context on a second
+        //      thread, doubling the surface area for vendor-driver crashes.
+        // The test client never needs the splash; turning it off is strictly
+        // an improvement.
+        Path configDir = root.resolve("config");
+        Files.createDirectories(configDir);
+        List<String> splash = new ArrayList<>();
+        splash.add("enabled=false");
+        Files.write(configDir.resolve("splash.properties"), splash, StandardCharsets.UTF_8);
     }
 
     private static int reservePort() throws IOException {
@@ -334,10 +457,29 @@ public final class RealClientHarness implements AutoCloseable {
     }
 
     private static Path resolveNativesDir() throws IOException {
-        Path[] candidates = new Path[] {
-                gradleUserHome().resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2"),
-                Paths.get(System.getProperty("user.home"), ".gradle").resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2")
-        };
+        List<Path> candidates = new ArrayList<>();
+
+        // 1. Explicit override — highest priority. Any project can point this
+        //    at the exact directory holding lwjgl64.dll.
+        String override = System.getProperty(PROP_NATIVES_DIR);
+        if (override != null && !override.trim().isEmpty()) {
+            candidates.add(Paths.get(override.trim()));
+        }
+
+        // 2. Project-relative auto-scan. The test JVM's working directory is the
+        //    consuming project's root (Gradle's default for Test tasks), so we
+        //    can find the natives the build plugin extracted without any config:
+        //      - ForgeGradle 6 extracts to  <project>/build/natives
+        //      - RetroFuturaGradle extracts to <project>/run/natives/lwjgl2
+        //      - older FG layouts sometimes used <project>/natives
+        Path projectDir = Paths.get(System.getProperty("user.dir", "."));
+        candidates.add(projectDir.resolve("build").resolve("natives"));
+        candidates.add(projectDir.resolve("run").resolve("natives").resolve("lwjgl2"));
+        candidates.add(projectDir.resolve("natives"));
+
+        // 3. RFG / FG4 shared-cache layout fallback.
+        candidates.add(gradleUserHome().resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2"));
+        candidates.add(Paths.get(System.getProperty("user.home"), ".gradle").resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2"));
 
         for (Path candidate : candidates) {
             if (Files.isRegularFile(candidate.resolve("lwjgl64.dll")) || Files.isRegularFile(candidate.resolve("lwjgl.dll"))) {
@@ -345,7 +487,9 @@ public final class RealClientHarness implements AutoCloseable {
             }
         }
 
-        throw new IOException("Unable to locate LWJGL natives directory in any known Gradle cache location");
+        throw new IOException("Unable to locate LWJGL natives directory. Checked "
+                + candidates + ". Set -D" + PROP_NATIVES_DIR
+                + "=<dir-containing-lwjgl64.dll> to point the harness at it explicitly.");
     }
 
     private static Path findCachedJar(String fileName) throws IOException {
@@ -426,7 +570,10 @@ public final class RealClientHarness implements AutoCloseable {
             if (lines.isEmpty()) {
                 return "";
             }
-            int from = Math.max(0, lines.size() - 40);
+            // Grab a generous window — a full MC crash report (Description +
+            // exception + stacktrace + System Details) easily exceeds 40 lines,
+            // and the actionable part (the exception header) sits near the top.
+            int from = Math.max(0, lines.size() - 300);
             StringBuilder builder = new StringBuilder();
             for (int i = from; i < lines.size(); i++) {
                 if (i > from) {
