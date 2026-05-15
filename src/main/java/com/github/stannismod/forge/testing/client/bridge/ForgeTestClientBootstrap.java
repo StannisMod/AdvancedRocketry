@@ -1,5 +1,6 @@
 package com.github.stannismod.forge.testing.client.bridge;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -10,6 +11,9 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
+import net.minecraft.inventory.ClickType;
+import net.minecraft.inventory.Slot;
+import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
@@ -24,6 +28,7 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Callable;
@@ -222,6 +227,118 @@ public final class ForgeTestClientBootstrap {
                     int x = button.x + 2 + (int) Math.round((button.width - 8 - 4) * ratio);
                     int y = button.y + button.height / 2;
                     invokeMouseClicked(screen, x, y, 0);
+                    return ok();
+                });
+            case "report_buttons":
+                return runOnClientThread(() -> {
+                    GuiScreen screen = Minecraft.getMinecraft().currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to inspect");
+                    }
+                    JsonArray buttons = new JsonArray();
+                    for (GuiButton button : collectAllButtons(screen)) {
+                        JsonObject entry = new JsonObject();
+                        entry.addProperty("id", button.id);
+                        entry.addProperty("text", button.displayString == null ? "" : button.displayString);
+                        entry.addProperty("x", button.x);
+                        entry.addProperty("y", button.y);
+                        entry.addProperty("width", button.width);
+                        entry.addProperty("height", button.height);
+                        entry.addProperty("enabled", button.enabled);
+                        entry.addProperty("visible", button.visible);
+                        buttons.add(entry);
+                    }
+                    JsonObject response = ok();
+                    response.add("buttons", buttons);
+                    return response;
+                });
+            case "click_button_id":
+                return runOnClientThread(() -> {
+                    GuiScreen screen = Minecraft.getMinecraft().currentScreen;
+                    if (screen == null) {
+                        throw new IllegalStateException("No current GUI to click");
+                    }
+                    int targetId = requireInt(request, "id");
+                    GuiButton match = null;
+                    for (GuiButton button : collectAllButtons(screen)) {
+                        if (button.id == targetId) {
+                            match = button;
+                            break;
+                        }
+                    }
+                    if (match == null) {
+                        throw new IllegalArgumentException("No GUI button with id " + targetId);
+                    }
+                    if (!match.visible || !match.enabled) {
+                        throw new IllegalStateException("GUI button id " + targetId
+                                + " is not clickable (visible=" + match.visible
+                                + ", enabled=" + match.enabled + ")");
+                    }
+                    // Dispatch through actionPerformed rather than a synthetic
+                    // mouse click: coordinate-free, and libVulpes' GuiModular
+                    // forwards actionPerformed to every module — so this hits
+                    // module-local buttons (planet selector grid, …) that never
+                    // land in GuiScreen.buttonList.
+                    invokeActionPerformed(screen, match);
+                    return ok();
+                });
+            case "report_slots":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (!(mc.currentScreen instanceof GuiContainer)) {
+                        throw new IllegalStateException("Current GUI is not a container screen");
+                    }
+                    net.minecraft.inventory.Container container =
+                            ((GuiContainer) mc.currentScreen).inventorySlots;
+                    JsonArray slots = new JsonArray();
+                    for (Slot slot : container.inventorySlots) {
+                        JsonObject entry = new JsonObject();
+                        entry.addProperty("slot", slot.slotNumber);
+                        entry.addProperty("x", slot.xPos);
+                        entry.addProperty("y", slot.yPos);
+                        entry.addProperty("playerSlot",
+                                mc.player != null && slot.inventory == mc.player.inventory);
+                        ItemStack stack = slot.getStack();
+                        entry.addProperty("hasStack", !stack.isEmpty());
+                        entry.addProperty("item", stack.isEmpty()
+                                ? "" : String.valueOf(stack.getItem().getRegistryName()));
+                        entry.addProperty("count", stack.isEmpty() ? 0 : stack.getCount());
+                        slots.add(entry);
+                    }
+                    JsonObject response = ok();
+                    response.add("slots", slots);
+                    return response;
+                });
+            case "click_slot":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (!(mc.currentScreen instanceof GuiContainer)) {
+                        throw new IllegalStateException("Current GUI is not a container screen");
+                    }
+                    GuiContainer containerScreen = (GuiContainer) mc.currentScreen;
+                    int slotId = requireInt(request, "slot");
+                    int mouseButton = boundedInt(request, "button", 0, 2);
+                    String modeName = request.has("mode")
+                            ? request.get("mode").getAsString() : "PICKUP";
+                    ClickType clickType;
+                    try {
+                        clickType = ClickType.valueOf(modeName.toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException invalid) {
+                        throw new IllegalArgumentException("Unknown click mode '" + modeName
+                                + "' — expected one of PICKUP, QUICK_MOVE, SWAP, CLONE, THROW,"
+                                + " QUICK_CRAFT, PICKUP_ALL");
+                    }
+                    Slot slot = null;
+                    for (Slot candidate : containerScreen.inventorySlots.inventorySlots) {
+                        if (candidate.slotNumber == slotId) {
+                            slot = candidate;
+                            break;
+                        }
+                    }
+                    if (slot == null) {
+                        throw new IllegalArgumentException("No container slot with id " + slotId);
+                    }
+                    invokeHandleMouseClick(containerScreen, slot, slotId, mouseButton, clickType);
                     return ok();
                 });
             case "drag_screen_point":
@@ -451,6 +568,79 @@ public final class ForgeTestClientBootstrap {
             return (List<GuiButton>) field.get(screen);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to access GUI button list", exception);
+        }
+    }
+
+    /**
+     * Every {@link GuiButton} reachable from {@code screen}: the standard
+     * {@code GuiScreen.buttonList}, plus — for libVulpes-style modular GUIs —
+     * any per-module button lists. libVulpes {@code GuiModular} keeps its
+     * sub-modules in a {@code modules} field, and container modules
+     * ({@code ModuleContainerPan}, the planet-selector grid) keep their buttons
+     * in their own {@code buttonList}/{@code staticButtonList} fields that never
+     * reach {@code GuiScreen.buttonList}. Discovered purely reflectively, so the
+     * framework keeps no compile dependency on libVulpes.
+     */
+    private static List<GuiButton> collectAllButtons(GuiScreen screen) {
+        List<GuiButton> all = new ArrayList<>(buttonList(screen));
+        Object modules = readFieldOrNull(screen, "modules");
+        if (modules instanceof List) {
+            for (Object module : (List<?>) modules) {
+                collectModuleButtons(module, all);
+            }
+        }
+        return all;
+    }
+
+    private static void collectModuleButtons(Object module, List<GuiButton> out) {
+        if (module == null) {
+            return;
+        }
+        for (String fieldName : new String[] {"buttonList", "staticButtonList"}) {
+            Object value = readFieldOrNull(module, fieldName);
+            if (value instanceof List) {
+                for (Object element : (List<?>) value) {
+                    if (element instanceof GuiButton) {
+                        out.add((GuiButton) element);
+                    }
+                }
+            }
+        }
+    }
+
+    private static Object readFieldOrNull(Object target, String fieldName) {
+        try {
+            java.lang.reflect.Field field = findField(target.getClass(), fieldName);
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Dispatches a button through the screen's {@code actionPerformed} — the
+     * same entry point MC invokes on a real click. libVulpes {@code GuiModular}
+     * forwards it to every module, so module-local buttons are handled too.
+     */
+    private static void invokeActionPerformed(GuiScreen screen, GuiButton button) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "actionPerformed", GuiButton.class);
+            method.setAccessible(true);
+            method.invoke(screen, button);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to dispatch GUI button action", exception);
+        }
+    }
+
+    private static void invokeHandleMouseClick(GuiContainer screen, Slot slot, int slotId, int mouseButton, ClickType type) {
+        try {
+            java.lang.reflect.Method method = findMethod(screen.getClass(), "handleMouseClick",
+                    Slot.class, int.class, int.class, ClickType.class);
+            method.setAccessible(true);
+            method.invoke(screen, slot, slotId, mouseButton, type);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to click container slot", exception);
         }
     }
 

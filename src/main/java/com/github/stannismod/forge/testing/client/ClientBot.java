@@ -77,6 +77,52 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command));
     }
 
+    /**
+     * Lists every {@link net.minecraft.client.gui.GuiButton} on the open GUI:
+     * each entry carries {@code id}, {@code text}, {@code x}/{@code y}/{@code width}/
+     * {@code height}, {@code enabled} and {@code visible}. Use the stable
+     * {@code id} (assigned by the mod, not the list position) to drive
+     * {@link #clickButtonById(int)}.
+     */
+    public JsonObject reportButtons() throws IOException {
+        return assertOk(execute(command("report_buttons")));
+    }
+
+    /**
+     * Clicks the GUI button whose {@code GuiButton.id} equals {@code id} —
+     * robust against button-list ordering. Fails if no such button exists or it
+     * is hidden / disabled.
+     */
+    public void clickButtonById(int id) throws IOException {
+        JsonObject command = command("click_button_id");
+        command.addProperty("id", id);
+        assertOk(execute(command));
+    }
+
+    /**
+     * Lists every slot of the open {@link net.minecraft.client.gui.inventory.GuiContainer}:
+     * each entry carries {@code slot} (the container slot number), {@code x}/
+     * {@code y}, {@code playerSlot} (true for the player-inventory portion),
+     * {@code hasStack}, {@code item} (registry name) and {@code count}.
+     */
+    public JsonObject reportSlots() throws IOException {
+        return assertOk(execute(command("report_slots")));
+    }
+
+    /**
+     * Performs a container slot interaction, mirroring
+     * {@code GuiContainer.handleMouseClick}. {@code mode} is a
+     * {@link net.minecraft.inventory.ClickType} name — {@code PICKUP} for a
+     * normal click, {@code QUICK_MOVE} for shift-click, etc.
+     */
+    public void clickSlot(int slot, int button, String mode) throws IOException {
+        JsonObject command = command("click_slot");
+        command.addProperty("slot", slot);
+        command.addProperty("button", button);
+        command.addProperty("mode", mode);
+        assertOk(execute(command));
+    }
+
     public void dragScreenPoint(int startX, int startY, int endX, int endY, int button) throws IOException {
         JsonObject command = command("drag_screen_point");
         command.addProperty("startX", startX);
