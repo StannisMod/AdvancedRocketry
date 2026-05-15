@@ -29,6 +29,18 @@ public final class RealClientHarness implements AutoCloseable {
     private static final int STILL_ACTIVE = 259;
     private static final int STARTF_USESHOWWINDOW = 0x00000001;
     private static final int SW_SHOWNOACTIVATE = 4;
+    private static final int SW_SHOWMINNOACTIVE = 7;
+
+    /**
+     * Controls how the LWJGL client window first appears. Default
+     * {@code minimized} — the window is iconified to the taskbar without
+     * stealing focus, so concurrent local work is not disrupted. Set to
+     * {@code normal} to restore the previous behaviour ({@code SW_SHOWNOACTIVATE},
+     * window visible at requested geometry but without keyboard focus). Honoured
+     * on the Windows {@code CreateProcessW} launch path only — other platforms
+     * inherit the default desktop behaviour.
+     */
+    private static final String PROP_WINDOW_START_STATE = "forge.test.client.window.startState";
 
     private final Path root;
     private final Process process;
@@ -320,7 +332,15 @@ public final class RealClientHarness implements AutoCloseable {
         STARTUPINFO startupInfo = new STARTUPINFO();
         startupInfo.cb = startupInfo.size();
         startupInfo.dwFlags = STARTF_USESHOWWINDOW;
-        startupInfo.wShowWindow = (short) SW_SHOWNOACTIVATE;
+        // STARTUPINFO.wShowWindow is consumed by the first ShowWindow(hwnd,
+        // SW_SHOWDEFAULT) call in the child process. LWJGL2's Display.create()
+        // ultimately issues SW_SHOWDEFAULT on the OpenGL window, so this also
+        // controls how the Minecraft client appears (not just the JVM console).
+        String startState = System.getProperty(PROP_WINDOW_START_STATE, "minimized")
+                .toLowerCase(java.util.Locale.ROOT);
+        startupInfo.wShowWindow = (short) ("normal".equals(startState)
+                ? SW_SHOWNOACTIVATE
+                : SW_SHOWMINNOACTIVE);
 
         PROCESS_INFORMATION processInformation = new PROCESS_INFORMATION();
         startupInfo.write();

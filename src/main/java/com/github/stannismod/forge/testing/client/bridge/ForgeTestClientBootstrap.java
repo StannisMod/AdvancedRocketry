@@ -736,9 +736,86 @@ public final class ForgeTestClientBootstrap {
         @SubscribeEvent
         public void onClientTick(TickEvent.ClientTickEvent event) {
             if (event.phase == TickEvent.Phase.END) {
+                if (CLIENT_TICKS.get() == 0L) {
+                    // First END-phase tick: Display.create() has returned and
+                    // the LWJGL window is up. Honour the start-state override.
+                    applyInitialWindowState();
+                }
                 CLIENT_TICKS.incrementAndGet();
             }
         }
+    }
+
+    private static final AtomicBoolean WINDOW_STATE_APPLIED = new AtomicBoolean(false);
+
+    /**
+     * Minimises the LWJGL client window after Display.create() so tests don't
+     * steal focus from concurrent local work. LWJGL2's native createWindow
+     * calls {@code ShowWindow(SW_SHOW)} directly, ignoring our
+     * {@code STARTUPINFO.wShowWindow} hint — so we have to issue
+     * {@code ShowWindow(SW_MINIMIZE)} ourselves once the window exists.
+     *
+     * <p>Controlled by system property {@code forge.test.client.window.startState}
+     * (default {@code minimized}). Set to {@code normal} to keep the window
+     * visible. No-op on non-Windows hosts.</p>
+     */
+    private static void applyInitialWindowState() {
+        if (!WINDOW_STATE_APPLIED.compareAndSet(false, true)) {
+            return;
+        }
+        String state = System.getProperty("forge.test.client.window.startState", "minimized")
+                .toLowerCase(Locale.ROOT);
+        if (!"minimized".equals(state)) {
+            return;
+        }
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            return;
+        }
+        try {
+            Class<?> displayClass = Class.forName("org.lwjgl.opengl.Display");
+            java.lang.reflect.Method isCreated = displayClass.getMethod("isCreated");
+            if (!Boolean.TRUE.equals(isCreated.invoke(null))) {
+                return;
+            }
+            // Move the window completely off-screen first, so the visible
+            // "flash" between Display.create() and our minimize call doesn't
+            // pop up over the user's other monitors. setLocation(int,int) is
+            // public LWJGL2 API and is honoured immediately by the native side.
+            try {
+                java.lang.reflect.Method setLocation =
+                        displayClass.getMethod("setLocation", int.class, int.class);
+                setLocation.invoke(null, -32000, -32000);
+            } catch (Throwable ignored) {
+                // Older/newer LWJGL2 variants — fall back to minimize-only.
+            }
+            java.lang.reflect.Field implField = displayClass.getDeclaredField("display_impl");
+            implField.setAccessible(true);
+            Object impl = implField.get(null);
+            java.lang.reflect.Method getHwndMethod = impl.getClass().getDeclaredMethod("getHwnd");
+            getHwndMethod.setAccessible(true);
+            Object hwndObject = getHwndMethod.invoke(impl);
+            long hwnd = ((Number) hwndObject).longValue();
+            if (hwnd == 0L) {
+                return;
+            }
+            // SW_FORCEMINIMIZE rather than SW_MINIMIZE so the call still works
+            // if some future Forge change moves ClientTickEvent off the LWJGL-
+            // owning thread (MSDN: "use when minimizing windows from a
+            // different thread"). On the same-thread path it behaves identically
+            // to SW_MINIMIZE.
+            final int SW_FORCEMINIMIZE = 11;
+            User32Native.INSTANCE.ShowWindow(new com.sun.jna.Pointer(hwnd), SW_FORCEMINIMIZE);
+        } catch (Throwable t) {
+            // Best-effort — never break the test run because the cosmetic
+            // minimise call failed.
+            System.err.println("[forge-test] applyInitialWindowState failed: " + t);
+        }
+    }
+
+    private interface User32Native extends com.sun.jna.Library {
+        User32Native INSTANCE = (User32Native) com.sun.jna.Native.loadLibrary("user32", User32Native.class);
+
+        boolean ShowWindow(com.sun.jna.Pointer hwnd, int nCmdShow);
     }
 
     private static final class TeeOutputStream extends OutputStream {
