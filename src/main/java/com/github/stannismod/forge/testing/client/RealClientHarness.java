@@ -99,6 +99,21 @@ public final class RealClientHarness implements AutoCloseable {
             try {
                 shutdownProcess(process);
             } finally {
+                // Preserve the client log at a stable location BEFORE wiping
+                // the tmp dir — diagnostics for any test that observed
+                // unexpected client behaviour (rendered weather, GUI state,
+                // packet flow) only survive across the deleteRecursively if
+                // we copy first. Matches the startup-failure preservation
+                // path so post-mortem looks at one well-known file.
+                try {
+                    if (clientLogFile != null && Files.isRegularFile(clientLogFile)) {
+                        Path preservedLog = Paths.get(System.getProperty("java.io.tmpdir"),
+                                "forge-test-client-last.log");
+                        Files.copy(clientLogFile, preservedLog, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException ignored) {
+                    // Best-effort only — never block close on preserve failure.
+                }
                 deleteRecursively(root);
             }
         }

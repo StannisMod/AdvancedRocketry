@@ -436,6 +436,33 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "report_weather":
+                // Client-side view of vanilla weather state for whatever
+                // dimension the client is currently in. Reports what the
+                // PLAYER is seeing — different from a server-side query
+                // because vanilla syncs weather via SPacketChangeGameState
+                // (begin/end raining + strength edges), so this is the
+                // canonical way to assert that those packets reached the
+                // rendered frame after a server-side weather change or a
+                // cross-dimension teleport.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.world == null) {
+                        response.addProperty("worldReady", false);
+                        return response;
+                    }
+                    response.addProperty("worldReady", true);
+                    response.addProperty("dim", mc.world.provider.getDimension());
+                    response.addProperty("worldInfoClass", mc.world.getWorldInfo().getClass().getName());
+                    response.addProperty("isRaining", mc.world.getWorldInfo().isRaining());
+                    response.addProperty("isThundering", mc.world.getWorldInfo().isThundering());
+                    response.addProperty("rainTime", mc.world.getWorldInfo().getRainTime());
+                    response.addProperty("thunderTime", mc.world.getWorldInfo().getThunderTime());
+                    response.addProperty("rainStrength", mc.world.getRainStrength(1.0f));
+                    response.addProperty("thunderStrength", mc.world.getThunderStrength(1.0f));
+                    return response;
+                });
             case "block_state":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();

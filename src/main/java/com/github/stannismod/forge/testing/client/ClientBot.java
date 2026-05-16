@@ -156,6 +156,17 @@ public final class ClientBot implements Closeable {
         return assertOk(execute(command("report_state")));
     }
 
+    /**
+     * Client-side view of vanilla weather state for whatever dim the player is
+     * currently in. Reports {@code dim}, {@code worldInfoClass}, {@code isRaining},
+     * {@code isThundering}, {@code rainTime}, {@code thunderTime},
+     * {@code rainStrength} (post-SPacketChangeGameState lerp), {@code thunderStrength}.
+     * If the client world isn't ready yet, only {@code worldReady=false} is set.
+     */
+    public JsonObject reportWeather() throws IOException {
+        return assertOk(execute(command("report_weather")));
+    }
+
     public JsonObject blockState(int x, int y, int z) throws IOException {
         JsonObject command = command("block_state");
         command.addProperty("x", x);
