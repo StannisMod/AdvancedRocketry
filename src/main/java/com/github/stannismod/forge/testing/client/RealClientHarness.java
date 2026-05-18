@@ -516,9 +516,16 @@ public final class RealClientHarness implements AutoCloseable {
         candidates.add(gradleUserHome().resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2"));
         candidates.add(Paths.get(System.getProperty("user.home"), ".gradle").resolve("caches").resolve("minecraft").resolve("net").resolve("minecraft").resolve("natives").resolve("1.12.2"));
 
+        String[] markers = {
+                "lwjgl64.dll", "lwjgl.dll",
+                "liblwjgl64.so", "liblwjgl.so",
+                "liblwjgl.dylib"
+        };
         for (Path candidate : candidates) {
-            if (Files.isRegularFile(candidate.resolve("lwjgl64.dll")) || Files.isRegularFile(candidate.resolve("lwjgl.dll"))) {
-                return candidate;
+            for (String marker : markers) {
+                if (Files.isRegularFile(candidate.resolve(marker))) {
+                    return candidate;
+                }
             }
         }
 

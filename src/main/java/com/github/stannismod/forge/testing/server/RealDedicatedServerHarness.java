@@ -139,9 +139,11 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
 
     private static Process launchServer(Path root, int port) throws IOException {
         String javaExe = System.getProperty("java.home");
+        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+        String javaName = windows ? "java.exe" : "java";
         Path javaBinary = javaExe == null
-                ? Paths.get("java.exe")
-                : Paths.get(javaExe, "bin", "java.exe");
+                ? Paths.get(javaName)
+                : Paths.get(javaExe, "bin", javaName);
         String launcherClass = System.getProperty(PROP_LAUNCHER_CLASS, "GradleStartServer");
         boolean legacyArgs = Boolean.parseBoolean(System.getProperty(PROP_LEGACY_ARGS, "true"));
 
