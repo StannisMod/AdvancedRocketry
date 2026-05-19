@@ -1,3 +1,17 @@
+Changelog 2.2.9
+- Fixed crater worldgen crash from negative Y placement.
+- Fixed enriched lava flow texture tiling.
+- Fixed crash when launching without JEI installed.
+- Fixed worldgen frequency multipliers for craters, volcanoes, and geodes.
+  - 2.0 means double frequency, 0.5 means half.
+  - Clamped between 0.01 and 10.0.
+- Reduced memory leaks:
+  - Clear rocket engine sound references when rockets unload/die.
+  - Clear custom rocket particles when changing dimensions.
+  - Clear AtmosphereHandler state onDisconnect
+  - Unregister OxygenVent atmosphere blobs when broken or chunk-unloaded.
+
+
 Changelog 2.2.8
 - Nuclear rocket gating:
   - Fixed station-return softlock for stations orbiting gated planets.

@@ -73,7 +73,7 @@ import zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector;
 
 
 import net.minecraftforge.fml.common.FMLCommonHandler;
-import zmaster587.advancedRocketry.integration.jei.JeiClientTickHandler;
+import net.minecraftforge.fml.common.Loader;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -302,7 +302,11 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(ModuleContainerPan.class);
         MinecraftForge.EVENT_BUS.register(new RenderComponents());
 
-        FMLCommonHandler.instance().bus().register(new JeiClientTickHandler());
+        if (Loader.isModLoaded("jei")) {
+            FMLCommonHandler.instance().bus().register(
+                    new zmaster587.advancedRocketry.integration.jei.JeiClientTickHandler()
+            );
+        }
     }
 
     @Override
