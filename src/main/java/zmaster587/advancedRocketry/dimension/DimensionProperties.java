@@ -74,6 +74,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final int WEATHER_START_LENGTH = 168000;
     public static final int WEATHER_PROLONGATION_LENGTH = 12000;
 
+    // Geode, Volcano, Crater clamps
+    private static final float MIN_FEATURE_FREQUENCY_MULTIPLIER = 0.01f;
+    private static final float MAX_FEATURE_FREQUENCY_MULTIPLIER = 10f;
+
+    private static float clampFeatureFrequencyMultiplier(float multiplier) {
+        return MathHelper.clamp(multiplier, MIN_FEATURE_FREQUENCY_MULTIPLIER, MAX_FEATURE_FREQUENCY_MULTIPLIER);
+    }
     //True if dimension is managed and created by AR (false otherwise)
     public boolean isNativeDimension;
     public boolean skyRenderOverride;
@@ -1661,9 +1668,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         canGenerateVolcanoes = nbt.getBoolean("canGenerateVolcanos");
         canGenerateCaves = nbt.getBoolean("canGenerateCaves");
         hasRivers = nbt.getBoolean("hasRivers");
-        geodeFrequencyMultiplier = nbt.getFloat("geodeFrequencyMultiplier");
-        craterFrequencyMultiplier = nbt.getFloat("craterFrequencyMultiplier");
-        volcanoFrequencyMultiplier = nbt.getFloat("volcanoFrequencyMultiplier");
+        //also clamp nbt load
+        if (nbt.hasKey("geodeFrequencyMultiplier", NBT.TAG_FLOAT))
+            setGeodeMultiplier(nbt.getFloat("geodeFrequencyMultiplier"));
+        if (nbt.hasKey("craterFrequencyMultiplier", NBT.TAG_FLOAT))
+            setCraterMultiplier(nbt.getFloat("craterFrequencyMultiplier"));
+        if (nbt.hasKey("volcanoFrequencyMultiplier", NBT.TAG_FLOAT))
+            setVolcanoMultiplier(nbt.getFloat("volcanoFrequencyMultiplier"));
 
         // Custom weather info
         if (nbt.hasKey("rainStartLength", NBT.TAG_INT))
@@ -2211,7 +2222,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public void setCraterMultiplier(float craterFrequencyMultiplier) {
-        this.craterFrequencyMultiplier = craterFrequencyMultiplier;
+        this.craterFrequencyMultiplier = clampFeatureFrequencyMultiplier(craterFrequencyMultiplier);
     }
 
     public void setGenerateGeodes(boolean canGenerateGeodes) {
@@ -2227,7 +2238,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public void setGeodeMultiplier(float geodeFrequencyMultiplier) {
-        this.geodeFrequencyMultiplier = geodeFrequencyMultiplier;
+        this.geodeFrequencyMultiplier = clampFeatureFrequencyMultiplier(geodeFrequencyMultiplier);
     }
 
     public void setGenerateVolcanos(boolean canGenerateVolcanos) {
@@ -2243,7 +2254,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public void setVolcanoMultiplier(float volcanoFrequencyMultiplier) {
-        this.volcanoFrequencyMultiplier = volcanoFrequencyMultiplier;
+        this.volcanoFrequencyMultiplier = clampFeatureFrequencyMultiplier(volcanoFrequencyMultiplier);
     }
 
     public void setGenerateStructures(boolean canGenerateStructures) {

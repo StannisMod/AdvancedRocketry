@@ -95,7 +95,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_SPAWNABLE = "spawnable";
     private static final String ELEMENT_CRATER_MULTIPLIER = "craterFrequencyMultiplier";
     private static final String ELEMENT_VOLCANO_MULTIPLIER = "volcanoFrequencyMultiplier";
-    private static final String ELEMENT_GEODE_MULTIPLIER = "geodefrequencyMultiplier";
+    private static final String ELEMENT_GEODE_MULTIPLIER = "geodeFrequencyMultiplier";
     private static final String ELEMENT_CAN_DECORATE = "hasShading";
     private static final String ELEMENT_COLOR_OVERRIDE = "hasColorOverride";
     private static final String ELEMENT_SKYOVERRIDE = "skyRenderOverride";

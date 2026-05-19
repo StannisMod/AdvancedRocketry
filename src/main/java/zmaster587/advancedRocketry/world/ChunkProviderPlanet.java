@@ -159,29 +159,33 @@ public class ChunkProviderPlanet implements IChunkGenerator {
 
 
         if (ARConfiguration.getCurrentConfig().generateCraters && dimProps.canGenerateCraters() && atmDensity <= 0.05)
-            craterGeneratorSmall = new MapGenCraterSmall((int) ((16 + (8 * (1 - atmDensity))) * dimProps.getCraterMultiplier()));
+            craterGeneratorSmall = new MapGenCraterSmall(
+                    frequencyMultiplierToChance(16 + (8 * (1 - atmDensity)), dimProps.getCraterMultiplier()));
         else
             craterGeneratorSmall = null;
 
         if (ARConfiguration.getCurrentConfig().generateCraters && dimProps.canGenerateCraters() && atmDensity < 2)
-            craterGenerator = new MapGenCrater((int) ((250 + (175 * (1 - atmDensity))) * dimProps.getCraterMultiplier()), atmDensity < 0.05);
+            craterGenerator = new MapGenCrater(
+                    frequencyMultiplierToChance(250 + (175 * (1 - atmDensity)), dimProps.getCraterMultiplier()),
+                    atmDensity < 0.05);
         else
             craterGenerator = null;
 
         if (ARConfiguration.getCurrentConfig().generateCraters && dimProps.canGenerateCraters() && atmDensity == 0)
-            craterGeneratorHuge = new MapGenCraterHuge((int) (200 * dimProps.getCraterMultiplier()));
+            craterGeneratorHuge = new MapGenCraterHuge(
+                    frequencyMultiplierToChance(200, dimProps.getCraterMultiplier()));
         else
             craterGeneratorHuge = null;
 
         if (dimProps.canGenerateGeodes() && ARConfiguration.getCurrentConfig().generateGeodes) {
-            geodeGenerator = new MapGenGeode((int) (800 * dimProps.getGeodeMultiplier()));
+            geodeGenerator = new MapGenGeode(
+                    frequencyMultiplierToChance(800, dimProps.getGeodeMultiplier()));
         } else
             geodeGenerator = null;
 
         if (dimProps.canGenerateVolcanos() && ARConfiguration.getCurrentConfig().generateVolcanos) {
-            float mult = dimProps.getVolcanoMultiplier();
-            int chance = Math.max(1, Math.round(15f / mult));
-            volcanoGenerator = new MapGenVolcano(chance);
+            volcanoGenerator = new MapGenVolcano(
+                    frequencyMultiplierToChance(15, dimProps.getVolcanoMultiplier()));
         } else {
             volcanoGenerator = null;
         }
@@ -194,6 +198,10 @@ public class ChunkProviderPlanet implements IChunkGenerator {
         //Yes, the trees shouldn't be here. This, however, makes them NOT MAKE WALLS. So they're here
         swampTreeGenerator = new MapGenSwampTree(10);
 
+    }
+
+    private static int frequencyMultiplierToChance(float baseChance, float multiplier) {
+        return Math.max(1, Math.round(baseChance / multiplier));
     }
 
     public void setBlocksInChunk(int x, int z, ChunkPrimer primer) {
