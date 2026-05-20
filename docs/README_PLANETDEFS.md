@@ -495,37 +495,45 @@ Notes:
 ### 6.2 Atmosphere, gravity, orbit, and rotation
 
 #### `<atmosphereDensity>`
-Atmosphere density value.
 
-```xml
-<atmosphereDensity>100</atmosphereDensity>
-```
+Atmosphere density / pressure value.
+
+Example:
+
+    <atmosphereDensity>100</atmosphereDensity>
 
 Meaning:
-- `100` is Earthlike
-- Values above `75` are generally treated as breathable in the code
-- Atmosphere density influences weather, fog, cloud height, and temperature calculations
-
-Loader clamp:
-- Min: `0`
-- Max: `1600`
+- `100` is Earthlike.
+- Clamped to `[0 - 1600]`
+- Atmosphere pressure category is selected with strict `>` thresholds:
+  - `0–25`: no atmosphere / vacuum
+  - `26–75`: low atmosphere / low oxygen pressure
+  - `76–200`: normal pressure (Breathable)
+  - `201–800`: high pressure
+  - `801–1600`: super-high pressure
+- Temperature can still override the result into hot or superheated atmosphere types.
 
 Notes:
-- World provider uses atmosphere density for rain/snow/ice behavior and cloud rendering
+- World provider uses atmosphere density for rain/snow/ice behavior and cloud rendering.
 
 #### `<hasOxygen>`
-Whether the atmosphere contains oxygen.
 
-```xml
-<hasOxygen>true</hasOxygen>
-```
+Used to disable `breathable` for normal pressure planets
+
+Example:
+
+    <hasOxygen>true</hasOxygen>
 
 Accepted values:
 - `true`
 - `false`
 
-Notes:
-- Used by atmosphere type logic
+Default:
+- `true` if omitted.
+
+Meaning:
+- This tag is mainly useful for disabling oxygen on breathable planets.
+- If the planet has no atmosphere, this tag has no practical breathing effect.
 
 #### `<gravitationalMultiplier>`
 Gravity value, using `100 = Earthlike`.
