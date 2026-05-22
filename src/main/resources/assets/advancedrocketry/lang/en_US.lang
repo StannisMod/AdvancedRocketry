@@ -1111,28 +1111,28 @@ tooltip.advancedrocketry.scrubber.alt.2=With 2 Scrubbers, Oxygen Vent won't use 
 
 # Oxygen Vent
 tooltip.advancedrocketry.oxygenvent=Creates breathable air in sealed rooms.
-tooltip.advancedrocketry.oxygenvent.shift.1=Requires Power and Oxygen.
-tooltip.advancedrocketry.oxygenvent.shift.2=Place inside enclosed area.
-tooltip.advancedrocketry.oxygenvent.alt.1=Use CO2 Scrubber instead of oxygen.
-tooltip.advancedrocketry.oxygenvent.alt.2=Range: %s blocks radius.
+tooltip.advancedrocketry.oxygenvent.shift.1=§fRequires Power and Oxygen.
+tooltip.advancedrocketry.oxygenvent.shift.2=§fPlace inside enclosed area.
+tooltip.advancedrocketry.oxygenvent.alt.1=§fUse CO2 Scrubber instead of oxygen.
+tooltip.advancedrocketry.oxygenvent.alt.2=§fRange: %s blocks radius.
 
 # Airlock Door
 tooltip.advancedrocketry.smallairlock=Airtight door!
-tooltip.advancedrocketry.smallairlock.shift.1=Not airtight, leaks when open
-tooltip.advancedrocketry.smallairlock.alt.1=Build a proper airlock
-tooltip.advancedrocketry.smallairlock.alt.2=using 2 doors
+tooltip.advancedrocketry.smallairlock.shift.1=§fNot airtight, leaks when open
+tooltip.advancedrocketry.smallairlock.alt.1=§fBuild a proper airlock
+tooltip.advancedrocketry.smallairlock.alt.2=§fusing 2 doors
 
 # Warp Controller
 tooltip.advancedrocketry.warpcontroller=Turns the station into a §6Starship
-tooltip.advancedrocketry.warpcontroller.shift.1=Place §4Warp Controller§7 + §4Warp Core§7 on a space station
-tooltip.advancedrocketry.warpcontroller.shift.2=Warp between planets and solar systems
-tooltip.advancedrocketry.warpcontroller.alt.1=UI shows location, destinations, and warp fuel
+tooltip.advancedrocketry.warpcontroller.shift.1=§fPlace §4Warp Controller§f + §4Warp Core§f on a space station
+tooltip.advancedrocketry.warpcontroller.shift.2=§fWarp between planets and solar systems
+tooltip.advancedrocketry.warpcontroller.alt.1=§fUI shows location, destinations, and warp fuel
 tooltip.advancedrocketry.warpcontroller.alt.2=(You made it this far! check wiki bro)
 
 # CarbonScrubberCartridge
 tooltip.advancedrocketry.scrubbercart=Used in CO₂ Scrubber
-tooltip.advancedrocketry.scrubbercart.shift.1=Purifies air at the cost of durability.
-tooltip.advancedrocketry.scrubbercart.alt.1=Should last more than 24h
+tooltip.advancedrocketry.scrubbercart.shift.1=§fPurifies air at the cost of durability.
+tooltip.advancedrocketry.scrubbercart.alt.1=§fShould last more than 24h
 
 # Seal Detector
 tooltip.advancedrocketry.sealdetector=Detects if a block is airtight
@@ -1146,9 +1146,9 @@ tooltip.advancedrocketry.lens.shift.1=§bUse Holo-Projector!
 
 # Suit Working Station
 tooltip.advancedrocketry.suitworkingstation=Install/remove §5Space Suit Components
-tooltip.advancedrocketry.suitworkingstation.shift.1=Works with Space Suit armor 
+tooltip.advancedrocketry.suitworkingstation.shift.1=§fWorks with Space Suit armor
 tooltip.advancedrocketry.suitworkingstation.shift.2=(Helmet/Chest/Legs/Boots)
-tooltip.advancedrocketry.suitworkingstation.alt.1=Does not require Power
+tooltip.advancedrocketry.suitworkingstation.alt.1=§fDoes not require Power
 
 # Jetpack
 tooltip.advancedrocketry.jetpack=§5Space Suit Component
@@ -1158,8 +1158,8 @@ tooltip.advancedrocketry.jetpack.shift.1=§dSlot: Chest§7
 tooltip.advancedrocketry.atmanalyzer=§5Space Suit Component
 tooltip.advancedrocketry.atmanalyzer.1=§fRight Click in hand to check atmosphere.
 tooltip.advancedrocketry.atmanalyzer.shift.1=§dSlot: Helmet§7
-tooltip.advancedrocketry.atmanalyzer.alt.1=Breathable? Depends on atmosphere
-tooltip.advancedrocketry.atmanalyzer.alt.2=Shows type and pressure
+tooltip.advancedrocketry.atmanalyzer.alt.1=§fBreathable? Depends on atmosphere
+tooltip.advancedrocketry.atmanalyzer.alt.2=§fShows type and pressure
 
 # BeaconFinder
 tooltip.advancedrocketry.beaconfinder=§5Space Suit Component
