@@ -52,7 +52,6 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
     private static final int BUTTON_ID_OFFSET = 5;
 
     public ItemStationChip() {
-        //setMaxDamage(Integer.MAX_VALUE);
         setHasSubtypes(true);
     }
 
@@ -126,7 +125,6 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
             ModuleContainerPan pan = new ModuleContainerPan(25 - offset_all, 50, list2, new LinkedList<>(), null, 512, 256, 0, -48, 258, 256);
             modules.add(pan);
         }
-
         return modules;
     }
 
@@ -164,7 +162,6 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
             out.writeShort(len);
             out.writeBytes(byteArray, 0, len);
         }
-
     }
 
     @Override
@@ -264,7 +261,6 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
                     List<LandingLocation> list2 = getLandingLocations(stack, dimid);
                     list2.add(0, new LandingLocation("Last", x, y, z));
                     setLandingLocations(stack, dimid, list2);
-
                 }
 
                 for (NBTBase tag : destList) {
@@ -335,7 +331,6 @@ public class ItemStationChip extends ItemIdWithName implements IModularInventory
                     loc = landingLocList.get(id);
                 else
                     loc = landingLocList.get(0);
-
 
                 return loc;
             }
