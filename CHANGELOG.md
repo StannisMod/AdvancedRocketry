@@ -2,6 +2,10 @@ Changelog 2.2.9
 - Fixed crater worldgen crash from negative Y placement.
 - Fixed enriched lava flow texture tiling.
 - Fixed crash when launching without JEI installed.
+- Fixed false yellow atmosphere warning when creating or joining a world.
+  - Regression from gracetimerpatch (2.2.5).
+- Increased Rocket TP grace timer from 60 to 100 ticks.
+  - Gives slow servers a little more time to complete rocket passenger transfers.
 - Fixed worldgen frequency multipliers for craters, volcanoes, and geodes.
   - 2.0 means double frequency, 0.5 means half.
   - Clamped between 0.01 and 10.0.
@@ -9,6 +13,7 @@ Changelog 2.2.9
   - Clear rocket engine sound references when rockets unload/die.
   - Clear custom rocket particles when changing dimensions.
   - Clear AtmosphereHandler state onDisconnect
+  - Clear an existing dimension AtmosphereHandler before registering a new one.
   - Unregister OxygenVent atmosphere blobs when broken or chunk-unloaded.
 
 
