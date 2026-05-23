@@ -2,6 +2,7 @@ Changelog 2.2.9
 - Fixed crater worldgen crash from negative Y placement.
 - Fixed enriched lava flow texture tiling.
 - Fixed crash when launching without JEI installed.
+- Fixed 3 GL.state.Leaks
 - Fixed false yellow atmosphere warning when creating or joining a world.
   - Regression from gracetimerpatch (2.2.5).
 - Increased Rocket TP grace timer from 60 to 100 ticks.
