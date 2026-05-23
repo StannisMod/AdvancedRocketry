@@ -184,20 +184,22 @@ public class RocketEventHandler extends Gui {
             }
 
 
+            long worldTime = mc.world.getTotalWorldTime();
+
             if (mc.player.dimension != lastSuffocationWarningDim) {
                 lastSuffocationWarningDim = mc.player.dimension;
-                AtmosphereHandler.lastSuffocationTime = 0;
-                suppressSuffocationWarningUntil = mc.world.getTotalWorldTime() + 40;
+                AtmosphereHandler.lastSuffocationTime = worldTime - numTicksToDisplay - 1;
+                suppressSuffocationWarningUntil = worldTime + 40;
             }
 
             // In event of world change make sure the warning isn't displayed
-            if (mc.world.getTotalWorldTime() - AtmosphereHandler.lastSuffocationTime < 0) {
-                AtmosphereHandler.lastSuffocationTime = 0;
+            if (worldTime - AtmosphereHandler.lastSuffocationTime < 0) {
+                AtmosphereHandler.lastSuffocationTime = worldTime - numTicksToDisplay - 1;
             }
 
             // Tell the player he's suffocating if needed
-            if (mc.world.getTotalWorldTime() >= suppressSuffocationWarningUntil &&
-                    mc.world.getTotalWorldTime() - AtmosphereHandler.lastSuffocationTime < numTicksToDisplay) {
+            if (worldTime >= suppressSuffocationWarningUntil &&
+                    worldTime - AtmosphereHandler.lastSuffocationTime < numTicksToDisplay) {
                 FontRenderer fontRenderer = mc.fontRenderer;
                 String str = "";
                 if (AtmosphereHandler.currentAtm != null) {

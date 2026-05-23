@@ -2317,7 +2317,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
             int timeOffset = 1;
             for (Entity e : passengers) {
-                e.getEntityData().setLong("arRocketTransferGrace", worldserver.getTotalWorldTime() + 60L);
+                e.getEntityData().setLong("arRocketTransferGrace", worldserver.getTotalWorldTime() + 100L);
                 PlanetEventHandler.addDelayedTransition(new TransitionEntity(
                         worldserver.getTotalWorldTime() + ++timeOffset,
                         e,

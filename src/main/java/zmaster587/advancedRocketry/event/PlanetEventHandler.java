@@ -329,7 +329,7 @@ public class PlanetEventHandler {
                         if (moved != null) {
                             moved.getEntityData().setLong(
                                     "arRocketTransferGrace",
-                                    newWorld.getTotalWorldTime() + 60
+                                    newWorld.getTotalWorldTime() + 100L
                             );
                         }
 
