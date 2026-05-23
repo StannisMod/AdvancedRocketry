@@ -12,7 +12,6 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent;
 import net.minecraftforge.fluids.IFluidBlock;
-import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerChangedDimensionEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedOutEvent;
@@ -64,8 +63,16 @@ public class AtmosphereHandler {
         //If O2 is allowed and
         DimensionProperties dimProp = DimensionManager.getInstance().getDimensionProperties(dimId);
         if (ARConfiguration.getCurrentConfig().enableOxygen && dimProp.hasSurface() && (ARConfiguration.getCurrentConfig().overrideGCAir || dimId != ARConfiguration.getCurrentConfig().MoonId || dimProp.isNativeDimension)) {
-            dimensionOxygen.put(dimId, new AtmosphereHandler(dimId));
-            MinecraftForge.EVENT_BUS.register(dimensionOxygen.get(dimId));
+
+            //dunno how, but double registering could happen.
+            //don't let old registered handler survive in the background forever
+            if (dimensionOxygen.containsKey(dimId)) {
+                unregisterWorld(dimId);
+            }
+
+            AtmosphereHandler handler = new AtmosphereHandler(dimId);
+            dimensionOxygen.put(dimId, handler);
+            MinecraftForge.EVENT_BUS.register(handler);
         }
     }
 
@@ -81,7 +88,6 @@ public class AtmosphereHandler {
             handler.blobs.clear();
 
             MinecraftForge.EVENT_BUS.unregister(handler);
-            FMLCommonHandler.instance().bus().unregister(handler);
         }
     }
 
@@ -94,7 +100,6 @@ public class AtmosphereHandler {
                 handler.blobs.clear();
 
                 MinecraftForge.EVENT_BUS.unregister(handler);
-                FMLCommonHandler.instance().bus().unregister(handler);
             }
         }
         dimensionOxygen.clear();
@@ -251,7 +256,6 @@ public class AtmosphereHandler {
     @SubscribeEvent
     public void onPlayerChangeDim(PlayerChangedDimensionEvent event) {
         prevAtmosphere.remove(event.player);
-
     }
 
     //Called from World.setBlockMetaDataWithNotify
