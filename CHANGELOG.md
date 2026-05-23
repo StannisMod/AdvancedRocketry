@@ -7,7 +7,7 @@ Changelog 2.2.9
   - Regression from gracetimerpatch (2.2.5).
 - Increased Rocket TP grace timer from 60 to 100 ticks.
   - Gives slow servers a little more time to complete rocket passenger transfers.
-- Fixed worldgen frequency multipliers for craters, volcanoes, and geodes.
+- Aligned semantics for worldgen frequency multipliers (craters, volcanoes, and geodes).
   - 2.0 means double frequency, 0.5 means half.
   - Clamped between 0.01 and 10.0.
 - Reduced memory leaks:
