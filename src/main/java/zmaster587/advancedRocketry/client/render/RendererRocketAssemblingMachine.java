@@ -156,10 +156,11 @@ public class RendererRocketAssemblingMachine extends TileEntitySpecialRenderer {
             Tessellator.getInstance().draw();
 
 
-            GlStateManager.alphaFunc(GL11.GL_GEQUAL, 0.1f);
+            GlStateManager.alphaFunc(GL11.GL_GREATER, 0.1f);
             GlStateManager.enableDepth();
             GlStateManager.enableTexture2D();
-            GlStateManager.enableBlend();
+            GlStateManager.disableBlend();
+            GlStateManager.color(1f, 1f, 1f, 1f);
             GL11.glPopMatrix();
         }
     }
