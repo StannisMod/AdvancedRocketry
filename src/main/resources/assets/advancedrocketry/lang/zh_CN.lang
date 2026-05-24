@@ -171,7 +171,7 @@ item.miscpart.0.name=用户界面
 item.miscpart.1.name=碳砖
 item.station.name=空间站容器
 item.stationChip.name=空间站ID芯片
-item.stationchip.openmenu=潜行右击以打开配置菜单
+item.stationchip.openmenu=潜行右击以编辑星球返回坐标
 item.spaceHelmet.name=太空头盔
 item.spaceChest.name=太空胸甲
 item.spaceLeggings.name=太空护腿
@@ -1111,28 +1111,28 @@ tooltip.advancedrocketry.scrubber.alt.2=使用2个净化器时，氧气排放口
 
 # Oxygen Vent
 tooltip.advancedrocketry.oxygenvent=在密闭房间中产出可呼吸的空气。
-tooltip.advancedrocketry.oxygenvent.shift.1=需要能量和氧气。
-tooltip.advancedrocketry.oxygenvent.shift.2=放置在封闭区域内。
-tooltip.advancedrocketry.oxygenvent.alt.1=可使用二氧化碳净化器代替氧气供应。
-tooltip.advancedrocketry.oxygenvent.alt.2=范围：%s格半径。
+tooltip.advancedrocketry.oxygenvent.shift.1=§f需要能量和氧气。
+tooltip.advancedrocketry.oxygenvent.shift.2=§f放置在封闭区域内。
+tooltip.advancedrocketry.oxygenvent.alt.1=§f可使用二氧化碳净化器代替氧气供应。
+tooltip.advancedrocketry.oxygenvent.alt.2=§f范围：%s格半径。
 
 # Airlock Door
 tooltip.advancedrocketry.smallairlock=气密门！
-tooltip.advancedrocketry.smallairlock.shift.1=非完全气密，打开时会泄漏
-tooltip.advancedrocketry.smallairlock.alt.1=使用两扇门
-tooltip.advancedrocketry.smallairlock.alt.2=建造一个合适的气闸
+tooltip.advancedrocketry.smallairlock.shift.1=§f非完全气密，打开时会泄漏
+tooltip.advancedrocketry.smallairlock.alt.1=§f使用两扇门
+tooltip.advancedrocketry.smallairlock.alt.2=§f建造一个合适的气闸
 
 # Warp Controller
 tooltip.advancedrocketry.warpcontroller=将空间站转变为§6星际飞船
-tooltip.advancedrocketry.warpcontroller.shift.1=在空间站上放置§4跃迁控制器§7和§4跃迁核心
-tooltip.advancedrocketry.warpcontroller.shift.2=在行星和恒星系之间进行跃迁旅行
-tooltip.advancedrocketry.warpcontroller.alt.1=界面中会显示位置、目的地和跃迁燃料
-tooltip.advancedrocketry.warpcontroller.alt.2=（你已经做到了！去看看Wiki吧伙计）
+tooltip.advancedrocketry.warpcontroller.shift.1=§f在空间站上放置§4跃迁控制器§f和§4跃迁核心§f
+tooltip.advancedrocketry.warpcontroller.shift.2=§f在行星和恒星系之间进行跃迁旅行
+tooltip.advancedrocketry.warpcontroller.alt.1=§f界面中会显示位置、目的地和跃迁燃料
+tooltip.advancedrocketry.warpcontroller.alt.2=（都走到这一步了！去看看Wiki吧伙计）
 
 # CarbonScrubberCartridge
 tooltip.advancedrocketry.scrubbercart=用于二氧化碳净化器
-tooltip.advancedrocketry.scrubbercart.shift.1=消耗耐久净化空气。
-tooltip.advancedrocketry.scrubbercart.alt.1=应该能使用超过24小时
+tooltip.advancedrocketry.scrubbercart.shift.1=§f消耗耐久净化空气。
+tooltip.advancedrocketry.scrubbercart.alt.1=§f应该能使用超过24小时
 
 # Seal Detector
 tooltip.advancedrocketry.sealdetector=检测方块是否具有气密性
@@ -1146,9 +1146,9 @@ tooltip.advancedrocketry.lens.shift.1=§b使用全息投影器！
 
 # Suit Working Station
 tooltip.advancedrocketry.suitworkingstation=安装/移除§5太空服组件
-tooltip.advancedrocketry.suitworkingstation.shift.1=适用于太空服盔甲
+tooltip.advancedrocketry.suitworkingstation.shift.1=§f适用于太空服盔甲
 tooltip.advancedrocketry.suitworkingstation.shift.2=（头盔/胸甲/护腿/靴子）
-tooltip.advancedrocketry.suitworkingstation.alt.1=不需要能量
+tooltip.advancedrocketry.suitworkingstation.alt.1=§f不需要能量
 
 # Jetpack
 tooltip.advancedrocketry.jetpack=§5太空服组件
@@ -1158,8 +1158,8 @@ tooltip.advancedrocketry.jetpack.shift.1=§d槽位：胸甲§7
 tooltip.advancedrocketry.atmanalyzer=§5太空服组件
 tooltip.advancedrocketry.atmanalyzer.1=§f手持此物品右击来检查大气。
 tooltip.advancedrocketry.atmanalyzer.shift.1=§d槽位：头盔§7
-tooltip.advancedrocketry.atmanalyzer.alt.1=是否可呼吸？取决于大气
-tooltip.advancedrocketry.atmanalyzer.alt.2=显示类型与气压
+tooltip.advancedrocketry.atmanalyzer.alt.1=§f是否可呼吸？取决于大气
+tooltip.advancedrocketry.atmanalyzer.alt.2=§f显示类型与气压
 
 # BeaconFinder
 tooltip.advancedrocketry.beaconfinder=§5太空服组件
