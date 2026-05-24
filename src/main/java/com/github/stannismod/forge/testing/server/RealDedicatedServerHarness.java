@@ -67,24 +67,110 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
     private static RealDedicatedServerHarness startInternal(Path root, boolean bootstrap,
                                                             boolean cleanupOnClose)
             throws IOException, InterruptedException {
-        int port = reservePort();
         if (bootstrap) {
-            bootstrapServerFiles(root, port);
-        } else {
-            // Reuse existing world/config; rewrite server.properties with a fresh
-            // port so we don't collide with any other running test JVM.
+            writeEula(root);
+        }
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= MAX_PORT_BIND_ATTEMPTS; attempt++) {
+            int port = reservePort();
+            // Rewrite server.properties with the freshly reserved port on every
+            // attempt — needed both for the first iteration and for retries
+            // after a child JVM lost the TOCTOU race to bind it.
             Files.write(root.resolve("server.properties"),
                     buildServerProperties(port).getBytes(StandardCharsets.UTF_8));
+            Process process = launchServer(root, port);
+            List<String> transcript = new ArrayList<>();
+            Thread readerThread = startReader(process, transcript);
+            TestClient client = new TestClient(process, TestClient.newWriter(process), transcript);
+            BootOutcome outcome;
+            try {
+                outcome = awaitReadyOrBindFailure(process, transcript, Duration.ofMinutes(3));
+            } catch (RuntimeException | InterruptedException failure) {
+                destroyAndJoin(process, readerThread);
+                throw failure;
+            }
+            if (outcome == BootOutcome.READY) {
+                return new RealDedicatedServerHarness(root, port, client, readerThread, cleanupOnClose);
+            }
+            destroyAndJoin(process, readerThread);
+            lastFailure = new IOException("BindException on port " + port
+                    + " (attempt " + attempt + " of " + MAX_PORT_BIND_ATTEMPTS + ")");
         }
-        Process process = launchServer(root, port);
+        throw new IOException("Failed to start dedicated server after "
+                + MAX_PORT_BIND_ATTEMPTS + " port-bind attempts", lastFailure);
+    }
 
-        List<String> transcript = new ArrayList<>();
-        Thread readerThread = startReader(process, transcript);
-        TestClient client = new TestClient(process, TestClient.newWriter(process), transcript);
-        RealDedicatedServerHarness harness = new RealDedicatedServerHarness(
-                root, port, client, readerThread, cleanupOnClose);
-        client.awaitOutputContaining("For help, type \"help\" or \"?\"", Duration.ofMinutes(3));
-        return harness;
+    private static final int MAX_PORT_BIND_ATTEMPTS = 3;
+
+    private enum BootOutcome { READY, BIND_FAILED }
+
+    private static BootOutcome awaitReadyOrBindFailure(Process process, List<String> transcript,
+                                                       Duration timeout) throws InterruptedException {
+        final String readyMarker = "For help, type \"help\" or \"?\"";
+        final String bindMarker = "BindException";
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        int index = 0;
+        while (System.nanoTime() < deadlineNanos) {
+            synchronized (transcript) {
+                while (index < transcript.size()) {
+                    String line = transcript.get(index++);
+                    if (line.contains(readyMarker)) {
+                        return BootOutcome.READY;
+                    }
+                    if (line.contains(bindMarker)) {
+                        return BootOutcome.BIND_FAILED;
+                    }
+                }
+                if (!process.isAlive()) {
+                    // Child exited without printing the ready marker. If a bind
+                    // failure is visible in the tail, treat the attempt as a
+                    // port collision and let the caller retry; otherwise this
+                    // is a real crash and we surface it as before.
+                    for (int i = transcript.size() - 1;
+                         i >= Math.max(0, transcript.size() - 50); i--) {
+                        if (transcript.get(i).contains(bindMarker)) {
+                            return BootOutcome.BIND_FAILED;
+                        }
+                    }
+                    throw new AssertionError("Server process exited (code="
+                            + process.exitValue() + ") before becoming ready. Recent output: "
+                            + tailOf(transcript));
+                }
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                long waitMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+                transcript.wait(Math.min(waitMillis, 250L));
+            }
+        }
+        throw new AssertionError("Timed out waiting for server to become ready. Recent output: "
+                + tailOf(transcript));
+    }
+
+    private static String tailOf(List<String> transcript) {
+        synchronized (transcript) {
+            int from = Math.max(0, transcript.size() - 25);
+            StringBuilder builder = new StringBuilder();
+            for (int i = from; i < transcript.size(); i++) {
+                if (i > from) {
+                    builder.append(System.lineSeparator());
+                }
+                builder.append(transcript.get(i));
+            }
+            return builder.toString();
+        }
+    }
+
+    private static void destroyAndJoin(Process process, Thread readerThread) {
+        process.destroyForcibly();
+        try {
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
+        try {
+            readerThread.join(TimeUnit.SECONDS.toMillis(5));
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public Path root() {
@@ -186,7 +272,7 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         } else {
             // FG6's net.minecraftforge.legacydev.MainServer takes no args — it reads
             // working directory + server.properties. Port comes from server.properties
-            // (already written by bootstrapServerFiles) and gameDir is the cwd.
+            // (already written above in startInternal) and gameDir is the cwd.
             command.add("--nogui");
         }
 
@@ -230,9 +316,9 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         return reader;
     }
 
-    private static void bootstrapServerFiles(Path root, int port) throws IOException {
-        Files.write(root.resolve("eula.txt"), java.util.Collections.singletonList("eula=true"), StandardCharsets.UTF_8);
-        Files.write(root.resolve("server.properties"), buildServerProperties(port).getBytes(StandardCharsets.UTF_8));
+    private static void writeEula(Path root) throws IOException {
+        Files.write(root.resolve("eula.txt"),
+                java.util.Collections.singletonList("eula=true"), StandardCharsets.UTF_8);
     }
 
     private static String buildServerProperties(int port) {
