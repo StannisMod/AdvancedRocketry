@@ -20,6 +20,10 @@ import java.util.concurrent.TimeUnit;
 
 public final class RealClientHarness implements AutoCloseable {
 
+    /** Default username for the single-client {@link #start(RealDedicatedServerHarness)}
+     *  entry point. Multi-client tests use the {@link #start(RealDedicatedServerHarness, String)}
+     *  overload to supply distinct usernames per client — the server's PlayerList
+     *  keys on username, so two clients sharing this constant would collide. */
     private static final String CLIENT_USERNAME = "ForgeTestClient";
     private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
     private static final int NORMAL_PRIORITY_CLASS = 0x00000020;
@@ -55,6 +59,26 @@ public final class RealClientHarness implements AutoCloseable {
     }
 
     public static RealClientHarness start(RealDedicatedServerHarness serverHarness) throws Exception {
+        return start(serverHarness, CLIENT_USERNAME);
+    }
+
+    /**
+     * Spawn a Minecraft client harness with a caller-supplied username.
+     *
+     * <p>Multi-client tests use this overload to bring up several clients
+     * against the same dedicated server — the server's PlayerList keys on
+     * username, so concurrent clients MUST pick distinct names or the
+     * later joiner is kicked as a duplicate. Each client gets its own
+     * temp gameDir, control port, and JVM, so resource collision between
+     * clients is limited to the GL display (typically managed by passing
+     * {@code DISPLAY=:77} or equivalent through to the client JVM).</p>
+     *
+     * <p>The username is forwarded to launchwrapper's {@code --username}
+     * and also seeds the deterministic offline-mode UUID
+     * ({@code OfflinePlayer:<username>} → {@code UUID.nameUUIDFromBytes}).</p>
+     */
+    public static RealClientHarness start(RealDedicatedServerHarness serverHarness,
+                                          String clientUsername) throws Exception {
         Path root = Files.createTempDirectory("forge-client-");
         Files.createDirectories(root.resolve("resourcepacks"));
         bootstrapClientFiles(root);
@@ -63,7 +87,8 @@ public final class RealClientHarness implements AutoCloseable {
         Path clientLogFile = root.resolve("client.log");
         Process process = null;
         try (java.net.ServerSocket controlSocket = openControlSocket(controlPort)) {
-            process = launchClient(root, serverHarness.port(), controlPort, clientLogFile);
+            process = launchClient(root, serverHarness.port(), controlPort, clientLogFile,
+                    clientUsername);
 
             ClientBot bot = awaitClientBot(controlSocket);
             bot.waitForWorld();
@@ -181,7 +206,8 @@ public final class RealClientHarness implements AutoCloseable {
      */
     public static final String PROP_CLIENT_ENV_PREFIX = "forge.test.client.env.";
 
-    private static Process launchClient(Path root, int serverPort, int controlPort, Path clientLogFile) throws IOException {
+    private static Process launchClient(Path root, int serverPort, int controlPort, Path clientLogFile,
+                                        String clientUsername) throws IOException {
         Path javaBinary = resolveJavaBinary();
         String assetsDirProp = System.getProperty(PROP_ASSETS_DIR);
         Path assetsDir = assetsDirProp != null
@@ -215,6 +241,20 @@ public final class RealClientHarness implements AutoCloseable {
         javaArgs.add(String.valueOf(serverPort));
         javaArgs.add("--gameDir");
         javaArgs.add(root.toAbsolutePath().toString());
+        // Username MUST be passed regardless of legacyArgs — both the
+        // RFG/FG4 GradleStart launcher AND the FG6 legacydev MainClient
+        // accept --username (FG6's MainClient.getDefaultArguments seeds
+        // it as null, so an unspecified --username yields a random
+        // generated "Player###" name and breaks any test that needs to
+        // resolve a specific known username via the server's PlayerList).
+        // Multi-client tests rely on this to give each client a distinct
+        // resolvable name. The --uuid is similarly seeded off the
+        // username to keep offline-mode UUIDs deterministic per name.
+        javaArgs.add("--username");
+        javaArgs.add(clientUsername);
+        javaArgs.add("--uuid");
+        javaArgs.add(UUID.nameUUIDFromBytes(("OfflinePlayer:" + clientUsername)
+                .getBytes(StandardCharsets.UTF_8)).toString().replace("-", ""));
 
         if (legacyArgs) {
             javaArgs.add("--assetsDir");
@@ -225,16 +265,14 @@ public final class RealClientHarness implements AutoCloseable {
             javaArgs.add("FML_DEV");
             javaArgs.add("--assetIndex");
             javaArgs.add("1.12.2");
-            javaArgs.add("--username");
-            javaArgs.add(CLIENT_USERNAME);
             javaArgs.add("--accessToken");
             javaArgs.add("FML");
             javaArgs.add("--userProperties");
             javaArgs.add("{}");
             javaArgs.add("--profileProperties");
             javaArgs.add("{}");
-            javaArgs.add("--uuid");
-            javaArgs.add(UUID.nameUUIDFromBytes(("OfflinePlayer:" + CLIENT_USERNAME).getBytes(StandardCharsets.UTF_8)).toString().replace("-", ""));
+            // --username + --uuid are now passed unconditionally above
+            // (FG6's MainClient also honours them).
             javaArgs.add("--width");
             javaArgs.add("640");
             javaArgs.add("--height");
