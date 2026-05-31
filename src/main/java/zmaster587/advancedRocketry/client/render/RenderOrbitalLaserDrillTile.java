@@ -27,8 +27,6 @@ public class RenderOrbitalLaserDrillTile extends TileEntitySpecialRenderer {
         GlStateManager.disableDepth();
         GlStateManager.disableTexture2D();
         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-        //GL11.glB
-        //GL11.gl
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION);
 
         buffer.color(0.9F, 0.2F, 0.3F, 1F);
@@ -59,5 +57,4 @@ public class RenderOrbitalLaserDrillTile extends TileEntitySpecialRenderer {
         GlStateManager.enableDepth();
         GL11.glPopMatrix();
     }
-
 }

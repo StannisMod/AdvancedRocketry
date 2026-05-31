@@ -21,7 +21,6 @@ public class RenderOrbitalLaserDrill extends TileEntitySpecialRenderer {
 
     ResourceLocation texture = new ResourceLocation("advancedRocketry:textures/models/orbitallaserdrill.png");
 
-
     public RenderOrbitalLaserDrill() {
         try {
             model = new WavefrontObject(new ResourceLocation("advancedrocketry:models/orbitallaserdrill.obj"));
@@ -54,7 +53,6 @@ public class RenderOrbitalLaserDrill extends TileEntitySpecialRenderer {
         bindTexture(texture);
         model.renderAll();
 
-
         //Laser
         if (((TileOrbitalLaserDrill) multiBlockTile).isRunning()) {
             GL11.glTranslated(-1.0f, 0, -5f);
@@ -66,8 +64,6 @@ public class RenderOrbitalLaserDrill extends TileEntitySpecialRenderer {
             GlStateManager.disableTexture2D();
             GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
             GlStateManager.color(0.9F, 0.2F, 0.3F, 1F);
-            //GL11.glB
-            //GL11.gl
             buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION);
 
             for (float radius = 0.1F; radius < .5; radius += .1F) {
@@ -90,6 +86,7 @@ public class RenderOrbitalLaserDrill extends TileEntitySpecialRenderer {
             Tessellator.getInstance().draw();
 
             GlStateManager.color(1f, 1f, 1f, 1f);
+            GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GlStateManager.disableBlend();
             GlStateManager.enableLighting();
             GlStateManager.enableTexture2D();
