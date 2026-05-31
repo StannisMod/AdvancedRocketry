@@ -43,7 +43,7 @@ tile.concrete.name=Concreto
 tile.lathe.name=Lathe
 tile.rollingMachine.name=Rolling Machine
 tile.planetSelector.name=Selecionador de planeta
-tile.blockHandPress.name=Small Plate Presser
+tile.platepress.name=Small Plate Presser
 tile.placeHolder.name=Máquina
 tile.stationAssembler.name=Space Station Assembler
 tile.electrolyser.name=Electrolyser
@@ -222,3 +222,11 @@ advancement.suitedUp.desc=Wear a full spacesuit
 key.controls.advancedrocketry=Advanced Rocketry
 key.openRocketUI=Open Rocket GUI
 key.toggleJetpack=Toggle Jetpack
+
+
+jei.sb.satellitepreview=Pronto para a órbita!
+jei.sb.copy.source=Fonte
+jei.sb.copy.output=Nova cópia
+jei.sb.assemblyhint=Pelo menos um painel solar
+jei.sb.copychiphint=Faça backups!
+

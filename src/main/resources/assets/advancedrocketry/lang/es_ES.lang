@@ -37,7 +37,7 @@ tile.concrete.name=Hormigón
 tile.lathe.name=Torno
 tile.rollingMachine.name=Laminadora
 tile.planetSelector.name=Selector de planetas
-tile.blockHandPress.name=Prensa de láminas pequeña
+tile.platepress.name=Prensa de láminas pequeña
 tile.placeHolder.name=Máquina
 tile.stationAssembler.name=Ensamblador de estación espacial
 tile.electrolyser.name=Electrolizador
@@ -108,6 +108,8 @@ item.jackhammer.name=Martillo neumático
 item.sealDetector.name=Detector de sellado
 tile.orientationControl.name=Controlador de orientación
 
+msg.rocketbuilder.alreadyassembled=Cohete ya ensamblado
+
 material.Dilithium.name=Dilitio
 
 
@@ -132,3 +134,9 @@ fluid.hydrogen=Hidrógeno
 fluid.rocketFuel=Combustible de cohete
 
 mission.asteroidmining.name=Minería de asteroides
+
+jei.sb.satellitepreview=¡Listo para la órbita!
+jei.sb.copy.source=Fuente
+jei.sb.copy.output=Nueva copia
+jei.sb.assemblyhint=Al menos un panel solar
+jei.sb.copychiphint=¡Haz copias de seguridad!

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oreconfig>
+
+    <!--
+      Global fallback ore presets for AR planets.
+      - per-planet <oreGen> in planetDefs.xml overrides this file
+      - missing entries will fallback to vanilla+ARconfig/normal oregen rules
+    -->
+
+    <!--
+      Pressure classes:
+      0 = SUPERHIGHPRESSURE
+      1 = HIGHPRESSURE
+      2 = NORMAL
+      3 = LOW
+      4 = NONE
+    -->
+
+    <!--
+      Temperature classes:
+      0 = TOOHOT
+      1 = HOT
+      2 = NORMAL
+      3 = COLD
+      4 = FRIGID
+      5 = SNOWBALL
+    -->
+
+        <!-- ========================= -->
+        <!-- 1) TEMP-ONLY BASELINES    -->
+        <!-- ========================= -->
+
+        <!-- T0 TOOHOT -->
+        <oreGen temp="0">
+            <ore block="minecraft:redstone_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="10" />
+            <ore block="minecraft:lapis_ore" minHeight="12" maxHeight="96" clumpSize="7" chancePerChunk="8" />
+        </oreGen>
+
+        <!-- T1 HOT -->
+        <oreGen temp="1">
+            <ore block="minecraft:coal_ore" minHeight="4" maxHeight="96" clumpSize="12" chancePerChunk="12" />
+            <ore block="minecraft:iron_ore" minHeight="4" maxHeight="96" clumpSize="9" chancePerChunk="10" />
+        </oreGen>
+
+        <!-- T2 NORMAL -->
+        <oreGen temp="2">
+            <ore block="minecraft:gold_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="8" />
+            <ore block="minecraft:redstone_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="10" />
+        </oreGen>
+
+        <!-- T3 COLD -->
+        <oreGen temp="3">
+            <ore block="minecraft:diamond_ore" minHeight="4" maxHeight="96" clumpSize="7" chancePerChunk="6" />
+            <ore block="minecraft:iron_ore" minHeight="4" maxHeight="96" clumpSize="9" chancePerChunk="10" />
+        </oreGen>
+
+        <!-- T5 SNOWBALL -->
+        <oreGen temp="5">
+            <ore block="minecraft:lapis_ore" minHeight="12" maxHeight="96" clumpSize="7" chancePerChunk="8" />
+            <ore block="minecraft:gold_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="8" />
+        </oreGen>
+
+
+        <!-- ======================================= -->
+        <!-- 2) PRESSURE-ONLY OVERRIDES FOR P2/P4 -->
+        <!-- ======================================= -->
+
+        <!-- P2 NORMALPRESSURE -->
+        <oreGen pressure="2">
+            <ore block="minecraft:emerald_ore" minHeight="4" maxHeight="96" clumpSize="6" chancePerChunk="6" />
+            <ore block="minecraft:iron_ore" minHeight="4" maxHeight="96" clumpSize="9" chancePerChunk="10" />
+        </oreGen>
+
+
+        <!-- P4 NOPRESSURE -->
+        <oreGen pressure="4">
+            <ore block="minecraft:redstone_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="10" />
+            <ore block="minecraft:gold_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="8" />
+        </oreGen>
+
+
+        <!-- =================================== -->
+        <!-- 3) EQUAL-INDEX COMBO CELL OVERRIDES -->
+        <!-- =================================== -->
+
+        <!-- P0/T0 -->
+        <oreGen pressure="0" temp="0">
+            <ore block="minecraft:diamond_ore" minHeight="4" maxHeight="96" clumpSize="7" chancePerChunk="6" />
+            <ore block="minecraft:emerald_ore" minHeight="4" maxHeight="96" clumpSize="6" chancePerChunk="6" />
+        </oreGen>
+
+        <!-- P1/T1 -->
+        <oreGen pressure="1" temp="1">
+            <ore block="minecraft:iron_ore" minHeight="4" maxHeight="96" clumpSize="9" chancePerChunk="10" />
+            <ore block="minecraft:lapis_ore" minHeight="12" maxHeight="96" clumpSize="7" chancePerChunk="8" />
+        </oreGen>
+
+        <!-- P2/T2 -->
+        <oreGen pressure="2" temp="2">
+            <ore block="minecraft:coal_ore" minHeight="4" maxHeight="96" clumpSize="12" chancePerChunk="12" />
+            <ore block="minecraft:redstone_ore" minHeight="4" maxHeight="96" clumpSize="8" chancePerChunk="10" />
+        </oreGen>
+
+
+        <!-- P4/T4 -->
+        <oreGen pressure="4" temp="4">
+            <ore block="minecraft:diamond_ore" minHeight="4" maxHeight="96" clumpSize="7" chancePerChunk="6" />
+            <ore block="minecraft:coal_ore" minHeight="4" maxHeight="96" clumpSize="12" chancePerChunk="12" />
+        </oreGen>
+</oreconfig>
