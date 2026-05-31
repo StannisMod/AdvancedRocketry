@@ -42,6 +42,14 @@ public class ItemMultiData extends Item {
     public int getMaxData(@Nonnull ItemStack stack) {
         return getDataStorage(stack).getMaxData();
     }
+    // Supported types for this item. Others will be ignored.
+    // FIX IF WE ADD MORE TYPES TO DataStorage.DataType
+    private static final java.util.EnumSet<DataStorage.DataType> SUPPORTED_TYPES =
+        java.util.EnumSet.of(
+            DataStorage.DataType.COMPOSITION,
+            DataStorage.DataType.MASS,
+            DataStorage.DataType.DISTANCE
+        );
 
     private MultiData getDataStorage(@Nonnull ItemStack item) {
 
@@ -117,9 +125,9 @@ public class ItemMultiData extends Item {
 
         MultiData data = getDataStorage(stack);
 
-        for (DataStorage.DataType type : DataStorage.DataType.values()) {
-            if (type != DataStorage.DataType.UNDEFINED)
-                list.add(data.getDataAmount(type) + " / " + data.getMaxData() + " " + I18n.format(type.toString(), new Object[0]) + " Data");
+        for (DataStorage.DataType type : SUPPORTED_TYPES) {
+            final int amt = data.getDataAmount(type);
+            list.add(amt + " / " + data.getMaxData() + " " + I18n.format(type.toString()) + " " + I18n.format("data.label.data"));
         }
     }
 }
