@@ -41,6 +41,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockConcrete;
     public static Block blockRollingMachine;
     public static Block blockPlatePress;
+    public static Block blockPlatePressHead;
     public static Block blockStationBuilder;
     public static Block blockElectrolyser;
     public static Block blockOxygenFluid;
@@ -65,8 +66,6 @@ public class AdvancedRocketryBlocks {
     public static Block blockOrientationController;
     public static Block blockGravityController;
     public static Block blockDrill;
-    public static Block blockFluidPipe;
-    public static Block blockDataPipe;
     public static Block blockMicrowaveReciever;
     public static Block blockSolarPanel;
     public static Block blockSuitWorkStation;
@@ -78,7 +77,6 @@ public class AdvancedRocketryBlocks {
     public static Block blockIntake;
     public static Block blockNitrogenFluid;
     public static Block blockCircleLight;
-    public static Block blockEnergyPipe;
     public static Block blockSolarGenerator;
     public static Block blockDockingPort;
     public static Block blockAltitudeController;
@@ -96,7 +94,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockBeacon;
     public static Block blockLightwoodPlanks;
     public static Block blockThermiteTorch;
-    public static Block blockTransciever;
+    public static Block blockTransceiver;
     public static Block blockMoonTurfDark;
     public static Block blockBlackHoleGenerator;
     public static Block blockEnrichedLavaFluid;
@@ -109,4 +107,6 @@ public class AdvancedRocketryBlocks {
     public static Block blockRocketFire;
     public static Block blockServiceMonitor;
     public static Block blockInvHatch;
+    public static Block blockOrbitalRegistry;
+    public static Block blockDataBusBig;
 }
