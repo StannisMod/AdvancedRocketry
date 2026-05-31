@@ -822,7 +822,9 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
             StationLandingLocation loc = new StationLandingLocation(pos, tag.getString("name"));
             spawnLocations.add(loc);
             loc.setOccupied(tag.getBoolean("occupied"));
-            loc.setAllowedForAutoLand(!tag.hasKey("occupied") || tag.getBoolean("occupied"));
+            // Read the autoLand flag from its own key; the write side stores it
+            // under "autoLand". Reading "occupied" tied auto-land to docked state.
+            loc.setAllowedForAutoLand(!tag.hasKey("autoLand") || tag.getBoolean("autoLand"));
         }
 
         list = nbt.getTagList("warpCorePositions", NBT.TAG_COMPOUND);
