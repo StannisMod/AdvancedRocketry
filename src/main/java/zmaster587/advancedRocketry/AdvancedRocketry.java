@@ -1123,7 +1123,7 @@ public class AdvancedRocketry {
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
         // Async weather info injection
-        MinecraftForge.EVENT_BUS.register(new WorldInfoHandler());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
 
         WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
         MinecraftForge.EVENT_BUS.register(wirelessTickHandler);

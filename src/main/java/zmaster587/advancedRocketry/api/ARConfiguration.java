@@ -198,6 +198,12 @@ public class ARConfiguration {
     @ConfigProperty
     public boolean forcePlayerRespawnInSpace;
     @ConfigProperty
+    public boolean enableCustomPlanetWeather = true;
+    @ConfigProperty
+    public boolean logPlanetWeatherWrapping = true;
+    @ConfigProperty
+    public boolean forcePlanetWeatherWorldInfoWrapper = false;
+    @ConfigProperty
     public float spaceLaserPowerMult;
     @ConfigProperty
     public float blockTankCapacity;
@@ -460,6 +466,9 @@ public class ARConfiguration {
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
+        arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "If true, each AR planet has its own vanilla weather state (rain, thunder, /weather, isRaining) instead of sharing the overworld's. Disable to fall back to vanilla-shared weather.").getBoolean();
+        arConfig.logPlanetWeatherWrapping = config.get(PLANET, "logPlanetWeatherWrapping", true, "Log an info line every time an AR planet's WorldInfo is wrapped for per-dimension weather. Useful for diagnosing weather-wrapping issues; safe to disable in production.").getBoolean();
+        arConfig.forcePlanetWeatherWorldInfoWrapper = config.get(PLANET, "forcePlanetWeatherWorldInfoWrapper", false, "Force per-dimension weather wrapping on every secondary (non-overworld) dimension, including non-AR dims of other mods. Compatibility/debug flag — do NOT enable unless you know exactly what you are doing.").getBoolean();
         arConfig.blackListAllVanillaBiomes = config.getBoolean("blackListVanillaBiomes", PLANET, false, "Prevent vanilla biomes from spawning on planets.");
         arConfig.maxBiomesPerPlanet = config.get(PLANET, "maxBiomesPerPlanet", 99, "Maximum unique biomes per planet.").getInt();
 
