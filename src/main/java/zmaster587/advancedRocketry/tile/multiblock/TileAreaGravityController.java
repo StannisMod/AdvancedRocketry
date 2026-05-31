@@ -14,10 +14,12 @@ import net.minecraft.util.SoundEvent;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.inventory.modules.ModuleSideSelectorTooltipOverlay;
 import zmaster587.advancedRocketry.util.AudioRegistry;
 import zmaster587.advancedRocketry.util.GravityHandler;
 import zmaster587.libVulpes.LibVulpes;
@@ -41,6 +43,7 @@ public class TileAreaGravityController extends TileMultiPowerConsumer implements
                     {LibVulpesBlocks.blockAdvStructureBlock, 'P', LibVulpesBlocks.blockAdvStructureBlock},
                     {null, LibVulpesBlocks.blockAdvStructureBlock, null}}
     };
+    
     int gravity;
     int progress;
     int radius;
@@ -49,13 +52,20 @@ public class TileAreaGravityController extends TileMultiPowerConsumer implements
     private ModuleRedstoneOutputButton redstoneControl;
     private RedstoneState state;
     private ModuleText targetGrav, textRadius;
+    private String[] sideStateNames;
     private ModuleBlockSideSelector sideSelectorModule;
 
     public TileAreaGravityController() {
-        //numGravPylons = new ModuleText(10, 25, "Number Of Thrusters: ", 0xaa2020);
         textRadius = new ModuleText(6, 82, LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.radius") + "5", 0x202020);
         targetGrav = new ModuleText(6, 110, LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetgrav"), 0x202020);
-        sideSelectorModule = new ModuleBlockSideSelector(90, 15, this, LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.none"), LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.activeset"), LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.activeadd"));
+
+        sideStateNames = new String[] {
+            LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.none"),
+            LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.activeset"),
+            LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.activeadd")
+        };
+
+        sideSelectorModule = new ModuleBlockSideSelector(90, 15, this, sideStateNames);
 
         redstoneControl = new ModuleRedstoneOutputButton(174, 4, 1, "", this);
         state = RedstoneState.OFF;
@@ -75,23 +85,31 @@ public class TileAreaGravityController extends TileMultiPowerConsumer implements
 
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
-        List<ModuleBase> modules = new LinkedList<>();//super.getModules(id, player);
-        modules.add(toggleSwitch = new ModuleToggleSwitch(160, 5, 0, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, 11, 26, getMachineEnabled()));
+        List<ModuleBase> modules = new LinkedList<>();
+        modules.add(toggleSwitch = new ModuleToggleSwitch(160, 5, 0, "", this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, 11, 26, getMachineEnabled()));
         modules.add(new ModulePower(18, 20, getBatteries()));
         modules.add(sideSelectorModule);
-
         modules.add(redstoneControl);
-
 
         modules.add(new ModuleSlider(6, 120, 0, TextureResources.doubleWarningSideBarIndicator, this));
         modules.add(new ModuleSlider(6, 90, 1, TextureResources.doubleWarningSideBarIndicator, this));
 
-        modules.add(new ModuleText(42, 20, LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetdir.1") + "\n" + LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetdir.2"), 0x202020));
+        modules.add(new ModuleText(42, 20,
+                LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetdir.1") + "\n" +
+                LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetdir.2"),
+                0x202020));
         modules.add(targetGrav);
         modules.add(textRadius);
+
+        if (FMLCommonHandler.instance().getSide().isClient()) {
+            modules.add(new ModuleSideSelectorTooltipOverlay(90, 15, sideSelectorModule, sideStateNames));
+        }
+
         updateText();
         return modules;
     }
+
 
     public int getRadius() {
         return radius + 10;
@@ -119,11 +137,10 @@ public class TileAreaGravityController extends TileMultiPowerConsumer implements
     }
 
     private void updateText() {
-        if (world.isRemote) {
-            textRadius.setText(String.format("%s%d", LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.radius"), getRadius()));
+        if (world == null || !world.isRemote) return;
+        textRadius.setText(String.format("%s%d", LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.radius"), getRadius()));
 
-            targetGrav.setText(String.format("%s %.2f/%.2f", LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetgrav"), currentProgress, gravity / 100f));
-        }
+        targetGrav.setText(String.format("%s %.2f/%.2f", LibVulpes.proxy.getLocalizedString("msg.gravitycontroller.targetgrav"), currentProgress, gravity / 100f));
     }
 
     @Override

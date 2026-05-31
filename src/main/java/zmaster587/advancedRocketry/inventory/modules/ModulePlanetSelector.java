@@ -12,6 +12,7 @@ import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IContainerListener;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.text.translation.I18n;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -49,14 +50,48 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
     private PlanetRenderProperties currentlySelectedPlanet;
     private IPlanetDefiner planetDefiner;
     private int currentlySelectedPlanetID = -1;
+
+    private IProgressBar progressSource;
+
+    private static final IProgressBar NULL_PROGRESS = new IProgressBar() {
+        @Override public float getNormallizedProgress(int id) { return 0f; }
+        @Override public void setProgress(int id, int progress) {}
+        @Override public int getProgress(int id) { return 0; }
+        @Override public int getTotalProgress(int id) { return 1; }
+        @Override public void setTotalProgress(int id, int progress) {}
+    };
+
+
     public ModulePlanetSelector(int planetId, ResourceLocation backdrop, ISelectionNotify tile, boolean star) {
-        this(planetId, backdrop, tile, null, star);
+        this(planetId, backdrop, tile, null, null, star);
     }
 
     public ModulePlanetSelector(int planetId, ResourceLocation backdrop, ISelectionNotify tile, IPlanetDefiner definer, boolean star) {
+        this(planetId, backdrop, tile, null, definer, star);
+    }
+
+    // NEW overloads for Option A
+    public ModulePlanetSelector(int planetId, ResourceLocation backdrop, ISelectionNotify tile,
+                                IProgressBar progress, boolean star) {
+        this(planetId, backdrop, tile, progress, null, star);
+    }
+
+    public ModulePlanetSelector(int planetId, ResourceLocation backdrop, ISelectionNotify tile,
+                                IProgressBar progress, IPlanetDefiner definer, boolean star) {
         super(0, 0, null, null, backdrop, 0, 0, 0, 0, size, size);
+
         this.planetDefiner = definer;
-        hostTile = tile;
+        this.hostTile = tile;
+
+        // choose progress provider safely
+        if (progress != null) {
+            this.progressSource = progress;
+        } else if (tile instanceof IProgressBar) {
+            this.progressSource = (IProgressBar) tile;
+        } else {
+            this.progressSource = NULL_PROGRESS;
+        }
+
         int center = size / 2;
         zoom = 1.0;
 
@@ -69,19 +104,36 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
         selectedSystem = Constants.INVALID_PLANET;
         stellarView = false;
 
-        staticModuleList.add(new ModuleButton(0, 0, Constants.INVALID_PLANET, "<< Up", this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
-        staticModuleList.add(new ModuleButton(0, 18, Constants.INVALID_PLANET + 1, "Select", this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
-        staticModuleList.add(new ModuleButton(0, 36, Constants.INVALID_PLANET + 2, "PlanetList", this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+        staticModuleList.add(new ModuleButton(0, 0, Constants.INVALID_PLANET,
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.up"),
+                this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
+        staticModuleList.add(new ModuleButton(0, 18, Constants.INVALID_PLANET + 1,
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.select"),
+                this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
+        staticModuleList.add(new ModuleButton(0, 36, Constants.INVALID_PLANET + 2,
+                I18n.translateToLocal("msg.advancedrocketry.planetselector.planet.list"),
+                this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
+
 
         ModuleDualProgressBar progressBar;
-        staticModuleList.add(progressBar = new ModuleDualProgressBar(100, 0, 0, TextureResources.atmIndicator, (IProgressBar) tile, "%b -> %a Earth's atmospheric pressure"));
+
+        staticModuleList.add(progressBar = new ModuleDualProgressBar(100, 0, 0,
+                TextureResources.atmIndicator, progressSource,
+                net.minecraft.util.text.translation.I18n.translateToLocal("msg.advancedrocketry.planetselector.atm.tooltip")));
         progressBar.setTooltipValueMultiplier(.16f);
 
-        staticModuleList.add(progressBar = new ModuleDualProgressBar(200, 0, 2, TextureResources.massIndicator, (IProgressBar) tile, "%b -> %a Earth's mass"));
+        staticModuleList.add(progressBar = new ModuleDualProgressBar(200, 0, 2,
+                TextureResources.massIndicator, progressSource,
+                net.minecraft.util.text.translation.I18n.translateToLocal("msg.advancedrocketry.planetselector.mass.tooltip")));
         progressBar.setTooltipValueMultiplier(.02f);
 
-        staticModuleList.add(progressBar = new ModuleDualProgressBar(300, 0, 1, TextureResources.distanceIndicator, (IProgressBar) tile, "%b -> %a Relative Distance units"));
+        staticModuleList.add(progressBar = new ModuleDualProgressBar(300, 0, 1,
+                TextureResources.distanceIndicator, progressSource,
+                net.minecraft.util.text.translation.I18n.translateToLocal("msg.advancedrocketry.planetselector.distance.tooltip")));
         progressBar.setTooltipValueMultiplier(.16f);
+
 
         //renderPlanetarySystem(properties, center, center, 3f);
         if (FMLCommonHandler.instance().getSide().isClient()) {
@@ -160,15 +212,36 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                     deltaX = (int) ((int) (star2.getStarSeparation() * MathHelper.cos(phase) * 0.5*distanceZoomMultiplier));
                     deltaY = (int) ((int) (star2.getStarSeparation() * MathHelper.sin(phase) * 0.5*distanceZoomMultiplier));
 
-                    planetList.add(button = new ModuleButton(offsetX + deltaX, offsetY + deltaY, star2.getId() + Constants.STAR_ID_OFFSET, "", this, new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew}, String.format("Name: %s\nNumber of Planets: %d", star2.getName(), star.getNumPlanets()), displaySize, displaySize));
+                    planetList.add(button = new ModuleButton(
+                            offsetX + deltaX,
+                            offsetY + deltaY,
+                            star2.getId() + Constants.STAR_ID_OFFSET,
+                            "",
+                            this,
+                            new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
+                            I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
+                                    + "\n" +
+                                    I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                            displaySize,
+                            displaySize));
                     button.setSound("buttonBlipA");
                     button.setBGColor(star2.getColorRGB8());
                     phase += phaseInc;
                 }
             }
 
-            planetList.add(button = new ModuleButton(offsetX, offsetY, star.getId() + Constants.STAR_ID_OFFSET, "", this, new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew}, String.format("Name: %s\nNumber of Planets: %d", star.getName(), star.getNumPlanets()), displaySize, displaySize));
+            planetList.add(button = new ModuleButton(
+                    offsetX, offsetY,
+                    star.getId() + Constants.STAR_ID_OFFSET,
+                    "",
+                    this,
+                    new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
+                    I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
+                            + "\n" +
+                            I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                    displaySize, displaySize));
 
+            
             button.setSound("buttonBlipA");
             button.setBGColor(star.getColorRGB8());
 
@@ -200,7 +273,18 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                 deltaX = (int) (star2.getStarSeparation() * MathHelper.cos(phase) * 0.5);
                 deltaY = (int) (star2.getStarSeparation() * MathHelper.sin(phase) * 0.5);
 
-                planetList.add(button = new ModuleButton(offsetX + deltaX, offsetY + deltaY, star2.getId() + Constants.STAR_ID_OFFSET, "", this, new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew}, String.format("Name: %s\nNumber of Planets: %d", star2.getName(), star.getNumPlanets()), displaySize, displaySize));
+                planetList.add(button = new ModuleButton(
+                        offsetX + deltaX, offsetY + deltaY,
+                        star2.getId() + Constants.STAR_ID_OFFSET,
+                        "",
+                        this,
+                        new ResourceLocation[]{star2.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star2.getName())
+                                + "\n" +
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                        displaySize, displaySize
+                ));
+
                 button.setSound("buttonBlipA");
                 button.setBGColor(star2.getColorRGB8());
                 phase += phaseInc;
@@ -210,7 +294,18 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
         offsetX = posX - displaySize / 2;
         offsetY = posY - displaySize / 2;
 
-        planetList.add(button = new ModuleButton(offsetX, offsetY, star.getId() + Constants.STAR_ID_OFFSET, "", this, new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew}, String.format("Name: %s\nNumber of Planets: %d", star.getName(), star.getNumPlanets()), displaySize, displaySize));
+        planetList.add(button = new ModuleButton(
+                offsetX, offsetY,
+                star.getId() + Constants.STAR_ID_OFFSET,
+                "",
+                this,
+                new ResourceLocation[]{star.isBlackHole() ? TextureResources.locationBlackHole_icon : TextureResources.locationSunNew},
+                I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.name", star.getName())
+                        + "\n" +
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.star.tooltip.number.of.planets", star.getNumPlanets()),
+                displaySize, displaySize
+        ));
+
         button.setSound("buttonBlipA");
         button.setBGColor(star.getColorRGB8());
         renderPropertiesMap.put(star.getId() + Constants.STAR_ID_OFFSET, new PlanetRenderProperties(displaySize, offsetX, offsetY));
@@ -279,7 +374,12 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
 
         ModuleButton button;
 
-        planetList.add(button = new ModuleButtonPlanet(offsetX, offsetY, planet.getId(), "", this, planet, planet.getName() + "\nMoons: " + planet.getChildPlanets().size(), displaySize, displaySize));
+        planetList.add(button = new ModuleButtonPlanet(
+                offsetX, offsetY, planet.getId(), "", this, planet,
+                I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.planet.tooltip.name", planet.getName())
+                        + "\n" +
+                        I18n.translateToLocalFormatted("msg.advancedrocketry.planetselector.planet.tooltip.moons.count", planet.getChildPlanets().size()),
+                displaySize, displaySize));
         button.setSound("buttonBlipA");
 
         renderPropertiesMap.put(planet.getId(), new PlanetRenderProperties(displaySize, offsetX, offsetY));
@@ -403,6 +503,7 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
     }
 
     @Override
+    @SideOnly(Side.CLIENT)
     public void renderForeground(int guiOffsetX, int guiOffsetY, int mouseX,
                                  int mouseY, float zLevel, GuiContainer gui, FontRenderer font) {
         super.renderForeground(guiOffsetX, guiOffsetY, mouseX, mouseY, zLevel, gui,
@@ -464,6 +565,7 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                 GL11.glColor4f(1f, 1f, 1f, 1f);
                 GL11.glPopMatrix();
                 GL11.glLineStipple(5, (short) 0xFFFF);
+                GL11.glDisable(GL11.GL_LINE_STIPPLE);
             }
         }
 

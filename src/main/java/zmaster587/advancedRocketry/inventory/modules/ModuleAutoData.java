@@ -104,8 +104,9 @@ public class ModuleAutoData extends ModuleBase {
             }
 
             List<String> list = new LinkedList<>();
-            list.add(totalData + " / " + totalMaxData + " Data");
-            list.add("Type: " + I18n.format(data[0].getDataType().toString()));
+            list.add(totalData + " / " + totalMaxData + " " + I18n.format("data.label.data"));
+            list.add(I18n.format("data.label.type") + " " + I18n.format(data[0].getDataType().toString()));
+
 
             this.drawTooltip(gui, list, mouseX, mouseY, zLevel, font);
         }

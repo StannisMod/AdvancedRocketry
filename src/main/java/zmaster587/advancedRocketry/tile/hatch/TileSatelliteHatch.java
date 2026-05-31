@@ -1,15 +1,25 @@
 package zmaster587.advancedRocketry.tile.hatch;
 
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
 import zmaster587.advancedRocketry.item.ItemSatellite;
+import zmaster587.advancedRocketry.network.PacketBackToRocketGui;
 import zmaster587.advancedRocketry.util.IWeighted;
+import zmaster587.advancedRocketry.util.RocketGuiNavigation;
+import zmaster587.libVulpes.inventory.modules.IButtonInventory;
+import zmaster587.libVulpes.inventory.modules.ModuleBase;
+import zmaster587.libVulpes.network.PacketHandler;
 import zmaster587.libVulpes.tile.multiblock.hatch.TileInventoryHatch;
 
-public class TileSatelliteHatch extends TileInventoryHatch implements IWeighted {
+import java.util.List;
+
+public class TileSatelliteHatch extends TileInventoryHatch implements IWeighted, IButtonInventory {
 
     public TileSatelliteHatch() {
         super();
@@ -24,6 +34,24 @@ public class TileSatelliteHatch extends TileInventoryHatch implements IWeighted 
     @Override
     public String getModularInventoryName() {
         return "container.satellite";
+    }
+
+    @Override
+    public List<ModuleBase> getModules(int ID, EntityPlayer player) {
+        List<ModuleBase> modules = super.getModules(ID, player);
+        RocketGuiNavigation.addBackButtonIfApplicable(modules, player, this);
+        return modules;
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void onInventoryButtonPressed(int buttonId) {
+        if (buttonId == RocketGuiNavigation.BUTTON_BACK_TO_ROCKET) {
+            PacketHandler.sendToServer(new PacketBackToRocketGui(
+                    this.world.provider.getDimension(),
+                    this.pos
+            ));
+        }
     }
 
     public SatelliteBase getSatellite() {
