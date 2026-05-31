@@ -141,8 +141,14 @@ dependencies {
         }
     }
     if (propertyBool('enable_junit_testing')) {
-        testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
-        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+        // JUnit 4 + the reusable Forge 1.12.2 test framework (see src/test/README.md).
+        // The :dev classifier is REQUIRED: the Forge dev workspace links against
+        // MCP-named MC classes; the reobf (no-classifier) jar has SRG names and
+        // won't compile against the dev classpath.
+        // Resolution: composite build when -PuseLocalFramework=true and
+        // ../ForgeTestFramework exists (settings.gradle), else mavenLocal.
+        testImplementation 'junit:junit:4.13.2'
+        testImplementation 'com.github.stannismod.forge:forge-test-framework:0.4.2:dev'
     }
 }
 
@@ -259,16 +265,46 @@ compileTestJava {
     sourceCompatibility = targetCompatibility = 8
 }
 
-test {
-    useJUnitPlatform()
-    javaLauncher.set(javaToolchains.launcherFor {
+// ─── Test task topology (headless layers) ───────────────────────────────────
+//
+// Test TYPE is selected by DIRECTORY. Two harness-free JUnit 4 layers are wired:
+//   ./gradlew testUnit         → pure unit            (fast, no harness)
+//   ./gradlew testIntegration  → MC-bootstrap integ.  (fast, no harness)
+//   ./gradlew test             → both of the above (umbrella)
+//
+// The dedicated-server / real-client harness layers (testServer / testClient)
+// are NOT wired here: their FG6 launcher/RunConfig integration must be rewritten
+// for RetroFuturaGradle first (tracked separately). Their sources are not yet
+// imported either.
+def configureHeadlessTest = { Test t, String packageGlob ->
+    t.group = 'verification'
+    t.useJUnit()
+    t.testClassesDirs = sourceSets.test.output.classesDirs
+    t.classpath = sourceSets.test.runtimeClasspath
+    t.include packageGlob
+    t.javaLauncher.set(javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(8)
     })
-    if (propertyBool('show_testing_output')) {
-        testLogging {
-            showStandardStreams = true
-        }
+    // Test-only flag gating /artest probe commands and other test-only behaviour.
+    t.systemProperty 'advancedrocketry.tests', 'true'
+    t.testLogging {
+        events 'failed', 'skipped', 'passed'
+        exceptionFormat = 'full'
+        showStandardStreams = propertyBool('show_testing_output')
     }
+}
+
+tasks.register('testUnit', Test) {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/unit/**')
+}
+
+tasks.register('testIntegration', Test) {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/integration/**')
+}
+
+test {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/unit/**')
+    include 'zmaster587/advancedRocketry/test/integration/**'
 }
 
 String parserChangelog() {
