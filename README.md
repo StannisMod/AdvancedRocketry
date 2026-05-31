@@ -57,6 +57,19 @@ An extended continuation of the classic expert experience, with heavier progress
 
 ---
 
+## Compatibility Notes
+
+- **PlusTiC Portly rocket compatibility removed.** Earlier builds shipped a
+  narrow ASM patch that adjusted rocket yaw when PlusTiC "Portly" tools
+  released an Advanced Rocketry rocket. The coremod was rewritten to Mixin,
+  and this third-party patch could not be ported safely without the PlusTiC
+  source on the build classpath, so it was dropped. Releasing AR rockets with
+  PlusTiC Portly tools still works; only the cosmetic yaw-preservation tweak
+  is gone. The `enablePlusTiCPortlyRocketCompat` config option no longer
+  exists.
+
+---
+
 ## Development Notes
 
 Bug fixes, balance changes, and other improvements are tracked in:
