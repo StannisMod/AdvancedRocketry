@@ -52,6 +52,16 @@ public class MapGenCraterHuge extends MapGenBase {
         }
     }
 
+    private static boolean isValidPrimerY(int y) {
+        return (y & ~255) == 0;
+    }
+
+    private static void setBlockStateSafe(ChunkPrimer primer, int x, int y, int z, IBlockState state) {
+        if (isValidPrimerY(y)) {
+            primer.setBlockState(x, y, z, state);
+        }
+    }
+
     @Override
     protected void recursiveGenerate(World world, int chunkX, int chunkZ, int p_180701_4_, int p_180701_5_, ChunkPrimer chunkPrimerIn) {
 
@@ -145,15 +155,15 @@ public class MapGenCraterHuge extends MapGenBase {
                             //Places blocks to form the surface of the bowl
                             if (inversePartialSquareRadius >= 0) {
                                 //Two blocks to remove weird stone
-                                chunkPrimerIn.setBlockState(x, y - Math.min(28, inversePartialSquareRadius), z, this.getBlockToPlace(world, chunkX, chunkZ, ores));
-                                chunkPrimerIn.setBlockState(x, y - 1 - Math.min(28, inversePartialSquareRadius), z, this.getBlockToPlace(world, chunkX, chunkZ, ores));
+                                setBlockStateSafe(chunkPrimerIn, x, y - Math.min(28, inversePartialSquareRadius), z, this.getBlockToPlace(world, chunkX, chunkZ, ores));
+                                setBlockStateSafe(chunkPrimerIn, x, y - 1 - Math.min(28, inversePartialSquareRadius), z, this.getBlockToPlace(world, chunkX, chunkZ, ores));
                             }
 
                             //Place spire in the center of the bowl
                             //An example of this graph is https://www.desmos.com/calculator/nn5xmzyu6i
                             if (blockRadius < 0.25 * radius && spire) {
                                 for (int dist = 0; dist < Math.pow(Math.abs(-(radius / 16.0) + blockRadius / 4.0), 1.25); dist++) {
-                                    chunkPrimerIn.setBlockState(x, y + Math.min(dist, 16) - 27, z, this.getBlockToPlaceRich(world, chunkX, chunkZ, ores));
+                                    setBlockStateSafe(chunkPrimerIn, x, y + Math.min(dist, 16) - 27, z, this.getBlockToPlaceRich(world, chunkX, chunkZ, ores));
                                 }
 
                             }
