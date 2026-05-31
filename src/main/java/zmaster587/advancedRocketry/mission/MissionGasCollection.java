@@ -22,7 +22,6 @@ import java.util.LinkedList;
 
 public class MissionGasCollection extends MissionResourceCollection {
 
-
     private Fluid gasFluid;
 
     public MissionGasCollection() {
@@ -42,14 +41,49 @@ public class MissionGasCollection extends MissionResourceCollection {
     @Override
     public void onMissionComplete() {
 
+        Object ipObj = rocketStats.getStatTag("intakePower");
+        int ip = (ipObj instanceof Number) ? Math.max(0, ((Number) ipObj).intValue()) : 0;
 
-        if ((int) rocketStats.getStatTag("intakePower") > 0 && gasFluid != null) {
-            Fluid type = gasFluid;//FluidRegistry.getFluid("hydrogen");
-            //Fill gas tanks
+        if (ip > 0 && gasFluid != null) {
+            final Fluid type = gasFluid;
+
+            // Planned harvest written by the rocket at launch
+            final boolean hasPlanned = missionPersistantNBT.hasKey("plannedHarvestMb");
+            final long planned = hasPlanned ? Math.max(0L, missionPersistantNBT.getLong("plannedHarvestMb")) : -1L;
+
+            // Config
+            final boolean infinite = ARConfiguration.getCurrentConfig().gasHarvestInfinite;
+            final double mult = Math.max(0.0, ARConfiguration.getCurrentConfig().gasHarvestAmountMultiplier);
+            final long basePerMission = 64_000L; // mB
+
+            long remaining;
+            if (hasPlanned) {
+                remaining = Math.min(Integer.MAX_VALUE, planned);
+            } else {
+                remaining = infinite
+                    ? Integer.MAX_VALUE
+                    : Math.min(Integer.MAX_VALUE, Math.round(basePerMission * mult));
+            }
+
+
+
             for (TileEntity tile : this.rocketStorage.getFluidTiles()) {
-                tile.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null).fill(new FluidStack(type, 64000), true);
+                net.minecraftforge.fluids.capability.IFluidHandler handler =
+                        tile.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+                if (handler == null) continue;
+
+                if (remaining <= 0) break;
+
+                int want = (int)Math.min(Integer.MAX_VALUE, remaining);
+                int couldTake = handler.fill(new FluidStack(type, want), false); // simulate
+                if (couldTake > 0) {
+                    int filled = handler.fill(new FluidStack(type, couldTake), true);
+                    remaining -= Math.max(0, filled);
+                }
             }
         }
+      
+
 
         World world = DimensionManager.getWorld(launchDimension);
         if (world == null) {
@@ -89,12 +123,19 @@ public class MissionGasCollection extends MissionResourceCollection {
     @Override
     public void writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
-        nbt.setString("gas", gasFluid.getName());
+        if (gasFluid != null) {
+            nbt.setString("gas", gasFluid.getName());
+        }
     }
 
+    public net.minecraftforge.fluids.Fluid getGasFluid() {
+        return gasFluid;
+    }
+    
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
-        gasFluid = FluidRegistry.getFluid(nbt.getString("gas"));
+        String name = nbt.getString("gas");
+        gasFluid = name != null && !name.isEmpty() ? FluidRegistry.getFluid(name) : null;
     }
 }

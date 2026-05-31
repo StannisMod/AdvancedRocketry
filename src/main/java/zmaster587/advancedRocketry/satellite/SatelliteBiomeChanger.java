@@ -13,6 +13,7 @@ import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
 import zmaster587.advancedRocketry.item.ItemBiomeChanger;
 import zmaster587.advancedRocketry.util.BiomeHandler;
+import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.api.IUniversalEnergy;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 
@@ -64,7 +65,7 @@ private int noise_val;
 
     @Override
     public String getName() {
-        return "Biome Changer";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.biomechanger");
     }
 
     @Override

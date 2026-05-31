@@ -254,7 +254,7 @@ public abstract class SpaceObjectBase implements ISpaceObject {
         nbt.setInteger("id", getId());
         nbt.setInteger("posX", posX);
         nbt.setInteger("posY", posY);
-        nbt.setInteger("alitude", altitude);
+        nbt.setInteger("altitude", altitude);
         nbt.setInteger("spawnX", spawnLocation.x);
         nbt.setInteger("spawnY", spawnLocation.y);
         nbt.setInteger("spawnZ", spawnLocation.z);

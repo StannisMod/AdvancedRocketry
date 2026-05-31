@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.satellite;
 
 import zmaster587.advancedRocketry.api.DataStorage;
+import zmaster587.libVulpes.LibVulpes;
 
 public class SatelliteComposition extends SatelliteData {
 
@@ -12,7 +13,7 @@ public class SatelliteComposition extends SatelliteData {
 
     @Override
     public String getName() {
-        return "Composition Scanner";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.composition");
     }
 
     @Override

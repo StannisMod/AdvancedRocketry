@@ -1,6 +1,5 @@
 package zmaster587.advancedRocketry.event;
 
-import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.BlockTorch;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
@@ -18,14 +17,11 @@ import net.minecraft.inventory.EntityEquipmentSlot;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.WorldServer;
-import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.client.event.EntityViewRenderEvent.FogColors;
 import net.minecraftforge.client.event.EntityViewRenderEvent.RenderFogEvent;
 import net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent;
@@ -34,7 +30,6 @@ import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickBlock;
 import net.minecraftforge.event.entity.player.PlayerSleepInBedEvent;
 import net.minecraftforge.event.terraingen.OreGenEvent;
-import net.minecraftforge.event.terraingen.PopulateChunkEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.BlockEvent.PlaceEvent;
 import net.minecraftforge.event.world.ChunkEvent;
@@ -67,12 +62,10 @@ import zmaster587.advancedRocketry.network.PacketSpaceStationInfo;
 import zmaster587.advancedRocketry.network.PacketStellarInfo;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
-import zmaster587.advancedRocketry.util.BiomeHandler;
 import zmaster587.advancedRocketry.util.SpawnListEntryNBT;
 import zmaster587.advancedRocketry.util.TransitionEntity;
-import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
 import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
-import zmaster587.advancedRocketry.world.util.TeleporterNoPortal;
+import zmaster587.advancedRocketry.world.util.BasicTeleporter;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.api.IModularArmor;
 import zmaster587.libVulpes.network.PacketHandler;
@@ -226,7 +219,7 @@ public class PlanetEventHandler {
                 event.getEntity().setPositionAndUpdate(teleportPosition.x, teleportPosition.y, teleportPosition.z);
             } else {
                 event.getEntity().sendMessage(new TextComponentString(LibVulpes.proxy.getLocalizedString("msg.chat.nostation3")));
-                event.getEntity().getServer().getPlayerList().transferPlayerToDimension((EntityPlayerMP) event.getEntity(), 0, new TeleporterNoPortal(net.minecraftforge.common.DimensionManager.getWorld(0)));
+                event.getEntity().changeDimension(0, new BasicTeleporter(event.getEntity().getPosition()));
             }
 
         }
@@ -319,71 +312,37 @@ public class PlanetEventHandler {
                 while (itr.hasNext()) {
                     TransitionEntity ent = itr.next();
                     if (ent.entity.world.getTotalWorldTime() >= ent.time) {
-                        ent.entity.setLocationAndAngles(ent.location.getX(), ent.location.getY(), ent.location.getZ(), ent.entity.rotationYaw, ent.entity.rotationPitch);
+                        ent.entity.setLocationAndAngles(
+                                ent.location.getX(),
+                                ent.location.getY(),
+                                ent.location.getZ(),
+                                ent.entity.rotationYaw,
+                                ent.entity.rotationPitch
+                        );
                         WorldServer newWorld = ent.entity.getServer().getWorld(ent.dimId);
-                        ent.entity.getServer().getPlayerList().transferPlayerToDimension((EntityPlayerMP) ent.entity, ent.dimId, new TeleporterNoPortal(newWorld));
-                        //should be loaded by now
+                        Entity moved = ent.entity.changeDimension(
+                                ent.dimId,
+                                new BasicTeleporter(ent.entity.getPosition())
+                        );
+
+                        // Grace on the post-transfer entity instance
+                        if (moved != null) {
+                            moved.getEntityData().setLong(
+                                    "arRocketTransferGrace",
+                                    newWorld.getTotalWorldTime() + 100L
+                            );
+                        }
+
                         Entity rocket = newWorld.getEntityFromUuid(ent.entity2.getPersistentID());
-                        if (rocket != null)
-                            ent.entity.startRiding(rocket);
+                        if (rocket != null && moved != null) {
+                            moved.startRiding(rocket, true);
+                        }
                         itr.remove();
                     }
                 }
             }
         }
     }
-
-	/*@SubscribeEvent
-	public void connectToServer(ClientConnectedToServerEvent event) 
-	{
-		zmaster587.advancedRocketry.api.ARConfiguration.prevAsteroidTypes = zmaster587.advancedRocketry.api.ARConfiguration.asteroidTypes;
-		zmaster587.advancedRocketry.api.ARConfiguration.asteroidTypes = new HashMap<String, AsteroidSmall>();
-	}
-
-	@SubscribeEvent
-	public void disconnectFromServer(ClientDisconnectionFromServerEvent event)
-	{
-		zmaster587.advancedRocketry.api.ARConfiguration.asteroidTypes = zmaster587.advancedRocketry.api.ARConfiguration.prevAsteroidTypes;
-	}*/
-
-
-    // Used to save extra biome data
-	/*@SubscribeEvent
-	public void worldLoadEvent(WorldEvent.Load event) {
-		if(event.getWorld().provider instanceof ProviderPlanet && DimensionManager.getInstance().getDimensionProperties(event.getWorld().provider.getDimension()).biomeProperties == null) {
-			DimensionManager.getInstance().getDimensionProperties(event.getWorld().provider.getDimension()).biomeProperties = new ExtendedBiomeProperties(event.getWorld());
-		}
-	}
-
-	// Used to load extra biome data
-	@SubscribeEvent
-	public void saveExtraData(ChunkDataEvent.Save event) {
-		if(event.getWorld().provider instanceof ProviderPlanet) {
-			NBTTagCompound nbt = event.getData();
-
-			int xPos = event.getChunk().xPosition;//nbt.getInteger("xPos");
-			int zPos = event.getChunk().zPosition;//nbt.getInteger("zPos");
-
-			ChunkProperties properties = DimensionManager.getInstance().getDimensionProperties(event.getWorld().provider.getDimension()).biomeProperties.getChunkPropertiesFromChunkCoords(xPos, zPos);
-
-			nbt.setIntArray("ExtendedBiomeArray", properties.getBlockBiomeArray());
-		}
-	}
-
-	@SubscribeEvent
-	public void loadExtraData(ChunkDataEvent.Load event) {
-		if(event.getWorld().provider instanceof ProviderPlanet)  {
-			NBTTagCompound nbt = event.getData();
-
-
-			int xPos = event.getChunk().xPosition;//nbt.getInteger("xPos");
-			int zPos = event.getChunk().zPosition;//nbt.getInteger("zPos");
-			ChunkProperties properties = DimensionManager.getInstance().getDimensionProperties(event.getWorld().provider.getDimension()).biomeProperties.getChunkPropertiesFromChunkCoords(xPos, zPos);
-
-			properties.setBlockBiomeArray(event.getData().getIntArray("ExtendedBiomeArray"));
-		}
-	}
-	 */
 
     @SubscribeEvent
     public void tickClient(TickEvent.ClientTickEvent event) {

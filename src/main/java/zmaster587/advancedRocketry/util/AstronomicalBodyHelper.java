@@ -114,7 +114,12 @@ public class AstronomicalBodyHelper {
      * @param orbitalDistance the distance from the star
      * @return the insolation of the planet relative to Earth insolation
      */
+    private static final double MIN_BRIGHTNESS = 1.0e-9d;
+
     public static double getStellarBrightness(StellarBody star, int orbitalDistance) {
+        if (star == null || orbitalDistance <= 0) {
+            return MIN_BRIGHTNESS;
+        }
         //Normal stars are 1.0 times this value, black holes with accretion discs emit less and so modify it
         float lightMultiplier = 1.0f;
         //Make all values ratios of Earth normal to get ratio compared to Earth
@@ -122,17 +127,30 @@ public class AstronomicalBodyHelper {
         float planetaryOrbitalRadius = orbitalDistance / 100f;
         //Check to see if the star is a black hole
         boolean blackHole = star.isBlackHole();
-        for (StellarBody star2 : star.getSubStars())
-            if (!star2.isBlackHole()) {
-                blackHole = false;
-                break;
+        Iterable<StellarBody> subs = star.getSubStars();
+        if (subs != null) {
+            for (StellarBody star2 : subs) {
+                if (star2 != null && !star2.isBlackHole()) {
+                    blackHole = false;
+                    break;
+                }
             }
+        }
         //There's no real easy way to get the light emitted by an accretion disc, so this substitutes
         if (blackHole)
             lightMultiplier *= 0.25;
         //Returns ratio compared to a planet at 1 AU for Sol, because the other values in AR are normalized,
         //and this works fairly well for hooking into with other mod's solar panels & such
-        return (lightMultiplier * ((Math.pow(star.getSize(), 2) * Math.pow(normalizedStarTemperature, 4)) / Math.pow(planetaryOrbitalRadius, 2)));
+        double brightness =
+                lightMultiplier *
+                ((Math.pow(star.getSize(), 2) * Math.pow(normalizedStarTemperature, 4)) /
+                Math.pow(planetaryOrbitalRadius, 2));
+
+        // Guarantee: never return 0, NaN, or Infinity
+        if (!Double.isFinite(brightness) || brightness < MIN_BRIGHTNESS) {
+            return MIN_BRIGHTNESS;
+        }
+        return brightness;
     }
 
     /**
