@@ -3157,10 +3157,14 @@ public class TestProbeCommand extends CommandBase {
                     preSatRegistered = props != null && props.getSatellite(preSatId) != null;
                 }
             }
-            // Server-side direct invocation — onInventoryButtonPressed(1)
-            // runs the production erase path: removes satellite from
-            // DimensionProperties, blanks NBT via chip.erase(stack).
-            terminal.onInventoryButtonPressed(1);
+            // onInventoryButtonPressed(1) is the CLIENT half — it only does
+            // PacketHandler.sendToServer(id 101), which throws on a dedicated
+            // server (no client->server channel). Invoke the SERVER half
+            // directly: useNetworkData(.., id=101) runs the production erase path
+            // (removes satellite from DimensionProperties, blanks NBT via
+            // chip.erase(stack)).
+            terminal.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER,
+                    (byte) 101, new net.minecraft.nbt.NBTTagCompound());
             net.minecraft.item.ItemStack post = terminal.getStackInSlot(0);
             boolean postNbtNull = !post.hasTagCompound();
             boolean postSlotEmpty = post.isEmpty();
