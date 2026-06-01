@@ -21,9 +21,12 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBiomes;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
+import net.minecraft.world.WorldServer;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.item.ItemBiomeChanger;
 import zmaster587.advancedRocketry.item.ItemWeatherController;
+import zmaster587.advancedRocketry.world.weather.PlanetWeatherManager;
 import zmaster587.advancedRocketry.network.PacketAirParticle;
 import zmaster587.advancedRocketry.network.PacketFluidParticle;
 import zmaster587.advancedRocketry.util.BiomeHandler;
@@ -100,6 +103,7 @@ public class SatelliteWeatherController extends SatelliteBase {
             last_mode_id = mode_id;
             //this.timer = 0;
             viable_positions.clear();
+            applyWeatherMode();
         }
 
         //if (this.timer > 0) {
@@ -156,6 +160,59 @@ public class SatelliteWeatherController extends SatelliteBase {
 
 
 
+
+    /**
+     * Drive the planet's rain marker from the controller mode:
+     * <ul>
+     *   <li>rain (0) → marker 1: the planet rains continuously,</li>
+     *   <li>dry (1) → marker -1: the sky is forced clear,</li>
+     *   <li>flood (2) → weather left untouched (purely hydrological).</li>
+     * </ul>
+     * The marker is re-read every tick by {@code WorldProviderPlanet#updateWeather},
+     * which still keeps a thin-atmosphere planet clear even in rain mode.
+     */
+    private void applyWeatherMode() {
+        DimensionProperties props =
+                DimensionManager.getInstance().getDimensionProperties(getDimensionId());
+        if (props == null) return;
+
+        if (mode_id == 0) {
+            props.setRainMarker(1);
+        } else if (mode_id == 1) {
+            props.setRainMarker(-1);
+        } else {
+            return; // flood: do not touch the weather
+        }
+
+        WorldServer ws = net.minecraftforge.common.DimensionManager.getWorld(getDimensionId());
+        if (ws != null) {
+            if (mode_id == 0) {
+                ws.getWorldInfo().setRaining(true);
+            } else {
+                ws.getWorldInfo().setRaining(false);
+                ws.getWorldInfo().setThundering(false);
+            }
+            PlanetWeatherManager.syncToPlayersInWorld(ws);
+        }
+    }
+
+    @Override
+    public void setDead() {
+        super.setDead();
+        // Hand weather control back when the controller is removed, but only if
+        // this controller was actively forcing it (rain/dry), so an XML-set
+        // marker on a flood-only planet is left alone.
+        if (mode_id != 0 && mode_id != 1) return;
+        DimensionProperties props =
+                DimensionManager.getInstance().getDimensionProperties(getDimensionId());
+        if (props != null && props.getRainMarker() != 0) {
+            props.setRainMarker(0);
+            WorldServer ws = net.minecraftforge.common.DimensionManager.getWorld(getDimensionId());
+            if (ws != null) {
+                PlanetWeatherManager.syncToPlayersInWorld(ws);
+            }
+        }
+    }
 
     private boolean is_block_in_list(List<BlockPos> l, BlockPos p) {
         for (BlockPos i : l) {

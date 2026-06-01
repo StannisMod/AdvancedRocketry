@@ -110,6 +110,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_THUNDER_PROLONGATION_LENGTH = "thunderProlongationLength";
     private static final String ELEMENT_RAIN_MARKER = "rainMarker";
     private static final String ELEMENT_THUNDER_MARKER = "thunderMarker";
+    private static final String ELEMENT_ACIDIC_RAIN = "acidicRain";
 
     NodeList currentList;
     private Document doc;
@@ -274,6 +275,7 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.getThunderProlongationLength()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_MARKER, properties.getRainMarker()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_MARKER, properties.getThunderMarker()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_ACIDIC_RAIN, properties.isAcidicRain()));
 
         nodePlanet.appendChild(createTextNode(doc, GENERATECRATERS, properties.canGenerateCraters()));
         nodePlanet.appendChild(createTextNode(doc, GENERATECAVES, properties.canGenerateCaves()));
@@ -612,6 +614,8 @@ public class XMLPlanetLoader {
                 properties.setRainMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_MARKER))
                 properties.setThunderMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
+            else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_ACIDIC_RAIN))
+                properties.setAcidicRain(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_ATMDENSITY)) {
 
                 try {

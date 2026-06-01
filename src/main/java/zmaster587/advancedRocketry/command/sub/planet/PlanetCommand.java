@@ -12,6 +12,7 @@ public class PlanetCommand extends CommandTreeBase {
         addSubcommand(new PlanetGenerateCommand());
         addSubcommand(new PlanetSetCommand());
         addSubcommand(new PlanetGetCommand());
+        addSubcommand(new PlanetWeatherCommand());
 
         addSubcommand(new CommandTreeHelp(this));
     }

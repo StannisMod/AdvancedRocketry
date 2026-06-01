@@ -1125,6 +1125,8 @@ public class AdvancedRocketry {
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
         // Async weather info injection
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
+        // Acid rain damage on planets flagged acidicRain
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.event.AcidRainHandler());
 
         WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
         MinecraftForge.EVENT_BUS.register(wirelessTickHandler);

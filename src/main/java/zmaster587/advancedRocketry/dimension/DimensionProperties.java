@@ -126,6 +126,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private int thunderProlongationLength = WEATHER_PROLONGATION_LENGTH;
     private int rainMarker;  // -1 - never rain, 1 - always rain, 0 - regular weather
     private int thunderMarker;  // -1 - never thunder, 1 - always thunder, 0 - regular weather
+    private boolean acidicRain;  // rain on this planet harms unprotected players under open sky
 
     IAtmosphere atmosphereType;
     StellarBody star;
@@ -1690,6 +1691,8 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             setRainMarker(nbt.getInteger("rainMarker"));
         if (nbt.hasKey("thunderMarker", NBT.TAG_INT))
             setThunderMarker(nbt.getInteger("thunderMarker"));
+        if (nbt.hasKey("acidicRain"))
+            setAcidicRain(nbt.getBoolean("acidicRain"));
 
         // Sanity clamp
         if (getRainStartLength() <= 0) setRainStartLength(WEATHER_START_LENGTH);
@@ -2042,6 +2045,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         nbt.setInteger("thunderProlongationLength", getThunderProlongationLength());
         nbt.setInteger("rainMarker", getRainMarker());
         nbt.setInteger("thunderMarker", getThunderMarker());
+        nbt.setBoolean("acidicRain", isAcidicRain());
 
         //Hierarchy
         if (!childPlanets.isEmpty()) {
@@ -2381,6 +2385,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public void setThunderMarker(int marker) {
         this.thunderMarker = marker;
         updateCustomWorldInfo();
+    }
+
+    public boolean isAcidicRain() {
+        return acidicRain;
+    }
+
+    public void setAcidicRain(boolean acidicRain) {
+        this.acidicRain = acidicRain;
     }
     //</editor-fold>
 

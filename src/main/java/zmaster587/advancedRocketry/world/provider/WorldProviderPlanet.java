@@ -104,7 +104,8 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
 
     @Override
     public boolean canDoRainSnowIce(Chunk chunk) {
-        return getAtmosphereDensity(new BlockPos(0, 0, 0)) > 75 && super.canDoRainSnowIce(chunk);
+        return getDimensionProperties().getAtmosphereDensity() >= ARConfiguration.getCurrentConfig().minAtmosphereDensityForRain
+                && super.canDoRainSnowIce(chunk);
     }
 
     @Override
@@ -135,7 +136,19 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                 }
                 boolean flag = world.getGameRules().getBoolean("doWeatherCycle");
 
-                if (flag) {
+                // Compatibility gate: a planet whose atmosphere is too thin can
+                // neither rain nor thunder, no matter what its weather markers
+                // say. Below the threshold we force a clear sky and skip the
+                // whole cycle so markers can't re-enable precipitation.
+                final boolean canRain = props.getAtmosphereDensity()
+                        >= ARConfiguration.getCurrentConfig().minAtmosphereDensityForRain;
+
+                if (!canRain) {
+                    world.getWorldInfo().setRaining(false);
+                    world.getWorldInfo().setRainTime(0);
+                    world.getWorldInfo().setThundering(false);
+                    world.getWorldInfo().setThunderTime(0);
+                } else if (flag) {
                     // No rain or thunder
                     if (props.getRainMarker() == -1 && props.getThunderMarker() == -1) {
                         world.getWorldInfo().setRaining(false);
@@ -160,6 +173,17 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                     if (props.getRainMarker() == 1) {
                         world.getWorldInfo().setCleanWeatherTime(0);
                         world.getWorldInfo().setRaining(true);
+                    }
+                    // Marker -1 means "never" — force the state off independently
+                    // so a "dry" planet (or a Weather Controller in dry mode) stays
+                    // clear even when only one of the two markers is -1.
+                    if (props.getThunderMarker() == -1) {
+                        world.getWorldInfo().setThundering(false);
+                        world.getWorldInfo().setThunderTime(0);
+                    }
+                    if (props.getRainMarker() == -1) {
+                        world.getWorldInfo().setRaining(false);
+                        world.getWorldInfo().setRainTime(0);
                     }
 
                     // Clamp to avoid IllegalArgumentException in Random#nextInt(0 or negative)
@@ -204,6 +228,15 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                     }
                 }
 
+
+                // Thunder cannot exist without rain. Vanilla couples the two
+                // (lightning only strikes where it is raining, and thunder
+                // strength is scaled by rain strength); keep AR consistent so a
+                // thunderMarker without rain can't leave a dead "storm" flag.
+                if (!world.getWorldInfo().isRaining()) {
+                    world.getWorldInfo().setThundering(false);
+                    world.getWorldInfo().setThunderTime(0);
+                }
 
                 world.prevThunderingStrength = world.thunderingStrength;
 

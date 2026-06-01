@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -141,6 +142,7 @@ public class XMLPlanetLoaderTest {
               + "  <thunderProlongationLength>6000</thunderProlongationLength>\n"
               + "  <rainMarker>1</rainMarker>\n"
               + "  <thunderMarker>-1</thunderMarker>\n"
+              + "  <acidicRain>true</acidicRain>\n"
               + "</planet>\n")));
         DimensionProperties props = coupling.dims.get(0);
         assertEquals(3000, props.getRainStartLength());
@@ -149,6 +151,7 @@ public class XMLPlanetLoaderTest {
         assertEquals(6000, props.getThunderProlongationLength());
         assertEquals("rainMarker=1 → always rain", 1, props.getRainMarker());
         assertEquals("thunderMarker=-1 → never thunder", -1, props.getThunderMarker());
+        assertTrue("acidicRain=true must be parsed from the planet XML", props.isAcidicRain());
     }
 
     @Test
@@ -163,6 +166,7 @@ public class XMLPlanetLoaderTest {
         assertEquals(168000, props.getThunderStartLength());
         assertEquals("default rainMarker=0 (regular weather)", 0, props.getRainMarker());
         assertEquals("default thunderMarker=0 (regular weather)", 0, props.getThunderMarker());
+        assertFalse("acidicRain must default to false when the tag is absent", props.isAcidicRain());
     }
 
     @Test

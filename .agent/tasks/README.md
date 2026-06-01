@@ -146,8 +146,9 @@ Bug-ledger history lives in
   #4 (fixed by TASK-41 2026-05-29) minus #6 (fixed by TASK-43 Phase 3
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
   = 4 live (#1, #3, #5, #7). Batch #2 opened 2026-05-25; entry #5 added
-  2026-05-29; entry #7 added 2026-05-31. Batch #1 fully drained by
-  TASK-12 on 2026-05-23. Entries:
+  2026-05-29; entry #7 added 2026-05-31; entry #8 added AND fixed
+  2026-06-01 in feature/better_weather (does not change the live count).
+  Batch #1 fully drained by TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —
   pinned by `SatelliteRegistryFallbackTest._documentsKnownBug` pair.
@@ -307,6 +308,19 @@ Bug-ledger history lives in
   `TilePumpFillsFromAdjacentWaterSourceTest` instead pins the real
   contract (drains an AR Forge-fluid source) and documents this in its
   docstring. Found during TASK-44 Gap F.4 un-ignore (2026-05-31).
+  (8) ✅ **FIXED 2026-06-01 in `feature/better_weather`.**
+  `WorldProviderPlanet.canDoRainSnowIce` compared
+  `getAtmosphereDensity(pos)` — which returns the density already
+  divided by 100 (range ~0..2) — against the literal `75`, so the
+  predicate was effectively always false. Player-visible: AR planets
+  never accumulated rain/snow/ice through this gate regardless of
+  atmosphere. Fixed while wiring the new `minAtmosphereDensityForRain`
+  config threshold: the check now compares the raw 0..100
+  `props.getAtmosphereDensity()` against the configurable threshold
+  (default 75), matching the scale used everywhere else
+  (XML `atmosphereDensity`, `AtmosphereTypes`). Found during the
+  feature/better_weather atmosphere-gate work. Does NOT change the live
+  count (found and fixed in the same change).
 
 ## Done
 

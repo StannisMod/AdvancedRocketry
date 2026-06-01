@@ -314,6 +314,7 @@ commands.advancedrocketry.goto.dimension.usage=goto dimension <dimId> (alias: d,
 commands.advancedrocketry.goto.station.usage=goto station <stationId> (alias: s) - teleports the player to the supplied station
 
 commands.advancedrocketry.planet.usage=/advancedrocketry planet help - lists subcommands.
+commands.advancedrocketry.planet.weather.usage=planet weather [dimId]
 commands.advancedrocketry.planet.reset.usage=planet reset [dimId]
 commands.advancedrocketry.planet.list.usage=planet list
 commands.advancedrocketry.planet.list.dimensions=Dimensions:
@@ -1257,8 +1258,8 @@ tooltip.advancedrocketry.satfunc.weather.alt.1=Combine with Weather Remote when 
 tooltip.advancedrocketry.weathercontrollerremote=§bShift-Right Click to open GUI
 tooltip.advancedrocketry.weathercontrollerremote.shift.1=§fRight-click in hand to use
 tooltip.advancedrocketry.weathercontrollerremote.alt.1=Combine with Weather Controller when assembling
-tooltip.advancedrocketry.weathercontrollerremote.mode.rain=§eMode: Rain - Fills small basins in the terrain with water
-tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Dries all water in a radius of 16
+tooltip.advancedrocketry.weathercontrollerremote.mode.rain=§eMode: Rain - Makes it rain on the planet and fills small basins in the terrain with water
+tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Keeps the sky clear and dries all water in a radius of 16
 tooltip.advancedrocketry.weathercontrollerremote.mode.flood=§eMode: Flood - Floods area with a radius of 16 with water
 
 
