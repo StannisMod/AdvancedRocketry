@@ -76,9 +76,9 @@ public class PipeNetworkSmokeTest extends AbstractSharedServerTest {
     public void wirelessTransceiverPairsAndTransmits() throws Exception {
         int x1 = 1300, x2 = 1350, y = 65, z = 1200;
         ok(client().execute(
-                "artest place 0 " + x1 + " " + y + " " + z + " advancedrocketry:wirelessTransciever"));
+                "artest place 0 " + x1 + " " + y + " " + z + " advancedrocketry:wirelessTransceiver"));
         ok(client().execute(
-                "artest place 0 " + x2 + " " + y + " " + z + " advancedrocketry:wirelessTransciever"));
+                "artest place 0 " + x2 + " " + y + " " + z + " advancedrocketry:wirelessTransceiver"));
 
         // Pre-pairing — each transceiver carries the default sentinel.
         String pre1 = String.join("\n", client().execute(

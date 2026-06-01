@@ -251,7 +251,7 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         for (int x : xs) {
             String r = String.join("\n", client().execute(
                     "artest place " + DIM + " " + x + " " + Y + " " + Z
-                            + " advancedrocketry:wirelessTransciever"));
+                            + " advancedrocketry:wirelessTransceiver"));
             assertTrue("place failed at x=" + x + ": " + r,
                     r.contains("\"placed\":true"));
             // Under parallel-fork load the tile entity can lag the block
