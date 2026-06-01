@@ -15,12 +15,9 @@ import java.util.List;
 public class ItemIdWithName extends Item {
 
     public void setName(@Nonnull ItemStack stack, String name) {
-
-        if (stack.hasTagCompound()) {
-            NBTTagCompound nbt = stack.getTagCompound();
-            nbt.setString("name", name);
-            stack.setTagCompound(nbt);
-        }
+        NBTTagCompound nbt = stack.hasTagCompound() ? stack.getTagCompound() : new NBTTagCompound();
+        nbt.setString("name", name);
+        stack.setTagCompound(nbt);
     }
 
     public String getName(@Nonnull ItemStack stack) {
@@ -38,8 +35,16 @@ public class ItemIdWithName extends Item {
     public void addInformation(@Nonnull ItemStack stack, World player, List<String> list, ITooltipFlag bool) {
         if (stack.getItemDamage() == -1) {
             list.add(ChatFormatting.GRAY + "Unprogrammed");
-        } else {
-            list.add(getName(stack));
+            return;
         }
+
+        String keyOrName = getName(stack);
+        if (keyOrName == null || keyOrName.isEmpty()) {
+            return;
+        }
+
+        // If it's a lang key, this becomes localized; if not, it returns the input unchanged.
+        String translated = net.minecraft.client.resources.I18n.format(keyOrName);
+        list.add(translated);
     }
 }

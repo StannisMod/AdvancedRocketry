@@ -35,6 +35,13 @@ public class RocketEvent extends EntityEvent {
             super(entity);
         }
     }
+    public static class RocketAbortEvent extends RocketEvent {
+        public final String reason;   // optional, for GUIs/logs
+        public RocketAbortEvent(Entity entity, String reason) {
+            super(entity);
+            this.reason = reason;
+        }
+    }
 
     /**
      * Fired before the rocket is finished teleporting to the destination world on the Minecraft Forge EVENT_BUS

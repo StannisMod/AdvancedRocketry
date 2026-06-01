@@ -136,14 +136,28 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         return false;
     }
 
+    private void unregisterAtmosphereBlob() {
+        if (world == null || world.isRemote) {
+            return;
+        }
+
+        AtmosphereHandler atmhandler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        if (atmhandler != null) {
+            atmhandler.unregisterBlob(this);
+        }
+    }
+
     @Override
     public void invalidate() {
-        super.invalidate();
-
-        AtmosphereHandler atmhandler = AtmosphereHandler.getOxygenHandler(this.world.provider.getDimension());
-        if (atmhandler != null)
-            atmhandler.unregisterBlob(this);
+        unregisterAtmosphereBlob();
         deactivateAdjBlocks();
+        super.invalidate();
+    }
+
+    @Override
+    public void onChunkUnload() {
+        unregisterAtmosphereBlob();
+        super.onChunkUnload();
     }
 
     @Override

@@ -11,6 +11,7 @@ import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.IAtmosphere;
 import zmaster587.advancedRocketry.api.atmosphere.AtmosphereRegister;
@@ -24,13 +25,18 @@ import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.util.INetworkMachine;
 
 import javax.annotation.Nullable;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 
 public class TileAtmosphereDetector extends TileEntity implements ITickable, IModularInventory, IButtonInventory, INetworkMachine {
 
     private IAtmosphere atmosphereToDetect;
+
+    private static final int BUTTON_COLOR_NORMAL = 0xFF22FF22;
+    private static final int BUTTON_COLOR_SELECTED = 0xFFFFFF55;
+    private static final int BUTTON_BG_NORMAL = 0xFFFFFFFF;
+    private static final int BUTTON_BG_SELECTED = 0xFF444444;
 
     public TileAtmosphereDetector() {
         atmosphereToDetect = AtmosphereType.AIR;
@@ -66,24 +72,38 @@ public class TileAtmosphereDetector extends TileEntity implements ITickable, IMo
         return (oldState.getBlock() != newSate.getBlock());
     }
 
+
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
         List<ModuleBase> btns = new LinkedList<>();
 
-        Iterator<IAtmosphere> atmIter = AtmosphereRegister.getInstance().getAtmosphereList().iterator();
+        List<IAtmosphere> atmospheres = AtmosphereRegister.getInstance().getAtmosphereList();
 
-        int i = 0;
-        while (atmIter.hasNext()) {
-            IAtmosphere atm = atmIter.next();
-            btns.add(new ModuleButton(60, 4 + i * 24, i, LibVulpes.proxy.getLocalizedString(atm.getUnlocalizedName()), this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild));
-            i++;
+        for (int i = 0; i < atmospheres.size(); i++) {
+            IAtmosphere atm = atmospheres.get(i);
+            String label = getLocalizedAtmosphereName(atm);
+
+            btns.add(AdvancedRocketry.proxy.createAtmosphereDetectorButton(
+                    60,
+                    4 + i * 24,
+                    i,
+                    atm,
+                    label,
+                    this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild
+            ));
         }
 
-        ModuleContainerPan panningContainer = new ModuleContainerPan(5, 20, btns, new LinkedList<>(), zmaster587.libVulpes.inventory.TextureResources.starryBG, 165, 120, 0, 500);
+        ModuleContainerPan panningContainer = new ModuleContainerPan(
+                5, 20, btns, new LinkedList<>(),
+                zmaster587.libVulpes.inventory.TextureResources.starryBG,
+                160, 100, 0, 500
+        );
         modules.add(panningContainer);
         return modules;
     }
+
 
     @Override
     public String getModularInventoryName() {
@@ -97,8 +117,63 @@ public class TileAtmosphereDetector extends TileEntity implements ITickable, IMo
 
     @Override
     public void onInventoryButtonPressed(int buttonId) {
-        atmosphereToDetect = AtmosphereRegister.getInstance().getAtmosphereList().get(buttonId);
-        PacketHandler.sendToServer(new PacketMachine(this, (byte) 0));
+        List<IAtmosphere> atmospheres = AtmosphereRegister.getInstance().getAtmosphereList();
+
+        if (buttonId < 0 || buttonId >= atmospheres.size()) {
+            return;
+        }
+
+        IAtmosphere oldAtmosphere = atmosphereToDetect;
+        atmosphereToDetect = atmospheres.get(buttonId);
+
+        if (world == null || world.isRemote) {
+            String atmosphereName = getLocalizedAtmosphereName(atmosphereToDetect);
+
+            if (isSameAtmosphere(oldAtmosphere, atmosphereToDetect)) {
+                AdvancedRocketry.proxy.sendClientStatusMessage(
+                        "msg.advancedrocketry.atmosphereDetector.alreadySelected",
+                        atmosphereName
+                );
+            }
+            else {
+                AdvancedRocketry.proxy.sendClientStatusMessage(
+                        "msg.advancedrocketry.atmosphereDetector.selected",
+                        atmosphereName
+                );
+            }
+
+            PacketHandler.sendToServer(new PacketMachine(this, (byte) 0));
+        }
+    }
+    public boolean isAtmosphereSelected(IAtmosphere atmosphere) {
+        return isSameAtmosphere(atmosphereToDetect, atmosphere);
+    }
+
+    public static String getLocalizedAtmosphereName(IAtmosphere atmosphere) {
+        if (atmosphere == null) {
+            return "";
+        }
+
+        String key = "msg.atmosphere." + atmosphere.getUnlocalizedName().toLowerCase(Locale.ROOT);
+        String label = LibVulpes.proxy.getLocalizedString(key);
+
+        if (label.equals(key)) {
+            return atmosphere.getUnlocalizedName();
+        }
+
+        return label;
+    }
+
+    private static boolean isSameAtmosphere(IAtmosphere first, IAtmosphere second) {
+        if (first == second) {
+            return true;
+        }
+
+        if (first == null || second == null) {
+            return false;
+        }
+
+        return first.getUnlocalizedName().equals(second.getUnlocalizedName());
     }
 
     @Override

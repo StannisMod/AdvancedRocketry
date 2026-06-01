@@ -21,7 +21,6 @@ import java.util.Random;
 @SideOnly(Side.CLIENT)
 public class RendererItem extends Render<EntityItemAbducted> implements IRenderFactory<EntityItemAbducted> {
     private static final ResourceLocation RES_ITEM_GLINT = new ResourceLocation("textures/misc/enchanted_item_glint.png");
-    private static final String __OBFID = "CL_00001003";
     public static boolean renderInFrame;
     public boolean renderWithColor = true;
     /**

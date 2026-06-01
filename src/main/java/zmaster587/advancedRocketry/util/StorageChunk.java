@@ -111,8 +111,16 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     private static boolean isLiquidContainerBlock(TileEntity tile) {
+        // Prefer real sides for compatibility
+        for (EnumFacing f : EnumFacing.VALUES) {
+            if (tile.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, f)) {
+                return true;
+            }
+        }
+        // Fallback for unsided/internal handlers
         return tile.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
     }
+
 
     public void setWeight(int weight) {
         this.weight = weight;
@@ -168,10 +176,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         int fuelCapacityBipropellant = 0;
         int fuelCapacityOxidizer = 0;
         int fuelCapacityNuclearWorkingFluid = 0;
-
+        int intakePower = 0;
         float drillPower = 0f;
         //stats.reset_no_fuel();
         stats.reset_no_fuel();// Oh Quarter... you can not keep adding engine and seat locations every launch
+        final boolean isSD = (this.entity instanceof zmaster587.advancedRocketry.entity.EntityStationDeployedRocket);
 
         float weight = 0;
 
@@ -193,22 +202,37 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         }
 
                         //If rocketEngine increaseThrust
-                        if (block instanceof IRocketEngine && (world.getBlockState(belowPos).getBlock().isAir(world.getBlockState(belowPos), world, belowPos) || world.getBlockState(belowPos).getBlock() instanceof BlockLandingPad || world.getBlockState(belowPos).getBlock() == AdvancedRocketryBlocks.blockLaunchpad)) {
-                            if (block instanceof BlockNuclearRocketMotor) {
-                                nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustNuclearNozzleLimit += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockBipropellantRocketMotor) {
-                                bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustBipropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
-                            } else if (block instanceof BlockRocketMotor) {
-                                monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                thrustMonopropellant += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                        if (block instanceof IRocketEngine) {
+                            boolean eligible;
+                            if (isSD) {
+                                // SD rockets: skip vertical requirements
+                                eligible = true;
+                            } else {
+                                // Legacy vertical rule
+                                IBlockState belowState = world.getBlockState(belowPos);
+                                Block below = belowState.getBlock();
+                                eligible = below.isAir(belowState, world, belowPos)
+                                        || below instanceof BlockLandingPad
+                                        || below == AdvancedRocketryBlocks.blockLaunchpad;
                             }
-                            stats.addEngineLocation(xCurr - (float) this.sizeX /2+0.5f, yCurr+0.5f, zCurr- (float) this.sizeZ /2+0.5f);
+
+                            if (eligible) {
+                                if (block instanceof BlockNuclearRocketMotor) {
+                                    nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustNuclearNozzleLimit  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockBipropellantRocketMotor) {
+                                    bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustBipropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                } else if (block instanceof BlockRocketMotor) {
+                                    monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
+                                    thrustMonopropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                }
+                                stats.addEngineLocation(xCurr - (float)this.sizeX/2 + 0.5f, yCurr+0.5f, zCurr - (float)this.sizeZ/2 + 0.5f);
+                            }
                         }
 
                         if (block instanceof IFuelTank) {
-                             if (block instanceof BlockBipropellantFuelTank) {
+                            if (block instanceof BlockBipropellantFuelTank) {
                                 fuelCapacityBipropellant += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
                             } else if (block instanceof BlockOxidizerFuelTank) {
                                 fuelCapacityOxidizer += (((IFuelTank) block).getMaxFill(world, currBlockPos, state) * ARConfiguration.getCurrentConfig().fuelCapacityMultiplier);
@@ -219,8 +243,18 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             }
                         }
 
-                        if (block instanceof IRocketNuclearCore && ((world.getBlockState(belowPos).getBlock() instanceof IRocketNuclearCore) || (world.getBlockState(belowPos).getBlock() instanceof IRocketEngine))) {
-                            thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                        if (block instanceof IRocketNuclearCore) {
+                            boolean counts;
+                            if (isSD) {
+                                // SD rockets: no vertical stack requirement
+                                counts = true;
+                            } else {
+                                Block below = world.getBlockState(belowPos).getBlock();
+                                counts = (below instanceof IRocketNuclearCore) || (below instanceof IRocketEngine);
+                            }
+                            if (counts) {
+                                thrustNuclearReactorLimit += ((IRocketNuclearCore) block).getMaxThrust(world, currBlockPos);
+                            }
                         }
 
                         if (block instanceof BlockSeat && world.getBlockState(abovePos).getBlock().isPassable(world, abovePos)) {
@@ -230,22 +264,12 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         if (block instanceof IMiningDrill) {
                             drillPower += ((IMiningDrill) block).getMiningSpeed(world, currBlockPos);
                         }
+                        if (block instanceof IIntake) {
+                            intakePower += ((IIntake) block).getIntakeAmt(state);
+                        }
 
                         if (block.getUnlocalizedName().contains("servicemonitor")) {
                             hasServiceMonitor = true;
-                        }
-
-                        TileEntity tile = world.getTileEntity(currBlockPos);
-                        if (tile instanceof TileSatelliteHatch) {
-                            if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
-                                TileSatelliteHatch hatch = (TileSatelliteHatch) tile;
-                                if (hatch.getSatellite() != null) {
-                                    weight += hatch.getSatellite().getProperties().getWeight();
-                                } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
-                                    ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
-                                    weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
-                                }
-                            }
                         }
                     }
                 }
@@ -272,10 +296,42 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         stats.setFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER, fuelCapacityOxidizer);
         stats.setFuelCapacity(FuelRegistry.FuelType.NUCLEAR_WORKING_FLUID, fuelCapacityNuclearWorkingFluid);
 
-        //Non-fuel stats
+        // SAFE liquid capacity sum (saturating at Integer.MAX_VALUE)
+        long liquidCapacitySum = 0L;
+
+        outer:
+        for (TileEntity te : this.getFluidTiles()) {
+            net.minecraftforge.fluids.capability.IFluidHandler fh =
+                    te.getCapability(net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+            if (fh == null) continue;
+
+            net.minecraftforge.fluids.capability.IFluidTankProperties[] props = fh.getTankProperties();
+            if (props == null) continue;
+
+            for (net.minecraftforge.fluids.capability.IFluidTankProperties p : props) {
+                if (p == null) continue;
+                long cap = Math.max(0L, (long) p.getCapacity());  // guard negatives
+                if (cap == 0L) continue;
+
+                long next = liquidCapacitySum + cap;              // saturating add
+                if (next >= (long) Integer.MAX_VALUE) {
+                    liquidCapacitySum = (long) Integer.MAX_VALUE;
+                    break outer; // early exit once saturated
+                }
+                liquidCapacitySum = next;
+            }
+        }
+
+        int liquidCapacitySafe = (int) Math.max(0L, Math.min(liquidCapacitySum, (long) Integer.MAX_VALUE));
+        stats.setStatTag("liquidCapacity", liquidCapacitySafe);
+
+
+        //Non-fuel stats (keep these after the capacity/tag work)
         stats.setWeight(weight);
         stats.setThrust(Math.max(Math.max(thrustMonopropellant, thrustBipropellant), thrustNuclearTotalLimit));
         stats.setDrillingPower(drillPower);
+        stats.setStatTag("intakePower", intakePower);
+        // (liquidCapacity already set above)
     }
 
     public void addTileEntity(TileEntity te) {
@@ -445,10 +501,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public List<TileEntity> getGUITiles() {
-
-		/*TileEntity guidanceComputer = getGuidanceComputer();
-		if(guidanceComputer != null)
-			list.add(getGuidanceComputer());*/
         return new LinkedList<>(inventoryTiles);
     }
 
@@ -466,7 +518,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
     public void setBlockState(BlockPos pos, IBlockState state) {
 
-//        System.out.println("Block "+pos.getX()+":"+pos.getY()+":"+pos.getZ()+" set to "+state.getBlock().getUnlocalizedName());
+        // System.out.println("Block "+pos.getX()+":"+pos.getY()+":"+pos.getZ()+" set to "+state.getBlock().getUnlocalizedName());
 
         int x = pos.getX();
         int y = pos.getY();
@@ -621,40 +673,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         nbt.setTag("idList", idList);
         nbt.setTag("metaList", metaList);
         nbt.setTag("tiles", tileList);
-
-
-		/*for(int x = 0; x < sizeX; x++) {
-			for(int y = 0; y < sizeY; y++) {
-				for(int z = 0; z < sizeZ; z++) {
-
-					idList.appendTag(new NBTTagInt(Block.getIdFromBlock(blocks[x][y][z])));
-					metaList.appendTag(new NBTTagInt(metas[x][y][z]));
-
-					//NBTTagCompound tag = new NBTTagCompound();
-					tag.setInteger("block", Block.getIdFromBlock(blocks[x][y][z]));
-					tag.setShort("meta", metas[x][y][z]);
-
-					NBTTagCompound tileNbtData = null;
-
-					for(TileEntity tile : tileEntities) {
-						NBTTagCompound tileNbt = new NBTTagCompound();
-
-						tile.writeToNBT(tileNbt);
-
-						if(tileNbt.getInteger("x") == x && tileNbt.getInteger("y") == y && tileNbt.getInteger("z") == z){
-							tileNbtData = tileNbt;
-							break;
-						}
-					}
-
-					if(tileNbtData != null)
-						tag.setTag("tile", tileNbtData);
-
-					nbt.setTag(String.format("%d.%d.%d", x,y,z), tag);
-				}
-
-			}
-		}*/
     }
 
     public void readFromNBT(NBTTagCompound nbt) {
@@ -673,6 +691,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         tileEntities.clear();
         inventoryTiles.clear();
         liquidTiles.clear();
+        pos2te.clear();
         chunk = new Chunk(world, 0, 0);
 
         int[] blockId = nbt.getIntArray("idList");
@@ -697,6 +716,10 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
             try {
                 TileEntity tile = ZUtils.createTile(tileList.getCompoundTagAt(i));
+                if (tile == null) {
+                    AdvancedRocketry.logger.warn("Rocket missing Tile (was a mod removed?)");
+                    continue;
+                }
                 tile.setWorld(world);
 
                 if (isInventoryBlock(tile)) {
@@ -717,43 +740,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             }
 
         }
-
-		/*for(int x = 0; x < sizeX; x++) {
-			for(int y = 0; y < sizeY; y++) {
-				for(int z = 0; z < sizeZ; z++) {
-
-
-
-					NBTTagCompound tag = (NBTTagCompound)nbt.getTag(String.format("%d.%d.%d", x,y,z));
-
-					if(!tag.hasKey("block"))
-						continue;
-					int blockId = tag.getInteger("block");
-					blocks[x][y][z] = Block.getBlockById(blockId);
-					metas[x][y][z] = tag.getShort("meta");
-
-
-					if(blockId != 0 && blocks[x][y][z] == Blocks.air) {
-						AdvancedRocketry.logger.warn("Removed pre-existing block with id " + blockId + " from a rocket (Was a mod removed?)");
-					}
-					else if(tag.hasKey("tile")) {
-
-						if(blocks[x][y][z].hasTileEntity(metas[x][y][z])) {
-							TileEntity tile = TileEntity.createAndLoadEntity(tag.getCompoundTag("tile"));
-							tile.setWorldObj(world);
-
-							tileEntities.add(tile);
-
-							//Machines would throw a wrench in the works
-							if(isUsableBlock(tile)) {
-								inventories.add((IInventory)tile);
-								usableTiles.add(tile);
-							}
-						}
-					}
-				}
-			}
-		}*/
         this.chunk.generateSkylightMap();
     }
 
@@ -1090,6 +1076,12 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
         this.blocks = new Block[sizeX][sizeY][sizeZ];
         this.metas = new short[sizeX][sizeY][sizeZ];
+
+        tileEntities.clear();
+        inventoryTiles.clear();
+        liquidTiles.clear();
+        pos2te.clear();
+
         chunk = new Chunk(world, 0, 0);
 
 
@@ -1111,6 +1103,11 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 NBTTagCompound nbt = buffer.readCompoundTag();
 
                 TileEntity tile = ZUtils.createTile(nbt);
+                if (tile == null) {
+                    AdvancedRocketry.logger.warn("Rocket missing Tile while reading from network");
+                    continue;
+                }
+
                 tile.setWorld(world);
                 this.addTileEntity(tile);
 
@@ -1128,7 +1125,6 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 e.printStackTrace();
             }
         }
-
         hasServiceMonitor = buffer.readBoolean();
 
         //We are now ready to render

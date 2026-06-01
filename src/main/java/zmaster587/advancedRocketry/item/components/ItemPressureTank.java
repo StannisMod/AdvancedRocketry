@@ -1,7 +1,9 @@
 package zmaster587.advancedRocketry.item.components;
 
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.util.ITooltipFlag;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.EntityEquipmentSlot;
@@ -9,12 +11,14 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.DamageSource;
+import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.common.capabilities.ICapabilityProvider;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import org.lwjgl.input.Keyboard;
 import zmaster587.advancedRocketry.capability.TankCapabilityItemStack;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.api.IArmorComponent;
@@ -23,6 +27,8 @@ import zmaster587.libVulpes.items.ItemIngredient;
 import zmaster587.libVulpes.util.FluidUtils;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 import java.util.List;
 
 public class ItemPressureTank extends ItemIngredient implements IArmorComponent {
@@ -34,26 +40,47 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
     public ItemPressureTank(int number, int capacity) {
         super(number);
         this.capacity = capacity;
-        this.maxStackSize = 1;
+        this.maxStackSize = 8;
     }
-
+    
+    @SideOnly(Side.CLIENT)
     @Override
-    public void addInformation(@Nonnull ItemStack stack, World player, List<String> list, ITooltipFlag bool) {
-        super.addInformation(stack, player, list, bool);
+    public void addInformation(@Nonnull ItemStack stack, @Nullable World world,
+                            List<String> list, ITooltipFlag flag) {
+        super.addInformation(stack, world, list, flag);
 
-        FluidStack fluidStack = FluidUtils.getFluidForItem(stack);
+        final int capMb = Math.max(0, getCapacity(stack));
+        final net.minecraftforge.fluids.FluidStack fs = zmaster587.libVulpes.util.FluidUtils.getFluidForItem(stack);
 
-        if (fluidStack == null) {
-            list.add(LibVulpes.proxy.getLocalizedString("msg.empty"));
-        } else {
-            list.add(fluidStack.getLocalizedName() + ": " + fluidStack.amount);
+        final String fluidName = (fs != null && fs.getFluid() != null) ? fs.getLocalizedName() : I18n.format("tooltip.advancedrocketry.fluidtank.empty");
+        final int amount = (fs != null) ? fs.amount : 0;
+
+        // Match main tank style
+        list.add(I18n.format("tooltip.advancedrocketry.itemdata.header"));
+        list.add(I18n.format("tooltip.advancedrocketry.fluidtank.fluid") + fluidName);
+        list.add(I18n.format("tooltip.advancedrocketry.fluidtank.level") + amount + "/" + capMb + " mB");
+
+        // SHIFT block
+        if (GuiScreen.isShiftKeyDown()) {
+            list.add(TextFormatting.GRAY + I18n.format("tooltip.advancedrocketry.pressuretank.shift.1"));
+        } else if (I18n.hasKey("tooltip.advancedrocketry.hold_shift")) {
+            list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC
+                    + I18n.format("tooltip.advancedrocketry.hold_shift"));
+        }
+
+        // ALT block (independent of SHIFT)
+        if (Keyboard.isKeyDown(Keyboard.KEY_LMENU) || Keyboard.isKeyDown(Keyboard.KEY_RMENU)) {
+            list.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.pressuretank.alt.1"));
+            list.add(TextFormatting.DARK_GRAY + I18n.format("tooltip.advancedrocketry.pressuretank.alt.2"));
+        } else if (I18n.hasKey("tooltip.advancedrocketry.hold_alt")) {
+            list.add(TextFormatting.DARK_GRAY.toString() + TextFormatting.ITALIC
+                    + I18n.format("tooltip.advancedrocketry.hold_alt"));
         }
     }
 
     @Override
     public void onTick(World world, EntityPlayer player, @Nonnull ItemStack armorStack, IInventory inv,
                        @Nonnull ItemStack componentStack) {
-
     }
 
     @Override
@@ -90,12 +117,11 @@ public class ItemPressureTank extends ItemIngredient implements IArmorComponent 
     @SideOnly(Side.CLIENT)
     public void renderScreen(@Nonnull ItemStack componentStack, List<ItemStack> modules, RenderGameOverlayEvent event, Gui gui) {
         // TODO Auto-generated method stub
-
     }
 
+   
     @Override
     public ICapabilityProvider initCapabilities(@Nonnull ItemStack stack, NBTTagCompound nbt) {
         return new TankCapabilityItemStack(stack, getCapacity(stack));
     }
-
 }

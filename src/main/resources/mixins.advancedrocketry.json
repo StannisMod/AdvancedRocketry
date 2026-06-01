@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "zmaster587.advancedRocketry.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "mixins.advancedrocketry.refmap.json",
+  "mixins": [
+    "MixinEntityGravity",
+    "MixinEntityPlayerInventoryAccess",
+    "MixinEntityPlayerMPInventoryAccess",
+    "MixinPlayerList",
+    "MixinWorldServerMulti",
+    "MixinWorldSetBlockState"
+  ],
+  "client": [],
+  "server": []
+}

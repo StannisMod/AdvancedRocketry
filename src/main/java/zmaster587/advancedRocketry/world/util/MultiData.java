@@ -19,6 +19,14 @@ public class MultiData implements IDataHandler {
         reset();
     }
 
+    private static final java.util.EnumSet<DataStorage.DataType> SUPPORTED_TYPES =
+        java.util.EnumSet.of(
+            DataStorage.DataType.COMPOSITION,
+            DataStorage.DataType.MASS,
+            DataStorage.DataType.DISTANCE
+        );
+
+
     public void reset() {
         for (DataStorage.DataType type : DataStorage.DataType.values()) {
             if (type != DataStorage.DataType.UNDEFINED)
@@ -84,11 +92,33 @@ public class MultiData implements IDataHandler {
 
     public void readFromNBT(NBTTagCompound nbt) {
         for (DataStorage.DataType type : DataStorage.DataType.values()) {
-            if (type != DataStorage.DataType.UNDEFINED) {
-                NBTTagCompound dataNBT = nbt.getCompoundTag(type.name());
-                dataStorages.get(type).readFromNBT(dataNBT);
+            if (type == DataStorage.DataType.UNDEFINED) continue;
 
+            DataStorage current = dataStorages.get(type);
+            int configuredMax = current != null ? current.getMaxData() : 0;
+
+            NBTTagCompound dataNBT = nbt.getCompoundTag(type.name());
+
+            // Read into a temporary storage first
+            DataStorage loaded = new DataStorage(type);
+            if (configuredMax > 0) {
+                loaded.setMaxData(configuredMax);
             }
+            loaded.readFromNBT(dataNBT);
+
+            int amount = loaded.getData();
+            int max = loaded.getMaxData();
+
+            // Rebuild lane from the map key so it stays permanently typed
+            DataStorage fixed = new DataStorage(type);
+            fixed.setMaxData(max > 0 ? max : configuredMax);
+
+            // Only set data if positive; setData(0, type) may clear type again
+            if (amount > 0) {
+                fixed.setData(amount, type);
+            }
+
+            dataStorages.put(type, fixed);
         }
     }
 }

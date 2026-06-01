@@ -147,6 +147,7 @@ public class XMLOreLoader {
         return oreGen.getOreEntries().isEmpty() ? null : oreGen;
     }
 
+    /* unused deprecated
     public static String writeXML(OreGenProperties gen, int numTabs) {
 
         String outputString;
@@ -160,6 +161,7 @@ public class XMLOreLoader {
 
         return outputString;
     }
+    */
 
     private static Node createTextNode(Document doc, String nodeName, double nodeText) {
         return createTextNode(doc, nodeName, Double.toString(nodeText));
@@ -181,23 +183,23 @@ public class XMLOreLoader {
     }
 
     public static Node writeOreEntryXML(Document doc, OreGenProperties gen) {
-
         Element oreGen = doc.createElement("oreGen");
 
         for (OreEntry ore : gen.getOreEntries()) {
             int meta = ore.getBlockState().getBlock().getMetaFromState(ore.getBlockState());
 
             Element oreElement = doc.createElement("ore");
-            oreElement.appendChild(createTextNode(doc, "block", ore.getBlockState().getBlock().getRegistryName().toString()));
-            oreElement.appendChild(createTextNode(doc, "minHeight", ore.getMinHeight()));
-            oreElement.appendChild(createTextNode(doc, "maxHeight", ore.getMaxHeight()));
-            oreElement.appendChild(createTextNode(doc, "clumpSize", ore.getClumpSize()));
-            oreElement.appendChild(createTextNode(doc, "chancePerChunk", ore.getClumpSize()));
-            if (meta != 0)
-                oreElement.appendChild(createTextNode(doc, "meta", meta));
+            oreElement.setAttribute("block", ore.getBlockState().getBlock().getRegistryName().toString());
+            oreElement.setAttribute("minHeight", Integer.toString(ore.getMinHeight()));
+            oreElement.setAttribute("maxHeight", Integer.toString(ore.getMaxHeight()));
+            oreElement.setAttribute("clumpSize", Integer.toString(ore.getClumpSize()));
+            oreElement.setAttribute("chancePerChunk", Integer.toString(ore.getChancePerChunk()));
 
+            if (meta != 0) {
+                oreElement.setAttribute("meta", Integer.toString(meta));
+            }
+            oreGen.appendChild(oreElement);
         }
-
         return oreGen;
     }
 
@@ -243,19 +245,19 @@ public class XMLOreLoader {
      * @return list of singleEntry (order MUST be preserved)
      */
     public List<SingleEntry<HashedBlockPosition, OreGenProperties>> loadPropertyFile() {
-        Node childNode = doc.getFirstChild();
+        List<SingleEntry<HashedBlockPosition, OreGenProperties>> mapping = new LinkedList<>();
 
-        while (childNode != null) {
-            if (!childNode.getNodeName().equalsIgnoreCase("oreconfig")) {
-                childNode = childNode.getFirstChild();
-                break;
-            }
-
-            childNode = childNode.getNextSibling();
+        if (doc == null) {
+            return mapping;
         }
 
-        List<SingleEntry<HashedBlockPosition, OreGenProperties>> mapping = new LinkedList<>();
-        OreGenProperties properties;
+        Node root = doc.getDocumentElement();
+        if (root == null || !root.getNodeName().equalsIgnoreCase("oreconfig")) {
+            AdvancedRocketry.logger.warn("Invalid ore config root node, expected <oreconfig>");
+            return mapping;
+        }
+
+        Node childNode = root.getFirstChild();
 
         while (childNode != null) {
 
@@ -264,59 +266,61 @@ public class XMLOreLoader {
                 continue;
             }
 
-            if (childNode.hasAttributes()) {
-                int pressure = -1;
-                int temp = -1;
-                NamedNodeMap att = childNode.getAttributes();
+            int pressure = -1;
+            int temp = -1;
+            NamedNodeMap att = childNode.getAttributes();
 
-                Node node = att.getNamedItem("pressure");
-
-                if (node != null) {
-                    try {
-                        pressure = MathHelper.clamp(Integer.parseInt(node.getTextContent()), 0, AtmosphereTypes.values().length);
-                    } catch (NumberFormatException e) {
-                        AdvancedRocketry.logger.warn("Invalid format for pressure: \"" + node.getTextContent() + "\" Only numbers are allowed(" + doc.getDocumentURI() + ")");
-                        childNode = childNode.getNextSibling();
-                        continue;
-                    }
-                }
-
-                node = att.getNamedItem("temp");
-
-                if (node != null) {
-                    try {
-                        temp = MathHelper.clamp(Integer.parseInt(node.getTextContent()), 0, Temps.values().length);
-                    } catch (NumberFormatException e) {
-                        AdvancedRocketry.logger.warn("Invalid format for temp: \"" + node.getTextContent() + "\" Only numbers are allowed(" + doc.getDocumentURI() + ")");
-                        childNode = childNode.getNextSibling();
-                        continue;
-                    }
-                }
-
-                if (pressure == -1 && temp == -1) {
-                    AdvancedRocketry.logger.warn("Invalid format for temp: \"" + node.getTextContent() + "\" Only numbers are allowed(" + doc.getDocumentURI() + ")");
+            Node node = att.getNamedItem("pressure");
+            if (node != null) {
+                try {
+                    pressure = MathHelper.clamp(
+                            Integer.parseInt(node.getTextContent()),
+                            0,
+                            AtmosphereTypes.values().length - 1
+                    );
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid format for pressure: \"" + node.getTextContent() + "\" Only numbers are allowed (" + doc.getDocumentURI() + ")");
                     childNode = childNode.getNextSibling();
                     continue;
                 }
-
-                properties = loadOre(childNode);
-
-                if (properties == null) {
-                    childNode = childNode.getNextSibling();
-                    continue;
-                }
-
-                if (temp != pressure) {
-                    if (pressure == -1) {
-                        mapping.add(new SingleEntry(new HashedBlockPosition(-1, temp, 0), properties));
-                    } else if (temp == -1) {
-                        mapping.add(new SingleEntry(new HashedBlockPosition(pressure, -1, 0), properties));
-                    }
-                } else
-                    mapping.add(new SingleEntry(new HashedBlockPosition(pressure, temp, 0), properties));
-
-                childNode = childNode.getNextSibling();
             }
+
+            node = att.getNamedItem("temp");
+            if (node != null) {
+                try {
+                    temp = MathHelper.clamp(
+                            Integer.parseInt(node.getTextContent()),
+                            0,
+                            Temps.values().length - 1
+                    );
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid format for temp: \"" + node.getTextContent() + "\" Only numbers are allowed (" + doc.getDocumentURI() + ")");
+                    childNode = childNode.getNextSibling();
+                    continue;
+                }
+            }
+
+            if (pressure == -1 && temp == -1) {
+                AdvancedRocketry.logger.warn("Each <oreGen> must define at least one of: pressure or temp (" + doc.getDocumentURI() + ")");
+                childNode = childNode.getNextSibling();
+                continue;
+            }
+
+            OreGenProperties properties = loadOre(childNode);
+            if (properties == null) {
+                childNode = childNode.getNextSibling();
+                continue;
+            }
+
+            if (pressure != -1 && temp != -1) {
+                mapping.add(new SingleEntry<>(new HashedBlockPosition(pressure, temp, 0), properties));
+            } else if (pressure != -1) {
+                mapping.add(new SingleEntry<>(new HashedBlockPosition(pressure, -1, 0), properties));
+            } else {
+                mapping.add(new SingleEntry<>(new HashedBlockPosition(-1, temp, 0), properties));
+            }
+
+            childNode = childNode.getNextSibling();
         }
 
         return mapping;

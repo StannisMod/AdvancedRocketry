@@ -34,7 +34,7 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -95,7 +95,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_SPAWNABLE = "spawnable";
     private static final String ELEMENT_CRATER_MULTIPLIER = "craterFrequencyMultiplier";
     private static final String ELEMENT_VOLCANO_MULTIPLIER = "volcanoFrequencyMultiplier";
-    private static final String ELEMENT_GEODE_MULTIPLIER = "geodefrequencyMultiplier";
+    private static final String ELEMENT_GEODE_MULTIPLIER = "geodeFrequencyMultiplier";
     private static final String ELEMENT_CAN_DECORATE = "hasShading";
     private static final String ELEMENT_COLOR_OVERRIDE = "hasColorOverride";
     private static final String ELEMENT_SKYOVERRIDE = "skyRenderOverride";
@@ -139,8 +139,6 @@ public class XMLPlanetLoader {
         Element galaxyElement = doc.createElement(ELEMENT_GALAXY);
         doc.appendChild(galaxyElement);
 
-        //galaxy.
-
         Collection<StellarBody> stars = galaxy.getStars();
 
         for (StellarBody star : stars) {
@@ -154,7 +152,6 @@ public class XMLPlanetLoader {
             nodeStar.setAttribute(ATTR_SIZE, Float.toString(star.getSize()));
             nodeStar.setAttribute(ATTR_NUMPLANETS, "0");
             nodeStar.setAttribute(ATTR_NUMGASPLANETS, "0");
-
 
             for (StellarBody star2 : star.getSubStars()) {
                 Element nodeSubStar = doc.createElement(ELEMENT_STAR);
@@ -180,25 +177,26 @@ public class XMLPlanetLoader {
         try {
             transformer = transformerFactory.newTransformer();
         } catch (TransformerConfigurationException e) {
-            //TODO: error handling
             return "";
         }
+
         transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty(OutputKeys.ENCODING, StandardCharsets.UTF_8.name());
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
         transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+
         DOMSource source = new DOMSource(doc);
-
-        OutputStream stream = new ByteArrayOutputStream();
-
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
         StreamResult result = new StreamResult(stream);
+
         try {
             transformer.transform(source, result);
         } catch (TransformerException e) {
-            //TODO: error handling
             e.printStackTrace();
             return "";
         }
 
-        return stream.toString();
+        return new String(stream.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static Node createTextNode(Document doc, String nodeName, double nodeText) {
@@ -270,10 +268,10 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PERIOD, properties.rotationalPeriod));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_ATMDENSITY, properties.getAtmosphereDensity()));
         // Custom weather properties
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_START_LENGTH, properties.rainStartLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_PROLONGATION_LENGTH, properties.rainProlongationLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_START_LENGTH, properties.thunderStartLength));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.thunderProlongationLength));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_START_LENGTH, properties.getRainStartLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_PROLONGATION_LENGTH, properties.getRainProlongationLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_START_LENGTH, properties.getThunderStartLength()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.getThunderProlongationLength()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_MARKER, properties.getRainMarker()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_MARKER, properties.getThunderMarker()));
 
@@ -602,14 +600,14 @@ public class XMLPlanetLoader {
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_SKYOVERRIDE))
                 properties.skyRenderOverride = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_START_LENGTH))
-                properties.rainStartLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setRainStartLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             // TODO Create default values for new fields
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_PROLONGATION_LENGTH))
-                properties.rainProlongationLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setRainProlongationLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_START_LENGTH))
-                properties.thunderStartLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setThunderStartLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_PROLONGATION_LENGTH))
-                properties.thunderProlongationLength = Integer.parseInt(planetPropertyNode.getTextContent());
+                properties.setThunderProlongationLength(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RAIN_MARKER))
                 properties.setRainMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_MARKER))

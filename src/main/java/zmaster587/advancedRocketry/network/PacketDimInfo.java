@@ -6,8 +6,10 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.PacketBuffer;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.integration.jei.ARPlugin;
 import zmaster587.advancedRocketry.util.SpawnListEntryNBT;
 import zmaster587.libVulpes.network.BasePacket;
 
@@ -144,7 +146,7 @@ public class PacketDimInfo extends BasePacket {
                 DimensionManager.getInstance().registerDimNoUpdate(dimProperties, true);
             }
         }
-
+        ARPlugin.requestGasGiantRefresh();
     }
 
     @Override

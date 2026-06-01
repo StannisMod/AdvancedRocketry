@@ -13,6 +13,7 @@ import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.satellite.SatelliteProperties;
 import zmaster587.advancedRocketry.item.ItemOreScanner;
+import zmaster587.libVulpes.LibVulpes;
 
 import javax.annotation.Nonnull;
 import java.util.ArrayList;
@@ -209,7 +210,7 @@ public class SatelliteOreMapping extends SatelliteBase {
 
     @Override
     public String getName() {
-        return "Ore Mapper";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.oremapper");
     }
 
 

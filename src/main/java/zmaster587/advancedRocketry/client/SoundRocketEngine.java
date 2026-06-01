@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.client;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.MovingSound;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.SoundEvent;
@@ -7,7 +8,7 @@ import zmaster587.advancedRocketry.entity.EntityRocket;
 
 public class SoundRocketEngine extends MovingSound {
 
-    EntityRocket rocket;
+    private EntityRocket rocket;
 
     public SoundRocketEngine(SoundEvent soundIn, SoundCategory categoryIn, EntityRocket rocket) {
         super(soundIn, categoryIn);
@@ -17,9 +18,17 @@ public class SoundRocketEngine extends MovingSound {
 
     @Override
     public void update() {
+        Minecraft mc = Minecraft.getMinecraft();
 
-        if (rocket.isDead)
+        if (rocket == null
+                || rocket.isDead
+                || mc.world == null
+                || rocket.world != mc.world) {
             this.donePlaying = true;
+            this.rocket = null;
+            this.volume = 0f;
+            return;
+        }
 
         this.volume = rocket.getEnginePower();
 
@@ -34,5 +43,4 @@ public class SoundRocketEngine extends MovingSound {
         this.yPosF = (float) rocket.posY;
         this.zPosF = (float) rocket.posZ;
     }
-
 }

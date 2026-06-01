@@ -3,8 +3,7 @@ package zmaster587.advancedRocketry.event;
 // The detailed map is scaled too small and it is ugly even with correct scale
 // maybe just use leo as earth? 
 
-import net.minecraft.block.material.MapColor;
-import net.minecraft.block.state.IBlockState;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
@@ -13,34 +12,26 @@ import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.client.settings.GameSettings;
 import net.minecraft.entity.Entity;
-import net.minecraft.init.Blocks;
 import net.minecraft.inventory.EntityEquipmentSlot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.IRenderHandler;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent.ElementType;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
 import zmaster587.advancedRocketry.api.ARConfiguration;
-import zmaster587.advancedRocketry.api.IPlanetaryProvider;
-import zmaster587.advancedRocketry.api.RocketEvent;
 import zmaster587.advancedRocketry.api.armor.IFillableArmor;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
+import zmaster587.advancedRocketry.client.KeyBindings;
 import zmaster587.advancedRocketry.client.render.ClientDynamicTexture;
-import zmaster587.advancedRocketry.client.render.planet.RenderPlanetarySky;
-import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.util.ItemAirUtils;
@@ -48,34 +39,25 @@ import zmaster587.libVulpes.api.IArmorComponent;
 import zmaster587.libVulpes.api.IModularArmor;
 import zmaster587.libVulpes.client.ResourceIcon;
 import zmaster587.libVulpes.render.RenderHelper;
-import zmaster587.libVulpes.util.ZUtils;
 
 import javax.annotation.Nonnull;
 import java.nio.IntBuffer;
 import java.util.List;
-import java.util.Random;
 
 public class RocketEventHandler extends Gui {
 
 
-    private static final int getImgSize = 512;
-    private static final int outerImgSize = getImgSize / 8;
     private static final int numTicksToDisplay = 100;
     public static GuiBox suitPanel = new GuiBox(8, 8, 24, 24);
     public static GuiBox oxygenBar = new GuiBox(8, -57, 80, 48);
     public static GuiBox hydrogenBar = new GuiBox(8, -74, 80, 48);
     public static GuiBox atmBar = new GuiBox(8, 27, 200, 48);
-    private static ClientDynamicTexture earth;
-    private static ClientDynamicTexture outerBounds;
-    private static boolean mapReady = false;
-    private static boolean mapNeedsBinding = false;
-    private static IntBuffer table, outerBoundsTable;
-    private static IRenderHandler prevRenderHanlder = null;
-    private static GuiBox currentlySelectedBox = null;
     private static String displayString = "";
     private static long lastDisplayTime = -1000;
-    Thread thread = null;
     private ResourceLocation background = TextureResources.rocketHud;
+    private static long suppressSuffocationWarningUntil = Long.MIN_VALUE;
+    private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
+
 
     @SideOnly(Side.CLIENT)
     public static void setOverlay(long endTime, String msg) {
@@ -93,13 +75,16 @@ public class RocketEventHandler extends Gui {
     public void onScreenRender(RenderGameOverlayEvent.Post event) {
         Entity ride;
         if (event.getType() == ElementType.HOTBAR) {
-            if ((ride = Minecraft.getMinecraft().player.getRidingEntity()) instanceof EntityRocket) {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc.player == null || mc.world == null) {
+                return;
+            }
+            if ((ride = mc.player.getRidingEntity()) instanceof EntityRocket) {
                 EntityRocket rocket = (EntityRocket) ride;
 
                 GlStateManager.enableBlend();
-                //GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
 
-                Minecraft.getMinecraft().renderEngine.bindTexture(background);
+                mc.renderEngine.bindTexture(background);
 
                 //Draw BG
                 this.drawTexturedModalRect(0, 0, 0, 0, 17, 252);
@@ -123,7 +108,7 @@ public class RocketEventHandler extends Gui {
                     int vertPos = 0;
                     for (String strPart : strs) {
 
-                        FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+                        FontRenderer fontRenderer = mc.fontRenderer;
 
                         float scale = str.length() < 50 ? 1f : 0.5f;
 
@@ -141,11 +126,34 @@ public class RocketEventHandler extends Gui {
                         vertPos++;
                     }
                 }
+                // New bottom-right hint
+                if (mc.currentScreen == null) { // no GUI open
+                    FontRenderer fontRenderer = mc.fontRenderer;
+                    String keyName = GameSettings.getKeyDisplayString(
+                            KeyBindings.getOpenRocketUI().getKeyCode()
+                    );
+                    String hint = I18n.format("msg.entity.rocket.openGuiHint", keyName);
+
+                    int scaledW = event.getResolution().getScaledWidth();
+                    int scaledH = event.getResolution().getScaledHeight();
+                    int textWidth = fontRenderer.getStringWidth(hint);
+                    int textHeight = fontRenderer.FONT_HEIGHT;
+
+                    float scale = 1.0F;
+                    float x = (scaledW - 4 - textWidth * scale) / scale;
+                    float y = (scaledH - 4 - textHeight * scale) / scale;
+
+                    GL11.glPushMatrix();
+                    GL11.glScalef(scale, scale, scale);
+                    fontRenderer.drawStringWithShadow(hint, x, y, 0xFFFFFF);
+                    GL11.glPopMatrix();
+                }               
+
             }
 
             //Draw the O2 Bar if needed
-            if (!(Minecraft.getMinecraft().player.capabilities.isCreativeMode || Minecraft.getMinecraft().player.isSpectator())) {
-                ItemStack chestPiece = Minecraft.getMinecraft().player.getItemStackFromSlot(EntityEquipmentSlot.CHEST);
+            if (!(mc.player.capabilities.isCreativeMode || mc.player.isSpectator())) {
+                ItemStack chestPiece = mc.player.getItemStackFromSlot(EntityEquipmentSlot.CHEST);
                 IFillableArmor fillable = null;
                 if (!chestPiece.isEmpty() && chestPiece.getItem() instanceof IFillableArmor)
                     fillable = (IFillableArmor) chestPiece.getItem();
@@ -156,7 +164,7 @@ public class RocketEventHandler extends Gui {
                     float size = fillable.getAirRemaining(chestPiece) / (float) fillable.getMaxAir(chestPiece);
 
                     GlStateManager.enableBlend();
-                    Minecraft.getMinecraft().renderEngine.bindTexture(background);
+                    mc.renderEngine.bindTexture(background);
                     GlStateManager.color(1f, 1f, 1f);
                     int width = 83;
                     int screenX = oxygenBar.getRenderX();//+ 8;
@@ -169,18 +177,30 @@ public class RocketEventHandler extends Gui {
             }
 
             //Draw module icons
-            if (!(Minecraft.getMinecraft().player.capabilities.isCreativeMode || Minecraft.getMinecraft().player.isSpectator()) && !Minecraft.getMinecraft().player.getItemStackFromSlot(EntityEquipmentSlot.HEAD).isEmpty() && Minecraft.getMinecraft().player.getItemStackFromSlot(EntityEquipmentSlot.HEAD).getItem() instanceof IModularArmor) {
+            if (!(mc.player.capabilities.isCreativeMode || mc.player.isSpectator()) && !mc.player.getItemStackFromSlot(EntityEquipmentSlot.HEAD).isEmpty() && mc.player.getItemStackFromSlot(EntityEquipmentSlot.HEAD).getItem() instanceof IModularArmor) {
                 for (EntityEquipmentSlot slot : EntityEquipmentSlot.values()) {
-                    renderModuleSlots(Minecraft.getMinecraft().player.getItemStackFromSlot(slot), 4 - slot.getIndex(), event);
+                    renderModuleSlots(mc.player.getItemStackFromSlot(slot), 4 - slot.getIndex(), event);
                 }
             }
 
-            //In event of world change make sure the warning isn't displayed
-            if (Minecraft.getMinecraft().world.getTotalWorldTime() - AtmosphereHandler.lastSuffocationTime < 0)
-                AtmosphereHandler.lastSuffocationTime = 0;
-            //Tell the player he's suffocating if needed
-            if (Minecraft.getMinecraft().world.getTotalWorldTime() - AtmosphereHandler.lastSuffocationTime < numTicksToDisplay) {
-                FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+
+            long worldTime = mc.world.getTotalWorldTime();
+
+            if (mc.player.dimension != lastSuffocationWarningDim) {
+                lastSuffocationWarningDim = mc.player.dimension;
+                AtmosphereHandler.lastSuffocationTime = worldTime - numTicksToDisplay - 1;
+                suppressSuffocationWarningUntil = worldTime + 40;
+            }
+
+            // In event of world change make sure the warning isn't displayed
+            if (worldTime - AtmosphereHandler.lastSuffocationTime < 0) {
+                AtmosphereHandler.lastSuffocationTime = worldTime - numTicksToDisplay - 1;
+            }
+
+            // Tell the player he's suffocating if needed
+            if (worldTime >= suppressSuffocationWarningUntil &&
+                    worldTime - AtmosphereHandler.lastSuffocationTime < numTicksToDisplay) {
+                FontRenderer fontRenderer = mc.fontRenderer;
                 String str = "";
                 if (AtmosphereHandler.currentAtm != null) {
                     str = AtmosphereHandler.currentAtm.getDisplayMessage();
@@ -194,15 +214,15 @@ public class RocketEventHandler extends Gui {
 
                 fontRenderer.drawStringWithShadow(str, screenX, screenY, 0xFF5656);
                 GlStateManager.color(1f, 1f, 1f);
-                Minecraft.getMinecraft().getTextureManager().bindTexture(TextureResources.progressBars);
+                mc.getTextureManager().bindTexture(TextureResources.progressBars);
                 this.drawTexturedModalRect(screenX + fontRenderer.getStringWidth(str) / 2 - 8, screenY - 16, 0, 156, 16, 16);
 
                 GL11.glPopMatrix();
             }
 
             //Draw arbitrary string
-            if (Minecraft.getMinecraft().world.getTotalWorldTime() <= lastDisplayTime) {
-                FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+            if (mc.world.getTotalWorldTime() <= lastDisplayTime) {
+                FontRenderer fontRenderer = mc.fontRenderer;
                 GL11.glPushMatrix();
                 GL11.glScalef(2, 2, 2);
                 int loc = 0;
@@ -352,32 +372,6 @@ public class RocketEventHandler extends Gui {
             return getRawY();
         }
 
-        public void setRenderX(int x, double scaleX) {
-            if (x < scaleX / 3) {
-                modeX = -1;
-                this.setRawX(x);
-            } else if (x > scaleX * 2 / 3) {
-                this.setRawX((int) (scaleX - x));
-                modeX = 1;
-            } else {
-                this.setRawX((int) (scaleX / 2 - x));
-                modeX = 0;
-            }
-        }
-
-        public void setRenderY(int y, double scaleY) {
-            if (y < scaleY / 3) {
-                modeY = -1;
-                this.setRawY(y);
-            } else if (y > scaleY * 2 / 3) {
-                this.setRawY((int) (scaleY - y));
-                modeY = 1;
-            } else {
-                this.setRawY((int) (scaleY / 2 - y));
-                modeY = 0;
-            }
-        }
-
         public int getRenderX() {
             ScaledResolution scaledresolution = new ScaledResolution(Minecraft.getMinecraft());
             int i = scaledresolution.getScaledWidth();
@@ -418,16 +412,8 @@ public class RocketEventHandler extends Gui {
             this.y = y;
         }
 
-        public int getSizeModeX() {
-            return modeX;
-        }
-
         public void setSizeModeX(int int1) {
             modeX = int1;
-        }
-
-        public int getSizeModeY() {
-            return modeY;
         }
 
         public void setSizeModeY(int int1) {

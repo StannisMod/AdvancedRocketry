@@ -1,0 +1,503 @@
+/**
+ * It is advised that you do not edit anything in the build.gradle; unless you are sure of what you are doing
+ */
+import com.gtnewhorizons.retrofuturagradle.mcp.InjectTagsTask
+import com.gtnewhorizons.retrofuturagradle.minecraft.RunMinecraftTask
+import org.jetbrains.changelog.Changelog
+import org.jetbrains.gradle.ext.Gradle
+
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.3'
+    id 'com.gtnewhorizons.retrofuturagradle' version '2.0.2'
+    id 'com.matthewprenger.cursegradle' version '1.4.0' apply false
+    id 'com.modrinth.minotaur' version '2.+' apply false
+    id 'org.jetbrains.changelog' version '2.5.0'
+}
+
+apply from: 'gradle/scripts/helpers.gradle'
+
+// Early Assertions
+assertProperty 'mod_version'
+assertProperty 'root_package'
+assertProperty 'mod_id'
+assertProperty 'mod_name'
+
+assertSubProperties 'use_tags', 'tag_class_name'
+assertSubProperties 'use_access_transformer', 'access_transformer_locations'
+assertSubProperties 'use_mixins', 'mixin_booter_version', 'mixin_refmap'
+assertSubProperties 'is_coremod', 'coremod_includes_mod', 'coremod_plugin_class_name'
+assertSubProperties 'use_asset_mover', 'asset_mover_version'
+
+setDefaultProperty 'use_modern_java_syntax', false, false
+setDefaultProperty 'generate_sources_jar', true, false
+setDefaultProperty 'generate_javadocs_jar', true, false
+setDefaultProperty 'mapping_channel', true, 'stable'
+setDefaultProperty 'mapping_version', true, '39'
+setDefaultProperty 'use_dependency_at_files', true, true
+setDefaultProperty 'minecraft_username', true, 'Developer'
+setDefaultProperty 'extra_jvm_args', false, ''
+setDefaultProperty 'extra_tweak_classes', false, ''
+setDefaultProperty 'change_minecraft_sources', false, false
+
+version = propertyString('mod_version')
+group = propertyString('root_package')
+
+base {
+    archivesName.set(propertyString('mod_id'))
+}
+
+tasks.decompressDecompiledSources.enabled !propertyBool('change_minecraft_sources')
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(propertyBool('use_modern_java_syntax') ? 16 : 8))
+        // Azul covers the most platforms for Java 8 toolchains, crucially including MacOS arm64
+        vendor.set(JvmVendorSpec.AZUL)
+    }
+    if (propertyBool('generate_sources_jar')) {
+        withSourcesJar()
+    }
+    if (propertyBool('generate_javadocs_jar')) {
+        withJavadocJar()
+    }
+}
+
+configurations {
+    embed
+    implementation.extendsFrom(embed)
+}
+
+minecraft {
+    mcVersion.set('1.12.2')
+
+    mcpMappingChannel.set(propertyString('mapping_channel'))
+    mcpMappingVersion.set(propertyString('mapping_version'))
+
+    useDependencyAccessTransformers.set(propertyBool('use_dependency_at_files'))
+
+    username.set(propertyString('minecraft_username'))
+    
+    // Add any additional tweaker classes here
+    extraTweakClasses.addAll(propertyStringList('extra_tweak_classes'))
+
+    // Add various JVM arguments here for runtime
+    def args = ['-ea:' + group]
+    if (propertyBool('use_mixins')) {
+        args << '-Dmixin.hotSwap=true'
+        args << '-Dmixin.checks.interfaces=true'
+        args << '-Dmixin.debug.export=true'
+    }
+    extraRunJvmArguments.addAll(args)
+    extraRunJvmArguments.addAll(propertyStringList('extra_jvm_args'))
+
+    if (propertyBool('use_tags')) {
+        if (file('tags.properties').exists()) {
+            Properties props = new Properties().tap {  it.load(file('tags.properties').newInputStream()); it }
+            if (!props.isEmpty()) {
+                injectedTags.set(props.collectEntries { k, v -> [(k): interpolate(v)] })
+            }
+        }
+    }
+}
+
+repositories {
+    maven {
+        name 'CleanroomMC Maven'
+        url 'https://maven.cleanroommc.com'
+    }
+}
+
+dependencies {
+    if (propertyBool('use_modern_java_syntax')) {
+        annotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:1.0.0'
+        // Workaround for https://github.com/bsideup/jabel/issues/174
+        annotationProcessor 'net.java.dev.jna:jna-platform:5.13.0'
+        compileOnly ('com.github.bsideup.jabel:jabel-javac-plugin:1.0.0') {
+            transitive = false
+        }
+        // Allow jdk.unsupported classes like sun.misc.Unsafe, workaround for JDK-8206937 and fixes crashes in tests
+        patchedMinecraft 'me.eigenraven.java8unsupported:java-8-unsupported-shim:1.0.0'
+        // Include for tests
+        testAnnotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:1.0.0'
+        testCompileOnly('com.github.bsideup.jabel:jabel-javac-plugin:1.0.0') {
+            transitive = false // We only care about the 1 annotation class
+        }
+    }
+    if (propertyBool('use_asset_mover')) {
+        implementation "com.cleanroommc:assetmover:${propertyString('asset_mover_version')}"
+    }
+    if (propertyBool('use_mixins')) {
+        String mixin = modUtils.enableMixins("zone.rong:mixinbooter:${propertyString('mixin_booter_version')}", propertyString('mixin_refmap'))
+        api (mixin) {
+            transitive = false
+        }
+        annotationProcessor 'org.ow2.asm:asm-debug-all:5.2'
+        annotationProcessor 'com.google.guava:guava:32.1.2-jre'
+        annotationProcessor 'com.google.code.gson:gson:2.8.9'
+        annotationProcessor (mixin) {
+            transitive = false
+        }
+    }
+    if (propertyBool('enable_junit_testing')) {
+        // JUnit 4 + the reusable Forge 1.12.2 test framework (see src/test/README.md).
+        // The :dev classifier is REQUIRED: the Forge dev workspace links against
+        // MCP-named MC classes; the reobf (no-classifier) jar has SRG names and
+        // won't compile against the dev classpath.
+        // Resolution: composite build when -PuseLocalFramework=true and
+        // ../ForgeTestFramework exists (settings.gradle), else mavenLocal.
+        testImplementation 'junit:junit:4.13.2'
+        testImplementation 'com.github.stannismod.forge:forge-test-framework:0.4.2:dev'
+    }
+}
+
+apply from: 'gradle/scripts/dependencies.gradle'
+
+// Adds Access Transformer files to tasks
+if (propertyBool('use_access_transformer')) {
+    for (def location : propertyStringList('access_transformer_locations')) {
+        def fileLocation = file("${projectDir}/src/main/resources/${location}")
+        if (fileLocation.exists()) {
+            tasks.deobfuscateMergedJarToSrg.accessTransformerFiles.from(fileLocation)
+            tasks.srgifyBinpatchedJar.accessTransformerFiles.from(fileLocation)
+        } else {
+            throw new GradleException("Access Transformer file [$fileLocation] does not exist!")
+        }
+    }
+}
+
+processResources {
+
+    inputs.property 'mod_id', propertyString('mod_id')
+    inputs.property 'mod_name', propertyString('mod_name')
+    inputs.property 'mod_version', propertyString('mod_version')
+    inputs.property 'mod_description', propertyString('mod_description')
+    inputs.property 'mod_authors', "${propertyStringList('mod_authors', ',').join(', ')}"
+    inputs.property 'mod_credits', propertyString('mod_credits')
+    inputs.property 'mod_url', propertyString('mod_url')
+    inputs.property 'mod_update_json', propertyString('mod_update_json')
+    inputs.property 'mod_logo_path', propertyString('mod_logo_path')
+    inputs.property 'mixin_refmap', propertyString('mixin_refmap')
+    inputs.property 'mixin_package', propertyString('mixin_package')
+    inputs.property 'mixin_configs', propertyStringList('mixin_configs').join(' ')
+
+    def filterList = ['mcmod.info', 'pack.mcmeta']
+    filterList.addAll(propertyStringList('mixin_configs').collect(config -> "mixins.${config}.json" as String))
+
+    filesMatching(filterList) { fcd ->
+        fcd.expand(
+                'mod_id': propertyString('mod_id'),
+                'mod_name': propertyString('mod_name'),
+                'mod_version': propertyString('mod_version'),
+                'mod_description': propertyString('mod_description'),
+                'mod_authors': "${propertyStringList('mod_authors', ',').join(', ')}",
+                'mod_credits': propertyString('mod_credits'),
+                'mod_url': propertyString('mod_url'),
+                'mod_update_json': propertyString('mod_update_json'),
+                'mod_logo_path': propertyString('mod_logo_path'),
+                'mixin_refmap': propertyString('mixin_refmap'),
+                'mixin_package': propertyString('mixin_package')
+        )
+    }
+    
+    if (propertyBool('use_access_transformer')) {
+        rename '(.+_at.cfg)', 'META-INF/$1'
+    }
+
+}
+
+jar {
+    manifest {
+        def attribute_map = [:]
+        if (propertyBool('is_coremod')) {
+            attribute_map['FMLCorePlugin'] = propertyString('coremod_plugin_class_name')
+            if (propertyBool('coremod_includes_mod')) {
+                attribute_map['FMLCorePluginContainsFMLMod'] = true
+                def currentTasks = gradle.startParameter.taskNames
+                if (currentTasks[0] == 'build' || currentTasks[0] == 'prepareObfModsFolder' || currentTasks[0] == 'runObfClient') {
+                    attribute_map['ForceLoadAsMod'] = true
+                }
+            }
+        }
+        if (propertyBool('use_access_transformer')) {
+            attribute_map['FMLAT'] = propertyString('access_transformer_locations')
+        }
+        attributes(attribute_map)
+    }
+    // Add all embedded dependencies into the jar
+    from(provider{ configurations.embed.collect {it.isDirectory() ? it : zipTree(it)} })
+}
+
+idea {
+    module {
+        inheritOutputDirs = true
+    }
+    project {
+        settings {
+            runConfigurations {
+                "1. Run Client"(Gradle) {
+                    taskNames = ["runClient"]
+                }
+                "2. Run Server"(Gradle) {
+                    taskNames = ["runServer"]
+                }
+                "3. Run Obfuscated Client"(Gradle) {
+                    taskNames = ["runObfClient"]
+                }
+                "4. Run Obfuscated Server"(Gradle) {
+                    taskNames = ["runObfServer"]
+                }
+            }
+            compiler.javac {
+                afterEvaluate {
+                    javacAdditionalOptions = "-encoding utf8"
+                    moduleJavacAdditionalOptions = [
+                            (project.name + ".main"): tasks.compileJava.options.compilerArgs.collect { '"' + it + '"' }.join(' ')
+                    ]
+                }
+            }
+        }
+    }
+}
+
+compileTestJava {
+    sourceCompatibility = targetCompatibility = 8
+}
+
+// ─── Test task topology (headless layers) ───────────────────────────────────
+//
+// Test TYPE is selected by DIRECTORY. Two harness-free JUnit 4 layers are wired:
+//   ./gradlew testUnit         → pure unit            (fast, no harness)
+//   ./gradlew testIntegration  → MC-bootstrap integ.  (fast, no harness)
+//   ./gradlew test             → both of the above (umbrella)
+//
+// The dedicated-server / real-client harness layers (testServer / testClient)
+// are NOT wired here: their FG6 launcher/RunConfig integration must be rewritten
+// for RetroFuturaGradle first (tracked separately). Their sources are not yet
+// imported either.
+def configureHeadlessTest = { Test t, String packageGlob ->
+    t.group = 'verification'
+    t.useJUnit()
+    t.testClassesDirs = sourceSets.test.output.classesDirs
+    t.classpath = sourceSets.test.runtimeClasspath
+    t.include packageGlob
+    t.javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(8)
+    })
+    // Test-only flag gating /artest probe commands and other test-only behaviour.
+    t.systemProperty 'advancedrocketry.tests', 'true'
+    t.testLogging {
+        events 'failed', 'skipped', 'passed'
+        exceptionFormat = 'full'
+        showStandardStreams = propertyBool('show_testing_output')
+    }
+}
+
+tasks.register('testUnit', Test) {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/unit/**')
+}
+
+tasks.register('testIntegration', Test) {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/integration/**')
+}
+
+test {
+    configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/unit/**')
+    include 'zmaster587/advancedRocketry/test/integration/**'
+}
+
+// ─── Real-server / real-client harness layers (RFG) ─────────────────────────
+//
+//   ./gradlew testServer  → dedicated-server e2e  (src/test/.../test/server)
+//   ./gradlew testClient  → real-client e2e       (src/test/.../test/client)
+//
+// forge-test-framework spawns a child JVM running RFG's GradleStartServer /
+// GradleStart off java.class.path. RFG bakes the SRG/CSV mapping dirs and the
+// FML tweaker into the compiled GradleStart launcher at token-replacement time,
+// and GradleForgeHacks auto-discovers our coremod + FMLAT by scanning the
+// classpath manifests — so the only thing the consuming build must supply is a
+// child classpath identical to runServer's (patched MC + mcLauncher + deps +
+// our mod) plus the test/framework classes. No FG6 run-config reflection needed:
+// RunMinecraftTask extends JavaExec, so getClasspath()/getAssetsDirectory() are
+// public. The framework's defaults (launcher.class.server=GradleStartServer,
+// legacyArgs=true) already target RFG.
+def configureHarnessTest = { Test t, boolean enableClient ->
+    t.group = 'verification'
+    t.useJUnit()
+    t.testClassesDirs = sourceSets.test.output.classesDirs
+
+    // Child server/client JVMs exec GradleStart* off this JVM's java.class.path,
+    // so it must carry the full RFG run classpath (mcLauncher = GradleStartServer,
+    // patched MC, deps) in addition to the test set. We take the run task's
+    // classpath ONLY — we must NOT depend on the run task executing (it launches
+    // a foreground MC server that never exits and would hang the build). Wrapping
+    // the run task's classpath provider in files() pulls in the build deps of the
+    // underlying artifacts (patched-MC / mcLauncher jars) without running it.
+    // NOTE: take the run task's classpath EAGERLY (.get().classpath). Going through
+    // a `runTask.map { it.classpath }` provider makes Gradle treat the run task as
+    // the producer and schedules it to EXECUTE — which launches a foreground MC
+    // server that never exits and hangs the build. The eager classpath collection's
+    // build deps are the compile / mcLauncher / jar tasks (the artifact producers),
+    // not the run task itself.
+    // Exclude the main source set output (classes + resources) from the test
+    // portion: the run task's classpath already carries our mod as the built jar,
+    // and FML throws DuplicateModsFoundException if it finds advancedrocketry both
+    // as build/classes/java/main AND build/libs/*.jar. The jar form is also the
+    // one that carries the FMLCorePlugin/FMLAT manifest, so coremod + AT discovery
+    // (GradleForgeHacks scanning java.class.path) only works from the jar anyway.
+    def runTask = tasks.named(enableClient ? 'runClient' : 'runServer', RunMinecraftTask).get()
+    t.classpath = project.files(
+            sourceSets.test.runtimeClasspath.minus(sourceSets.main.output),
+            runTask.classpath)
+    t.dependsOn 'jar'
+
+    // The child server must run on the Java 8 toolchain (MC 1.12.2). The harness
+    // resolves the child's java binary from THIS JVM's java.home, so pin the
+    // parent test JVM to Java 8 as well.
+    t.javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(8)
+    })
+
+    t.systemProperty 'advancedrocketry.tests', 'true'
+    // Gate that flips AbstractHeadlessServerTest / AbstractClientE2ETest from
+    // Assume-skip to live. Without it the whole layer no-ops.
+    t.systemProperty 'forge.test.harness.enabled', 'true'
+    // Pin the assets dir to RFG's resolved location (framework default guesses a
+    // cache path that can drift between RFG versions).
+    t.systemProperty 'forge.test.assets.dir',
+            runTask.assetsDirectory.get().asFile.absolutePath
+
+    if (enableClient) {
+        // Real client needs LWJGL natives + a display. Auto-skips on headless.
+        // MC 1.12.2 runs on LWJGL 2, whose natives RFG extracts to
+        // run/natives/lwjgl2 via the extractNatives2 task (there is no plain
+        // `extractNatives` task under RFG; extractNatives3 is the unused
+        // LWJGL 3 set).
+        def nativesTask = tasks.named('extractNatives2').get()
+        t.dependsOn nativesTask
+        t.systemProperty 'forge.test.client.enabled', 'true'
+        t.systemProperty 'forge.test.client.nativesDir',
+                nativesTask.outputs.files.singleFile.absolutePath
+        ['DISPLAY', 'XAUTHORITY', 'LIBGL_ALWAYS_SOFTWARE'].each { var ->
+            def v = System.getenv(var)
+            if (v != null) {
+                t.systemProperty "forge.test.client.env.${var}", v
+            }
+        }
+    }
+
+    // Each child MC JVM is heavyweight; isolate one test class per fork.
+    t.maxParallelForks = (findProperty('test_harness_forks') ?: '1') as int
+    t.forkEvery 1L
+    t.minHeapSize = '256m'
+    t.maxHeapSize = '1g'
+
+    t.testLogging {
+        events 'failed', 'skipped', 'passed'
+        exceptionFormat = 'full'
+        showStandardStreams = propertyBool('show_testing_output')
+    }
+}
+
+tasks.register('testServer', Test) {
+    description = 'Dedicated-server scenario e2e (src/test/.../test/server).'
+    configureHarnessTest(it, false)
+    include 'zmaster587/advancedRocketry/test/server/**'
+    mustRunAfter 'testIntegration'
+}
+
+tasks.register('testClient', Test) {
+    description = 'Real-client + server e2e (src/test/.../test/client). Auto-skips headless.'
+    configureHarnessTest(it, true)
+    include 'zmaster587/advancedRocketry/test/client/**'
+    mustRunAfter 'testServer'
+}
+
+String parserChangelog() {
+    if (!file('CHANGELOG.md').exists()) {
+        throw new GradleException('publish_with_changelog is true, but CHANGELOG.md does not exist in the workspace!')
+    }
+    String parsedChangelog = changelog.renderItem(
+            changelog.get(propertyString('mod_version')).withHeader(false).withEmptySections(false),
+            Changelog.OutputType.MARKDOWN)
+    if (parsedChangelog.isEmpty()) {
+        throw new GradleException('publish_with_changelog is true, but the changelog for the latest version is empty!')
+    }
+    return parsedChangelog
+}
+
+tasks.register('generateMixinJson') {
+    group 'cleanroom helpers'
+    def missingConfig = propertyStringList('mixin_configs').findAll(config -> !file("src/main/resources/mixins.${config}.json").exists())
+    onlyIf {
+        if (propertyBool('use_mixins') && propertyBool('generate_mixins_json')) {
+            return !missingConfig.empty
+        }
+        return false
+    }
+    doLast {
+        for (String mixinConfig : missingConfig) {
+            def file = file("src/main/resources/mixins.${mixinConfig}.json")
+            file << """{\n\t"package": "",\n\t"required": true,\n\t"refmap": "${propertyString('mixin_refmap')}",\n\t"target": "@env(DEFAULT)",\n\t"minVersion": "0.8.5",\n\t"compatibilityLevel": "JAVA_8",\n\t"mixins": [],\n\t"server": [],\n\t"client": []\n}"""
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    if (propertyBool('use_modern_java_syntax')) {
+        if (it.name in ['compileMcLauncherJava', 'compilePatchedMcJava']) {
+            return
+        }
+        sourceCompatibility = 17
+        options.release.set(8)
+        javaCompiler.set(javaToolchains.compilerFor {
+            languageVersion.set(JavaLanguageVersion.of(16))
+            vendor.set(JvmVendorSpec.AZUL)
+        })
+    }
+}
+
+tasks.register('cleanroomAfterSync') {
+    group 'cleanroom helpers'
+    dependsOn 'injectTags', 'generateMixinJson'
+}
+
+if (propertyBool('use_modern_java_syntax')) {
+    tasks.withType(Javadoc).configureEach {
+        sourceCompatibility = 17
+    }
+}
+
+tasks.named('injectTags', InjectTagsTask).configure {
+    onlyIf {
+        return propertyBool('use_tags') && !it.getTags().get().isEmpty()
+    }
+    it.outputClassName.set(propertyString('tag_class_name'))
+}
+
+tasks.named('prepareObfModsFolder').configure {
+    finalizedBy 'prioritizeCoremods'
+}
+
+tasks.register('prioritizeCoremods') {
+    dependsOn 'prepareObfModsFolder'
+    doLast {
+        fileTree('run/obfuscated').forEach {
+            if (it.isFile() && it.name =~ '(mixinbooter|configanytime)(-)([0-9])+\\.+([0-9])+(.jar)') {
+                it.renameTo(new File(it.parentFile, "!${it.name}"))
+            }
+        }
+    }
+}
+
+idea.project.settings {
+    taskTriggers {
+        afterSync 'cleanroomAfterSync'
+    }
+}
+
+apply from: 'gradle/scripts/publishing.gradle'
+apply from: 'gradle/scripts/extra.gradle'

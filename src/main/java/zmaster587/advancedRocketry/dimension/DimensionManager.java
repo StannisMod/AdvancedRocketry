@@ -33,12 +33,16 @@ import zmaster587.advancedRocketry.world.provider.WorldProviderSpace;
 import zmaster587.libVulpes.network.PacketHandler;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.zip.GZIPOutputStream;
 
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static zmaster587.advancedRocketry.dimension.DimensionProperties.proxylists;
 
@@ -235,7 +239,7 @@ public class DimensionManager implements IGalaxy {
      * @return next free id
      */
     public int getNextFreeDim(int startingValue) {
-        for (int i = startingValue; i < 10000; i++) {
+        for (int i = Math.max(startingValue, 2); i < 10000; i++) {
             if (!net.minecraftforge.common.DimensionManager.isDimensionRegistered(i) && !dimensionList.containsKey(i))
                 return i;
         }
@@ -495,7 +499,7 @@ public class DimensionManager implements IGalaxy {
         dimensionList.remove(dimId);
 
         //Delete World Folder
-        File file = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory(), workingPath + "/DIM" + dimId);
+        File file = new File(getCurrentSaveRootDirectory(), workingPath + "/DIM" + dimId);
 
         try {
             FileUtils.deleteDirectory(file);
@@ -632,48 +636,72 @@ public class DimensionManager implements IGalaxy {
 
         try {
             File planetXMLOutput = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory(), filePath + worldXML);
-            planetXMLOutput.createNewFile();
 
-            File tmpFileXml = File.createTempFile("ARXMLdata_", ".DAT", net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory());
-            FileOutputStream bufOutStream = new FileOutputStream(tmpFileXml);
-            bufOutStream.write(xmlOutput.getBytes());
+            // ensure directory exists
+            File xmlDir = planetXMLOutput.getParentFile();
+            if (xmlDir != null) xmlDir.mkdirs();
 
-            //Commit to OS, tell OS to commit to disk, release and close stream
-            bufOutStream.flush();
-            bufOutStream.getFD().sync();
-            bufOutStream.close();
+            // temp file MUST be in same directory for atomic move to work reliably
+            File tmpFileXml = new File(xmlDir, planetXMLOutput.getName() + ".tmp");
 
-            //Temp file was written OK, commit
-            Files.copy(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING);
-            tmpFileXml.delete();
+            if (tmpFileXml.exists()) tmpFileXml.delete();
+            try (FileOutputStream bufOutStream = new FileOutputStream(tmpFileXml)) {
+                bufOutStream.write(xmlOutput.getBytes(StandardCharsets.UTF_8));
+                bufOutStream.flush();
+                bufOutStream.getFD().sync();
+            }
 
-            File file = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory(), filePath + tempFile);
-            file.createNewFile();
-
-            //Getting real sick of my planet file getting toasted during debug...
-            File tmpFile = File.createTempFile("dimprops", ".DAT", net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory());
-            FileOutputStream tmpFileOut = new FileOutputStream(tmpFile);
-            DataOutputStream outStream = new DataOutputStream(new BufferedOutputStream(new GZIPOutputStream(tmpFileOut)));
+            // commit: atomic swap if supported, fallback to non-atomic move if not supported
             try {
-                //Closes output stream internally without flush... why tho...
+                Files.move(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING, ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmpFileXml.toPath(), planetXMLOutput.toPath(), REPLACE_EXISTING);
+            }
+            // best-effort cleanup if something went wrong mid-commit
+            if (tmpFileXml.exists()) tmpFileXml.delete();
+
+            File file = new File(getCurrentSaveRootDirectory(), filePath + tempFile);
+
+            // ensure directory exists
+            File dataDir = file.getParentFile();
+            if (dataDir != null) dataDir.mkdirs();
+
+            // temp file must be in same directory as target for atomic move to be useful
+            File tmpFile = new File(dataDir, file.getName() + ".tmp");
+            if (tmpFile.exists()) tmpFile.delete();
+
+            try (FileOutputStream tmpFileOut = new FileOutputStream(tmpFile);
+                 BufferedOutputStream bufferedOut = new BufferedOutputStream(tmpFileOut);
+                 GZIPOutputStream gzipOut = new GZIPOutputStream(bufferedOut);
+                 DataOutputStream outStream = new DataOutputStream(gzipOut)) {
+
                 CompressedStreamTools.write(nbt, outStream);
 
-                //Open in append mode to make sure the file syncs, hacky AF
-                outStream.flush();
-                tmpFileOut.getFD().sync();
-                outStream.close();
+                outStream.flush();       // push DataOutputStream into gzip
+                gzipOut.finish();        // write gzip footer
+                bufferedOut.flush();     // push compressed bytes to file stream
+                tmpFileOut.getFD().sync(); // sync complete gzip file
+            }
 
-                Files.copy(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING);
-                tmpFile.delete();
-
+            try {
+                Files.move(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING, ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                try {
+                    Files.move(tmpFile.toPath(), file.toPath(), REPLACE_EXISTING);
+                } catch (Exception e2) {
+                    AdvancedRocketry.logger.error("Cannot save advanced rocketry planet file, you may be able to find backups in " + getCurrentSaveRootDirectory());
+                    if (tmpFile.exists()) tmpFile.delete();
+                    e2.printStackTrace();
+                }
             } catch (Exception e) {
-                AdvancedRocketry.logger.error("Cannot save advanced rocketry planet file, you may be able to find backups in " + net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory());
+                AdvancedRocketry.logger.error("Cannot save advanced rocketry planet file, you may be able to find backups in " + getCurrentSaveRootDirectory());
+                if (tmpFile.exists()) tmpFile.delete();
                 e.printStackTrace();
             }
 
 
         } catch (IOException e) {
-            AdvancedRocketry.logger.error("Cannot save advanced rocketry planet files, you may be able to find backups in " + net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory());
+            AdvancedRocketry.logger.error("Cannot save advanced rocketry planet files, you may be able to find backups in " + getCurrentSaveRootDirectory());
             e.printStackTrace();
         }
     }
@@ -752,6 +780,18 @@ public class DimensionManager implements IGalaxy {
         return dimPropList;
     }
 
+    @Nullable
+    private File getCurrentSaveRootDirectory() {
+        File dir = net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory();
+        if (dir == null) {
+            if (FMLCommonHandler.instance().getMinecraftServerInstance() == null) return null;
+
+            // Server about to start, but worlds haven't loaded yet
+            return new File(FMLCommonHandler.instance().getSavesDirectory(), FMLCommonHandler.instance().getMinecraftServerInstance().getFolderName());
+        }
+        return dir;
+    }
+
     public void createAndLoadDimensions(boolean resetFromXml) {
         //Load planet files
         //Note: loading this modifies dimOffset
@@ -763,7 +803,7 @@ public class DimensionManager implements IGalaxy {
 
         //Check advRocketry folder first
         File localFile;
-        localFile = file = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory() + "/" + DimensionManager.workingPath + "/planetDefs.xml");
+        localFile = file = new File(getCurrentSaveRootDirectory() + "/" + DimensionManager.workingPath + "/planetDefs.xml");
         logger.info("Checking for config at " + file.getAbsolutePath());
 
         if (!file.exists() || resetFromXml) { //Hi, I'm if check #42, I am true if the config is not in the world/advRocketry folder
@@ -779,20 +819,12 @@ public class DimensionManager implements IGalaxy {
                     File dir = new File(localFile.getAbsolutePath().substring(0, localFile.getAbsolutePath().length() - localFile.getName().length()));
 
                     //File cannot exist due to if check #42
-                    if ((dir.exists() || dir.mkdir()) && localFile.createNewFile()) {
-                        char[] buffer = new char[1024];
-
-                        FileReader reader = new FileReader(file);
-                        FileWriter writer = new FileWriter(localFile);
-                        int numChars;
-                        while ((numChars = reader.read(buffer)) > 0) {
-                            writer.write(buffer, 0, numChars);
-                        }
-
-                        reader.close();
-                        writer.close();
+                    if ((dir.exists() || dir.mkdirs())) {
+                        Files.copy(file.toPath(), localFile.toPath(), REPLACE_EXISTING);
                         logger.info("Copy success!");
-                    } else logger.warn("Unable to create file " + localFile.getAbsolutePath());
+                    } else {
+                        logger.warn("Unable to create directory " + dir.getAbsolutePath());
+                    }
                 } catch (IOException e) {
                     logger.warn("Unable to write file " + localFile.getAbsolutePath());
                 }
@@ -1043,7 +1075,7 @@ public class DimensionManager implements IGalaxy {
         FileInputStream inStream;
         NBTTagCompound nbt;
         try {
-            File file = new File(net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory(), filePath + tempFile);
+            File file = new File(getCurrentSaveRootDirectory(), filePath + tempFile);
 
             if (!file.exists()) {
                 new File(file.getAbsolutePath().substring(0, file.getAbsolutePath().length() - file.getName().length())).mkdirs();

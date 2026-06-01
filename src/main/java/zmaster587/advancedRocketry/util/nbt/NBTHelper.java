@@ -153,7 +153,7 @@ public class NBTHelper {
     }
 
     public static NBTTagList getTagList(String name, NBTTagCompound compound) {
-        NBTBase nbt = compound.tagMap.get(name);
+        NBTBase nbt = compound.getTag(name);
         if (!(nbt instanceof NBTTagList)) {
             throw new IllegalArgumentException("Tag got by name " + name + "isn't NBTTagList!");
         }

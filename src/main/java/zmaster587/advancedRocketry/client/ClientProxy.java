@@ -50,13 +50,12 @@ import zmaster587.advancedRocketry.entity.*;
 import zmaster587.advancedRocketry.entity.fx.*;
 import zmaster587.advancedRocketry.event.PlanetEventHandler;
 import zmaster587.advancedRocketry.event.RocketEventHandler;
+import zmaster587.advancedRocketry.inventory.modules.ModuleContainerPanYOnlyWithScrollCache;
+import zmaster587.libVulpes.inventory.modules.ModuleBase;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.TileFluidTank;
 import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine;
-import zmaster587.advancedRocketry.tile.cables.TileDataPipe;
-import zmaster587.advancedRocketry.tile.cables.TileEnergyPipe;
-import zmaster587.advancedRocketry.tile.cables.TileLiquidPipe;
 import zmaster587.advancedRocketry.tile.multiblock.*;
 import zmaster587.advancedRocketry.tile.multiblock.energy.TileBlackHoleGenerator;
 import zmaster587.advancedRocketry.tile.multiblock.energy.TileMicrowaveReciever;
@@ -67,11 +66,22 @@ import zmaster587.libVulpes.entity.fx.FxErrorBlock;
 import zmaster587.libVulpes.inventory.modules.ModuleContainerPan;
 import zmaster587.libVulpes.tile.TileSchematic;
 
+import net.minecraft.util.text.TextComponentTranslation;
+import zmaster587.advancedRocketry.api.IAtmosphere;
+import zmaster587.advancedRocketry.client.gui.ModuleSelectableAtmosphereButton;
+import zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector;
+
+
+import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.fml.common.Loader;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.LinkedList;
+import java.util.List;
 
 @Mod.EventBusSubscriber(value = Side.CLIENT)
 public class ClientProxy extends CommonProxy {
@@ -107,9 +117,6 @@ public class ClientProxy extends CommonProxy {
         ClientRegistry.bindTileEntitySpecialRenderer(TileChemicalReactor.class, new RendererChemicalReactor("advancedrocketry:models/chemicalreactor.obj", "advancedrocketry:textures/models/chemicalreactor.png"));
         ClientRegistry.bindTileEntitySpecialRenderer(TileSchematic.class, new RendererPhantomBlock());
         //ClientRegistry.bindTileEntitySpecialRenderer(TileDrill.class, new RendererDrill());
-        ClientRegistry.bindTileEntitySpecialRenderer(TileLiquidPipe.class, new RendererPipe(new ResourceLocation("AdvancedRocketry:textures/blocks/pipeLiquid.png")));
-        ClientRegistry.bindTileEntitySpecialRenderer(TileDataPipe.class, new RendererPipe(new ResourceLocation("AdvancedRocketry:textures/blocks/pipeData.png")));
-        ClientRegistry.bindTileEntitySpecialRenderer(TileEnergyPipe.class, new RendererPipe(new ResourceLocation("AdvancedRocketry:textures/blocks/pipeEnergy.png")));
         ClientRegistry.bindTileEntitySpecialRenderer(TileMicrowaveReciever.class, new RendererMicrowaveReciever());
         //ClientRegistry.bindTileEntitySpecialRenderer(TileOrbitalLaserDrill.class, new RenderOrbitalLaserDrillTile());
         ClientRegistry.bindTileEntitySpecialRenderer(TileBiomeScanner.class, new RenderBiomeScanner());
@@ -261,6 +268,32 @@ public class ClientProxy extends CommonProxy {
     public void preinit() {
         OBJLoader.INSTANCE.addDomain("advancedrocketry");
         registerRenderers();
+        bootstrapTestClientBridge();
+    }
+
+    /**
+     * Test-only hook: when the client JVM is launched with
+     * {@code -Dforge.test.client=true} (the reusable test framework's marker for
+     * {@code RealClientHarness}-spawned clients), reflectively load and start
+     * the framework's bridge so {@code ClientBot} can drive this client.
+     *
+     * <p>Inert in normal gameplay (flag absent → returns immediately). The
+     * bridge class lives in the test-only framework jar and is NOT on the
+     * production runtime classpath; the {@link ClassNotFoundException} branch
+     * handles that gracefully.</p>
+     */
+    private static void bootstrapTestClientBridge() {
+        if (!Boolean.getBoolean("forge.test.client")) {
+            return;
+        }
+        try {
+            Class<?> bridge = Class.forName("com.github.stannismod.forge.testing.client.bridge.ForgeTestClientBootstrap");
+            bridge.getMethod("bootstrap").invoke(null);
+        } catch (ClassNotFoundException ignored) {
+            // Test framework jar absent at runtime — no-op (production launch).
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Failed to bootstrap forge test client bridge", e);
+        }
     }
 
     private void registerFluidModel(IFluidBlock fluidBlock) {
@@ -294,6 +327,12 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new DelayedParticleRenderingEventHandler());
         MinecraftForge.EVENT_BUS.register(ModuleContainerPan.class);
         MinecraftForge.EVENT_BUS.register(new RenderComponents());
+
+        if (Loader.isModLoaded("jei")) {
+            FMLCommonHandler.instance().bus().register(
+                    new zmaster587.advancedRocketry.integration.jei.JeiClientTickHandler()
+            );
+        }
     }
 
     @Override
@@ -479,6 +518,38 @@ public class ClientProxy extends CommonProxy {
         }
     }
 
+
+    @Override
+    public ModuleBase createScrollListPan(
+            int baseX, int baseY,
+            List<ModuleBase> list,
+            int sizeX, int sizeY
+    ) {
+        return new ModuleContainerPanYOnlyWithScrollCache(
+                baseX, baseY,
+                list, new LinkedList<>(),
+                null,
+                sizeX - 2, sizeY,
+                0, -48,
+                0, 72
+        );
+    }
+
+    @Override
+    public void clearScrollCache() {
+        ModuleContainerPanYOnlyWithScrollCache.clearScrollCache();
+    }
+
+    @Override
+    public ModuleBase createObservatoryAsteroidListPan(int baseX, int baseY, List<ModuleBase> list2, int sizeX, int sizeY) {
+        return createScrollListPan(baseX, baseY, list2, sizeX, sizeY);
+    }
+
+    @Override
+    public void clearObservatoryScrollCache() {
+        clearScrollCache();
+    }
+
     private static class FluidItemMeshDefinition implements ItemMeshDefinition {
         private final ModelResourceLocation location;
 
@@ -489,6 +560,23 @@ public class ClientProxy extends CommonProxy {
         @Override
         public ModelResourceLocation getModelLocation(@Nonnull ItemStack stack) {
             return location;
+        }
+    }
+
+    // atmosphere detector
+
+    @Override
+    public ModuleBase createAtmosphereDetectorButton(int offsetX, int offsetY, int buttonId, IAtmosphere atmosphere, String text, TileAtmosphereDetector detector, ResourceLocation[] buttonImages) {
+        return new ModuleSelectableAtmosphereButton(offsetX, offsetY, buttonId, atmosphere, text, detector, buttonImages);
+    }
+
+    @Override
+    public void sendClientStatusMessage(String translationKey, Object... args) {
+        if (Minecraft.getMinecraft().player != null) {
+            Minecraft.getMinecraft().player.sendStatusMessage(
+                    new TextComponentTranslation(translationKey, args),
+                    true
+            );
         }
     }
 }

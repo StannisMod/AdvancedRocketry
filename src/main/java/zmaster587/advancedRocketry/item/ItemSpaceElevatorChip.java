@@ -39,7 +39,9 @@ public class ItemSpaceElevatorChip extends Item {
         if (stack.hasTagCompound()) {
 
             if (listToStore.isEmpty())
-                stack.getTagCompound().removeTag("positions");
+                // The list is written under "list" (NBTStorableListList), so the
+                // empty-clear must remove "list" — "positions" was a silent no-op.
+                stack.getTagCompound().removeTag("list");
             else {
                 list.writeToNBT(stack.getTagCompound());
             }

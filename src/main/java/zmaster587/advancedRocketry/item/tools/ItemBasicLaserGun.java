@@ -5,6 +5,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
@@ -17,11 +18,15 @@ import net.minecraft.util.*;
 import net.minecraft.util.math.*;
 import net.minecraft.util.math.RayTraceResult.Type;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.AdvancedRocketry;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.util.AudioRegistry;
 import zmaster587.libVulpes.LibVulpes;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import java.util.List;
 import java.util.WeakHashMap;
@@ -249,4 +254,12 @@ public class ItemBasicLaserGun extends Item {
         }
         return new ActionResult<>(EnumActionResult.PASS, stack);
     }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.lasergun", insertAt);
+    }    
+
 }

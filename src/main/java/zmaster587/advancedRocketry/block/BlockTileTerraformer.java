@@ -8,6 +8,7 @@ import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.properties.PropertyBool;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
@@ -21,8 +22,12 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+
 import org.lwjgl.Sys;
 import scala.tools.nsc.doc.base.comment.EntityLink;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.tile.satellite.TileTerraformingTerminal;
@@ -31,7 +36,9 @@ import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.block.RotatableBlock;
 import zmaster587.libVulpes.util.IAdjBlockUpdate;
 
+import java.util.List;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 public class BlockTileTerraformer extends RotatableBlock {
     protected Class<? extends TileEntity> tileClass;
@@ -163,4 +170,10 @@ public class BlockTileTerraformer extends RotatableBlock {
 
         super.breakBlock(world, pos, state);
     }
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.terraformer", insertAt);
+    }  
 }

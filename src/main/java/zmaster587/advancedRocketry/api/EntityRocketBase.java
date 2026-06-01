@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.api;
 import net.minecraft.entity.Entity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.libVulpes.util.HashedBlockPosition;
@@ -140,8 +141,16 @@ public abstract class EntityRocketBase extends Entity {
 
     /**
      * Deconstructs the rocket, replacing it with actual blocks
+     * Log and continue even if event handlers throw exceptions
      */
     public void deconstructRocket() {
-        MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketDismantleEvent(this));
+        try {
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketDismantleEvent(this));
+        } catch (Throwable t) {
+            AdvancedRocketry.logger.error(
+                "RocketDismantleEvent handler threw for rocket {}, continuing deconstruction anyway",
+                this, t
+            );
+        }
     }
 }

@@ -56,30 +56,36 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
     }
 
     @Override
-    public void addInformation(@Nonnull ItemStack stack, World player, List<String> list, ITooltipFlag arg5) {
+    public void addInformation(@Nonnull ItemStack stack, World world, List<String> list, ITooltipFlag flag) {
+
+        // If unprogrammed, let the superclass handle the "unprogrammed" tooltip
+        if (!stack.hasTagCompound()) {
+            super.addInformation(stack, world, list, flag);
+            return;
+        }
 
         SatelliteBase sat = SatelliteRegistry.getSatellite(stack);
-
         SatelliteWeatherController mapping = null;
+
         if (sat instanceof SatelliteWeatherController)
             mapping = (SatelliteWeatherController) sat;
 
-        if (!stack.hasTagCompound())
-            list.add(LibVulpes.proxy.getLocalizedString("msg.unprogrammed"));
-        else if (mapping == null)
+        if (mapping == null) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.nosat"));
-        else if (mapping.getDimensionId() == player.provider.getDimension()) {
+        } else if (mapping.getDimensionId() == world.provider.getDimension()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.connected"));
             if (mapping.mode_id == 0)
-                list.add("mode: rain - Fills small basins in the terrain with water");
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.rain"));
             if (mapping.mode_id == 1)
-                list.add("mode: dry - Drys all water in a radius of 16");
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.dry"));
             if (mapping.mode_id == 2)
-                list.add("mode: flood - Floods area with a radius of 16 with water");
-        } else
+                list.add(LibVulpes.proxy.getLocalizedString("tooltip.advancedrocketry.weathercontrollerremote.mode.flood"));
+        } else {
             list.add(LibVulpes.proxy.getLocalizedString("msg.notconnected"));
+        }
 
-        super.addInformation(stack, player, list, arg5);
+        // Still let the parent add its usual info
+        super.addInformation(stack, world, list, flag);
     }
 
 

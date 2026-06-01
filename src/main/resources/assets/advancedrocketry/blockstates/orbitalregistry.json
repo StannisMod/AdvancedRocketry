@@ -1,0 +1,20 @@
+{
+    "forge_marker": 1,
+    "defaults": {
+        "transform": "forge:default-block",
+        "model": "advancedrocketry:orbitalRegistry"
+    },
+    "variants": {
+        "facing=north,state=false": [{}],
+        "facing=south,state=false": { "model": "advancedrocketry:orbitalRegistry", "y": 180 },
+        "facing=west,state=false":  { "model": "advancedrocketry:orbitalRegistry", "y": 270 },
+        "facing=east,state=false":  { "model": "advancedrocketry:orbitalRegistry", "y": 90 },
+
+        "facing=north,state=true":  [{}],
+        "facing=south,state=true":  { "model": "advancedrocketry:orbitalRegistry", "y": 180 },
+        "facing=west,state=true":   { "model": "advancedrocketry:orbitalRegistry", "y": 270 },
+        "facing=east,state=true":   { "model": "advancedrocketry:orbitalRegistry", "y": 90 },
+
+        "inventory": [{}]
+    }
+}

@@ -411,7 +411,8 @@ public class TileAstrobodyDataProcessor extends TileMultiPowerConsumer implement
         int xStart = 150;
         int yStart = 14;
 
-        modules.add(new ModuleText(15, 76, "Research", 0x404040));
+        modules.add(new ModuleText(15, 76, LibVulpes.proxy.getLocalizedString("msg.abdp.research"), 0x404040));
+
 
         modules.add(new ModuleToggleSwitch(15, 86, 4, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, LibVulpes.proxy.getLocalizedString("msg.abdp.compositionresearch"), 11, 26, researchingAtmosphere));
         modules.add(new ModuleToggleSwitch(65, 86, 5, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, LibVulpes.proxy.getLocalizedString("msg.abdp.distanceresearch"), 11, 26, researchingDistance));

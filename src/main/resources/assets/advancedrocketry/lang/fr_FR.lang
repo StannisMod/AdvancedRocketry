@@ -47,7 +47,7 @@ tile.concrete.name=Béton
 tile.lathe.name=Tour
 tile.rollingMachine.name=Laminoir
 tile.planetSelector.name=Sélecteur de planète
-tile.blockHandPress.name=Presse manuelle
+tile.platepress.name=Presse manuelle
 tile.placeHolder.name=Machine
 tile.stationAssembler.name=Assembleur de station spatiale
 tile.electrolyser.name=Électrolyseur
@@ -260,3 +260,10 @@ msg.spaceElevator.ascentReady=Paré pour l'ascension
 msg.spaceElevator.turnedOff=L'ascenseur est hors tension.
 msg.entityDeployedRocket.notGasGiant=Absence de gaz
 msg.noOxygen=Avertissement: oxygène non détecté!
+
+jei.sb.satellitepreview=Prêt pour l’orbite !
+jei.sb.copy.source=Source
+jei.sb.copy.output=Nouvelle copie
+jei.sb.assemblyhint=Au moins un panneau solaire
+jei.sb.copychiphint=Faites des sauvegardes !
+

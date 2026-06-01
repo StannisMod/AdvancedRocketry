@@ -61,6 +61,8 @@ public class ItemSatelliteIdentificationChip extends Item implements ISatelliteI
         nbt.setString("satelliteName", satellite.getName());
         nbt.setInteger("dimId", satellite.getDimensionId());
         nbt.setLong("satelliteId", satellite.getId());
+
+        stack.setTagCompound(nbt);
     }
 
     /**
@@ -127,7 +129,13 @@ public class ItemSatelliteIdentificationChip extends Item implements ISatelliteI
         int worldId = getWorldId(stack);
         long satId = SatelliteRegistry.getSatelliteId(stack);
 
-        String satelliteName = getSatelliteName(stack);
+        String satelliteNameKey = getSatelliteName(stack);
+        String satelliteName = satelliteNameKey;
+
+        // Translate if it's a lang key; if missing, translateToLocal returns the key
+        if (!satelliteNameKey.isEmpty()) {
+            satelliteName = net.minecraft.util.text.translation.I18n.translateToLocal(satelliteNameKey);
+        }
 
         if (satId != -1) {
 

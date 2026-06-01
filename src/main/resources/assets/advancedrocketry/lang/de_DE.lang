@@ -41,7 +41,7 @@ tile.hotDryturf.name=Oxidierter Eisensand
 tile.concrete.name=Asphalttile.lathe.name=Drechselbank
 tile.rollingMachine.name=Walzenmaschine
 tile.planetSelector.name=Planetenwähler
-tile.blockHandPress.name=Kleine Plattenpresse
+tile.platepress.name=Kleine Plattenpresse
 tile.placeHolder.name=Maschine
 tile.stationAssembler.name=Raumstationsmonteur
 tile.electrolyser.name=Elektrolyseur
@@ -345,6 +345,7 @@ msg.rocketbuilder.fuel=Treibstoff
 msg.rocketbuilder.acc=Beschleunigung
 msg.rocketbuilder.build=Bauen
 msg.rocketbuilder.scan=Scannen
+msg.rocketbuilder.alreadyassembled=Rakete bereits zusammengebaut
 msg.solar.collectingEnergy= Energie sammeln:
 msg.solar.cannotcollectEnergy=Kann keine  Energie sammeln
 msg.asteroidChip.asteroid=Asteroid
@@ -407,3 +408,9 @@ msg.unprogrammed=Unprogrammiert
 msg.programfail=Programmierung fehlgeschlagen
 msg.modules=Module
 msg.na=Nicht verfügbar
+
+jei.sb.satellitepreview=Bereit für den Orbit!
+jei.sb.copy.source=Quelle
+jei.sb.copy.output=Neue Kopie
+jei.sb.assemblyhint=Mindestens ein Solarpanel
+jei.sb.copychiphint=Erstelle Sicherungskopien!

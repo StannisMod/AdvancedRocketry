@@ -24,7 +24,7 @@ public class BiomeGenBarrenVolcanic extends Biome {
         this.decorator.treesPerChunk = 0;
         this.decorator.mushroomsPerChunk = 0;
         this.fillerBlock = this.topBlock = AdvancedRocketryBlocks.blockBasalt.getDefaultState();
-        volcano = new MapGenVolcano(800);
+        volcano = new MapGenVolcano(15);
     }
 
     @Override

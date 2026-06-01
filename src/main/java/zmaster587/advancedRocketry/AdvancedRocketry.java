@@ -48,6 +48,7 @@ import net.minecraftforge.oredict.OreDictionary;
 import net.minecraftforge.oredict.OreDictionary.OreRegisterEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import zmaster587.advancedRocketry.advancedrocketry.Tags;
 import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.capability.CapabilitySpaceArmor;
@@ -58,12 +59,14 @@ import zmaster587.advancedRocketry.armor.ItemSpaceChest;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.block.inventory.BlockInvHatch;
 import zmaster587.advancedRocketry.block.multiblock.BlockARHatch;
+import zmaster587.advancedRocketry.block.multiblock.BlockDataBusBig;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodLeaves;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodPlanks;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodWood;
 import zmaster587.advancedRocketry.capability.CapabilityProtectiveArmor;
-import zmaster587.advancedRocketry.command.WorldCommand;
+import zmaster587.advancedRocketry.command.ARCommandRoot;
+import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.common.CommonProxy;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
@@ -71,12 +74,10 @@ import zmaster587.advancedRocketry.dimension.DimensionProperties.AtmosphereTypes
 import zmaster587.advancedRocketry.dimension.DimensionProperties.Temps;
 import zmaster587.advancedRocketry.enchant.EnchantmentSpaceBreathing;
 import zmaster587.advancedRocketry.entity.*;
-import zmaster587.advancedRocketry.event.CableTickHandler;
-import zmaster587.advancedRocketry.event.EntityEventHandler;
-import zmaster587.advancedRocketry.event.PlanetEventHandler;
-import zmaster587.advancedRocketry.event.WorldEvents;
+import zmaster587.advancedRocketry.event.*;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
+import zmaster587.advancedRocketry.integration.theoneprobe.TopIntegration;
 import zmaster587.advancedRocketry.item.*;
 import zmaster587.advancedRocketry.item.components.ItemJetpack;
 import zmaster587.advancedRocketry.item.components.ItemPressureTank;
@@ -90,11 +91,9 @@ import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.stations.SpaceStationObject;
 import zmaster587.advancedRocketry.tile.*;
 import zmaster587.advancedRocketry.tile.atmosphere.*;
-import zmaster587.advancedRocketry.tile.cables.TileDataPipe;
-import zmaster587.advancedRocketry.tile.cables.TileEnergyPipe;
-import zmaster587.advancedRocketry.tile.cables.TileLiquidPipe;
-import zmaster587.advancedRocketry.tile.cables.TileWirelessTransciever;
+import zmaster587.advancedRocketry.tile.TileWirelessTransceiver;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
+import zmaster587.advancedRocketry.tile.hatch.TileDataBusBig;
 import zmaster587.advancedRocketry.tile.hatch.TileInvHatch;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.tile.infrastructure.*;
@@ -136,7 +135,6 @@ import zmaster587.libVulpes.tile.TileMaterial;
 import zmaster587.libVulpes.tile.energy.TilePlugBase;
 import zmaster587.libVulpes.tile.multiblock.TileMultiBlock;
 import zmaster587.libVulpes.tile.multiblock.hatch.TileFluidHatch;
-import zmaster587.libVulpes.tile.multiblock.hatch.TileInventoryHatch;
 import zmaster587.libVulpes.util.FluidUtils;
 import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.InputSyncHandler;
@@ -145,15 +143,17 @@ import zmaster587.libVulpes.util.SingleEntry;
 import javax.annotation.Nonnull;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.Map.Entry;
 
 
-@Mod(modid = "advancedrocketry")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = Constants.DEPENDENCIES)
 public class AdvancedRocketry {
 
+    private static final String PLANET = "Planet";
     public static final RecipeHandler machineRecipes = new RecipeHandler();
     public static final Logger logger = LogManager.getLogger(Constants.modId);
     private static final CreativeTabs tabAdvRocketry = new CreativeTabs("advancedRocketry") {
@@ -179,6 +179,7 @@ public class AdvancedRocketry {
         FluidRegistry.enableUniversalBucket(); // Must be called before preInit
     }
 
+    //CONFIG-stuff here to make sure we load early enough
     private boolean resetFromXml;
 
     //Biome registry.
@@ -292,6 +293,9 @@ public class AdvancedRocketry {
         AdvancedRocketryAPI.atomsphereSealHandler = SealableBlockHandler.INSTANCE;
         ((SealableBlockHandler) AdvancedRocketryAPI.atomsphereSealHandler).loadDefaultData();
 
+        // Integrations
+        // The One Probe integration
+        TopIntegration.register();
 
         //Configuration  ---------------------------------------------------------------------------------------------
 
@@ -300,8 +304,24 @@ public class AdvancedRocketry {
         config.load();
 
         ARConfiguration.loadPreInit();
-        resetFromXml = config.getBoolean("resetPlanetsFromXML", Configuration.CATEGORY_GENERAL, false, "setting this to true will force AR to read from the XML file in the config/advRocketry instead of the local data, intended for use pack developers to ensure updates are pushed through");
 
+        resetFromXml = config.getBoolean(
+                "resetPlanetsFromXML",
+                PLANET,
+                false,
+                "Reload planet definitions from config XML on this restart."
+        );
+
+        boolean resetOnlyOnce = config.getBoolean(
+                "ResetOnlyOnce",
+                PLANET,
+                true,
+                "Setting this to false will prevent resetPlanetsFromXML from being set to false upon world reload. Recommended for pack developers who want all saves to always use planetDefs XML from the config folder."
+        );
+
+        if (resetOnlyOnce && resetFromXml) {
+            config.get("Planet", "resetPlanetsFromXML", false).set(false);
+        }
         //Load client and UI positioning stuff
         proxy.loadUILayout(config);
 
@@ -329,7 +349,7 @@ public class AdvancedRocketry {
         PacketHandler.INSTANCE.addDiscriminator(PacketFluidParticle.class);
         PacketHandler.INSTANCE.addDiscriminator(PacketSatellitesUpdate.class);
         PacketHandler.INSTANCE.addDiscriminator(PacketSyncKnownPlanets.class);
-
+        PacketHandler.INSTANCE.addDiscriminator(PacketBackToRocketGui.class);
 
         //if(zmaster587.advancedRocketry.api.Configuration.allowMakingItemsForOtherMods)
         MinecraftForge.EVENT_BUS.register(this);
@@ -357,7 +377,7 @@ public class AdvancedRocketry {
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARPlanetUIButton"), EntityUIButton.class, "ARPlanetUIButton", 6, this, 64, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARStarUIButton"), EntityUIStar.class, "ARStarUIButton", 7, this, 64, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARSpaceElevatorCapsule"), EntityElevatorCapsule.class, "ARSpaceElevatorCapsule", 8, this, 64, 20, true);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", 9, this, 64, 3, true);
+        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", 9, this, 64, 1, true);
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
@@ -374,6 +394,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileCrystallizer.class, "ARcrystallizer");
         GameRegistry.registerTileEntity(TileCuttingMachine.class, "ARcuttingmachine");
         GameRegistry.registerTileEntity(TileDataBus.class, "ARdataBus");
+        GameRegistry.registerTileEntity(TileDataBusBig.class, "ARdataBusBig");
         GameRegistry.registerTileEntity(TileSatelliteHatch.class, "ARsatelliteHatch");
         GameRegistry.registerTileEntity(TileInvHatch.class, "ARinventoryHatch");
         GameRegistry.registerTileEntity(TileGuidanceComputerAccessHatch.class, "ARguidanceComputerHatch");
@@ -398,9 +419,6 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileAtmosphereDetector.class, "AROxygenDetector");
         GameRegistry.registerTileEntity(TileStationOrientationController.class, "AROrientationControl");
         GameRegistry.registerTileEntity(TileStationGravityController.class, "ARGravityControl");
-        GameRegistry.registerTileEntity(TileLiquidPipe.class, "ARLiquidPipe");
-        GameRegistry.registerTileEntity(TileDataPipe.class, "ARDataPipe");
-        GameRegistry.registerTileEntity(TileEnergyPipe.class, "AREnergyPipe");
         GameRegistry.registerTileEntity(TileMicrowaveReciever.class, "ARMicrowaveReciever");
         GameRegistry.registerTileEntity(TileSuitWorkStation.class, "ARSuitWorkStation");
         GameRegistry.registerTileEntity(TileRocketLoader.class, "ARRocketLoader");
@@ -421,12 +439,13 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileSeal.class, "ARBlockSeal");
         GameRegistry.registerTileEntity(TileSpaceElevator.class, "ARSpaceElevator");
         GameRegistry.registerTileEntity(TileBeacon.class, "ARBeacon");
-        GameRegistry.registerTileEntity(TileWirelessTransciever.class, "ARTransciever");
+        GameRegistry.registerTileEntity(TileWirelessTransceiver.class, "ARTransceiver");
         GameRegistry.registerTileEntity(TileBlackHoleGenerator.class, "ARblackholegenerator");
         GameRegistry.registerTileEntity(TilePump.class, new ResourceLocation(Constants.modId, "ARpump"));
         GameRegistry.registerTileEntity(TileCentrifuge.class, new ResourceLocation(Constants.modId, "ARCentrifuge"));
         GameRegistry.registerTileEntity(TilePrecisionLaserEtcher.class, new ResourceLocation(Constants.modId, "ARPrecisionLaserEtcher"));
         GameRegistry.registerTileEntity(TileSolarArray.class, new ResourceLocation(Constants.modId, "ARSolarArray"));
+        GameRegistry.registerTileEntity(TileOrbitalRegistry.class, new ResourceLocation(Constants.modId, "orbitalRegistry"));
 
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableGravityController)
             GameRegistry.registerTileEntity(TileAreaGravityController.class, "ARGravityMachine");
@@ -624,15 +643,16 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockQuartzCrucible = new BlockQuartzCrucible().setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockSawBlade = new BlockMotor(Material.IRON, 1f).setCreativeTab(tabAdvRocketry).setUnlocalizedName("sawBlade").setHardness(2f);
         //Singleblock machines
-        AdvancedRocketryBlocks.blockPlatePress = new BlockSmallPlatePress().setUnlocalizedName("blockHandPress").setCreativeTab(tabAdvRocketry).setHardness(2f);
+        AdvancedRocketryBlocks.blockPlatePress = new BlockSmallPlatePress().setUnlocalizedName("platepress").setCreativeTab(tabAdvRocketry).setHardness(2f);
+        AdvancedRocketryBlocks.blockPlatePressHead = new BlockSmallPlatePressHead().setUnlocalizedName("platepress_head").setHardness(2f);
         AdvancedRocketryBlocks.blockForceFieldProjector = new BlockForceFieldProjector(Material.IRON).setUnlocalizedName("forceFieldProjector").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockForceField = new BlockForceField(Material.BARRIER).setBlockUnbreakable().setResistance(6000000.0F).setUnlocalizedName("forceField");
-        AdvancedRocketryBlocks.blockVacuumLaser = new BlockFullyRotatable(Material.IRON).setUnlocalizedName("vacuumLaser").setCreativeTab(tabAdvRocketry).setHardness(4f);
-        AdvancedRocketryBlocks.blockPump = new BlockTile(TilePump.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("pump").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockVacuumLaser = new BlockVacuumLaser(Material.IRON).setUnlocalizedName("vacuumLaser").setCreativeTab(tabAdvRocketry).setHardness(4f);
+        AdvancedRocketryBlocks.blockPump = new BlockPump(TilePump.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("pump").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSuitWorkStation = new BlockSuitWorkstation(TileSuitWorkStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("suitWorkStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockPressureTank = new BlockPressurizedFluidTank(Material.IRON).setUnlocalizedName("pressurizedTank").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSolarGenerator = new BlockSolarGenerator(TileSolarPanel.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("solarGenerator");
-        AdvancedRocketryBlocks.blockTransciever = new BlockTransciever(TileWirelessTransciever.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransciever").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockTransceiver = new BlockTransceiver(TileWirelessTransceiver.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransceiver").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Multiblock machines
         //T1 processing
         AdvancedRocketryBlocks.blockArcFurnace = new BlockMultiblockMachine(TileElectricArcFurnace.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("electricArcFurnace").setCreativeTab(tabAdvRocketry).setHardness(3f);
@@ -649,6 +669,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockPlanetAnalyser = new BlockMultiblockMachine(TileAstrobodyDataProcessor.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("planetanalyser").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockCentrifuge = new BlockMultiblockMachine(TileCentrifuge.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("centrifuge");
         AdvancedRocketryBlocks.blockSatelliteBuilder = new BlockMultiblockMachine(TileSatelliteBuilder.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteBuilder");
+        
         //Energy
         AdvancedRocketryBlocks.blockBlackHoleGenerator = new BlockMultiblockMachine(TileBlackHoleGenerator.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("blackholegenerator").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockMicrowaveReciever = new BlockMultiblockMachine(TileMicrowaveReciever.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("microwaveReciever");
@@ -667,6 +688,11 @@ public class AdvancedRocketry {
             AdvancedRocketryBlocks.blockGravityMachine = new BlockMultiblockMachine(TileAreaGravityController.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("gravityMachine").setCreativeTab(tabAdvRocketry).setHardness(3f);
         if (ARConfiguration.getCurrentConfig().enableLaserDrill)
             AdvancedRocketryBlocks.blockSpaceLaser = new BlockOrbitalLaserDrill().setHardness(2f).setCreativeTab(tabAdvRocketry);
+        if (ARConfiguration.getCurrentConfig().enableOrbitalRegistry)
+            AdvancedRocketryBlocks.blockOrbitalRegistry = new BlockMultiblockMachine(TileOrbitalRegistry.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("orbitalRegistry");
+
+
+
         //Docking blocks
         AdvancedRocketryBlocks.blockLaunchpad = new BlockLinkedHorizontalTexture(Material.ROCK).setUnlocalizedName("pad").setCreativeTab(tabAdvRocketry).setHardness(2f).setResistance(10f);
         AdvancedRocketryBlocks.blockLandingPad = new BlockLandingPad(Material.ROCK).setUnlocalizedName("dockingPad").setHardness(3f).setCreativeTab(tabAdvRocketry);
@@ -695,11 +721,14 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockDeployableRocketBuilder = new BlockTileWithMultitooltip(TileUnmannedVehicleAssembler.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("deployableRocketAssembler").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Infrastructure machines
         AdvancedRocketryBlocks.blockLoader = new BlockARHatch(Material.IRON).setUnlocalizedName("loader").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // Big Data Bus Hatch
+        AdvancedRocketryBlocks.blockDataBusBig = new BlockDataBusBig(Material.IRON).setUnlocalizedName("databusbig").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockFuelingStation = new BlockTileRedstoneEmitter(TileFuelingStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("fuelStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockMonitoringStation = new BlockTileNeighborUpdate(TileRocketMonitoringStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("monitoringstation");
         AdvancedRocketryBlocks.blockSatelliteControlCenter = new BlockTile(TileSatelliteTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteMonitor");
         AdvancedRocketryBlocks.blockTerraformingTerminal = new BlockTileTerraformer(TileTerraformingTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("terraformingTerminal");
         AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
+
 
         //Station machines
         AdvancedRocketryBlocks.blockWarpShipMonitor = new BlockWarpController(TileWarpController.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("stationmonitor");
@@ -777,16 +806,6 @@ public class AdvancedRocketry {
         FluidRegistry.addBucketForFluid(AdvancedRocketryFluids.fluidRocketFuel);
         FluidRegistry.addBucketForFluid(AdvancedRocketryFluids.fluidEnrichedLava);
 
-        //Cables
-        //TODO: add back after fixing the cable network
-        //AdvancedRocketryBlocks.blockFluidPipe = new BlockLiquidPipe(Material.IRON).setUnlocalizedName("liquidPipe").setCreativeTab(tabAdvRocketry).setHardness(1f);
-        //AdvancedRocketryBlocks.blockDataPipe = new BlockDataCable(Material.IRON).setUnlocalizedName("dataPipe").setCreativeTab(tabAdvRocketry).setHardness(1f);
-        //AdvancedRocketryBlocks.blockEnergyPipe = new BlockEnergyCable(Material.IRON).setUnlocalizedName("energyPipe").setCreativeTab(tabAdvRocketry).setHardness(1f);
-        //LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDataPipe.setRegistryName("dataPipe"));
-        //LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockEnergyPipe.setRegistryName("energyPipe"));
-        //LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFluidPipe.setRegistryName("liquidPipe"));
-
-
         //Machines
         //Machine parts
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockConcrete.setRegistryName("concrete"));
@@ -799,6 +818,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSawBlade.setRegistryName("sawBlade"));
         //Singleblock machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlatePress.setRegistryName("platepress"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlatePressHead.setRegistryName("platepress_head"), null, false);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockForceFieldProjector.setRegistryName("forceFieldProjector"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockForceField.setRegistryName("forceField"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockVacuumLaser.setRegistryName("vacuumLaser"));
@@ -806,7 +826,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSuitWorkStation.setRegistryName("suitWorkStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPressureTank.setRegistryName("liquidTank"), ItemBlockFluidTank.class, true);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarGenerator.setRegistryName("solarGenerator"));
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransciever.setRegistryName("wirelessTransciever"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransceiver.setRegistryName("wirelessTransceiver"));
         //Multiblock machines
         //T1 processing
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockArcFurnace.setRegistryName("arcfurnace"));
@@ -823,6 +843,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlanetAnalyser.setRegistryName("planetAnalyser"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockCentrifuge.setRegistryName("centrifuge"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSatelliteBuilder.setRegistryName("satelliteBuilder"));
+       
         //Energy
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBlackHoleGenerator.setRegistryName("blackholegenerator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMicrowaveReciever.setRegistryName("microwaveReciever"));
@@ -840,6 +861,7 @@ public class AdvancedRocketry {
             LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGravityMachine.setRegistryName("gravityMachine"));
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableLaserDrill)
             LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSpaceLaser.setRegistryName("spaceLaser"));
+
         //Docking blocks
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLaunchpad.setRegistryName("launchpad"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLandingPad.setRegistryName("landingPad"));
@@ -868,10 +890,14 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDeployableRocketBuilder.setRegistryName("deployableRocketBuilder"));
         //Infrastructure machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLoader.setRegistryName("loader"), ItemBlockMeta.class, false);
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDataBusBig.setRegistryName("databusbig"), zmaster587.advancedRocketry.item.ItemBlockDataBusBig.class, true);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockServiceStation.setRegistryName("serviceStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFuelingStation.setRegistryName("fuelingStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMonitoringStation.setRegistryName("monitoringStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSatelliteControlCenter.setRegistryName("satelliteControlCenter"));
+        if (ARConfiguration.getCurrentConfig().enableOrbitalRegistry)
+            LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOrbitalRegistry.setRegistryName("orbitalRegistry"));
+
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTerraformingTerminal.setRegistryName("terraformingTerminal"));
         //Station machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWarpShipMonitor.setRegistryName("warpMonitor"));
@@ -952,8 +978,7 @@ public class AdvancedRocketry {
         ARAdvancements.register();
         proxy.init();
 
-        zmaster587.advancedRocketry.cable.NetworkRegistry.registerFluidNetwork();
-
+        MinecraftForge.EVENT_BUS.register(new WirelessNetworkRegistryHandler());
         //Register Alloys
         MaterialRegistry.registerMixedMaterial(new MixedMaterial(TileElectricArcFurnace.class, "oreRutile", new ItemStack[]{MaterialRegistry.getMaterialFromName("Titanium").getProduct(AllowedProducts.getProductByName("INGOT"))}));
 
@@ -1039,6 +1064,7 @@ public class AdvancedRocketry {
         List<BlockMeta> list = new LinkedList<>();
         list.add(new BlockMeta(AdvancedRocketryBlocks.blockLoader, 0));
         list.add(new BlockMeta(AdvancedRocketryBlocks.blockLoader, 8));
+        list.add(new BlockMeta(AdvancedRocketryBlocks.blockDataBusBig, 0));
         TileMultiBlock.addMapping('D', list);
 
         machineRecipes.createAutoGennedRecipes(modProducts);
@@ -1097,9 +1123,11 @@ public class AdvancedRocketry {
 
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
+        // Async weather info injection
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
 
-        CableTickHandler cable = new CableTickHandler();
-        MinecraftForge.EVENT_BUS.register(cable);
+        WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
+        MinecraftForge.EVENT_BUS.register(wirelessTickHandler);
 
         InputSyncHandler inputSync = new InputSyncHandler();
         MinecraftForge.EVENT_BUS.register(inputSync);
@@ -1156,15 +1184,20 @@ public class AdvancedRocketry {
     }
 
     @EventHandler
+    public void serverAboutToStart(FMLServerAboutToStartEvent event) {
+        // Populate dimension properties before worlds get loaded
+        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
+    }
+
+    @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
-        event.registerServerCommand(new WorldCommand());
+        event.registerServerCommand(new ARCommandRoot());
+        // Test-only /artest probe surface — no-op unless -Dadvancedrocketry.tests=true
+        // (or a harness-spawned server sets -Dforge.test.server=true).
+        TestProbeCommandRegistration.registerIfTestMode(event);
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();
-
-
-        //Open ore files
-
 
         //Load Asteroids from XML
         File file = new File("./config/" + zmaster587.advancedRocketry.api.ARConfiguration.configFolder + "/asteroidConfig.xml");
@@ -1174,8 +1207,8 @@ public class AdvancedRocketry {
             try {
                 file.createNewFile();
                 BufferedWriter stream;
-                stream = new BufferedWriter(new FileWriter(file));
-                stream.write("<Asteroids>"
+                stream = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8);
+                stream.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Asteroids>"
                         + "\n\t<asteroid name=\"Small Asteroid\" distance=\"10\" mass=\"200\" massVariability=\"0.5\" minLevel=\"0\" probability=\"20\" richness=\"0.3\" richnessVariability=\"0.5\">"
                         + "\n\t\t<ore itemStack=\"minecraft:iron_ore\" chance=\"15\" />"
                         + "\n\t\t<ore itemStack=\"minecraft:gold_ore\" chance=\"10\" />"
@@ -1222,8 +1255,8 @@ public class AdvancedRocketry {
 
                 file.createNewFile();
                 BufferedWriter stream;
-                stream = new BufferedWriter(new FileWriter(file));
-                stream.write("<OreConfig>\n</OreConfig>");
+                stream = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8);
+                stream.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<OreConfig>\n</OreConfig>");
                 stream.close();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -1254,16 +1287,15 @@ public class AdvancedRocketry {
             }
         }
         //End open and load ore files
-
-        DimensionManager.getInstance().createAndLoadDimensions(resetFromXml);
     }
 
 
     @EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
+        zmaster587.advancedRocketry.wirelessdata.NetworkRegistry.clear();
         zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().onServerStopped();
-        //zmaster587.advancedRocketry.cable.NetworkRegistry.clearNetworks();
         SpaceObjectManager.getSpaceManager().onServerStopped();
+        zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.clear();
         zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId = Constants.INVALID_PLANET;
         ((BlockSeal) AdvancedRocketryBlocks.blockPipeSealer).clearMap();
         DimensionManager.dimOffset = config.getInt("minDimension", "Planet", 2, -127, 8000, "Dimensions including and after this number are allowed to be made into planets");
@@ -1297,7 +1329,6 @@ public class AdvancedRocketry {
                     PacketHandler.sendToPlayer(new PacketSyncKnownPlanets(station.getId(), station.getKnownPlanetList()), player);
                 }
             }
-
         }
     }
 }

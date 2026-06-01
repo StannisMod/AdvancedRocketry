@@ -4,14 +4,22 @@ import com.google.common.collect.Sets;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemTool;
+import net.minecraft.world.World;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import net.minecraftforge.oredict.OreDictionary;
 import zmaster587.advancedRocketry.api.MaterialGeode;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
+
+import java.util.List;
 import java.util.Set;
 
 public class ItemJackHammer extends ItemTool {
@@ -40,4 +48,12 @@ public class ItemJackHammer extends ItemTool {
     public boolean canHarvestBlock(IBlockState blockIn) {
         return true;
     }
+
+    @SideOnly(Side.CLIENT)
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.jackhammer", insertAt);
+    }
+
 }

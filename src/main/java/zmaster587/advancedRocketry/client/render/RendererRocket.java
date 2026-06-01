@@ -48,19 +48,15 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
         }
     }
 
-
-    //TODO: possibly optimize with GL lists
     @Override
     public void doRender(@Nonnull Entity entity, double x, double y, double z, float f1, float f2) {
 
         StorageChunk storage = ((EntityRocket) entity).storage;
 
-
         BufferBuilder buffer = Tessellator.getInstance().getBuffer();
 
         if ((storage == null || !storage.finalized))
             return;
-
 
         //Find the halfway point along the XZ plane
         float halfx = storage.getSizeX() / 2f;
@@ -95,10 +91,7 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
                     buffer.pos(tile.getPos().getX() - entity.posX + 0.5f, tile.getPos().getY() - entity.posY + 0.5f, tile.getPos().getZ() - entity.posZ + 0.5f).endVertex();
                     buffer.pos((tile.getPos().getX() - entity.posX + 0.5f) / 2f, storage.getSizeY() / 2f, (tile.getPos().getZ() - entity.posZ + 0.5f) / 2f).endVertex();
 
-                    //RenderHelper.renderCrossXZ(Tessellator.instance, .2f, 0, storage.getSizeY()/2f, 0, tile.xCoord - entity.posX + 0.5f, tile.yCoord - entity.posY  + 0.5f, tile.zCoord - entity.posZ + 0.5f);
-                    //RenderHelper.renderBlockWithEndPointers(Tessellator.instance, .2f, 0, storage.getSizeY()/2f, 0, tile.xCoord - entity.posX, tile.yCoord - entity.posY, tile.zCoord - entity.posZ);
                     Tessellator.getInstance().draw();
-                    //RenderHelper.renderCubeWithUV(tess, 0, 0, 0, 2, 55, 2, 0, 1, 0, 1);
                 }
             }
         }
@@ -169,7 +162,6 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
                 if (tileEntityBlockChiseled == null || !tileEntityBlockChiseled.isInstance(tile)) {
                     TileEntityRendererDispatcher.instance.render(tile, tile.getPos().getX(), tile.getPos().getY(), tile.getPos().getZ(), f1);
                 }
-                //renderer.renderTileEntity(tile, tile.getPos().getX(), tile.getPos().getY(), tile.getPos().getZ(), f1, 0);
             }
         }
 
@@ -187,14 +179,13 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
                             //Chisel transforms by -TileEntityRendererDispatcher.staticPlayer, we already transformed, so we must negate it
                             GL11.glTranslated(TileEntityRendererDispatcher.staticPlayerX, TileEntityRendererDispatcher.staticPlayerY, TileEntityRendererDispatcher.staticPlayerZ);
                             TileEntityRendererDispatcher.instance.render(tile, tile.getPos().getX(), tile.getPos().getY(), tile.getPos().getZ(), f1);
-                            GL11.glPopMatrix();
                         } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
                             // TODO Auto-generated catch block
                             e.printStackTrace();
+                        } finally {
+                            GL11.glPopMatrix();
                         }
                     }
-
-                    //renderer.renderTileEntity(tile, tile.getPos().getX(), tile.getPos().getY(), tile.getPos().getZ(), f1, 0);
                 }
             }
             TileEntityRendererDispatcher.instance.drawBatch(0);
@@ -207,10 +198,8 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
         GlStateManager.resetColor();
         GL11.glPopMatrix();
 
-
-        //Clean up and make player not transparent
+        //Clean up AND make player not transparent
         OpenGlHelper.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, 0, 0);
-
     }
 
     @Override
@@ -222,5 +211,4 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
     public Render<? super EntityRocket> createRenderFor(RenderManager manager) {
         return new RendererRocket(manager);
     }
-
 }

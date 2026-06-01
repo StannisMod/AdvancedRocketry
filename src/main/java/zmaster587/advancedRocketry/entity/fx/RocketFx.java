@@ -66,6 +66,10 @@ public class RocketFx extends Particle {
         this(world, x, y, z, motx, moty, motz, 1.0f);
     }
 
+    public World getParticleWorld() {
+        return this.world;
+    }
+
     @Override
     public int getFXLayer() {
         return 0;
@@ -163,6 +167,7 @@ public class RocketFx extends Particle {
         GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
         GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
     }
 
     public boolean shouldDisableDepth() {

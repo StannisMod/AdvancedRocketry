@@ -73,6 +73,9 @@ public class ItemPlanetIdentificationChip extends ItemIdWithName {
         if (dimensionId == Constants.INVALID_PLANET) {
             nbt = new NBTTagCompound();
             nbt.setInteger(dimensionIdIdentifier, dimensionId);
+            // Attach the tag to the stack; otherwise the sentinel dimId is built
+            // and discarded, leaving the chip with no NBT for the invalid case.
+            stack.setTagCompound(nbt);
             return;
         }
 

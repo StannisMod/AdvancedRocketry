@@ -26,14 +26,13 @@ import zmaster587.advancedRocketry.api.RocketEvent;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketLaunchEvent;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketPreLaunchEvent;
 import zmaster587.advancedRocketry.api.StatsRocket;
-import zmaster587.advancedRocketry.api.atmosphere.AtmosphereRegister;
+import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.stations.ISpaceObject;
 import zmaster587.advancedRocketry.client.SoundRocketEngine;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.mission.MissionGasCollection;
 import zmaster587.advancedRocketry.network.PacketSatellite;
-import zmaster587.advancedRocketry.network.PacketSatellitesUpdate;
 import zmaster587.advancedRocketry.stations.SpaceObjectManager;
 import zmaster587.advancedRocketry.util.AudioRegistry;
 import zmaster587.advancedRocketry.util.StorageChunk;
@@ -62,7 +61,10 @@ public class EntityStationDeployedRocket extends EntityRocket {
     private ModuleText atmText;
     private short gasId;
     private Ticket ticket;
-
+    private long plannedHarvestMb = 0L;  // planned total mB to attempt this mission
+    private transient boolean postedLandedAfterLoad = false;
+    private transient boolean postedDeorbit = false;
+    
     public EntityStationDeployedRocket(World world) {
         super(world);
         launchDirection = EnumFacing.DOWN;
@@ -121,8 +123,21 @@ public class EntityStationDeployedRocket extends EntityRocket {
             setInFlight(true);
             return;
         }
-        if (getFuelAmount(getRocketFuelType()) < getFuelCapacity(getRocketFuelType()))
-            return;
+
+        if (storage != null) {
+            storage.recalculateStats(this.stats);  // keeps everything else in sync
+        }
+ 
+
+        FuelRegistry.FuelType rt = getRocketFuelType();
+        if (rt != null && ARConfiguration.getCurrentConfig().rocketRequireFuel) {
+            if (getFuelAmount(rt) < getFuelCapacity(rt)) return;
+
+            if (rt == FuelRegistry.FuelType.LIQUID_BIPROPELLANT) {
+                if (getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER)
+                    < getFuelCapacity(FuelRegistry.FuelType.LIQUID_OXIDIZER)) return;
+            }
+        }
 
         ISpaceObject spaceObj;
         if (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId &&
@@ -152,7 +167,15 @@ public class EntityStationDeployedRocket extends EntityRocket {
     @Override
     public void onUpdate() {
         lastWorldTickTicked = world.getTotalWorldTime();
-
+        if (!world.isRemote && !postedLandedAfterLoad && this.ticksExisted >= 5) {
+            // Consider "landed" = entity exists, NOT in flight, NOT in orbit
+            if (!isInFlight() && !isInOrbit()) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new zmaster587.advancedRocketry.api.RocketEvent.RocketLandedEvent(this)
+                );
+                postedLandedAfterLoad = true;
+            }
+        }
         if (this.ticksExisted == 20) {
             //problems with loading on other world then where the infrastructure was set?
             for (HashedBlockPosition temp : new LinkedList<>(infrastructureCoords)) {
@@ -226,6 +249,13 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
             //Returning
             if (isInOrbit()) { //For unmanned rockets
+                // Post deorbit once, as we start the return phase
+                if (!world.isRemote && !postedDeorbit) {
+                    net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                        new zmaster587.advancedRocketry.api.RocketEvent.RocketDeOrbitingEvent(this)
+                    );
+                    postedDeorbit = true;
+                }                
                 EnumFacing dir;
                 isCoasting = Math.abs(this.posX - actualLaunchLocation.x) < 0.01 && Math.abs(this.posZ - actualLaunchLocation.z) < 0.01;
 
@@ -281,7 +311,12 @@ public class EntityStationDeployedRocket extends EntityRocket {
                     motionX += acc * forwardDirection.getFrontOffsetX();
                     motionY += acc * forwardDirection.getFrontOffsetY();
                     motionZ += acc * forwardDirection.getFrontOffsetZ();
-                    setFuelAmount(getRocketFuelType(), getFuelAmount(getRocketFuelType()) - 1);
+
+                    // server-side fuel consumption for thrust ticks
+                    if (!world.isRemote && burningFuel) {
+                        // only consume if we actually need to (respect config + biprop pairing)
+                        tryConsumeAscentFuel();
+                    }
                 }
                 if (!world.isRemote && this.getDistance(actualLaunchLocation.x, actualLaunchLocation.y, actualLaunchLocation.z) > 128) {
 
@@ -375,13 +410,15 @@ public class EntityStationDeployedRocket extends EntityRocket {
     /**
      * Called when the rocket reaches orbit
      */
+    @Override
     public void onOrbitReached() {
-        //make it 30 minutes with one drill
+        if (world.isRemote) return;  // client should not run any of this
+        // Emit the “reached orbit” event directly so monitors update.
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+            new zmaster587.advancedRocketry.api.RocketEvent.RocketReachesOrbitEvent(this)
+        );
+        if (this.isDead) return;
 
-        if (world.isRemote)System.out.println("this code should not run on client side!");
-
-        if (this.isDead)
-            return;
 
         //Check again to make sure we are around a gas giant
         ISpaceObject spaceObj;
@@ -402,14 +439,64 @@ public class EntityStationDeployedRocket extends EntityRocket {
             return;
         }
 
-        //one intake with a 1 bucket tank should take 100 seconds
-        float intakePower = (Integer) stats.getStatTag("intakePower");
+        // --- Plan harvest & cap duration by what we can actually get ---
+        final net.minecraftforge.fluids.Fluid targetFluid =
+                properties.getHarvestableGasses().get(gasId);
 
-        MissionGasCollection miningMission = new MissionGasCollection(intakePower == 0 ? 360 : (long) (2 * ((int) stats.getStatTag("liquidCapacity") / intakePower)), this, connectedInfrastructure, properties.getHarvestableGasses().get(gasId));
+        // (1) config harvest cap (mB)
+        final boolean infinite = ARConfiguration.getCurrentConfig().gasHarvestInfinite;
+        final double mult = Math.max(0.0, ARConfiguration.getCurrentConfig().gasHarvestAmountMultiplier);
+        final long base64k = 64_000L;
+        final int harvestCapMb = infinite
+                ? Integer.MAX_VALUE
+                : (int) Math.min(Integer.MAX_VALUE, Math.round(base64k * mult));
+
+        // (2) free capacity for this gas across all rocket tanks (simulate)
+        int freeMb = 0;
+        for (TileEntity tile : this.storage.getFluidTiles()) {
+            net.minecraftforge.fluids.capability.IFluidHandler h =
+                tile.getCapability(net.minecraftforge.fluids.capability.CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, null);
+            if (h == null) continue;
+            int couldTake = h.fill(new net.minecraftforge.fluids.FluidStack(targetFluid, Integer.MAX_VALUE), false);
+            if (couldTake > 0) {
+                freeMb = (int) Math.min((long) Integer.MAX_VALUE, (long) freeMb + (long) couldTake);
+            }
+        }
+
+        // (3) final planned harvest for this mission
+        this.plannedHarvestMb = Math.max(0, Math.min(harvestCapMb, freeMb));
+
+        // (4) duration = min( baseCurveTime(capForTiming), ceil(plannedHarvest / rate) )
+        // Keep your curve and denominator 25
+        final int liquidCapacity = safeTagInt(stats, "liquidCapacity");
+        final int intake        = safeTagInt(stats, "intakePower");
+        final long rate         = DENOM_PER_INTAKE * (long) Math.max(1, intake); // mB/s
+
+        final long durationSeconds;
+        if (intake <= 0 || this.plannedHarvestMb <= 0) {
+            durationSeconds = 180L; // safety default
+        } else {
+            // IMPORTANT: cap the capacity used by the curve to the harvest cap,
+            // so durations match the table when harvest is smaller than tank size.
+            final int capForTiming = infinite ? liquidCapacity : Math.min(liquidCapacity, harvestCapMb);
+
+            double effCapMb  = computeEffectiveCapacityMb(capForTiming);
+            long baseSeconds = (long) Math.floor(effCapMb / (double) rate);
+            long capSeconds  = (long) Math.ceil((double) this.plannedHarvestMb / (double) rate);
+
+            durationSeconds = Math.max(1L, Math.min(baseSeconds, capSeconds));
+        }
+        final long durationTicks = Math.max(1L, durationSeconds * 20L);
+
+
+        MissionGasCollection miningMission =
+            new MissionGasCollection(durationTicks, this, connectedInfrastructure, targetFluid);
+
 
         miningMission.setDimensionId(properties.getId());
         properties.addSatellite(miningMission);
 
+        // broadcast
         if (!world.isRemote) {
             PacketHandler.sendToAll(new PacketSatellite(miningMission));
         }
@@ -495,7 +582,98 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
 
         nbt.setShort("gas", gasId);
+        nbt.setLong("plannedHarvestMb", Math.max(0L, this.plannedHarvestMb));
     }
+    
+    // handle possible bad data gracefully
+    private static int safeTagInt(StatsRocket s, String key) {
+        Object v = s.getStatTag(key);
+        return (v instanceof Number) ? Math.max(0, ((Number) v).intValue()) : 0;
+    }    
+
+    // --- Nonlinear gas mission timing (alpha = 0.2) ---
+    // effectiveCapacity = BASE_CAP * (liquidCapacity / BASE_CAP)^ALPHA
+    // baseSeconds       = floor( effectiveCapacity / (DENOM_PER_INTAKE * intakePower) )
+    // finalSeconds      = min(baseSeconds, ceil(plannedHarvestMb / (DENOM_PER_INTAKE * intakePower)))
+    private static final long BASE_CAP = 64_000L;       // 64,000 mB (64 buckets)
+    private static final double ALPHA = 0.2d;           // gentle sublinear scaling
+    private static final long DENOM_PER_INTAKE = 25L;   // you picked "25 * intakePower"
+
+    // Returns the effective capacity (mB) from your nonlinear curve.
+    private static double computeEffectiveCapacityMb(int liquidCapacity) {
+        double ratio = Math.max(1.0d, ((double) liquidCapacity) / (double) BASE_CAP);
+        return (double) BASE_CAP * Math.pow(ratio, ALPHA);
+    }
+
+    private static long computeMissionDurationSeconds(int liquidCapacity, int intakePower) {
+        // default fallback if bad data
+        if (intakePower <= 0) return 180L; // 3 minutes safety default
+
+        // scale in double to avoid precision loss, clamp ratio >= 1 to avoid shrinking below base
+        double ratio = Math.max(1.0d, ((double) liquidCapacity) / (double) BASE_CAP);
+        double effectiveCapacity = (double) BASE_CAP * Math.pow(ratio, ALPHA);
+
+        long denom = DENOM_PER_INTAKE * (long) Math.max(1, intakePower);
+        long secs = (long) Math.floor(effectiveCapacity / (double) denom);
+
+        return Math.max(1L, secs); // never zero
+    }
+
+    // Consume ascent fuel exactly like the parent rocket does.
+    // Returns true if fuel was consumed this tick (or fuel is not required by config).
+    private boolean tryConsumeAscentFuel() {
+        if (!ARConfiguration.getCurrentConfig().rocketRequireFuel)
+            return true;
+
+        final FuelRegistry.FuelType rt = getRocketFuelType();
+        if (rt == null)
+            return false;
+
+        // current amounts
+        int main = getFuelAmount(rt);
+        final int mainRate = Math.max(1, getFuelConsumptionRate(rt)); // defensive
+
+        if (rt == FuelRegistry.FuelType.LIQUID_BIPROPELLANT) {
+            int ox = getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER);
+            final int oxRate = Math.max(1, getFuelConsumptionRate(FuelRegistry.FuelType.LIQUID_OXIDIZER));
+
+            // both-or-nothing
+            if (main >= mainRate && ox >= oxRate) {
+                setFuelAmount(rt, main - mainRate);
+                setFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER, ox - oxRate);
+            } else {
+                return false; // not enough of one stream
+            }
+
+            // normalize + clear fluid names when empty
+            setFuelAmount(rt, Math.max(0, getFuelAmount(rt)));
+            setFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER, Math.max(0, getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER)));
+
+            if (getFuelAmount(rt) == 0) {
+                stats.setFuelFluid("null");
+                stats.setWorkingFluid("null");
+            }
+            if (getFuelAmount(FuelRegistry.FuelType.LIQUID_OXIDIZER) == 0) {
+                stats.setOxidizerFluid("null");
+            }
+            return true;
+        } else {
+            if (main >= mainRate) {
+                setFuelAmount(rt, main - mainRate);
+            } else {
+                return false;
+            }
+
+            // normalize + clear when empty
+            setFuelAmount(rt, Math.max(0, getFuelAmount(rt)));
+            if (getFuelAmount(rt) == 0) {
+                stats.setFuelFluid("null");
+                stats.setWorkingFluid("null");
+            }
+            return true;
+        }
+    }
+
 
     @Override
     public void readMissionPersistentNBT(NBTTagCompound nbt) {
@@ -512,5 +690,22 @@ public class EntityStationDeployedRocket extends EntityRocket {
         actualLaunchLocation = new Vec3d(ax, ay, az);
 
         gasId = nbt.getShort("gas");
+    }
+
+    // TOP integration
+    @javax.annotation.Nullable
+    public net.minecraftforge.fluids.Fluid getSelectedHarvestGas() {
+        DimensionProperties props = DimensionManager.getEffectiveDimId(world, this.getPosition());
+
+        if (props == null || !props.isGasGiant() || props.getHarvestableGasses().isEmpty()) {
+            return null;
+        }
+
+        int idx = gasId;
+        if (idx < 0 || idx >= props.getHarvestableGasses().size()) {
+            idx = 0;
+        }
+
+        return props.getHarvestableGasses().get(idx);
     }
 }

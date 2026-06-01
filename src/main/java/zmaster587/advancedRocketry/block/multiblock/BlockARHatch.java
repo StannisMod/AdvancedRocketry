@@ -35,17 +35,24 @@ public class BlockARHatch extends BlockHatch {
     }
 
     @Override
-    public boolean shouldSideBeRendered(IBlockState blockState,
-                                        IBlockAccess blockAccess, BlockPos pos, EnumFacing direction) {
+    public boolean shouldSideBeRendered(IBlockState blockState, IBlockAccess blockAccess, BlockPos pos, EnumFacing direction) {
+        int variant = blockState.getValue(VARIANT);
 
+        // Always render sides for guidancecomputeraccesshatch variants (6 and 14)
+        if (variant == 6 || variant == 14) {
+            return true;
+        }
+
+        // Keep
+        if (variant == 8)
+            return false;
 
         boolean isPointer = blockAccess.getTileEntity(pos.offset(direction.getOpposite())) instanceof TilePointer;
-        if (blockState.getValue(VARIANT) == 8)
-            return false;
-        if (isPointer || blockState.getValue(VARIANT) < 2)
+        if (isPointer || variant < 2)
             return super.shouldSideBeRendered(blockState, blockAccess, pos, direction);
-        return true;
 
+
+        return true;
     }
 
     @Override

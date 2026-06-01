@@ -1,8 +1,8 @@
 package zmaster587.advancedRocketry.block;
 
 import com.google.common.collect.Lists;
-import com.mojang.realmsclient.gui.ChatFormatting;
 import net.minecraft.block.*;
+import net.minecraft.block.state.BlockFaceShape;
 import net.minecraft.block.state.BlockPistonStructureHelper;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.util.ITooltipFlag;
@@ -13,17 +13,22 @@ import net.minecraft.init.Items;
 import net.minecraft.init.SoundEvents;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.tileentity.TileEntityPiston;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
-import zmaster587.libVulpes.LibVulpes;
+import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
+import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.libVulpes.interfaces.IRecipe;
 import zmaster587.libVulpes.recipe.RecipesMachine;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import java.util.List;
 
@@ -184,11 +189,18 @@ public class BlockSmallPlatePress extends BlockPistonBase {
             BlockPos blockpos2 = pos.offset(direction);
 
             if (extending) {
-                BlockPistonExtension.EnumPistonType blockpistonextension$enumpistontype = BlockPistonExtension.EnumPistonType.DEFAULT;
-                IBlockState iblockstate3 = Blocks.PISTON_HEAD.getDefaultState().withProperty(BlockPistonExtension.FACING, direction).withProperty(BlockPistonExtension.TYPE, blockpistonextension$enumpistontype);
-                IBlockState iblockstate1 = Blocks.PISTON_EXTENSION.getDefaultState().withProperty(BlockPistonMoving.FACING, direction).withProperty(BlockPistonMoving.TYPE, BlockPistonExtension.EnumPistonType.DEFAULT);
-                worldIn.setBlockState(blockpos2, iblockstate1, 4);
-                worldIn.setTileEntity(blockpos2, BlockPistonMoving.createTilePiston(iblockstate3, direction, true, false));
+                IBlockState pressHeadState =
+                        AdvancedRocketryBlocks.blockPlatePressHead.getDefaultState()
+                                .withProperty(BlockPistonExtension.FACING, direction)
+                                .withProperty(BlockPistonExtension.TYPE, BlockPistonExtension.EnumPistonType.DEFAULT)
+                                .withProperty(BlockPistonExtension.SHORT, Boolean.FALSE);
+
+                IBlockState movingState = Blocks.PISTON_EXTENSION.getDefaultState()
+                        .withProperty(BlockPistonMoving.FACING, direction)
+                        .withProperty(BlockPistonMoving.TYPE, BlockPistonExtension.EnumPistonType.DEFAULT);
+
+                worldIn.setBlockState(blockpos2, movingState, 4);
+                worldIn.setTileEntity(blockpos2, BlockPistonMoving.createTilePiston(pressHeadState, direction, true, false));
             }
 
             for (int i1 = list2.size() - 1; i1 >= 0; --i1) {
@@ -200,7 +212,7 @@ public class BlockSmallPlatePress extends BlockPistonBase {
             }
 
             if (extending) {
-                worldIn.notifyNeighborsOfStateChange(blockpos2, Blocks.PISTON_HEAD, true);
+                worldIn.notifyNeighborsOfStateChange(blockpos2, AdvancedRocketryBlocks.blockPlatePressHead, true);
                 worldIn.notifyNeighborsOfStateChange(pos, this, true);
             }
 
@@ -232,21 +244,34 @@ public class BlockSmallPlatePress extends BlockPistonBase {
             worldIn.setBlockState(pos, state.withProperty(EXTENDED, Boolean.TRUE), 2);
             worldIn.playSound(null, pos, SoundEvents.BLOCK_PISTON_EXTEND, SoundCategory.BLOCKS, 0.5F, worldIn.rand.nextFloat() * 0.25F + 0.6F);
         } else if (id == 1) {
+            BlockPos headPos = pos.offset(enumfacing);
 
-            worldIn.setBlockState(pos, Blocks.PISTON_EXTENSION.getDefaultState().withProperty(BlockPistonMoving.FACING, enumfacing).withProperty(BlockPistonMoving.TYPE, BlockPistonExtension.EnumPistonType.DEFAULT), 3);
-            worldIn.setTileEntity(pos, BlockPistonMoving.createTilePiston(this.getStateFromMeta(param), enumfacing, false, true));
+            TileEntity te = worldIn.getTileEntity(headPos);
+            if (te instanceof TileEntityPiston) {
+                ((TileEntityPiston) te).clearPistonTileEntity();
+            }
 
+            worldIn.setBlockToAir(headPos);
+            worldIn.setBlockState(pos, state.withProperty(EXTENDED, Boolean.FALSE), 2);
 
-            worldIn.playSound(null, pos, SoundEvents.BLOCK_PISTON_CONTRACT, SoundCategory.BLOCKS, 0.5F, worldIn.rand.nextFloat() * 0.15F + 0.6F);
+            worldIn.notifyNeighborsOfStateChange(headPos, Blocks.AIR, true);
+            worldIn.notifyNeighborsOfStateChange(pos, this, true);
+
+            worldIn.playSound(null, pos, SoundEvents.BLOCK_PISTON_CONTRACT,
+                    SoundCategory.BLOCKS, 0.5F, worldIn.rand.nextFloat() * 0.15F + 0.6F);
         }
 
         return true;
     }
-
+    @Override
+    public BlockFaceShape getBlockFaceShape(IBlockAccess worldIn, IBlockState state, BlockPos pos, EnumFacing face) {
+        return face == EnumFacing.DOWN ? BlockFaceShape.UNDEFINED : BlockFaceShape.SOLID;
+    }
     @SideOnly(Side.CLIENT)
-    public void addInformation(@Nonnull ItemStack stack, World player, List<String> tooltip, ITooltipFlag advanced) {
-        super.addInformation(stack, player, tooltip, advanced);
-        tooltip.add(ChatFormatting.DARK_GRAY + "" + ChatFormatting.ITALIC + LibVulpes.proxy.getLocalizedString("machine.tooltip.smallplatepress"));
+    @Override
+    public void addInformation(ItemStack stack, @Nullable World world, List<String> tooltip, ITooltipFlag flag) {
+        int insertAt = TooltipInjector.computeInsertIndex(tooltip, flag.isAdvanced());
+        TooltipInjector.renderShiftAlt(stack, tooltip, "tooltip.advancedrocketry.platepress", insertAt);
     }
 
 }

@@ -3,7 +3,6 @@ package zmaster587.advancedRocketry.tile.infrastructure;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -14,16 +13,21 @@ import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.ItemHandlerHelper;
+import net.minecraftforge.items.wrapper.InvWrapper;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
 import zmaster587.advancedRocketry.api.IInfrastructure;
 import zmaster587.advancedRocketry.api.IMission;
 import zmaster587.advancedRocketry.block.multiblock.BlockARHatch;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.inventory.modules.ModuleSideSelectorTooltipOverlay;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
+import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
 import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.inventory.modules.*;
@@ -39,6 +43,7 @@ import java.util.List;
 
 public class TileRocketLoader extends TileInventoryHatch implements IInfrastructure, ITickable, IButtonInventory, INetworkMachine, IGuiCallback {
 
+    private String[] sideStateNames;
     private final static int ALLOW_REDSTONEOUT = 2;
     EntityRocket rocket;
     ModuleRedstoneOutputButton redstoneControl;
@@ -47,13 +52,21 @@ public class TileRocketLoader extends TileInventoryHatch implements IInfrastruct
     RedstoneState inputstate;
     ModuleBlockSideSelector sideSelectorModule;
 
+    protected static final int TRANSFER_INTERVAL_TICKS = 20;
+    protected static final int MAX_TRANSFER_PER_OPERATION = 64;
+    protected int transferCooldown = 0;
+
+    // Own wrapper around the EmbeddedInventory from TileInventoryHatch.
+    // We DO NOT use the broken capability from LibVulpes for ourselves.
+    protected final IItemHandler ownItemHandler = new InvWrapper(this.inventory);
+
     public TileRocketLoader() {
         redstoneControl = new ModuleRedstoneOutputButton(174, 4, 0, "", this, LibVulpes.proxy.getLocalizedString("msg.rocketLoader.loadingState"));
         state = RedstoneState.ON;
         inputRedstoneControl = new ModuleRedstoneOutputButton(174, 32, 1, "", this, LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowLoading"));
         inputstate = RedstoneState.OFF;
         inputRedstoneControl.setRedstoneState(inputstate);
-        sideSelectorModule = new ModuleBlockSideSelector(90, 15, this, LibVulpes.proxy.getLocalizedString("msg.rocketLoader.none"), LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneoutput"), LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneinput"));
+        initSideSelector();
     }
 
     public TileRocketLoader(int size) {
@@ -71,8 +84,51 @@ public class TileRocketLoader extends TileInventoryHatch implements IInfrastruct
         inputRedstoneControl = new ModuleRedstoneOutputButton(174, 32, 1, "", this, LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowLoading"));
         inputstate = RedstoneState.OFF;
         inputRedstoneControl.setRedstoneState(inputstate);
-        sideSelectorModule = new ModuleBlockSideSelector(90, 15, this, LibVulpes.proxy.getLocalizedString("msg.rocketLoader.none"), LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneoutput"), LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneinput"));
+        initSideSelector();
+    }
 
+    // Used for rocket / other tiles – they SHOULD implement IItemHandler correctly.
+    protected IItemHandler getItemHandler(TileEntity tile) {
+        if (tile == null || tile.isInvalid())
+            return null;
+
+        // Prefer null side
+        if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null)) {
+            Object cap = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null);
+            if (cap instanceof IItemHandler) {
+                return (IItemHandler) cap;
+            }
+        }
+
+        // Fallback: try all sides
+        for (EnumFacing side : EnumFacing.values()) {
+            if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, side)) {
+                Object cap = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, side);
+                if (cap instanceof IItemHandler) {
+                    return (IItemHandler) cap;
+                }
+            }
+        }
+
+        return null;
+    }
+
+
+    // For THIS tile only: never go through LibVulpes’ capability (it returns EmbeddedInventory).
+    protected IItemHandler getOwnItemHandler() {
+        return ownItemHandler;
+    }
+
+
+
+    private void initSideSelector() {
+        sideStateNames = new String[] {
+                LibVulpes.proxy.getLocalizedString("msg.rocketLoader.none"),
+                LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneoutput"),
+                LibVulpes.proxy.getLocalizedString("msg.rocketLoader.allowredstoneinput")
+        };
+
+        sideSelectorModule = new ModuleBlockSideSelector(90, 15, this, sideStateNames);
     }
 
     @Override
@@ -98,6 +154,10 @@ public class TileRocketLoader extends TileInventoryHatch implements IInfrastruct
         list.add(redstoneControl);
         list.add(inputRedstoneControl);
         list.add(sideSelectorModule);
+        if (FMLCommonHandler.instance().getSide().isClient()) {
+            list.add(new ModuleSideSelectorTooltipOverlay(90, 15, sideSelectorModule, sideStateNames));
+        }
+
         return list;
     }
 
@@ -111,94 +171,100 @@ public class TileRocketLoader extends TileInventoryHatch implements IInfrastruct
 
     @Override
     public void update() {
-        //Move a stack of items
-        if (!world.isRemote && rocket != null) {
+        if (world.isRemote || rocket == null)
+            return;
 
-            boolean isAllowedToOperate = (inputstate == RedstoneState.OFF || isStateActive(inputstate, getStrongPowerForSides(world, getPos())));
+        // Throttle: only try to move items every TRANSFER_INTERVAL_TICKS
+        if (transferCooldown > 0) {
+            transferCooldown--;
+            return;
+        }
 
-            List<TileEntity> tiles = rocket.storage.getInventoryTiles();
-            boolean foundStack = false;
-            boolean rocketContainsItems = false;
-            out:
-            //Function returns if something can be moved
-            for (TileEntity tile : tiles) {
-                if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP)) {
-                    if(tile instanceof TileGuidanceComputer) continue;
+        boolean isAllowedToOperate = (inputstate == RedstoneState.OFF ||
+                isStateActive(inputstate, getStrongPowerForSides(world, getPos())));
 
-                    IItemHandler inv = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP);
+        IItemHandler ownHandler = getOwnItemHandler();
+        if (ownHandler == null || ownHandler.getSlots() == 0) {
+            // Nothing to move / no handler -> treat as not doing anything
+            setRedstoneState(false);
+            return;
+        }
 
-                    for (int i = 0; i < inv.getSlots(); i++) {
-                        if (inv.getStackInSlot(i).isEmpty())
-                            rocketContainsItems = true;
+        List<TileEntity> tiles = rocket.storage.getInventoryTiles();
+        boolean rocketHasCapacity = false; // true if any slot can still take items
 
-                        //Loop though this inventory's slots and find a suitible one
-                        for (int j = 0; j < getSizeInventory(); j++) {
-                            if ((inv.getStackInSlot(i).isEmpty()) && !inventory.getStackInSlot(j).isEmpty()) {
-                                if (isAllowedToOperate) {
-                                    inv.insertItem(i, inventory.getStackInSlot(j), false);
-                                    inventory.setInventorySlotContents(j, ItemStack.EMPTY);
-                                }
-                                rocketContainsItems = true;
-                                break out;
-                            } else if (!getStackInSlot(j).isEmpty() && inv.getStackInSlot(i).getItem() == getStackInSlot(j).getItem() &&
-                                    ItemStack.areItemStackTagsEqual(inv.getStackInSlot(i), getStackInSlot(j)) && inv.getStackInSlot(i).getMaxStackSize() != inv.getStackInSlot(i).getCount()) {
-                                if (isAllowedToOperate) {
-                                    ItemStack stack2 = inventory.decrStackSize(j, inv.getStackInSlot(i).getMaxStackSize() - inv.getStackInSlot(i).getCount());
-                                    inv.getStackInSlot(i).setCount(inv.getStackInSlot(i).getCount() + stack2.getCount());
-                                }
-                                rocketContainsItems = true;
+        outer:
+        for (TileEntity tile : tiles) {
+            if (tile instanceof TileGuidanceComputer || tile instanceof TileSatelliteHatch)
+                continue;
 
-                                if (inventory.getStackInSlot(j).isEmpty())
-                                    break out;
+            IItemHandler rocketHandler = getItemHandler(tile);
+            if (rocketHandler == null || rocketHandler.getSlots() == 0)
+                continue;
 
-                                foundStack = true;
-                            }
-                        }
-                        if (foundStack)
-                            break out;
-                    }
-                } else {
-                    if (tile instanceof IInventory && !(tile instanceof TileGuidanceComputer)) {
-                        IInventory inv = ((IInventory) tile);
+            int rocketSlots = rocketHandler.getSlots();
+            int ownSlots = ownHandler.getSlots();
 
-                        for (int i = 0; i < inv.getSizeInventory(); i++) {
-                            if (inv.getStackInSlot(i).isEmpty())
-                                rocketContainsItems = true;
-
-                            //Loop though this inventory's slots and find a suitible one
-                            for (int j = 0; j < getSizeInventory(); j++) {
-                                if ((inv.getStackInSlot(i).isEmpty()) && !inventory.getStackInSlot(j).isEmpty()) {
-                                    if (isAllowedToOperate) {
-                                        inv.setInventorySlotContents(i, inventory.getStackInSlot(j));
-                                        inventory.setInventorySlotContents(j, ItemStack.EMPTY);
-                                    }
-                                    rocketContainsItems = true;
-                                    break out;
-                                } else if (!getStackInSlot(j).isEmpty() && inv.isItemValidForSlot(i, getStackInSlot(j)) && inv.getStackInSlot(i).getItem() == getStackInSlot(j).getItem() &&
-                                        ItemStack.areItemStackTagsEqual(inv.getStackInSlot(i), getStackInSlot(j)) && inv.getStackInSlot(i).getMaxStackSize() != inv.getStackInSlot(i).getCount()) {
-                                    if (isAllowedToOperate) {
-                                        ItemStack stack2 = inventory.decrStackSize(j, inv.getStackInSlot(i).getMaxStackSize() - inv.getStackInSlot(i).getCount());
-                                        inv.getStackInSlot(i).setCount(inv.getStackInSlot(i).getCount() + stack2.getCount());
-                                    }
-                                    rocketContainsItems = true;
-
-                                    if (inventory.getStackInSlot(j).isEmpty())
-                                        break out;
-
-                                    foundStack = true;
-                                }
-                            }
-                            if (foundStack)
-                                break out;
-                        }
-                    }
+            // Capacity detection for redstone: matches original semantics (any empty slot)
+            for (int rocketSlot = 0; rocketSlot < rocketSlots; rocketSlot++) {
+                ItemStack rocketStack = rocketHandler.getStackInSlot(rocketSlot);
+                if (rocketStack.isEmpty()) {
+                    rocketHasCapacity = true;
+                    break;
                 }
             }
 
-            //Update redstone state
-            setRedstoneState(!rocketContainsItems);
+            // If we are not allowed to operate, we only care about capacity for redstone
+            if (!isAllowedToOperate)
+                continue;
 
+            // Actual transfer: handler-wide insert using ItemHandlerHelper
+            for (int ownSlot = 0; ownSlot < ownSlots; ownSlot++) {
+                ItemStack sourceStack = ownHandler.getStackInSlot(ownSlot);
+                if (sourceStack.isEmpty())
+                    continue;
+
+                // Limit per-operation transfer, but DO NOT assume anything about slot max size
+                int maxToMove = Math.min(MAX_TRANSFER_PER_OPERATION, sourceStack.getCount());
+                if (maxToMove <= 0)
+                    continue;
+
+                // Simulate extraction from our inventory
+                ItemStack simulatedExtract = ownHandler.extractItem(ownSlot, maxToMove, true);
+                if (simulatedExtract.isEmpty())
+                    continue;
+
+                // Simulate insertion into the rocket inventory as a whole
+                ItemStack simulatedRemainder = ItemHandlerHelper.insertItem(rocketHandler, simulatedExtract, true);
+                int accepted = simulatedExtract.getCount() - simulatedRemainder.getCount();
+                if (accepted <= 0)
+                    continue;
+
+                // Actually extract exactly what the rocket said it will accept
+                ItemStack actuallyExtracted = ownHandler.extractItem(ownSlot, accepted, false);
+                if (actuallyExtracted.isEmpty())
+                    continue;
+
+                // Actually insert into rocket
+                ItemStack remainder = ItemHandlerHelper.insertItem(rocketHandler, actuallyExtracted, false);
+
+                // Normally remainder should be empty because we respected 'accepted'.
+                // Absolute last-resort fallback for misbehaving handlers: try to put remainder back.
+                if (!remainder.isEmpty()) {
+                    ItemHandlerHelper.insertItem(ownHandler, remainder, false);
+                    // If this still leaves items, they'll effectively vanish, but only
+                    // in the case of a broken mod that lied during simulation.
+                }
+
+                transferCooldown = TRANSFER_INTERVAL_TICKS;
+                markDirty();
+                tile.markDirty();
+                break outer; // only one transfer per operation
+            }
         }
+
+        // Redstone: ON when rocketHasCapacity == false (i.e. no empty slot -> "full" rocket)
+        setRedstoneState(!rocketHasCapacity);
     }
 
     @Override

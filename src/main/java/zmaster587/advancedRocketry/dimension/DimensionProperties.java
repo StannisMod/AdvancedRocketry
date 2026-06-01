@@ -40,12 +40,19 @@ import zmaster587.libVulpes.util.HashedBlockPosition;
 import zmaster587.libVulpes.util.VulpineMath;
 import zmaster587.libVulpes.util.ZUtils;
 
+import javax.annotation.Nullable;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 
 public class DimensionProperties implements Cloneable, IDimensionProperties {
 
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
     /**
      * Contains default graphic {@link ResourceLocation} to display for different planet types
      */
@@ -57,12 +64,23 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final ResourceLocation planetRingShadow = new ResourceLocation("advancedrocketry:textures/planets/ringShadow.png");
     public static final ResourceLocation shadow = new ResourceLocation("advancedrocketry:textures/planets/shadow.png");
     public static final ResourceLocation shadow3 = new ResourceLocation("advancedrocketry:textures/planets/shadow3.png");
+
     public static final int MAX_ATM_PRESSURE = 1600;
     public static final int MIN_ATM_PRESSURE = 0;
     public static final int MAX_DISTANCE = Integer.MAX_VALUE;
     public static final int MIN_DISTANCE = 1;
     public static final int MAX_GRAVITY = 400;
     public static final int MIN_GRAVITY = 0;
+    public static final int WEATHER_START_LENGTH = 168000;
+    public static final int WEATHER_PROLONGATION_LENGTH = 12000;
+
+    // Geode, Volcano, Crater clamps
+    private static final float MIN_FEATURE_FREQUENCY_MULTIPLIER = 0.01f;
+    private static final float MAX_FEATURE_FREQUENCY_MULTIPLIER = 10f;
+
+    private static float clampFeatureFrequencyMultiplier(float multiplier) {
+        return MathHelper.clamp(multiplier, MIN_FEATURE_FREQUENCY_MULTIPLIER, MAX_FEATURE_FREQUENCY_MULTIPLIER);
+    }
     //True if dimension is managed and created by AR (false otherwise)
     public boolean isNativeDimension;
     public boolean skyRenderOverride;
@@ -101,10 +119,11 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public List<ItemStack> requiredArtifacts;
 
     // Custom weather properties
-    public int rainStartLength = 168000;
-    public int thunderStartLength = 168000;
-    public int rainProlongationLength = 12000;
-    public int thunderProlongationLength = 12000;
+    private boolean customWorldInfo = false;
+    private int rainStartLength = WEATHER_START_LENGTH;
+    private int thunderStartLength = WEATHER_START_LENGTH;
+    private int rainProlongationLength = WEATHER_PROLONGATION_LENGTH;
+    private int thunderProlongationLength = WEATHER_PROLONGATION_LENGTH;
     private int rainMarker;  // -1 - never rain, 1 - always rain, 0 - regular weather
     private int thunderMarker;  // -1 - never thunder, 1 - always thunder, 0 - regular weather
 
@@ -147,17 +166,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private int generatorType;
     //public int target_sea_level;
 
-
     @SidedProxy(serverSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.serverlists", clientSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.clientlists")
     public static Afuckinginterface proxylists;
-
 
 
     public List<ChunkPos> terraformingChunksAlreadyAdded;
 
     //class
-
-
     public List<watersourcelocked> water_source_locked_positions;
 
     //public boolean water_can_exist;
@@ -216,26 +231,6 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terraformingChunksAlreadyAdded = new ArrayList<>();
 
         ringAngle = 70;
-
-
-        //dont need this here because the terraforming terminal will re-create it anyway
-        //this.chunkMgrTerraformed = new ChunkManagerPlanet(net.minecraftforge.common.DimensionManager.getWorld(id), net.minecraftforge.common.DimensionManager.getWorld(getId()).getWorldInfo().getGeneratorOptions(), getTerraformedBiomes());
-    }
-
-    public int getRainMarker() {
-        return rainMarker;
-    }
-
-    public int getThunderMarker() {
-        return thunderMarker;
-    }
-
-    public void setRainMarker(int marker) {
-        this.rainMarker = marker;
-    }
-
-    public void setThunderMarker(int marker) {
-        this.thunderMarker = marker;
     }
 
     public void load_terraforming_helper(boolean reset) {
@@ -1082,7 +1077,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
                 BlockPos p = i.pos.getBlockPos();
                 iterator_2.remove(); // Safe removal during iteration
                 World world = (net.minecraftforge.common.DimensionManager.getWorld(getId()));
-                world.notifyNeighborsOfStateChange(p, world.getBlockState(p).getBlock(), false);
+                if (world != null) {
+                    world.notifyNeighborsOfStateChange(p, world.getBlockState(p).getBlock(), false);
+                }
             }
         }
 
@@ -1176,8 +1173,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      * @return a list of biomes allowed to spawn in this dimension
      */
     public List<Biome> getViableBiomes(boolean not_terraforming) {
-        Random random = new Random(System.nanoTime());
         List<Biome> viableBiomes = new ArrayList<>();
+
+        if (!hasSurface()) {
+            return viableBiomes;
+        }
+
+        Random random = new Random(System.nanoTime());
 
         if (atmosphereDensity > AtmosphereTypes.LOW.value && random.nextInt(3) == 0 && not_terraforming) {
             List<Biome> list = new LinkedList<>(AdvancedRocketryBiomes.instance.getSingleBiome());
@@ -1513,22 +1515,66 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             }
         }
 
-        //Load biomes
-        if (nbt.hasKey("biomes")) {
+        // Load biomes
+        // New format: registry names, safe vs biome ID drift across modpack versions.
+        // Legacy format: integer biome IDs, kept only for old temp.dat compatibility.
+        //
+        // If biomeNames exists, it is authoritative. Do not also read legacy integer IDs.
+        if (nbt.hasKey("biomeNames", NBT.TAG_LIST)) {
+
+            NBTTagList biomeNames = nbt.getTagList("biomeNames", NBT.TAG_STRING);
+            int[] biomeWeights = nbt.getIntArray("weights");
+
+            List<BiomeEntry> biomesList = new ArrayList<>();
+
+            for (int i = 0; i < biomeNames.tagCount(); i++) {
+                String biomeNameString = biomeNames.getStringTagAt(i);
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+
+                try {
+                    ResourceLocation biomeName = new ResourceLocation(biomeNameString);
+                    Biome biome = Biome.REGISTRY.getObject(biomeName);
+
+                    if (biome != null && biome.getRegistryName() != null && biome.getRegistryName().equals(biomeName)) {
+                        biomesList.add(new BiomeEntry(biome, weight));
+                    } else {
+                        AdvancedRocketry.logger.warn("Unknown biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                    }
+                } catch (RuntimeException e) {
+                    AdvancedRocketry.logger.warn("Invalid biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                }
+            }
 
             allowedBiomes.clear();
+            allowedBiomes.addAll(biomesList);
+
+            if (allowedBiomes.isEmpty()) {
+                AdvancedRocketry.logger.error("No valid biomeNames resolved for DIMID " + getId() + ". This planet has an empty allowed biome list.");
+            }
+        }
+        else if (nbt.hasKey("biomes", NBT.TAG_INT_ARRAY)) {
+
+            allowedBiomes.clear();
+
             int[] biomeIds = nbt.getIntArray("biomes");
             int[] biomeWeights = nbt.getIntArray("weights");
-            //Old handling
+
             if (biomeWeights.length == 0) {
                 biomeWeights = new int[biomeIds.length];
                 Arrays.fill(biomeWeights, 30);
             }
+
             List<BiomeEntry> biomesList = new ArrayList<>();
 
-
             for (int i = 0; i < biomeIds.length; i++) {
-                biomesList.add(new BiomeEntry(AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]), biomeWeights[i]));
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+                Biome biome = AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]);
+
+                if (biome != null) {
+                    biomesList.add(new BiomeEntry(biome, weight));
+                } else {
+                    AdvancedRocketry.logger.warn("Unknown legacy biome ID " + biomeIds[i] + " for DIMID " + getId() + ", skipping");
+                }
             }
 
             allowedBiomes.addAll(biomesList);
@@ -1622,17 +1668,37 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         canGenerateVolcanoes = nbt.getBoolean("canGenerateVolcanos");
         canGenerateCaves = nbt.getBoolean("canGenerateCaves");
         hasRivers = nbt.getBoolean("hasRivers");
-        geodeFrequencyMultiplier = nbt.getFloat("geodeFrequencyMultiplier");
-        craterFrequencyMultiplier = nbt.getFloat("craterFrequencyMultiplier");
-        volcanoFrequencyMultiplier = nbt.getFloat("volcanoFrequencyMultiplier");
+        //also clamp nbt load
+        if (nbt.hasKey("geodeFrequencyMultiplier", NBT.TAG_FLOAT))
+            setGeodeMultiplier(nbt.getFloat("geodeFrequencyMultiplier"));
+        if (nbt.hasKey("craterFrequencyMultiplier", NBT.TAG_FLOAT))
+            setCraterMultiplier(nbt.getFloat("craterFrequencyMultiplier"));
+        if (nbt.hasKey("volcanoFrequencyMultiplier", NBT.TAG_FLOAT))
+            setVolcanoMultiplier(nbt.getFloat("volcanoFrequencyMultiplier"));
 
         // Custom weather info
-        rainStartLength = nbt.getInteger("rainStartLength");
-        thunderStartLength = nbt.getInteger("thunderStartLength");
-        rainProlongationLength = nbt.getInteger("rainProlongationLength");
-        thunderProlongationLength = nbt.getInteger("thunderProlongationLength");
-        rainMarker = nbt.getInteger("rainMarker");
-        thunderMarker = nbt.getInteger("thunderMarker");
+        if (nbt.hasKey("rainStartLength", NBT.TAG_INT))
+            setRainStartLength(nbt.getInteger("rainStartLength"));
+        if (nbt.hasKey("thunderStartLength", NBT.TAG_INT))
+            setThunderStartLength(nbt.getInteger("thunderStartLength"));
+        if (nbt.hasKey("rainProlongationLength", NBT.TAG_INT))
+            setRainProlongationLength(nbt.getInteger("rainProlongationLength"));
+        if (nbt.hasKey("thunderProlongationLength", NBT.TAG_INT))
+            setThunderProlongationLength(nbt.getInteger("thunderProlongationLength"));
+
+        if (nbt.hasKey("rainMarker", NBT.TAG_INT))
+            setRainMarker(nbt.getInteger("rainMarker"));
+        if (nbt.hasKey("thunderMarker", NBT.TAG_INT))
+            setThunderMarker(nbt.getInteger("thunderMarker"));
+
+        // Sanity clamp
+        if (getRainStartLength() <= 0) setRainStartLength(WEATHER_START_LENGTH);
+        if (getThunderStartLength() <= 0) setThunderStartLength(WEATHER_START_LENGTH);
+        if (getRainProlongationLength() <= 0) setRainProlongationLength(WEATHER_PROLONGATION_LENGTH);
+        if (getThunderProlongationLength() <= 0) setThunderProlongationLength(WEATHER_PROLONGATION_LENGTH);
+        // Clamp markers to documented range
+        setRainMarker(MathHelper.clamp(getRainMarker(), -1, 1));
+        setThunderMarker(MathHelper.clamp(getThunderMarker(), -1, 1));
 
 
         //Hierarchy
@@ -1855,15 +1921,33 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         }
 
 
-        if (!allowedBiomes.isEmpty()) {
-            int[] biomeId = new int[allowedBiomes.size()];
+        // Only save planet-generation biomes for AR-owned dimensions with real surfaces.
+        // Non-native dimensions are metadata/proxies, and gas giants/stars do not use biome generation.
+        if (isNativeDimension && hasSurface() && !allowedBiomes.isEmpty()) {
+            NBTTagList biomeNames = new NBTTagList();
             int[] weights = new int[allowedBiomes.size()];
-            for (int i = 0; i < allowedBiomes.size(); i++) {
-                biomeId[i] = Biome.getIdForBiome(allowedBiomes.get(i).biome);
-                weights[i] = allowedBiomes.get(i).itemWeight;
+            int validCount = 0;
+
+            for (BiomeEntry entry : allowedBiomes) {
+                ResourceLocation biomeName = entry.biome != null ? Biome.REGISTRY.getNameForObject(entry.biome) : null;
+
+                if (biomeName != null) {
+                    biomeNames.appendTag(new NBTTagString(biomeName.toString()));
+                    weights[validCount] = entry.itemWeight;
+                    validCount++;
+                } else {
+                    AdvancedRocketry.logger.warn("Cannot save unnamed/null biome for DIMID " + getId() + ", skipping");
+                }
             }
-            nbt.setIntArray("biomes", biomeId);
-            nbt.setIntArray("weights", weights);
+
+            if (!biomeNames.hasNoTags()) {
+                if (validCount != weights.length) {
+                    weights = Arrays.copyOf(weights, validCount);
+                }
+
+                nbt.setTag("biomeNames", biomeNames);
+                nbt.setIntArray("weights", weights);
+            }
         }
 
         if (!craterBiomeWeights.isEmpty()) {
@@ -1952,12 +2036,12 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         nbt.setFloat("volcanoFrequencyMultiplier", volcanoFrequencyMultiplier);
 
         // Custom weather data
-        nbt.setInteger("rainStartLength", rainStartLength);
-        nbt.setInteger("thunderStartLength", thunderStartLength);
-        nbt.setInteger("rainProlongationLength", rainProlongationLength);
-        nbt.setInteger("thunderProlongationLength", thunderProlongationLength);
-        nbt.setInteger("rainMarker", rainMarker);
-        nbt.setInteger("thunderMarker", thunderMarker);
+        nbt.setInteger("rainStartLength", getRainStartLength());
+        nbt.setInteger("thunderStartLength", getThunderStartLength());
+        nbt.setInteger("rainProlongationLength", getRainProlongationLength());
+        nbt.setInteger("thunderProlongationLength", getThunderProlongationLength());
+        nbt.setInteger("rainMarker", getRainMarker());
+        nbt.setInteger("thunderMarker", getThunderMarker());
 
         //Hierarchy
         if (!childPlanets.isEmpty()) {
@@ -2138,7 +2222,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public void setCraterMultiplier(float craterFrequencyMultiplier) {
-        this.craterFrequencyMultiplier = craterFrequencyMultiplier;
+        this.craterFrequencyMultiplier = clampFeatureFrequencyMultiplier(craterFrequencyMultiplier);
     }
 
     public void setGenerateGeodes(boolean canGenerateGeodes) {
@@ -2150,11 +2234,11 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public float getGeodeMultiplier() {
-        return volcanoFrequencyMultiplier;
+        return geodeFrequencyMultiplier;
     }
 
     public void setGeodeMultiplier(float geodeFrequencyMultiplier) {
-        this.geodeFrequencyMultiplier = geodeFrequencyMultiplier;
+        this.geodeFrequencyMultiplier = clampFeatureFrequencyMultiplier(geodeFrequencyMultiplier);
     }
 
     public void setGenerateVolcanos(boolean canGenerateVolcanos) {
@@ -2170,7 +2254,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     public void setVolcanoMultiplier(float volcanoFrequencyMultiplier) {
-        this.volcanoFrequencyMultiplier = volcanoFrequencyMultiplier;
+        this.volcanoFrequencyMultiplier = clampFeatureFrequencyMultiplier(volcanoFrequencyMultiplier);
     }
 
     public void setGenerateStructures(boolean canGenerateStructures) {
@@ -2224,6 +2308,81 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public float[] getSkyColor() {
         return skyColor;
     }
+
+    public boolean usesCustomWorldInfo() {
+        return customWorldInfo;
+    }
+
+    public void updateCustomWorldInfo() {
+        boolean isDefault = getRainStartLength() == getThunderStartLength() && getRainStartLength() == WEATHER_START_LENGTH
+                && getRainProlongationLength() == getThunderProlongationLength() && getRainProlongationLength() == WEATHER_PROLONGATION_LENGTH
+                && getRainMarker() == 0 && getThunderMarker() == 0;
+        customWorldInfo = !isDefault;
+    }
+
+    //<editor-fold desc="Custom weather">
+    public int getRainStartLength()
+    {
+        return rainStartLength;
+    }
+
+    public void setRainStartLength(int rainStartLength)
+    {
+        this.rainStartLength = rainStartLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getThunderStartLength()
+    {
+        return thunderStartLength;
+    }
+
+    public void setThunderStartLength(int thunderStartLength)
+    {
+        this.thunderStartLength = thunderStartLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getRainProlongationLength()
+    {
+        return rainProlongationLength;
+    }
+
+    public void setRainProlongationLength(int rainProlongationLength)
+    {
+        this.rainProlongationLength = rainProlongationLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getThunderProlongationLength()
+    {
+        return thunderProlongationLength;
+    }
+
+    public void setThunderProlongationLength(int thunderProlongationLength)
+    {
+        this.thunderProlongationLength = thunderProlongationLength;
+        updateCustomWorldInfo();
+    }
+
+    public int getRainMarker() {
+        return rainMarker;
+    }
+
+    public int getThunderMarker() {
+        return thunderMarker;
+    }
+
+    public void setRainMarker(int marker) {
+        this.rainMarker = marker;
+        updateCustomWorldInfo();
+    }
+
+    public void setThunderMarker(int marker) {
+        this.thunderMarker = marker;
+        updateCustomWorldInfo();
+    }
+    //</editor-fold>
 
     /**
      * Temperatures are stored in Kelvin
@@ -2359,6 +2518,62 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         public ResourceLocation getResourceLEO() {
             return resourceLEO;
+        }
+    }
+
+    /**
+     * Used to get/set properties by command.
+     */
+    public static class PropLookup {
+        private final DimensionProperties props;
+
+        public PropLookup(DimensionProperties props) {
+            this.props = props;
+        }
+
+        @Nullable
+        public MethodHandle getPropertyGetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectGetter(field.get());
+        }
+
+        @Nullable
+        public MethodHandle getPropertySetter(String name) throws IllegalAccessException {
+            Optional<Field> field = Arrays.stream(props.getClass().getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> f.getName().equalsIgnoreCase(name))
+                    .findFirst();
+            if (!field.isPresent()) {
+                return null;
+            }
+            return LOOKUP.unreflectSetter(field.get());
+        }
+
+        public static List<String> getPropertyNames(boolean fromSet) {
+            return Arrays.stream(DimensionProperties.class.getDeclaredFields())
+                    .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                    .filter(f -> !Modifier.isFinal(f.getModifiers()))
+                    .filter(f -> {
+                        // Only primitives or Strings (and array variants) can be set by command
+                        if (fromSet) {
+                            Class<?> type = f.getType();
+                            if (type.isArray()) {
+                                type = type.getComponentType();
+                            }
+                            return type.isPrimitive() || type.equals(String.class);
+                        }
+                        return true;
+                    })
+                    .map(Field::getName)
+                    .collect(Collectors.toList());
         }
     }
 }

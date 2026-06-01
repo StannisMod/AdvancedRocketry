@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.satellite;
 
 import zmaster587.advancedRocketry.api.DataStorage;
 import zmaster587.advancedRocketry.api.DataStorage.DataType;
+import zmaster587.libVulpes.LibVulpes;
 
 public class SatelliteOptical extends SatelliteData {
 
@@ -13,7 +14,7 @@ public class SatelliteOptical extends SatelliteData {
 
     @Override
     public String getName() {
-        return "Optical Telescope";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.opticaltelescope");
     }
 
     @Override

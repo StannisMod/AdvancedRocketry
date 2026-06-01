@@ -9,6 +9,7 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.wrapper.InvWrapper;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
@@ -24,6 +25,7 @@ import zmaster587.libVulpes.util.HashedBlockPosition;
 import java.util.LinkedList;
 import java.util.List;
 
+
 public class MissionOreMining extends MissionResourceCollection {
 
 
@@ -34,8 +36,61 @@ public class MissionOreMining extends MissionResourceCollection {
     public MissionOreMining(long l, EntityRocket entityRocket,
                             LinkedList<IInfrastructure> connectedInfrastructure) {
         super(l, entityRocket, connectedInfrastructure);
+
+        // Persist asteroid metadata for the monitor UI
+        try {
+            if (rocketStorage != null && rocketStorage.getGuidanceComputer() != null) {
+                ItemStack chip = rocketStorage.getGuidanceComputer().getStackInSlot(0);
+                if (!chip.isEmpty() && chip.getItem() instanceof ItemAsteroidChip) {
+                    ItemAsteroidChip ac = (ItemAsteroidChip) chip.getItem();
+
+                    String type = ac.getType(chip);
+                    Long   uuid = ac.getUUID(chip);
+
+                    if (type != null && !type.isEmpty())
+                        missionPersistantNBT.setString("asteroidType", type);
+                    if (uuid != null)
+                        missionPersistantNBT.setLong("asteroidUUID", uuid);
+                }
+            }
+        } catch (Throwable t) {
+            // leave fields unset; GUI will show defaults
+        }
     }
 
+    @javax.annotation.Nullable
+    private static IItemHandler getItemHandler(TileEntity tile) {
+        if (tile == null) return null;
+
+        // Prefer capability (modded inventories)
+        if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null)) {
+            IItemHandler h = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null);
+            if (h != null) return h;
+        }
+        for (EnumFacing face : EnumFacing.VALUES) {
+            if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, face)) {
+                IItemHandler h = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, face);
+                if (h != null) return h;
+            }
+        }
+
+        // Vanilla fallback (and “treat sided inventories like normal”, closest to old behavior)
+        if (tile instanceof IInventory) {
+            return new InvWrapper((IInventory) tile);
+        }
+
+        return null;
+    }
+
+    public String getAsteroidTypeOrEmpty() {
+        return (missionPersistantNBT != null && missionPersistantNBT.hasKey("asteroidType"))
+                ? missionPersistantNBT.getString("asteroidType") : "";
+    }
+    @javax.annotation.Nullable
+    public Long getAsteroidUUIDOrNull() {
+        return (missionPersistantNBT != null && missionPersistantNBT.hasKey("asteroidUUID"))
+                ? missionPersistantNBT.getLong("asteroidUUID") : null;
+    }
     @Override
     public void onMissionComplete() {
 
@@ -83,30 +138,31 @@ public class MissionOreMining extends MissionResourceCollection {
                                 totalStacksList.add(stack2);
                             }
                             //}
-                            entry.stack.setCount(entry.stack.getCount() % entry.stack.getMaxStackSize());
-                            totalStacksList.add(entry.stack);
+                            int rem = entry.stack.getCount() % entry.stack.getMaxStackSize();
+                            if (rem > 0) {
+                                entry.stack.setCount(rem);
+                                totalStacksList.add(entry.stack);
+                            }
                         }
 
                         stacks = new ItemStack[totalStacksList.size()];
                         totalStacksList.toArray(stacks);
 
-                        for (int i = 0, g = 0; i < rocketStorage.getInventoryTiles().size(); i++) {
-                            if (rocketStorage.getInventoryTiles().get(i).hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP)) {
-                                IItemHandler capabilityItemHandle = rocketStorage.getInventoryTiles().get(i).getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP);
+                        for (int g = 0; g < stacks.length; g++) {
+                            ItemStack remaining = stacks[g].copy();
+                            if (remaining.isEmpty()) continue;
 
-                                for (int offset = 0; offset < capabilityItemHandle.getSlots() && g < stacks.length; offset++, g++) {
-                                    if (capabilityItemHandle.getStackInSlot(offset).isEmpty())
-                                        capabilityItemHandle.insertItem(offset, stacks[g], false);
-                                }
-                            } else {
-                                IInventory tile = (IInventory) rocketStorage.getInventoryTiles().get(i);
+                            for (int i = 0; i < rocketStorage.getInventoryTiles().size() && !remaining.isEmpty(); i++) {
+                                TileEntity te = rocketStorage.getInventoryTiles().get(i);
+                                IItemHandler handler = getItemHandler(te);
+                                if (handler == null) continue;
 
-
-                                for (int offset = 0; offset < tile.getSizeInventory() && g < stacks.length; offset++, g++) {
-                                    if (tile.getStackInSlot(offset).isEmpty())
-                                        tile.setInventorySlotContents(offset, stacks[g]);
+                                for (int slot = 0; slot < handler.getSlots() && !remaining.isEmpty(); slot++) {
+                                    remaining = handler.insertItem(slot, remaining, false);
                                 }
                             }
+
+                            // Any leftover is intentionally voided
                         }
                     }
                 }

@@ -34,7 +34,7 @@ public class SatelliteMicrowaveEnergy extends SatelliteBase implements IUniversa
 
     @Override
     public String getName() {
-        return "Microwave Energy Satellite";
+        return LibVulpes.proxy.getLocalizedString("item.satellite.solar");
     }
 
     @Override
@@ -48,19 +48,29 @@ public class SatelliteMicrowaveEnergy extends SatelliteBase implements IUniversa
     }
 
     @Override
-    public int getEnergyMTU(EnumFacing side) {
-        return (int) (ARConfiguration.getCurrentConfig().microwaveRecieverMulitplier * battery.extractEnergy(battery.getMaxEnergyStored(), false));
-    }
-
-    @Override
     public void setDimensionId(World world) {
         super.setDimensionId(world);
     }
 
     @Override
-    public int transmitEnergy(EnumFacing dir, boolean simulate) {
-        return getEnergyMTU(EnumFacing.DOWN);
+    public int getEnergyMTU(EnumFacing side) {
+        return transmitEnergy(side, true);
     }
+
+    @Override
+    public int transmitEnergy(EnumFacing dir, boolean simulate) {
+
+        // cap by generation per tick (after upkeep)
+        int genPerTick = Math.max(0, getPowerPerTick() - 1);
+
+        int maxSend = (int)Math.round(
+            ARConfiguration.getCurrentConfig().microwaveRecieverMulitplier * genPerTick
+        );
+
+        return battery.extractEnergy(maxSend, simulate);
+    }
+
+
 
     @Override
     public void writeToNBT(NBTTagCompound nbt) {

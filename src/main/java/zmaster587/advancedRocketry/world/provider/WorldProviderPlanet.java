@@ -33,6 +33,8 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderCavePlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderPlanet;
+import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
+import zmaster587.advancedRocketry.world.weather.PlanetWeatherManager;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -40,8 +42,7 @@ import java.util.Set;
 
 public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProvider {
 
-
-	/*@Override
+/*@Override
 	protected void registerWorldChunkManager() {
 		//this.worldChunkMgr = new WorldChunkManagerHell(BiomeGenBase.extremeHills, 0.0f);
 		this.worldChunkMgr = new ChunkManagerPlanet(getSeed(), planetWorldType);
@@ -115,13 +116,27 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
     @Override
     public void updateWeather() {
         DimensionProperties props = getDimensionProperties();
+        if (!props.usesCustomWorldInfo()) {
+            super.updateWeather();
+            return;
+        }
 
         // Totally override weather cycle
         if (world.provider.hasSkyLight()) {
             if (!world.isRemote) {
+                // All weather setters below go through world.getWorldInfo(). On AR
+                // planets that's an ARWeatherWorldInfo wrapping the per-dim state;
+                // if it isn't (wrap failed for some reason — config off, Mixin not
+                // applied, etc.) we'd silently mutate the shared overworld weather.
+                // Warn once per dim so the issue is visible in logs.
+                if (ARConfiguration.getCurrentConfig().enableCustomPlanetWeather
+                        && !(world.getWorldInfo() instanceof ARWeatherWorldInfo)) {
+                    PlanetWeatherManager.warnUnwrappedOnce(world.provider.getDimension());
+                }
                 boolean flag = world.getGameRules().getBoolean("doWeatherCycle");
 
                 if (flag) {
+                    // No rain or thunder
                     if (props.getRainMarker() == -1 && props.getThunderMarker() == -1) {
                         world.getWorldInfo().setRaining(false);
                         world.getWorldInfo().setRainTime(0);
@@ -147,13 +162,20 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                         world.getWorldInfo().setRaining(true);
                     }
 
+                    // Clamp to avoid IllegalArgumentException in Random#nextInt(0 or negative)
+                    final int thunderProlong = props.getThunderProlongationLength() > 0 ? props.getThunderProlongationLength() : 12000;
+                    final int thunderStart   = props.getThunderStartLength() > 0 ? props.getThunderStartLength() : 168000;
+                    final int rainProlong    = props.getRainProlongationLength() > 0 ? props.getRainProlongationLength() : 12000;
+                    final int rainStart      = props.getRainStartLength() > 0 ? props.getRainStartLength() : 168000;
+
+
                     int k2 = world.getWorldInfo().getThunderTime();
 
                     if (k2 <= 0) {
                         if (world.getWorldInfo().isThundering()) {
-                            world.getWorldInfo().setThunderTime(world.rand.nextInt(getDimensionProperties().thunderProlongationLength) + 3600);
+                            world.getWorldInfo().setThunderTime(world.rand.nextInt(thunderProlong) + 3600);
                         } else {
-                            world.getWorldInfo().setThunderTime(world.rand.nextInt(getDimensionProperties().thunderStartLength) + 12000);
+                            world.getWorldInfo().setThunderTime(world.rand.nextInt(thunderStart) + 12000);
                         }
                     } else {
                         --k2;
@@ -168,9 +190,9 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
 
                     if (l2 <= 0) {
                         if (world.getWorldInfo().isRaining()) {
-                            world.getWorldInfo().setRainTime(world.rand.nextInt(getDimensionProperties().rainProlongationLength) + 12000);
+                            world.getWorldInfo().setRainTime(world.rand.nextInt(rainProlong) + 12000);
                         } else {
-                            world.getWorldInfo().setRainTime(world.rand.nextInt(getDimensionProperties().rainStartLength) + 12000);
+                            world.getWorldInfo().setRainTime(world.rand.nextInt(rainStart) + 12000);
                         }
                     } else {
                         --l2;
@@ -181,6 +203,7 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
                         }
                     }
                 }
+
 
                 world.prevThunderingStrength = world.thunderingStrength;
 

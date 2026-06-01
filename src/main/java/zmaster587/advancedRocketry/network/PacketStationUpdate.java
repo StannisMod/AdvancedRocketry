@@ -75,6 +75,7 @@ public class PacketStationUpdate extends BasePacket {
                     Logger.getLogger("advancedRocketry").warning("Dimension " + stationNumber + " has thrown an exception trying to write NBT, deleting!");
                     DimensionManager.getInstance().deleteDimension(stationNumber);
                 }
+                break;
             default:
         }
     }
@@ -128,7 +129,8 @@ public class PacketStationUpdate extends BasePacket {
     @Override
     public void executeClient(EntityPlayer thePlayer) {
         spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStation(stationNumber);
-
+        if (spaceObject == null) return;
+        
         switch (type) {
             case DEST_ORBIT_UPDATE:
                 spaceObject.setDestOrbitingBody(destOrbitingBody);
@@ -140,14 +142,12 @@ public class PacketStationUpdate extends BasePacket {
                 if (spaceObject instanceof SpaceStationObject)
                     ((SpaceStationObject) spaceObject).setFuelAmount(fuel);
                 break;
-            case ROTANGLE_UPDATE:
-                spaceObject.setRotation(rx, EnumFacing.EAST);
-                spaceObject.setRotation(ry, EnumFacing.UP);
-                spaceObject.setRotation(rz, EnumFacing.NORTH);
-                spaceObject.setDeltaRotation(drx, EnumFacing.EAST);
-                spaceObject.setDeltaRotation(dry, EnumFacing.UP);
-                spaceObject.setDeltaRotation(drz, EnumFacing.NORTH);
+            case ROTANGLE_UPDATE: {
+                ((SpaceStationObject) spaceObject).applyRemoteRotationState(
+                    rx, ry, rz, drx, dry, drz
+                );
                 break;
+            }
             case SIGNAL_WHITE_BURST:
                 PlanetEventHandler.runBurst(Minecraft.getMinecraft().world.getTotalWorldTime() + 20, 20);
                 break;
