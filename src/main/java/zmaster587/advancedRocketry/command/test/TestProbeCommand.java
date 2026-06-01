@@ -6003,11 +6003,12 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "forcefield-tick".equalsIgnoreCase(args[0])) {
-            // TASK-40d Gap L — directly invoke TileForceFieldProjector's
-            // onIntermittentUpdate (the public probe-friendly half of update()
-            // split out by a prior task-driven refactor) so tests can drive
-            // extension / retraction without burning ~250 ms per natural-tick
-            // cycle on the worldTime % 5 == 0 gate.
+            // Drive TileForceFieldProjector.update() so tests can step
+            // extension / retraction without waiting on natural ticks.
+            // update() only acts when world.getTotalWorldTime() % 5 == 0, so we
+            // advance the world clock to a fresh 5-tick boundary before each call
+            // (otherwise every call in this command would see the same world time
+            // and either all fire or none do).
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
             int y = parseIntOr(args[3], 0);
@@ -6026,7 +6027,11 @@ public class TestProbeCommand extends CommandBase {
             }
             zmaster587.advancedRocketry.tile.TileForceFieldProjector projector =
                     (zmaster587.advancedRocketry.tile.TileForceFieldProjector) tile;
+            long base = world.getWorldInfo().getWorldTotalTime();
+            long aligned = base - (base % 5L);
             for (int i = 0; i < ticks; i++) {
+                aligned += 5L;
+                world.getWorldInfo().setWorldTotalTime(aligned);
                 projector.update();
             }
             send(sender, "{\"ok\":true,\"ticked\":" + ticks + "}");

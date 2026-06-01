@@ -149,15 +149,10 @@ public class RocketFlightFailureModesTest extends AbstractSharedServerTest {
 
     @Test
     public void launchWithZeroFuelStillTransitionsToInFlight() throws Exception {
-        // Counter-test for the assumption that empty tanks gate launch.
-        // Production launch() (line 1757) has NO fuel-amount precondition
-        // — only weight/thrust + destination validation. So a rocket with
-        // 0 fuel and a valid destination still enters isInFlight=true on
-        // the production path. The gameplay-visible consequence (no
-        // thrust → falls back down) plays out on the burn-phase
-        // (line 1235+) which already drains-then-noops with empty tanks.
-        //
-        // Pin: launch with empty tanks succeeds at the setInFlight gate.
+        // The upstream merge added a fuel gate to launch(): a rocket with empty
+        // tanks is now refused at launch time (error.rocket.notEnoughMissionFuel)
+        // and never enters flight. Pin that gate: zero fuel + valid destination
+        // must NOT transition to in-flight.
         int destDim = firstNonOverworldArDimOrSkip();
         int id = buildAndAssemble(7200, 64, 500);
         ok(client().execute("artest rocket set-destination " + id + " " + destDim));
@@ -166,9 +161,9 @@ public class RocketFlightFailureModesTest extends AbstractSharedServerTest {
         ok(client().execute("artest rocket launch " + id + " false instant"));
 
         String info = ok(client().execute("artest rocket info " + id));
-        assertTrue("zero-fuel launch must still set isInFlight=true "
-                        + "(production has no fuel gate at launch time): " + info,
-                info.contains("\"isInFlight\":true"));
+        assertTrue("zero-fuel launch must be refused by the fuel gate "
+                        + "(isInFlight stays false): " + info,
+                info.contains("\"isInFlight\":false"));
     }
 
     @Test

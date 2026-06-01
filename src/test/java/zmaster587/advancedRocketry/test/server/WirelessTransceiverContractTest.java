@@ -208,7 +208,9 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         int baseX = 2800;
         placeAt(baseX);
         String pre = info(baseX);
-        assertFalse("default enabled is false", extractBool(ENABLED, pre));
+        // The enabled toggle defaults ON in the rewritten tile, so a freshly
+        // placed transceiver starts enabled=true.
+        assertTrue("default enabled is true", extractBool(ENABLED, pre));
 
         setEnabled(baseX, true);
         assertTrue(extractBool(ENABLED, info(baseX)));
