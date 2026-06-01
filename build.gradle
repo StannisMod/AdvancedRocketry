@@ -2,6 +2,7 @@
  * It is advised that you do not edit anything in the build.gradle; unless you are sure of what you are doing
  */
 import com.gtnewhorizons.retrofuturagradle.mcp.InjectTagsTask
+import com.gtnewhorizons.retrofuturagradle.minecraft.RunMinecraftTask
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.gradle.ext.Gradle
 
@@ -305,6 +306,108 @@ tasks.register('testIntegration', Test) {
 test {
     configureHeadlessTest(it, 'zmaster587/advancedRocketry/test/unit/**')
     include 'zmaster587/advancedRocketry/test/integration/**'
+}
+
+// ─── Real-server / real-client harness layers (RFG) ─────────────────────────
+//
+//   ./gradlew testServer  → dedicated-server e2e  (src/test/.../test/server)
+//   ./gradlew testClient  → real-client e2e       (src/test/.../test/client)
+//
+// forge-test-framework spawns a child JVM running RFG's GradleStartServer /
+// GradleStart off java.class.path. RFG bakes the SRG/CSV mapping dirs and the
+// FML tweaker into the compiled GradleStart launcher at token-replacement time,
+// and GradleForgeHacks auto-discovers our coremod + FMLAT by scanning the
+// classpath manifests — so the only thing the consuming build must supply is a
+// child classpath identical to runServer's (patched MC + mcLauncher + deps +
+// our mod) plus the test/framework classes. No FG6 run-config reflection needed:
+// RunMinecraftTask extends JavaExec, so getClasspath()/getAssetsDirectory() are
+// public. The framework's defaults (launcher.class.server=GradleStartServer,
+// legacyArgs=true) already target RFG.
+def configureHarnessTest = { Test t, boolean enableClient ->
+    t.group = 'verification'
+    t.useJUnit()
+    t.testClassesDirs = sourceSets.test.output.classesDirs
+
+    // Child server/client JVMs exec GradleStart* off this JVM's java.class.path,
+    // so it must carry the full RFG run classpath (mcLauncher = GradleStartServer,
+    // patched MC, deps) in addition to the test set. We take the run task's
+    // classpath ONLY — we must NOT depend on the run task executing (it launches
+    // a foreground MC server that never exits and would hang the build). Wrapping
+    // the run task's classpath provider in files() pulls in the build deps of the
+    // underlying artifacts (patched-MC / mcLauncher jars) without running it.
+    // NOTE: take the run task's classpath EAGERLY (.get().classpath). Going through
+    // a `runTask.map { it.classpath }` provider makes Gradle treat the run task as
+    // the producer and schedules it to EXECUTE — which launches a foreground MC
+    // server that never exits and hangs the build. The eager classpath collection's
+    // build deps are the compile / mcLauncher / jar tasks (the artifact producers),
+    // not the run task itself.
+    // Exclude the main source set output (classes + resources) from the test
+    // portion: the run task's classpath already carries our mod as the built jar,
+    // and FML throws DuplicateModsFoundException if it finds advancedrocketry both
+    // as build/classes/java/main AND build/libs/*.jar. The jar form is also the
+    // one that carries the FMLCorePlugin/FMLAT manifest, so coremod + AT discovery
+    // (GradleForgeHacks scanning java.class.path) only works from the jar anyway.
+    def runTask = tasks.named(enableClient ? 'runClient' : 'runServer', RunMinecraftTask).get()
+    t.classpath = project.files(
+            sourceSets.test.runtimeClasspath.minus(sourceSets.main.output),
+            runTask.classpath)
+    t.dependsOn 'jar'
+
+    // The child server must run on the Java 8 toolchain (MC 1.12.2). The harness
+    // resolves the child's java binary from THIS JVM's java.home, so pin the
+    // parent test JVM to Java 8 as well.
+    t.javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(8)
+    })
+
+    t.systemProperty 'advancedrocketry.tests', 'true'
+    // Gate that flips AbstractHeadlessServerTest / AbstractClientE2ETest from
+    // Assume-skip to live. Without it the whole layer no-ops.
+    t.systemProperty 'forge.test.harness.enabled', 'true'
+    // Pin the assets dir to RFG's resolved location (framework default guesses a
+    // cache path that can drift between RFG versions).
+    t.systemProperty 'forge.test.assets.dir',
+            runTask.assetsDirectory.get().asFile.absolutePath
+
+    if (enableClient) {
+        // Real client needs LWJGL natives + a display. Auto-skips on headless.
+        t.dependsOn 'extractNatives'
+        t.systemProperty 'forge.test.client.enabled', 'true'
+        t.systemProperty 'forge.test.client.nativesDir',
+                layout.buildDirectory.dir('natives').get().asFile.absolutePath
+        ['DISPLAY', 'XAUTHORITY', 'LIBGL_ALWAYS_SOFTWARE'].each { var ->
+            def v = System.getenv(var)
+            if (v != null) {
+                t.systemProperty "forge.test.client.env.${var}", v
+            }
+        }
+    }
+
+    // Each child MC JVM is heavyweight; isolate one test class per fork.
+    t.maxParallelForks = (findProperty('test_harness_forks') ?: '1') as int
+    t.forkEvery 1L
+    t.minHeapSize = '256m'
+    t.maxHeapSize = '1g'
+
+    t.testLogging {
+        events 'failed', 'skipped', 'passed'
+        exceptionFormat = 'full'
+        showStandardStreams = propertyBool('show_testing_output')
+    }
+}
+
+tasks.register('testServer', Test) {
+    description = 'Dedicated-server scenario e2e (src/test/.../test/server).'
+    configureHarnessTest(it, false)
+    include 'zmaster587/advancedRocketry/test/server/**'
+    mustRunAfter 'testIntegration'
+}
+
+tasks.register('testClient', Test) {
+    description = 'Real-client + server e2e (src/test/.../test/client). Auto-skips headless.'
+    configureHarnessTest(it, true)
+    include 'zmaster587/advancedRocketry/test/client/**'
+    mustRunAfter 'testServer'
 }
 
 String parserChangelog() {
