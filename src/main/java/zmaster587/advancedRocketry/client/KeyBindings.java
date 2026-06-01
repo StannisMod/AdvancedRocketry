@@ -12,6 +12,8 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.input.Keyboard;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
+import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.api.RocketFlightMode;
 import zmaster587.advancedRocketry.entity.EntityHoverCraft;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.libVulpes.LibVulpes;
@@ -32,7 +34,10 @@ public class KeyBindings {
     static KeyBinding turnRocketRight = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.turnRocketRight"), Keyboard.KEY_D, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding turnRocketUp = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.turnRocketUp"), Keyboard.KEY_Z, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding turnRocketDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.turnRocketDown"), Keyboard.KEY_X, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding toggleFlightMode = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.toggleFlightMode"), Keyboard.KEY_M, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
+    /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
+    private FreeFlightInput lastSentInput = FreeFlightInput.zero();
 
     public static void init() {
         //ClientRegistry.registerKeyBinding(launch);
@@ -43,6 +48,7 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(turnRocketLeft);
         ClientRegistry.registerKeyBinding(turnRocketUp);
         ClientRegistry.registerKeyBinding(turnRocketDown);
+        ClientRegistry.registerKeyBinding(toggleFlightMode);
     }
     //Getters for keybindings
     public static KeyBinding getOpenRocketUI() {
@@ -82,10 +88,46 @@ public class KeyBindings {
                         && Keyboard.getEventKeyState()) {
                     rocket.prepareLaunch();
                 }
-                rocket.onTurnLeft(turnRocketLeft.isKeyDown());
-                rocket.onTurnRight(turnRocketRight.isKeyDown());
-                rocket.onUp(turnRocketUp.isKeyDown());
-                rocket.onDown(turnRocketDown.isKeyDown());
+
+                // Mode toggle (M) — only meaningful before launch, server-side gated anyway.
+                if (toggleFlightMode.isPressed() && !rocket.isInFlight()) {
+                    RocketFlightMode next = rocket.isFreeFlight()
+                            ? RocketFlightMode.CLASSIC_LAUNCH
+                            : RocketFlightMode.FREE_FLIGHT;
+                    // Set local intent so writeDataToNetwork serializes the new mode ordinal.
+                    rocket.setFlightMode(next);
+                    PacketHandler.sendToServer(new PacketEntity(
+                            rocket,
+                            (byte) EntityRocket.PacketType.SET_FLIGHT_MODE.ordinal()));
+                }
+
+                if (rocket.isFreeFlight() && rocket.isInFlight()) {
+                    // Free Flight: synthesise input from movement keys + RCS keys, send when changed.
+                    float fwd  = (Minecraft.getMinecraft().gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
+                               + (Minecraft.getMinecraft().gameSettings.keyBindBack.isKeyDown()    ? -1f : 0f);
+                    float vert = (turnRocketUp.isKeyDown()   ?  1f : 0f)
+                               + (turnRocketDown.isKeyDown() ? -1f : 0f);
+                    float yaw  = (turnRocketRight.isKeyDown() ?  1f : 0f)
+                               + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
+                    float pitch = 0f; // reserved for future mouse-pitch wire-up
+                    float brake = Minecraft.getMinecraft().gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
+                    FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake);
+                    if (!input.equals(lastSentInput)) {
+                        // Set local intent so EntityRocket.writeDataToNetwork serializes the new
+                        // FreeFlightInput via its ByteBuf path (mirrors TURNUPDATE precedent
+                        // — client mutates local booleans then sends the entity packet).
+                        rocket.applyFreeFlightInput(input);
+                        PacketHandler.sendToServer(new PacketEntity(
+                                rocket,
+                                (byte) EntityRocket.PacketType.FREE_FLIGHT_INPUT.ordinal()));
+                        lastSentInput = input;
+                    }
+                } else {
+                    rocket.onTurnLeft(turnRocketLeft.isKeyDown());
+                    rocket.onTurnRight(turnRocketRight.isKeyDown());
+                    rocket.onUp(turnRocketUp.isKeyDown());
+                    rocket.onDown(turnRocketDown.isKeyDown());
+                }
             }
         }
 

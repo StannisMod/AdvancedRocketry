@@ -746,6 +746,21 @@ public class TestProbeCommand extends CommandBase {
             info.put("isInFlight", rocket.isInFlight());
             info.put("isInOrbit", rocket.isInOrbit());
             info.put("ticksExisted", rocket.ticksExisted);
+            // Free Flight Mode probe surface (TASK: feature/true_rcs).
+            info.put("flightMode", rocket.getFlightMode().name());
+            info.put("motionX", rocket.motionX);
+            info.put("motionY", rocket.motionY);
+            info.put("motionZ", rocket.motionZ);
+            zmaster587.advancedRocketry.api.FreeFlightInput ffin = rocket.getCurrentFreeFlightInput();
+            if (ffin != null) {
+                // Flat keys (jsonMap does not recurse into nested Maps).
+                info.put("ffInputFwd",   ffin.throttleForward);
+                info.put("ffInputVert",  ffin.throttleVertical);
+                info.put("ffInputYaw",   ffin.yawInput);
+                info.put("ffInputPitch", ffin.pitchInput);
+                info.put("ffInputBrake", ffin.brakeInput);
+            }
+            info.put("freeFlightPitch", rocket.getFreeFlightPitch());
             info.put("destinationDim", reflectInt(rocket, "destinationDimId"));
             // errorStr is private + set by setError(...) when launch() bails
             // on a precondition. Without surfacing it, A1 launch-depth tests
@@ -1258,7 +1273,109 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"deOrbiting\":" + RocketEventRecorder.deOrbitingCount + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full\"}");
+        if ("set-flight-mode".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest rocket set-flight-mode <entityId> <CLASSIC_LAUNCH|FREE_FLIGHT>
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.api.RocketFlightMode mode = null;
+            for (zmaster587.advancedRocketry.api.RocketFlightMode m :
+                    zmaster587.advancedRocketry.api.RocketFlightMode.values()) {
+                if (m.name().equalsIgnoreCase(args[2])) { mode = m; break; }
+            }
+            if (mode == null) {
+                send(sender, "{\"error\":\"unknown mode\",\"value\":\"" + args[2] + "\"}");
+                return;
+            }
+            rocket.setFlightMode(mode);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"flightMode\":\""
+                    + mode.name() + "\"}");
+            return;
+        }
+        if ("free-flight-input".equalsIgnoreCase(args[0]) && args.length >= 7) {
+            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake>
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            float fwd, vert, yaw, pitch, brake;
+            try {
+                fwd   = Float.parseFloat(args[2]);
+                vert  = Float.parseFloat(args[3]);
+                yaw   = Float.parseFloat(args[4]);
+                pitch = Float.parseFloat(args[5]);
+                brake = Float.parseFloat(args[6]);
+            } catch (NumberFormatException ex) {
+                send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.api.FreeFlightInput input =
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, yaw, pitch, brake);
+            rocket.applyFreeFlightInput(input);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
+                    + ",\"fwd\":" + input.throttleForward
+                    + ",\"vert\":" + input.throttleVertical
+                    + ",\"yaw\":" + input.yawInput
+                    + ",\"pitch\":" + input.pitchInput
+                    + ",\"brake\":" + input.brakeInput + "}");
+            return;
+        }
+        if ("free-flight-tick".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket free-flight-tick <id> [n] — invoke tickFreeFlight n times.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            int n = args.length >= 3 ? parseIntOr(args[2], 1) : 1;
+            if (n < 1) n = 1;
+            if (n > 200) n = 200;
+            for (int i = 0; i < n; i++) rocket.tickFreeFlight();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"ticks\":" + n
+                    + ",\"motionX\":" + rocket.motionX
+                    + ",\"motionY\":" + rocket.motionY
+                    + ",\"motionZ\":" + rocket.motionZ
+                    + ",\"isInFlight\":" + rocket.isInFlight() + "}");
+            return;
+        }
+        if ("start-free-flight".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket start-free-flight <id> [fuelFill] — server-only bypass;
+            // sets isInFlight=true without classic countdown. Bails harmlessly if
+            // mode != FREE_FLIGHT. fuelFill defaults to true so tests don't need a
+            // separate fuel-loading step.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            boolean fuelFill = args.length >= 3 ? Boolean.parseBoolean(args[2]) : true;
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            if (!rocket.isFreeFlight()) {
+                send(sender, "{\"error\":\"rocket not in FREE_FLIGHT\",\"flightMode\":\""
+                        + rocket.getFlightMode().name() + "\"}");
+                return;
+            }
+            if (fuelFill) {
+                for (zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType type :
+                        zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType.values()) {
+                    int cap = rocket.stats.getFuelCapacity(type);
+                    if (cap > 0) rocket.setFuelAmount(type, cap);
+                }
+            }
+            rocket.startFreeFlight();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"isInFlight\":" + rocket.isInFlight()
+                    + ",\"fuelFilled\":" + fuelFill + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full | set-flight-mode <id> MODE | free-flight-input <id> fwd vert yaw pitch brake | free-flight-tick <id> [n] | start-free-flight <id>\"}");
     }
 
     /** {@code /artest rocket assemble <dim> <x> <y> <z>} — synchronously assembles

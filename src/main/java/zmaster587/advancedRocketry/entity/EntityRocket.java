@@ -49,6 +49,9 @@ import net.minecraftforge.oredict.OreDictionary;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
+import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.api.RocketFlightMode;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketLaunchEvent;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketPreLaunchEvent;
 import zmaster587.advancedRocketry.api.dimension.IDimensionProperties;
@@ -151,6 +154,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private int rcs_mode_counter = 0;
     // Used to most of the logic, determining if in RCS mode or not
     private boolean rcs_mode = false;
+
+    // ----- Free Flight Mode (additive — default mode is CLASSIC_LAUNCH, behaviour
+    //       below is opt-in and bypassed entirely when classic) -----
+    private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
+    private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
+    /** Pitch tracked separately from rotationPitch so passenger updatePassenger() can ignore it. */
+    private float freeFlightPitch = 0f;
+    /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
+    private transient boolean freeFlightLandedLatched = false;
 
     // Mirror PlanetSelector Progressbars
     private DimensionProperties dimCache;
@@ -765,6 +777,132 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.setDirty(INFLIGHT);
     }
 
+    // ---- Free Flight Mode accessors / mutators ----
+
+    public RocketFlightMode getFlightMode() {
+        return flightMode == null ? RocketFlightMode.DEFAULT : flightMode;
+    }
+
+    /**
+     * Set the rocket's flight mode. Persisted to NBT. Server-side mutation only
+     * (callers from packet handlers must validate sender authority first).
+     */
+    public void setFlightMode(RocketFlightMode mode) {
+        this.flightMode = (mode == null ? RocketFlightMode.DEFAULT : mode);
+    }
+
+    public boolean isFreeFlight() {
+        return getFlightMode() == RocketFlightMode.FREE_FLIGHT;
+    }
+
+    public boolean isClassicLaunch() {
+        return getFlightMode() == RocketFlightMode.CLASSIC_LAUNCH;
+    }
+
+    /**
+     * Server-side application of a pilot input packet. The {@link FreeFlightInput}
+     * constructor already clamps per-channel; callers may forward a freshly-deserialised
+     * input without re-validating ranges.
+     *
+     * <p>No-op if the rocket is not in {@link RocketFlightMode#FREE_FLIGHT} —
+     * input is dropped silently to keep the contract symmetric ("input is intent,
+     * server decides").
+     */
+    public void applyFreeFlightInput(FreeFlightInput input) {
+        if (input == null) return;
+        if (!isFreeFlight()) return;
+        this.currentFreeFlightInput = input;
+    }
+
+    public FreeFlightInput getCurrentFreeFlightInput() {
+        return currentFreeFlightInput;
+    }
+
+    public float getFreeFlightPitch() {
+        return freeFlightPitch;
+    }
+
+    /**
+     * Enter free-flight without the classic countdown. Sets isInFlight, resets
+     * latched-landed flag, zeros input so the rocket doesn't inherit stale intent.
+     * Server-side only.
+     */
+    public void startFreeFlight() {
+        if (world.isRemote) return;
+        setInFlight(true);
+        freeFlightLandedLatched = false;
+        currentFreeFlightInput = FreeFlightInput.zero();
+        // Small upward kick so the rocket leaves the launchpad before the
+        // landing-detector ({@link FreeFlightPhysics#shouldLand}) runs on the
+        // first tick. Without this, a rocket sitting on the ground would
+        // re-land instantly because onGround=true + motionY≈0.
+        this.motionY = 0.3;
+        // Force the next move() to update onGround, so the landing detector
+        // sees an airborne rocket on the first FF tick.
+        this.onGround = false;
+    }
+
+    /**
+     * One server-side free-flight physics step. Pure delegation to
+     * {@link FreeFlightPhysics#step}: this method exists so the test harness
+     * can also single-step from the probe command without booting MC physics.
+     */
+    public void tickFreeFlight() {
+        if (world.isRemote) return;
+        if (!isFreeFlight() || !isInFlight()) return;
+
+        int primaryFuel = 0;
+        FuelType ft = getRocketFuelType();
+        if (ft != null) primaryFuel = getFuelAmount(ft);
+
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        // Per-tick gravity decrement scaled to existing space-flight convention.
+        double gravity = 0.04 * gravMult;
+
+        FreeFlightPhysics.Step result = FreeFlightPhysics.step(
+                this.motionX, this.motionY, this.motionZ,
+                this.rotationYaw, this.freeFlightPitch,
+                this.currentFreeFlightInput,
+                this.stats.getThrust(), this.stats.getWeight(),
+                gravity, primaryFuel);
+
+        this.motionX = result.motionX;
+        this.motionY = result.motionY;
+        this.motionZ = result.motionZ;
+        this.rotationYaw = result.yaw;
+        this.freeFlightPitch = result.pitch;
+
+        if (result.fuelConsumed > 0 && ft != null) {
+            setFuelAmount(ft, primaryFuel - result.fuelConsumed);
+            if (ft == FuelType.LIQUID_BIPROPELLANT) {
+                int ox = getFuelAmount(FuelType.LIQUID_OXIDIZER);
+                int oxBurn = Math.min(ox, result.fuelConsumed);
+                if (oxBurn > 0) setFuelAmount(FuelType.LIQUID_OXIDIZER, ox - oxBurn);
+            }
+        }
+
+        // Apply motion to the world.
+        this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
+
+        // Landing: ground contact + slow vertical motion → exit FF active flight.
+        if (FreeFlightPhysics.shouldLand(this.onGround, this.motionY) && !freeFlightLandedLatched) {
+            this.motionX = 0;
+            this.motionY = 0;
+            this.motionZ = 0;
+            this.setInFlight(false);
+            this.setInOrbit(false);
+            this.currentFreeFlightInput = FreeFlightInput.zero();
+            this.freeFlightLandedLatched = true;
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketLandedEvent(this));
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.ROCKETLANDEVENT.ordinal()), this);
+        }
+
+        this.velocityChanged = true;
+    }
+
     /**
      * If the rocket is in flight, ie the rocket has taken off and has not touched the ground
      *
@@ -1337,6 +1475,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             rcs_mode_counter--;
             this.rotationYaw = 0;
         }
+
+        // ---- Free Flight Mode branch -------------------------------------------
+        // When the rocket is in FREE_FLIGHT mode AND active, run the arcade
+        // physics path and SKIP every classic-launch branch below. Client side
+        // is intent-only — the standard datawatcher / motion replication kicks
+        // in via super.onUpdate() / setInFlight already.
+        if (isFreeFlight() && isInFlight()) {
+            if (!world.isRemote) {
+                tickFreeFlight();
+            }
+            return;
+        }
+        // ------------------------------------------------------------------------
+
         //Count down
         int launchCount = this.dataManager.get(LAUNCH_COUNTER);
         if (launchCount >= 0) {
@@ -1973,6 +2125,17 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             return;
         }
 
+        // Free Flight Mode short-circuit: skip classic countdown + destination
+        // validation. The pilot just enters arcade flight directly.
+        if (isFreeFlight()) {
+            if (world.isRemote) {
+                PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.LAUNCH.ordinal()));
+            } else if (!isInFlight()) {
+                startFreeFlight();
+            }
+            return;
+        }
+
         if (isInOrbit()) {
             setInFlight(true);
             return;
@@ -2369,6 +2532,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         motionY = nbt.getDouble("motionY");
         motionZ = nbt.getDouble("motionZ");
 
+        // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
+        flightMode = RocketFlightMode.readFromNBT(nbt);
+        freeFlightPitch = nbt.getFloat("freeFlightPitch");
+
         readMissionPersistentNBT(nbt);
         if (nbt.hasKey("data")) {
             if (storage == null)
@@ -2412,6 +2579,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         nbt.setDouble("motionX", motionX);
         nbt.setDouble("motionY", motionY);
         nbt.setDouble("motionZ", motionZ);
+        // Free Flight Mode — written unconditionally so the field round-trips
+        // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
+        RocketFlightMode.writeToNBT(nbt, flightMode);
+        nbt.setFloat("freeFlightPitch", freeFlightPitch);
         stats.writeToNBT(nbt);
 
         if (!infrastructureCoords.isEmpty()) {
@@ -2495,6 +2666,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 position.star = DimensionManager.getInstance().getStar(in.readInt());
 
             position.writeToNBT(nbt);
+        } else if (packetId == PacketType.SET_FLIGHT_MODE.ordinal()) {
+            // Wire: 1 byte = ordinal of RocketFlightMode (-1 → default).
+            byte ord = in.readByte();
+            RocketFlightMode[] all = RocketFlightMode.values();
+            RocketFlightMode mode = (ord >= 0 && ord < all.length) ? all[ord] : RocketFlightMode.DEFAULT;
+            nbt.setString("flightMode", mode.name());
+        } else if (packetId == PacketType.FREE_FLIGHT_INPUT.ordinal()) {
+            FreeFlightInput input = FreeFlightInput.read(in);
+            nbt.setFloat("ffFwd",   input.throttleForward);
+            nbt.setFloat("ffVert",  input.throttleVertical);
+            nbt.setFloat("ffYaw",   input.yawInput);
+            nbt.setFloat("ffPitch", input.pitchInput);
+            nbt.setFloat("ffBrake", input.brakeInput);
         }
     }
 
@@ -2541,6 +2725,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             out.writeBoolean(hasStar);
             if (hasStar)
                 out.writeInt(spacePosition.star.getId());
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal()) {
+            out.writeByte((byte) getFlightMode().ordinal());
+        } else if (id == PacketType.FREE_FLIGHT_INPUT.ordinal()) {
+            // Client→server send: client writes its current input intent.
+            // The current intent on server is the latest applied input, so
+            // re-broadcasting it (server→client mirror) is also coherent.
+            getCurrentFreeFlightInput().write(out);
         }
     }
 
@@ -2624,6 +2815,38 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             releaseDestinationPreload();
         } else if (id == PacketType.SENDSPACEPOS.ordinal()) {
             this.spacePosition.readFromNBT(nbt);
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal() && !world.isRemote) {
+            // Authority: only a passenger of THIS rocket may change its mode,
+            // and only while the rocket is not actively in flight (you don't
+            // get to switch mid-ascent).
+            if (this.isInFlight()) return;
+            if (!this.getPassengers().contains(player)) return;
+            String name = nbt.getString("flightMode");
+            RocketFlightMode mode = RocketFlightMode.DEFAULT;
+            for (RocketFlightMode m : RocketFlightMode.values()) {
+                if (m.name().equals(name)) { mode = m; break; }
+            }
+            setFlightMode(mode);
+            // Propagate to clients so the UI can react.
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.SET_FLIGHT_MODE.ordinal()), this);
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal() && world.isRemote) {
+            // Echo from server → mutate local cache to keep client UI in sync.
+            String name = nbt.getString("flightMode");
+            for (RocketFlightMode m : RocketFlightMode.values()) {
+                if (m.name().equals(name)) { this.flightMode = m; break; }
+            }
+        } else if (id == PacketType.FREE_FLIGHT_INPUT.ordinal() && !world.isRemote) {
+            // Authority: only the active pilot (= a passenger) may push input.
+            if (!this.getPassengers().contains(player)) return;
+            if (!isFreeFlight()) return; // silent drop — mode mismatch
+            FreeFlightInput input = new FreeFlightInput(
+                    nbt.getFloat("ffFwd"),
+                    nbt.getFloat("ffVert"),
+                    nbt.getFloat("ffYaw"),
+                    nbt.getFloat("ffPitch"),
+                    nbt.getFloat("ffBrake"));
+            applyFreeFlightInput(input);
         } else if (id >= STATION_LOC_OFFSET + BUTTON_ID_OFFSET) {
             int id2 = id - (STATION_LOC_OFFSET + BUTTON_ID_OFFSET) - 1;
             setDestLandingPad(id2);
@@ -3019,6 +3242,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         TOGGLE_RCS,
         TURNUPDATE,
         ABORTLAUNCH,
-        SENDSPACEPOS
+        SENDSPACEPOS,
+        // Free Flight Mode (TASK: feature/true_rcs) — APPEND-ONLY so wire IDs stay stable.
+        SET_FLIGHT_MODE,
+        FREE_FLIGHT_INPUT
     }
 }
