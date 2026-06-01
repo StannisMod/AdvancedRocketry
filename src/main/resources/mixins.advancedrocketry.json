@@ -12,6 +12,8 @@
     "MixinWorldServerMulti",
     "MixinWorldSetBlockState"
   ],
-  "client": [],
+  "client": [
+    "MixinAcidRainRender"
+  ],
   "server": []
 }
