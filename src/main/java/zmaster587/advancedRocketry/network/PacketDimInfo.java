@@ -9,7 +9,6 @@ import net.minecraft.network.PacketBuffer;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
-import zmaster587.advancedRocketry.integration.jei.ARPlugin;
 import zmaster587.advancedRocketry.util.SpawnListEntryNBT;
 import zmaster587.libVulpes.network.BasePacket;
 
@@ -146,7 +145,12 @@ public class PacketDimInfo extends BasePacket {
                 DimensionManager.getInstance().registerDimNoUpdate(dimProperties, true);
             }
         }
-        ARPlugin.requestGasGiantRefresh();
+        // Guard the JEI integration: touching ARPlugin (implements mezz.jei.api
+        // IModPlugin) loads JEI classes, which NoClassDefFoundErrors when JEI
+        // isn't installed. See issue #76.
+        if (net.minecraftforge.fml.common.Loader.isModLoaded("jei")) {
+            zmaster587.advancedRocketry.integration.jei.ARPlugin.requestGasGiantRefresh();
+        }
     }
 
     @Override

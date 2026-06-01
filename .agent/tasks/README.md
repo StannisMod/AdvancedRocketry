@@ -375,6 +375,7 @@ entry is an actionable TASK with a defined plan + acceptance.
 | [TASK-15](TASK-15-visual-regression.md) | Visual regression infrastructure for Minecraft client | ❌ Not planned | Closed 2026-05-29 — speculative infra with no live trigger and high build cost. Original 4 promotion triggers retained in task file; re-open via a new TASK if any fires. |
 | [TASK-16](TASK-16-test-stability-flake-watch.md) | Test-stability flake watch — investigation deliverable. Three flake shapes root-caused; shape #3 mitigated in TASK-26 via kit retry; #1+#2 split into TASK-27; #4 (worldgen sampling) confirmed across 3 sightings, promoted to TASK-28 F7. | 🟡 Investigation complete | Investigation done 2026-05-23. |
 | [TASK-45](TASK-45-oregen-clumpsize-clamp-disables-impossible.md) | `<oreGen>` `clumpSize`/`chancePerChunk` clamp to a floor of 1 (and empty `<oreGen>` falls through to the global pressure/temp default), so "disable this ore" is inexpressible per planet — likely the real cause behind #73's "zeroing veins still spawns ore". Analysis only; fix-vs-document undecided. | 🟡 Backlog — not started | Found 2026-06-01 alongside the #73 round-trip test. |
+| [TASK-46](TASK-46-compatibilitymgr-vestigial.md) | `CompatibilityMgr` is vestigial — `compat` instance never read, mod-presence flags written-but-not-read / set-by-uncalled-method, `reloadRecipes()` commented out. Kept on purpose (may regain meaning); decide revive vs remove. | 🟡 Backlog — not started | Found 2026-06-01 during the #76 JEI-ref audit. |
 
 ## Conscious non-goals
 
