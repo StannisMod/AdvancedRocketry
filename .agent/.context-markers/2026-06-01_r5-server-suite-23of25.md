@@ -54,12 +54,28 @@ Run with `export JAVA_HOME=/home/dev/jdks/jdk-25.0.3+9` and ALWAYS a timeout, e.
    station→rocket link the new code reads, and does performFunction transfer on
    force-tick? Likely a linking-model or transfer-condition change.
 
-## Also still pending
+## Also still pending — Phase E (26 client tests)
 
-- **Phase E** — 26 client (testClient) tests not yet imported/wired. testClient
-  can't run headless (no GL); wire it for GPU CI. Includes 3 WorldCommandFetch*/
-  PlayerEquipped client tests.
-- WorldCommand client tests + any other client-side command coverage.
+Not yet imported/wired. Plan to integrate:
+1. Bring `src/test/.../test/client/**` (26 files) from `feature/tests`:
+   `for f in $(git ls-tree -r --name-only feature/tests -- src/test/java/zmaster587/advancedRocketry/test/client/); do git show "feature/tests:$f" > "$f"; done`
+   (mkdir the dir first). Includes 3 WorldCommandFetch*/PlayerEquipped client tests.
+2. `compileTestJava` → reconcile API drift like the server layer did (most drive
+   the client via the framework `bot()`/probe surface, so expect few direct-API hits).
+3. **testClient task is already wired** in build.gradle (configureHarnessTest with
+   enableClient=true): sets forge.test.client.enabled, nativesDir=build/natives,
+   depends on extractNatives, and forwards DISPLAY/XAUTHORITY/LIBGL_ALWAYS_SOFTWARE
+   from the env into `forge.test.client.env.*`. The framework's RealClientHarness
+   launches GradleStart with LWJGL natives.
+
+**RUN CLIENT TESTS ON DISPLAY :100** (NOT :99 — that Xvfb had no OpenGL). The
+testClient task forwards the parent env's DISPLAY to the client JVM, so launch as:
+```
+export JAVA_HOME=/home/dev/jdks/jdk-25.0.3+9
+DISPLAY=:100 timeout --signal=KILL 1200 ./gradlew testClient -Ptest_harness_forks=1 --no-daemon > logs/client.log 2>&1
+```
+(ensure something is serving :100 with GL before running; build/natives is
+populated by `./gradlew extractNatives`). Auto-skips if it still detects headless.
 
 ## Bug ledger note
 

@@ -173,7 +173,10 @@ when you add or remove a ledger entry so it stays accurate.
   run `./gradlew clean` — RFG caches the AT-applied decompiled MC under `build/rfg`.
 - **Test harness layers**: `./gradlew testUnit testIntegration` (fast, no harness);
   `./gradlew testServer` / `testClient` (forge-test-framework boots a real MC
-  server/client per test). ALWAYS cap harness/run tasks with a wall-clock timeout
+  server/client per test). **Run `testClient` (and any GL/client run) on display
+  `:100`** — `DISPLAY=:100 ./gradlew testClient ...` (display `:99` has no OpenGL).
+  The testClient task forwards the env DISPLAY to the client JVM. ALWAYS cap
+  harness/run tasks with a wall-clock timeout
   and log to a file, e.g.
   `timeout --signal=KILL 360 ./gradlew testServer ... --no-daemon > logs/x.log 2>&1`
   — an uncapped harness run once hung ~10.5h. Never pipe through `tail` (hides
