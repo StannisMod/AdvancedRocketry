@@ -34,7 +34,7 @@ public class AdvancedRocketryPlugin implements IFMLLoadingPlugin {
 
     @Override
     public String getModContainerClass() {
-        return "zmaster587.advancedRocketry.asm.ModContainer";
+        return null;
     }
 
     @Override
