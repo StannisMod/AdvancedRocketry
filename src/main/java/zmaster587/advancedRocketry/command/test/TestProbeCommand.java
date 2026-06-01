@@ -8100,8 +8100,17 @@ public class TestProbeCommand extends CommandBase {
                 .getValue(new ResourceLocation("advancedrocketry", "guidanceComputer"));
         net.minecraft.block.Block seat = ForgeRegistries.BLOCKS
                 .getValue(new ResourceLocation("advancedrocketry", "seat"));
+        // The unmanned-vehicle assembler now requires intakePower > 0 (an air
+        // intake) or the scan returns NOINTAKE.
+        net.minecraft.block.Block intake = ForgeRegistries.BLOCKS
+                .getValue(new ResourceLocation("advancedrocketry", "intake"));
+        // The UV scan's foundFluidTank check wants a generic IFluidHandler tank
+        // (the liquidTank), distinct from the propellant fuelTank.
+        net.minecraft.block.Block liquidTank = ForgeRegistries.BLOCKS
+                .getValue(new ResourceLocation("advancedrocketry", "liquidTank"));
         if (uvBuilder == null || structureTower == null || advEngine == null
-                || fuelTank == null || guidanceComputer == null || seat == null) {
+                || fuelTank == null || guidanceComputer == null || seat == null
+                || intake == null || liquidTank == null) {
             send(sender, "{\"error\":\"missing AR block(s) for UV fixture\"}");
             return;
         }
@@ -8158,6 +8167,11 @@ public class TestProbeCommand extends CommandBase {
         world.setBlockState(new BlockPos(cx, cy + 4, cz + 1), guidanceComputer.getDefaultState());
         // Seat.
         world.setBlockState(new BlockPos(cx, cy + 5, cz + 1), seat.getDefaultState());
+        // Air intake (interior cell, inside the BB) — satisfies the UV
+        // assembler's intakePower > 0 requirement.
+        world.setBlockState(new BlockPos(cx, cy + 1, cz + 2), intake.getDefaultState());
+        // Liquid tank (generic IFluidHandler) — satisfies foundFluidTank.
+        world.setBlockState(new BlockPos(cx, cy + 2, cz + 2), liquidTank.getDefaultState());
 
         send(sender, "{\"ok\":true,\"builderPos\":["
                 + cx + "," + cy + "," + cz + "]"
