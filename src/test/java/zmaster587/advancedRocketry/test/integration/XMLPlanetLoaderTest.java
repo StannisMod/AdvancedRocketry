@@ -1,8 +1,11 @@
 package zmaster587.advancedRocketry.test.integration;
 
+import net.minecraft.block.Block;
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.oredict.OreDictionary;
+import zmaster587.advancedRocketry.util.OreGenProperties;
+import zmaster587.advancedRocketry.util.OreGenProperties.OreEntry;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -437,6 +440,63 @@ public class XMLPlanetLoaderTest {
                             + expected.getMessage(),
                     expected.getMessage().contains("planetDefs XML"));
         }
+    }
+
+    // ---- oregen persistence (issue #73) --------------------------------------
+
+    /**
+     * Issue #73 — per-planet {@code <oreGen>} must survive the planetDefs.xml
+     * write/read round-trip. AR persists a planet's ore generation config only
+     * through the per-world planetDefs.xml (it is NOT written to the per-dimension
+     * NBT), so {@code writeXML} → {@code readAllPlanets} losing the {@code <oreGen>}
+     * block is exactly the "oregen doesn't stick to the worldsave" bug kaduvill
+     * traced back to 2019. This pins the round-trip so it can't regress.
+     */
+    @Test
+    public void oreGenPropertiesSurviveWriteReadRoundTrip() throws Exception {
+        Block ironOre = Block.getBlockFromName("minecraft:iron_ore");
+        assertNotNull("precondition: minecraft:iron_ore must be registered", ironOre);
+
+        zmaster587.advancedRocketry.api.dimension.solar.StellarBody star =
+                new zmaster587.advancedRocketry.api.dimension.solar.StellarBody();
+        star.setId(7600);
+        star.setName("OreGenStar");
+        star.setTemperature(120);
+        star.setSize(1.0f);
+        star.setBlackHole(false);
+
+        DimensionProperties planet = new DimensionProperties(7601, "OreGenWorld");
+        planet.setStar(star);
+
+        OreGenProperties ore = new OreGenProperties();
+        ore.addEntry(ironOre.getDefaultState(), 5, 60, 8, 20);
+        planet.oreProperties = ore;
+
+        star.addPlanet(planet);
+
+        String xml = XMLPlanetLoader.writeXML(new SingleStarGalaxyFixture(star));
+        assertTrue("writeXML must emit the <oreGen> block", xml.contains("oreGen"));
+        assertTrue("writeXML must reference the ore block by registry name",
+                xml.contains("minecraft:iron_ore"));
+
+        File out = tempFolder.newFile("oregen-planets.xml");
+        Files.write(out.toPath(), xml.getBytes(StandardCharsets.UTF_8));
+
+        XMLPlanetLoader reader = new XMLPlanetLoader();
+        assertTrue("loadFile must accept the written XML", reader.loadFile(out));
+        DimensionPropertyCoupling restored = reader.readAllPlanets();
+
+        assertEquals(1, restored.dims.size());
+        OreGenProperties restoredOre = restored.dims.get(0).oreProperties;
+        assertNotNull("oreProperties must round-trip, not be dropped", restoredOre);
+        assertEquals("exactly one ore entry must survive", 1, restoredOre.getOreEntries().size());
+
+        OreEntry entry = restoredOre.getOreEntries().get(0);
+        assertEquals("ore block must round-trip", ironOre, entry.getBlockState().getBlock());
+        assertEquals("minHeight must round-trip", 5, entry.getMinHeight());
+        assertEquals("maxHeight must round-trip", 60, entry.getMaxHeight());
+        assertEquals("clumpSize must round-trip", 8, entry.getClumpSize());
+        assertEquals("chancePerChunk must round-trip", 20, entry.getChancePerChunk());
     }
 
     // ---- helpers -------------------------------------------------------------
