@@ -371,10 +371,15 @@ def configureHarnessTest = { Test t, boolean enableClient ->
 
     if (enableClient) {
         // Real client needs LWJGL natives + a display. Auto-skips on headless.
-        t.dependsOn 'extractNatives'
+        // MC 1.12.2 runs on LWJGL 2, whose natives RFG extracts to
+        // run/natives/lwjgl2 via the extractNatives2 task (there is no plain
+        // `extractNatives` task under RFG; extractNatives3 is the unused
+        // LWJGL 3 set).
+        def nativesTask = tasks.named('extractNatives2').get()
+        t.dependsOn nativesTask
         t.systemProperty 'forge.test.client.enabled', 'true'
         t.systemProperty 'forge.test.client.nativesDir',
-                layout.buildDirectory.dir('natives').get().asFile.absolutePath
+                nativesTask.outputs.files.singleFile.absolutePath
         ['DISPLAY', 'XAUTHORITY', 'LIBGL_ALWAYS_SOFTWARE'].each { var ->
             def v = System.getenv(var)
             if (v != null) {
