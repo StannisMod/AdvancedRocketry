@@ -142,12 +142,13 @@ Bug-ledger history lives in
   Counter regenerated via
   `grep -rc '@Test$' src/test/java/.../{unit,integration,server,client}/`.
 - **testServer wall time**: 8m 27s (50 % faster than pre-B2).
-- **Bug ledger**: 4 live bugs. Arithmetic: 7 entries total minus
+- **Bug ledger**: 4 live bugs. Arithmetic: 8 entries total minus
   #4 (fixed by TASK-41 2026-05-29) minus #6 (fixed by TASK-43 Phase 3
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
-  = 4 live (#1, #3, #5, #7). Batch #2 opened 2026-05-25; entry #5 added
-  2026-05-29; entry #7 added 2026-05-31. Batch #1 fully drained by
-  TASK-12 on 2026-05-23. Entries:
+  minus #8 (found+fixed 2026-06-01 by the weight-rework) = 4 live
+  (#1, #3, #5, #7). Batch #2 opened 2026-05-25; entry #5 added
+  2026-05-29; entry #7 added 2026-05-31; entry #8 added 2026-06-01.
+  Batch #1 fully drained by TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —
   pinned by `SatelliteRegistryFallbackTest._documentsKnownBug` pair.
@@ -307,6 +308,13 @@ Bug-ledger history lives in
   `TilePumpFillsFromAdjacentWaterSourceTest` instead pins the real
   contract (drains an AR Forge-fluid source) and documents this in its
   docstring. Found during TASK-44 Gap F.4 un-ignore (2026-05-31).
+  (8) ✅ **FIXED 2026-06-01 by the weight-rework.**
+  `StatsRocket.getAcceleration` divided by `getWeight()` with no
+  zero-guard, so a zero-weight rocket produced `NaN`/`Infinity`
+  acceleration (visible in the assembler GUI and fed into
+  `EntityRocket` motion). Fixed: acceleration getters + TWR getter
+  return 0 when weight ≤ 0; pinned by
+  `StatsRocketTest.accelerationOnWeightlessRocketIsZeroNotInfinite`.
 
 ## Done
 

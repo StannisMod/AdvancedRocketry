@@ -190,8 +190,36 @@ public class StatsRocket {
     }
 
     public float getAcceleration(float gravitationalMultiplier) {
-        float N = getThrust() - (getWeight()  * ((ARConfiguration.getCurrentConfig().gravityAffectsFuel) ? gravitationalMultiplier : 1));
-        return N/getWeight() /20f;
+        float weight = getWeight();
+        if (weight <= 0) {
+            return 0;
+        }
+        float N = getThrust() - (weight * ((ARConfiguration.getCurrentConfig().gravityAffectsFuel) ? gravitationalMultiplier : 1));
+        return N / weight / 20f;
+    }
+
+    /** Acceleration with empty tanks (dry weight only) — the upper bound reached as fuel burns off. */
+    public float getDryAcceleration(float gravitationalMultiplier) {
+        float weight = getWeight_NoFuel();
+        if (weight <= 0) {
+            return 0;
+        }
+        float N = getThrust() - (weight * ((ARConfiguration.getCurrentConfig().gravityAffectsFuel) ? gravitationalMultiplier : 1));
+        return N / weight / 20f;
+    }
+
+    /** Thrust-to-weight ratio against the current wet weight (dry + fuel). 0 if weightless. */
+    public float getThrustToWeightRatio() {
+        float weight = getWeight();
+        if (weight <= 0) {
+            return 0;
+        }
+        return getThrust() / weight;
+    }
+
+    /** True if the rocket clears the configured minimum thrust-to-weight ratio to launch. */
+    public boolean canLaunch() {
+        return getThrustToWeightRatio() >= ARConfiguration.getCurrentConfig().minLaunchTWR;
     }
 
     public List<Vector3F<Float>> getEngineLocations() {

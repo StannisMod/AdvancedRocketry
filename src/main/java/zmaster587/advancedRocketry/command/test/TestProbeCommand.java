@@ -160,6 +160,9 @@ public class TestProbeCommand extends CommandBase {
                 case "item":
                     handleItem(server, sender, tail(args));
                     break;
+                case "weight":
+                    handleWeight(sender, tail(args));
+                    break;
                 case "enchant":
                     handleEnchant(server, sender, tail(args));
                     break;
@@ -9185,6 +9188,85 @@ public class TestProbeCommand extends CommandBase {
             info.put("capability", capName);
             info.put("hasCapability", has);
         }
+        send(sender, jsonMap(info));
+    }
+
+    /**
+     * {@code /artest weight ...} — probes the {@link zmaster587.advancedRocketry.util.WeightEngine}.
+     * Verbs:
+     *   reset                         — restore default tables + scales (test isolation)
+     *   item <registry-id> [count]    — resolved weight of an ItemStack
+     *   fluid <fluid-name> <amount>   — resolved weight of a FluidStack-equivalent
+     *   set <registry-id> <weight>    — register an individual override
+     *   set-regex <pattern> <weight>  — register a regex rule
+     *   material-scale <value>        — set ARConfiguration.weightMaterialScale
+     *   fuel-scale <value>            — set ARConfiguration.fuelMassScale
+     */
+    private void handleWeight(ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.util.WeightEngine we = zmaster587.advancedRocketry.util.WeightEngine.INSTANCE;
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"unknown weight subcommand — try reset|item|fluid|set|set-regex|material-scale|fuel-scale\"}");
+            return;
+        }
+        Map<String, Object> info = new LinkedHashMap<>();
+        String verb = args[0].toLowerCase();
+        switch (verb) {
+            case "reset":
+                we.resetTables();
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = 1.0;
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
+                info.put("reset", true);
+                info.put("materialCount", we.materialCount());
+                break;
+            case "item": {
+                String id = args[1];
+                int count = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(id));
+                info.put("id", id);
+                info.put("registered", item != null);
+                if (item != null) {
+                    net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, count);
+                    info.put("count", count);
+                    info.put("weight", we.getWeight(stack));
+                }
+                break;
+            }
+            case "fluid": {
+                String name = args[1];
+                float amount = Float.parseFloat(args[2]);
+                net.minecraftforge.fluids.Fluid f = net.minecraftforge.fluids.FluidRegistry.getFluid(name);
+                info.put("fluid", name);
+                info.put("registered", f != null);
+                if (f != null) {
+                    info.put("amount", amount);
+                    info.put("weight", we.getWeight(f, amount));
+                }
+                break;
+            }
+            case "set":
+                we.setIndividual(args[1], Double.parseDouble(args[2]));
+                info.put("set", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "set-regex":
+                we.setRegex(args[1], Double.parseDouble(args[2]));
+                info.put("regex", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "material-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = Double.parseDouble(args[1]);
+                we.clearResolveCache();
+                info.put("materialScale", Double.parseDouble(args[1]));
+                break;
+            case "fuel-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = Double.parseDouble(args[1]);
+                info.put("fuelScale", Double.parseDouble(args[1]));
+                break;
+            default:
+                send(sender, "{\"error\":\"unknown weight subcommand\",\"sub\":\"" + verb + "\"}");
+                return;
+        }
+        info.put("ok", true);
         send(sender, jsonMap(info));
     }
 

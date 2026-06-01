@@ -4,9 +4,10 @@
 2026-05-23). Batch #2 below is **live** and is kept in sync with the
 summary in [`../tasks/README.md`](../tasks/README.md) bug-ledger section.
 
-**Live bug count (as of 2026-05-31)**: 4 live — Batch #2 entries
+**Live bug count (as of 2026-06-01)**: 4 live — Batch #2 entries
 #1, #3, #5, #7. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
-#6 fixed by TASK-43 Phase 3 (see per-entry notes below).
+#6 fixed by TASK-43 Phase 3, #8 found+fixed by the weight-rework
+(see per-entry notes below).
 When a future production bug is uncovered, follow the rule in
 [`CLAUDE.md`](../../CLAUDE.md#bug-tracking--every-discovered-production-bug-must-be-logged)
 and append it to Batch #2 here AND to the README summary.
@@ -255,3 +256,19 @@ authoring that have not yet been fixed.
    `TilePumpFillsFromAdjacentWaterSourceTest` pins the real contract
    (drains an AR Forge-fluid source) and documents this in its docstring.
    **Found**: 2026-05-31 during TASK-44 Gap F.4 un-ignore.
+
+8. ✅ **FIXED 2026-06-01 by the weight-rework (feature/postponed).**
+   `StatsRocket.getAcceleration` computed `N / getWeight() / 20f` with no
+   guard, so a rocket whose `getWeight()` resolved to 0 (possible with
+   `advancedWeightSystem` on and a structure of all-zero-weight blocks)
+   yielded `Infinity`/`NaN`.
+   File: `src/main/java/zmaster587/advancedRocketry/api/StatsRocket.java`
+   (`getAcceleration`, also new `getDryAcceleration`).
+   **Consequence**: player-visible — the assembler GUI printed a NaN/∞
+   acceleration and the value propagated into `EntityRocket` `motionY`,
+   producing undefined flight motion.
+   **Fixed**: both acceleration getters return 0 when weight ≤ 0;
+   `getThrustToWeightRatio()` guards the same way.
+   **Pinned by**: `StatsRocketTest.accelerationOnWeightlessRocketIsZeroNotInfinite`
+   (positive contract, not a `_documentsKnownBug`).
+   **Found**: 2026-06-01 during the weight-system rework.

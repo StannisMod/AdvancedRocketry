@@ -2153,7 +2153,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
 
-        if (this.stats.getWeight() >= this.stats.getThrust()) {
+        if (!this.stats.canLaunch()) {
             setError("error.rocket.tooHeavy");
             return; // hard stop; no silent fall-through
         }

@@ -295,6 +295,81 @@ public class StatsRocketTest {
     }
 
     @Test
+    public void accelerationOnWeightlessRocketIsZeroNotInfinite() {
+        // getAcceleration divides by weight; a zero-weight rocket must not yield
+        // NaN/Infinity (which would propagate into motion and the assembler GUI).
+        StatsRocket stats = new StatsRocket();
+        stats.setThrust(100);
+        stats.setWeight(0f);
+
+        float a = stats.getAcceleration(1f);
+        assertEquals(0f, a, 0f);
+        assertEquals(0f, stats.getThrustToWeightRatio(), 0f);
+        assertFalse(stats.canLaunch());
+    }
+
+    @Test
+    public void thrustToWeightRatioIsThrustOverWeight() {
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false; // getWeight() == dry weight
+            StatsRocket stats = new StatsRocket();
+            stats.setThrust(200);
+            stats.setWeight(100f);
+            assertEquals(2.0f, stats.getThrustToWeightRatio(), 1e-6);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void canLaunchRespectsMinLaunchTWR() {
+        double prevTWR = ARConfiguration.getCurrentConfig().minLaunchTWR;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().minLaunchTWR = 1.5;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setWeight(100f);
+
+            stats.setThrust(160); // TWR 1.6 >= 1.5
+            assertTrue("TWR above the threshold must allow launch", stats.canLaunch());
+
+            stats.setThrust(140); // TWR 1.4 < 1.5
+            assertFalse("TWR below the threshold must block launch", stats.canLaunch());
+
+            stats.setThrust(150); // TWR exactly 1.5 — boundary is inclusive
+            assertTrue("TWR exactly at the threshold must allow launch", stats.canLaunch());
+        } finally {
+            ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void dryAccelerationUsesEmptyTankWeight() {
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = false;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setThrust(300);
+            stats.setWeight(100f); // dry weight
+
+            // N = 300 - 100, a = 200 / 100 / 20 = 0.1
+            assertEquals(0.1f, stats.getDryAcceleration(1f), 1e-6);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
     public void copyProducesIndependentInstance() {
         StatsRocket original = new StatsRocket();
         original.setThrust(500);
