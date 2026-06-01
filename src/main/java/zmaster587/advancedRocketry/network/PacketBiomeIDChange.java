@@ -66,10 +66,9 @@ public class PacketBiomeIDChange extends BasePacket {
                 chunk.setBiomeArray(array);
                 BlockPos pos2 = pos.getBlockPos();// new BlockPos(chunk.xPosition << 4, 48, chunk.zPosition << 4);
                 thePlayer.world.markBlockRangeForRenderUpdate(pos2, pos2.add(1, 64, 1));
-
-                if (Minecraft.getMinecraft().gameSettings.particleSetting < 2)
-                    AdvancedRocketry.proxy.spawnParticle("smallLazer", thePlayer.world, pos.x, pos.y, pos.z, 0, 0, 0);
             }
+            if (Minecraft.getMinecraft().gameSettings.particleSetting < 2)
+                AdvancedRocketry.proxy.spawnParticle("smallLazer", thePlayer.world, pos.x, pos.y, pos.z, 0, 0, 0);
         }
     }
 

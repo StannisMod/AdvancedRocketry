@@ -115,7 +115,7 @@ public class RenderLaser extends Render implements IRenderFactory<EntityLaserNod
         GlStateManager.color(flareColor[0], flareColor[1], flareColor[2], flareColor[3]);
 
         for (int i = 0; i < 4; i++) {
-            RenderHelper.renderBottomFaceWithUV(buffer, -y + 200, -(i * 6) - x, -(i * 6) - z, (i * 6) - x, (i * 6) - z, 0, 1, 0, 1);
+            RenderHelper.renderBottomFaceWithUV(buffer, -y, -(i * 6) - x, -(i * 6) - z, (i * 6) - x, (i * 6) - z, 0, 1, 0, 1);
         }
 
         Tessellator.getInstance().draw();

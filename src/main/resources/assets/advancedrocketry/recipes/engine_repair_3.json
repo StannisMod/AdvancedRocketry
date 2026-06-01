@@ -1,0 +1,21 @@
+{
+    "type": "advancedrocketry:precisionassembler",
+    "itemingredients":
+    [
+        {
+            "type": "forge:ore_dict",
+            "ore": "ingotSteel"
+        },
+	    {
+            "item": "advancedrocketry:rocketmotor",
+            "data": 3
+        }
+    ],
+    "time": 900,
+    "energy": 300,
+    "itemresults":
+    {
+        "item": "advancedrocketry:rocketmotor",
+        "count": 1
+    }
+}

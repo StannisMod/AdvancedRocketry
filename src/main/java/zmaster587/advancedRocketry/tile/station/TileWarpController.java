@@ -932,6 +932,15 @@ public class TileWarpController extends TileEntity implements ITickable, IModula
 
     @Override
     public boolean isPlanetKnown(IDimensionProperties properties) {
+        //okay so before i had if(dimId > 10000), but as marvin said it's dimOffset, so basically we can use it instead? idk, correct me and my code if i'm wrong
+        if (properties == null) return false;
+
+        int dimId = properties.getId();
+
+        if (DimensionManager.getInstance().getDimensionProperties(dimId).isStar()) {
+            return true;
+        }
+
         SpaceStationObject spaceStationObject = getSpaceObject();
         if (spaceStationObject != null)
             return spaceStationObject.isPlanetKnown(properties);

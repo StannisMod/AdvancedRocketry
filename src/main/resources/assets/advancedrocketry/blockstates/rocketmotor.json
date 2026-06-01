@@ -4,18 +4,18 @@
         "textures": {
             "#None": "advancedrocketry:/models/combustion"
         },
-        "model": "advancedrocketry:models/rocketmotor.obj",
+        "model": "advancedrocketry:models/rocket.obj",
         "transform": "forge:default-block"
     },
     "variants": {
-        "facing=north": { "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90 },
-        "facing=south": {  "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 180 },
-        "facing=west":  { "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 270 },
-        "facing=east":  { "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 90 },
-        "facing=up":  { "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 180 },
-        "facing=down":  { "model": "advancedrocketry:models/rocketmotor.obj", "texture": "advancedrocketry:textures/models/combustion.png" },
+        "facing=north": { "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90 },
+        "facing=south": {  "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 180 },
+        "facing=west":  { "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 270 },
+        "facing=east":  { "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 90, "y": 90 },
+        "facing=up":  { "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png", "x": 180 },
+        "facing=down":  { "model": "advancedrocketry:models/rocket.obj", "texture": "advancedrocketry:textures/models/combustion.png" },
         "inventory": {
-            "model": "advancedrocketry:models/rocketmotor.obj",
+            "model": "advancedrocketry:models/rocket.obj",
             "textures": {
                 "layer0": "advancedrocketry:textures/models/combustion.png"
             }

@@ -166,7 +166,6 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
         for (TileEntity tile : storage.getTileEntityList()) {
             TileEntitySpecialRenderer renderer = TileEntityRendererDispatcher.instance.renderers.get(tile.getClass());
             if (renderer != null) {
-
                 if (tileEntityBlockChiseled == null || !tileEntityBlockChiseled.isInstance(tile)) {
                     TileEntityRendererDispatcher.instance.render(tile, tile.getPos().getX(), tile.getPos().getY(), tile.getPos().getZ(), f1);
                 }

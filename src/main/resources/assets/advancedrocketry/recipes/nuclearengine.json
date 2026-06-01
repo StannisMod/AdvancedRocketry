@@ -20,7 +20,8 @@
         },
     "d": {
         "type": "forge:ore_dict",
-        "ore": "gemDilithium"}
+        "ore": "gemDilithium"
+        }
     },
     "result":
     {

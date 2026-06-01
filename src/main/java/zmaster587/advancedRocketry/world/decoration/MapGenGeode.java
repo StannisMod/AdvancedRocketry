@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.world.decoration;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
@@ -99,8 +100,10 @@ public class MapGenGeode extends MapGenBase {
 
                             //Generates ore hanging from the ceiling
                             if (x % 4 > 0 && z % 4 > 0) {
-                                for (int i = 1; i < size; i++)
-                                    chunkPrimerIn.setBlockState(x, avgY + count - i, z, ores.get((x / 4 + z / 4) % ores.size()).getBlockState());
+                                IBlockState ore = ores.get(world.rand.nextInt(ores.size())).getBlockState();
+                                for (int i = 1; i < size; i++) {
+                                    chunkPrimerIn.setBlockState(x, avgY + count - i, z, ore);
+                                }
                             } else {
                                 size -= 2;
                                 for (int i = 1; i < size; i++) {
@@ -110,10 +113,11 @@ public class MapGenGeode extends MapGenBase {
 
                             //Generates ore in the floor
                             if ((x + 2) % 4 > 0 && (z + 2) % 4 > 0) {
-                                for (int i = 1; i < size; i++)
-                                    chunkPrimerIn.setBlockState(x, avgY - count + i, z, ores.get((x / 4 + z / 4) % ores.size()).getBlockState());
+                                IBlockState ore = ores.get(world.rand.nextInt(ores.size())).getBlockState();
+                                for (int i = 1; i < size; i++) {
+                                    chunkPrimerIn.setBlockState(x, avgY - count + i, z, ore);
+                                }
                             }
-
                         }
 
                         chunkPrimerIn.setBlockState(x, avgY - count, z, AdvancedRocketryBlocks.blocksGeode.getDefaultState());

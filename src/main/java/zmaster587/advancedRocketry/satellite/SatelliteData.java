@@ -53,6 +53,8 @@ public abstract class SatelliteData extends SatelliteBase {
     public void setProperties(@Nonnull ItemStack satelliteProperties) {
         super.setProperties(satelliteProperties);
         data.setMaxData(this.satelliteProperties.getMaxDataStorage());
+        powerConsumption = getPowerPerTick();
+        collectionTime = (int) (200 / Math.sqrt(0.1 * powerConsumption));
     }
 
 
@@ -113,6 +115,7 @@ public abstract class SatelliteData extends SatelliteBase {
 
         //Add data to the buffer, if the satellite has enough power
         data.addData(getDataCreated(), data.getDataType(), true);
+        //System.out.println("data: "+data.getData()+":"+getDataCreated()+":"+collectionTime);
     }
 
     @Override

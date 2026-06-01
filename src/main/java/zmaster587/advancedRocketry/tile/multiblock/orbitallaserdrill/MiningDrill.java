@@ -2,17 +2,22 @@ package zmaster587.advancedRocketry.tile.multiblock.orbitallaserdrill;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.MinecraftForge;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.entity.EntityLaserNode;
 import zmaster587.advancedRocketry.event.BlockBreakEvent;
+
+import java.util.ArrayList;
+import java.util.List;
 
 class MiningDrill extends AbstractDrill {
 
@@ -27,7 +32,7 @@ class MiningDrill extends AbstractDrill {
 
     ItemStack[] performOperation() {
 
-        ItemStack[] stacks = new ItemStack[0];
+        ArrayList<ItemStack> stacks = new ArrayList<>();
 
         for (int i = 0; i < 9; i++) {
             int x = (int) laser.posX + (i % 3) - 1;
@@ -41,8 +46,17 @@ class MiningDrill extends AbstractDrill {
             if (event.isCanceled())
                 continue;
 
+            /* What is this shit?
             if (state == Blocks.AIR.getDefaultState() || state.getMaterial().isReplaceable() || state.getMaterial().isLiquid()) {
                 laser.world.setBlockState(laserPos, AdvancedRocketryBlocks.blockLightSource.getDefaultState());
+                continue;
+            }
+             */
+            if (state.getMaterial().isReplaceable() || state.getMaterial().isLiquid()) {
+                laser.world.setBlockState(laserPos, Blocks.AIR.getDefaultState());
+                continue;
+            }
+            if (state == Blocks.AIR.getDefaultState()){
                 continue;
             }
 
@@ -55,14 +69,13 @@ class MiningDrill extends AbstractDrill {
 
 
             if (items.isEmpty()) {
-                laser.world.setBlockState(laserPos, AdvancedRocketryBlocks.blockLightSource.getDefaultState());
+                laser.world.setBlockState(laserPos, Blocks.AIR.getDefaultState());
                 continue;
             }
 
-            stacks = new ItemStack[items.size()];
-            stacks = items.toArray(stacks);
+            stacks.addAll(items);
 
-            laser.world.setBlockState(laserPos, AdvancedRocketryBlocks.blockLightSource.getDefaultState());
+            laser.world.setBlockState(laserPos, Blocks.AIR.getDefaultState());
         }
 
         boolean blockInWay = false;
@@ -98,26 +111,27 @@ class MiningDrill extends AbstractDrill {
             }
         } while (!blockInWay);
 
-        return stacks;
+        return stacks.toArray(new ItemStack[0]);
     }
 
     boolean activate(World world, int x, int z) {
         ticketLaser = ForgeChunkManager.requestTicket(AdvancedRocketry.instance, world, ForgeChunkManager.Type.NORMAL);
 
         if (ticketLaser != null) {
-            ForgeChunkManager.forceChunk(ticketLaser, new ChunkPos(x >> 4, z >> 4));
+            Chunk chunk = world.getChunkFromBlockCoords(new BlockPos (x,0,z)); // force the chunk to generate
+            //System.out.println("pos"+x+":"+z);
+            //System.out.println("chunkpos"+chunk.x+":"+chunk.z);
+            ForgeChunkManager.forceChunk(ticketLaser, new ChunkPos(chunk.x, chunk.z));
 
             int y = 64;
 
-            if (world.getChunkFromChunkCoords(x >> 4, z >> 4).isLoaded()) {
                 int current;
                 for (int i = 0; i < 9; i++) {
                     current = world.getTopSolidOrLiquidBlock(new BlockPos(x + (i % 3) - 1, 0xFF, z + (i / 3) - 1)).getY();
                     if (current > y)
                         y = current;
                 }
-            } else
-                y = 255;
+
 
             laser = new EntityLaserNode(world, x, y, z);
             laser.markValid();

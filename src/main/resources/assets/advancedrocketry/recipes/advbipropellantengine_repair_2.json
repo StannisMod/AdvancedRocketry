@@ -1,0 +1,21 @@
+{
+    "type": "advancedrocketry:precisionassembler",
+    "itemingredients":
+    [
+        {
+            "type": "forge:ore_dict",
+            "ore": "ingotTitaniumIridium"
+        },
+	    {
+            "item": "advancedrocketry:advbipropellantrocketmotor",
+            "data": 2
+        }
+    ],
+    "time": 900,
+    "energy": 200,
+    "itemresults":
+    {
+        "item": "advancedrocketry:advbipropellantrocketmotor",
+        "count": 1
+    }
+}

@@ -135,6 +135,8 @@ public class AtmosphereHandler {
             }
 
 
+            // sure.. causes stackoverflow left right center
+            /*
             else if (!handler.getAtmosphereType(bpos).allowsCombustion()) {
                 if (world.getBlockState(bpos).getBlock().isLeaves(world.getBlockState(bpos), world, bpos)) {
                     if (!(Boolean)world.getBlockState(bpos).getValue(BlockLeaves.CHECK_DECAY)) {
@@ -152,6 +154,7 @@ public class AtmosphereHandler {
                     world.setBlockState(bpos, Blocks.DIRT.getDefaultState());
                 }
             }
+             */
 
             //Gasses should automatically vaporize and dissipate
             if (handler.getAtmosphereType(bpos) == AtmosphereType.VACUUM) {

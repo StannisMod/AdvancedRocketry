@@ -123,6 +123,8 @@ public class TileRocketLoader extends TileInventoryHatch implements IInfrastruct
             //Function returns if something can be moved
             for (TileEntity tile : tiles) {
                 if (tile.hasCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP)) {
+                    if(tile instanceof TileGuidanceComputer) continue;
+
                     IItemHandler inv = tile.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP);
 
                     for (int i = 0; i < inv.getSlots(); i++) {

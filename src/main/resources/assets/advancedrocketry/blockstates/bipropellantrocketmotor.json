@@ -4,18 +4,18 @@
         "textures": {
             "#None": "advancedrocketry:/models/bipropellantcombustion"
         },
-        "model": "advancedrocketry:models/bipropellantrocketmotor.obj",
+        "model": "advancedrocketry:models/bipropellantrocket.obj",
         "transform": "forge:default-block"
     },
     "variants": {
-        "facing=north": { "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90 },
-        "facing=south": {  "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 180 },
-        "facing=west":  { "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 270 },
-        "facing=east":  { "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 90 },
-        "facing=up":  { "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 180 },
-        "facing=down":  { "model": "advancedrocketry:models/bipropellantrocketmotor.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png" },
+        "facing=north": { "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90 },
+        "facing=south": {  "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 180 },
+        "facing=west":  { "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 270 },
+        "facing=east":  { "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 90, "y": 90 },
+        "facing=up":  { "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png", "x": 180 },
+        "facing=down":  { "model": "advancedrocketry:models/bipropellantrocket.obj", "texture": "advancedrocketry:textures/models/bipropellantcombustion.png" },
         "inventory": {
-            "model": "advancedrocketry:models/bipropellantrocketmotor.obj",
+            "model": "advancedrocketry:models/bipropellantrocket.obj",
             "textures": {
                 "layer0": "advancedrocketry:textures/models/bipropellantcombustion.png"
             }

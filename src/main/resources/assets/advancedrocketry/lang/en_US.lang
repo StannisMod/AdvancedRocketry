@@ -16,6 +16,9 @@ entity.hovercraft.name=Hovercraft
 tile.landingPad.name=Landing Pad
 tile.seat.name=Seat
 tile.pad.name=Launch Pad
+tile.servicestation.name=Service station
+tile.servicemonitor.name=Service monitor
+tile.invhatch.name=Storage hatch
 tile.structuretower.name=Structure Tower
 tile.rocketAssembler.name=Rocket Assembling Machine
 tile.turf.name=Moon Turf
@@ -135,6 +138,7 @@ tile.basalt.name=Basalt
 tile.landingfloat.name=Landing Float
 tile.solararray.name=Solar Array
 tile.solararraypanel.name=Solar Array Panel
+tile.serviceStation.name=Service Station
 
 item.lens.0.name=Basic Lens
 item.wafer.0.name=Silicon Wafer
@@ -199,6 +203,7 @@ item.elevatorChip.name=Space Elevator Chip
 
 container.satellite=Satellite Bay
 container.monitoringstation=Monitoring Station
+container.invhatch=Storage hatch
 
 material.TitaniumAluminide.name=Titanium Aluminide
 material.TitaniumIridium.name=Titanium Iridium Alloy
@@ -425,6 +430,16 @@ msg.itemplanetidchip.stationid=Station Id:
 msg.itemplanetidchip.artifacts=Artifacts:
 msg.vent.trace=Oxygen Trace
 
+msg.serviceStation.destroyProbNA=Destroy probability: N/A
+msg.serviceStation.destroyProb=Destroy probability
+msg.serviceStation.serviceProgress=Service progress
+msg.serviceStation.serviceProgressNA=Service progress: N/A
+msg.serviceStation.wornMotorsText=Engines
+msg.serviceStation.wornSeatsText=Seats
+msg.serviceStation.wornTanksText=Tanks
+msg.serviceStation.assemblerScan=Scan for assemblers
+msg.serviceStation.link=You program the linker with the service station at
+
 msg.itemsatellite.pwr=Power Storage: 
 msg.itemsatellite.nopwr=No Power Storage
 msg.itemsatellite.pwrgen=Power Generation: 
@@ -433,6 +448,11 @@ msg.itemsatellite.microwavestatus=Collecting Power
 msg.itemsatellite.data=Data Storage: 
 msg.itemsatellite.nodata=No Data Storage!
 msg.itemsatellite.empty=Empty Chassis
+msg.itemsatellite.weight=Chassis weight:
+msg.itemsatellite.noweight=Error in weight calculation
+
+msg.brokenstage.text=Destruction stage
+
 msg.itemsatchip.id=ID: 
 msg.itemsatchip.planet=Planet: 
 msg.itemsatchip.planetunk=Planet: Unknown
@@ -483,3 +503,7 @@ msg.muchTooDense=Warning: Atmosphere pressure critically dense!
 msg.chat.nostation1=You wake up on the space station with a lingering feeling that your far-reaching spacewalk was frowned upon by some elder fox deity, and that it would be foolish to attempt so again and to expect different results
 msg.chat.nostation2=Maybe you should think before overstepping clearly logical and absolute boundaries again then deciding it was a good idea and not your fault if things go wrong
 msg.chat.nostation3=You must be on a space station to be in this dimension, and none have been created!
+
+commands.weather.always_not_clear=This planet is always not clear...
+commands.weather.cannot_rain=Cannot start a rain here
+commands.weather.cannot_thunder=Cannot start a thunder here

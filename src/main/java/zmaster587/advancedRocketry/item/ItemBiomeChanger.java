@@ -47,12 +47,12 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
         int j = 0;
         for (byte biomeByte : sat.discoveredBiomes()) {
             Biome biome = Biome.getBiome(biomeByte);
-            String biomeName = AdvancedRocketry.proxy.getNameFromBiome(biome);
 
-
-            list2.add(new ModuleButton(32, 16 + 24 * (j++), Biome.getIdForBiome(biome), biomeName, this, TextureResources.buttonBuild));
+            if (biome != null) {
+                String biomeName = AdvancedRocketry.proxy.getNameFromBiome(biome);
+                list2.add(new ModuleButton(32, 16 + 24 * (j++), Biome.getIdForBiome(biome), biomeName, this, TextureResources.buttonBuild));
+            }
         }
-
         //Relying on a bug, is this safe?
         ModuleContainerPan pan = new ModuleContainerPan(32, 16, list2, new LinkedList<>(), null, 128, 128, 0, -64, 0, 1000);
 
@@ -78,7 +78,8 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
             list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.nosat"));
         else if (mapping.getDimensionId() == player.provider.getDimension()) {
             list.add(LibVulpes.proxy.getLocalizedString("msg.connected"));
-            list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.selBiome") + mapping.getBiome().getBiomeName());
+            if (mapping.getBiome()!=null)
+                list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.selBiome") + mapping.getBiome().getBiomeName());
             list.add(LibVulpes.proxy.getLocalizedString("msg.biomechanger.numBiome") + mapping.discoveredBiomes().size());
         } else
             list.add(LibVulpes.proxy.getLocalizedString("msg.notconnected"));

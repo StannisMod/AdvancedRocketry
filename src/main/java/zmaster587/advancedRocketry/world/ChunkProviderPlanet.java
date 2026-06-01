@@ -13,6 +13,7 @@ import net.minecraft.world.WorldEntitySpawner;
 import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.Biome.SpawnListEntry;
+import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkPrimer;
 import net.minecraft.world.gen.*;
@@ -153,8 +154,8 @@ public class ChunkProviderPlanet implements IChunkGenerator {
         this.mapFeaturesEnabled = dimProps.canGenerateStructures() && ARConfiguration.getCurrentConfig().generateVanillaStructures;
 
         //TODO: may break on little planets
-        float atmDensity = ((WorldProviderPlanet) worldObj.provider).getAtmosphereDensity(new BlockPos(0, 0, 0));
-        habitable = ((WorldProviderPlanet) worldObj.provider).getAtmosphere(new BlockPos(0, 0, 0)).isBreathable();
+        float atmDensity = dimProps.getAtmosphereDensity() / 100f; // this fucking shit does not belong here -> ((WorldProviderPlanet) worldObj.provider).getAtmosphereDensity(new BlockPos(0, 0, 0));
+        habitable = dimProps.getAtmosphere().isBreathable();
 
 
         if (ARConfiguration.getCurrentConfig().generateCraters && dimProps.canGenerateCraters() && atmDensity <= 0.05)
@@ -193,11 +194,18 @@ public class ChunkProviderPlanet implements IChunkGenerator {
     }
 
     public void setBlocksInChunk(int x, int z, ChunkPrimer primer) {
+        setBlocksInChunk(x,z,primer,null);
+    }
+    public void setBlocksInChunk(int x, int z, ChunkPrimer primer, BiomeProvider bp) {
         byte b0 = 63;
         //TODO: may break for little planets
-        this.biomesForGeneration = this.worldObj.getBiomeProvider().getBiomesForGeneration(this.biomesForGeneration, x * 4 - 2, z * 4 - 2, 10, 10);
-        this.generateHeightmap(x * 4, 0, z * 4);
-
+        if (bp == null) {
+            this.biomesForGeneration = this.worldObj.getBiomeProvider().getBiomesForGeneration(this.biomesForGeneration, x * 4 - 2, z * 4 - 2, 10, 10);
+            this.generateHeightmap(x * 4, 0, z * 4);
+        }else{
+            this.biomesForGeneration = bp.getBiomesForGeneration(this.biomesForGeneration, x * 4 - 2, z * 4 - 2, 10, 10);
+            this.generateHeightmap(x * 4, 0, z * 4);
+        }
         for (int i = 0; i < 4; ++i) {
             int j = i * 5;
             int k = (i + 1) * 5;
@@ -266,13 +274,28 @@ public class ChunkProviderPlanet implements IChunkGenerator {
         }
     }
 
-    protected ChunkPrimer getChunkPrimer(int x, int z) {
+    public ChunkPrimer getChunkPrimer(int x, int z) {
+        return getChunkPrimer(x,z,null);
+    }
+    public ChunkPrimer getChunkPrimer(int x, int z, BiomeProvider bp) {
 
         this.rand.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
         ChunkPrimer chunkprimer = new ChunkPrimer();
-        this.setBlocksInChunk(x, z, chunkprimer);
-        this.biomesForGeneration = this.worldObj.getBiomeProvider().getBiomes(this.biomesForGeneration, x * 16, z * 16, 16, 16);
-        this.replaceBiomeBlocks(x, z, chunkprimer, this.biomesForGeneration);
+        boolean is_terraforming = false;
+        if (bp == null) {
+            this.biomesForGeneration = this.worldObj.getBiomeProvider().getBiomes(this.biomesForGeneration, x * 16, z * 16, 16, 16);
+            this.setBlocksInChunk(x, z, chunkprimer); // this messes up biome generation, needs to reset biomes
+            this.biomesForGeneration = this.worldObj.getBiomeProvider().getBiomes(this.biomesForGeneration, x * 16, z * 16, 16, 16);
+            this.replaceBiomeBlocks(x, z, chunkprimer, this.biomesForGeneration);
+        }
+        else {
+            this.biomesForGeneration = bp.getBiomes(this.biomesForGeneration, x * 16, z * 16, 16, 16);
+            this.setBlocksInChunk(x, z, chunkprimer, bp); // this messes up biome generation, needs to reset biomes
+            this.biomesForGeneration = bp.getBiomes(this.biomesForGeneration, x * 16, z * 16, 16, 16);
+            this.replaceBiomeBlocks(x, z, chunkprimer, this.biomesForGeneration);
+            is_terraforming = true;
+        }
+
 
         if (this.settings.useCaves && caveGenerator != null) {
             this.caveGenerator.generate(this.worldObj, x, z, chunkprimer);
@@ -282,13 +305,13 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             this.ravineGenerator.generate(this.worldObj, x, z, chunkprimer);
         }
 
-        if (this.craterGeneratorSmall != null)
+        if (this.craterGeneratorSmall != null && !is_terraforming)
             this.craterGeneratorSmall.generate(this.worldObj, x, z, chunkprimer);
 
-        if (this.craterGenerator != null)
+        if (this.craterGenerator != null && !is_terraforming)
             this.craterGenerator.generate(this.worldObj, x, z, chunkprimer);
 
-        if (this.craterGeneratorHuge != null)
+        if (this.craterGeneratorHuge != null && !is_terraforming)
             this.craterGeneratorHuge.generate(this.worldObj, x, z, chunkprimer);
 
         if (this.volcanoGenerator != null)
@@ -300,7 +323,7 @@ public class ChunkProviderPlanet implements IChunkGenerator {
         //Trees are always
         this.swampTreeGenerator.generate(this.worldObj, x, z, chunkprimer);
 
-        if (this.mapFeaturesEnabled && habitable) {
+        if (this.mapFeaturesEnabled && habitable  && !is_terraforming) { // terraforming would destroy it all...
             if (this.settings.useMineShafts) {
                 this.mineshaftGenerator.generate(this.worldObj, x, z, chunkprimer);
             }
@@ -308,7 +331,6 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             if (this.settings.useVillages) {
                 this.villageGenerator.generate(this.worldObj, x, z, chunkprimer);
             }
-
             if (this.settings.useStrongholds) {
                 this.strongholdGenerator.generate(this.worldObj, x, z, chunkprimer);
             }
@@ -316,7 +338,6 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             if (this.settings.useTemples) {
                 this.scatteredFeatureGenerator.generate(this.worldObj, x, z, chunkprimer);
             }
-
             if (this.settings.useMonuments) {
                 this.oceanMonumentGenerator.generate(this.worldObj, x, z, chunkprimer);
             }
@@ -493,7 +514,6 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             if (this.settings.useTemples) {
                 this.scatteredFeatureGenerator.generateStructure(this.worldObj, this.rand, chunkpos);
             }
-
             if (this.settings.useMonuments) {
                 this.oceanMonumentGenerator.generateStructure(this.worldObj, this.rand, chunkpos);
             }
@@ -550,18 +570,6 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             }
         }//Forge: End ICE
 
-
-        //If a planet is terraformed chenge upper blocks
-        // NO - because it causes mega-lag!
-        /*
-        if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableTerraforming && worldObj.provider.getClass() == WorldProviderPlanet.class) {
-
-            if (DimensionManager.getInstance().getDimensionProperties(worldObj.provider.getDimension()).isTerraformed()) {
-                Chunk chunk = worldObj.getChunkFromChunkCoords(x, z);
-                PlanetEventHandler.modifyChunk(worldObj, (WorldProviderPlanet) worldObj.provider, chunk);
-            }
-        }
-        */
         net.minecraftforge.event.ForgeEventFactory.onChunkPopulate(false, this, this.worldObj, this.rand, x, z, flag);
 
         OreGenProperties oreGenProperties = DimensionManager.getInstance().getDimensionProperties(this.worldObj.provider.getDimension()).getOreGenProperties(this.worldObj);
@@ -593,6 +601,7 @@ public class ChunkProviderPlanet implements IChunkGenerator {
 
     @Override
     public void recreateStructures(Chunk chunkIn, int x, int z) {
+
         if (this.mapFeaturesEnabled || !habitable) {
             if (this.settings.useMineShafts) {
                 this.mineshaftGenerator.generate(this.worldObj, x, z, null);
@@ -601,10 +610,10 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             if (this.settings.useVillages) {
                 this.villageGenerator.generate(this.worldObj, x, z, null);
             }
-
             if (this.settings.useStrongholds) {
                 this.strongholdGenerator.generate(this.worldObj, x, z, null);
             }
+
 
             if (this.settings.useTemples) {
                 this.scatteredFeatureGenerator.generate(this.worldObj, x, z, null);
@@ -613,6 +622,7 @@ public class ChunkProviderPlanet implements IChunkGenerator {
             if (this.settings.useMonuments) {
                 this.oceanMonumentGenerator.generate(this.worldObj, x, z, null);
             }
+
         }
     }
 

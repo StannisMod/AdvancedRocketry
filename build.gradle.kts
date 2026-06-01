@@ -32,6 +32,10 @@ val startGitRev: String by project
 group = "zmaster587.advancedRocketry"
 setProperty("archivesBaseName", archiveBase)
 
+legacy {
+    fixClasspath = true
+}
+
 val buildNumber: String by lazy { System.getenv("BUILD_NUMBER") ?: getDate() }
 
 fun getDate(): String {
@@ -41,7 +45,7 @@ fun getDate(): String {
     return format.format(Date())
 }
 
-version = "$modVersion-$buildNumber"
+version = "$modVersion"
 
 println("$archiveBase v$mcVersion-$version")
 
@@ -51,9 +55,25 @@ java {
     }
 }
 
-configurations.configureEach {
-    exclude(group = "net.minecraftforge", module = "mergetool")
+tasks {
+    javadoc {
+        options.encoding = "UTF-8"
+    }
+    compileJava {
+        options.encoding = "UTF-8"
+    }
+    compileTestJava {
+        options.encoding = "UTF-8"
+    }
+
+//    withType(JavaCompile) {
+//        options.encoding = "UTF-8"
+//    }
 }
+
+//configurations.configureEach {
+//    exclude(group = "net.minecraftforge", module = "mergetool")
+//}
 
 //sourceCompatibility = targetCompatibility = '1.8' // Need this here so eclipse task generates correctly.
 tasks.compileJava {
@@ -63,7 +83,7 @@ tasks.compileJava {
 
 
 minecraft {
-    mappings("snapshot", "20170624-1.12")
+    mappings("snapshot", "20171003-1.12")
 
     accessTransformer(file("src/main/resources/META-INF/accessTransformer.cfg"))
 
@@ -131,10 +151,10 @@ repositories {
         name = "ModMaven"
         url = uri("https://modmaven.k-4u.nl")
     }
-    maven {
-        name = "Galacticraft"
-        url = uri("https://maven.galacticraft.dev/repository/legacy-releases/")
-    }
+    //maven {
+    //    name = "Galacticraft"
+    //    url = uri("https://maven.galacticraft.dev/repository/legacy-releases/")
+    //}
 //    maven {
 //        name = "LibVulpes"
 //        url = uri("http://maven.dmodoomsirius.me/")
@@ -152,15 +172,17 @@ dependencies {
     //compileOnly("net.industrial-craft:industrialcraft-2:$icVersion:dev")
     //implementation("zmaster587.libVulpes:LibVulpes:$mcVersion-$libVulpesVersion-$libVulpesBuildNum-deobf")
 
-    compileOnly(fg.deobf("dev.galacticraft:galacticraft-legacy:$gcVersion"))
-
+    //compileOnly(fg.deobf("dev.galacticraft:galacticraft-legacy:$gcVersion"))
+    compileOnly(fg.deobf("curse.maven:galacticraft-legacy-564236:4671122"))
     compileOnly(fg.deobf("mezz.jei:jei_${mcVersion}:${jeiVersion}:api"))
-    runtimeOnly(fg.deobf("mezz.jei:jei_${mcVersion}:${jeiVersion}"))
+    implementation(fg.deobf("mezz.jei:jei_${mcVersion}:${jeiVersion}")) // Sorry but it won't start wihout jei...
+    //runtimeOnly(fg.deobf("mezz.jei:jei_${mcVersion}:${jeiVersion}")) // I think this crashes the game for me when running from IntelliJ
 
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    compileOnly(fileTree(mapOf("dir" to "libs/compileOnly", "include" to listOf("*.jar"))))
 
-    implementation ("net.minecraftforge:mergetool:0.2.3.3")
-    // implementation ("zmaster587.libVulpes:libVulpes:1.12.2-0.4.2+:deobf")
+//    implementation ("net.minecraftforge:mergetool:0.2.3.3")
+    implementation ("net.minecraftforge:mergetool") { version { strictly("0.2.3.3") } }
 }
 
 tasks.processResources {
@@ -206,6 +228,7 @@ tasks.withType(Jar::class) {
                 "Implementation-Title" to archiveBase,
                 "Implementation-Version" to project.version,
                 "Git-Hash" to gitHash,
+                "FMLAT" to "accessTransformer.cfg",
                 "FMLCorePlugin" to "zmaster587.advancedRocketry.asm.AdvancedRocketryPlugin",
                 "FMLCorePluginContainsFMLMod" to "true"
         )
