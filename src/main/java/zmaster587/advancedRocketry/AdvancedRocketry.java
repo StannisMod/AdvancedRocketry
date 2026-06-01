@@ -66,6 +66,7 @@ import zmaster587.advancedRocketry.block.plant.BlockLightwoodSapling;
 import zmaster587.advancedRocketry.block.plant.BlockLightwoodWood;
 import zmaster587.advancedRocketry.capability.CapabilityProtectiveArmor;
 import zmaster587.advancedRocketry.command.ARCommandRoot;
+import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.common.CommonProxy;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
@@ -1191,6 +1192,9 @@ public class AdvancedRocketry {
     @EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new ARCommandRoot());
+        // Test-only /artest probe surface — no-op unless -Dadvancedrocketry.tests=true
+        // (or a harness-spawned server sets -Dforge.test.server=true).
+        TestProbeCommandRegistration.registerIfTestMode(event);
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();
