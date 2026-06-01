@@ -1,0 +1,7 @@
+[2026-05-12T15:48:41Z] Marker created: 2026-05-12-1847_test-suite-junit-migration-eod.md (checksum: 8709f905a6dabc745d616b357fc7261a, 12627 bytes)
+[2026-05-15T16:10:00Z] Marker created: 2026-05-15-1610_smart-pyramid-skeleton-complete.md (checksum: 7dc0fc1898b9da4bab9f6d9802aa6c24, 14659 bytes)
+[2026-05-15T16:40:00Z] Marker corrected: 2026-05-15-1610_smart-pyramid-skeleton-complete.md — renamed from -complete; depth gaps noted; follow-up captured as .agent/tasks/TASK-01-smart-depth-coverage.md
+[2026-05-30T14:10:00Z] Marker imported from feature/tests stash: before-compact-2026-05-30-1410.md (8193 bytes)
+[2026-05-31T14:00:00Z] Marker imported from feature/tests stash: before-compact-2026-05-31-1400.md (6067 bytes)
+[2026-05-31T14:10:00Z] Marker imported from feature/tests stash: before-compact-2026-05-31-1410.md (5467 bytes)
+[2026-05-31T19:24:00Z] Marker created (feature/upstream): before-compact-2026-05-31-upstream-merge.md (7173 bytes)
