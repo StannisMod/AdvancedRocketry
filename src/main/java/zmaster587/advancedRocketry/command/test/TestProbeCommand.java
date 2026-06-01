@@ -5185,6 +5185,50 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"tileClass\":\"" + tile.getClass().getName() + "\"}");
             return;
         }
+        if (args.length >= 6 && "force-tick-clock".equalsIgnoreCase(args[0])) {
+            // /artest tile force-tick-clock <dim> <x> <y> <z> <ticks> — same as
+            // force-tick but advances world.getTotalWorldTime() by 1 before each
+            // update(). Plain force-tick freezes the clock, which starves tiles
+            // whose work is gated on a world-time modulus (e.g.
+            // TileFuelingStation.performFunction only transfers when
+            // worldTime % OP_THROTTLE_TICKS == 0). Advancing one tick per call
+            // lets those moduli cycle naturally, mirroring real ticking.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            int ticks = parseIntOr(args[5], 1);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(x, y, z);
+            TileEntity tile = world.getTileEntity(pos);
+            if (!(tile instanceof net.minecraft.util.ITickable)) {
+                send(sender, "{\"error\":\"tile not ITickable\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.util.ITickable tickable = (net.minecraft.util.ITickable) tile;
+            long base = world.getWorldInfo().getWorldTotalTime();
+            int ticked = 0;
+            try {
+                for (int i = 0; i < ticks; i++) {
+                    base += 1L;
+                    world.getWorldInfo().setWorldTotalTime(base);
+                    tickable.update();
+                    ticked++;
+                }
+            } catch (RuntimeException e) {
+                send(sender, "{\"error\":\"tile.update() threw after " + ticked + " ticks: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"ticked\":" + ticked
+                    + ",\"tileClass\":\"" + tile.getClass().getName() + "\"}");
+            return;
+        }
         if (args.length >= 5 && "init-modules".equalsIgnoreCase(args[0])) {
             // /artest tile init-modules <dim> <x> <y> <z>
             // Calls getModules(0, null) on an IModularInventory tile to
@@ -5437,7 +5481,7 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        send(sender, "{\"error\":\"unknown tile subcommand — try force-tick | warp-state | warp-trigger | warp-trigger-debug | multiblock-state\"}");
+        send(sender, "{\"error\":\"unknown tile subcommand — try force-tick | force-tick-clock | warp-state | warp-trigger | warp-trigger-debug | multiblock-state\"}");
     }
 
     // §5 Commands probe -------------------------------------------------------
@@ -8522,9 +8566,16 @@ public class TestProbeCommand extends CommandBase {
                 // structure[2][0][0]. Filler = libVulpes blockStructureBlock
                 // (added with WILDCARD meta in
                 // TilePrecisionAssembler.getAllowableWildCardBlocks).
+                //
+                // A SECOND input hatch is overlaid on the side wildcard at
+                // structure[2][1][3]: the precision-assembler's first recipe
+                // declares more item ingredients than a single 4-slot input
+                // hatch can hold, so the kit needs to spill ingredients into a
+                // second hatch (the controller aggregates all input hatches).
                 return new WildcardConfig(
                         zmaster587.libVulpes.api.LibVulpesBlocks.blockStructureBlock,
                         new HatchOverride('I', 2, 0, 1),
+                        new HatchOverride('I', 2, 1, 3),
                         new HatchOverride('O', 2, 0, 2),
                         new HatchOverride('P', 2, 0, 3));
             default:

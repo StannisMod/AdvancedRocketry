@@ -366,6 +366,8 @@ final class MachineRecipeEndToEndKit {
 
     // ---- helpers -----------------------------------------------------------
 
+    private static final Pattern INV_SIZE = Pattern.compile("\"size\":(\\d+)");
+
     private static void fillItemIngredients(TestClient c, String fixtureKey,
                                             FixturePositions p,
                                             List<String[]> items) throws Exception {
@@ -373,16 +375,40 @@ final class MachineRecipeEndToEndKit {
         assertTrue("recipe needs item inputs but fixture " + fixtureKey
                         + " has no inputPos ('I' in structure): " + p.fullResp,
                 p.firstInput() != null);
+        // The recipe ingredient-list index is NOT a fixed inventory slot — the
+        // controller matches ingredients against the combined contents of all
+        // input hatches regardless of slot. So place each ingredient into the
+        // next free slot, spilling into the next input hatch once one fills.
+        // (Machines like the precision assembler declare more ingredients than
+        // a single 4-slot hatch can hold; the fixture supplies extra hatches.)
+        int hatchSize = readInventorySize(c, p.firstInput());
+        int globalSlot = 0;
         for (String[] ing : items) {
+            int hatchIdx = globalSlot / hatchSize;
+            int localSlot = globalSlot % hatchSize;
+            assertTrue("recipe needs " + items.size() + " item input slot(s) but fixture "
+                            + fixtureKey + " supplies only " + p.inputPositions.size()
+                            + " input hatch(es) × " + hatchSize + " slots: " + p.fullResp,
+                    hatchIdx < p.inputPositions.size());
+            String pos = p.inputPositions.get(hatchIdx);
             // hatch fill <dim> <pos> <slot> <itemId> [count] [meta]
             String fill = String.join("\n", c.execute(
-                    "artest hatch fill 0 " + p.firstInput() + " " + ing[0] + " "
+                    "artest hatch fill 0 " + pos + " " + localSlot + " "
                             + ing[1] + " " + ing[2] + " " + ing[3]));
-            assertTrue("hatch fill (slot " + ing[0] + " " + ing[1]
+            assertTrue("hatch fill (hatch " + hatchIdx + " slot " + localSlot + " " + ing[1]
                             + ":" + ing[3] + " ×" + ing[2] + ") failed for "
                             + fixtureKey + ": " + fill,
                     fill.contains("\"ok\":true"));
+            globalSlot++;
         }
+    }
+
+    /** Reads an input hatch's inventory size from a {@code hatch read}. */
+    private static int readInventorySize(TestClient c, String pos) throws Exception {
+        String resp = String.join("\n", c.execute("artest hatch read 0 " + pos));
+        Matcher m = INV_SIZE.matcher(resp);
+        assertTrue("could not read input-hatch size at " + pos + ": " + resp, m.find());
+        return Integer.parseInt(m.group(1));
     }
 
     private static void fillFluidIngredients(TestClient c, String fixtureKey,

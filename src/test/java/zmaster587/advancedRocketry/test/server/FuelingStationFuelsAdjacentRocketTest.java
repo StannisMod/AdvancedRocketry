@@ -133,12 +133,13 @@ public class FuelingStationFuelsAdjacentRocketTest extends AbstractHeadlessServe
                 initialTank >= 1000);
 
         // ─── 5. Force-tick station → drains tank + fills rocket ────────
-        // 200 ticks: enough to traverse many performFunction calls
-        // (libVulpes machines fire performFunction once their internal
-        // progress timer rolls over — getProgressBarValueDelta=10 means
-        // every 10 ticks of update()).
+        // 200 ticks via the clock-advancing variant: TileFuelingStation
+        // gates the transfer on `worldTime % OP_THROTTLE_TICKS == 0`, so a
+        // frozen-clock force-tick would either never or always pass that gate
+        // depending on the start time. force-tick-clock advances world time by
+        // one per update(), letting the throttle modulus cycle as in real play.
         String tick = join(client().execute(
-                "artest tile force-tick 0 " + FX + " " + FY + " " + FZ + " 200"));
+                "artest tile force-tick-clock 0 " + FX + " " + FY + " " + FZ + " 200"));
         assertTrue("station force-tick errored: " + tick,
                 tick.contains("\"ok\":true"));
 

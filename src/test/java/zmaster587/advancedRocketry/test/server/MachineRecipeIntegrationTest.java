@@ -35,7 +35,7 @@ public class MachineRecipeIntegrationTest extends AbstractHeadlessServerTest {
     private static final Pattern OUTPUT_POS = Pattern.compile("\"outputPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern POWER_POS = Pattern.compile("\"powerPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern FIRST_INGREDIENT_ITEM =
-            Pattern.compile("\"ingredients\":\\[\\{\"slot\":0,\"item\":\"([^\"]+)\",\"count\":(\\d+)");
+            Pattern.compile("\"ingredients\":\\[\\{\"slot\":0,\"item\":\"([^\"]+)\",\"count\":(\\d+),\"meta\":(\\d+)");
     private static final Pattern FIRST_OUTPUT_ITEM =
             Pattern.compile("\"outputs\":\\[\\{\"slot\":0,\"item\":\"([^\"]+)\"");
 
@@ -110,11 +110,17 @@ public class MachineRecipeIntegrationTest extends AbstractHeadlessServerTest {
         assertTrue("recipe-info missing first output: " + recipe, om.find());
         String ingredientItem = im.group(1);
         int ingredientCount = Integer.parseInt(im.group(2));
+        // Meta matters: oredict ingredients like `bouleSilicon` resolve to a
+        // libVulpes meta-item (productboule) at the material-specific meta, not
+        // meta 0. Filling without the meta inserts the wrong variant and the
+        // recipe never matches.
+        int ingredientMeta = Integer.parseInt(im.group(3));
         String expectedOutput = om.group(1);
 
         // 4. Stuff input hatch.
         String hatchFill = String.join("\n", client().execute(
-                "artest hatch fill 0 " + inPos + " 0 " + ingredientItem + " " + ingredientCount));
+                "artest hatch fill 0 " + inPos + " 0 " + ingredientItem + " "
+                        + ingredientCount + " " + ingredientMeta));
         assertTrue("hatch fill failed: " + hatchFill, hatchFill.contains("\"ok\":true"));
 
         // 5. Charge power hatch.
