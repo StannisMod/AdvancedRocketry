@@ -7,86 +7,73 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-11 Phase 4 — non-player-sender guard contracts.
+ * Non-player-sender guard contracts for the ARCommandRoot subcommand tree.
  *
- * <p>Several {@code /ar} subcommands operate on a player entity
- * (held-item mutations, per-player gravity, teleport). Their guards
- * for non-Entity senders are part of the surfaced contract — without
- * the guards, console invocation would crash. Each test fires the
- * subcommand from the harness console (which has
- * {@code getCommandSenderEntity() == null}) and pins the
- * production guard's chat envelope.</p>
+ * <p>Several {@code /advancedrocketry} (alias {@code /ar}) subcommands operate
+ * on a player entity (held-item mutations, per-player gravity, teleport). When
+ * invoked from the harness console (no player entity) they must refuse cleanly
+ * rather than crash. The upstream merge replaced the WorldCommand monolith with
+ * the ARCommandRoot tree; the player-requiring subcommands now resolve the
+ * sender via vanilla {@code CommandBase.getCommandSenderAsPlayer}, which throws
+ * the unified "You must specify which player you wish to perform this action on."
+ * message on a console sender. This class pins that negative contract.</p>
  *
- * <p>Positive (player-equipped) variants of these subcommands belong
- * in testClient e2e — they need a real EntityPlayerMP on a connected
- * client. This class only pins the negative side, which is itself a
- * non-trivial contract: <em>"command does not crash when invoked
- * without a player"</em>.</p>
+ * <p>Positive (player-equipped) variants belong in testClient e2e.</p>
  */
 public class WorldCommandGuardContractTest extends AbstractSharedServerTest {
 
+    /** Vanilla CommandBase.getCommandSenderAsPlayer message for a non-player sender. */
+    private static final String NO_PLAYER =
+            "You must specify which player you wish to perform this action on";
+
     @Test
-    public void addTorchRefusesConsoleSenderWithNotAPlayerEntityMessage() throws Exception {
+    public void addTorchRefusesConsoleSender() throws Exception {
         String resp = exec("ar addTorch");
-        assertTrue("addTorch must refuse console with 'Not a player entity' — got: "
-                + resp, resp.contains("Not a player entity"));
+        assertTrue("addTorch must refuse console — got: " + resp, resp.contains(NO_PLAYER));
     }
 
     @Test
-    public void addSolidBlockOverrideRefusesConsoleSenderWithNotAPlayerEntityMessage()
-            throws Exception {
-        String resp = exec("ar addSolidBlockOverride");
-        assertTrue("addSolidBlockOverride must refuse console — got: " + resp,
-                resp.contains("Not a player entity"));
-    }
-
-    @Test
-    public void setGravityRefusesConsoleSenderWithNotAValidPlayerMessage()
-            throws Exception {
+    public void setGravityRefusesConsoleSenderWithUsage() throws Exception {
+        // setGravity resolves the sender via getCommandSenderEntity() (null on
+        // console) and falls through to wrongUsage(), printing its usage line.
         String resp = exec("ar setGravity 0.5");
-        assertTrue("setGravity must refuse console — got: " + resp,
-                resp.contains("Not a valid player"));
+        assertTrue("setGravity must refuse console with usage — got: " + resp,
+                resp.contains("sets your gravity"));
     }
 
     @Test
-    public void fillDataRefusesConsoleSenderWithGhostsDontHaveItemsMessage()
-            throws Exception {
-        // fillData reaches the entity-null branch via the args.length >= 2
-        // path; the help/length guards short-circuit otherwise.
+    public void fillDataRefusesConsoleSender() throws Exception {
         String resp = exec("ar fillData distance");
-        assertTrue("fillData must refuse console — got: " + resp,
-                resp.contains("Ghosts don't have items"));
+        assertTrue("fillData must refuse console — got: " + resp, resp.contains(NO_PLAYER));
     }
 
     @Test
-    public void gotoRefusesConsoleSenderWithMustBeAPlayerMessage() throws Exception {
-        String resp = exec("ar goto 0");
-        assertTrue("goto must refuse console — got: " + resp,
-                resp.contains("Must be a player to use this command"));
+    public void gotoRefusesConsoleSender() throws Exception {
+        // goto is now a tree; the dimension leaf carries the player guard.
+        String resp = exec("ar goto dimension 0");
+        assertTrue("goto must refuse console — got: " + resp, resp.contains(NO_PLAYER));
     }
 
     @Test
-    public void fetchUnknownPlayerEmitsInvalidPlayerNameMessage() throws Exception {
-        // fetch's null-target branch (line 359-361) runs before the
-        // `me.world.provider` access that would NPE on console — pins
-        // that we get the "Invalid player name" guard rather than a crash.
+    public void fetchRefusesConsoleSender() throws Exception {
+        // fetch resolves the destination (the command sender) as a player first,
+        // so a console sender is rejected before the target lookup.
         String resp = exec("ar fetch nonExistentPlayerName123");
-        assertTrue("fetch must report invalid player name — got: " + resp,
-                resp.contains("Invalid player name"));
+        assertTrue("fetch must refuse console — got: " + resp, resp.contains(NO_PLAYER));
     }
 
     @Test
     public void giveStationWithUnknownPlayerNameEmitsNotFoundMessage() throws Exception {
-        String resp = exec("ar giveStation 7 nonExistentPlayerName123");
-        assertTrue("giveStation must report player not found — got: " + resp,
-                resp.contains("not found"));
+        // give is now under the `station` subtree; an unknown target player is
+        // reported by vanilla getPlayer's PlayerNotFoundException.
+        String resp = exec("ar station give 7 nonExistentPlayerName123");
+        assertTrue("station give must report player not found — got: " + resp,
+                resp.toLowerCase().contains("found"));
     }
 
-    /** Top-level switch in {@code execute} has no default branch — an
-     *  unknown subcommand silently no-ops. Pin that we do NOT fall
-     *  through to the help envelope. Guards against a future refactor
-     *  that adds a default case which prints help (and thereby spams
-     *  console for every typo). */
+    /** An unknown subcommand must not echo a help envelope with the old
+     *  "Subcommands:" header (the ARCommandRoot tree emits the vanilla
+     *  invalid-subcommand key instead). */
     @Test
     public void unknownTopLevelSubcommandDoesNotEmitHelpEnvelope() throws Exception {
         String resp = exec("ar definitelyNotARealSubcommand");

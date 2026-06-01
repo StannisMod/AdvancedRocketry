@@ -38,7 +38,11 @@ public class ReloadRecipesCommand extends ARCommand {
         try {
             AdvancedRocketry.machineRecipes.clearAllMachineRecipes();
             AdvancedRocketry.machineRecipes.registerAllMachineRecipes();
-            AdvancedRocketry.machineRecipes.createAutoGennedRecipes(AdvancedRocketry.modProducts);
+            // NB: do NOT call createAutoGennedRecipes here. It registers
+            // ShapedOreRecipe objects into Forge's recipe registry, which is
+            // frozen after startup, so a runtime reload throws "being added too
+            // late". Auto-genned recipes are registered once at init and persist;
+            // the runtime reload only needs to refresh machine + XML recipes.
             AdvancedRocketry.machineRecipes.registerXMLRecipes();
 
             sender.sendMessage(new TextComponentString("Recipes reloaded"));

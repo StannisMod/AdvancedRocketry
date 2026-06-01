@@ -79,7 +79,7 @@ public class WorldCommandStarMiscContractTest extends AbstractSharedServerTest {
         Path root = harness().root();
         Path dump = root.resolve("BiomeDump.txt");
         Files.deleteIfExists(dump);
-        exec("ar dumpBiomes");
+        exec("ar dev dumpBiomes");
         assertTrue("BiomeDump.txt must exist after the command",
                 Files.exists(dump));
         String body = new String(Files.readAllBytes(dump));

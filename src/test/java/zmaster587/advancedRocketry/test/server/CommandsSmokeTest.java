@@ -29,11 +29,12 @@ public class CommandsSmokeTest extends AbstractSharedServerTest {
     @Test
     public void arHelpCommandPrintsUsageWithoutCrash() throws Exception {
         // §7.19: AR's primary command must surface usage text without crashing
-        // the server. WorldCommand.execute(args=["help"]) prints a
-        // "Subcommands:" header followed by the subcommand list; pin both.
+        // the server. The ARCommandRoot tree prints its usage line
+        // "/advancedrocketry [subcommand]" rather than the old WorldCommand
+        // "Subcommands:" header.
         String help = String.join("\n", client().execute("advancedrocketry help"));
-        assertTrue("AR help did not include the Subcommands header: " + help,
-                help.contains("Subcommands:"));
+        assertTrue("AR help did not surface the command usage: " + help,
+                help.contains("/advancedrocketry") && help.contains("[subcommand]"));
 
         // Sanity: server is still responsive after running help.
         String alive = String.join("\n", client().execute("artest commands list"));
