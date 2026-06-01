@@ -11772,7 +11772,10 @@ public class TestProbeCommand extends CommandBase {
                     send(sender, "{\"error\":\"mission dim not loaded\",\"dim\":" + m.getDimensionId() + "}");
                     return;
                 }
-                long now = w.getTotalWorldTime();
+                // getProgress() measures against dim-0 universal time
+                // (AdvancedRocketry.proxy.getWorldTimeUniversal(0)), not the
+                // mission dim's own clock, so backdate against the same source.
+                long now = zmaster587.advancedRocketry.AdvancedRocketry.proxy.getWorldTimeUniversal(0);
                 // Snapshot launch coords + dim BEFORE tickEntity so we can
                 // read cargo from the re-spawned rocket atomically — the
                 // natural DimensionProperties.tick loop prunes dead
@@ -11784,6 +11787,10 @@ public class TestProbeCommand extends CommandBase {
                 int launchDim = readIntField(m, "launchDimension");
                 // Backdate startWorldTime so progress = 1.0 exactly.
                 writeLongField(m, "startWorldTime", now - duration);
+                // tickEntity() only evaluates completion once every
+                // MISSION_COMPLETION_TICKS (60) ticks, gated by completionCheckTimer.
+                // Prime it so this single call reaches the progress>=1 check.
+                writeIntField(m, "completionCheckTimer", 59);
                 boolean wasDead = m.isDead();
                 m.tickEntity();
                 // Synchronous cargo readback while we still know the launch
@@ -12076,6 +12083,12 @@ public class TestProbeCommand extends CommandBase {
         java.lang.reflect.Field f = findFieldInHierarchy(target.getClass(), name);
         f.setAccessible(true);
         return f.getInt(target);
+    }
+
+    private static void writeIntField(Object target, String name, int value) throws ReflectiveOperationException {
+        java.lang.reflect.Field f = findFieldInHierarchy(target.getClass(), name);
+        f.setAccessible(true);
+        f.setInt(target, value);
     }
 
     private static double readDoubleField(Object target, String name) throws ReflectiveOperationException {
