@@ -56,6 +56,33 @@ launch → service station resets `stage`). The frustration is in the
   ingredients × `serviceStationStandaloneRepairMultiplier` (default 3.0,
   config) + RF + time. Fix the assembler handshake robustness regardless.
 
+## Architecture revision (2026-06-02) — wear becomes a capability + extends to tanks/seats
+
+User directives after Phase 0:
+- Wear should be a **Forge capability** (`IPartWear` / `CapabilityWear`,
+  mirroring `CapabilitySpaceArmor`), so it can ride on a block's existing
+  TileEntity later. `TileBrokenPart` hosts the capability **and** does the
+  breaking render. (The "foreign TE with its own custom render" case does
+  not occur in AR today — noted, not solved.)
+- **Tanks and seats now wear too.** Verified neither has its own
+  TileEntity (capacity is blockstate-driven, fuel lives in `StatsRocket`),
+  so both can take a `TileBrokenPart` + `IBrokenPartBlock` like motors.
+- **Tank consequence**: at launch, per worn tank roll whether it LEAKS
+  (chance from stage). If it leaks: lose some fuel AND, because the
+  contents are flammable/oxidizer, roll an explosion risk. Tank capacity
+  is NOT degraded.
+- **Seat consequence**: a worn seat (≥ critical stage) **blocks a crewed
+  launch** (refuse with error); uncrewed/automated rockets still fly.
+  Seats wear slowly (low transition multiplier).
+- Tanks/seats have no repair recipes → repaired by replacing the block
+  (new block = stage 0). Station/assembler repair stays recipe-driven
+  (motors). Noted; recipes for tanks/seats can be added later.
+
+Revised phase order: Phase 0 (motor thrust, done) → **0b** (capability +
+migrate consequence reads off `instanceof TileBrokenPart`) → **0c** (wear
+on tank + seat blocks) → Phase 1 (consequences + gating: tank leak, seat
+crewed-launch block, pre-launch warning, config switch) → 2/3/4.
+
 ## Bug ledger (to log during this task)
 
 - Tanks/seats accrue `stage` via `damageParts()` but `getBreakingProbability`

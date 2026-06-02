@@ -39,6 +39,8 @@ import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.stations.IStorageChunk;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
+import zmaster587.advancedRocketry.api.capability.CapabilityWear;
+import zmaster587.advancedRocketry.api.capability.IPartWear;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
@@ -792,8 +794,9 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
     public void damageParts() {
         for (TileEntity tile : tileEntities) {
-            if (tile instanceof TileBrokenPart) {
-                ((TileBrokenPart) tile).transition();
+            IPartWear wear = CapabilityWear.get(tile);
+            if (wear != null) {
+                wear.transition();
             }
         }
     }
@@ -884,14 +887,13 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         if (maxPenalty <= 0) {
             return 1f;
         }
-        TileEntity te = world.getTileEntity(pos);
-        if (te instanceof TileBrokenPart) {
-            TileBrokenPart bp = (TileBrokenPart) te;
-            int max = bp.getMaxStage();
+        IPartWear wear = CapabilityWear.get(world.getTileEntity(pos));
+        if (wear != null) {
+            int max = wear.getMaxStage();
             if (max <= 0) {
                 return 1f;
             }
-            float frac = (float) bp.getStage() / max; // 0 = pristine, 1 = fully worn
+            float frac = (float) wear.getStage() / max; // 0 = pristine, 1 = fully worn
             return (float) Math.max(0.0, 1.0 - maxPenalty * frac);
         }
         return 1f;
@@ -901,8 +903,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         float prob = 0;
 
         for (TileEntity te : tileEntities) {
-            if (te instanceof TileBrokenPart) {
-                TileBrokenPart brokenPart = (TileBrokenPart) te;
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear != null) {
                 float additionalProb = 0;
 
                 if (te.getBlockType() instanceof BlockNuclearRocketMotor) {
@@ -910,7 +912,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 } else if (te.getBlockType() instanceof BlockRocketMotor || te.getBlockType() instanceof BlockBipropellantRocketMotor) {
                     additionalProb = 0.2F;
                 }
-                prob += additionalProb * brokenPart.getStage() / 10;
+                prob += additionalProb * wear.getStage() / 10;
                 if (prob >= 1) {
                     return Math.min(1, prob);
                 }

@@ -2,12 +2,17 @@ package zmaster587.advancedRocketry.tile;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.EnumFacing;
+import net.minecraftforge.common.capabilities.Capability;
+import zmaster587.advancedRocketry.api.capability.CapabilityWear;
+import zmaster587.advancedRocketry.api.capability.IPartWear;
 import zmaster587.advancedRocketry.util.IBrokenPartBlock;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.Random;
 
-public class TileBrokenPart extends TileEntitySyncable {
+public class TileBrokenPart extends TileEntitySyncable implements IPartWear {
 
     private int stage;
     private int maxStage;
@@ -71,6 +76,23 @@ public class TileBrokenPart extends TileEntitySyncable {
             }
         }
         return false;
+    }
+
+    @Override
+    public boolean hasCapability(@Nonnull Capability<?> capability, @Nullable EnumFacing facing) {
+        if (capability == CapabilityWear.PART_WEAR) {
+            return true;
+        }
+        return super.hasCapability(capability, facing);
+    }
+
+    @Nullable
+    @Override
+    public <T> T getCapability(@Nonnull Capability<T> capability, @Nullable EnumFacing facing) {
+        if (capability == CapabilityWear.PART_WEAR) {
+            return CapabilityWear.PART_WEAR.cast(this);
+        }
+        return super.getCapability(capability, facing);
     }
 
     @Override

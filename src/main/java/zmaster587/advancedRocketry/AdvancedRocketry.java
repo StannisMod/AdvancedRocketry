@@ -1075,6 +1075,7 @@ public class AdvancedRocketry {
     public void postInit(FMLPostInitializationEvent event) {
 
         CapabilitySpaceArmor.register();
+        zmaster587.advancedRocketry.api.capability.CapabilityWear.register();
         //Need to raise the Max Entity Radius to allow player interaction with rockets
         World.MAX_ENTITY_RADIUS = 20;
 
