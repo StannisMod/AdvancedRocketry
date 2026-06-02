@@ -4,8 +4,8 @@
 2026-05-23). Batch #2 below is **live** and is kept in sync with the
 summary in [`../tasks/README.md`](../tasks/README.md) bug-ledger section.
 
-**Live bug count (as of 2026-05-31)**: 4 live — Batch #2 entries
-#1, #3, #5, #7. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
+**Live bug count (as of 2026-06-02)**: 5 live — Batch #2 entries
+#1, #3, #5, #7, #8. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
 #6 fixed by TASK-43 Phase 3 (see per-entry notes below).
 When a future production bug is uncovered, follow the rule in
 [`CLAUDE.md`](../../CLAUDE.md#bug-tracking--every-discovered-production-bug-must-be-logged)
@@ -255,3 +255,32 @@ authoring that have not yet been fixed.
    `TilePumpFillsFromAdjacentWaterSourceTest` pins the real contract
    (drains an AR Forge-fluid source) and documents this in its docstring.
    **Found**: 2026-05-31 during TASK-44 Gap F.4 un-ignore.
+
+8. **`TileRailgun.attemptCargoTransfer` fails silently — no player feedback
+   on any failure branch; the dominant field cause is an unloaded destination
+   dimension.** The railgun is a paired item-teleport: a source pulls a stack
+   from its input port and dispatches it to a linked destination railgun.
+   Firing is gated by ~5 AND-conditions and returns `false` with **no message**
+   when any fails. The most likely field failure (matching the related
+   Advanced-Rocketry#1172 "Station→Moon doesn't fire") is the destination being
+   in an unloaded dimension: production resolves it via
+   `net.minecraftforge.common.DimensionManager.getWorld(destDim)`, which
+   returns `null` for an unloaded dim, and the railgun only chunk-loads its OWN
+   chunk (`onLoad:252`), never the destination's.
+   File: `src/main/java/zmaster587/advancedRocketry/tile/multiblock/TileRailgun.java:309-364`
+   (silent `false` branches), `:340` (Forge `getWorld` → null on unloaded dim),
+   `:252` (own-chunk-only force-load).
+   **Consequence**: player-visible — "Railgun just does not fire" (#61). Sender
+   on planet A, receiver on planet B, player on A → B unloaded → nothing
+   happens, no feedback. Cargo is NOT lost (verified). Same-dimension firing
+   works. Other silent modes: no output hatch on the destination / output full,
+   redstone state not satisfied, insufficient RF/t, linker not re-targetable
+   without a sneak-`resetPosition`.
+   **Pinned by**: `RailgunFiringContractTest` —
+   `railgunFiresCargoToLinkedRailgunInSameDimension` (positive same-dim
+   contract) + `railgunSilentlyFailsWhenDestinationDimensionUnloaded`
+   (characterizes the silent unloaded-dest no-op + cargo-preservation). New
+   `artest infra railgun-fire` probe verb drives the source-side path.
+   Fix candidates (TASK-49): load/resolve the destination dim on fire +
+   surface a failure message per cause.
+   **Found**: 2026-06-02 during issue #61 investigation (TASK-49).

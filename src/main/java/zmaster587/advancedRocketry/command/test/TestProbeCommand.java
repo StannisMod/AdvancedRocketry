@@ -6326,6 +6326,146 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"matchedCount\":" + matchedCount + "}");
             return;
         }
+        if (args.length >= 10 && "railgun-fire".equalsIgnoreCase(args[0])) {
+            // Issue #61 repro — the SOURCE-side firing path. Unlike
+            // railgun-receive-cargo (which probes only the receiver endpoint
+            // on a solo railgun), this drives the full
+            // TileRailgun.attemptCargoTransfer() across TWO assembled
+            // railguns: it programs a libVulpes Linker to point at the
+            // destination controller, drops it in the source controller's
+            // slot, loads <itemId>×<count> into the source's first input
+            // port, then reflectively invokes attemptCargoTransfer() and
+            // reports whether it fired plus where the cargo ended up.
+            //
+            // Usage: railgun-fire <srcDim> <sx> <sy> <sz>
+            //                     <destDim> <dx> <dy> <dz> <itemId> [count]
+            int sDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int sx = parseIntOr(args[2], 0);
+            int sy = parseIntOr(args[3], 0);
+            int sz = parseIntOr(args[4], 0);
+            int dDim = parseIntOr(args[5], Integer.MIN_VALUE);
+            int dx = parseIntOr(args[6], 0);
+            int dy = parseIntOr(args[7], 0);
+            int dz = parseIntOr(args[8], 0);
+            String itemId = args[9];
+            int count = args.length >= 11 ? parseIntOr(args[10], 1) : 1;
+
+            net.minecraft.world.WorldServer sWorld = server.getWorld(sDim);
+            if (sWorld == null) {
+                send(sender, "{\"error\":\"source world not loaded\",\"dim\":" + sDim + "}");
+                return;
+            }
+            TileEntity sTile = sWorld.getTileEntity(new BlockPos(sx, sy, sz));
+            if (!(sTile instanceof zmaster587.advancedRocketry.tile.multiblock.TileRailgun)) {
+                send(sender, "{\"error\":\"source not a TileRailgun\",\"tile\":\""
+                        + (sTile == null ? "null" : sTile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.item.Item item =
+                    ForgeRegistries.ITEMS.getValue(new ResourceLocation(itemId));
+            if (item == null) {
+                send(sender, "{\"error\":\"unknown item id\",\"id\":\""
+                        + escapeJson(itemId) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.multiblock.TileRailgun src =
+                    (zmaster587.advancedRocketry.tile.multiblock.TileRailgun) sTile;
+
+            // Program a Linker to point at the destination controller, exactly
+            // as TileRailgun.onLinkStart would on a right-click.
+            net.minecraft.item.ItemStack linker =
+                    new net.minecraft.item.ItemStack(zmaster587.libVulpes.api.LibVulpesItems.itemLinker);
+            zmaster587.libVulpes.items.ItemLinker.setMasterCoords(linker, new BlockPos(dx, dy, dz));
+            zmaster587.libVulpes.items.ItemLinker.setDimId(linker, dDim);
+            boolean linkerSet = zmaster587.libVulpes.items.ItemLinker.isSet(linker);
+            src.setInventorySlotContents(0, linker);
+
+            // Load the cargo into the source's first input port.
+            int inPortCount = 0;
+            boolean loadedInput = false;
+            try {
+                java.lang.reflect.Field fin = zmaster587.libVulpes.tile.multiblock
+                        .TileMultiBlock.class.getDeclaredField("itemInPorts");
+                fin.setAccessible(true);
+                Object obj = fin.get(src);
+                if (obj instanceof java.util.List) {
+                    for (Object inv : (java.util.List<?>) obj) {
+                        if (!(inv instanceof net.minecraft.inventory.IInventory)) continue;
+                        inPortCount++;
+                        if (!loadedInput) {
+                            ((net.minecraft.inventory.IInventory) inv).setInventorySlotContents(
+                                    0, new net.minecraft.item.ItemStack(item, count));
+                            loadedInput = true;
+                        }
+                    }
+                }
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"itemInPorts reflection failed\","
+                        + "\"detail\":\"" + escapeJson(
+                                e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+
+            // Fire: invoke the private attemptCargoTransfer() directly so the
+            // result isolates the cargo/linker/planetary gate from the
+            // enabled/redstone/power gating in useEnergy().
+            boolean fired;
+            try {
+                java.lang.reflect.Method m = zmaster587.advancedRocketry.tile.multiblock
+                        .TileRailgun.class.getDeclaredMethod("attemptCargoTransfer");
+                m.setAccessible(true);
+                fired = (Boolean) m.invoke(src);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"attemptCargoTransfer reflection failed\","
+                        + "\"detail\":\"" + escapeJson(
+                                e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+
+            // Inspect the aftermath.
+            int srcInputRemaining;
+            try {
+                srcInputRemaining = countItemsInPortList(src, "itemInPorts", item);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"itemInPorts recount failed\",\"detail\":\""
+                        + escapeJson(e.getMessage()) + "\"}");
+                return;
+            }
+            boolean destLoaded = false;
+            boolean destIsRailgun = false;
+            int destMatched = 0;
+            // Mirror production exactly: attemptCargoTransfer resolves the
+            // destination via Forge's DimensionManager.getWorld (returns null
+            // when the dim is unloaded). Do NOT use server.getWorld here — it
+            // auto-inits the dimension, which would mask the unloaded-dest
+            // silent-failure mode this probe is meant to surface.
+            net.minecraft.world.WorldServer dWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(dDim);
+            if (dWorld != null) {
+                destLoaded = true;
+                TileEntity dTile = dWorld.getTileEntity(new BlockPos(dx, dy, dz));
+                if (dTile instanceof zmaster587.advancedRocketry.tile.multiblock.TileRailgun) {
+                    destIsRailgun = true;
+                    try {
+                        destMatched = countItemsInPortList(
+                                dTile, "itemOutPorts", item);
+                    } catch (ReflectiveOperationException e) {
+                        send(sender, "{\"error\":\"dest itemOutPorts scan failed\",\"detail\":\""
+                                + escapeJson(e.getMessage()) + "\"}");
+                        return;
+                    }
+                }
+            }
+
+            send(sender, "{\"ok\":true,\"fired\":" + fired
+                    + ",\"linkerSet\":" + linkerSet
+                    + ",\"inPortCount\":" + inPortCount
+                    + ",\"srcInputRemaining\":" + srcInputRemaining
+                    + ",\"destLoaded\":" + destLoaded
+                    + ",\"destIsRailgun\":" + destIsRailgun
+                    + ",\"destMatched\":" + destMatched + "}");
+            return;
+        }
         if (args.length >= 5 && "astrobody-set-research".equalsIgnoreCase(args[0])) {
             // TASK-40 Gap D — reshape note: the audit's "PlanetAnalyser /
             // SatelliteData scan output" framing was wrong. The actual class
@@ -6498,7 +6638,7 @@ public class TestProbeCommand extends CommandBase {
                     + "\",\"amount\":" + amount + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown infra subcommand — try info <dim> <x> <y> <z> | link <dim> <x> <y> <z> <entityId> | unlink <dim> <x> <y> <z> <entityId> | monitor-info <dim> <x> <y> <z> | inject-broken-part <entityId> <stage> | service-relink <dim> <x> <y> <z> | service-scan-assemblers <dim> <x> <y> <z> | railgun-receive-cargo <dim> <x> <y> <z> <itemId> [count] | astrobody-set-research <dim> <x> <y> <z> <bits> | astrobody-load-chip <dim> <x> <y> <z> | astrobody-chip-data <dim> <x> <y> <z> | databus-set-data <dim> <x> <y> <z> <type> <amount>\"}");
+        send(sender, "{\"error\":\"unknown infra subcommand — try info <dim> <x> <y> <z> | link <dim> <x> <y> <z> <entityId> | unlink <dim> <x> <y> <z> <entityId> | monitor-info <dim> <x> <y> <z> | inject-broken-part <entityId> <stage> | service-relink <dim> <x> <y> <z> | service-scan-assemblers <dim> <x> <y> <z> | railgun-receive-cargo <dim> <x> <y> <z> <itemId> [count] | railgun-fire <srcDim> <sx> <sy> <sz> <destDim> <dx> <dy> <dz> <itemId> [count] | astrobody-set-research <dim> <x> <y> <z> <bits> | astrobody-load-chip <dim> <x> <y> <z> | astrobody-chip-data <dim> <x> <y> <z> | databus-set-data <dim> <x> <y> <z> <type> <amount>\"}");
     }
 
     // §9.2 Fixture-building primitives -----------------------------------------
@@ -12195,6 +12335,35 @@ public class TestProbeCommand extends CommandBase {
             }
         }
         throw new NoSuchFieldException(name);
+    }
+
+    /** Sums the count of {@code item} across every slot of every IInventory in
+     *  a libVulpes {@code TileMultiBlock} port list ({@code itemInPorts} /
+     *  {@code itemOutPorts}), reached reflectively. Used by the railgun-fire
+     *  probe (issue #61) to verify cargo left the source's input and arrived
+     *  at the destination's output. */
+    private static int countItemsInPortList(Object tile, String fieldName,
+                                            net.minecraft.item.Item item)
+            throws ReflectiveOperationException {
+        java.lang.reflect.Field f = zmaster587.libVulpes.tile.multiblock
+                .TileMultiBlock.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        Object obj = f.get(tile);
+        int matched = 0;
+        if (obj instanceof java.util.List) {
+            for (Object inv : (java.util.List<?>) obj) {
+                if (!(inv instanceof net.minecraft.inventory.IInventory)) continue;
+                net.minecraft.inventory.IInventory ii =
+                        (net.minecraft.inventory.IInventory) inv;
+                for (int i = 0; i < ii.getSizeInventory(); i++) {
+                    net.minecraft.item.ItemStack s = ii.getStackInSlot(i);
+                    if (!s.isEmpty() && s.getItem() == item) {
+                        matched += s.getCount();
+                    }
+                }
+            }
+        }
+        return matched;
     }
 
     /** Reads a private static final int field via reflection. Returns
