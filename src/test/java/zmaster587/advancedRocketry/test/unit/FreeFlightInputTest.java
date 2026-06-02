@@ -75,8 +75,9 @@ public class FreeFlightInputTest {
     }
 
     @Test
-    public void wireSizeIs20Bytes() {
-        assertEquals(20, FreeFlightInput.WIRE_SIZE);
+    public void wireSizeIs21Bytes() {
+        // 5 floats + 1 flag byte (stop/hover assists, Option A).
+        assertEquals(21, FreeFlightInput.WIRE_SIZE);
         ByteBuf buf = Unpooled.buffer();
         new FreeFlightInput(0.5f, -0.5f, 0.25f, -0.25f, 1f).write(buf);
         assertEquals(FreeFlightInput.WIRE_SIZE, buf.writerIndex());
@@ -101,6 +102,7 @@ public class FreeFlightInputTest {
         buf.writeFloat(Float.NaN);
         buf.writeFloat(Float.POSITIVE_INFINITY);
         buf.writeFloat(2.0f);
+        buf.writeByte(0); // flag byte (no assists active)
         FreeFlightInput in = FreeFlightInput.read(buf);
         assertEquals( 1f, in.throttleForward,  EPS);
         assertEquals(-1f, in.throttleVertical, EPS);

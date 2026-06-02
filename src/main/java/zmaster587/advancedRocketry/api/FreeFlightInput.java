@@ -16,29 +16,49 @@ public final class FreeFlightInput {
     public static final float MIN = -1.0f;
     public static final float MAX = 1.0f;
 
-    /** Number of bytes a FreeFlightInput occupies on the wire. */
-    public static final int WIRE_SIZE = 5 * 4;
+    /** Flight-assist bit-flags packed into the final wire byte (Option A). */
+    private static final int FLAG_STOP  = 0x01;
+    private static final int FLAG_HOVER = 0x02;
+
+    /** Wire size: 5 floats + 1 flag byte. */
+    public static final int WIRE_SIZE = 5 * 4 + 1;
 
     public final float throttleForward;
     public final float throttleVertical;
     public final float yawInput;
     public final float pitchInput;
     public final float brakeInput;
+    /** Stop assist — server applies counter-thrust along -motion until |v|≈0. */
+    public final boolean stopActive;
+    /** Hover hold — server adds gravity-cancelling vertical thrust each tick. */
+    public final boolean hoverActive;
 
     public FreeFlightInput(float throttleForward,
                            float throttleVertical,
                            float yawInput,
                            float pitchInput,
                            float brakeInput) {
+        this(throttleForward, throttleVertical, yawInput, pitchInput, brakeInput, false, false);
+    }
+
+    public FreeFlightInput(float throttleForward,
+                           float throttleVertical,
+                           float yawInput,
+                           float pitchInput,
+                           float brakeInput,
+                           boolean stopActive,
+                           boolean hoverActive) {
         this.throttleForward  = clamp(throttleForward);
         this.throttleVertical = clamp(throttleVertical);
         this.yawInput         = clamp(yawInput);
         this.pitchInput       = clamp(pitchInput);
         this.brakeInput       = clamp(brakeInput);
+        this.stopActive       = stopActive;
+        this.hoverActive      = hoverActive;
     }
 
     public static FreeFlightInput zero() {
-        return new FreeFlightInput(0f, 0f, 0f, 0f, 0f);
+        return new FreeFlightInput(0f, 0f, 0f, 0f, 0f, false, false);
     }
 
     /** Clamp a single channel to [MIN, MAX]; NaN/Inf collapse to 0. */
@@ -55,6 +75,10 @@ public final class FreeFlightInput {
         out.writeFloat(yawInput);
         out.writeFloat(pitchInput);
         out.writeFloat(brakeInput);
+        int flags = 0;
+        if (stopActive)  flags |= FLAG_STOP;
+        if (hoverActive) flags |= FLAG_HOVER;
+        out.writeByte(flags);
     }
 
     /** Read + clamp; tolerant of malicious clients sending out-of-range floats. */
@@ -64,16 +88,21 @@ public final class FreeFlightInput {
         float y = in.readFloat();
         float p = in.readFloat();
         float b = in.readFloat();
-        return new FreeFlightInput(f, v, y, p, b);
+        int flags = in.readByte() & 0xFF;
+        boolean stop  = (flags & FLAG_STOP)  != 0;
+        boolean hover = (flags & FLAG_HOVER) != 0;
+        return new FreeFlightInput(f, v, y, p, b, stop, hover);
     }
 
-    /** True when every channel is effectively zero (within fp epsilon). */
+    /** True when every channel is effectively zero (within fp epsilon) AND no assist active. */
     public boolean isIdle() {
         return Math.abs(throttleForward)  < 1e-5f
             && Math.abs(throttleVertical) < 1e-5f
             && Math.abs(yawInput)         < 1e-5f
             && Math.abs(pitchInput)       < 1e-5f
-            && Math.abs(brakeInput)       < 1e-5f;
+            && Math.abs(brakeInput)       < 1e-5f
+            && !stopActive
+            && !hoverActive;
     }
 
     @Override
@@ -84,7 +113,9 @@ public final class FreeFlightInput {
             && Float.compare(throttleVertical, i.throttleVertical) == 0
             && Float.compare(yawInput,         i.yawInput)         == 0
             && Float.compare(pitchInput,       i.pitchInput)       == 0
-            && Float.compare(brakeInput,       i.brakeInput)       == 0;
+            && Float.compare(brakeInput,       i.brakeInput)       == 0
+            && stopActive  == i.stopActive
+            && hoverActive == i.hoverActive;
     }
 
     @Override
@@ -94,12 +125,15 @@ public final class FreeFlightInput {
         h = 31 * h + Float.floatToIntBits(yawInput);
         h = 31 * h + Float.floatToIntBits(pitchInput);
         h = 31 * h + Float.floatToIntBits(brakeInput);
+        h = 31 * h + (stopActive  ? 1 : 0);
+        h = 31 * h + (hoverActive ? 1 : 0);
         return h;
     }
 
     @Override
     public String toString() {
-        return String.format("FreeFlightInput{fwd=%.3f vert=%.3f yaw=%.3f pitch=%.3f brake=%.3f}",
-                throttleForward, throttleVertical, yawInput, pitchInput, brakeInput);
+        return String.format("FreeFlightInput{fwd=%.3f vert=%.3f yaw=%.3f pitch=%.3f brake=%.3f stop=%b hover=%b}",
+                throttleForward, throttleVertical, yawInput, pitchInput, brakeInput,
+                stopActive, hoverActive);
     }
 }

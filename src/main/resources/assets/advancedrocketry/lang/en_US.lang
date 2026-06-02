@@ -294,6 +294,9 @@ key.turnRocketDown=Move Vehicle Down
 key.toggleFlightMode=Toggle Flight Mode
 key.pitchRocketUp=Pitch Vehicle Up
 key.pitchRocketDown=Pitch Vehicle Down
+key.flightStop=Stop (zero motion)
+key.flightAssistToggle=Toggle Flight Assist
+key.flightHoverHold=Hover Hold
 
 enchantment.advancedrocketry.spacebreathing.desc=Allows the piece of armor to form an airtight seal
 

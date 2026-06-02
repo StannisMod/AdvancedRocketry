@@ -80,6 +80,17 @@ public final class FreeFlightPhysics {
                             FreeFlightInput input,
                             int thrust, double mass,
                             double gravity, int fuelAvail) {
+        // Back-compat overload — flight assist ON by default.
+        return step(mx, my, mz, yawDeg, pitchDeg, input, thrust, mass, gravity, fuelAvail,
+                /*flightAssistOn=*/true);
+    }
+
+    public static Step step(double mx, double my, double mz,
+                            float yawDeg, float pitchDeg,
+                            FreeFlightInput input,
+                            int thrust, double mass,
+                            double gravity, int fuelAvail,
+                            boolean flightAssistOn) {
         if (input == null) input = FreeFlightInput.zero();
 
         // Yaw/pitch rotate regardless of fuel — purely orientation, no thrust.
@@ -98,46 +109,93 @@ public final class FreeFlightPhysics {
         double fwdMag = MAX_FORWARD_ACCEL  * input.throttleForward  * thrustScalar;
         double vrtMag = MAX_VERTICAL_ACCEL * input.throttleVertical * thrustScalar;
 
-        // Fuel gate: out of fuel → no thrust applied, but orientation + gravity still act.
-        boolean thrustApplied = fuelAvail > 0 && (fwdMag != 0.0 || vrtMag != 0.0);
-        if (!thrustApplied) {
-            fwdMag = 0.0;
-            vrtMag = 0.0;
+        boolean thrustApplied;
+        double newMx, newMy, newMz;
+        int fuelCost = 0;
+
+        if (input.stopActive) {
+            // -------- STOP ASSIST -----------------------------------------
+            // Apply counter-thrust along -motion until magnitude is ~0.
+            // Ignores forward/vertical channels (Stop overrides). Yaw/pitch
+            // rotation still applied above (orientation never gated).
+            double speed = Math.sqrt(mx * mx + my * my + mz * mz);
+            double counterAccel = MAX_FORWARD_ACCEL * thrustScalar;
+            if (speed > 1e-5 && fuelAvail > 0 && counterAccel > 0) {
+                // Don't overshoot: cap counter-thrust at the speed itself.
+                double counterMag = Math.min(counterAccel, speed);
+                double inv = counterMag / speed;
+                newMx = mx - mx * inv;
+                newMy = my - my * inv;
+                newMz = mz - mz * inv;
+                thrustApplied = true;
+                double demand = counterMag / Math.max(counterAccel, 1e-9);
+                fuelCost = (int) Math.ceil(demand * FUEL_PER_TICK_AT_FULL_THRUST);
+            } else {
+                newMx = mx;
+                newMy = my;
+                newMz = mz;
+                thrustApplied = false;
+            }
+            // Stop snap: if very slow, zero out.
+            if (Math.abs(newMx) < 0.01 && Math.abs(newMy) < 0.01 && Math.abs(newMz) < 0.01) {
+                newMx = 0; newMy = 0; newMz = 0;
+            }
+            // Gravity still acts during Stop assist (we don't have anti-grav unless Hover is also on).
+            if (!input.hoverActive || fuelAvail <= 0) {
+                newMy -= gravity;
+            } else {
+                // Hover during Stop: pin Y motion to 0 instead of fighting gravity manually.
+                newMy = 0;
+                fuelCost += hoverFuelCost(gravity);
+            }
+        } else {
+            // -------- REGULAR THRUST PATH ---------------------------------
+            // Fuel gate: out of fuel → no thrust applied, but orientation + gravity still act.
+            boolean wantsThrust = (fwdMag != 0.0 || vrtMag != 0.0);
+            thrustApplied = fuelAvail > 0 && wantsThrust;
+            if (!thrustApplied) {
+                fwdMag = 0.0;
+                vrtMag = 0.0;
+            }
+
+            double yawRad   = Math.toRadians(newYaw);
+            double pitchRad = Math.toRadians(newPitch);
+            // Forward vector projected through pitch — MC convention: pitch<0 = nose up.
+            double cosPitch = Math.cos(pitchRad);
+            double fx = -Math.sin(yawRad) * cosPitch;
+            double fy = -Math.sin(pitchRad);
+            double fz =  Math.cos(yawRad) * cosPitch;
+
+            newMx = mx + fwdMag * fx;
+            newMy = my + fwdMag * fy + vrtMag;
+            newMz = mz + fwdMag * fz;
+
+            // Hover hold: when active AND fuel > 0, exactly cancel gravity for the tick.
+            // Cost: proportional to gravity. If out of fuel, hover silently fails → gravity drains as normal.
+            boolean hoverApplied = input.hoverActive && fuelAvail > 0;
+            if (hoverApplied) {
+                // No -gravity term; instead bill the equivalent thrust.
+                fuelCost += hoverFuelCost(gravity);
+                thrustApplied = true;
+            } else {
+                newMy -= gravity;
+            }
+
+            // Brake / idle drag (FA-gated).
+            double brake = clamp01(input.brakeInput);
+            if (brake > 0.0) {
+                double retain = 1.0 - (1.0 - BRAKE_RETENTION) * brake;
+                newMx *= retain;
+                newMy *= retain;
+                newMz *= retain;
+            } else if (flightAssistOn && input.isIdle()) {
+                // FA OFF: pure Newtonian, motion persists across ticks (great for coast).
+                newMx *= IDLE_DRAG;
+                newMz *= IDLE_DRAG;
+            }
         }
 
-        double yawRad   = Math.toRadians(newYaw);
-        double pitchRad = Math.toRadians(newPitch);
-        // Forward vector projected through pitch — MC convention: pitch<0 = nose up.
-        // Cap cos(pitch) at a small minimum so thrust doesn't fully vanish at
-        // gimbal lock (PITCH_MAX = ±85°, so cos ≈ 0.087 — still gives the pilot
-        // some horizontal control to recover).
-        double cosPitch = Math.cos(pitchRad);
-        double fx = -Math.sin(yawRad) * cosPitch;
-        double fy = -Math.sin(pitchRad);
-        double fz =  Math.cos(yawRad) * cosPitch;
-
-        double newMx = mx + fwdMag * fx;
-        double newMy = my + fwdMag * fy + vrtMag;
-        double newMz = mz + fwdMag * fz;
-
-        // Gravity always drains vertical motion in FF (no orbital handwave).
-        newMy -= gravity;
-
-        // Brake / idle drag.
-        double brake = clamp01(input.brakeInput);
-        if (brake > 0.0) {
-            double retain = 1.0 - (1.0 - BRAKE_RETENTION) * brake;
-            newMx *= retain;
-            // Vertical brake fights gravity less aggressively (otherwise hover is impossible
-            // at zero brake) — kept symmetric with horizontal for predictability.
-            newMy *= retain;
-            newMz *= retain;
-        } else if (input.isIdle()) {
-            newMx *= IDLE_DRAG;
-            newMz *= IDLE_DRAG;
-        }
-
-        // Hard speed cap.
+        // Hard speed cap (always — safety, regardless of FA).
         double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
         if (speed > MAX_SPEED) {
             double s = MAX_SPEED / speed;
@@ -146,15 +204,22 @@ public final class FreeFlightPhysics {
             newMz *= s;
         }
 
-        // Fuel cost: proportional to absolute thrust magnitude on whichever axis applied it.
-        int fuelCost = 0;
-        if (thrustApplied) {
+        // Fuel cost for forward+vertical thrust path (Stop already accounted above).
+        if (thrustApplied && !input.stopActive) {
             double demand = (Math.abs(input.throttleForward) + Math.abs(input.throttleVertical)) * 0.5;
-            fuelCost = (int) Math.ceil(demand * FUEL_PER_TICK_AT_FULL_THRUST);
-            if (fuelCost > fuelAvail) fuelCost = fuelAvail;
+            fuelCost += (int) Math.ceil(demand * FUEL_PER_TICK_AT_FULL_THRUST);
         }
+        if (fuelCost > fuelAvail) fuelCost = fuelAvail;
 
         return new Step(newMx, newMy, newMz, newYaw, newPitch, fuelCost, thrustApplied);
+    }
+
+    /** Fuel units required to cancel one tick of gravity via vertical thrust. */
+    private static int hoverFuelCost(double gravity) {
+        // Scale roughly proportional to gravity: a stronger gravity well costs more.
+        // 0.04 gravity (default mult=1.0) → ~2 units/tick.
+        int cost = (int) Math.ceil(Math.abs(gravity) / 0.02 * (FUEL_PER_TICK_AT_FULL_THRUST / 4.0));
+        return Math.max(1, cost);
     }
 
     /**

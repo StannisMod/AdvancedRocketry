@@ -37,6 +37,9 @@ public class KeyBindings {
     static KeyBinding toggleFlightMode = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.toggleFlightMode"), Keyboard.KEY_M, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding pitchRocketUp   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.pitchRocketUp"),   Keyboard.KEY_Q, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding pitchRocketDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.pitchRocketDown"), Keyboard.KEY_E, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding flightStop          = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightStop"),          Keyboard.KEY_B, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding flightAssistToggle  = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightAssistToggle"),  Keyboard.KEY_N, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding flightHoverHold     = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightHoverHold"),     Keyboard.KEY_H, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
@@ -53,6 +56,9 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(toggleFlightMode);
         ClientRegistry.registerKeyBinding(pitchRocketUp);
         ClientRegistry.registerKeyBinding(pitchRocketDown);
+        ClientRegistry.registerKeyBinding(flightStop);
+        ClientRegistry.registerKeyBinding(flightAssistToggle);
+        ClientRegistry.registerKeyBinding(flightHoverHold);
     }
     //Getters for keybindings
     public static KeyBinding getOpenRocketUI() {
@@ -105,6 +111,14 @@ public class KeyBindings {
                             (byte) EntityRocket.PacketType.SET_FLIGHT_MODE.ordinal()));
                 }
 
+                // Flight-assist toggle (N) — persistent state, server-side gated.
+                if (flightAssistToggle.isPressed() && rocket.isFreeFlight()) {
+                    rocket.setFlightAssistOn(!rocket.isFlightAssistOn());
+                    PacketHandler.sendToServer(new PacketEntity(
+                            rocket,
+                            (byte) EntityRocket.PacketType.SET_FLIGHT_ASSIST.ordinal()));
+                }
+
                 if (rocket.isFreeFlight() && rocket.isInFlight()) {
                     // Free Flight: synthesise input from movement keys + RCS keys, send when changed.
                     float fwd  = (Minecraft.getMinecraft().gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
@@ -118,7 +132,9 @@ public class KeyBindings {
                     float pitch = (pitchRocketUp.isKeyDown()   ? -1f : 0f)
                                 + (pitchRocketDown.isKeyDown() ?  1f : 0f);
                     float brake = Minecraft.getMinecraft().gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
-                    FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake);
+                    boolean stop  = flightStop.isKeyDown();
+                    boolean hover = flightHoverHold.isKeyDown();
+                    FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
                     if (!input.equals(lastSentInput)) {
                         // Set local intent so EntityRocket.writeDataToNetwork serializes the new
                         // FreeFlightInput via its ByteBuf path (mirrors TURNUPDATE precedent

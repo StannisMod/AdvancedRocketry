@@ -759,8 +759,11 @@ public class TestProbeCommand extends CommandBase {
                 info.put("ffInputYaw",   ffin.yawInput);
                 info.put("ffInputPitch", ffin.pitchInput);
                 info.put("ffInputBrake", ffin.brakeInput);
+                info.put("ffInputStop",  ffin.stopActive);
+                info.put("ffInputHover", ffin.hoverActive);
             }
             info.put("freeFlightPitch", rocket.getFreeFlightPitch());
+            info.put("flightAssistOn", rocket.isFlightAssistOn());
             info.put("destinationDim", reflectInt(rocket, "destinationDimId"));
             // errorStr is private + set by setError(...) when launch() bails
             // on a precondition. Without surfacing it, A1 launch-depth tests
@@ -1296,7 +1299,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("free-flight-input".equalsIgnoreCase(args[0]) && args.length >= 7) {
-            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake>
+            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [stop=0|1] [hover=0|1]
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
             EntityRocket rocket = findRocket(server, entityId);
             if (rocket == null) {
@@ -1314,8 +1317,10 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
                 return;
             }
+            boolean stop  = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
+            boolean hover = args.length >= 9 && !"0".equals(args[8]) && !"false".equalsIgnoreCase(args[8]);
             zmaster587.advancedRocketry.api.FreeFlightInput input =
-                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, yaw, pitch, brake);
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
             rocket.applyFreeFlightInput(input);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId
                     + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
@@ -1323,7 +1328,29 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"vert\":" + input.throttleVertical
                     + ",\"yaw\":" + input.yawInput
                     + ",\"pitch\":" + input.pitchInput
-                    + ",\"brake\":" + input.brakeInput + "}");
+                    + ",\"brake\":" + input.brakeInput
+                    + ",\"stop\":" + input.stopActive
+                    + ",\"hover\":" + input.hoverActive + "}");
+            return;
+        }
+        if ("set-flight-assist".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest rocket set-flight-assist <id> on|off
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            boolean on;
+            if ("on".equalsIgnoreCase(args[2]) || "true".equalsIgnoreCase(args[2]) || "1".equals(args[2])) on = true;
+            else if ("off".equalsIgnoreCase(args[2]) || "false".equalsIgnoreCase(args[2]) || "0".equals(args[2])) on = false;
+            else {
+                send(sender, "{\"error\":\"bad value — expected on|off\",\"value\":\"" + args[2] + "\"}");
+                return;
+            }
+            rocket.setFlightAssistOn(on);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"flightAssistOn\":" + rocket.isFlightAssistOn() + "}");
             return;
         }
         if ("free-flight-tick".equalsIgnoreCase(args[0]) && args.length >= 2) {

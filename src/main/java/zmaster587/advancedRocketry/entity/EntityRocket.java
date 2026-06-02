@@ -163,6 +163,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private float freeFlightPitch = 0f;
     /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
     private transient boolean freeFlightLandedLatched = false;
+    /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
+    private boolean flightAssistOn = true;
 
     // Mirror PlanetSelector Progressbars
     private DimensionProperties dimCache;
@@ -829,6 +831,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return freeFlightPitch;
     }
 
+    public boolean isFlightAssistOn() {
+        return flightAssistOn;
+    }
+
+    /** Persistent flight-assist toggle. Server-side authority only. */
+    public void setFlightAssistOn(boolean on) {
+        this.flightAssistOn = on;
+    }
+
     /**
      * Enter free-flight without the classic countdown. Sets isInFlight, resets
      * latched-landed flag, zeros input so the rocket doesn't inherit stale intent.
@@ -873,7 +884,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 this.rotationYaw, this.freeFlightPitch,
                 this.currentFreeFlightInput,
                 this.stats.getThrust(), this.stats.getWeight(),
-                gravity, primaryFuel);
+                gravity, primaryFuel,
+                this.flightAssistOn);
 
         this.motionX = result.motionX;
         this.motionY = result.motionY;
@@ -2542,6 +2554,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
         flightMode = RocketFlightMode.readFromNBT(nbt);
         freeFlightPitch = nbt.getFloat("freeFlightPitch");
+        // Flight Assist default ON for missing-key (legacy) saves.
+        flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
 
         readMissionPersistentNBT(nbt);
         if (nbt.hasKey("data")) {
@@ -2590,6 +2604,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
         RocketFlightMode.writeToNBT(nbt, flightMode);
         nbt.setFloat("freeFlightPitch", freeFlightPitch);
+        nbt.setBoolean("flightAssistOn", flightAssistOn);
         stats.writeToNBT(nbt);
 
         if (!infrastructureCoords.isEmpty()) {
@@ -2686,6 +2701,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             nbt.setFloat("ffYaw",   input.yawInput);
             nbt.setFloat("ffPitch", input.pitchInput);
             nbt.setFloat("ffBrake", input.brakeInput);
+            nbt.setBoolean("ffStop",  input.stopActive);
+            nbt.setBoolean("ffHover", input.hoverActive);
+        } else if (packetId == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
+            nbt.setBoolean("flightAssistOn", in.readBoolean());
         }
     }
 
@@ -2739,6 +2758,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // The current intent on server is the latest applied input, so
             // re-broadcasting it (server→client mirror) is also coherent.
             getCurrentFreeFlightInput().write(out);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
+            out.writeBoolean(isFlightAssistOn());
         }
     }
 
@@ -2852,8 +2873,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     nbt.getFloat("ffVert"),
                     nbt.getFloat("ffYaw"),
                     nbt.getFloat("ffPitch"),
-                    nbt.getFloat("ffBrake"));
+                    nbt.getFloat("ffBrake"),
+                    nbt.getBoolean("ffStop"),
+                    nbt.getBoolean("ffHover"));
             applyFreeFlightInput(input);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal() && !world.isRemote) {
+            // Authority: passenger only. Allowed in-flight (unlike SET_FLIGHT_MODE).
+            if (!this.getPassengers().contains(player)) return;
+            setFlightAssistOn(nbt.getBoolean("flightAssistOn"));
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.SET_FLIGHT_ASSIST.ordinal()), this);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal() && world.isRemote) {
+            this.flightAssistOn = nbt.getBoolean("flightAssistOn");
         } else if (id >= STATION_LOC_OFFSET + BUTTON_ID_OFFSET) {
             int id2 = id - (STATION_LOC_OFFSET + BUTTON_ID_OFFSET) - 1;
             setDestLandingPad(id2);
@@ -3252,6 +3283,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         SENDSPACEPOS,
         // Free Flight Mode (TASK: feature/true_rcs) — APPEND-ONLY so wire IDs stay stable.
         SET_FLIGHT_MODE,
-        FREE_FLIGHT_INPUT
+        FREE_FLIGHT_INPUT,
+        SET_FLIGHT_ASSIST
     }
 }
