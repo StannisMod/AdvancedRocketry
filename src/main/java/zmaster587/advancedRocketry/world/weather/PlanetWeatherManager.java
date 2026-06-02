@@ -120,7 +120,11 @@ public final class PlanetWeatherManager {
      */
     public static boolean shouldWrap(WorldServer world) {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
-        if (cfg == null || !cfg.enableCustomPlanetWeather) return false;
+        // NOTE: deliberately NOT gated by enableCustomPlanetWeather. AR planets
+        // are wrapped regardless so per-dimension time / working beds (issue #66)
+        // always apply; whether the wrapper *manages weather* is decided
+        // separately by isWeatherManaged().
+        if (cfg == null) return false;
         if (world == null || world.isRemote) return false;
         if (world.provider == null) return false;
         int dim = world.provider.getDimension();
@@ -141,6 +145,19 @@ public final class PlanetWeatherManager {
                 .getInstance()
                 .isDimensionCreated(dim)
                 && dim != cfg.spaceDimId;
+    }
+
+    /**
+     * Whether the wrapper installed on {@code world} should serve weather from
+     * the per-dim {@link PlanetWeatherState} (vs delegating to vanilla). Time is
+     * always per-dim; only weather is gated by config. Kept separate from
+     * {@link #shouldWrap} so an AR planet can have per-dim time with vanilla
+     * (shared) weather when custom weather is disabled.
+     */
+    public static boolean isWeatherManaged(WorldServer world) {
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        if (cfg == null) return false;
+        return cfg.enableCustomPlanetWeather || cfg.forcePlanetWeatherWorldInfoWrapper;
     }
 
     /**
@@ -166,7 +183,7 @@ public final class PlanetWeatherManager {
         PlanetWeatherState state = saved.getOrCreate(dim);
         WorldInfo current = world.getWorldInfo();
         ARWeatherWorldInfo wrapped = new ARWeatherWorldInfo(current, state,
-                () -> markDirty(world));
+                () -> markDirty(world), isWeatherManaged(world));
 
         world.worldInfo = wrapped;
 

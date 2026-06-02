@@ -22,9 +22,9 @@ import static org.junit.Assert.assertTrue;
  * <ul>
  *   <li>(4) non-weather getters route to the delegate;</li>
  *   <li>(5) weather setters route only to the state, not the delegate;</li>
- *   <li>(6) {@code getWorldTime} stays on the delegate (day/night must not
- *       diverge between planet and overworld in this iteration);</li>
- *   <li>(7) weather mutations fire the dirty callback.</li>
+ *   <li>(6) time-of-day / world age are per-dimension (TASK-47): owned by the
+ *       state, seeded from the delegate, independent of the overworld clock;</li>
+ *   <li>(7) weather + per-dim time mutations fire the dirty callback.</li>
  * </ul>
  *
  * Lives in the integration layer because constructing a vanilla {@link WorldInfo}
@@ -50,7 +50,7 @@ public class ARWeatherWorldInfoTest {
     }
 
     private static ARWeatherWorldInfo wrap(WorldInfo delegate, PlanetWeatherState state, Runnable dirty) {
-        return new ARWeatherWorldInfo(delegate, state, dirty);
+        return new ARWeatherWorldInfo(delegate, state, dirty, /* weatherManaged */ true);
     }
 
     @Test
@@ -117,19 +117,68 @@ public class ARWeatherWorldInfoTest {
     }
 
     @Test
-    public void arWeatherWorldInfoDoesNotOverrideWorldTime() {
+    public void arWeatherWorldInfoServesPerDimTimeIndependentOfDelegate() {
+        WorldInfo delegate = seededDelegate(); // DayTime=17000, Time=17000
+        PlanetWeatherState state = new PlanetWeatherState();
+        ARWeatherWorldInfo wrapper = wrap(delegate, state, () -> {});
+
+        // (TASK-47) Per-dim time is seeded from the delegate on construction so
+        // existing saves don't jump...
+        assertEquals("per-dim worldTime seeded from delegate", 17000L, wrapper.getWorldTime());
+        assertEquals("per-dim worldTotalTime seeded from delegate", 17000L, wrapper.getWorldTotalTime());
+
+        // ...but then it is OWNED by the state, not delegated.
+        wrapper.setWorldTime(50_000L);
+        wrapper.setWorldTotalTime(60_000L);
+        assertEquals(50_000L, wrapper.getWorldTime());
+        assertEquals(60_000L, wrapper.getWorldTotalTime());
+        assertEquals("state holds per-dim worldTime", 50_000L, state.getWorldTime());
+        assertEquals("state holds per-dim worldTotalTime", 60_000L, state.getWorldTotalTime());
+
+        // The overworld (delegate) clock advancing must NOT leak into the planet.
+        delegate.setWorldTime(99_000L);
+        delegate.setWorldTotalTime(99_000L);
+        assertEquals("planet worldTime independent of overworld", 50_000L, wrapper.getWorldTime());
+        assertEquals("planet worldTotalTime independent of overworld", 60_000L, wrapper.getWorldTotalTime());
+    }
+
+    @Test
+    public void perDimTimeSettersMarkDirty() {
         WorldInfo delegate = seededDelegate();
-        ARWeatherWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), () -> {});
+        AtomicInteger dirtyHits = new AtomicInteger();
+        ARWeatherWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), dirtyHits::incrementAndGet);
 
-        // Day/night currently must NOT diverge between planet and overworld
-        // (SMART §10) — getWorldTime / getWorldTotalTime stay on delegate.
-        assertEquals("worldTime stays on delegate", delegate.getWorldTime(), wrapper.getWorldTime());
-        assertEquals("worldTotalTime stays on delegate",
-                delegate.getWorldTotalTime(), wrapper.getWorldTotalTime());
+        wrapper.setWorldTime(1L);
+        wrapper.setWorldTotalTime(1L);
 
-        delegate.setWorldTotalTime(50_000L);
-        assertEquals("delegate worldTotalTime change visible through wrapper",
-                50_000L, wrapper.getWorldTotalTime());
+        assertEquals("per-dim time setters must mark the saved-data dirty", 2, dirtyHits.get());
+    }
+
+    @Test
+    public void unmanagedWeatherDelegatesToVanilla() {
+        // When custom weather is disabled the wrapper is still installed (for
+        // per-dim time) but weather must pass through to the delegate, matching
+        // vanilla shared-weather behaviour.
+        WorldInfo delegate = seededDelegate();
+        PlanetWeatherState state = new PlanetWeatherState();
+        ARWeatherWorldInfo wrapper =
+                new ARWeatherWorldInfo(delegate, state, () -> {}, /* weatherManaged */ false);
+
+        delegate.setRaining(true);
+        delegate.setRainTime(555);
+        state.setRaining(false);
+        state.setRainTime(111);
+
+        assertTrue("unmanaged weather reads the delegate", wrapper.isRaining());
+        assertEquals(555, wrapper.getRainTime());
+
+        wrapper.setRainTime(777);
+        assertEquals("unmanaged weather writes the delegate", 777, delegate.getRainTime());
+        assertEquals("per-dim weather state untouched when unmanaged", 111, state.getRainTime());
+
+        // Time is per-dim even when weather is unmanaged.
+        wrapper.setWorldTime(40_000L);
+        assertEquals(40_000L, state.getWorldTime());
     }
 
     @Test
@@ -159,9 +208,8 @@ public class ARWeatherWorldInfoTest {
 
         wrapper.setWorldName("ignored");
         wrapper.setSaveVersion(7);
-        wrapper.setWorldTotalTime(100L);
 
-        assertEquals("non-weather mutations must NOT mark weather saved-data dirty",
+        assertEquals("non-weather, non-time mutations must NOT mark saved-data dirty",
                 0, dirtyHits.get());
     }
 
