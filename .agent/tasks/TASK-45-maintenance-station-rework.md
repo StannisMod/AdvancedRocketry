@@ -108,7 +108,8 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
 - **Acceptance**: server probe sets a motor's stage, assembler stats show
   reduced thrust / TWR; unit test for the thrust factor formula.
 
-### Phase 1 — explosion gating + pre-launch warning + config switch
+### Phase 1 — explosion gating + pre-launch warning + config switch ✅
+(0b ✅ capability + migration; 0c ✅ tank/seat wear via TileWearable.)
 - New config: `wearThrustPenaltyMax` (0.5), `wearCriticalBlocksLaunch`
   (bool), `wearWarnProbability` (e.g. 0.05), `serviceStationStandaloneRepairMultiplier`
   (3.0).

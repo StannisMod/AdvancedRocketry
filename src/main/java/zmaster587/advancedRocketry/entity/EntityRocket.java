@@ -563,6 +563,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return sb.toString();
     }
 
+    /** Send a translated informational message to the rocket's passengers (no abort). */
+    private void messagePilot(String key, Object... args) {
+        if (world.isRemote) {
+            return;
+        }
+        for (Entity e : this.getPassengers()) {
+            if (e instanceof EntityPlayerMP) {
+                ((EntityPlayerMP) e).sendMessage(new net.minecraft.util.text.TextComponentTranslation(key, args));
+            }
+        }
+    }
+
     private void setError(String key, Object... args) {
         this.errorStr = key;
         this.lastErrorTime = this.world.getTotalWorldTime();
@@ -2061,9 +2073,46 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             }
         }
 
-        if (ARConfiguration.getCurrentConfig().partsWearSystem && storage.shouldBreak()) {
-            this.explode();
-            return;
+        if (ARConfiguration.getCurrentConfig().partsWearSystem) {
+            ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+
+            // A worn seat is unsafe: refuse a CREWED launch (automated rockets fly).
+            if (!this.getPassengers().isEmpty() && storage.hasCriticallyWornSeat(cfg.wearSeatBlockStageFraction)) {
+                setError("error.rocket.seatWorn");
+                return;
+            }
+
+            // Failure probability = motor wear + leak-ignition risk of worn tanks
+            // that actually carry fuel/oxidizer. Computed without side effects so
+            // the block decision below does not strand a half-leaked rocket.
+            float failProb = storage.getBreakingProbability();
+            for (StorageChunk.WornTank tank : storage.getWornTanks()) {
+                if (getFuelAmount(tank.type) > 0) {
+                    failProb += (float) cfg.wearTankLeakChanceMax * tank.wornFraction;
+                }
+            }
+            failProb = Math.min(1f, failProb);
+
+            if (failProb >= cfg.wearWarnProbability) {
+                messagePilot("warning.rocket.worn", (int) (failProb * 100));
+                if (cfg.wearCriticalBlocksLaunch) {
+                    setError("error.rocket.tooWorn", (int) (failProb * 100));
+                    return;
+                }
+            }
+
+            if (failProb > 0 && world.rand.nextFloat() < failProb) {
+                this.explode();
+                return;
+            }
+
+            // Launch proceeds, but worn tanks bleed some of their fuel.
+            for (StorageChunk.WornTank tank : storage.getWornTanks()) {
+                int amt = getFuelAmount(tank.type);
+                if (amt > 0 && world.rand.nextFloat() < cfg.wearTankLeakChanceMax * tank.wornFraction) {
+                    setFuelAmount(tank.type, (int) (amt * (1 - cfg.wearTankLeakFuelLoss)));
+                }
+            }
         }
 
         if (ARConfiguration.getCurrentConfig().experimentalSpaceFlight && storage.getGuidanceComputer() != null && storage.getGuidanceComputer().isEmpty()) {

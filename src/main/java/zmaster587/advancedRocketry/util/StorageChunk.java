@@ -35,6 +35,7 @@ import net.minecraftforge.items.CapabilityItemHandler;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
+import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.stations.IStorageChunk;
 import zmaster587.advancedRocketry.block.*;
@@ -920,6 +921,58 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         }
 
         return prob;
+    }
+
+    /** A worn fuel tank: which fuel type it holds and how worn it is (0..1). */
+    public static class WornTank {
+        public final FuelType type;
+        public final float wornFraction;
+
+        public WornTank(FuelType type, float wornFraction) {
+            this.type = type;
+            this.wornFraction = wornFraction;
+        }
+    }
+
+    @Nullable
+    private static FuelType tankFuelType(Block b) {
+        // Subclasses first — Oxidizer/Bipropellant/Nuclear all extend BlockFuelTank.
+        if (b instanceof BlockOxidizerFuelTank) return FuelType.LIQUID_OXIDIZER;
+        if (b instanceof BlockBipropellantFuelTank) return FuelType.LIQUID_BIPROPELLANT;
+        if (b instanceof BlockNuclearFuelTank) return FuelType.NUCLEAR_WORKING_FLUID;
+        if (b instanceof BlockFuelTank) return FuelType.LIQUID_MONOPROPELLANT;
+        return null;
+    }
+
+    /** Worn fuel tanks (stage &gt; 0) with their fuel type and wear fraction. */
+    public List<WornTank> getWornTanks() {
+        List<WornTank> res = new ArrayList<>();
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getMaxStage() <= 0 || wear.getStage() <= 0) {
+                continue;
+            }
+            FuelType ft = tankFuelType(te.getBlockType());
+            if (ft != null) {
+                res.add(new WornTank(ft, (float) wear.getStage() / wear.getMaxStage()));
+            }
+        }
+        return res;
+    }
+
+    /** True if any seat is worn at/above the given fraction of its max stage. */
+    public boolean hasCriticallyWornSeat(double stageFraction) {
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getMaxStage() <= 0) {
+                continue;
+            }
+            if (te.getBlockType() instanceof BlockSeat
+                    && wear.getStage() >= Math.ceil(wear.getMaxStage() * stageFraction)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public List<TileBrokenPart> getBrokenBlocks() {
