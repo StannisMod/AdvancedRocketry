@@ -364,16 +364,23 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     }
 
 
+    /**
+     * Deprecated by Free Flight Mode (feature/true_rcs). The R-keybind path
+     * still arrives here for save-compat, but instead of toggling RCS we
+     * surface a redirect message pointing the pilot at FF mode (M-key).
+     *
+     * <p>The {@link #RCS_MODE} datawatcher field and {@link #setRCS} mutator
+     * remain functional — solar-map deep-space navigation ({@code getInSpaceFlight()})
+     * still flips RCS internally to drive its own steering branch. That path
+     * is untouched until {@code solar-map flight} migrates to FF (see
+     * design followup task).
+     */
     public void toggleRCS() {
-        if (DimensionManager.getInstance().getDimensionProperties(this.world.provider.getDimension()).isAsteroid()) {
-            rcs_mode = !rcs_mode;
-            setRCS(rcs_mode);
-            setPosition(this.posX, this.posY, this.posZ);
-        } else {
-            rcs_mode = false;
-            setRCS(false);
+        // Server-side: report deprecation to the pilot. No mutation of
+        // RCS_MODE — legacy state remains, solar-map flight unaffected.
+        if (!world.isRemote) {
+            setError("msg.entity.rocket.rcsDeprecated");
         }
-
     }
 
     public boolean getRCS() {
