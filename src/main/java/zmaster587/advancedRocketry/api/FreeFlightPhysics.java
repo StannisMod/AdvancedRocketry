@@ -105,13 +105,19 @@ public final class FreeFlightPhysics {
             vrtMag = 0.0;
         }
 
-        double yawRad = Math.toRadians(newYaw);
-        // Forward vector in world space: -sin(yaw), cos(yaw) matches existing space-flight code.
-        double fx = -Math.sin(yawRad);
-        double fz =  Math.cos(yawRad);
+        double yawRad   = Math.toRadians(newYaw);
+        double pitchRad = Math.toRadians(newPitch);
+        // Forward vector projected through pitch — MC convention: pitch<0 = nose up.
+        // Cap cos(pitch) at a small minimum so thrust doesn't fully vanish at
+        // gimbal lock (PITCH_MAX = ±85°, so cos ≈ 0.087 — still gives the pilot
+        // some horizontal control to recover).
+        double cosPitch = Math.cos(pitchRad);
+        double fx = -Math.sin(yawRad) * cosPitch;
+        double fy = -Math.sin(pitchRad);
+        double fz =  Math.cos(yawRad) * cosPitch;
 
         double newMx = mx + fwdMag * fx;
-        double newMy = my + vrtMag;
+        double newMy = my + fwdMag * fy + vrtMag;
         double newMz = mz + fwdMag * fz;
 
         // Gravity always drains vertical motion in FF (no orbital handwave).

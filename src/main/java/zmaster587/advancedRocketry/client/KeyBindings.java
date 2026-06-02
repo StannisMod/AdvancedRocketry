@@ -35,6 +35,8 @@ public class KeyBindings {
     static KeyBinding turnRocketUp = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.turnRocketUp"), Keyboard.KEY_Z, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding turnRocketDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.turnRocketDown"), Keyboard.KEY_X, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding toggleFlightMode = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.toggleFlightMode"), Keyboard.KEY_M, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding pitchRocketUp   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.pitchRocketUp"),   Keyboard.KEY_Q, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    static KeyBinding pitchRocketDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.pitchRocketDown"), Keyboard.KEY_E, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
@@ -49,6 +51,8 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(turnRocketUp);
         ClientRegistry.registerKeyBinding(turnRocketDown);
         ClientRegistry.registerKeyBinding(toggleFlightMode);
+        ClientRegistry.registerKeyBinding(pitchRocketUp);
+        ClientRegistry.registerKeyBinding(pitchRocketDown);
     }
     //Getters for keybindings
     public static KeyBinding getOpenRocketUI() {
@@ -109,7 +113,10 @@ public class KeyBindings {
                                + (turnRocketDown.isKeyDown() ? -1f : 0f);
                     float yaw  = (turnRocketRight.isKeyDown() ?  1f : 0f)
                                + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
-                    float pitch = 0f; // reserved for future mouse-pitch wire-up
+                    // Q = nose up (pitch -1 → newPitch decreases, MC convention pitch<0 looks up).
+                    // E = nose down.
+                    float pitch = (pitchRocketUp.isKeyDown()   ? -1f : 0f)
+                                + (pitchRocketDown.isKeyDown() ?  1f : 0f);
                     float brake = Minecraft.getMinecraft().gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
                     FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake);
                     if (!input.equals(lastSentInput)) {

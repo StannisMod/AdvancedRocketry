@@ -204,6 +204,55 @@ public class FreeFlightPhysicsTest {
     }
 
     @Test
+    public void forwardThrustAtNegativePitchProducesUpwardMotion() {
+        // pitch=-45 (nose up in MC convention) → forward vector picks up a +Y
+        // component: fy = -sin(-45°) = +√2/2. Forward thrust must therefore
+        // contribute positively to motionY even with zero vertical-throttle.
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, -45f,
+                new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        assertTrue("pitch=-45 + forward thrust must lift the rocket, got motionY=" + s.motionY,
+                s.motionY > 0);
+        assertTrue("pitch=-45 must also still push +Z (horizontal component), got motionZ=" + s.motionZ,
+                s.motionZ > 0);
+    }
+
+    @Test
+    public void forwardThrustAtPositivePitchProducesDownwardMotion() {
+        // pitch=+45 (nose down) → fy = -sin(+45°) = -√2/2 → motionY drops
+        // from forward thrust alone (no gravity in this test).
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 45f,
+                new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        assertTrue("pitch=+45 + forward thrust must lower motionY (no gravity), got motionY=" + s.motionY,
+                s.motionY < 0);
+    }
+
+    @Test
+    public void forwardThrustAtZeroPitchPreservesPureHorizontal() {
+        // Regression guard: pitch=0 means fy=0 means forward thrust ONLY
+        // affects horizontal axes. (Confirms the pitch-projection refactor
+        // didn't leak a constant offset.)
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        assertEquals("pitch=0 forward thrust must add zero Y", 0.0, s.motionY, DELTA);
+        assertTrue("pitch=0 forward thrust must add +Z", s.motionZ > 0);
+    }
+
+    @Test
+    public void verticalThrustIndependentOfPitch() {
+        // Vertical-throttle channel must remain orthogonal: vert=+1 always
+        // adds to motionY regardless of pitch (otherwise hover at pitch=±90°
+        // becomes impossible).
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 60f,
+                new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
+                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        assertTrue("vertical thrust must lift motionY independently of pitch=60°, got "
+                + s.motionY, s.motionY > 0);
+    }
+
+    @Test
     public void minimalMassDoesNotBlowUp() {
         // mass=0 mustn't NaN/Infinity the motion; physics floors mass internally.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
