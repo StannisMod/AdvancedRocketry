@@ -163,6 +163,9 @@ public class TestProbeCommand extends CommandBase {
                 case "weight":
                     handleWeight(sender, tail(args));
                     break;
+                case "wear":
+                    handleWear(server, sender, tail(args));
+                    break;
                 case "enchant":
                     handleEnchant(server, sender, tail(args));
                     break;
@@ -9266,6 +9269,43 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"unknown weight subcommand\",\"sub\":\"" + verb + "\"}");
                 return;
         }
+        info.put("ok", true);
+        send(sender, jsonMap(info));
+    }
+
+    /**
+     * {@code /artest wear ...} — probes the part-wear capability on world blocks
+     * (motors / fuel tanks / seats hosting a TileWearable):
+     *   get <dim> <x> <y> <z>           — registered + current/max wear stage
+     *   set <dim> <x> <y> <z> <stage>   — force the wear stage at a position
+     */
+    private void handleWear(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: wear get|set <dim> <x> <y> <z> [stage]\"}");
+            return;
+        }
+        int dim = Integer.parseInt(args[1]);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+        zmaster587.advancedRocketry.api.capability.IPartWear wear =
+                zmaster587.advancedRocketry.api.capability.CapabilityWear.get(world.getTileEntity(pos));
+
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("pos", new int[]{pos.getX(), pos.getY(), pos.getZ()});
+        info.put("registered", wear != null);
+        if (wear == null) {
+            send(sender, jsonMap(info));
+            return;
+        }
+        if ("set".equalsIgnoreCase(args[0])) {
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: wear set <dim> <x> <y> <z> <stage>\"}");
+                return;
+            }
+            wear.setStage(Integer.parseInt(args[5]));
+        }
+        info.put("stage", wear.getStage());
+        info.put("maxStage", wear.getMaxStage());
         info.put("ok", true);
         send(sender, jsonMap(info));
     }
