@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-06-02T08:46:26.977051Z",
+  "last_updated": "2026-06-02T10:26:34.379623Z",
   "stats": {
     "total_nodes": 120,
     "total_edges": 418,
@@ -620,10 +620,10 @@
         "title": "Per-dimension time + working beds on planets (issue #66)",
         "status": "unknown",
         "concepts": [
-          "tom",
-          "testing",
           "api",
-          "deployment"
+          "tom",
+          "deployment",
+          "testing"
         ]
       },
       "TASK-48": {
