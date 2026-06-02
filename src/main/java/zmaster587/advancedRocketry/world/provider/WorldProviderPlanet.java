@@ -116,7 +116,12 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
     @Override
     public void updateWeather() {
         DimensionProperties props = getDimensionProperties();
-        if (!props.usesCustomWorldInfo()) {
+        // Gate the custom weather cycle on the config flag too: with custom planet
+        // weather disabled we fall straight back to vanilla, even for planets whose
+        // XML carries non-default rain/thunder markers. Without this, the custom
+        // cycle keeps running against an UN-wrapped (shared overworld) WorldInfo and
+        // silently overwrites the overworld's weather — see PlanetWeatherManager.
+        if (!ARConfiguration.getCurrentConfig().enableCustomPlanetWeather || !props.usesCustomWorldInfo()) {
             super.updateWeather();
             return;
         }

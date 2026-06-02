@@ -794,6 +794,12 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public void damageParts() {
+        // Single gate for wear ACCRUAL. When the parts-wear system is disabled no
+        // part ever advances a wear stage, so a worn save loaded with the system
+        // off neither grows nor (combined with the gated consequences) bites.
+        if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
+            return;
+        }
         for (TileEntity tile : tileEntities) {
             IPartWear wear = CapabilityWear.get(tile);
             if (wear != null) {

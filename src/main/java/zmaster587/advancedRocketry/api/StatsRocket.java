@@ -217,8 +217,15 @@ public class StatsRocket {
         return getThrust() / weight;
     }
 
-    /** True if the rocket clears the configured minimum thrust-to-weight ratio to launch. */
+    /** True if the rocket clears the configured minimum thrust-to-weight ratio to launch.
+     *  When the advanced weight system is disabled the weight-based launch gate is off
+     *  entirely (classic behaviour — no TWR check), so this returns true regardless of
+     *  thrust or weight. This is the single source of truth for weight-based launch
+     *  gating; callers must not re-derive the TWR check independently. */
     public boolean canLaunch() {
+        if (!ARConfiguration.getCurrentConfig().advancedWeightSystem) {
+            return true;
+        }
         return getThrustToWeightRatio() >= ARConfiguration.getCurrentConfig().minLaunchTWR;
     }
 

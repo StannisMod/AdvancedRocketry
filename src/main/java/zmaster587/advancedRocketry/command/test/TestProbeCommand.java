@@ -473,6 +473,54 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"mode\":\"" + mode + "\",\"ticks\":" + ticks + "}");
             return;
         }
+        // weather set-marker <dim> <rainMarker> <thunderMarker> — set the planet's
+        // XML-style weather markers at runtime and refresh usesCustomWorldInfo().
+        // A non-default marker (e.g. rain=-1 = forced-clear) makes the custom
+        // weather cycle eligible to run, which is what we toggle the config against.
+        if (args.length >= 4 && "set-marker".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int rainMarker = parseIntOr(args[2], 0);
+            int thunderMarker = parseIntOr(args[3], 0);
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"no dimension properties\",\"dim\":" + dim + "}");
+                return;
+            }
+            props.setRainMarker(rainMarker);
+            props.setThunderMarker(thunderMarker);
+            props.updateCustomWorldInfo();
+            send(sender, "{\"ok\":true,\"dim\":" + dim
+                    + ",\"rainMarker\":" + props.getRainMarker()
+                    + ",\"thunderMarker\":" + props.getThunderMarker()
+                    + ",\"usesCustomWorldInfo\":" + props.usesCustomWorldInfo() + "}");
+            return;
+        }
+        // weather tick-provider <dim> [n] — call WorldProvider.updateWeather()
+        // directly n times (default 1), bypassing the natural per-tick schedule.
+        // This is the production weather-cycle entry point; driving it lets a test
+        // observe whether the custom planet cycle runs (config on) or delegates to
+        // vanilla (config off) without waiting on real ticks.
+        if (args.length >= 2 && "tick-provider".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int n = args.length >= 3 ? parseIntOr(args[2], 1) : 1;
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            for (int i = 0; i < n; i++) {
+                world.provider.updateWeather();
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"ticks\":" + n
+                    + ",\"providerClass\":\"" + world.provider.getClass().getName() + "\"}");
+            return;
+        }
         send(sender, "{\"error\":\"unknown weather subcommand\"}");
     }
 
@@ -4485,7 +4533,14 @@ public class TestProbeCommand extends CommandBase {
                     "allowTerraformNonAR",
                     "terraformRequiresFluid",
                     "oxygenVentSize",
-                    "atmosphereHandleBitMask"));
+                    "atmosphereHandleBitMask",
+                    // Disableability-contract tests (TASK-46): toggle each opt-in
+                    // mechanic and its tuning knobs from the test JVM.
+                    "advancedWeightSystem",
+                    "minLaunchTWR",
+                    "partsWearSystem",
+                    "increaseWearIntensityProb",
+                    "enableCustomPlanetWeather"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -9301,6 +9356,33 @@ public class TestProbeCommand extends CommandBase {
             info.put("found", true);
             info.put("wornTankCount", rocket.storage.getWornTanks().size());
             info.put("hasCriticallyWornSeat", rocket.storage.hasCriticallyWornSeat(frac));
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear damage-parts <entityId> [iterations] — drive StorageChunk.damageParts()
+        // directly (the same accrual entry point production calls on landing) N times,
+        // then report the resulting breaking probability. Lets a test observe whether
+        // wear ACCRUES (partsWearSystem on) or stays put (system off) deterministically,
+        // without depending on a free-flight landing tick.
+        if ("damage-parts".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            int iterations = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null || rocket.storage == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            double before = rocket.storage.getBreakingProbability();
+            for (int i = 0; i < iterations; i++) {
+                rocket.storage.damageParts();
+            }
+            info.put("found", true);
+            info.put("iterations", iterations);
+            info.put("breakingProbBefore", before);
             info.put("breakingProb", rocket.storage.getBreakingProbability());
             info.put("ok", true);
             send(sender, jsonMap(info));
