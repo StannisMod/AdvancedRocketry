@@ -22,7 +22,7 @@ import static org.junit.Assert.fail;
  * AR planets. After the B1 Mixin weather wrapper landed, per-dimension weather
  * is the only supported behaviour: rain on the overworld must NOT propagate to
  * AR planets, and each AR planet's {@code WorldInfo} must be the
- * {@code ARWeatherWorldInfo} wrapper.
+ * {@code ARDimensionWorldInfo} wrapper.
  */
 public class WeatherBaselineTest {
 
@@ -109,7 +109,7 @@ public class WeatherBaselineTest {
         // AR planet WorldInfo MUST be the B1 wrapper. If it isn't, the
         // isolation assertion above passed for the wrong reason (e.g. server
         // tick simply didn't propagate weather yet), and we'd ship a regression.
-        assertTrue("planet A is NOT wrapped: " + wA, wA.contains("ARWeatherWorldInfo"));
-        assertTrue("planet B is NOT wrapped: " + wB, wB.contains("ARWeatherWorldInfo"));
+        assertTrue("planet A is NOT wrapped: " + wA, wA.contains("ARDimensionWorldInfo"));
+        assertTrue("planet B is NOT wrapped: " + wB, wB.contains("ARDimensionWorldInfo"));
     }
 }

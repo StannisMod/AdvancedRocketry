@@ -12378,7 +12378,7 @@ public class TestProbeCommand extends CommandBase {
     //      advance under normal server ticks); a regression in the @Mod init
     //      wiring would silently leave AR running without an event handler.
     //   2. The dim-side wrap-up effects we DO have a probe surface for
-    //      (ARWeatherWorldInfo install, atmosphere registration, sky-color
+    //      (ARDimensionWorldInfo install, atmosphere registration, sky-color
     //      override) are pinned on a freshly loaded AR dim.
     //   3. The transition queue size is observable — a counter-test for the
     //      "no leaked transitions when the harness has no players" invariant.
@@ -12443,7 +12443,7 @@ public class TestProbeCommand extends CommandBase {
         if ("dim-side-effects".equals(sub) && args.length >= 2) {
             // For the given AR dim, dump the player-facing side effects
             // that *would* fire when a player joins:
-            //   - WorldInfo class (ARWeatherWorldInfo wrapper present? — B1)
+            //   - WorldInfo class (ARDimensionWorldInfo wrapper present? — B1)
             //   - AtmosphereHandler registered? (dictates oxygen/vacuum on join)
             //   - DimensionProperties.skyColor (rendered by client on join)
             //   - DimensionProperties.gravity (applied by gravity handler)

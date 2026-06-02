@@ -5,7 +5,7 @@ import net.minecraft.world.storage.WorldInfo;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
-import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
+import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
 import zmaster587.advancedRocketry.world.weather.PlanetWeatherState;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,7 +17,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §6.10 (4-7) — {@link ARWeatherWorldInfo} delegation contract.
+ * SMART §6.10 (4-7) — {@link ARDimensionWorldInfo} delegation contract.
  *
  * <ul>
  *   <li>(4) non-weather getters route to the delegate;</li>
@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
  * Lives in the integration layer because constructing a vanilla {@link WorldInfo}
  * touches {@code GameRules} which requires {@code Bootstrap.register()}.
  */
-public class ARWeatherWorldInfoTest {
+public class ARDimensionWorldInfoTest {
 
     @BeforeClass
     public static void bootstrap() {
@@ -49,15 +49,15 @@ public class ARWeatherWorldInfoTest {
         return new WorldInfo(nbt);
     }
 
-    private static ARWeatherWorldInfo wrap(WorldInfo delegate, PlanetWeatherState state, Runnable dirty) {
-        return new ARWeatherWorldInfo(delegate, state, dirty, /* weatherManaged */ true);
+    private static ARDimensionWorldInfo wrap(WorldInfo delegate, PlanetWeatherState state, Runnable dirty) {
+        return new ARDimensionWorldInfo(delegate, state, dirty, /* weatherManaged */ true);
     }
 
     @Test
     public void arWeatherWorldInfoDelegatesNonWeatherFields() {
         WorldInfo delegate = seededDelegate();
         PlanetWeatherState state = new PlanetWeatherState();
-        ARWeatherWorldInfo wrapper = wrap(delegate, state, () -> {});
+        ARDimensionWorldInfo wrapper = wrap(delegate, state, () -> {});
 
         assertEquals("seed must come from delegate", 4242L, wrapper.getSeed());
         assertEquals("worldName must come from delegate", "DelegateLevel", wrapper.getWorldName());
@@ -73,7 +73,7 @@ public class ARWeatherWorldInfoTest {
     public void arWeatherWorldInfoOverridesOnlyWeatherFields() {
         WorldInfo delegate = seededDelegate();
         PlanetWeatherState state = new PlanetWeatherState();
-        ARWeatherWorldInfo wrapper = wrap(delegate, state, () -> {});
+        ARDimensionWorldInfo wrapper = wrap(delegate, state, () -> {});
 
         // Pre-seed delegate weather to a DIFFERENT value than the wrapper —
         // proves the wrapper reads state, not delegate.
@@ -120,7 +120,7 @@ public class ARWeatherWorldInfoTest {
     public void arWeatherWorldInfoServesPerDimTimeIndependentOfDelegate() {
         WorldInfo delegate = seededDelegate(); // DayTime=17000, Time=17000
         PlanetWeatherState state = new PlanetWeatherState();
-        ARWeatherWorldInfo wrapper = wrap(delegate, state, () -> {});
+        ARDimensionWorldInfo wrapper = wrap(delegate, state, () -> {});
 
         // (TASK-47) Per-dim time is seeded from the delegate on construction so
         // existing saves don't jump...
@@ -146,7 +146,7 @@ public class ARWeatherWorldInfoTest {
     public void perDimTimeSettersMarkDirty() {
         WorldInfo delegate = seededDelegate();
         AtomicInteger dirtyHits = new AtomicInteger();
-        ARWeatherWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), dirtyHits::incrementAndGet);
+        ARDimensionWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), dirtyHits::incrementAndGet);
 
         wrapper.setWorldTime(1L);
         wrapper.setWorldTotalTime(1L);
@@ -161,8 +161,8 @@ public class ARWeatherWorldInfoTest {
         // vanilla shared-weather behaviour.
         WorldInfo delegate = seededDelegate();
         PlanetWeatherState state = new PlanetWeatherState();
-        ARWeatherWorldInfo wrapper =
-                new ARWeatherWorldInfo(delegate, state, () -> {}, /* weatherManaged */ false);
+        ARDimensionWorldInfo wrapper =
+                new ARDimensionWorldInfo(delegate, state, () -> {}, /* weatherManaged */ false);
 
         delegate.setRaining(true);
         delegate.setRainTime(555);
@@ -186,7 +186,7 @@ public class ARWeatherWorldInfoTest {
         WorldInfo delegate = seededDelegate();
         PlanetWeatherState state = new PlanetWeatherState();
         AtomicInteger dirtyHits = new AtomicInteger();
-        ARWeatherWorldInfo wrapper = wrap(delegate, state, dirtyHits::incrementAndGet);
+        ARDimensionWorldInfo wrapper = wrap(delegate, state, dirtyHits::incrementAndGet);
 
         wrapper.setRaining(true);
         wrapper.setRainTime(1);
@@ -204,7 +204,7 @@ public class ARWeatherWorldInfoTest {
         // anything happened from the weather subsystem's POV.
         WorldInfo delegate = seededDelegate();
         AtomicInteger dirtyHits = new AtomicInteger();
-        ARWeatherWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), dirtyHits::incrementAndGet);
+        ARDimensionWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), dirtyHits::incrementAndGet);
 
         wrapper.setWorldName("ignored");
         wrapper.setSaveVersion(7);
@@ -216,7 +216,7 @@ public class ARWeatherWorldInfoTest {
     @Test
     public void getDelegateExposesUnderlyingForUnwrap() {
         WorldInfo delegate = seededDelegate();
-        ARWeatherWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), () -> {});
+        ARDimensionWorldInfo wrapper = wrap(delegate, new PlanetWeatherState(), () -> {});
         assertSame(delegate, wrapper.getDelegate());
     }
 }

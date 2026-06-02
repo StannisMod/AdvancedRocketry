@@ -1,21 +1,21 @@
 package zmaster587.advancedRocketry.test.unit;
 
 import org.junit.Test;
-import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
+import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
  * TASK-47 / issue #66 — pure-math unit pins for
- * {@link ARWeatherWorldInfo#computeSleepWakeTime(long, int)}: the sleep wake-up
+ * {@link ARDimensionWorldInfo#computeSleepWakeTime(long, int)}: the sleep wake-up
  * must land on the planet's dawn (a multiple of {@code rotationalPeriod}),
  * strictly forward, by at most one planetary day.
  */
 public class SleepWakeTimeTest {
 
     private static void assertDawnInvariants(long current, int rp) {
-        long wake = ARWeatherWorldInfo.computeSleepWakeTime(current, rp);
+        long wake = ARDimensionWorldInfo.computeSleepWakeTime(current, rp);
         assertEquals("wake must land on a multiple of rotationalPeriod (dawn) for rp=" + rp
                 + ", current=" + current, 0L, Math.floorMod(wake, (long) rp));
         assertTrue("wake must move strictly forward (current=" + current + ", wake=" + wake + ")",
@@ -30,7 +30,7 @@ public class SleepWakeTimeTest {
         for (long t : new long[]{0L, 1L, 12345L, 23999L, 24000L, 50000L}) {
             long vanilla = (t + 24000L) - (t + 24000L) % 24000L;
             assertEquals("rp=24000 must equal vanilla rounding at t=" + t,
-                    vanilla, ARWeatherWorldInfo.computeSleepWakeTime(t, 24000));
+                    vanilla, ARDimensionWorldInfo.computeSleepWakeTime(t, 24000));
         }
     }
 
@@ -47,14 +47,14 @@ public class SleepWakeTimeTest {
     public void alreadyAtDawnSkipsToNextDay() {
         // current exactly on a dawn boundary → advance a full day, not stay put.
         int rp = 13888;
-        long wake = ARWeatherWorldInfo.computeSleepWakeTime(2L * rp, rp);
+        long wake = ARDimensionWorldInfo.computeSleepWakeTime(2L * rp, rp);
         assertEquals(3L * rp, wake);
     }
 
     @Test
     public void nonPositivePeriodFallsBackTo24000() {
         // Defensive: a bad rotationalPeriod must not divide-by-zero or loop.
-        assertEquals(24000L, ARWeatherWorldInfo.computeSleepWakeTime(0L, 0));
-        assertEquals(24000L, ARWeatherWorldInfo.computeSleepWakeTime(0L, -5));
+        assertEquals(24000L, ARDimensionWorldInfo.computeSleepWakeTime(0L, 0));
+        assertEquals(24000L, ARDimensionWorldInfo.computeSleepWakeTime(0L, -5));
     }
 }

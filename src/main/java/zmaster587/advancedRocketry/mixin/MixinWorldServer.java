@@ -5,7 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import zmaster587.advancedRocketry.api.IPlanetaryProvider;
-import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
+import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
 
 /**
  * Makes beds bring the planet's morning. Vanilla's sleep skip in
@@ -19,11 +19,11 @@ import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
  * (ordinal 0 = the sleep-skip block; ordinal 1 is the per-tick +1 increment)
  * and, for {@link IPlanetaryProvider} dimensions, round to the dimension's
  * {@code rotationalPeriod} instead. The rounding math lives in
- * {@link ARWeatherWorldInfo#computeSleepWakeTime(long, int)} so it is unit
+ * {@link ARDimensionWorldInfo#computeSleepWakeTime(long, int)} so it is unit
  * tested. Non-AR worlds keep vanilla behaviour untouched.</p>
  *
  * <p>The per-dimension clock this writes into is owned by the
- * {@link ARWeatherWorldInfo} wrapper (per-dim time, not the swallowed
+ * {@link ARDimensionWorldInfo} wrapper (per-dim time, not the swallowed
  * {@code DerivedWorldInfo} no-op), so the skip actually takes effect.</p>
  */
 @Mixin(WorldServer.class)
@@ -36,7 +36,7 @@ public abstract class MixinWorldServer {
     private void ar$roundSleepWakeToRotationalPeriod(WorldServer self, long vanillaRounded) {
         if (self.provider instanceof IPlanetaryProvider) {
             int rotationalPeriod = ((IPlanetaryProvider) self.provider).getRotationalPeriod(null);
-            self.setWorldTime(ARWeatherWorldInfo.computeSleepWakeTime(self.getWorldTime(), rotationalPeriod));
+            self.setWorldTime(ARDimensionWorldInfo.computeSleepWakeTime(self.getWorldTime(), rotationalPeriod));
         } else {
             self.setWorldTime(vanillaRounded);
         }

@@ -23,7 +23,7 @@ import java.util.Set;
  *   <li>holds the singleton {@link PlanetWeatherSavedData} (lazy-loaded from
  *       the overworld's {@link MapStorage}),</li>
  *   <li>decides which dimensions are eligible for the wrapper,</li>
- *   <li>installs / removes {@link ARWeatherWorldInfo} on a {@link WorldServer}
+ *   <li>installs / removes {@link ARDimensionWorldInfo} on a {@link WorldServer}
  *       via direct assignment to {@link World#worldInfo} (widened to public by
  *       AR's access transformer — see {@code META-INF/accessTransformer.cfg}),</li>
  *   <li>syncs weather to clients via vanilla {@link SPacketChangeGameState}
@@ -130,7 +130,7 @@ public final class PlanetWeatherManager {
         int dim = world.provider.getDimension();
         if (dim == 0) return false; // overworld: never touch
         if (dim == cfg.spaceDimId) return false; // space: not a planet
-        if (world.getWorldInfo() instanceof ARWeatherWorldInfo) return false; // already wrapped
+        if (world.getWorldInfo() instanceof ARDimensionWorldInfo) return false; // already wrapped
 
         if (cfg.forcePlanetWeatherWorldInfoWrapper) return true;
 
@@ -161,7 +161,7 @@ public final class PlanetWeatherManager {
     }
 
     /**
-     * Idempotent + safe. Installs (or refreshes) {@link ARWeatherWorldInfo} on
+     * Idempotent + safe. Installs (or refreshes) {@link ARDimensionWorldInfo} on
      * the given world.
      *
      * <p>"Refresh" — if the world somehow gets a fresh {@link WorldInfo} after
@@ -182,7 +182,7 @@ public final class PlanetWeatherManager {
 
         PlanetWeatherState state = saved.getOrCreate(dim);
         WorldInfo current = world.getWorldInfo();
-        ARWeatherWorldInfo wrapped = new ARWeatherWorldInfo(current, state,
+        ARDimensionWorldInfo wrapped = new ARDimensionWorldInfo(current, state,
                 () -> markDirty(world), isWeatherManaged(world));
 
         world.worldInfo = wrapped;
@@ -197,8 +197,8 @@ public final class PlanetWeatherManager {
     /** Reverse of {@link #wrapWorldInfoIfNeeded}. Used by tests / debug. */
     public static void unwrap(WorldServer world) {
         WorldInfo current = world.getWorldInfo();
-        if (current instanceof ARWeatherWorldInfo) {
-            ARWeatherWorldInfo wrapped = (ARWeatherWorldInfo) current;
+        if (current instanceof ARDimensionWorldInfo) {
+            ARDimensionWorldInfo wrapped = (ARDimensionWorldInfo) current;
             world.worldInfo = wrapped.getDelegate();
         }
     }

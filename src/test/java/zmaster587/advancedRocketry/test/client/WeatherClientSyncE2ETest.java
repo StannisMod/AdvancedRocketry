@@ -136,7 +136,7 @@ public class WeatherClientSyncE2ETest {
 
         // Seed deterministic, opposite weather on the two planets. /artest
         // weather set goes through world.getWorldInfo().setRaining(...), which
-        // on AR planets is our ARWeatherWorldInfo wrapper.
+        // on AR planets is our ARDimensionWorldInfo wrapper.
         String setA = String.join("\n", serverHarness.client().execute(
                 "artest weather set " + DIM_A + " rain 12000"));
         assertTrue("set rain on dim A failed: " + setA, setA.contains("\"ok\":true"));
@@ -152,10 +152,10 @@ public class WeatherClientSyncE2ETest {
                 serverHarness.client().execute("artest weather get " + DIM_A));
         String getB = String.join("\n",
                 serverHarness.client().execute("artest weather get " + DIM_B));
-        assertTrue("dim A WorldInfo class should be ARWeatherWorldInfo: " + getA,
-                getA.contains("ARWeatherWorldInfo"));
-        assertTrue("dim B WorldInfo class should be ARWeatherWorldInfo: " + getB,
-                getB.contains("ARWeatherWorldInfo"));
+        assertTrue("dim A WorldInfo class should be ARDimensionWorldInfo: " + getA,
+                getA.contains("ARDimensionWorldInfo"));
+        assertTrue("dim B WorldInfo class should be ARDimensionWorldInfo: " + getB,
+                getB.contains("ARDimensionWorldInfo"));
         assertTrue("dim A should be raining after explicit set: " + getA,
                 getA.contains("\"isRaining\":true"));
         assertFalse("dim B should NOT be raining after explicit clear: " + getB,
@@ -200,7 +200,7 @@ public class WeatherClientSyncE2ETest {
         String getBAgain = String.join("\n",
                 serverHarness.client().execute("artest weather get " + DIM_B));
         assertTrue("dim B wrapper must persist across teleports: " + getBAgain,
-                getBAgain.contains("ARWeatherWorldInfo"));
+                getBAgain.contains("ARDimensionWorldInfo"));
         assertFalse("server-side dim B must remain clear: " + getBAgain,
                 getBAgain.contains("\"isRaining\":true"));
     }

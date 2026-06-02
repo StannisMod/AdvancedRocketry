@@ -32,7 +32,7 @@ import javax.annotation.Nullable;
  * reference (the wrapper outlives world unload during dim flicker — a hard
  * world reference would leak the entire dimension).</p>
  */
-public final class ARWeatherWorldInfo extends WorldInfo {
+public final class ARDimensionWorldInfo extends WorldInfo {
 
     private final WorldInfo delegate;
     private final PlanetWeatherState weatherState;
@@ -46,7 +46,7 @@ public final class ARWeatherWorldInfo extends WorldInfo {
      */
     private final boolean weatherManaged;
 
-    public ARWeatherWorldInfo(WorldInfo delegate, PlanetWeatherState weatherState,
+    public ARDimensionWorldInfo(WorldInfo delegate, PlanetWeatherState weatherState,
                               Runnable dirtyMarker, boolean weatherManaged) {
         // Call the WorldInfo no-arg ctor — initialises the (never-read)
         // internal scaffolding (GameRules, dimensionData, customBossEvents)

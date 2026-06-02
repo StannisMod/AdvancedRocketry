@@ -4,8 +4,13 @@
 
 - Source: dercodeKoenig/AdvancedRocketry#66 ("Beds do not work on planets
   with modified day-night cycle") — sleeping on an AR planet skips no time.
-- Status: 🟡 **Planned — not started.** Design converged 2026-06-02; code
-  not yet written.
+- Status: ✅ **Shipped 2026-06-02.** Per-dim time + dawn-rounding mixin
+  implemented; `ARWeatherWorldInfo` renamed to `ARDimensionWorldInfo`. unit +
+  integration green; server weather/wiring suites green (mixin applies,
+  decoupling no regression). Live "bot sleeps in a bed → time advances to
+  dawn" e2e is NOT covered (needs a sleeping-player testClient harness) —
+  dawn math is unit-tested and the mixin application is confirmed by server
+  boot under `required:true`.
 - Created: 2026-06-02.
 
 ## Root cause (confirmed against decompiled MC 1.12.2)

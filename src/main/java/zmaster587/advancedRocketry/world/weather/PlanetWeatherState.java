@@ -6,7 +6,7 @@ import net.minecraft.nbt.NBTTagCompound;
  * Per-dimension weather state pulled out of {@link net.minecraft.world.storage.WorldInfo}.
  *
  * <p>Held by {@link PlanetWeatherSavedData} keyed by dimension id; mutated only
- * via {@link ARWeatherWorldInfo} setters. Mutations flip the {@code dirty} flag
+ * via {@link ARDimensionWorldInfo} setters. Mutations flip the {@code dirty} flag
  * — the manager pushes that flip down to the saved-data so vanilla disk save
  * picks it up. Per-listener "lastSynced" snapshots support the explicit
  * client sync (begin/end raining edges) emitted on player join / dim change.</p>
