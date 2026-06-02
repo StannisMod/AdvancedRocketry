@@ -129,7 +129,7 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
 - **Acceptance**: client/e2e or server-readout check that the panel/readout
   reflects part stages.
 
-### Phase 3 — standalone repair mode
+### Phase 3 — standalone repair mode ✅
 - Add input item slots + GUI to `TileRocketServiceStation` (currently
   `MODULARNOINV`).
 - Standalone repair: for each worn part, look up its PrecisionAssembler

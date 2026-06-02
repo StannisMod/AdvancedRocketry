@@ -23,12 +23,18 @@ import zmaster587.advancedRocketry.block.BlockRocketMotor;
 import zmaster587.advancedRocketry.block.BlockSeat;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.api.ARConfiguration;
+import zmaster587.advancedRocketry.api.capability.CapabilityWear;
+import zmaster587.advancedRocketry.api.capability.IPartWear;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.multiblock.machine.TilePrecisionAssembler;
 import zmaster587.advancedRocketry.util.IBrokenPartBlock;
 import zmaster587.advancedRocketry.util.InventoryUtil;
 import zmaster587.advancedRocketry.util.StorageChunk;
 import zmaster587.advancedRocketry.util.nbt.NBTHelper;
+import zmaster587.libVulpes.interfaces.IRecipe;
+import zmaster587.libVulpes.recipe.RecipesMachine;
+import zmaster587.libVulpes.util.EmbeddedInventory;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.block.BlockTile;
 import zmaster587.libVulpes.interfaces.ILinkableTile;
@@ -68,6 +74,10 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
     int initialPartToRepairCount;
     List<TileBrokenPart> partsToRepair = new LinkedList<>();
     List<IBlockState> statesToRepair = new LinkedList<>();
+
+    // Input slots for the standalone (assembler-less) repair path.
+    private static final int REPAIR_SLOTS = 6;
+    private final EmbeddedInventory repairInventory = new EmbeddedInventory(REPAIR_SLOTS);
 
     public TileRocketServiceStation() {
         super(10000);
@@ -228,8 +238,13 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
     private void giveWorkToAssemblers() {
         boolean dirty = false;
         for (int i = 0; i < assemblers.size(); i++) {
-            if (assemblers.get(i).isInvalid()) {
-                // it is invalid, so we should not operate with it
+            if (assemblers.get(i) == null || assemblers.get(i).isInvalid()) {
+                // Assembler vanished mid-repair: re-queue the in-flight part so it
+                // is not silently lost, then drop the dead assembler slot.
+                if (partsProcessing[i] != null) {
+                    partsToRepair.add(0, partsProcessing[i]);
+                    statesToRepair.add(0, statesProcessing[i]);
+                }
                 assemblers.set(i, null);
                 partsProcessing[i] = null;
                 statesProcessing[i] = null;
@@ -281,12 +296,122 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
                     }
                 }
 
-                giveWorkToAssemblers();
+                if (hasValidAssembler()) {
+                    giveWorkToAssemblers();
+                } else {
+                    // No assembler nearby → repair one part from the station's own
+                    // input slots at the configured resource penalty.
+                    tryStandaloneRepair();
+                }
             }
         }
         if (!getEquivalentPower()) {
             was_powered = false;
         }
+    }
+
+    private boolean hasValidAssembler() {
+        for (TilePrecisionAssembler a : assemblers) {
+            if (a != null && !a.isInvalid()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Repair one worn part using the station's own input inventory, consuming the
+     * part's PrecisionAssembler repair-recipe non-part ingredients times
+     * {@code serviceStationStandaloneRepairMultiplier}. No-op (leaves the part
+     * worn) if there is no repair recipe or the materials are missing.
+     */
+    private boolean tryStandaloneRepair() {
+        if (partsToRepair.isEmpty()) {
+            return false;
+        }
+        TileBrokenPart part = partsToRepair.get(0);
+        IBlockState state = statesToRepair.get(0);
+        if (!(part.getBlockType() instanceof IBrokenPartBlock)) {
+            partsToRepair.remove(0);
+            statesToRepair.remove(0);
+            return false;
+        }
+        ItemStack worn = ((IBrokenPartBlock) part.getBlockType()).getDropItem(state, world, part);
+        IRecipe recipe = findRepairRecipe(worn);
+        if (recipe == null) {
+            // Not standalone-repairable (no recipe) — skip so the queue advances.
+            partsToRepair.remove(0);
+            statesToRepair.remove(0);
+            return false;
+        }
+
+        double mult = ARConfiguration.getCurrentConfig().serviceStationStandaloneRepairMultiplier;
+        if (!consumeStandaloneMaterials(recipe, worn, mult, true)) {
+            return false; // not enough materials yet; keep the part queued
+        }
+        consumeStandaloneMaterials(recipe, worn, mult, false);
+
+        part.setStage(0);
+        StorageChunk storage = ((EntityRocket) linkedRocket).storage;
+        storage.setBlockState(part.getPos(), state);
+        partsToRepair.remove(0);
+        statesToRepair.remove(0);
+        syncRocket();
+        return true;
+    }
+
+    private IRecipe findRepairRecipe(ItemStack worn) {
+        for (IRecipe recipe : RecipesMachine.getInstance().getRecipes(TilePrecisionAssembler.class)) {
+            for (List<ItemStack> slot : recipe.getIngredients()) {
+                for (ItemStack variant : slot) {
+                    if (ItemStack.areItemsEqual(variant, worn)) {
+                        return recipe;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Either check (simulate=true) or consume (simulate=false) the recipe's
+     * non-part ingredients ×mult from the station inventory. The part slot (the
+     * worn item itself) is skipped — only materials are charged.
+     */
+    private boolean consumeStandaloneMaterials(IRecipe recipe, ItemStack worn, double mult, boolean simulate) {
+        for (List<ItemStack> slot : recipe.getIngredients()) {
+            if (slot.isEmpty()) {
+                continue;
+            }
+            boolean isPartSlot = slot.stream().anyMatch(s -> ItemStack.areItemsEqual(s, worn));
+            if (isPartSlot) {
+                continue;
+            }
+            int needed = (int) Math.ceil(slot.get(0).getCount() * mult);
+            if (needed <= 0) {
+                continue;
+            }
+            int remaining = needed;
+            for (int i = 0; i < repairInventory.getSlots() && remaining > 0; i++) {
+                ItemStack inSlot = repairInventory.getStackInSlot(i);
+                if (inSlot.isEmpty()) {
+                    continue;
+                }
+                boolean matches = slot.stream().anyMatch(v -> ItemStack.areItemsEqual(v, inSlot));
+                if (!matches) {
+                    continue;
+                }
+                int take = Math.min(remaining, inSlot.getCount());
+                if (!simulate) {
+                    repairInventory.extractItem(i, take, false);
+                }
+                remaining -= take;
+            }
+            if (remaining > 0) {
+                return false; // cannot satisfy this material
+            }
+        }
+        return true;
     }
 
     @Override
@@ -370,6 +495,10 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
         super.readFromNBT(nbt);
         was_powered = nbt.getBoolean("was_powered");
         initialPartToRepairCount = nbt.getInteger("initialPartToRepairCount");
+        // Backward compatible: old saves lack these keys → empty inventory.
+        if (nbt.hasKey("repairInv")) {
+            repairInventory.readFromNBT(nbt.getCompoundTag("repairInv"));
+        }
 
         assemblerPoses = NBTHelper.readCollection("assemblerPoses", nbt, ArrayList::new, NBTHelper::readBlockPos);
         partsProcessing = NBTHelper.readCollection("partsProcessing", nbt, ArrayList::new, NBTHelper::readTileEntity).toArray(new TileBrokenPart[0]);
@@ -381,6 +510,10 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
         super.writeToNBT(nbt);
         nbt.setBoolean("was_powered", was_powered);
         nbt.setInteger("initialPartToRepairCount", initialPartToRepairCount);
+
+        NBTTagCompound invTag = new NBTTagCompound();
+        repairInventory.writeToNBT(invTag);
+        nbt.setTag("repairInv", invTag);
 
         NBTHelper.writeCollection("assemblerPoses", nbt, this.assemblers, te -> NBTHelper.writeBlockPos(te.getPos()));
         NBTHelper.writeCollection("partsProcessing", nbt, Arrays.asList(this.partsProcessing), NBTHelper::writeTileEntity);
@@ -421,6 +554,9 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
 
         modules.add(new ModuleProgress(32, 133, 0, TextureResources.progressToMission, this));
 
+        // Input slots for the standalone repair path (materials when no assembler).
+        modules.add(new ModuleSlotArray(8, 90, repairInventory, 0, REPAIR_SLOTS));
+
         if (!world.isRemote) {
             PacketHandler.sendToPlayer(new PacketMachine(this, (byte) 1), player);
         }
@@ -437,20 +573,23 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
             }
             EntityRocket rocket = (EntityRocket) linkedRocket;
             destroyProbText.setText(LibVulpes.proxy.getLocalizedString("msg.serviceStation.destroyProb") + ": " + rocket.storage.getBreakingProbability());
-            List<TileBrokenPart> brokenParts = rocket.storage.getBrokenBlocks();
-            long motorsCount = brokenParts
-                    .stream()
-                    .filter(te -> te.getStage() > 0 && (te.getBlockType() instanceof BlockRocketMotor
-                            || te.getBlockType() instanceof BlockBipropellantRocketMotor))
-                    .count();
-            long seatsCount = brokenParts
-                    .stream()
-                    .filter(te -> te.getStage() > 0 && te.getBlockType() instanceof BlockSeat)
-                    .count();
-            long tanksCount = brokenParts
-                    .stream()
-                    .filter(te -> te.getStage() > 0 && te.getBlockType() instanceof IFuelTank)
-                    .count();
+
+            // Count worn parts via the wear capability so tanks/seats (which are
+            // TileWearable, not TileBrokenPart) are reflected, not just motors.
+            long motorsCount = 0, seatsCount = 0, tanksCount = 0;
+            for (TileEntity te : rocket.storage.getTileEntityList()) {
+                IPartWear wear = CapabilityWear.get(te);
+                if (wear == null || wear.getStage() <= 0) {
+                    continue;
+                }
+                if (te.getBlockType() instanceof BlockRocketMotor || te.getBlockType() instanceof BlockBipropellantRocketMotor) {
+                    motorsCount++;
+                } else if (te.getBlockType() instanceof BlockSeat) {
+                    seatsCount++;
+                } else if (te.getBlockType() instanceof IFuelTank) {
+                    tanksCount++;
+                }
+            }
 
             this.wornMotorsCount.setText(String.valueOf(motorsCount));
             this.wornSeatsCount.setText(String.valueOf(seatsCount));
