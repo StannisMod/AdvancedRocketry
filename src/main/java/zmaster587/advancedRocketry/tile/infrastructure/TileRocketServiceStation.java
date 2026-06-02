@@ -310,6 +310,11 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
         }
     }
 
+    /** The standalone-repair material input inventory (test/automation access). */
+    public net.minecraftforge.items.IItemHandlerModifiable getRepairInventory() {
+        return repairInventory;
+    }
+
     private boolean hasValidAssembler() {
         for (TilePrecisionAssembler a : assemblers) {
             if (a != null && !a.isInvalid()) {
@@ -397,7 +402,8 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
                 if (inSlot.isEmpty()) {
                     continue;
                 }
-                boolean matches = slot.stream().anyMatch(v -> ItemStack.areItemsEqual(v, inSlot));
+                boolean matches = slot.stream().anyMatch(
+                        v -> net.minecraftforge.oredict.OreDictionary.itemMatches(v, inSlot, false));
                 if (!matches) {
                     continue;
                 }

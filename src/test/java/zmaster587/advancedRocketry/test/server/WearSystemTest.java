@@ -124,6 +124,68 @@ public class WearSystemTest extends AbstractSharedServerTest {
     }
 
     @Test
+    public void standaloneRepairResetsMotorWear() throws Exception {
+        int bx = 2900, by = 64, bz = 3080;
+        int[] builder = buildFixture(bx, by, bz);
+        int rocketId = assembleAndGetId(builder);
+        // Wear one motor to stage 5 (no PrecisionAssembler nearby → standalone path).
+        String inject = String.join("\n", client().execute("artest infra inject-broken-part " + rocketId + " 5"));
+        assertTrue("inject-broken-part failed: " + inject, inject.contains("\"ok\":true"));
+        assertTrue("worn motor must give a non-zero breaking probability",
+                breakingProbOf(rocketId) > 0);
+
+        // Service station off to the side, with its own clear pocket + redstone power.
+        int sx = bx - 4, sy = by + 1, sz = bz;
+        client().execute("artest fill 0 " + (sx - 1) + " " + sy + " " + (sz - 1)
+                + " " + (sx + 1) + " " + (sy + 2) + " " + (sz + 1) + " minecraft:air");
+        String place = String.join("\n", client().execute(
+                "artest place 0 " + sx + " " + sy + " " + sz + " advancedrocketry:serviceStation"));
+        assertTrue("service station place failed: " + place, place.contains("\"placed\":true"));
+        // Redstone power — performFunction requires getEquivalentPower=true.
+        client().execute("artest place 0 " + sx + " " + (sy + 1) + " " + sz + " minecraft:redstone_block");
+
+        String link = String.join("\n", client().execute(
+                "artest infra link 0 " + sx + " " + sy + " " + sz + " " + rocketId));
+        assertTrue("link failed: " + link, link.contains("\"ok\":true"));
+
+        // Load the stage-5 repair recipe's non-part materials (ingot + plate),
+        // each well above the x3 standalone multiplier.
+        String load0 = String.join("\n", client().execute(
+                "artest wear station-load 0 " + sx + " " + sy + " " + sz + " 0 ore:ingotTitaniumIridium 16"));
+        assertTrue("station-load ingot failed: " + load0, load0.contains("\"ok\":true"));
+        String load1 = String.join("\n", client().execute(
+                "artest wear station-load 0 " + sx + " " + sy + " " + sz + " 1 ore:plateTitaniumAluminide 16"));
+        assertTrue("station-load plate failed: " + load1, load1.contains("\"ok\":true"));
+
+        // Drive performFunction directly (no assembler → standalone repair branch).
+        client().execute("artest infra service-perform-function 0 " + sx + " " + sy + " " + sz);
+        client().execute("artest infra service-perform-function 0 " + sx + " " + sy + " " + sz);
+
+        assertEquals("standalone repair must reset the worn motor (breaking prob back to 0)",
+                0.0, breakingProbOf(rocketId), 1e-6);
+    }
+
+    @Test
+    public void wornTankAndSeatSurfaceForLaunchGate() throws Exception {
+        int bx = 2960, by = 64, bz = 3080;
+        int[] builder = buildFixture(bx, by, bz);
+        int rocketX = bx + 3, rocketY = by + 1, rocketZ = bz + 3;
+        client().execute("artest wear set 0 " + rocketX + " " + (rocketY + 1) + " " + rocketZ + " 8");  // a fuel tank
+        client().execute("artest wear set 0 " + rocketX + " " + (rocketY + 4) + " " + rocketZ + " 10"); // the seat
+        int rocketId = assembleAndGetId(builder);
+
+        String status = String.join("\n", client().execute("artest wear rocket-status " + rocketId + " 0.7"));
+        assertTrue("rocket-status must find the rocket: " + status, status.contains("\"found\":true"));
+
+        Matcher tanks = Pattern.compile("\"wornTankCount\":(\\d+)").matcher(status);
+        assertTrue("no wornTankCount: " + status, tanks.find());
+        assertTrue("a worn fuel tank must be surfaced for the launch gate: " + status,
+                Integer.parseInt(tanks.group(1)) >= 1);
+        assertTrue("a critically-worn seat must be detected: " + status,
+                status.contains("\"hasCriticallyWornSeat\":true"));
+    }
+
+    @Test
     public void wornMotorsProduceLessThrust() throws Exception {
         // Pristine reference rocket.
         int[] pristineBuilder = {0, 0, 0};

@@ -142,17 +142,29 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
   assembler, assert ingredients consumed and stage reset; assembler path
   still works.
 
-### Phase 4 — config + tests + ledger ✅ (partial)
-- `/artest wear get|set` probe; `rocket info` exposes `breakingProb`.
-- `WearSystemTest`: cap on motors/tanks/seats, stage round-trip, worn
-  motors lose thrust + raise breaking probability. testUnit green.
+### Phase 4 — config + tests + ledger ✅
+- `/artest wear get|set|station-load|rocket-status` probe; `rocket info`
+  exposes `breakingProb`.
+- `WearSystemTest` (6 tests): cap on motors/tanks/seats, stage round-trip,
+  worn motors lose thrust + raise breaking probability, **standalone repair
+  E2E** (link → load ingot+plate → power → performFunction → motor restored
+  to stage 0), and worn tank/seat surfaced for the launch gate.
 - Ledger #9 (dead tank/seat counters) found+fixed.
-- **Deferred (honest)**: no automated E2E for the standalone repair flow
-  (needs probe orchestration to insert recipe materials into the station,
-  link, power, tick). Logic compiles and was reviewed; recipe lookup uses
-  `RecipesMachine.getRecipes(TilePrecisionAssembler.class)`. Tank-leak /
-  seat-block launch consequences also lack an automated test (need a
-  launch with a passenger / stochastic roll) — production logic shipped.
+- Standalone repair recipe lookup goes through
+  `RecipesMachine.getRecipes(TilePrecisionAssembler.class)` (the JSON
+  `*_repair_*` recipes register there via `RecipeMachineFactory`), with
+  ore-dict-tolerant material matching (`OreDictionary.itemMatches`).
+- **Still no automated test** for the *actual* launch explosion / crewed
+  seat-block (needs a launched rocket with a passenger / stochastic roll);
+  the data feeding that gate (`getWornTanks`, `hasCriticallyWornSeat`) is
+  pinned by `wornTankAndSeatSurfaceForLaunchGate`.
+
+### Known follow-up (not in scope)
+The service-station block is registered with GUI id `MODULARNOINV`, so the
+new repair-material input slots are not reachable from the player GUI yet —
+standalone repair works (probe-loaded in tests) but a player can't load
+materials until the GUI id is switched to `MODULAR` and the slot layout is
+visually checked. Tracked here for a follow-up.
 - Finalise config keys (sync flags), `/artest wear` probe verbs
   (get/set stage, breaking-prob, trigger repair), unit + server coverage,
   ledger entries.

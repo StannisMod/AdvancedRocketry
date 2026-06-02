@@ -9281,6 +9281,77 @@ public class TestProbeCommand extends CommandBase {
      *   set <dim> <x> <y> <z> <stage>   — force the wear stage at a position
      */
     private void handleWear(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"usage: wear get|set|station-load|rocket-status ...\"}");
+            return;
+        }
+        String verb = args[0].toLowerCase();
+
+        // wear rocket-status <entityId> <seatFraction> — worn tanks + worn-seat
+        // predicate of an assembled rocket (the data the launch gate reads).
+        if ("rocket-status".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            double frac = args.length >= 3 ? Double.parseDouble(args[2]) : 0.7;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            info.put("found", true);
+            info.put("wornTankCount", rocket.storage.getWornTanks().size());
+            info.put("hasCriticallyWornSeat", rocket.storage.hasCriticallyWornSeat(frac));
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear station-load <dim> <x> <y> <z> <slot> <ore:name|item-id> <count>
+        if ("station-load".equals(verb)) {
+            int dim = Integer.parseInt(args[1]);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+            TileEntity te = world.getTileEntity(pos);
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (!(te instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation)) {
+                info.put("error", "no service station at pos");
+                send(sender, jsonMap(info));
+                return;
+            }
+            int slot = Integer.parseInt(args[5]);
+            String spec = args[6];
+            int count = Integer.parseInt(args[7]);
+            net.minecraft.item.ItemStack stack;
+            if (spec.startsWith("ore:")) {
+                java.util.List<net.minecraft.item.ItemStack> ores =
+                        net.minecraftforge.oredict.OreDictionary.getOres(spec.substring(4));
+                if (ores.isEmpty()) {
+                    info.put("error", "ore dict empty: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = ores.get(0).copy();
+            } else {
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(spec));
+                if (item == null) {
+                    info.put("error", "item not found: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = new net.minecraft.item.ItemStack(item);
+            }
+            stack.setCount(count);
+            ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation) te)
+                    .getRepairInventory().setStackInSlot(slot, stack);
+            info.put("loaded", stack.getItem().getRegistryName().toString());
+            info.put("count", count);
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear get|set <dim> <x> <y> <z> [stage]
         if (args.length < 5) {
             send(sender, "{\"error\":\"usage: wear get|set <dim> <x> <y> <z> [stage]\"}");
             return;
@@ -9298,7 +9369,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        if ("set".equalsIgnoreCase(args[0])) {
+        if ("set".equals(verb)) {
             if (args.length < 6) {
                 send(sender, "{\"error\":\"usage: wear set <dim> <x> <y> <z> <stage>\"}");
                 return;
