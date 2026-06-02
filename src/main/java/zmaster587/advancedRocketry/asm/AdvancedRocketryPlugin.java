@@ -11,20 +11,28 @@ import java.util.Map;
 public class AdvancedRocketryPlugin implements IFMLLoadingPlugin {
 
     public AdvancedRocketryPlugin() {
-        // Register our mixin config programmatically. In a packaged production
-        // jar this is also declared via the `MixinConfigs` manifest attribute
-        // (set by tasks.jar), but in the dev workspace the mod is loaded from
-        // build/classes/java/main with no manifest, so MixinBooter would
-        // otherwise never see our config. Mixins.addConfiguration is
-        // idempotent on the same file name, so the manifest + programmatic
-        // paths can both fire harmlessly.
+        // Register our mixin config programmatically. In the dev workspace the mod
+        // is loaded from build/classes/java/main with no manifest, so nothing else
+        // bootstraps Mixin or sees our config — we must do it ourselves.
         //
-        // MixinBootstrap.init() is also idempotent — MixinBooter has typically
-        // run first and called it, but doing it again is a no-op and protects
-        // against load-order surprises (e.g. coremod scan reaching us before
-        // MixinBooter on some Forge versions).
-        MixinBootstrap.init();
-        Mixins.addConfiguration("mixins.advancedrocketry.json");
+        // In a packaged jar a Mixin host (MixinBooter) is present: it bootstraps
+        // Mixin on the LaunchClassLoader and registers our config from the
+        // `MixinConfigs` manifest attribute. Re-running MixinBootstrap.init() from
+        // this coremod (loaded on the AppClassLoader) then re-initiates loading of
+        // org.spongepowered.asm.launch.GlobalProperties$Keys on a second classloader
+        // and the JVM throws a LinkageError ("loader constraint violation"), which
+        // crashes FML at launch. So guard the self-bootstrap: attempt it, and if a
+        // host already owns Mixin, swallow the error and let the manifest drive
+        // registration. The dev path (no host) succeeds and self-registers.
+        try {
+            MixinBootstrap.init();
+            Mixins.addConfiguration("mixins.advancedrocketry.json");
+        } catch (Throwable t) {
+            org.apache.logging.log4j.LogManager.getLogger("AdvancedRocketry").info(
+                    "Skipping AR self-bootstrap of Mixin — a Mixin host (e.g. MixinBooter) "
+                    + "is present and loads mixins.advancedrocketry.json from the jar "
+                    + "manifest. Cause: " + t);
+        }
     }
 
     @Override
