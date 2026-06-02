@@ -159,12 +159,22 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
   the data feeding that gate (`getWornTanks`, `hasCriticallyWornSeat`) is
   pinned by `wornTankAndSeatSurfaceForLaunchGate`.
 
-### Known follow-up (not in scope)
-The service-station block is registered with GUI id `MODULARNOINV`, so the
-new repair-material input slots are not reachable from the player GUI yet —
-standalone repair works (probe-loaded in tests) but a player can't load
-materials until the GUI id is switched to `MODULAR` and the slot layout is
-visually checked. Tracked here for a follow-up.
+### Phase 5 — service-station GUI access ✅ (layout needs a visual pass)
+- Switched the service-station block from `MODULARNOINV` to `MODULAR` so the
+  player inventory is present and the repair-material input slots are
+  reachable.
+- Exposed the repair inventory as an `ITEM_HANDLER` capability so hoppers /
+  pipes can feed materials too (automation-friendly, and independent of the
+  GUI layout).
+- Compacted the GUI: all custom modules (power, scan button, 6 repair slots,
+  worn-part texts/counts, progress) now sit above `y=86`, clear of the
+  MODULAR player-inventory click zone (`y=89..163`, from
+  `ContainerModular`).
+- Server regression green (WearSystemTest + ServiceStationFullRepairCycleTest).
+- **Still needs a human visual pass on a GPU**: the headless harness can't
+  render the GUI, so the exact pixel layout / texture background of the
+  re-laid-out MODULAR gui hasn't been eyeballed. Functionally the slots are
+  outside the player-inventory zone and the item-handler cap is a fallback.
 - Finalise config keys (sync flags), `/artest wear` probe verbs
   (get/set stage, breaking-prob, trigger repair), unit + server coverage,
   ledger entries.

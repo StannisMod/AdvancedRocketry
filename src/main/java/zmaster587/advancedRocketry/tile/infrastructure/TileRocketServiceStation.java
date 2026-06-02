@@ -82,15 +82,17 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
     public TileRocketServiceStation() {
         super(10000);
 
-        destroyProbText = new ModuleText(90, 30, LibVulpes.proxy.getLocalizedString("msg.serviceStation.destroyProbNA"), 0x2b2b2b, true);
-        wornMotorsText = new ModuleText(40, 30 + 30, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornMotorsText"), 0x2b2b2b, true);
-        wornSeatsText = new ModuleText(90, 30 + 30, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornSeatsText"), 0x2b2b2b, true);
-        wornTanksText = new ModuleText(140, 30 + 30, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornTanksText"), 0x2b2b2b, true);
-        destroyProgressText = new ModuleText(90, 120, LibVulpes.proxy.getLocalizedString("msg.serviceStation.serviceProgressNA"), 0x2b2b2b, true);
+        // Compact layout: everything sits above the player inventory (y >= 89
+        // in a MODULAR gui), so the repair-material slots stay reachable.
+        destroyProbText = new ModuleText(8, 46, LibVulpes.proxy.getLocalizedString("msg.serviceStation.destroyProbNA"), 0x2b2b2b, true);
+        wornMotorsText = new ModuleText(8, 56, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornMotorsText"), 0x2b2b2b, true);
+        wornSeatsText = new ModuleText(60, 56, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornSeatsText"), 0x2b2b2b, true);
+        wornTanksText = new ModuleText(112, 56, LibVulpes.proxy.getLocalizedString("msg.serviceStation.wornTanksText"), 0x2b2b2b, true);
+        destroyProgressText = new ModuleText(8, 76, LibVulpes.proxy.getLocalizedString("msg.serviceStation.serviceProgressNA"), 0x2b2b2b, true);
 
-        wornMotorsCount = new ModuleText(40, 30 + 30 + 10, "0", 0x2b2b2b, true);
-        wornSeatsCount = new ModuleText(90, 30 + 30 + 10, "0", 0x2b2b2b, true);
-        wornTanksCount = new ModuleText(140, 30 + 30 + 10, "0", 0x2b2b2b, true);
+        wornMotorsCount = new ModuleText(8, 66, "0", 0x2b2b2b, true);
+        wornSeatsCount = new ModuleText(60, 66, "0", 0x2b2b2b, true);
+        wornTanksCount = new ModuleText(112, 66, "0", 0x2b2b2b, true);
     }
 
     @Override
@@ -313,6 +315,26 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
     /** The standalone-repair material input inventory (test/automation access). */
     public net.minecraftforge.items.IItemHandlerModifiable getRepairInventory() {
         return repairInventory;
+    }
+
+    @Override
+    public boolean hasCapability(@Nonnull net.minecraftforge.common.capabilities.Capability<?> capability,
+                                 net.minecraft.util.EnumFacing facing) {
+        if (capability == net.minecraftforge.items.CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) {
+            return true;
+        }
+        return super.hasCapability(capability, facing);
+    }
+
+    @Override
+    public <T> T getCapability(@Nonnull net.minecraftforge.common.capabilities.Capability<T> capability,
+                               net.minecraft.util.EnumFacing facing) {
+        // Expose the repair-material inventory so hoppers/pipes can feed it
+        // (works regardless of the GUI slot layout).
+        if (capability == net.minecraftforge.items.CapabilityItemHandler.ITEM_HANDLER_CAPABILITY) {
+            return net.minecraftforge.items.CapabilityItemHandler.ITEM_HANDLER_CAPABILITY.cast(repairInventory);
+        }
+        return super.getCapability(capability, facing);
     }
 
     private boolean hasValidAssembler() {
@@ -543,8 +565,8 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
         LinkedList<ModuleBase> modules = new LinkedList<>();
 
-        modules.add(new ModulePower(10, 20, this.energy));
-        modules.add(new ModuleButton(63 - 52 / 2, 100, 0, LibVulpes.proxy.getLocalizedString("msg.serviceStation.assemblerScan"),
+        modules.add(new ModulePower(150, 8, this.energy));
+        modules.add(new ModuleButton(8, 6, 0, LibVulpes.proxy.getLocalizedString("msg.serviceStation.assemblerScan"),
                 this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 104, 16));
 
         updateText();
@@ -558,10 +580,11 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
         modules.add(wornSeatsCount);
         modules.add(wornTanksCount);
 
-        modules.add(new ModuleProgress(32, 133, 0, TextureResources.progressToMission, this));
+        modules.add(new ModuleProgress(120, 26, 0, TextureResources.progressToMission, this));
 
         // Input slots for the standalone repair path (materials when no assembler).
-        modules.add(new ModuleSlotArray(8, 90, repairInventory, 0, REPAIR_SLOTS));
+        // Kept above y=89 so they don't collide with the player inventory.
+        modules.add(new ModuleSlotArray(8, 26, repairInventory, 0, REPAIR_SLOTS));
 
         if (!world.isRemote) {
             PacketHandler.sendToPlayer(new PacketMachine(this, (byte) 1), player);
