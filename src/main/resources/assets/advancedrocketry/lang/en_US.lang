@@ -910,9 +910,9 @@ tooltip.advancedrocketry.guidancecomputer.alt.2=when deploying Satellites or Spa
 
 # Service Monitor
 tooltip.advancedrocketry.servicemonitor=§cPart of Rocket
-tooltip.advancedrocketry.servicemonitor.shift.1=Enables damage view
-tooltip.advancedrocketry.servicemonitor.shift.2=in rocket GUI
-tooltip.advancedrocketry.servicemonitor.alt.1=WIP
+tooltip.advancedrocketry.servicemonitor.shift.1=Shows worn parts and failure
+tooltip.advancedrocketry.servicemonitor.shift.2=chance in the rocket GUI
+tooltip.advancedrocketry.servicemonitor.alt.1=Place one inside a rocket
 tooltip.advancedrocketry.servicemonitor.alt.2=
 
 # Docking Pad (landingPad)
@@ -1028,8 +1028,8 @@ tooltip.advancedrocketry.fuelingstation.alt.2=§fRockets landing here will auto-
 
 # Service Station
 tooltip.advancedrocketry.servicestation=§cInfrastructure
-tooltip.advancedrocketry.servicestation.shift.1=Repair rocket
-tooltip.advancedrocketry.servicestation.shift.2=§o(WIP)
+tooltip.advancedrocketry.servicestation.shift.1=Link to a rocket to repair
+tooltip.advancedrocketry.servicestation.shift.2=worn parts (needs power)
 
 ## // Infrastructure
 

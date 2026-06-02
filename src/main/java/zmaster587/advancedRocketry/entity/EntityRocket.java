@@ -2769,15 +2769,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 modules.add(new ModuleImage(173, 168, new IconResource(98, 168, 78, 3, CommonResources.genericBackground)));
             }
 
-            // Broken parts
-            // TODO Add check for the service monitor
-
+            // Worn parts damage view — gated on a service monitor in the rocket.
             if (storage.hasServiceMonitor()) {
                 List<ModuleBase> serviceMonitorList = new ArrayList<>();
 
                 int ii = 0;
-                for (TileBrokenPart part : storage.getBrokenBlocks()) {
-                    serviceMonitorList.add(new ModuleBrokenPart(1 + (ii % 5) * 18, 1 + (ii / 5) * 18, part.getDrop()));
+                for (ItemStack worn : storage.getWornPartDisplayStacks()) {
+                    serviceMonitorList.add(new ModuleBrokenPart(1 + (ii % 5) * 18, 1 + (ii / 5) * 18, worn));
                     ii++;
                 }
 

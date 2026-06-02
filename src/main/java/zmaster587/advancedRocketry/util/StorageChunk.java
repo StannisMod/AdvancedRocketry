@@ -975,6 +975,27 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         return false;
     }
 
+    /**
+     * Display stacks for every worn part (stage &gt; 0) for the rocket GUI damage
+     * view: motors show their staged drop (with wear overlay), tanks/seats show
+     * their block icon.
+     */
+    public List<ItemStack> getWornPartDisplayStacks() {
+        List<ItemStack> res = new ArrayList<>();
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getStage() <= 0) {
+                continue;
+            }
+            if (te instanceof TileBrokenPart) {
+                res.add(((TileBrokenPart) te).getDrop());
+            } else if (te.getBlockType() != null) {
+                res.add(new ItemStack(te.getBlockType()));
+            }
+        }
+        return res;
+    }
+
     public List<TileBrokenPart> getBrokenBlocks() {
         List<TileBrokenPart> res = new ArrayList<>();
 

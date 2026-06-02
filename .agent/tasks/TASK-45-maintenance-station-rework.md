@@ -120,7 +120,7 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
 - **Acceptance**: server test — high-stage rocket either blocked (config on)
   or warned (config off); unit test for the gating predicate.
 
-### Phase 2 — visibility
+### Phase 2 — visibility ✅ (service-station GUI counters folded into Phase 3)
 - Wire the `hasServiceMonitor` gate in `EntityRocket.getModules`
   (uncomment + implement) → show the `ModuleBrokenPart` panel.
 - Service Station GUI: add max/critical stage + breaking-% readout.
