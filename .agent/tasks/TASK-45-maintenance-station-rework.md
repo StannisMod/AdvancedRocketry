@@ -32,10 +32,12 @@ launch → service station resets `stage`). The frustration is in the
    adjacent PrecisionAssembler (≤5) + `*_repair_*` recipes + a fragile
    two-phase extract→craft→reinject handshake with a known "out of sync"
    path and no recovery.
-3. **Only motors matter, everything wears.** `getBreakingProbability`
-   weights only motors (nuclear 1.0, motor 0.2, else 0), but
-   `damageParts()` transitions ALL `TileBrokenPart`s — tanks/seats accrue
-   `stage` that does nothing yet inflates the "worn parts" counters. UI lies.
+3. **Dead tank/seat counters.** Only the 5 motor blocks create a
+   `TileBrokenPart` (verified: `BlockRocketMotor`,
+   `BlockBipropellantRocketMotor`, `BlockNuclearRocketMotor`,
+   `BlockAdvanced{,Bipropellant}RocketMotor`). Tanks/seats have no wear
+   state, so the service-station "Tanks: N / Seats: N worn" counters can
+   never be non-zero — dead UI promising a feature that doesn't exist.
 4. **Nuclear is a death-trap.** `additionalProb=1.0` → stage-1 nuclear motor
    already 10% explosion, stage-10 = 100%, with a 4× accrual multiplier.
 5. **Opaque tuning.** Backwards stage loop, `(stage+1)·transitionProb/√(2i+1)`;
@@ -66,12 +68,15 @@ launch → service station resets `stage`). The frustration is in the
 
 ## Phases (one commit each; user reviews at the end)
 
-### Phase 0 — wear feeds stats (graduated)
+### Phase 0 — wear feeds stats (graduated) ✅
 - In `StorageChunk.recalculateStats`: when summing engine thrust, multiply
-  by `1 − wearThrustPenaltyMax · stage/maxStage` using the block's
-  `TileBrokenPart` at that position. Reduce worn fuel-tank capacity the same
-  way (gives "Tanks worn" real meaning).
-- Net effect composes with TASK-weight: worn rocket → lower thrust/capacity
+  each motor's rated thrust by `1 − wearThrustPenaltyMax · stage/maxStage`
+  via its `TileBrokenPart` (`wearThrustFactor`). Added `getMaxStage()` to
+  `TileBrokenPart` and `wearThrustPenaltyMax` config (default 0.5).
+- Only motors wear (no `TileBrokenPart` on tanks/seats), so tank-capacity
+  degradation was dropped — there is no wear data to act on. The dead
+  tank/seat counters are a Phase-2 GUI cleanup + ledger item.
+- Net effect composes with the weight rework: worn rocket → lower thrust
   → lower TWR → may hit `minLaunchTWR` and be refused with a clear error.
 - **Acceptance**: server probe sets a motor's stage, assembler stats show
   reduced thrust / TWR; unit test for the thrust factor formula.

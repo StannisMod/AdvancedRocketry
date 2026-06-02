@@ -217,15 +217,19 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             }
 
                             if (eligible) {
+                                // Worn motors produce less thrust (partsWearSystem): a
+                                // motor at max wear keeps (1 - wearThrustPenaltyMax) of
+                                // its rated thrust. Feeds TWR → may fail the launch gate.
+                                float wear = wearThrustFactor(currBlockPos);
                                 if (block instanceof BlockNuclearRocketMotor) {
                                     nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustNuclearNozzleLimit  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustNuclearNozzleLimit  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 } else if (block instanceof BlockBipropellantRocketMotor) {
                                     bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustBipropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustBipropellant  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 } else if (block instanceof BlockRocketMotor) {
                                     monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustMonopropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustMonopropellant  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 }
                                 stats.addEngineLocation(xCurr - (float)this.sizeX/2 + 0.5f, yCurr+0.5f, zCurr - (float)this.sizeZ/2 + 0.5f);
                             }
@@ -865,6 +869,32 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         }
 
         return null;
+    }
+
+    /**
+     * Thrust multiplier for a motor at the given position based on its wear
+     * stage: 1.0 when pristine, (1 - wearThrustPenaltyMax) when fully worn.
+     * Returns 1.0 when the wear system is off or the block has no wear state.
+     */
+    private float wearThrustFactor(BlockPos pos) {
+        if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
+            return 1f;
+        }
+        double maxPenalty = ARConfiguration.getCurrentConfig().wearThrustPenaltyMax;
+        if (maxPenalty <= 0) {
+            return 1f;
+        }
+        TileEntity te = world.getTileEntity(pos);
+        if (te instanceof TileBrokenPart) {
+            TileBrokenPart bp = (TileBrokenPart) te;
+            int max = bp.getMaxStage();
+            if (max <= 0) {
+                return 1f;
+            }
+            float frac = (float) bp.getStage() / max; // 0 = pristine, 1 = fully worn
+            return (float) Math.max(0.0, 1.0 - maxPenalty * frac);
+        }
+        return 1f;
     }
 
     public float getBreakingProbability() {

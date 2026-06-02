@@ -312,6 +312,8 @@ public class ARConfiguration {
     public double fuelMassScale = 1.0;
     @ConfigProperty(needsSync = true)
     public double minLaunchTWR = 1.05;
+    @ConfigProperty(needsSync = true)
+    public double wearThrustPenaltyMax = 0.5;
 
     @ConfigProperty
     public boolean partsWearSystem;
@@ -513,6 +515,7 @@ public class ARConfiguration {
         arConfig.weightMaterialScale = config.get(ROCKET, "weightMaterialScale", 1.0, "Global multiplier applied to material-derived and fallback block weights (does not affect explicit overrides or rocket component parts). Raise to make hulls/structure mass matter more").getDouble();
         arConfig.fuelMassScale = config.get(ROCKET, "fuelMassScale", 1.0, "Global multiplier applied to the mass of fuel/oxidizer carried by a rocket. Raise to make full tanks weigh more relative to thrust").getDouble();
         arConfig.minLaunchTWR = config.get(ROCKET, "minLaunchTWR", 1.05, "Minimum thrust-to-weight ratio (thrust / wet weight) a rocket needs before it is allowed to launch. 1.0 means it can barely lift itself; values above 1.0 add a safety margin").getDouble();
+        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses (partsWearSystem). 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty (wear then only affects explosion chance)").getDouble();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

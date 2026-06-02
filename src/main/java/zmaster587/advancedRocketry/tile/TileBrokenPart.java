@@ -43,6 +43,10 @@ public class TileBrokenPart extends TileEntitySyncable {
         return this.stage;
     }
 
+    public int getMaxStage() {
+        return this.maxStage;
+    }
+
     private void initProb(float transitionProb) {
         this.transitionProb = transitionProb;
         this.probs = new float[maxStage];
