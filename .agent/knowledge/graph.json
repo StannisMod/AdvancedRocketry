@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-05-31T13:36:42.747342Z",
+  "last_updated": "2026-06-02T08:46:26.977051Z",
   "stats": {
-    "total_nodes": 116,
-    "total_edges": 400,
+    "total_nodes": 120,
+    "total_edges": 418,
     "memory_count": 8
   },
   "nodes": {
@@ -589,6 +589,52 @@
           "testing",
           "authentication",
           "tom"
+        ]
+      },
+      "TASK-45": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-45-oregen-clumpsize-clamp-disables-impossible.md",
+        "title": "`<oreGen>` clumpSize/chancePerChunk clamp to 1 makes \"disable ore\" impossible",
+        "status": "unknown",
+        "concepts": [
+          "api",
+          "context",
+          "workflow",
+          "deployment",
+          "testing"
+        ]
+      },
+      "TASK-46": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-46-compatibilitymgr-vestigial.md",
+        "title": "`CompatibilityMgr` is currently vestigial \u2014 decide revive vs remove",
+        "status": "unknown",
+        "concepts": [
+          "deployment",
+          "context",
+          "skills",
+          "testing",
+          "api"
+        ]
+      },
+      "TASK-47": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-47-per-dim-time-and-sleep.md",
+        "title": "Per-dimension time + working beds on planets (issue #66)",
+        "status": "unknown",
+        "concepts": [
+          "tom",
+          "testing",
+          "api",
+          "deployment"
+        ]
+      },
+      "TASK-48": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-48-per-dim-worldinfo-delegation.md",
+        "title": "Per-dimension WorldInfo state vanilla delegates to overworld (feature request)",
+        "status": "unknown",
+        "concepts": [
+          "tom",
+          "deployment",
+          "database",
+          "context"
         ]
       }
     },
@@ -3606,6 +3652,96 @@
       "from": "TASK-44",
       "to": "tom",
       "type": "implements"
+    },
+    {
+      "from": "TASK-45",
+      "to": "api",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-45",
+      "to": "context",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-45",
+      "to": "workflow",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-45",
+      "to": "deployment",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-45",
+      "to": "testing",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-46",
+      "to": "deployment",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-46",
+      "to": "context",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-46",
+      "to": "skills",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-46",
+      "to": "testing",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-46",
+      "to": "api",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-47",
+      "to": "tom",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-47",
+      "to": "testing",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-47",
+      "to": "api",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-47",
+      "to": "deployment",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-48",
+      "to": "tom",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-48",
+      "to": "deployment",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-48",
+      "to": "database",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-48",
+      "to": "context",
+      "type": "implements"
     }
   ],
   "concept_index": {
@@ -3692,7 +3828,10 @@
       "TASK-37",
       "TASK-38",
       "TASK-39",
-      "TASK-40"
+      "TASK-40",
+      "TASK-45",
+      "TASK-46",
+      "TASK-48"
     ],
     "knowledge": [
       "TASK-09",
@@ -3751,7 +3890,8 @@
       "TASK-38",
       "TASK-39",
       "TASK-40",
-      "TASK-44"
+      "TASK-44",
+      "TASK-45"
     ],
     "testing": [
       "TASK-09",
@@ -3851,7 +3991,10 @@
       "TASK-41",
       "TASK-42",
       "TASK-43",
-      "TASK-44"
+      "TASK-44",
+      "TASK-45",
+      "TASK-46",
+      "TASK-47"
     ],
     "backend": [
       "TASK-09",
@@ -3934,7 +4077,8 @@
       "2026-05-14-1150_client-e2e-fg6-harness",
       "2026-05-20-2030_task04-terraformer-orbitallaser",
       "TASK-42",
-      "TASK-43"
+      "TASK-43",
+      "TASK-48"
     ],
     "markers": [
       "TASK-09",
@@ -4098,7 +4242,8 @@
       "2026-05-15-1733_task01-session2-phase1-planet-depth",
       "2026-05-19-2030_multiblock-fixtures-bhg-beacon",
       "TASK-41",
-      "TASK-43"
+      "TASK-43",
+      "TASK-46"
     ],
     "api": [
       "TASK-11",
@@ -4132,7 +4277,10 @@
       "TASK-40",
       "TASK-42",
       "TASK-43",
-      "TASK-44"
+      "TASK-44",
+      "TASK-45",
+      "TASK-46",
+      "TASK-47"
     ],
     "deployment": [
       "TASK-03",
@@ -4167,7 +4315,11 @@
       "TASK-41",
       "TASK-42",
       "TASK-43",
-      "TASK-44"
+      "TASK-44",
+      "TASK-45",
+      "TASK-46",
+      "TASK-47",
+      "TASK-48"
     ],
     "frontend": [
       "TASK-03",
@@ -4251,7 +4403,9 @@
       "TASK-41",
       "TASK-42",
       "TASK-43",
-      "TASK-44"
+      "TASK-44",
+      "TASK-47",
+      "TASK-48"
     ],
     "diagnosis": [
       "mem-006"
