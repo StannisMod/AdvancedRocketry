@@ -381,6 +381,7 @@ public class AdvancedRocketry {
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.TileWearable.class, "ARwearablePart");
         GameRegistry.registerTileEntity(TileRocketServiceStation.class, "ARserviceStation");
         GameRegistry.registerTileEntity(TileRocketAssemblingMachine.class, "ARrocketBuilder");
         GameRegistry.registerTileEntity(TileWarpCore.class, "ARwarpCore");
