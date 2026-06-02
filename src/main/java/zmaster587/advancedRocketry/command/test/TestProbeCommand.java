@@ -824,6 +824,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("fuel", fuel);
             info.put("thrust", rocket.stats.getThrust());
             info.put("weight_no_fuel", rocket.stats.getWeight_NoFuel());
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
             // TASK-37/TASK-38 — expose stats fields that aggregate per-block
             // contributions during scanRocket. drillingPower sums every
             // IMiningDrill.getMiningSpeed(); thrust above already reflects

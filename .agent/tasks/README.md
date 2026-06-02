@@ -145,9 +145,11 @@ Bug-ledger history lives in
 - **Bug ledger**: 4 live bugs. Arithmetic: 8 entries total minus
   #4 (fixed by TASK-41 2026-05-29) minus #6 (fixed by TASK-43 Phase 3
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
-  minus #8 (found+fixed 2026-06-01 by the weight-rework) = 4 live
+  minus #8 (found+fixed 2026-06-01 by the weight-rework)
+  minus #9 (found+fixed 2026-06-02 by TASK-45) = 4 live
   (#1, #3, #5, #7). Batch #2 opened 2026-05-25; entry #5 added
-  2026-05-29; entry #7 added 2026-05-31; entry #8 added 2026-06-01.
+  2026-05-29; entry #7 added 2026-05-31; entry #8 added 2026-06-01;
+  entry #9 added 2026-06-02.
   Batch #1 fully drained by TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —

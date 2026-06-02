@@ -98,6 +98,31 @@ public class WearSystemTest extends AbstractSharedServerTest {
         assertEquals("wear stage must persist", 7, Integer.parseInt(m.group(1)));
     }
 
+    private double breakingProbOf(int entityId) throws Exception {
+        String info = String.join("\n", client().execute("artest rocket info " + entityId));
+        Matcher m = Pattern.compile("\"breakingProb\":(-?\\d+(?:\\.\\d+)?)").matcher(info);
+        assertTrue("no breakingProb in info: " + info, m.find());
+        return Double.parseDouble(m.group(1));
+    }
+
+    @Test
+    public void wornMotorRaisesBreakingProbability() throws Exception {
+        // Pristine rocket: zero failure probability.
+        int ax = 2900, ay = 64, az = 3020;
+        int pristine = assembleAndGetId(buildFixture(ax, ay, az));
+        assertEquals("pristine rocket must have zero breaking probability",
+                0.0, breakingProbOf(pristine), 1e-6);
+
+        // Max out one engine's wear before assembly → breaking probability rises.
+        int bx = 2960, by = 64, bz = 3020;
+        int[] builder = buildFixture(bx, by, bz);
+        int rocketX = bx + 3, rocketY = by + 1, rocketZ = bz + 3;
+        client().execute("artest wear set 0 " + (rocketX - 1) + " " + rocketY + " " + rocketZ + " 10");
+        int worn = assembleAndGetId(builder);
+        assertTrue("a fully-worn motor must raise the breaking probability",
+                breakingProbOf(worn) > 0);
+    }
+
     @Test
     public void wornMotorsProduceLessThrust() throws Exception {
         // Pristine reference rocket.

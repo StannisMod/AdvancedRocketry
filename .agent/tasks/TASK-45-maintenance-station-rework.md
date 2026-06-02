@@ -142,7 +142,17 @@ crewed-launch block, pre-launch warning, config switch) → 2/3/4.
   assembler, assert ingredients consumed and stage reset; assembler path
   still works.
 
-### Phase 4 — config + tests + ledger
+### Phase 4 — config + tests + ledger ✅ (partial)
+- `/artest wear get|set` probe; `rocket info` exposes `breakingProb`.
+- `WearSystemTest`: cap on motors/tanks/seats, stage round-trip, worn
+  motors lose thrust + raise breaking probability. testUnit green.
+- Ledger #9 (dead tank/seat counters) found+fixed.
+- **Deferred (honest)**: no automated E2E for the standalone repair flow
+  (needs probe orchestration to insert recipe materials into the station,
+  link, power, tick). Logic compiles and was reviewed; recipe lookup uses
+  `RecipesMachine.getRecipes(TilePrecisionAssembler.class)`. Tank-leak /
+  seat-block launch consequences also lack an automated test (need a
+  launch with a passenger / stochastic roll) — production logic shipped.
 - Finalise config keys (sync flags), `/artest wear` probe verbs
   (get/set stage, breaking-prob, trigger repair), unit + server coverage,
   ledger entries.

@@ -4,10 +4,10 @@
 2026-05-23). Batch #2 below is **live** and is kept in sync with the
 summary in [`../tasks/README.md`](../tasks/README.md) bug-ledger section.
 
-**Live bug count (as of 2026-06-01)**: 4 live — Batch #2 entries
+**Live bug count (as of 2026-06-02)**: 4 live — Batch #2 entries
 #1, #3, #5, #7. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
-#6 fixed by TASK-43 Phase 3, #8 found+fixed by the weight-rework
-(see per-entry notes below).
+#6 fixed by TASK-43 Phase 3, #8 found+fixed by the weight-rework,
+#9 found+fixed by TASK-45 (see per-entry notes below).
 When a future production bug is uncovered, follow the rule in
 [`CLAUDE.md`](../../CLAUDE.md#bug-tracking--every-discovered-production-bug-must-be-logged)
 and append it to Batch #2 here AND to the README summary.
@@ -272,3 +272,18 @@ authoring that have not yet been fixed.
    **Pinned by**: `StatsRocketTest.accelerationOnWeightlessRocketIsZeroNotInfinite`
    (positive contract, not a `_documentsKnownBug`).
    **Found**: 2026-06-01 during the weight-system rework.
+
+9. ✅ **FIXED 2026-06-02 by TASK-45 (maintenance-station rework).**
+   `TileRocketServiceStation` GUI showed "Worn motors / Seats / Tanks"
+   counters, but only motors ever had a `TileBrokenPart` — tanks and
+   seats had no wear state at all, so the seat/tank counters were
+   permanently 0.
+   File: `src/main/java/zmaster587/advancedRocketry/tile/infrastructure/TileRocketServiceStation.java`
+   (`updateText`).
+   **Consequence**: player-visible — the station promised seat/tank wear
+   readouts that could never be non-zero (dead UI).
+   **Fixed**: TASK-45 0c gives tanks/seats a `TileWearable` wear state and
+   the counters now read it through the wear capability.
+   **Pinned by**: ledger-only; `WearSystemTest` covers the wear data model
+   the counters read.
+   **Found**: 2026-06-02 during the maintenance-station rework.
