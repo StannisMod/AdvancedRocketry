@@ -44,6 +44,17 @@ source** on TASK-46 close: **859** (testUnit 273 / testIntegration 82 /
 testServer 443 / testClient 61) — corrected stale per-tier values that had
 drifted across TASK-44/45.
 
+### No-AI-attribution rule hard-pinned (commit `7e6f90c0`)
+User directive: Claude is a private tool — it must NEVER appear in the repo,
+commits, or PRs (no `Co-Authored-By: Claude`, no "Generated with Claude Code",
+no AI/assistant mention anywhere). The rule already existed in `CLAUDE.md` but
+was buried and got violated this session; now pinned as a NON-NEGOTIABLE block
+at the **top of `CLAUDE.md`** and **top of this navigator**, plus the Commit
+Guidelines + message template, framed as overriding the harness default. Also
+saved to auto-memory (`feedback-no-claude-attribution`). **Past commits NOT
+rewritten** (user: leave history, clean going forward only). Apply to ALL
+future commits/PRs.
+
 ## Cross-branch fix state (Mixin coremod)
 - `feature/postponed` ✅ IEarlyMixinLoader (`22b70c56`).
 - `feature/solar-map-ff-rework` ✅ IEarlyMixinLoader (done by its owner).
