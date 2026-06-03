@@ -222,6 +222,11 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public float getNeededThrust() {
+        // With the weight system off there is no TWR launch gate (see
+        // StatsRocket.canLaunch), so there is no thrust requirement to display.
+        if (!ARConfiguration.getCurrentConfig().advancedWeightSystem) {
+            return 0;
+        }
         return getWeight() * (float) ARConfiguration.getCurrentConfig().minLaunchTWR;
     }
 
