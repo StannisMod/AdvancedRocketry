@@ -5,23 +5,35 @@ package zmaster587.advancedRocketry.api;
  *
  * Deliberately depends on NO Minecraft types — every input is a primitive
  * and every output is captured in {@link Step}. This is the entire decision
- * surface for FF physics, so it can be unit-tested deterministically without
- * booting a server.
+ * surface for FF kinematics, so it can be unit-tested deterministically
+ * without booting a server.
  *
- * Units follow EntityRocket's convention: motionX/Y/Z are block-deltas per
+ * <p>Units follow EntityRocket's convention: motionX/Y/Z are block-deltas per
  * tick. Gravity is a per-tick velocity decrement (positive value drains
- * motionY). Mass is the rocket's "weight" stat (StatsRocket.getWeight()).
+ * motionY).
  *
- * Player intent enters via a {@link FreeFlightInput} normalised to [-1, +1].
+ * <p><b>Thrust authority.</b> The class no longer invents a thrust scale of its
+ * own. The caller passes {@code thrustMag} — the <em>gross per-tick thrust
+ * acceleration</em> (blocks/tick²) derived from the rocket's classic stats
+ * (thrust-to-weight, config-aware). EntityRocket computes it as
+ * {@code StatsRocket.getAcceleration(g) + gravity}, so at full vertical throttle
+ * the net (thrust − gravity) equals the classic ascent acceleration and the FF
+ * climb gate is exactly the classic thrust-to-weight gate (TWR &gt; 1). See
+ * {@code EntityRocket.tickFreeFlight}.
+ *
+ * <p><b>Fuel.</b> This class does NOT account fuel — that lives in
+ * EntityRocket so it mirrors the classic burn (getFuelConsumptionRate, the
+ * {@code rocketRequireFuel} config flag, bipropellant oxidizer). The pure layer
+ * only reports, via {@link Step#thrustApplied}, whether thrust was applied this
+ * tick; the caller drains fuel when it was. Whether thrust is permitted at all
+ * is passed in as {@code canThrust} (fuel present, or fuel not required).
+ *
+ * <p>Player intent enters via a {@link FreeFlightInput} normalised to [-1, +1].
  */
 public final class FreeFlightPhysics {
 
     // -- Tunables --------------------------------------------------------
 
-    /** Per-tick forward acceleration at full forward throttle, post mass scaling. */
-    public static final double MAX_FORWARD_ACCEL  = 0.08;
-    /** Per-tick vertical acceleration at full vertical throttle, post mass scaling. */
-    public static final double MAX_VERTICAL_ACCEL = 0.10;
     /** Per-tick yaw delta (degrees) at full yaw input. */
     public static final double MAX_YAW_RATE       = 6.0;
     /** Per-tick pitch delta (degrees) at full pitch input. */
@@ -34,28 +46,30 @@ public final class FreeFlightPhysics {
     public static final double IDLE_DRAG          = 0.99;
     /** Pitch clamp (degrees). */
     public static final double PITCH_MAX          = 85.0;
+    /**
+     * Arcade ceiling on per-tick thrust acceleration (blocks/tick²). Bounds an
+     * extremely high thrust-to-weight rocket so motion stays smooth; velocity is
+     * still bounded independently by {@link #MAX_SPEED}. Normal rockets sit far
+     * below this (e.g. TWR 2 → ~0.1), so the cap only bites on absurd builds.
+     */
+    public static final double MAX_THRUST_ACCEL   = 0.5;
 
-    /** Fuel units consumed per tick at full effective thrust. */
-    public static final int    FUEL_PER_TICK_AT_FULL_THRUST = 4;
+    /** Speed below which the Stop assist snaps motion to exactly zero. */
+    private static final double STOP_SNAP = 0.01;
 
-    /** Minimum rocket mass to avoid division blowups. */
-    private static final double MIN_MASS = 1.0;
-
-    /** Snapshot of post-step rocket kinematics + fuel cost. Immutable. */
+    /** Snapshot of post-step rocket kinematics. Immutable. */
     public static final class Step {
         public final double motionX, motionY, motionZ;
         public final float  yaw, pitch;
-        public final int    fuelConsumed;
         public final boolean thrustApplied;
 
         public Step(double motionX, double motionY, double motionZ,
-                    float yaw, float pitch, int fuelConsumed, boolean thrustApplied) {
+                    float yaw, float pitch, boolean thrustApplied) {
             this.motionX = motionX;
             this.motionY = motionY;
             this.motionZ = motionZ;
             this.yaw = yaw;
             this.pitch = pitch;
-            this.fuelConsumed = fuelConsumed;
             this.thrustApplied = thrustApplied;
         }
     }
@@ -65,98 +79,75 @@ public final class FreeFlightPhysics {
     /**
      * Compute one tick of free-flight physics.
      *
-     * @param mx,my,mz   current motion vector
-     * @param yawDeg     current yaw (degrees)
-     * @param pitchDeg   current pitch (degrees)
-     * @param input      pilot intent
-     * @param thrust     rocket thrust stat (StatsRocket.getThrust())
-     * @param mass       rocket mass stat   (StatsRocket.getWeight())
-     * @param gravity    per-tick gravity drain (positive)
-     * @param fuelAvail  fuel units left in primary tank
-     * @return Step with new motion, yaw, pitch, fuel cost
+     * @param mx            current motion X
+     * @param my            current motion Y
+     * @param mz            current motion Z
+     * @param yawDeg        current yaw (degrees)
+     * @param pitchDeg      current pitch (degrees)
+     * @param input         pilot intent
+     * @param thrustMag     gross per-tick thrust acceleration (blocks/tick²),
+     *                      derived from the rocket's classic stats; clamped to
+     *                      {@code [0, MAX_THRUST_ACCEL]} internally
+     * @param gravity       per-tick gravity drain (positive)
+     * @param canThrust     whether thrust may be applied (fuel present, or fuel
+     *                      not required)
+     * @param flightAssistOn whether Flight Assist (idle drag) is engaged
+     * @return Step with new motion, yaw, pitch, and whether thrust was applied
      */
     public static Step step(double mx, double my, double mz,
                             float yawDeg, float pitchDeg,
                             FreeFlightInput input,
-                            int thrust, double mass,
-                            double gravity, int fuelAvail) {
-        // Back-compat overload — flight assist ON by default.
-        return step(mx, my, mz, yawDeg, pitchDeg, input, thrust, mass, gravity, fuelAvail,
-                /*flightAssistOn=*/true);
-    }
-
-    public static Step step(double mx, double my, double mz,
-                            float yawDeg, float pitchDeg,
-                            FreeFlightInput input,
-                            int thrust, double mass,
-                            double gravity, int fuelAvail,
-                            boolean flightAssistOn) {
+                            double thrustMag, double gravity,
+                            boolean canThrust, boolean flightAssistOn) {
         if (input == null) input = FreeFlightInput.zero();
 
-        // Yaw/pitch rotate regardless of fuel — purely orientation, no thrust.
+        // Yaw/pitch rotate regardless of thrust — purely orientation.
         float newYaw   = yawDeg   + (float) (input.yawInput   * MAX_YAW_RATE);
         float newPitch = clampPitch(pitchDeg + (float) (input.pitchInput * MAX_PITCH_RATE));
 
-        // Thrust ratio depends on rocket spec; classic stats are integers in
-        // the thousands, so normalise against mass like the classic ascent
-        // formula does (thrust - weight) / 10000 → similar order of magnitude.
-        double m = Math.max(MIN_MASS, mass);
-        double thrustScalar = Math.max(0.0, thrust) / (m * 10000.0);
-        if (thrustScalar < 1e-6) thrustScalar = 1e-6;
-        // Cap scalar so a wildly over-thrusted rocket still respects caps.
-        if (thrustScalar > 2.0) thrustScalar = 2.0;
-
-        double fwdMag = MAX_FORWARD_ACCEL  * input.throttleForward  * thrustScalar;
-        double vrtMag = MAX_VERTICAL_ACCEL * input.throttleVertical * thrustScalar;
+        // Clamp the supplied thrust acceleration into the arcade range.
+        double accel = thrustMag;
+        if (accel < 0.0) accel = 0.0;
+        if (accel > MAX_THRUST_ACCEL) accel = MAX_THRUST_ACCEL;
 
         boolean thrustApplied;
         double newMx, newMy, newMz;
-        int fuelCost = 0;
 
         if (input.stopActive) {
             // -------- STOP ASSIST -----------------------------------------
-            // Apply counter-thrust along -motion until magnitude is ~0.
-            // Ignores forward/vertical channels (Stop overrides). Yaw/pitch
-            // rotation still applied above (orientation never gated).
+            // Counter-thrust along -motion until magnitude is ~0. Ignores
+            // forward/vertical channels (Stop overrides). Orientation still applied.
             double speed = Math.sqrt(mx * mx + my * my + mz * mz);
-            double counterAccel = MAX_FORWARD_ACCEL * thrustScalar;
-            if (speed > 1e-5 && fuelAvail > 0 && counterAccel > 0) {
-                // Don't overshoot: cap counter-thrust at the speed itself.
-                double counterMag = Math.min(counterAccel, speed);
+            if (speed > 1e-5 && canThrust && accel > 0.0) {
+                double counterMag = Math.min(accel, speed); // don't overshoot
                 double inv = counterMag / speed;
                 newMx = mx - mx * inv;
                 newMy = my - my * inv;
                 newMz = mz - mz * inv;
                 thrustApplied = true;
-                double demand = counterMag / Math.max(counterAccel, 1e-9);
-                fuelCost = (int) Math.ceil(demand * FUEL_PER_TICK_AT_FULL_THRUST);
             } else {
                 newMx = mx;
                 newMy = my;
                 newMz = mz;
                 thrustApplied = false;
             }
-            // Stop snap: if very slow, zero out.
-            if (Math.abs(newMx) < 0.01 && Math.abs(newMy) < 0.01 && Math.abs(newMz) < 0.01) {
+            if (Math.abs(newMx) < STOP_SNAP && Math.abs(newMy) < STOP_SNAP && Math.abs(newMz) < STOP_SNAP) {
                 newMx = 0; newMy = 0; newMz = 0;
             }
-            // Gravity still acts during Stop assist (we don't have anti-grav unless Hover is also on).
-            if (!input.hoverActive || fuelAvail <= 0) {
+            // Gravity still acts during Stop unless Hover is also held (and thrust allowed).
+            if (!input.hoverActive || !canThrust) {
                 newMy -= gravity;
             } else {
-                // Hover during Stop: pin Y motion to 0 instead of fighting gravity manually.
-                newMy = 0;
-                fuelCost += hoverFuelCost(gravity);
+                newMy = 0; // Hover during Stop: pin Y instead of fighting gravity.
+                thrustApplied = true;
             }
         } else {
             // -------- REGULAR THRUST PATH ---------------------------------
-            // Fuel gate: out of fuel → no thrust applied, but orientation + gravity still act.
-            boolean wantsThrust = (fwdMag != 0.0 || vrtMag != 0.0);
-            thrustApplied = fuelAvail > 0 && wantsThrust;
-            if (!thrustApplied) {
-                fwdMag = 0.0;
-                vrtMag = 0.0;
-            }
+            boolean wantsThrust = (input.throttleForward != 0.0 || input.throttleVertical != 0.0);
+            thrustApplied = canThrust && wantsThrust;
+
+            double fwdMag = thrustApplied ? accel * input.throttleForward  : 0.0;
+            double vrtMag = thrustApplied ? accel * input.throttleVertical : 0.0;
 
             double yawRad   = Math.toRadians(newYaw);
             double pitchRad = Math.toRadians(newPitch);
@@ -170,13 +161,10 @@ public final class FreeFlightPhysics {
             newMy = my + fwdMag * fy + vrtMag;
             newMz = mz + fwdMag * fz;
 
-            // Hover hold: when active AND fuel > 0, exactly cancel gravity for the tick.
-            // Cost: proportional to gravity. If out of fuel, hover silently fails → gravity drains as normal.
-            boolean hoverApplied = input.hoverActive && fuelAvail > 0;
+            // Hover hold: cancel gravity for the tick when active AND thrust allowed.
+            boolean hoverApplied = input.hoverActive && canThrust;
             if (hoverApplied) {
-                // No -gravity term; instead bill the equivalent thrust.
-                fuelCost += hoverFuelCost(gravity);
-                thrustApplied = true;
+                thrustApplied = true; // no -gravity term this tick
             } else {
                 newMy -= gravity;
             }
@@ -189,7 +177,7 @@ public final class FreeFlightPhysics {
                 newMy *= retain;
                 newMz *= retain;
             } else if (flightAssistOn && input.isIdle()) {
-                // FA OFF: pure Newtonian, motion persists across ticks (great for coast).
+                // FA on + idle → bleed horizontal drift. FA off → Newtonian coast.
                 newMx *= IDLE_DRAG;
                 newMz *= IDLE_DRAG;
             }
@@ -204,22 +192,7 @@ public final class FreeFlightPhysics {
             newMz *= s;
         }
 
-        // Fuel cost for forward+vertical thrust path (Stop already accounted above).
-        if (thrustApplied && !input.stopActive) {
-            double demand = (Math.abs(input.throttleForward) + Math.abs(input.throttleVertical)) * 0.5;
-            fuelCost += (int) Math.ceil(demand * FUEL_PER_TICK_AT_FULL_THRUST);
-        }
-        if (fuelCost > fuelAvail) fuelCost = fuelAvail;
-
-        return new Step(newMx, newMy, newMz, newYaw, newPitch, fuelCost, thrustApplied);
-    }
-
-    /** Fuel units required to cancel one tick of gravity via vertical thrust. */
-    private static int hoverFuelCost(double gravity) {
-        // Scale roughly proportional to gravity: a stronger gravity well costs more.
-        // 0.04 gravity (default mult=1.0) → ~2 units/tick.
-        int cost = (int) Math.ceil(Math.abs(gravity) / 0.02 * (FUEL_PER_TICK_AT_FULL_THRUST / 4.0));
-        return Math.max(1, cost);
+        return new Step(newMx, newMy, newMz, newYaw, newPitch, thrustApplied);
     }
 
     /**

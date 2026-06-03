@@ -52,6 +52,7 @@ import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.FreeFlightInput;
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 import zmaster587.advancedRocketry.api.RocketFlightMode;
+import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketLaunchEvent;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketPreLaunchEvent;
 import zmaster587.advancedRocketry.api.dimension.IDimensionProperties;
@@ -163,6 +164,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private float freeFlightPitch = 0f;
     /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
     private transient boolean freeFlightLandedLatched = false;
+    /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
+    private transient int freeFlightTicksSinceStart = 0;
     /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
     private boolean flightAssistOn = true;
 
@@ -849,6 +852,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         if (world.isRemote) return;
         setInFlight(true);
         freeFlightLandedLatched = false;
+        freeFlightTicksSinceStart = 0;
         currentFreeFlightInput = FreeFlightInput.zero();
         // Small upward kick so the rocket leaves the launchpad before the
         // landing-detector ({@link FreeFlightPhysics#shouldLand}) runs on the
@@ -869,9 +873,24 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         if (world.isRemote) return;
         if (!isFreeFlight() || !isInFlight()) return;
 
-        int primaryFuel = 0;
+        freeFlightTicksSinceStart++;
+
         FuelType ft = getRocketFuelType();
-        if (ft != null) primaryFuel = getFuelAmount(ft);
+        boolean requireFuel = ARConfiguration.getCurrentConfig().rocketRequireFuel;
+
+        // Fuel availability mirrors the classic isBurningFuel() gate: a
+        // bipropellant rocket needs BOTH fuel and oxidizer; if fuel isn't
+        // required by config, thrust is always available.
+        boolean canThrust;
+        if (!requireFuel) {
+            canThrust = true;
+        } else if (ft == null) {
+            canThrust = false;
+        } else if (ft == FuelType.LIQUID_BIPROPELLANT) {
+            canThrust = getFuelAmount(ft) > 0 && getFuelAmount(FuelType.LIQUID_OXIDIZER) > 0;
+        } else {
+            canThrust = getFuelAmount(ft) > 0;
+        }
 
         float gravMult = DimensionManager.getInstance()
                 .getDimensionProperties(this.world.provider.getDimension())
@@ -879,12 +898,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Per-tick gravity decrement scaled to existing space-flight convention.
         double gravity = 0.04 * gravMult;
 
+        // Thrust authority comes from the SAME classic stat the launch path uses:
+        // getAcceleration(g) is the net per-tick climb at full thrust and is
+        // thrust-multiplier / weight-system / gravityAffectsFuel aware. Adding the
+        // per-tick gravity back yields the gross thrust accel, so that at full
+        // vertical throttle net == getAcceleration → the FF climb gate is exactly
+        // the classic thrust-to-weight gate (TWR > 1). No invented /10000 scale.
+        double thrustMag = stats.getAcceleration(gravMult) + gravity;
+
         FreeFlightPhysics.Step result = FreeFlightPhysics.step(
                 this.motionX, this.motionY, this.motionZ,
                 this.rotationYaw, this.freeFlightPitch,
                 this.currentFreeFlightInput,
-                this.stats.getThrust(), this.stats.getWeight(),
-                gravity, primaryFuel,
+                thrustMag, gravity, canThrust,
                 this.flightAssistOn);
 
         this.motionX = result.motionX;
@@ -893,12 +919,22 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.rotationYaw = result.yaw;
         this.freeFlightPitch = result.pitch;
 
-        if (result.fuelConsumed > 0 && ft != null) {
-            setFuelAmount(ft, primaryFuel - result.fuelConsumed);
-            if (ft == FuelType.LIQUID_BIPROPELLANT) {
-                int ox = getFuelAmount(FuelType.LIQUID_OXIDIZER);
-                int oxBurn = Math.min(ox, result.fuelConsumed);
-                if (oxBurn > 0) setFuelAmount(FuelType.LIQUID_OXIDIZER, ox - oxBurn);
+        // Fuel burn — classic semantics: while thrust is applied AND fuel is
+        // required, drain getFuelConsumptionRate per tick (oxidizer too for
+        // bipropellant), and null out the fluid when a tank empties — exactly
+        // like the classic ascent burn in onUpdate().
+        if (requireFuel && result.thrustApplied && ft != null) {
+            setFuelAmount(ft, getFuelAmount(ft) - getFuelConsumptionRate(ft));
+            if (ft == FuelType.LIQUID_BIPROPELLANT)
+                setFuelAmount(FuelType.LIQUID_OXIDIZER,
+                        getFuelAmount(FuelType.LIQUID_OXIDIZER) - getFuelConsumptionRate(FuelType.LIQUID_OXIDIZER));
+
+            if (getFuelAmount(ft) == 0) {
+                stats.setFuelFluid("null");
+                stats.setWorkingFluid("null");
+            }
+            if (ft == FuelType.LIQUID_BIPROPELLANT && getFuelAmount(FuelType.LIQUID_OXIDIZER) == 0) {
+                stats.setOxidizerFluid("null");
             }
         }
 
@@ -907,6 +943,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Landing: ground contact + slow vertical motion → exit FF active flight.
         if (FreeFlightPhysics.shouldLand(this.onGround, this.motionY) && !freeFlightLandedLatched) {
+            // Harness-only diagnostics: explain WHY FF just switched off, with the
+            // concrete climb-authority numbers so manual testers can tell an
+            // out-of-thrust rocket apart from an over-eager auto-land. Gated on the
+            // same flag as the /artest probes (-Dadvancedrocketry.tests=true), so
+            // players never see it.
+            if (TestProbeCommandRegistration.isTestMode()) {
+                logFreeFlightLandReason(result.thrustApplied);
+            }
             this.motionX = 0;
             this.motionY = 0;
             this.motionZ = 0;
@@ -920,6 +964,42 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
         this.velocityChanged = true;
+    }
+
+    /**
+     * Harness-only diagnostic for "Free Flight switched off". Recomputes the
+     * climb-authority numbers the way {@link FreeFlightPhysics} does and logs
+     * whether the rocket physically could not climb (thrust too low for the
+     * local gravity) versus simply having re-landed without sustained vertical
+     * input. Gated by the caller on {@link TestProbeCommandRegistration#isTestMode()}.
+     *
+     * @param thrustAppliedLastTick whether the final physics step actually applied thrust
+     */
+    private void logFreeFlightLandReason(boolean thrustAppliedLastTick) {
+        int thrust = stats.getThrust();
+        float weight = stats.getWeight();
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        double gravity = 0.04 * gravMult;
+
+        // Climb authority is exactly the classic ascent acceleration: > 0 means
+        // the rocket can gain altitude at full vertical thrust (i.e. TWR > 1).
+        double netAccel = stats.getAcceleration(gravMult);
+        double twr = weight > 0 ? (double) thrust / weight : Double.POSITIVE_INFINITY;
+        boolean canClimb = netAccel > 0;
+        String verdict = canClimb
+                ? "thrust OK (getAcceleration > 0, TWR > 1) — re-landed without sustained vertical (Z) input, or auto-land fired near the pad"
+                : "INSUFFICIENT THRUST: getAcceleration <= 0 (TWR <= effective gravity) — full vertical thrust cannot climb here";
+
+        AdvancedRocketry.logger.info(String.format(
+                "[FF-DEBUG] FreeFlight OFF (landed) after %d ticks: onGround=%b motionY=%.4f thrustAppliedLastTick=%b%n"
+              + "           climb: thrust=%d weight=%.2f TWR=%.3f getAcceleration=%.5f gravity=%.5f canClimb=%b%n"
+              + "           verdict: %s%n"
+              + "           lastInput=%s",
+                freeFlightTicksSinceStart, this.onGround, this.motionY, thrustAppliedLastTick,
+                thrust, weight, twr, netAccel, gravity, canClimb,
+                verdict, String.valueOf(currentFreeFlightInput)));
     }
 
     /**

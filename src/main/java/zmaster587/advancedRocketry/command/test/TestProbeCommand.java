@@ -751,6 +751,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("motionX", rocket.motionX);
             info.put("motionY", rocket.motionY);
             info.put("motionZ", rocket.motionZ);
+            info.put("rotationYaw", rocket.rotationYaw);
             zmaster587.advancedRocketry.api.FreeFlightInput ffin = rocket.getCurrentFreeFlightInput();
             if (ffin != null) {
                 // Flat keys (jsonMap does not recurse into nested Maps).

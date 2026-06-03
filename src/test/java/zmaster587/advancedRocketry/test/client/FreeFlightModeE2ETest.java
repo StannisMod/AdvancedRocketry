@@ -46,6 +46,12 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern ROCKET_ID = Pattern.compile("\"id\":(-?\\d+)");
     private static final Pattern MOTION_Y = Pattern.compile("\"motionY\":(-?[0-9.E\\-]+)");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.E\\-]+)");
+    private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
+    private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
+    private static final Pattern YAW   = Pattern.compile("\"rotationYaw\":(-?[0-9.E\\-]+)");
+    private static final Pattern FUEL_PRIMARY_AMOUNT =
+            Pattern.compile("\"primaryFuelType\":\"([^\"]+)\".*?\"\\1\":\\{\"amount\":(-?\\d+)");
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));
@@ -213,5 +219,114 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         String info2 = exec("artest rocket info " + rocketId);
         assertTrue("flip-back must restore CLASSIC_LAUNCH: " + info2,
                 info2.contains("\"flightMode\":\"CLASSIC_LAUNCH\""));
+    }
+
+    // ===== FF flight controls (TWR-based thrust) =========================
+
+    private int mountFreshFreeFlightRocket(int baseX, int baseY, int baseZ) throws Exception {
+        exec("tp @a " + (baseX + 10) + " " + (baseY + 15) + " " + (baseZ + 10) + " 0 0");
+        bot().waitTicks(10);
+        int rocketId = buildAndAssemble(baseX, baseY, baseZ);
+        exec("tp @a " + (baseX + 0.5) + " " + (baseY + 1) + " " + (baseZ + 0.5) + " 0 0");
+        bot().waitTicks(5);
+        exec("artest player mount-entity " + rocketId);
+        exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
+        exec("artest rocket start-free-flight " + rocketId);
+        return rocketId;
+    }
+
+    @Test
+    public void verticalThrustGainsAltitude() throws Exception {
+        // The core "can take off" contract: with TWR-based thrust, a
+        // launch-capable fixture rocket (TWR ≫ 1) must actually CLIMB under
+        // full vertical throttle through the live server tick loop — not just
+        // hop and re-land like the old /10000-scaled thrust did.
+        int rocketId = mountFreshFreeFlightRocket(3300, 64, 500);
+
+        String inputResp = exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        assertTrue("vertical input must apply: " + inputResp, inputResp.contains("\"applied\":true"));
+
+        double yBefore = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
+        bot().waitTicks(30);
+        String after = exec("artest rocket info " + rocketId);
+        double yAfter = parseDouble(after, POS_Y, "posY");
+
+        assertTrue("FF rocket must gain real altitude under vertical thrust "
+                        + "(yBefore=" + yBefore + " yAfter=" + yAfter + ")",
+                yAfter - yBefore > 2.0);
+        assertTrue("rocket must still be in flight while climbing: " + after,
+                after.contains("\"isInFlight\":true"));
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void forwardThrustDisplacesHorizontally() throws Exception {
+        // Forward throttle at yaw=0 → +Z. Vertical kept on so the rocket stays
+        // airborne (doesn't auto-land mid-test).
+        int rocketId = mountFreshFreeFlightRocket(3400, 64, 500);
+
+        exec("artest rocket free-flight-input " + rocketId + " 1 1 0 0 0");
+        String before = exec("artest rocket info " + rocketId);
+        double xb = parseDouble(before, POS_X, "posX");
+        double zb = parseDouble(before, POS_Z, "posZ");
+        bot().waitTicks(30);
+        String after = exec("artest rocket info " + rocketId);
+        double xa = parseDouble(after, POS_X, "posX");
+        double za = parseDouble(after, POS_Z, "posZ");
+
+        double horiz = Math.sqrt((xa - xb) * (xa - xb) + (za - zb) * (za - zb));
+        assertTrue("forward thrust must move the rocket horizontally over 30 ticks "
+                        + "(horiz=" + horiz + ")", horiz > 1.0);
+        assertTrue("forward at yaw=0 must be predominantly +Z, got dz=" + (za - zb),
+                (za - zb) > 0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void yawInputRotatesHeading() throws Exception {
+        // Yaw input must steer the heading through the live loop. Vertical kept
+        // on to stay airborne while yawing (yaw rotates regardless of thrust).
+        int rocketId = mountFreshFreeFlightRocket(3500, 64, 500);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 1 1 0 0");
+        double yawBefore = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+        bot().waitTicks(8);
+        double yawAfter = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+
+        assertTrue("yaw input must rotate heading over 8 ticks "
+                        + "(before=" + yawBefore + " after=" + yawAfter + ")",
+                Math.abs(yawAfter - yawBefore) > 10.0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void verticalThrustDrainsFuelThroughLiveLoop() throws Exception {
+        // Fuel must burn classic-style (getFuelConsumptionRate, gated by
+        // rocketRequireFuel) while thrust is applied across real server ticks.
+        int rocketId = mountFreshFreeFlightRocket(3600, 64, 500);
+
+        Matcher mb = FUEL_PRIMARY_AMOUNT.matcher(exec("artest rocket fuel " + rocketId));
+        assertTrue("rocket must report a primary fuel amount", mb.find());
+        int fuelBefore = Integer.parseInt(mb.group(2));
+        assertTrue("start-free-flight must auto-fill fuel, got " + fuelBefore, fuelBefore > 0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        bot().waitTicks(20);
+
+        Matcher ma = FUEL_PRIMARY_AMOUNT.matcher(exec("artest rocket fuel " + rocketId));
+        assertTrue(ma.find());
+        int fuelAfter = Integer.parseInt(ma.group(2));
+        assertTrue("FF thrust must drain primary fuel through the live loop; "
+                        + "before=" + fuelBefore + " after=" + fuelAfter,
+                fuelAfter < fuelBefore);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
     }
 }

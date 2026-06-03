@@ -8,7 +8,6 @@ import zmaster587.advancedRocketry.api.FreeFlightPhysics.Step;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -16,48 +15,45 @@ import static org.junit.Assert.assertTrue;
  * that drives FREE_FLIGHT-mode kinematics. NO Minecraft types in this test; if a
  * regression slips into the math, this file fails before any server boots.
  *
+ * <p>The thrust scale is no longer invented here: the caller passes a gross
+ * per-tick thrust acceleration ({@code thrustMag}) and whether thrust is allowed
+ * ({@code canThrust}); fuel accounting lives in EntityRocket. The climb gate is
+ * therefore purely "full vertical net = thrustMag − gravity", which EntityRocket
+ * wires to the classic TWR via getAcceleration.
+ *
  * Pins:
  *  - Idle input + no gravity + no motion → no motion change.
- *  - Pure forward thrust moves the rocket along its yaw vector (no Y change beyond gravity).
- *  - Vertical thrust deltas motionY by a positive amount.
- *  - Yaw input rotates yaw at MAX_YAW_RATE × input.
- *  - Out-of-fuel + thrust input → no thrust applied; gravity still decreases motionY.
- *  - Brake input attenuates motion magnitude.
- *  - Max-speed hard cap clamps |motion| to MAX_SPEED.
- *  - Pitch clamp at PITCH_MAX.
- *  - shouldLand() requires ground contact AND small motionY.
+ *  - Forward thrust moves along the yaw vector by exactly thrustMag.
+ *  - Vertical thrust raises motionY by exactly thrustMag (no gravity).
+ *  - Climb gate: full vertical climbs iff thrustMag &gt; gravity.
+ *  - Yaw/pitch rotate at MAX_*_RATE; pitch clamps to PITCH_MAX.
+ *  - canThrust=false → no thrust applied; gravity + rotation still act.
+ *  - Brake attenuates motion; hard speed cap clamps to MAX_SPEED.
+ *  - Pitch projection lifts/lowers forward thrust; vertical is pitch-independent.
  *  - Null input is tolerated (treated as zero).
  */
 public class FreeFlightPhysicsTest {
 
     private static final double DELTA = 1e-6;
 
-    /** Convenient default thrust/mass that produces a non-trivial thrustScalar. */
-    private static final int DEFAULT_THRUST = 50000;
-    private static final double DEFAULT_MASS = 10000.0;
+    /** A healthy gross thrust acceleration (well above default gravity). */
+    private static final double THRUST = 0.10;
 
     @Test
-    public void idleInputNoGravityNoMotionIsStable() {
-        Step s = FreeFlightPhysics.step(
-                0, 0, 0,                       // motion
-                0f, 0f,                        // yaw, pitch
-                FreeFlightInput.zero(),
-                DEFAULT_THRUST, DEFAULT_MASS,
-                0.0,                           // gravity
-                1000);                         // fuel
+    public void idleNoGravityNoMotionIsStable() {
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f, FreeFlightInput.zero(),
+                THRUST, 0.0, true, true);
         assertEquals(0, s.motionX, DELTA);
         assertEquals(0, s.motionY, DELTA);
         assertEquals(0, s.motionZ, DELTA);
         assertEquals(0f, s.yaw, DELTA);
         assertEquals(0f, s.pitch, DELTA);
         assertFalse(s.thrustApplied);
-        assertEquals(0, s.fuelConsumed);
     }
 
     @Test
     public void nullInputTreatedAsZero() {
-        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f, null,
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f, null, THRUST, 0.0, true, true);
         assertEquals(0, s.motionX, DELTA);
         assertEquals(0, s.motionY, DELTA);
         assertEquals(0, s.motionZ, DELTA);
@@ -67,102 +63,105 @@ public class FreeFlightPhysicsTest {
     @Test
     public void gravityDrainsMotionYWhenIdle() {
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f, FreeFlightInput.zero(),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.05, 1000);
-        // gravity is +0.05 → motionY drops by exactly 0.05 with idle drag NOT applied to Y
-        // (idle drag only scales X/Z per implementation).
+                THRUST, 0.05, true, true);
         assertEquals(-0.05, s.motionY, DELTA);
     }
 
     @Test
-    public void forwardThrustMovesAlongYaw() {
-        // yaw=0 → forward vector = (-sin 0, cos 0) = (0, 1) → +Z direction.
+    public void forwardThrustMovesAlongYawByThrustMag() {
+        // yaw=0 → forward vector = (-sin 0, cos 0) = (0, 1) → +Z by exactly thrustMag.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertTrue("expected +Z motion from forward thrust at yaw=0, got " + s.motionZ,
-                s.motionZ > 0);
-        assertEquals("no X motion when yaw=0", 0.0, s.motionX, DELTA);
-        // gravity=0 in this test, so motionY stays zero.
+                THRUST, 0.0, true, true);
+        assertEquals(THRUST, s.motionZ, DELTA);
+        assertEquals(0.0, s.motionX, DELTA);
         assertEquals(0.0, s.motionY, DELTA);
         assertTrue(s.thrustApplied);
-        assertTrue(s.fuelConsumed > 0);
     }
 
     @Test
     public void forwardThrustAt90DegYawMovesAlongNegX() {
-        // yaw=90 → forward = (-sin 90°, cos 90°) = (-1, 0).
         Step s = FreeFlightPhysics.step(0, 0, 0, 90f, 0f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertTrue("expected -X motion at yaw=90, got " + s.motionX, s.motionX < 0);
         assertEquals(0.0, s.motionZ, 1e-3); // cos 90 ≈ 0
     }
 
     @Test
-    public void verticalThrustIncreasesMotionY() {
+    public void verticalThrustRaisesMotionYByThrustMag() {
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertTrue("vertical+ thrust must raise motionY, got " + s.motionY, s.motionY > 0);
+                THRUST, 0.0, true, true);
+        assertEquals(THRUST, s.motionY, DELTA);
         assertTrue(s.thrustApplied);
+    }
+
+    @Test
+    public void climbGateFullVerticalClimbsWhenThrustExceedsGravity() {
+        // thrustMag (0.10) > gravity (0.04) → net positive climb.
+        Step climb = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
+                0.10, 0.04, true, true);
+        assertTrue("net climb expected, got motionY=" + climb.motionY, climb.motionY > 0);
+        assertEquals(0.10 - 0.04, climb.motionY, DELTA);
+
+        // thrustMag (0.02) < gravity (0.04) → underpowered, sinks even at full vertical.
+        Step sink = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
+                0.02, 0.04, true, true);
+        assertTrue("underpowered must sink, got motionY=" + sink.motionY, sink.motionY < 0);
     }
 
     @Test
     public void yawInputRotatesYaw() {
         Step s = FreeFlightPhysics.step(0, 0, 0, 10f, 0f,
                 new FreeFlightInput(0f, 0f, 1f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertEquals(10f + (float) FreeFlightPhysics.MAX_YAW_RATE, s.yaw, DELTA);
     }
 
     @Test
     public void pitchInputRotatesPitchClampedToMax() {
-        // Pitch rate per tick is MAX_PITCH_RATE — at +1 input, pitch grows by exactly
-        // MAX_PITCH_RATE until the clamp at PITCH_MAX kicks in.
-        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, (float)(FreeFlightPhysics.PITCH_MAX - 1),
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, (float) (FreeFlightPhysics.PITCH_MAX - 1),
                 new FreeFlightInput(0f, 0f, 0f, 1f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertEquals((float) FreeFlightPhysics.PITCH_MAX, s.pitch, DELTA);
     }
 
     @Test
     public void pitchClampedBelowNegative() {
-        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, (float)(-FreeFlightPhysics.PITCH_MAX + 1),
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, (float) (-FreeFlightPhysics.PITCH_MAX + 1),
                 new FreeFlightInput(0f, 0f, 0f, -1f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertEquals((float) -FreeFlightPhysics.PITCH_MAX, s.pitch, DELTA);
     }
 
     @Test
-    public void noFuelDisablesThrustButStillRotatesAndApplyGravity() {
+    public void cannotThrustDisablesThrustButStillRotatesAndApplyGravity() {
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(1f, 1f, 1f, 1f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.05, /*fuel=*/0);
-        assertFalse("out of fuel: no thrust", s.thrustApplied);
-        assertEquals("out of fuel: no fuel consumed", 0, s.fuelConsumed);
+                THRUST, 0.05, /*canThrust=*/false, true);
+        assertFalse("no fuel: no thrust", s.thrustApplied);
         assertEquals("forward thrust must not apply (motionX stayed 0)", 0.0, s.motionX, DELTA);
-        assertEquals("vertical thrust must not apply, only gravity acts",
-                -0.05, s.motionY, DELTA);
-        // Yaw rotation still applies — input drives orientation independently of fuel.
+        assertEquals("vertical thrust must not apply, only gravity acts", -0.05, s.motionY, DELTA);
+        // Yaw rotation still applies — orientation is independent of thrust.
         assertNotEquals(0f, s.yaw);
     }
 
     @Test
     public void brakeAttenuatesHorizontalMotion() {
-        // start moving in +X; full brake should pull magnitude down (× BRAKE_RETENTION).
         double startX = 1.0;
         Step s = FreeFlightPhysics.step(startX, 0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 0f, 0f, 0f, 1f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertTrue("brake must shrink motionX magnitude", Math.abs(s.motionX) < startX);
     }
 
     @Test
     public void hardSpeedCapClampsMagnitudeToMaxSpeed() {
-        // initial motion already at 10 blocks/tick — far above MAX_SPEED.
-        Step s = FreeFlightPhysics.step(10, 0, 0, 0f, 0f,
-                FreeFlightInput.zero(),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+        Step s = FreeFlightPhysics.step(10, 0, 0, 0f, 0f, FreeFlightInput.zero(),
+                THRUST, 0.0, true, true);
         double speed = Math.sqrt(s.motionX * s.motionX
                 + s.motionY * s.motionY + s.motionZ * s.motionZ);
         assertTrue("hard cap: speed must not exceed MAX_SPEED, got " + speed,
@@ -170,28 +169,13 @@ public class FreeFlightPhysicsTest {
     }
 
     @Test
-    public void fuelConsumedScalesWithThrottle() {
-        // Full forward+vertical → full demand → ceil(1.0 * 4) = 4
-        Step full = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
-                new FreeFlightInput(1f, 1f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertEquals(FreeFlightPhysics.FUEL_PER_TICK_AT_FULL_THRUST, full.fuelConsumed);
-
-        // Half forward + zero vertical → 0.25 demand → ceil(0.25*4) = 1
-        Step half = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
-                new FreeFlightInput(0.5f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertEquals(1, half.fuelConsumed);
-    }
-
-    @Test
-    public void fuelConsumedCappedByFuelAvailable() {
+    public void thrustAccelClampedToMaxThrustAccel() {
+        // A wildly over-thrusted rocket (thrustMag far above the arcade ceiling)
+        // is capped: forward motion can't exceed MAX_THRUST_ACCEL in one tick.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
-                new FreeFlightInput(1f, 1f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, /*fuel=*/2);
-        assertTrue("fuel consumed must not exceed available", s.fuelConsumed <= 2);
-        assertTrue("fuel consumed must be positive when thrust applied", s.fuelConsumed > 0);
-        assertTrue(s.thrustApplied);
+                new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
+                /*thrustMag=*/100.0, 0.0, true, true);
+        assertEquals(FreeFlightPhysics.MAX_THRUST_ACCEL, s.motionZ, DELTA);
     }
 
     @Test
@@ -199,66 +183,42 @@ public class FreeFlightPhysicsTest {
         assertTrue (FreeFlightPhysics.shouldLand(true,  0.0));
         assertTrue (FreeFlightPhysics.shouldLand(true,  0.04));
         assertTrue (FreeFlightPhysics.shouldLand(true, -0.04));
-        assertFalse(FreeFlightPhysics.shouldLand(true,  1.0));   // ground but going fast → not landing
-        assertFalse(FreeFlightPhysics.shouldLand(false, 0.0));   // airborne idle → not landing
+        assertFalse(FreeFlightPhysics.shouldLand(true,  1.0));
+        assertFalse(FreeFlightPhysics.shouldLand(false, 0.0));
     }
 
     @Test
     public void forwardThrustAtNegativePitchProducesUpwardMotion() {
-        // pitch=-45 (nose up in MC convention) → forward vector picks up a +Y
-        // component: fy = -sin(-45°) = +√2/2. Forward thrust must therefore
-        // contribute positively to motionY even with zero vertical-throttle.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, -45f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertTrue("pitch=-45 + forward thrust must lift the rocket, got motionY=" + s.motionY,
-                s.motionY > 0);
-        assertTrue("pitch=-45 must also still push +Z (horizontal component), got motionZ=" + s.motionZ,
-                s.motionZ > 0);
+                THRUST, 0.0, true, true);
+        assertTrue("pitch=-45 + forward thrust must lift, got motionY=" + s.motionY, s.motionY > 0);
+        assertTrue("pitch=-45 must also push +Z, got motionZ=" + s.motionZ, s.motionZ > 0);
     }
 
     @Test
     public void forwardThrustAtPositivePitchProducesDownwardMotion() {
-        // pitch=+45 (nose down) → fy = -sin(+45°) = -√2/2 → motionY drops
-        // from forward thrust alone (no gravity in this test).
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 45f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertTrue("pitch=+45 + forward thrust must lower motionY (no gravity), got motionY=" + s.motionY,
-                s.motionY < 0);
+                THRUST, 0.0, true, true);
+        assertTrue("pitch=+45 + forward thrust must lower motionY, got " + s.motionY, s.motionY < 0);
     }
 
     @Test
     public void forwardThrustAtZeroPitchPreservesPureHorizontal() {
-        // Regression guard: pitch=0 means fy=0 means forward thrust ONLY
-        // affects horizontal axes. (Confirms the pitch-projection refactor
-        // didn't leak a constant offset.)
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
+                THRUST, 0.0, true, true);
         assertEquals("pitch=0 forward thrust must add zero Y", 0.0, s.motionY, DELTA);
         assertTrue("pitch=0 forward thrust must add +Z", s.motionZ > 0);
     }
 
     @Test
     public void verticalThrustIndependentOfPitch() {
-        // Vertical-throttle channel must remain orthogonal: vert=+1 always
-        // adds to motionY regardless of pitch (otherwise hover at pitch=±90°
-        // becomes impossible).
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 60f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
-                DEFAULT_THRUST, DEFAULT_MASS, 0.0, 1000);
-        assertTrue("vertical thrust must lift motionY independently of pitch=60°, got "
-                + s.motionY, s.motionY > 0);
-    }
-
-    @Test
-    public void minimalMassDoesNotBlowUp() {
-        // mass=0 mustn't NaN/Infinity the motion; physics floors mass internally.
-        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
-                new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
-                DEFAULT_THRUST, 0.0, 0.0, 1000);
-        assertTrue("motion must be finite even at mass=0",
-                Double.isFinite(s.motionX) && Double.isFinite(s.motionZ));
+                THRUST, 0.0, true, true);
+        assertTrue("vertical thrust must lift independently of pitch=60°, got " + s.motionY,
+                s.motionY > 0);
     }
 }
