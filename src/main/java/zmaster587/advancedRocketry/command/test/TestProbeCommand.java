@@ -6406,6 +6406,13 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
 
+            // Was the destination dimension loaded BEFORE firing? Issue #61's
+            // fix makes attemptCargoTransfer initDimension a registered-but-
+            // unloaded destination, so a false→true transition here proves the
+            // load branch ran.
+            boolean destLoadedBefore =
+                    net.minecraftforge.common.DimensionManager.getWorld(dDim) != null;
+
             // Fire: invoke the private attemptCargoTransfer() directly so the
             // result isolates the cargo/linker/planetary gate from the
             // enabled/redstone/power gating in useEnergy().
@@ -6431,14 +6438,26 @@ public class TestProbeCommand extends CommandBase {
                         + escapeJson(e.getMessage()) + "\"}");
                 return;
             }
+            // Read the fire status the production code just set (issue #61
+            // feedback). Reflective — the field is private transient state.
+            String fireStatus = "<unknown>";
+            try {
+                java.lang.reflect.Field fsf = zmaster587.advancedRocketry.tile.multiblock
+                        .TileRailgun.class.getDeclaredField("fireStatus");
+                fsf.setAccessible(true);
+                Object fs = fsf.get(src);
+                fireStatus = fs == null ? "null" : fs.toString();
+            } catch (ReflectiveOperationException ignored) {
+                // older build without the status field — leave "<unknown>"
+            }
+
             boolean destLoaded = false;
             boolean destIsRailgun = false;
             int destMatched = 0;
-            // Mirror production exactly: attemptCargoTransfer resolves the
-            // destination via Forge's DimensionManager.getWorld (returns null
-            // when the dim is unloaded). Do NOT use server.getWorld here — it
-            // auto-inits the dimension, which would mask the unloaded-dest
-            // silent-failure mode this probe is meant to surface.
+            // Use Forge's DimensionManager.getWorld (no auto-init) so this
+            // reflects the dim's ACTUAL post-fire state — i.e. whether
+            // production itself loaded it (issue #61 fix), not a probe side
+            // effect. server.getWorld would auto-init and mask that.
             net.minecraft.world.WorldServer dWorld =
                     net.minecraftforge.common.DimensionManager.getWorld(dDim);
             if (dWorld != null) {
@@ -6461,9 +6480,11 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"linkerSet\":" + linkerSet
                     + ",\"inPortCount\":" + inPortCount
                     + ",\"srcInputRemaining\":" + srcInputRemaining
+                    + ",\"destLoadedBefore\":" + destLoadedBefore
                     + ",\"destLoaded\":" + destLoaded
                     + ",\"destIsRailgun\":" + destIsRailgun
-                    + ",\"destMatched\":" + destMatched + "}");
+                    + ",\"destMatched\":" + destMatched
+                    + ",\"fireStatus\":\"" + escapeJson(fireStatus) + "\"}");
             return;
         }
         if (args.length >= 5 && "astrobody-set-research".equalsIgnoreCase(args[0])) {

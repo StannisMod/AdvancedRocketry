@@ -6,9 +6,12 @@
   "Railgun just does not fire with a linker that has the cords of another
   railgun"). Reported 2025-07-15 against AR 1.12.2-2.1.8 / LibVulpes
   ARLIB-17-09-2024. No comments, no repro detail, no stacktrace.
-- Status: 🟡 **In Progress — repro shipped 2026-06-02, fix pending.**
-  Root cause isolated and characterized by tests; production fix not yet
-  written.
+- Type: Bug report — confirmed.
+- Priority: urgent.
+- Status: ✅ **Completed 2026-06-03.** Repro shipped 2026-06-02 (server +
+  client); production fix (Option 1: load destination dim on fire + player
+  feedback) shipped 2026-06-03; repro tests flipped to the corrected
+  behaviour. All green.
 - Created: 2026-06-02.
 
 ## Context
@@ -85,15 +88,40 @@ across dercodeKoenig `1.12` and zmaster587 — no fix to pull.
 
 All four green; testServer + testClient cache-busted per flake-diagnosis SOP.
 
-## Fix plan (not yet implemented)
+## Fix shipped (Option 1 — 2026-06-03)
 
-1. **Resolve/load the destination dimension on fire** so Station→Planet and
-   Planet→Planet work regardless of player presence — either
-   `server.getWorld(destDim)` (Forge auto-inits) plus a transient chunk-load
-   of the destination, or a kept ticket. Then flip the cross-dim test's
-   expectation to "fires".
-2. **Player feedback** on each failure cause (other dim / unloaded / no output
-   hatch / redstone / power) — turn the silent `false` into a clear message.
+User chose **Option 1: load destination on fire + feedback** (over a
+persistent destination chunk-ticket, or feedback-only). Implemented in
+`TileRailgun`:
+
+1. **Load the destination dimension on fire.** `attemptCargoTransfer` now,
+   when `DimensionManager.getWorld(dimId) == null && isDimensionRegistered`,
+   calls `initDimension(dimId)` and re-resolves — mirroring the
+   `TileSpaceElevator` idiom. `getTileEntity` then loads the destination chunk;
+   the destination railgun's own `onLoad` ticket keeps it loaded thereafter. So
+   Planet→Planet / Station→Planet now work regardless of player presence, with
+   only a one-time load on the first cold shot.
+2. **Player feedback.** New `FireStatus` enum (`IDLE`/`FIRED`/`NO_TARGET`/
+   `TARGET_UNAVAILABLE`/`TARGET_FULL`/`DIFFERENT_SYSTEM`) set at every branch of
+   `attemptCargoTransfer`, synced to the client via the tile description packet
+   (`write/readNetworkData`), and rendered as a red GUI line via `ModuleText`
+   in `getModules`. Four new `msg.railgun.status.*` keys in `en_US.lang`.
+
+## Result
+
+Shipped 2026-06-03. Production: `TileRailgun` (dimension-load + `FireStatus`
+feedback). Probe: `infra railgun-fire` extended with `destLoadedBefore` +
+`fireStatus`. Tests flipped to the corrected behaviour (Path B):
+- **server** `RailgunFiringContractTest` (3): same-dim fires (status FIRED);
+  registered-but-unloaded dest dim is loaded on fire
+  (`destLoadedBefore:false → destLoaded:true`); unloadable (unregistered) dest
+  reports `TARGET_UNAVAILABLE` with cargo preserved.
+- **client** `RailgunCargoTransitE2ETest` (2): same-dim fires; unloadable dest
+  reports `TARGET_UNAVAILABLE`, cargo preserved.
+All green (3 server + 2 client, `skipped=0`). Pyramid +1 net server (the repro
+class grew 2→3). Bug-ledger #8 flipped to FIXED. Net production touch: only the
+firing path + GUI status; `onReceiveCargo` / structure / receiver contract
+(TASK-40, RailgunCargoReceiveContractTest) untouched.
 
 ## Out of scope / notes
 
@@ -104,8 +132,8 @@ All four green; testServer + testClient cache-busted per flake-diagnosis SOP.
 
 ## Dependencies
 
-- Independent. Touches only `TestProbeCommand.java` + a new test file (repro);
-  the fix (when done) will touch `TileRailgun.attemptCargoTransfer`.
+- Independent. Repro touched `TestProbeCommand.java` + new test files; the fix
+  touched `TileRailgun` (firing path + GUI status) + `en_US.lang`.
 
 ## Bug ledger
 

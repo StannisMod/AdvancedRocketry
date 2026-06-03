@@ -4,9 +4,9 @@
 2026-05-23). Batch #2 below is **live** and is kept in sync with the
 summary in [`../tasks/README.md`](../tasks/README.md) bug-ledger section.
 
-**Live bug count (as of 2026-06-02)**: 5 live — Batch #2 entries
-#1, #3, #5, #7, #8. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
-#6 fixed by TASK-43 Phase 3 (see per-entry notes below).
+**Live bug count (as of 2026-06-03)**: 4 live — Batch #2 entries
+#1, #3, #5, #7. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
+#6 fixed by TASK-43 Phase 3, #8 fixed by TASK-49 (see per-entry notes below).
 When a future production bug is uncovered, follow the rule in
 [`CLAUDE.md`](../../CLAUDE.md#bug-tracking--every-discovered-production-bug-must-be-logged)
 and append it to Batch #2 here AND to the README summary.
@@ -256,7 +256,16 @@ authoring that have not yet been fixed.
    (drains an AR Forge-fluid source) and documents this in its docstring.
    **Found**: 2026-05-31 during TASK-44 Gap F.4 un-ignore.
 
-8. **`TileRailgun.attemptCargoTransfer` fails silently — no player feedback
+8. ✅ **FIXED 2026-06-03 by TASK-49.** `attemptCargoTransfer` now loads a
+   registered-but-unloaded destination dimension on fire
+   (`getWorld==null && isDimensionRegistered → initDimension → getWorld`,
+   the `TileSpaceElevator` idiom; the destination railgun's own `onLoad`
+   ticket sustains it after), and every non-firing outcome sets a
+   `FireStatus` (`NO_TARGET` / `TARGET_UNAVAILABLE` / `TARGET_FULL` /
+   `DIFFERENT_SYSTEM`) synced to the client and shown as a red GUI line —
+   no more silent no-op. Repro tests flipped to the corrected behaviour
+   (3 server + 2 client, green). Original description below.
+   **`TileRailgun.attemptCargoTransfer` fails silently — no player feedback
    on any failure branch; the dominant field cause is an unloaded destination
    dimension.** The railgun is a paired item-teleport: a source pulls a stack
    from its input port and dispatches it to a linked destination railgun.

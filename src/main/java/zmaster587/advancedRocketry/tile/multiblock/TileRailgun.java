@@ -170,6 +170,18 @@ public class TileRailgun extends TileMultiPowerConsumer implements IInventory, I
                     }
             };
     public long recoil;
+
+    /**
+     * Why the last cargo-dispatch attempt did (not) fire. Surfaced to the
+     * player in the GUI (issue #61: failures used to be a silent no-op).
+     * Transient — recomputed every tick, synced to the client via the tile
+     * description packet.
+     */
+    public enum FireStatus {
+        IDLE, FIRED, NO_TARGET, TARGET_UNAVAILABLE, TARGET_FULL, DIFFERENT_SYSTEM
+    }
+
+    private FireStatus fireStatus = FireStatus.IDLE;
     private EmbeddedInventory inv;
     private Ticket ticket;
     private int minStackTransferSize = 1;
@@ -244,6 +256,16 @@ public class TileRailgun extends TileMultiPowerConsumer implements IInventory, I
         }
 
         modules.add(redstoneControl);
+
+        // Issue #61: surface why the railgun isn't firing instead of failing
+        // silently. Only the actionable failure states get a line; IDLE/FIRED
+        // show nothing.
+        if (world.isRemote && fireStatus != FireStatus.IDLE && fireStatus != FireStatus.FIRED) {
+            modules.add(new ModuleText(60, 55,
+                    LibVulpes.proxy.getLocalizedString(
+                            "msg.railgun.status." + fireStatus.name().toLowerCase()),
+                    0xb00000));
+        }
 
         return modules;
     }
@@ -329,38 +351,81 @@ public class TileRailgun extends TileMultiPowerConsumer implements IInventory, I
             }
         }
 
-        if (!tfrStack.isEmpty()) {
-            BlockPos pos = getDestPosition();
-            if (pos != null) {
-                int dimId;
-
-                dimId = getDestDimId();
-
-                if (dimId != Constants.INVALID_PLANET) {
-                    World world = DimensionManager.getWorld(dimId);
-                    TileEntity tile;
-
-                    if (world != null && (tile = world.getTileEntity(pos)) instanceof TileRailgun && ((TileRailgun) tile).canReceiveCargo(tfrStack) &&
-                            (PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(this.world.provider.getDimension(),
-                                    zmaster587.advancedRocketry.dimension.DimensionManager.getEffectiveDimId(world, pos).getId()) ||
-                                    zmaster587.advancedRocketry.dimension.DimensionManager.getEffectiveDimId(world, pos).getId() == zmaster587.advancedRocketry.dimension.DimensionManager.getEffectiveDimId(this.world, this.pos).getId())) {
-
-                        ((TileRailgun) tile).onReceiveCargo(tfrStack);
-                        inv2.setInventorySlotContents(index, ItemStack.EMPTY);
-                        inv2.markDirty();
-                        world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
-
-                        EnumFacing dir = RotatableBlock.getFront(world.getBlockState(pos));
-
-                        EntityItemAbducted ent = new EntityItemAbducted(this.world, this.pos.getX() - 2 * dir.getFrontOffsetX() + 0.5f, this.pos.getY() + 5, this.pos.getZ() - 2 * dir.getFrontOffsetZ() + 0.5f, tfrStack);
-                        this.world.spawnEntity(ent);
-                        PacketHandler.sendToNearby(new PacketMachine(this, (byte) 3), this.world.provider.getDimension(), this.pos.getX() - dir.getFrontOffsetX(), this.pos.getY() + 5, this.pos.getZ() - dir.getFrontOffsetZ(), 64d);
-                        return true;
-                    }
-                }
-            }
+        if (tfrStack.isEmpty()) {
+            setFireStatus(FireStatus.IDLE);
+            return false;
         }
-        return false;
+
+        BlockPos pos = getDestPosition();
+        int dimId = getDestDimId();
+        if (pos == null || dimId == Constants.INVALID_PLANET) {
+            setFireStatus(FireStatus.NO_TARGET);
+            return false;
+        }
+
+        // Issue #61: resolve the destination world, loading the dimension if it
+        // is registered but not currently loaded. The railgun only chunk-loads
+        // its OWN chunk (see onLoad), so a destination on an otherwise-idle
+        // planet used to resolve to null here and fail SILENTLY. Mirror the
+        // initDimension idiom used by TileSpaceElevator; once loaded, the
+        // destination railgun's own onLoad ticket keeps it loaded.
+        World destWorld = DimensionManager.getWorld(dimId);
+        if (destWorld == null && DimensionManager.isDimensionRegistered(dimId)) {
+            DimensionManager.initDimension(dimId);
+            destWorld = DimensionManager.getWorld(dimId);
+        }
+        if (destWorld == null) {
+            setFireStatus(FireStatus.TARGET_UNAVAILABLE);
+            return false;
+        }
+
+        TileEntity tile = destWorld.getTileEntity(pos);
+        if (!(tile instanceof TileRailgun)) {
+            setFireStatus(FireStatus.TARGET_UNAVAILABLE);
+            return false;
+        }
+        TileRailgun dest = (TileRailgun) tile;
+
+        if (!dest.canReceiveCargo(tfrStack)) {
+            setFireStatus(FireStatus.TARGET_FULL);
+            return false;
+        }
+
+        int destEffective = zmaster587.advancedRocketry.dimension.DimensionManager
+                .getEffectiveDimId(destWorld, pos).getId();
+        int srcEffective = zmaster587.advancedRocketry.dimension.DimensionManager
+                .getEffectiveDimId(this.world, this.pos).getId();
+        if (!(PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem(
+                this.world.provider.getDimension(), destEffective)
+                || destEffective == srcEffective)) {
+            setFireStatus(FireStatus.DIFFERENT_SYSTEM);
+            return false;
+        }
+
+        dest.onReceiveCargo(tfrStack);
+        inv2.setInventorySlotContents(index, ItemStack.EMPTY);
+        inv2.markDirty();
+        destWorld.notifyBlockUpdate(pos, destWorld.getBlockState(pos), destWorld.getBlockState(pos), 2);
+
+        EnumFacing dir = RotatableBlock.getFront(destWorld.getBlockState(pos));
+
+        EntityItemAbducted ent = new EntityItemAbducted(this.world, this.pos.getX() - 2 * dir.getFrontOffsetX() + 0.5f, this.pos.getY() + 5, this.pos.getZ() - 2 * dir.getFrontOffsetZ() + 0.5f, tfrStack);
+        this.world.spawnEntity(ent);
+        PacketHandler.sendToNearby(new PacketMachine(this, (byte) 3), this.world.provider.getDimension(), this.pos.getX() - dir.getFrontOffsetX(), this.pos.getY() + 5, this.pos.getZ() - dir.getFrontOffsetZ(), 64d);
+        setFireStatus(FireStatus.FIRED);
+        return true;
+    }
+
+    /**
+     * Update the cached fire status and, on a real change server-side, push a
+     * tile resync so an open GUI reflects it (issue #61 feedback).
+     */
+    private void setFireStatus(FireStatus status) {
+        if (this.fireStatus != status) {
+            this.fireStatus = status;
+            if (!world.isRemote)
+                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+        }
     }
 
     public boolean canReceiveCargo(@Nonnull ItemStack stack) {
@@ -536,6 +601,7 @@ public class TileRailgun extends TileMultiPowerConsumer implements IInventory, I
         super.writeNetworkData(nbt);
         nbt.setByte("state", (byte) state.ordinal());
         nbt.setInteger("minTfrSize", minStackTransferSize);
+        nbt.setByte("fireStatus", (byte) fireStatus.ordinal());
     }
 
     @Override
@@ -544,6 +610,7 @@ public class TileRailgun extends TileMultiPowerConsumer implements IInventory, I
         state = RedstoneState.values()[nbt.getByte("redstoneState")];
         redstoneControl.setRedstoneState(state);
         minStackTransferSize = nbt.getInteger("minTfrSize");
+        fireStatus = FireStatus.values()[nbt.getByte("fireStatus")];
     }
 
     @Override
