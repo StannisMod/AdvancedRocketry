@@ -1282,6 +1282,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     @Override
     public void setPositionAndRotationDirect(double x, double y, double z, float yaw, float pitch, int posRotationIncrements, boolean teleport) {
 
+        // Free Flight is fast/arcade. The classic poscorrection smoothing below
+        // (closed at only 1/ct=50 per tick) is tuned for the slow vertical
+        // ascent and cannot track FF motion — the client falls ~150 blocks
+        // behind the server and the ridden rocket jerks and looks stuck. Snap
+        // straight to the authoritative server transform instead.
+        if (isFreeFlight() && isInFlight()) {
+            this.setPosition(x, y, z);
+            this.rotationYaw = yaw;
+            this.rotationPitch = pitch;
+            this.poscorrection = new Vec3d(0, 0, 0);
+            return;
+        }
+
         if(last_was_in_orbit != this.dataManager.get(INORBIT)){
             last_was_in_orbit = this.dataManager.get(INORBIT);
             reset_motion= true;
@@ -1444,6 +1457,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     @Override
     public void setVelocity(double x, double y, double z) {
 
+        // Free Flight: take the server velocity verbatim (see
+        // setPositionAndRotationDirect) — no slow velcorrection blending.
+        if (isFreeFlight() && isInFlight()) {
+            this.motionX = x;
+            this.motionY = y;
+            this.motionZ = z;
+            this.velcorrection = new Vec3d(0, 0, 0);
+            return;
+        }
+
         if (reset_motion){
             velcorrection = new Vec3d(0,0,0);
             this.motionX = x;
@@ -1476,7 +1499,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 postedLandedAfterLoad = true;
             }
         }
-        if (world.isRemote) {
+        // Skip the classic poscorrection/velcorrection smoothing while in Free
+        // Flight — FF snaps to the server transform in setPositionAndRotationDirect
+        // / setVelocity, so applying stale corrections here would re-introduce the
+        // lag/jerk this fix removes.
+        if (world.isRemote && !(isFreeFlight() && isInFlight())) {
 
             double ct = 50;
 

@@ -7,6 +7,7 @@ import net.minecraftforge.fml.client.FMLClientHandler;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.input.Keyboard;
@@ -65,6 +66,50 @@ public class KeyBindings {
         return openRocketUI;
     }
 
+    /**
+     * Free Flight steering is sampled every client tick (not just on key
+     * transitions) and dispatched when the intent changes. This is what makes a
+     * held key keep thrusting after {@code isInFlight} replicates to the client,
+     * and lets the pilot hold a direction continuously.
+     */
+    @SubscribeEvent
+    public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+
+        final Minecraft mc = Minecraft.getMinecraft();
+        final EntityPlayerSP player = mc.player;
+        if (player == null || !mc.inGameHasFocus || mc.currentScreen != null) return;
+        if (!(player.getRidingEntity() instanceof EntityRocket)) return;
+
+        EntityRocket rocket = (EntityRocket) player.getRidingEntity();
+        if (!(rocket.isFreeFlight() && rocket.isInFlight())) {
+            // Reset so the next entry into FF sends a fresh, current snapshot.
+            lastSentInput = FreeFlightInput.zero();
+            return;
+        }
+
+        float fwd  = (mc.gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
+                   + (mc.gameSettings.keyBindBack.isKeyDown()    ? -1f : 0f);
+        float vert = (turnRocketUp.isKeyDown()   ?  1f : 0f)
+                   + (turnRocketDown.isKeyDown() ? -1f : 0f);
+        float yaw  = (turnRocketRight.isKeyDown() ?  1f : 0f)
+                   + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
+        // Q = nose up (pitch < 0 looks up in MC convention), E = nose down.
+        float pitch = (pitchRocketUp.isKeyDown()   ? -1f : 0f)
+                    + (pitchRocketDown.isKeyDown() ?  1f : 0f);
+        float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
+        boolean stop  = flightStop.isKeyDown();
+        boolean hover = flightHoverHold.isKeyDown();
+
+        FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
+        if (!input.equals(lastSentInput)) {
+            rocket.applyFreeFlightInput(input);
+            PacketHandler.sendToServer(new PacketEntity(
+                    rocket, (byte) EntityRocket.PacketType.FREE_FLIGHT_INPUT.ordinal()));
+            lastSentInput = input;
+        }
+    }
+
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         final Minecraft minecraft = FMLClientHandler.instance().getClient();
@@ -119,33 +164,12 @@ public class KeyBindings {
                             (byte) EntityRocket.PacketType.SET_FLIGHT_ASSIST.ordinal()));
                 }
 
-                if (rocket.isFreeFlight() && rocket.isInFlight()) {
-                    // Free Flight: synthesise input from movement keys + RCS keys, send when changed.
-                    float fwd  = (Minecraft.getMinecraft().gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
-                               + (Minecraft.getMinecraft().gameSettings.keyBindBack.isKeyDown()    ? -1f : 0f);
-                    float vert = (turnRocketUp.isKeyDown()   ?  1f : 0f)
-                               + (turnRocketDown.isKeyDown() ? -1f : 0f);
-                    float yaw  = (turnRocketRight.isKeyDown() ?  1f : 0f)
-                               + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
-                    // Q = nose up (pitch -1 → newPitch decreases, MC convention pitch<0 looks up).
-                    // E = nose down.
-                    float pitch = (pitchRocketUp.isKeyDown()   ? -1f : 0f)
-                                + (pitchRocketDown.isKeyDown() ?  1f : 0f);
-                    float brake = Minecraft.getMinecraft().gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
-                    boolean stop  = flightStop.isKeyDown();
-                    boolean hover = flightHoverHold.isKeyDown();
-                    FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
-                    if (!input.equals(lastSentInput)) {
-                        // Set local intent so EntityRocket.writeDataToNetwork serializes the new
-                        // FreeFlightInput via its ByteBuf path (mirrors TURNUPDATE precedent
-                        // — client mutates local booleans then sends the entity packet).
-                        rocket.applyFreeFlightInput(input);
-                        PacketHandler.sendToServer(new PacketEntity(
-                                rocket,
-                                (byte) EntityRocket.PacketType.FREE_FLIGHT_INPUT.ordinal()));
-                        lastSentInput = input;
-                    }
-                } else {
+                // Free Flight steering input is sampled every client tick in
+                // onClientTick (below), NOT here: KeyInputEvent only fires on key
+                // transitions, so a key held *before* isInFlight replicates to the
+                // client would never be sent and the rocket would never climb.
+                // The legacy (non-FF) turning path stays edge-driven here.
+                if (!(rocket.isFreeFlight() && rocket.isInFlight())) {
                     rocket.onTurnLeft(turnRocketLeft.isKeyDown());
                     rocket.onTurnRight(turnRocketRight.isKeyDown());
                     rocket.onUp(turnRocketUp.isKeyDown());
