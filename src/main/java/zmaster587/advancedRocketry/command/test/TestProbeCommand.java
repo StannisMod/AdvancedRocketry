@@ -1295,6 +1295,14 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             rocket.setFlightMode(mode);
+            // Mirror the real SET_FLIGHT_MODE server handler: broadcast to tracking
+            // clients so the client-side flightMode field updates (otherwise a real
+            // client / test bot would still see CLASSIC and its FF input gate would
+            // never open).
+            zmaster587.libVulpes.network.PacketHandler.sendToPlayersTrackingEntity(
+                    new zmaster587.libVulpes.network.PacketEntity(
+                            rocket, (byte) EntityRocket.PacketType.SET_FLIGHT_MODE.ordinal()),
+                    rocket);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"flightMode\":\""
                     + mode.name() + "\"}");
             return;

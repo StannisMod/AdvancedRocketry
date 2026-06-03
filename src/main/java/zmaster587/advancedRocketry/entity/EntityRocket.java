@@ -166,6 +166,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private transient boolean freeFlightLandedLatched = false;
     /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
     private transient int freeFlightTicksSinceStart = 0;
+    /** Grace window (ticks) after takeoff during which auto-land is suppressed. */
+    private static final int FF_LAND_GRACE_TICKS = 30;
     /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
     private boolean flightAssistOn = true;
 
@@ -824,6 +826,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         if (input == null) return;
         if (!isFreeFlight()) return;
         this.currentFreeFlightInput = input;
+        ffTrace("applyFreeFlightInput " + input);
     }
 
     public FreeFlightInput getCurrentFreeFlightInput() {
@@ -862,6 +865,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Force the next move() to update onGround, so the landing detector
         // sees an airborne rocket on the first FF tick.
         this.onGround = false;
+        ffTrace("startFreeFlight mode=" + getFlightMode() + " thrust=" + stats.getThrust()
+                + " weight=" + stats.getWeight() + " accel=" + stats.getAcceleration(1f));
+    }
+
+    /** Harness-only ([FF-TRACE]) lifecycle log for the live FF path. Gated on the
+     *  same flag as the /artest probes; pass -Dadvancedrocketry.tests=true. */
+    private void ffTrace(String msg) {
+        if (TestProbeCommandRegistration.isTestMode()) {
+            AdvancedRocketry.logger.info("[FF-TRACE/" + (world.isRemote ? "C" : "S") + "] " + msg);
+        }
     }
 
     /**
@@ -874,6 +887,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         if (!isFreeFlight() || !isInFlight()) return;
 
         freeFlightTicksSinceStart++;
+        if (freeFlightTicksSinceStart == 1) ffTrace("tickFreeFlight first tick");
 
         FuelType ft = getRocketFuelType();
         boolean requireFuel = ARConfiguration.getCurrentConfig().rocketRequireFuel;
@@ -942,7 +956,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
 
         // Landing: ground contact + slow vertical motion → exit FF active flight.
-        if (FreeFlightPhysics.shouldLand(this.onGround, this.motionY) && !freeFlightLandedLatched) {
+        // Grace window: ignore the landing detector for the first FF_LAND_GRACE_TICKS
+        // after takeoff. The startFreeFlight kick decays under gravity in ~15 ticks,
+        // which can be faster than the pilot's keypress → packet round-trip; without
+        // this window the rocket re-lands before any thrust input can arrive and it
+        // looks like "jerk on space, no response to thrust".
+        if (FreeFlightPhysics.shouldLand(this.onGround, this.motionY)
+                && !freeFlightLandedLatched
+                && freeFlightTicksSinceStart > FF_LAND_GRACE_TICKS) {
             // Harness-only diagnostics: explain WHY FF just switched off, with the
             // concrete climb-authority numbers so manual testers can tell an
             // out-of-thrust rocket apart from an over-eager auto-land. Gated on the
@@ -2253,6 +2274,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Free Flight Mode short-circuit: skip classic countdown + destination
         // validation. The pilot just enters arcade flight directly.
+        ffTrace("prepareLaunch isFreeFlight=" + isFreeFlight() + " isInFlight=" + isInFlight());
         if (isFreeFlight()) {
             if (world.isRemote) {
                 PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.LAUNCH.ordinal()));

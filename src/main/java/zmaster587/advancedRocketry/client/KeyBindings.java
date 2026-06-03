@@ -11,10 +11,12 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.input.Keyboard;
+import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
 import zmaster587.advancedRocketry.api.FreeFlightInput;
 import zmaster587.advancedRocketry.api.RocketFlightMode;
+import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.entity.EntityHoverCraft;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.libVulpes.LibVulpes;
@@ -44,6 +46,15 @@ public class KeyBindings {
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
+    /** Tracks FF-gate transitions for [FF-TRACE] logging. */
+    private boolean wasFreeFlightActive = false;
+
+    /** Harness-only ([FF-TRACE/K]) client keybind log; pass -Dadvancedrocketry.tests=true. */
+    private static void kbTrace(String msg) {
+        if (TestProbeCommandRegistration.isTestMode()) {
+            AdvancedRocketry.logger.info("[FF-TRACE/K] " + msg);
+        }
+    }
 
     public static void init() {
         //ClientRegistry.registerKeyBinding(launch);
@@ -78,11 +89,23 @@ public class KeyBindings {
 
         final Minecraft mc = Minecraft.getMinecraft();
         final EntityPlayerSP player = mc.player;
-        if (player == null || !mc.inGameHasFocus || mc.currentScreen != null) return;
-        if (!(player.getRidingEntity() instanceof EntityRocket)) return;
+        // Don't steer while a GUI is open. (We intentionally do NOT require
+        // inGameHasFocus — losing window focus shouldn't freeze the controls,
+        // and the headless test bot never reports focus.)
+        if (player == null || mc.currentScreen != null) return;
+        if (!(player.getRidingEntity() instanceof EntityRocket)) {
+            if (wasFreeFlightActive) { kbTrace("FF gate -> inactive (no longer riding a rocket)"); wasFreeFlightActive = false; }
+            return;
+        }
 
         EntityRocket rocket = (EntityRocket) player.getRidingEntity();
-        if (!(rocket.isFreeFlight() && rocket.isInFlight())) {
+        boolean active = rocket.isFreeFlight() && rocket.isInFlight();
+        if (active != wasFreeFlightActive) {
+            kbTrace("FF gate active=" + active + " (isFreeFlight=" + rocket.isFreeFlight()
+                    + " isInFlight=" + rocket.isInFlight() + ")");
+            wasFreeFlightActive = active;
+        }
+        if (!active) {
             // Reset so the next entry into FF sends a fresh, current snapshot.
             lastSentInput = FreeFlightInput.zero();
             return;
@@ -103,6 +126,7 @@ public class KeyBindings {
 
         FreeFlightInput input = new FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
         if (!input.equals(lastSentInput)) {
+            kbTrace("send FF input " + input);
             rocket.applyFreeFlightInput(input);
             PacketHandler.sendToServer(new PacketEntity(
                     rocket, (byte) EntityRocket.PacketType.FREE_FLIGHT_INPUT.ordinal()));
@@ -141,6 +165,7 @@ public class KeyBindings {
                 if (!rocket.isInFlight()
                         && Keyboard.getEventKey() == Keyboard.KEY_SPACE
                         && Keyboard.getEventKeyState()) {
+                    kbTrace("SPACE -> prepareLaunch (isFreeFlight=" + rocket.isFreeFlight() + ")");
                     rocket.prepareLaunch();
                 }
 
@@ -149,6 +174,7 @@ public class KeyBindings {
                     RocketFlightMode next = rocket.isFreeFlight()
                             ? RocketFlightMode.CLASSIC_LAUNCH
                             : RocketFlightMode.FREE_FLIGHT;
+                    kbTrace("M pressed -> set mode " + next);
                     // Set local intent so writeDataToNetwork serializes the new mode ordinal.
                     rocket.setFlightMode(next);
                     PacketHandler.sendToServer(new PacketEntity(

@@ -1,7 +1,9 @@
 package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
+import com.google.gson.JsonObject;
 import org.junit.Test;
+import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -302,6 +304,50 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
                 Math.abs(yawAfter - yawBefore) > 10.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    // ===== REAL keypress path (no server input probe) ====================
+
+    @Test
+    public void realZKeyThrustClimbsServerAndClientTracks() throws Exception {
+        // The honest end-to-end: FF entry via probes (M/space are event-driven and
+        // not the broken part), but STEERING via a REAL injected key. Holding Z
+        // (turnRocketUp) drives KeyBindings.onClientTick → a real FREE_FLIGHT_INPUT
+        // packet → server tickFreeFlight. We assert BOTH halves that the probe
+        // tests could never see:
+        //   1) the server rocket actually climbs (real packet path delivers thrust),
+        //   2) the CLIENT-rendered rocket tracks the server (no poscorrection lag).
+        int rocketId = mountFreshFreeFlightRocket(3700, 64, 500);
+
+        // Hold the real climb key. No artest free-flight-input here on purpose.
+        bot().holdKey(Keyboard.KEY_Z);
+
+        double svrYBefore = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
+        bot().waitTicks(40);
+        String svrInfo = exec("artest rocket info " + rocketId);
+        double svrYAfter = parseDouble(svrInfo, POS_Y, "posY");
+
+        JsonObject ride = bot().reportRidingEntity();
+        assertTrue("client must still be riding the rocket: " + ride,
+                ride.has("riding") && ride.get("riding").getAsBoolean());
+        double cliY = ride.get("posY").getAsDouble();
+
+        bot().releaseKey(Keyboard.KEY_Z);
+
+        // 1) Real key → real packet → server physics.
+        assertTrue("holding real Z must drive a server-side climb via the packet path "
+                        + "(before=" + svrYBefore + " after=" + svrYAfter + ")",
+                svrYAfter - svrYBefore > 2.0);
+        assertTrue("rocket must stay in flight while climbing: " + svrInfo,
+                svrInfo.contains("\"isInFlight\":true"));
+
+        // 2) Client render tracks server — would be ~150 blocks behind with the old
+        //    ct=50 poscorrection smoothing that this fix bypasses for FF.
+        assertTrue("client-rendered rocket Y must track server Y within a few blocks "
+                        + "(client=" + cliY + " server=" + svrYAfter + ")",
+                Math.abs(cliY - svrYAfter) < 6.0);
+
         exec("artest player dismount");
     }
 
