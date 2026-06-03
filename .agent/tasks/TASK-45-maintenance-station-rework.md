@@ -2,6 +2,9 @@
 
 **Branch**: `feature/postponed`
 **Opened**: 2026-06-02
+**Status**: ✅ Completed 2026-06-02 (phases 0–5 shipped; Done-row +
+status reconciled 2026-06-03 during TASK-46 close — the original closure
+saved an EOD marker but never synced the README Done table)
 **Driver**: user directive — "the maintenance station is half-finished and
 annoys everyone; make wear readable and the repair loop bearable."
 Follows the weight/TWR rework (`8da5d223`) on the same branch and composes

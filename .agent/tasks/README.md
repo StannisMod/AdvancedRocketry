@@ -14,8 +14,12 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 856 (testUnit **288** / testIntegration 81 /
-  testServer **426** / testClient **61**). +1 on 2026-05-29 from
+- **Pyramid**: 859 (testUnit **273** / testIntegration **82** /
+  testServer **443** / testClient **61**). Counter **regenerated from
+  source 2026-06-03** on TASK-46 close (`grep -rc '@Test$'` per tier) —
+  this corrected stale per-tier values that had drifted across TASK-44/45
+  (totals were ~right, tiers mislabelled). TASK-46 added +6 (4 unit /
+  2 server). Earlier changelog below is historical. +1 on 2026-05-29 from
   TASK-40b Batch 2 (Gap F.2 GasChargePad — testClient harness fix unlocked
   it). +1 on 2026-05-29 from
   TASK-40d Batch 4 (Gap L force field projector). +8 on 2026-05-29 from
@@ -374,6 +378,8 @@ Bug-ledger history lives in
 | [TASK-42](TASK-42-pre-existing-test-failures-investigation.md) | Triage of 5 pre-existing testServer + testClient failures surfaced during TASK-41 validation. Phase 0 revealed three shape buckets: 1 broken-since-inception (`InventoryBypassRedirectE2ETest` — verified at 149c361e worktree, same failure shape; @Ignore'd 2026-05-30, contract still pinned by `testUnit.RocketInventoryHelperRedirectTest`); 3 parallel-fork flakes (`Electrolyser` / `PrecisionAssembler` / `PrecisionLaserEtcher` recipe tests — PASS in isolation, FAIL only in full suite); 1 stable-isolation failure (`WorldCommandFetchModeratorTest` — fails in 3m 10s even alone, real test-design or production bug). Remaining 4 promoted to TASK-43. | ✅ |
 | [TASK-43](TASK-43-flaky-and-stable-test-failures.md) | Mitigate the 4 deferred TASK-42 failures across two shapes: Shape A (3 recipe tests, parallel-fork contention — plan: `wait-for-recipe-registry` probe verb + kit hook); Shape B (FetchModerator, stable-fail-in-isolation — plan: per-step bot instrumentation to bisect bridge-drop tick). **Phase 3 shipped** (2026-05-30 — `mixin.env.disableRefMap=true` fix, ledger #6 closed); Shapes A/B still open. | 🟡 Phase 3 done; A/B open |
 | [TASK-44](TASK-44-shallow-to-deep-batch.md) | Shallow→deep conversion batch — 4 real contracts + 1 mixin-CI gap shipped: F.4 (TilePump drains Forge IFluidBlock, ledger #7), B (laser-drill MINING dispatch breaks column + drops), C (area-gravity resets fallDistance in-radius only; found controller not machine-enabled by default), N (asteroid worldprovider generates fill blocks), U (un-`@Ignore`'d `InventoryBypassRedirectE2ETest` via server-side `player open-chest` probe, ledger #6 resolved). 5 new probe verbs. Dropped per SOP: G/H/I/K/M/T (impl-only/unwired/wrong-framing). 429/430 full-suite after batch. | ✅ |
+| [TASK-45](TASK-45-maintenance-station-rework.md) | Maintenance-station / parts-wear rework — wear extracted to a Forge capability (motors + tanks + seats via `TileWearable`), graduated launch consequences (tank leak / crewed-seat block / explosion + pre-launch pilot warning, config-switchable), standalone service-station repair without an assembler, cap-based rocket damage-view GUI, `/artest wear` probe group. Ledger #9 (dead tank/seat counters) found + fixed. | ✅ |
+| [TASK-46](TASK-46-config-disableability.md) | Weight / wear / weather / mixin mechanics made **fully disableable** in config — 5 single-source production gates + the `IEarlyMixinLoader` coremod fix (prevents a MixinBooter launch crash) + 6 tests (4 unit / 2 server, OFF-state pinned as a revert guard) + 8 `/artest` probe additions + `config-flag-disableability` SOP. No new bugs (leaks only). | ✅ |
 
 ## Backlog
 
