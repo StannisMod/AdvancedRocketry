@@ -75,8 +75,15 @@ across dercodeKoenig `1.12` and zmaster587 — no fix to pull.
     cargo moves input→output (positive contract / regression guard).
   - `railgunSilentlyFailsWhenDestinationDimensionUnloaded` — unloaded dest →
     silent no-op, cargo preserved (characterizes the #61 root-cause mode).
+- **2 client e2e tests** (`RailgunCargoTransitE2ETest`, the mandatory
+  player-truth guard per `bug-report-workflow.md`) — the same two contracts
+  re-pinned with a REAL client connected (catches a teleport client/server
+  desync the dedicated-server test is blind to): `cargoTransitsBetweenLinked
+  RailgunsClientSide` + `railgunDoesNotFireToUnloadedDestinationClientSide`.
+  Run on a dedicated `DISPLAY`/xvfb (`:100` on this box); `skipped=0` confirms
+  the client actually connected.
 
-Both green; testServer cache-busted per flake-diagnosis SOP.
+All four green; testServer + testClient cache-busted per flake-diagnosis SOP.
 
 ## Fix plan (not yet implemented)
 

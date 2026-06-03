@@ -279,8 +279,10 @@ authoring that have not yet been fixed.
    **Pinned by**: `RailgunFiringContractTest` —
    `railgunFiresCargoToLinkedRailgunInSameDimension` (positive same-dim
    contract) + `railgunSilentlyFailsWhenDestinationDimensionUnloaded`
-   (characterizes the silent unloaded-dest no-op + cargo-preservation). New
-   `artest infra railgun-fire` probe verb drives the source-side path.
+   (characterizes the silent unloaded-dest no-op + cargo-preservation), and at
+   client tier by `RailgunCargoTransitE2ETest` (same two contracts with a real
+   client connected). New `artest infra railgun-fire` probe verb drives the
+   source-side path.
    Fix candidates (TASK-49): load/resolve the destination dim on fire +
    surface a failure message per cause.
    **Found**: 2026-06-02 during issue #61 investigation (TASK-49).

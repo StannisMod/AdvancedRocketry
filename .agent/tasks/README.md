@@ -14,11 +14,12 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 848 (testUnit 267 / testIntegration 89 /
-  testServer 431 / testClient 61). Counter regenerated 2026-06-02
+- **Pyramid**: 850 (testUnit 267 / testIntegration 89 /
+  testServer 431 / testClient 63). Counter regenerated 2026-06-02
   per SOP §2.5 (prior 856/288/81/426/61 headline was stale — trust
-  the regen, not the "+N" arithmetic). +2 testServer on 2026-06-02
-  from TASK-49 (`RailgunFiringContractTest` — issue #61 repro).
+  the regen, not the "+N" arithmetic). +2 testServer + 2 testClient
+  on 2026-06-02 from TASK-49 (issue #61 repro:
+  `RailgunFiringContractTest` + `RailgunCargoTransitE2ETest`).
   Historical "+N" narrative below is retained for provenance only.
   +1 on 2026-05-29 from
   TASK-40b Batch 2 (Gap F.2 GasChargePad — testClient harness fix unlocked
@@ -381,7 +382,7 @@ Bug-ledger history lives in
 | [TASK-41](TASK-41-runclient-mixin-accessorworld-bug.md) | `./gradlew runClient` mixin AccessorWorld apply error — fixed 2026-05-29 by swapping `@Accessor` for an access transformer (`public net.minecraft.world.World field_72986_A`) and direct `world.worldInfo = ...` assignment in PlanetWeatherManager. AccessorWorld mixin + mixin-config entry deleted. Added `stageMixinRefmapForRun` build task copying the AP-generated refmap into `build/resources/main/` so future @Inject mixins don't trip the same dev-classpath gap. Option C (`@Mixin(targets="...")`) tried first, failed identically — confirmed root cause was refmap-driven SRG-name lookup, not class-load ordering. Validated: runClient boots to main menu, FML loads 9 mods, testUnit + testIntegration green; testServer 423/427 PASS, 3 pre-existing recipe-registration failures unrelated to TASK-41 (logged as ledger entry #5). | ✅ |
 | [TASK-42](TASK-42-pre-existing-test-failures-investigation.md) | Triage of 5 pre-existing testServer + testClient failures surfaced during TASK-41 validation. Phase 0 revealed three shape buckets: 1 broken-since-inception (`InventoryBypassRedirectE2ETest` — verified at 149c361e worktree, same failure shape; @Ignore'd 2026-05-30, contract still pinned by `testUnit.RocketInventoryHelperRedirectTest`); 3 parallel-fork flakes (`Electrolyser` / `PrecisionAssembler` / `PrecisionLaserEtcher` recipe tests — PASS in isolation, FAIL only in full suite); 1 stable-isolation failure (`WorldCommandFetchModeratorTest` — fails in 3m 10s even alone, real test-design or production bug). Remaining 4 promoted to TASK-43. | ✅ |
 | [TASK-43](TASK-43-flaky-and-stable-test-failures.md) | Mitigate the 4 deferred TASK-42 failures across two shapes: Shape A (3 recipe tests, parallel-fork contention — plan: `wait-for-recipe-registry` probe verb + kit hook); Shape B (FetchModerator, stable-fail-in-isolation — plan: per-step bot instrumentation to bisect bridge-drop tick). **Phase 3 shipped** (2026-05-30 — `mixin.env.disableRefMap=true` fix, ledger #6 closed); Shapes A/B still open. | 🟡 Phase 3 done; A/B open |
-| [TASK-49](TASK-49-railgun-silent-fire-failure.md) | Railgun silent fire-failure (#61) — repro shipped: `infra railgun-fire` probe + 2 server tests (`RailgunFiringContractTest`) proving same-dim fires and unloaded-dest fails silently with cargo preserved. Root cause = unloaded destination dim + zero feedback (ledger #8). Production fix pending. | 🟡 Repro shipped; fix pending |
+| [TASK-49](TASK-49-railgun-silent-fire-failure.md) | Railgun silent fire-failure (#61) — repro shipped: `infra railgun-fire` probe + 2 server (`RailgunFiringContractTest`) + 2 client e2e (`RailgunCargoTransitE2ETest`) proving same-dim fires and unloaded-dest fails silently with cargo preserved. Root cause = unloaded destination dim + zero feedback (ledger #8). Production fix pending. | 🟡 Repro shipped; fix pending |
 | [TASK-44](TASK-44-shallow-to-deep-batch.md) | Shallow→deep conversion batch — 4 real contracts + 1 mixin-CI gap shipped: F.4 (TilePump drains Forge IFluidBlock, ledger #7), B (laser-drill MINING dispatch breaks column + drops), C (area-gravity resets fallDistance in-radius only; found controller not machine-enabled by default), N (asteroid worldprovider generates fill blocks), U (un-`@Ignore`'d `InventoryBypassRedirectE2ETest` via server-side `player open-chest` probe, ledger #6 resolved). 5 new probe verbs. Dropped per SOP: G/H/I/K/M/T (impl-only/unwired/wrong-framing). 429/430 full-suite after batch. | ✅ |
 
 ## Backlog
