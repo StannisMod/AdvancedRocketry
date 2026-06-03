@@ -133,6 +133,8 @@ own). Then:
 
 ## Related
 
+- `issue-reference-discipline.md` — how to write the issue number
+  (never bare `#NN`; fully-qualify per the original issue link).
 - `testing-principles.md` — contract-vs-impl test design.
 - `flake-diagnosis.md` — cache-bust + distribution diagnosis.
 - `task-lifecycle.md` — status values + closure checklist.
