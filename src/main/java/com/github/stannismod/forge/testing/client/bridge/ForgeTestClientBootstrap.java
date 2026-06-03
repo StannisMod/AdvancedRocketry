@@ -436,6 +436,40 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "report_riding_entity":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    net.minecraft.entity.Entity ridden =
+                            mc.player == null ? null : mc.player.getRidingEntity();
+                    response.addProperty("riding", ridden != null);
+                    if (ridden != null) {
+                        response.addProperty("entityClass", ridden.getClass().getName());
+                        response.addProperty("entityId", ridden.getEntityId());
+                        response.addProperty("posX", ridden.posX);
+                        response.addProperty("posY", ridden.posY);
+                        response.addProperty("posZ", ridden.posZ);
+                        response.addProperty("motionX", ridden.motionX);
+                        response.addProperty("motionY", ridden.motionY);
+                        response.addProperty("motionZ", ridden.motionZ);
+                    }
+                    return response;
+                });
+            case "set_key":
+                return runOnClientThread(() -> {
+                    int keyCode = requireInt(request, "keyCode");
+                    boolean pressed = request.has("pressed") && request.get("pressed").getAsBoolean();
+                    // Drive the binding's held-state (isKeyDown) and, on press, a
+                    // single isPressed() edge via onTick — mirroring a real key.
+                    net.minecraft.client.settings.KeyBinding.setKeyBindState(keyCode, pressed);
+                    if (pressed) {
+                        net.minecraft.client.settings.KeyBinding.onTick(keyCode);
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("keyCode", keyCode);
+                    response.addProperty("pressed", pressed);
+                    return response;
+                });
             case "report_weather":
                 // Client-side view of vanilla weather state for whatever
                 // dimension the client is currently in. Reports what the

@@ -157,6 +157,45 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Client-side view of the entity the player is currently riding. Reports
+     * {@code riding} (bool), and when riding: {@code entityClass}, {@code entityId},
+     * {@code posX}/{@code posY}/{@code posZ} and {@code motionX}/{@code motionY}/
+     * {@code motionZ}. This is the authoritative way to assert what the player's
+     * CLIENT actually renders — distinct from a server-side entity query — so it
+     * catches client-side position-sync / interpolation regressions.
+     */
+    public JsonObject reportRidingEntity() throws IOException {
+        return assertOk(execute(command("report_riding_entity")));
+    }
+
+    /**
+     * Injects a real key-binding press/release on the client, exactly as the
+     * keyboard would. Drives {@code KeyBinding.isKeyDown()} (held movement keys)
+     * and a single {@code isPressed()} edge, so mod input handlers that poll key
+     * state on {@code ClientTickEvent}/{@code KeyInputEvent} fire their real
+     * packet path — not a server-side shortcut.
+     *
+     * @param keyCode LWJGL key code (e.g. {@link org.lwjgl.input.Keyboard#KEY_Z})
+     * @param pressed true to hold the key down, false to release it
+     */
+    public void setKey(int keyCode, boolean pressed) throws IOException {
+        JsonObject command = command("set_key");
+        command.addProperty("keyCode", keyCode);
+        command.addProperty("pressed", pressed);
+        assertOk(execute(command));
+    }
+
+    /** Convenience: hold a key down ({@link #setKey(int, boolean) setKey(keyCode, true)}). */
+    public void holdKey(int keyCode) throws IOException {
+        setKey(keyCode, true);
+    }
+
+    /** Convenience: release a key ({@link #setKey(int, boolean) setKey(keyCode, false)}). */
+    public void releaseKey(int keyCode) throws IOException {
+        setKey(keyCode, false);
+    }
+
+    /**
      * Client-side view of vanilla weather state for whatever dim the player is
      * currently in. Reports {@code dim}, {@code worldInfoClass}, {@code isRaining},
      * {@code isThundering}, {@code rainTime}, {@code thunderTime},
