@@ -470,6 +470,25 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("pressed", pressed);
                     return response;
                 });
+            case "read_static_field":
+                return runOnClientThread(() -> {
+                    String className = requireString(request, "className");
+                    String fieldName = requireString(request, "fieldName");
+                    JsonObject response = ok();
+                    try {
+                        Class<?> clazz = Class.forName(className);
+                        java.lang.reflect.Field field = findField(clazz, fieldName);
+                        field.setAccessible(true);
+                        Object value = field.get(null);
+                        response.addProperty("isNull", value == null);
+                        response.addProperty("value", value == null ? "" : String.valueOf(value));
+                        response.addProperty("type", value == null ? "null" : value.getClass().getName());
+                    } catch (Throwable t) {
+                        throw new IllegalStateException("read_static_field(" + className + "#"
+                                + fieldName + ") failed: " + t, t);
+                    }
+                    return response;
+                });
             case "report_weather":
                 // Client-side view of vanilla weather state for whatever
                 // dimension the client is currently in. Reports what the

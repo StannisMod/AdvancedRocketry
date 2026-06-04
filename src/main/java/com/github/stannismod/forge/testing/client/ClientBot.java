@@ -196,6 +196,22 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Reflectively reads a static field on the client and returns its
+     * {@code String.valueOf(...)} as {@code value} (plus {@code isNull},
+     * {@code type}). Lets a test assert arbitrary client-side mod state (HUD
+     * text, render flags, …) without the framework depending on the mod.
+     *
+     * @param className fully-qualified class name (loaded on the client classpath)
+     * @param fieldName a static field on that class or a superclass
+     */
+    public JsonObject readStaticField(String className, String fieldName) throws IOException {
+        JsonObject command = command("read_static_field");
+        command.addProperty("className", className);
+        command.addProperty("fieldName", fieldName);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Client-side view of vanilla weather state for whatever dim the player is
      * currently in. Reports {@code dim}, {@code worldInfoClass}, {@code isRaining},
      * {@code isThundering}, {@code rainTime}, {@code thunderTime},
