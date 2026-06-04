@@ -26,6 +26,21 @@ When auditing test depth, count **contract-coverage**, not pin-count.
 Resist the temptation to "tighten" with magic-number assertions —
 that's the wrong shape of pin.
 
+### Before writing or auditing a client / testClient test
+
+**[SOP: Honest client e2e](./sops/development/honest-client-e2e.md)** —
+must be read before the first assertion of any client-tier test.
+
+**TL;DR**: a client e2e must drive the REAL client (inject keys / look /
+GUI clicks) AND observe REAL client state (open screen, client-rendered
+pos/motion, client static fields). Server probes are allowed only for
+setup or as a cross-side oracle — never as a stand-in for the client
+behaviour under test. **Litmus**: if the client jar could be deleted and
+the test still passed, it was never a client test. Also covers *when* a
+client e2e is warranted (client-only code / round-trip) vs when to push
+the test down to testServer/unit, and how to extend the harness honestly
+instead of faking it.
+
 ### Before tuning retry budgets / chasing test flakes
 
 **[SOP: Flake diagnosis](./sops/development/flake-diagnosis.md)** —
