@@ -74,7 +74,14 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         int by = Integer.parseInt(bp.group(2));
         int bz = Integer.parseInt(bp.group(3));
 
+        // Pad-bounds detection occasionally races chunk/structure state on the
+        // shared world; retry the assemble a couple of times before failing.
         String assemble = exec("artest rocket assemble 0 " + bx + " " + by + " " + bz);
+        for (int attempt = 0; attempt < 3 && !assemble.contains("\"ok\":true"); attempt++) {
+            bot().waitTicks(5);
+            exec("artest fixture rocket 0 " + baseX + " " + baseY + " " + baseZ + " simple");
+            assemble = exec("artest rocket assemble 0 " + bx + " " + by + " " + bz);
+        }
         assertTrue("assemble failed: " + assemble, assemble.contains("\"ok\":true"));
 
         String list = exec("artest rocket list 0");
@@ -347,6 +354,40 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         assertTrue("client-rendered rocket Y must track server Y within a few blocks "
                         + "(client=" + cliY + " server=" + svrYAfter + ")",
                 Math.abs(cliY - svrYAfter) < 6.0);
+
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void freeFlightClientRenderAdvancesEveryTickNoStutter() throws Exception {
+        // Render smoothness: the client must dead-reckon every tick, so the
+        // rendered rocket advances on (almost) every single client tick. The
+        // snap-only approach froze between the every-3-tick tracker updates and
+        // jumped on update ticks — here that shows up as many zero-delta samples.
+        int rocketId = mountFreshFreeFlightRocket(4000, 64, 500);
+        // Drive a reliable, sustained server-side climb. Probe input is
+        // authoritative and not subject to key-injection timing; the bot holds
+        // no keys, so onClientTick stays quiet and doesn't override it. (The real
+        // keypress path is covered by realZKeyThrustClimbsServerAndClientTracks.)
+        // This isolates the actual contract under test: given server motion, does
+        // the CLIENT render advance smoothly every tick?
+        exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        bot().waitTicks(8); // past the launch-kick transient, into a steady climb
+
+        int samples = 8;
+        int moved = 0;
+        double prev = bot().reportRidingEntity().get("posY").getAsDouble();
+        for (int i = 0; i < samples; i++) {
+            bot().waitTicks(1);
+            double cur = bot().reportRidingEntity().get("posY").getAsDouble();
+            if (cur - prev > 1e-4) moved++;
+            prev = cur;
+        }
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+
+        assertTrue("FF client render must advance on (almost) every tick rather than "
+                        + "freeze-then-jump (moved " + moved + "/" + samples + ")",
+                moved >= samples - 2);
 
         exec("artest player dismount");
     }

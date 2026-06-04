@@ -168,6 +168,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private transient int freeFlightTicksSinceStart = 0;
     /** Grace window (ticks) after takeoff during which auto-land is suppressed. */
     private static final int FF_LAND_GRACE_TICKS = 30;
+    /** Ticks over which the FF client absorbs a server-position correction
+     *  (~ the entity updateFrequency, so jitter is smoothed, not snapped). */
+    private static final double FF_CLIENT_CORRECT_TICKS = 3.0;
     /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
     private boolean flightAssistOn = true;
 
@@ -1303,16 +1306,17 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     @Override
     public void setPositionAndRotationDirect(double x, double y, double z, float yaw, float pitch, int posRotationIncrements, boolean teleport) {
 
-        // Free Flight is fast/arcade. The classic poscorrection smoothing below
-        // (closed at only 1/ct=50 per tick) is tuned for the slow vertical
-        // ascent and cannot track FF motion — the client falls ~150 blocks
-        // behind the server and the ridden rocket jerks and looks stuck. Snap
-        // straight to the authoritative server transform instead.
+        // Free Flight is fast/arcade. The classic poscorrection smoothing (closed
+        // at only 1/ct=50 per tick) lags ~150 blocks behind; a hard snap on every
+        // tracker update (every updateFrequency=3 ticks) is the opposite problem —
+        // the rocket freezes between updates then jumps, which reads as violent
+        // jitter. Instead we just record the position ERROR here and let the
+        // client dead-reckon by velocity each tick, absorbing the (small) error
+        // over a few ticks — see the FF branch in onUpdate().
         if (isFreeFlight() && isInFlight()) {
-            this.setPosition(x, y, z);
             this.rotationYaw = yaw;
             this.rotationPitch = pitch;
-            this.poscorrection = new Vec3d(0, 0, 0);
+            this.poscorrection = new Vec3d(x, y, z).subtract(this.posX, this.posY, this.posZ);
             return;
         }
 
@@ -1624,13 +1628,25 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
         // ---- Free Flight Mode branch -------------------------------------------
-        // When the rocket is in FREE_FLIGHT mode AND active, run the arcade
-        // physics path and SKIP every classic-launch branch below. Client side
-        // is intent-only — the standard datawatcher / motion replication kicks
-        // in via super.onUpdate() / setInFlight already.
+        // Server runs the arcade physics; client smooths the render. Either way
+        // we SKIP every classic-launch branch below.
         if (isFreeFlight() && isInFlight()) {
             if (!world.isRemote) {
                 tickFreeFlight();
+            } else {
+                // Client smoothing (the rocket is fast and the tracker only sends
+                // a position every updateFrequency=3 ticks). Dead-reckon by the
+                // synced velocity EVERY client tick so the rocket advances each
+                // frame, and bleed the small position error toward the server over
+                // FF_CLIENT_CORRECT_TICKS — instead of freezing between updates and
+                // snapping (which read as violent jitter).
+                double cx = poscorrection.x / FF_CLIENT_CORRECT_TICKS;
+                double cy = poscorrection.y / FF_CLIENT_CORRECT_TICKS;
+                double cz = poscorrection.z / FF_CLIENT_CORRECT_TICKS;
+                poscorrection = poscorrection.subtract(cx, cy, cz);
+                this.setPosition(this.posX + this.motionX + cx,
+                                 this.posY + this.motionY + cy,
+                                 this.posZ + this.motionZ + cz);
             }
             return;
         }
