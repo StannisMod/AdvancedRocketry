@@ -26,6 +26,21 @@ When auditing test depth, count **contract-coverage**, not pin-count.
 Resist the temptation to "tighten" with magic-number assertions —
 that's the wrong shape of pin.
 
+### Before writing or auditing a client / testClient test
+
+**[SOP: Honest client e2e](./sops/development/honest-client-e2e.md)** —
+must be read before the first assertion of any client-tier test.
+
+**TL;DR**: a client e2e must drive the REAL client (inject keys / look /
+GUI clicks) AND observe REAL client state (open screen, client-rendered
+pos/motion, client static fields). Server probes are allowed only for
+setup or as a cross-side oracle — never as a stand-in for the client
+behaviour under test. **Litmus**: if the client jar could be deleted and
+the test still passed, it was never a client test. Also covers *when* a
+client e2e is warranted (client-only code / round-trip) vs when to push
+the test down to testServer/unit, and how to extend the harness honestly
+instead of faking it.
+
 ### Before tuning retry budgets / chasing test flakes
 
 **[SOP: Flake diagnosis](./sops/development/flake-diagnosis.md)** —
@@ -237,11 +252,39 @@ assertions). Historical batch lives in
 #### Development (`sops/development/`)
 **When to create**: Establishing development patterns and workflows
 
-**Example SOPs**:
-- Local Forge dev environment setup
-- Running client/server in IntelliJ
-- Mappings refresh
-- Git workflow
+**Current index** (read the one matching your task — load on demand):
+
+*Testing — what & how*
+- [testing-principles](./sops/development/testing-principles.md) — what a test may pin (contracts, not impl details). Read before touching any test.
+- [honest-client-e2e](./sops/development/honest-client-e2e.md) — client tests must drive AND observe the real client. Read before any client/testClient test.
+- [flake-diagnosis](./sops/development/flake-diagnosis.md) — races vs regressions vs test-design; read before tuning retries / 10× sweeps.
+- [coverage-audit-playbook](./sops/development/coverage-audit-playbook.md) — running a coverage audit and triaging the gaps.
+
+*Test harness & probes*
+- [server-test-harness](./sops/development/server-test-harness.md) — testServer isolation & config injection.
+- [client-tests-on-linux](./sops/development/client-tests-on-linux.md) — running testClient headless (Xvfb / GL).
+- [sharing-client-harness](./sops/development/sharing-client-harness.md) — per-method client harness cost & when to share.
+- [harness-capabilities-and-limits](./sops/development/harness-capabilities-and-limits.md) — what the headless harness can and cannot verify.
+- [artest-probe-authoring](./sops/development/artest-probe-authoring.md) — authoring `/artest` probes.
+- [test-fixtures-catalog](./sops/development/test-fixtures-catalog.md) — the `/artest fixture` catalog.
+
+*Workflow & process*
+- [task-lifecycle](./sops/development/task-lifecycle.md) — task-status single source of truth + closure checklist.
+- [bug-ledger-discipline](./sops/development/bug-ledger-discipline.md) — tracking live bugs.
+- [bug-report-workflow](./sops/development/bug-report-workflow.md) — confirm → trace → decide → fix.
+- [issue-reference-discipline](./sops/development/issue-reference-discipline.md) — issue refs (never bare `#NN`, never the fork root).
+- [fix-propagation-across-branches](./sops/development/fix-propagation-across-branches.md) — propagating one fix across worktrees / branches.
+- [verify-subagent-findings](./sops/development/verify-subagent-findings.md) — verify audit / sub-agent findings against code before acting.
+
+*Build, code patterns & compatibility*
+- [build-and-run-env](./sops/development/build-and-run-env.md) — building & running AR locally (JDK, bounded gradle runs).
+- [mcp-intellij-usage](./sops/development/mcp-intellij-usage.md) — using `mcp__intellij__*` tools in this project.
+- [bash-exit-codes](./sops/development/bash-exit-codes.md) — bash exit codes that look like failures but aren't.
+- [mixin-coremod-dev-vs-prod](./sops/development/mixin-coremod-dev-vs-prod.md) — mixin / coremod / ASM dev-vs-prod gotchas.
+- [forge-capability-pattern](./sops/development/forge-capability-pattern.md) — adding a Forge capability (by example).
+- [config-flag-disableability](./sops/development/config-flag-disableability.md) — config flags must fully disable their mechanic.
+- [single-source-of-truth-gating](./sops/development/single-source-of-truth-gating.md) — one source of truth for any gate or decision.
+- [save-and-wire-compat](./sops/development/save-and-wire-compat.md) — what you must never rename (NBT / registry / wire).
 
 #### Deployment (`sops/deployment/`)
 **When to create**: After setting up deployment processes
