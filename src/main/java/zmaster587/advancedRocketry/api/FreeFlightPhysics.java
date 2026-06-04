@@ -54,6 +54,14 @@ public final class FreeFlightPhysics {
      */
     public static final double MAX_THRUST_ACCEL   = 0.5;
 
+    /**
+     * Per-tick velocity retention while Hover Hold is engaged (0..1). Hover is a
+     * gradual autopilot: each tick it scales motion by this factor so the craft
+     * eases to a stop rather than snapping (≈0.88 → settles in ~25–30 ticks),
+     * while gravity is cancelled so it holds altitude.
+     */
+    public static final double HOVER_RETENTION    = 0.88;
+
     /** Speed below which the Stop assist snaps motion to exactly zero. */
     private static final double STOP_SNAP = 0.01;
 
@@ -141,33 +149,58 @@ public final class FreeFlightPhysics {
                 newMy = 0; // Hover during Stop: pin Y instead of fighting gravity.
                 thrustApplied = true;
             }
+        } else if (input.hoverActive) {
+            // -------- HOVER HOLD (gradual autopilot) ----------------------
+            // Ease motion toward zero and cancel gravity so the craft settles
+            // into a stationary hover — a striving-to-hover autopilot, never an
+            // instantaneous freeze (see HOVER_RETENTION). Throttle channels are
+            // ignored while holding; release Hover to manoeuvre again.
+            if (canThrust) {
+                newMx = mx * HOVER_RETENTION;
+                newMy = my * HOVER_RETENTION;
+                newMz = mz * HOVER_RETENTION;
+                if (Math.abs(newMx) < STOP_SNAP && Math.abs(newMy) < STOP_SNAP
+                        && Math.abs(newMz) < STOP_SNAP) {
+                    newMx = 0; newMy = 0; newMz = 0;
+                }
+                thrustApplied = true; // gravity-cancelling + damping thrust this tick
+            } else {
+                // No fuel: hover silently fails, normal gravity acts.
+                newMx = mx;
+                newMy = my - gravity;
+                newMz = mz;
+                thrustApplied = false;
+            }
         } else {
             // -------- REGULAR THRUST PATH ---------------------------------
-            boolean wantsThrust = (input.throttleForward != 0.0 || input.throttleVertical != 0.0);
+            // Translation is body-relative: forward along the nose, strafe along
+            // the nose's right axis, vertical along the nose's up axis. The three
+            // basis vectors form an orthonormal frame from yaw+pitch (no roll).
+            boolean wantsThrust = (input.throttleForward != 0.0
+                    || input.throttleVertical != 0.0
+                    || input.strafeInput != 0.0);
             thrustApplied = canThrust && wantsThrust;
 
             double fwdMag = thrustApplied ? accel * input.throttleForward  : 0.0;
             double vrtMag = thrustApplied ? accel * input.throttleVertical : 0.0;
+            double strMag = thrustApplied ? accel * input.strafeInput      : 0.0;
 
             double yawRad   = Math.toRadians(newYaw);
             double pitchRad = Math.toRadians(newPitch);
-            // Forward vector projected through pitch — MC convention: pitch<0 = nose up.
-            double cosPitch = Math.cos(pitchRad);
-            double fx = -Math.sin(yawRad) * cosPitch;
-            double fy = -Math.sin(pitchRad);
-            double fz =  Math.cos(yawRad) * cosPitch;
+            double sinYaw = Math.sin(yawRad), cosYaw = Math.cos(yawRad);
+            double sinPit = Math.sin(pitchRad), cosPit = Math.cos(pitchRad);
+            // Nose (forward) — MC convention: pitch<0 = nose up.
+            double fX = -sinYaw * cosPit, fY = -sinPit, fZ =  cosYaw * cosPit;
+            // Right axis (horizontal, perpendicular to the nose's heading).
+            double rX =  cosYaw,          rZ =  sinYaw;
+            // Up axis (= forward × right) — tilts with pitch, world-up at pitch 0.
+            double uX = -sinYaw * sinPit, uY = cosPit,  uZ =  cosYaw * sinPit;
 
-            newMx = mx + fwdMag * fx;
-            newMy = my + fwdMag * fy + vrtMag;
-            newMz = mz + fwdMag * fz;
+            newMx = mx + fwdMag * fX + vrtMag * uX + strMag * rX;
+            newMy = my + fwdMag * fY + vrtMag * uY;
+            newMz = mz + fwdMag * fZ + vrtMag * uZ + strMag * rZ;
 
-            // Hover hold: cancel gravity for the tick when active AND thrust allowed.
-            boolean hoverApplied = input.hoverActive && canThrust;
-            if (hoverApplied) {
-                thrustApplied = true; // no -gravity term this tick
-            } else {
-                newMy -= gravity;
-            }
+            newMy -= gravity;
 
             // Brake / idle drag (FA-gated).
             double brake = clamp01(input.brakeInput);

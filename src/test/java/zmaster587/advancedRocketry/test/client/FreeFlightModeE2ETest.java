@@ -8,6 +8,7 @@ import org.lwjgl.input.Keyboard;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
@@ -52,6 +53,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern YAW   = Pattern.compile("\"rotationYaw\":(-?[0-9.E\\-]+)");
+    private static final Pattern FF_PITCH = Pattern.compile("\"freeFlightPitch\":(-?[0-9.E\\-]+)");
     private static final Pattern FUEL_PRIMARY_AMOUNT =
             Pattern.compile("\"primaryFuelType\":\"([^\"]+)\".*?\"\\1\":\\{\"amount\":(-?\\d+)");
 
@@ -317,18 +319,18 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     // ===== REAL keypress path (no server input probe) ====================
 
     @Test
-    public void realZKeyThrustClimbsServerAndClientTracks() throws Exception {
+    public void realVerticalKeyThrustClimbsServerAndClientTracks() throws Exception {
         // The honest end-to-end: FF entry via probes (M/space are event-driven and
-        // not the broken part), but STEERING via a REAL injected key. Holding Z
-        // (turnRocketUp) drives KeyBindings.onClientTick → a real FREE_FLIGHT_INPUT
-        // packet → server tickFreeFlight. We assert BOTH halves that the probe
-        // tests could never see:
+        // not the broken part), but STEERING via a REAL injected key. Holding R
+        // (flightVerticalUp) drives KeyBindings.onClientTick → a real
+        // FREE_FLIGHT_INPUT packet → server tickFreeFlight. We assert BOTH halves
+        // that the probe tests could never see:
         //   1) the server rocket actually climbs (real packet path delivers thrust),
         //   2) the CLIENT-rendered rocket tracks the server (no poscorrection lag).
         int rocketId = mountFreshFreeFlightRocket(3700, 64, 500);
 
         // Hold the real climb key. No artest free-flight-input here on purpose.
-        bot().holdKey(Keyboard.KEY_Z);
+        bot().holdKey(Keyboard.KEY_R);
 
         double svrYBefore = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
         bot().waitTicks(40);
@@ -340,10 +342,10 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
                 ride.has("riding") && ride.get("riding").getAsBoolean());
         double cliY = ride.get("posY").getAsDouble();
 
-        bot().releaseKey(Keyboard.KEY_Z);
+        bot().releaseKey(Keyboard.KEY_R);
 
         // 1) Real key → real packet → server physics.
-        assertTrue("holding real Z must drive a server-side climb via the packet path "
+        assertTrue("holding real R must drive a server-side climb via the packet path "
                         + "(before=" + svrYBefore + " after=" + svrYAfter + ")",
                 svrYAfter - svrYBefore > 2.0);
         assertTrue("rocket must stay in flight while climbing: " + svrInfo,
@@ -464,6 +466,232 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         assertTrue("FF thrust must drain primary fuel through the live loop; "
                         + "before=" + fuelBefore + " after=" + fuelAfter,
                 fuelAfter < fuelBefore);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    // ===== Key-conflict resolution (ARKeyConflictContext) =================
+    // Steering keys share defaults with vanilla (E inventory, Q drop, A/D
+    // strafe). These honest client tests prove the two halves of the contract:
+    // the standard key behaves vanilla on foot, and is overridden — not merely
+    // shadowed — while piloting. Both observe the REAL client (GUI screen +
+    // client-driven server state), never a server probe stand-in.
+
+    /** Default inventory key (E) — the vanilla binding pitch-down shares a key with. */
+    private static final int KEY_INVENTORY = Keyboard.KEY_E;
+
+    private String currentScreen() throws Exception {
+        return bot().reportState().get("screen").getAsString();
+    }
+
+    @Test
+    public void inventoryKeyOpensInventoryWhenNotPiloting() throws Exception {
+        // On foot (not piloting any AR craft), pressing the inventory key must
+        // open the survival inventory exactly like vanilla — i.e. the FF key
+        // override does NOT leak into normal gameplay.
+        exec("tp @a 4200 79 510 0 0");
+        bot().waitTicks(10);
+        // Guarantee the precondition: not riding, no GUI up.
+        exec("artest player dismount");
+        bot().closeScreen();
+        bot().waitTicks(3);
+        assertEquals("precondition: no screen should be open before pressing E",
+                "", currentScreen());
+
+        bot().setKey(KEY_INVENTORY, true);
+        bot().waitTicks(3);
+        String screen = currentScreen();
+        bot().setKey(KEY_INVENTORY, false);
+        bot().closeScreen();
+
+        // Survival opens GuiInventory; creative opens GuiContainerCreative —
+        // both are the vanilla inventory-key action, which is the point.
+        assertTrue("pressing the inventory key on foot must open the inventory GUI, got: "
+                        + screen,
+                screen.endsWith("GuiInventory") || screen.endsWith("GuiContainerCreative"));
+    }
+
+    @Test
+    public void inventoryKeyIsOverriddenToStrafeWhilePiloting() throws Exception {
+        // Same physical key (E), while piloting in Free Flight: it must NOT open
+        // the inventory (which would also freeze steering) and must instead drive
+        // the lateral strafe control through the real key->packet->server path.
+        int rocketId = mountFreshFreeFlightRocket(4300, 64, 500);
+        assertEquals("precondition: no GUI open while piloting", "", currentScreen());
+
+        double xBefore = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
+
+        // Hold vertical-up (R, keeps it airborne so the FF tick keeps running) AND
+        // the inventory key (E). On foot E opens the inventory; here it must
+        // strafe (right = +X at yaw 0).
+        bot().holdKey(Keyboard.KEY_R);
+        bot().holdKey(KEY_INVENTORY);
+        bot().waitTicks(25);
+
+        String screenDuring = currentScreen();
+        String info = exec("artest rocket info " + rocketId);
+        double xAfter = parseDouble(info, POS_X, "posX");
+
+        bot().releaseKey(KEY_INVENTORY);
+        bot().releaseKey(Keyboard.KEY_R);
+
+        assertEquals("inventory key must NOT open the inventory while piloting "
+                + "(would also freeze steering): " + screenDuring, "", screenDuring);
+        assertTrue("inventory key must instead strafe the craft (+X at yaw 0) while piloting "
+                        + "(xBefore=" + xBefore + " xAfter=" + xAfter + ")",
+                xAfter - xBefore > 1.0);
+        assertTrue("rocket must stay in flight (override must not have frozen control): " + info,
+                info.contains("\"isInFlight\":true"));
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void strafeLeftKeyMovesNegativeX() throws Exception {
+        // Q (strafe left) → -X at yaw 0, the mirror of E. Drop key on foot;
+        // strafe in the cockpit.
+        int rocketId = mountFreshFreeFlightRocket(4400, 64, 500);
+        double xBefore = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
+
+        bot().holdKey(Keyboard.KEY_R);          // stay airborne
+        bot().holdKey(Keyboard.KEY_Q);          // strafe left
+        bot().waitTicks(25);
+        double xAfter = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
+        bot().releaseKey(Keyboard.KEY_Q);
+        bot().releaseKey(Keyboard.KEY_R);
+
+        assertTrue("Q must strafe -X at yaw 0 (xBefore=" + xBefore + " xAfter=" + xAfter + ")",
+                xAfter - xBefore < -1.0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void verticalKeysClimbAndDescend() throws Exception {
+        // R climbs (real altitude gain); F is the opposite vertical thrust, so it
+        // must drive the vertical velocity down. We measure F by motionY (robust
+        // to the climb's accumulated upward inertia, which a position check is not).
+        int rocketId = mountFreshFreeFlightRocket(4500, 64, 500);
+
+        double y0 = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(20);
+        String climbInfo = exec("artest rocket info " + rocketId);
+        double y1 = parseDouble(climbInfo, POS_Y, "posY");
+        double myUp = parseDouble(climbInfo, MOTION_Y, "motionY");
+        bot().releaseKey(Keyboard.KEY_R);
+        assertTrue("R must climb (y0=" + y0 + " y1=" + y1 + ")", y1 - y0 > 2.0);
+
+        // F is downward thrust: it must reduce the vertical velocity vs the climb.
+        bot().holdKey(Keyboard.KEY_F);
+        bot().waitTicks(10);
+        double myDown = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        bot().releaseKey(Keyboard.KEY_F);
+        assertTrue("F must reduce vertical velocity vs the climb (myUp=" + myUp
+                + " myDown=" + myDown + ")", myDown < myUp - 0.05);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void throttleCutKeyNeutralisesThrust() throws Exception {
+        // X cuts throttle: while held, vertical/strafe/forward input is ignored,
+        // so a climbing rocket stops gaining upward velocity.
+        int rocketId = mountFreshFreeFlightRocket(4600, 64, 500);
+
+        // Establish a climb.
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(12);
+        double myClimb = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        assertTrue("precondition: R must be producing upward motion, got " + myClimb,
+                myClimb > 0.01);
+
+        // Now also hold X (cut) — vertical input is zeroed; with FA-off coast the
+        // craft no longer accelerates upward (motionY stops growing).
+        bot().holdKey(Keyboard.KEY_X);
+        bot().waitTicks(12);
+        double myCut = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        bot().releaseKey(Keyboard.KEY_X);
+        bot().releaseKey(Keyboard.KEY_R);
+
+        assertTrue("throttle-cut must stop upward acceleration (climb=" + myClimb
+                + " afterCut=" + myCut + ")", myCut <= myClimb + 1e-3);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void hoverKeyHoldsPositionByDampingMotion() throws Exception {
+        // H is a gradual hover autopilot: from a moving start it eases motion to
+        // ~0 and holds altitude. Build motion via probe, then hold H and watch
+        // |motion| shrink across ticks.
+        int rocketId = mountFreshFreeFlightRocket(4700, 64, 500);
+        exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        bot().waitTicks(10);
+        double myMoving = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        assertTrue("precondition: rocket must be moving before hover, got " + myMoving,
+                Math.abs(myMoving) > 0.02);
+
+        // Engage hover via the real key; it ignores throttle and damps to ~0.
+        bot().holdKey(Keyboard.KEY_H);
+        bot().waitTicks(30);
+        double myHover = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        bot().releaseKey(Keyboard.KEY_H);
+
+        assertTrue("hover must damp vertical motion toward zero (moving=" + myMoving
+                + " hover=" + myHover + ")", Math.abs(myHover) < Math.abs(myMoving) * 0.5);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void cameraYawBindsToNoseWhilePiloting() throws Exception {
+        // The client camera yaw is locked to the rocket nose: after yawing the
+        // craft with D, the CLIENT player's rotationYaw must track the server
+        // rocket's rotationYaw (read from the real client, not a probe).
+        int rocketId = mountFreshFreeFlightRocket(4800, 64, 500);
+
+        bot().holdKey(Keyboard.KEY_R);   // stay airborne
+        bot().holdKey(Keyboard.KEY_D);   // yaw the nose
+        bot().waitTicks(15);
+        bot().releaseKey(Keyboard.KEY_D);
+        bot().waitTicks(2);
+
+        double rocketYaw = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+        double clientYaw = bot().reportState().get("playerYaw").getAsDouble();
+        bot().releaseKey(Keyboard.KEY_R);
+
+        // Compare on the circle (wrap to [-180,180]).
+        double diff = Math.abs(((rocketYaw - clientYaw + 540) % 360) - 180);
+        assertTrue("client camera yaw must track the nose yaw (rocket=" + rocketYaw
+                + " client=" + clientYaw + " diff=" + diff + ")", diff < 5.0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void mouseLookAimsTheNosePitch() throws Exception {
+        // Pitch is mouse-driven: the nose tracks the player's look pitch. Inject a
+        // real client look (down 40°) and the server nose pitch must ease toward
+        // it through the P-controller in KeyBindings.onClientTick.
+        int rocketId = mountFreshFreeFlightRocket(4900, 64, 500);
+        bot().holdKey(Keyboard.KEY_R); // keep airborne so tickFreeFlight integrates pitch
+
+        bot().setLook(0f, 40f);        // look down 40° (MC: +pitch = down)
+        bot().waitTicks(25);
+        double nosePitch = parseDouble(exec("artest rocket info " + rocketId),
+                FF_PITCH, "freeFlightPitch");
+        bot().releaseKey(Keyboard.KEY_R);
+
+        assertTrue("nose pitch must track the look pitch toward +40° (got " + nosePitch + ")",
+                nosePitch > 25.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");

@@ -757,6 +757,7 @@ public class TestProbeCommand extends CommandBase {
                 // Flat keys (jsonMap does not recurse into nested Maps).
                 info.put("ffInputFwd",   ffin.throttleForward);
                 info.put("ffInputVert",  ffin.throttleVertical);
+                info.put("ffInputStrafe", ffin.strafeInput);
                 info.put("ffInputYaw",   ffin.yawInput);
                 info.put("ffInputPitch", ffin.pitchInput);
                 info.put("ffInputBrake", ffin.brakeInput);
@@ -1308,20 +1309,23 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("free-flight-input".equalsIgnoreCase(args[0]) && args.length >= 7) {
-            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [stop=0|1] [hover=0|1]
+            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [stop=0|1] [hover=0|1] [strafe]
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
             EntityRocket rocket = findRocket(server, entityId);
             if (rocket == null) {
                 send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
                 return;
             }
-            float fwd, vert, yaw, pitch, brake;
+            float fwd, vert, yaw, pitch, brake, strafe = 0f;
             try {
                 fwd   = Float.parseFloat(args[2]);
                 vert  = Float.parseFloat(args[3]);
                 yaw   = Float.parseFloat(args[4]);
                 pitch = Float.parseFloat(args[5]);
                 brake = Float.parseFloat(args[6]);
+                // Strafe is the trailing optional arg so legacy 5-number calls
+                // (fwd vert yaw pitch brake [stop] [hover]) keep working.
+                if (args.length >= 10) strafe = Float.parseFloat(args[9]);
             } catch (NumberFormatException ex) {
                 send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
                 return;
@@ -1329,12 +1333,13 @@ public class TestProbeCommand extends CommandBase {
             boolean stop  = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
             boolean hover = args.length >= 9 && !"0".equals(args[8]) && !"false".equalsIgnoreCase(args[8]);
             zmaster587.advancedRocketry.api.FreeFlightInput input =
-                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, yaw, pitch, brake, stop, hover);
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, stop, hover);
             rocket.applyFreeFlightInput(input);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId
                     + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
                     + ",\"fwd\":" + input.throttleForward
                     + ",\"vert\":" + input.throttleVertical
+                    + ",\"strafe\":" + input.strafeInput
                     + ",\"yaw\":" + input.yawInput
                     + ",\"pitch\":" + input.pitchInput
                     + ",\"brake\":" + input.brakeInput

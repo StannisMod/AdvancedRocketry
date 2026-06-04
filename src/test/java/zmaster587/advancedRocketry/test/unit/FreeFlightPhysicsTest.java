@@ -24,12 +24,13 @@ import static org.junit.Assert.assertTrue;
  * Pins:
  *  - Idle input + no gravity + no motion → no motion change.
  *  - Forward thrust moves along the yaw vector by exactly thrustMag.
- *  - Vertical thrust raises motionY by exactly thrustMag (no gravity).
+ *  - Vertical thrust at level flight raises motionY by exactly thrustMag (no gravity).
  *  - Climb gate: full vertical climbs iff thrustMag &gt; gravity.
  *  - Yaw/pitch rotate at MAX_*_RATE; pitch clamps to PITCH_MAX.
  *  - canThrust=false → no thrust applied; gravity + rotation still act.
  *  - Brake attenuates motion; hard speed cap clamps to MAX_SPEED.
- *  - Pitch projection lifts/lowers forward thrust; vertical is pitch-independent.
+ *  - Translation is body-relative: forward along the nose, strafe along the
+ *    horizontal right axis, vertical along the nose's up axis (tilts with pitch).
  *  - Null input is tolerated (treated as zero).
  */
 public class FreeFlightPhysicsTest {
@@ -214,11 +215,49 @@ public class FreeFlightPhysicsTest {
     }
 
     @Test
-    public void verticalThrustIndependentOfPitch() {
+    public void verticalThrustAtZeroPitchIsPureWorldUp() {
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
+                THRUST, 0.0, true, true);
+        assertEquals("level: up-thrust is pure +Y", THRUST, s.motionY, DELTA);
+        assertEquals("level: no Z from up-thrust", 0.0, s.motionZ, DELTA);
+        assertEquals("level: no X from up-thrust", 0.0, s.motionX, DELTA);
+    }
+
+    @Test
+    public void verticalThrustFollowsCraftUpAxisWhenPitched() {
+        // Vertical is body-relative: along the nose's up axis, which tilts with
+        // pitch. At pitch=60° (yaw=0) the up axis splits into world-up + forward.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 60f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
                 THRUST, 0.0, true, true);
-        assertTrue("vertical thrust must lift independently of pitch=60°, got " + s.motionY,
-                s.motionY > 0);
+        assertEquals("up-axis Y = thrust*cos(pitch)",
+                THRUST * Math.cos(Math.toRadians(60)), s.motionY, DELTA);
+        assertEquals("up-axis Z (forward lean) = thrust*sin(pitch)",
+                THRUST * Math.sin(Math.toRadians(60)), s.motionZ, DELTA);
+        assertTrue("tilted up-thrust lifts less than full vertical", s.motionY < THRUST);
+    }
+
+    @Test
+    public void strafeThrustPushesAlongHorizontalRightAxis() {
+        // yaw=0 → right axis is +X. Strafe is the 3rd float in the full constructor.
+        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 0f, 1f, 0f, 0f, 0f, false, false),
+                THRUST, 0.0, true, true);
+        assertEquals("strafe+ at yaw=0 → +X", THRUST, s.motionX, DELTA);
+        assertEquals("strafe adds no Z at yaw=0", 0.0, s.motionZ, DELTA);
+        assertEquals("strafe adds no Y", 0.0, s.motionY, DELTA);
+    }
+
+    @Test
+    public void strafeStaysHorizontalIndependentOfPitch() {
+        Step level = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 0f, 1f, 0f, 0f, 0f, false, false),
+                THRUST, 0.0, true, true);
+        Step pitched = FreeFlightPhysics.step(0, 0, 0, 0f, 70f,
+                new FreeFlightInput(0f, 0f, 1f, 0f, 0f, 0f, false, false),
+                THRUST, 0.0, true, true);
+        assertEquals("strafe X must not change with pitch", level.motionX, pitched.motionX, DELTA);
+        assertEquals("strafe stays horizontal (no Y) when pitched", 0.0, pitched.motionY, DELTA);
     }
 }

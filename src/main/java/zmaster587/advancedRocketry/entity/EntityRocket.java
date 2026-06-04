@@ -2843,6 +2843,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             FreeFlightInput input = FreeFlightInput.read(in);
             nbt.setFloat("ffFwd",   input.throttleForward);
             nbt.setFloat("ffVert",  input.throttleVertical);
+            nbt.setFloat("ffStrafe", input.strafeInput);
             nbt.setFloat("ffYaw",   input.yawInput);
             nbt.setFloat("ffPitch", input.pitchInput);
             nbt.setFloat("ffBrake", input.brakeInput);
@@ -3016,6 +3017,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             FreeFlightInput input = new FreeFlightInput(
                     nbt.getFloat("ffFwd"),
                     nbt.getFloat("ffVert"),
+                    nbt.getFloat("ffStrafe"),
                     nbt.getFloat("ffYaw"),
                     nbt.getFloat("ffPitch"),
                     nbt.getFloat("ffBrake"),

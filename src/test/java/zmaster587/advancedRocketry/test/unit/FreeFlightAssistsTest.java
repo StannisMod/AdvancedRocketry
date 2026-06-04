@@ -15,13 +15,14 @@ import static org.junit.Assert.assertTrue;
  * Flight-assist contracts (Option A): Stop, Flight Assist toggle, Hover Hold.
  *
  * Wire format:
- *  - FreeFlightInput is 21 bytes (5 floats + 1 flag byte).
+ *  - FreeFlightInput is 25 bytes (6 floats + 1 flag byte).
  *  - Flag bits: 0x01 = stopActive, 0x02 = hoverActive.
  *
  * Physics (post TASK: thrust magnitude + canThrust passed in, fuel accounted by
  * the caller):
  *  - Stop overrides forward/vertical thrust with counter-thrust along -motion.
- *  - Hover hold cancels gravity for the tick when thrust is available.
+ *  - Hover hold is a gradual autopilot: it ignores throttle, eases motion toward
+ *    zero (HOVER_RETENTION) and cancels gravity to hold altitude.
  *  - FA off skips idle-drag (motion persists across ticks for coast).
  *  - FA off does NOT skip gravity, brake, or speed cap (safety / pilot intent).
  */
@@ -34,8 +35,8 @@ public class FreeFlightAssistsTest {
     // ===== Wire =========================================================
 
     @Test
-    public void wireSizeIsTwentyOneBytesForFlagByte() {
-        assertEquals(21, FreeFlightInput.WIRE_SIZE);
+    public void wireSizeIsTwentyFiveBytesForFlagByte() {
+        assertEquals(25, FreeFlightInput.WIRE_SIZE);
         ByteBuf buf = Unpooled.buffer();
         new FreeFlightInput(0.5f, -0.5f, 0.25f, -0.25f, 1f, true, true).write(buf);
         assertEquals(FreeFlightInput.WIRE_SIZE, buf.writerIndex());
@@ -133,11 +134,12 @@ public class FreeFlightAssistsTest {
     // ===== Hover ========================================================
 
     @Test
-    public void hoverHoldCancelsGravityWhenThrustAvailable() {
+    public void hoverHoldHoldsAltitudeAtRest() {
+        // At rest with fuel, hover cancels gravity and keeps motionY at zero.
         Step s = FreeFlightPhysics.step(0, 0.0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 0f, 0f, 0f, 0f, false, true),
                 THRUST, 0.04, true, true);
-        assertEquals("hover hold must zero out gravity tick", 0.0, s.motionY, DELTA);
+        assertEquals("hover must hold altitude (no gravity drain)", 0.0, s.motionY, DELTA);
         assertTrue(s.thrustApplied);
     }
 
@@ -152,11 +154,38 @@ public class FreeFlightAssistsTest {
     }
 
     @Test
-    public void hoverAndVerticalThrustStack() {
-        Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
+    public void hoverIgnoresThrottleAndDampsMotionTowardZero() {
+        // Hover is a hold: even with full vertical throttle and existing motion,
+        // it damps toward zero instead of accelerating. Throttle is ignored.
+        Step s = FreeFlightPhysics.step(1.0, 1.0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f, false, true),
                 THRUST, 0.04, true, true);
-        assertTrue("hover + vert+1 must rise: motionY > 0, got " + s.motionY, s.motionY > 0);
+        assertTrue("hover must shrink horizontal motion, got mx=" + s.motionX,
+                Math.abs(s.motionX) < 1.0);
+        assertTrue("hover must not let vertical throttle climb past start, got my=" + s.motionY,
+                s.motionY < 1.0);
+        assertEquals("hover damps by HOVER_RETENTION",
+                1.0 * FreeFlightPhysics.HOVER_RETENTION, s.motionX, DELTA);
+    }
+
+    @Test
+    public void hoverDampsGraduallyNotInstantly() {
+        // One tick must not snap a fast craft to a standstill — it eases off.
+        Step s = FreeFlightPhysics.step(1.0, 0, 0, 0f, 0f,
+                new FreeFlightInput(0f, 0f, 0f, 0f, 0f, false, true),
+                THRUST, 0.0, true, true);
+        assertTrue("hover must remain in motion after one tick (gradual), got mx=" + s.motionX,
+                s.motionX > 0.5 && s.motionX < 1.0);
+    }
+
+    @Test
+    public void hoverSnapsToZeroWhenAlreadySlow() {
+        Step s = FreeFlightPhysics.step(0.005, -0.004, 0.003, 0f, 0f,
+                new FreeFlightInput(0f, 0f, 0f, 0f, 0f, false, true),
+                THRUST, 0.04, true, true);
+        assertEquals(0, s.motionX, DELTA);
+        assertEquals(0, s.motionY, DELTA);
+        assertEquals(0, s.motionZ, DELTA);
     }
 
     // ===== Flight Assist toggle =========================================
