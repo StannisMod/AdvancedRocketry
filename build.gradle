@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'com.github.stannismod.forge'
-version = '0.4.4'
+version = '0.4.5'
 
 base {
     archivesName = 'forge-test-framework'

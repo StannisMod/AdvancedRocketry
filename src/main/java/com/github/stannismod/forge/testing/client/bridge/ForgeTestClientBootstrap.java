@@ -426,6 +426,8 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("playerX", mc.player.posX);
                         response.addProperty("playerY", mc.player.posY);
                         response.addProperty("playerZ", mc.player.posZ);
+                        response.addProperty("playerYaw", mc.player.rotationYaw);
+                        response.addProperty("playerPitch", mc.player.rotationPitch);
                         response.addProperty("health", mc.player.getHealth());
                         response.addProperty("heldItem", mc.player.getHeldItemMainhand().isEmpty()
                                 ? ""
@@ -452,7 +454,30 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("motionX", ridden.motionX);
                         response.addProperty("motionY", ridden.motionY);
                         response.addProperty("motionZ", ridden.motionZ);
+                        response.addProperty("rotationYaw", ridden.rotationYaw);
+                        response.addProperty("rotationPitch", ridden.rotationPitch);
                     }
+                    return response;
+                });
+            case "set_look":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    float yaw = request.get("yaw").getAsFloat();
+                    float pitch = request.get("pitch").getAsFloat();
+                    JsonObject response = ok();
+                    if (mc.player != null) {
+                        // Set both current and prev so the look snaps without a
+                        // render-interpolation sweep — mirrors an instantaneous aim.
+                        mc.player.rotationYaw = yaw;
+                        mc.player.prevRotationYaw = yaw;
+                        mc.player.rotationPitch = pitch;
+                        mc.player.prevRotationPitch = pitch;
+                        response.addProperty("applied", true);
+                    } else {
+                        response.addProperty("applied", false);
+                    }
+                    response.addProperty("yaw", yaw);
+                    response.addProperty("pitch", pitch);
                     return response;
                 });
             case "set_key":

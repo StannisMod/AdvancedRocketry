@@ -196,6 +196,24 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Sets the client player's look direction, exactly as the mouse would after
+     * accumulating movement. Drives {@code EntityPlayerSP.rotationYaw/rotationPitch}
+     * (and the prev-tick fields, so there is no render interpolation jump), so mod
+     * code that reads the player's look on {@code ClientTickEvent} (e.g. a flight
+     * controller that aims a craft at where the pilot is looking) exercises its
+     * real path — not a server-side shortcut.
+     *
+     * @param yaw   absolute yaw in degrees
+     * @param pitch absolute pitch in degrees (negative = up, MC convention)
+     */
+    public void setLook(float yaw, float pitch) throws IOException {
+        JsonObject command = command("set_look");
+        command.addProperty("yaw", yaw);
+        command.addProperty("pitch", pitch);
+        assertOk(execute(command));
+    }
+
+    /**
      * Reflectively reads a static field on the client and returns its
      * {@code String.valueOf(...)} as {@code value} (plus {@code isNull},
      * {@code type}). Lets a test assert arbitrary client-side mod state (HUD
