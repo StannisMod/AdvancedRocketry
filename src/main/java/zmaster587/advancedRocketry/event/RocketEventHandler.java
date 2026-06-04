@@ -54,6 +54,9 @@ public class RocketEventHandler extends Gui {
     public static GuiBox atmBar = new GuiBox(8, 27, 200, 48);
     private static String displayString = "";
     private static long lastDisplayTime = -1000;
+    /** Last rendered Free Flight HUD text (joined with " | "), for client e2e
+     *  assertions. Empty when not riding a FF rocket. Updated each HUD frame. */
+    public static volatile String lastFreeFlightHud = "";
     private ResourceLocation background = TextureResources.rocketHud;
     private static long suppressSuffocationWarningUntil = Long.MIN_VALUE;
     private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
@@ -147,7 +150,28 @@ public class RocketEventHandler extends Gui {
                     GL11.glScalef(scale, scale, scale);
                     fontRenderer.drawStringWithShadow(hint, x, y, 0xFFFFFF);
                     GL11.glPopMatrix();
-                }               
+                }
+
+                // Free Flight Mode HUD: mode indicator + control legend with the
+                // pilot's actual bound keys. Only while riding a FF-mode rocket.
+                if (mc.currentScreen == null && rocket.isFreeFlight()) {
+                    FontRenderer fr = mc.fontRenderer;
+                    List<String> ffLines = KeyBindings.freeFlightHudLines(
+                            rocket.isInFlight(), rocket.isFlightAssistOn());
+                    // Expose the rendered text for client-side e2e assertions
+                    // (read reflectively by the test bridge — no test-only code path).
+                    lastFreeFlightHud = String.join(" | ", ffLines);
+                    int lineH = fr.FONT_HEIGHT + 1;
+                    int scaledH2 = event.getResolution().getScaledHeight();
+                    // Bottom-left, to the right of the instrument panel, stacked up.
+                    int ffX = 22;
+                    int ffY = scaledH2 - 4 - ffLines.size() * lineH;
+                    for (int i = 0; i < ffLines.size(); i++) {
+                        // Title/indicator line brighter; legend lines in FF cyan.
+                        int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
+                        fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
+                    }
+                }
 
             }
 

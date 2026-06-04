@@ -149,7 +149,7 @@ dependencies {
         // Resolution: composite build when -PuseLocalFramework=true and
         // ../ForgeTestFramework exists (settings.gradle), else mavenLocal.
         testImplementation 'junit:junit:4.13.2'
-        testImplementation 'com.github.stannismod.forge:forge-test-framework:0.4.3:dev'
+        testImplementation 'com.github.stannismod.forge:forge-test-framework:0.4.4:dev'
     }
 }
 

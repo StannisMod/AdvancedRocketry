@@ -351,6 +351,58 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
+    // ===== HUD =========================================================
+
+    private static final String ROCKET_EVENT_HANDLER =
+            "zmaster587.advancedRocketry.event.RocketEventHandler";
+
+    @Test
+    public void freeFlightHudInFlightShowsIndicatorAndControlLegend() throws Exception {
+        // Riding a FF rocket in flight: the HUD must render the mode indicator,
+        // a control legend keyed to the pilot's bindings, and the FA state. Read
+        // the actually-rendered text from the client (reflective static), so a
+        // missing lang key (which I18n echoes back raw) fails these assertions.
+        int rocketId = mountFreshFreeFlightRocket(3800, 64, 500);
+        bot().waitTicks(10); // let the overlay render a few frames
+
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+
+        assertTrue("FF HUD must show the active-mode indicator: " + hud,
+                hud.contains("FREE FLIGHT"));
+        assertTrue("FF HUD must show a vertical-thrust control hint: " + hud,
+                hud.contains("Up / Down"));
+        assertTrue("FF HUD must show the Flight Assist state: " + hud,
+                hud.contains("Flight Assist"));
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void freeFlightHudPreLaunchShowsLaunchHint() throws Exception {
+        // FF mode, mounted but NOT launched: HUD shows the title + how to launch /
+        // switch back to classic — distinct from the in-flight legend.
+        exec("tp @a 3910 79 510 0 0");
+        bot().waitTicks(10);
+        int rocketId = buildAndAssemble(3900, 64, 500);
+        exec("tp @a 3900.5 65 500.5 0 0");
+        bot().waitTicks(5);
+        exec("artest player mount-entity " + rocketId);
+        exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
+        bot().waitTicks(10);
+
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+
+        assertTrue("pre-launch FF HUD must show the mode title: " + hud,
+                hud.contains("Free Flight Mode"));
+        assertTrue("pre-launch FF HUD must show the launch hint: " + hud,
+                hud.contains("Launch"));
+
+        exec("artest player dismount");
+    }
+
     @Test
     public void verticalThrustDrainsFuelThroughLiveLoop() throws Exception {
         // Fuel must burn classic-style (getFuelConsumptionRate, gated by

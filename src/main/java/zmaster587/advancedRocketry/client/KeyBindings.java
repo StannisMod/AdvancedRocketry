@@ -2,6 +2,8 @@ package zmaster587.advancedRocketry.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraftforge.fml.client.FMLClientHandler;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
@@ -75,6 +77,36 @@ public class KeyBindings {
     //Getters for keybindings
     public static KeyBinding getOpenRocketUI() {
         return openRocketUI;
+    }
+
+    private static String key(KeyBinding binding) {
+        return GameSettings.getKeyDisplayString(binding.getKeyCode());
+    }
+
+    /**
+     * Localised Free Flight HUD lines: a mode indicator plus a control legend
+     * with the player's actual bound keys. Pre-launch shows how to launch /
+     * switch mode; in-flight shows the steering legend + Flight Assist state.
+     * Client-only (reads GameSettings + I18n).
+     */
+    public static java.util.List<String> freeFlightHudLines(boolean inFlight, boolean flightAssistOn) {
+        GameSettings gs = Minecraft.getMinecraft().gameSettings;
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        if (!inFlight) {
+            lines.add(I18n.format("msg.ff.hud.title"));
+            lines.add(I18n.format("msg.ff.hud.prelaunch",
+                    GameSettings.getKeyDisplayString(Keyboard.KEY_SPACE), key(toggleFlightMode)));
+            return lines;
+        }
+        lines.add(I18n.format("msg.ff.hud.active",
+                I18n.format(flightAssistOn ? "msg.ff.hud.fa.on" : "msg.ff.hud.fa.off")));
+        lines.add(I18n.format("msg.ff.hud.move",  key(gs.keyBindForward), key(gs.keyBindBack)));
+        lines.add(I18n.format("msg.ff.hud.yaw",   key(turnRocketLeft),    key(turnRocketRight)));
+        lines.add(I18n.format("msg.ff.hud.vert",  key(turnRocketUp),      key(turnRocketDown)));
+        lines.add(I18n.format("msg.ff.hud.pitch", key(pitchRocketUp),     key(pitchRocketDown)));
+        lines.add(I18n.format("msg.ff.hud.brake", key(gs.keyBindSneak),   key(flightStop)));
+        lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle), key(flightHoverHold)));
+        return lines;
     }
 
     /**
