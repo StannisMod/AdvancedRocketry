@@ -8,9 +8,9 @@
   implemented; `ARWeatherWorldInfo` renamed to `ARDimensionWorldInfo`. unit +
   integration green; server weather/wiring suites green (mixin applies,
   decoupling no regression). Live "bot sleeps in a bed → time advances to
-  dawn" e2e is NOT covered (needs a sleeping-player testClient harness) —
-  dawn math is unit-tested and the mixin application is confirmed by server
-  boot under `required:true`.
+  dawn" e2e: ✅ covered 2026-06-10 by `PlanetBedSleepE2ETest` (framework
+  `interact_block` capability landed with the vendored testframework/), with
+  a red-proof against vanilla 24000-rounding.
 - Created: 2026-06-02.
 
 ## Root cause (confirmed against decompiled MC 1.12.2)
