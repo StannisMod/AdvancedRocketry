@@ -10,6 +10,7 @@ import org.junit.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -101,8 +102,11 @@ public class WeatherCycleDisableTest {
         // separate (already-tested) wrapping gate.
         assertTrue(cmd("artest config set enableCustomPlanetWeather true").contains("\"ok\":true"));
         String wrapped = cmd("artest weather get " + FIXTURE_DIM);
+        // Anchor on the probe's named worldInfoClass field, not a bare substring
+        // of the whole response (see artest-probe-authoring SOP).
         assertTrue("planet must be wrapped while custom weather is on: " + wrapped,
-                wrapped.contains("ARWeatherWorldInfo"));
+                Pattern.compile("\"worldInfoClass\":\"[^\"]*ARWeatherWorldInfo\"")
+                        .matcher(wrapped).find());
 
         // Forced-clear marker (rain=-1, thunder=-1): the custom cycle, when it runs,
         // drives this planet to clear regardless of what we set.

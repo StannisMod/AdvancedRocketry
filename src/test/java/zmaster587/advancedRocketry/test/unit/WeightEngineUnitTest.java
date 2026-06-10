@@ -24,14 +24,19 @@ public class WeightEngineUnitTest {
     }
 
     @Test
-    public void fluidWeightIsFallbackRatePerMb() {
+    public void fluidWeightIsPositiveAndLinearInAmount() {
         WeightEngine we = WeightEngine.INSTANCE;
         we.resetTables();
         double prevScale = ARConfiguration.getCurrentConfig().fuelMassScale;
         try {
             ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
-            // Default fluidFallback is 0.001 kN/mB → 1000 mB == 1.0 kN.
-            assertEquals(1.0f, we.getWeight(testFluid(), 1000f), 1e-4);
+            // An unknown fluid still weighs something (the fallback per-mB rate)
+            // and the weight is linear in the amount. The exact kN/mB constant is
+            // an implementation default (see testing-principles SOP).
+            float base = we.getWeight(testFluid(), 1000f);
+            assertTrue("fallback fluid weight must be positive: " + base, base > 0);
+            assertEquals("fluid weight must be linear in the amount",
+                    2 * base, we.getWeight(testFluid(), 2000f), 1e-4);
         } finally {
             ARConfiguration.getCurrentConfig().fuelMassScale = prevScale;
         }
@@ -43,8 +48,12 @@ public class WeightEngineUnitTest {
         we.resetTables();
         double prevScale = ARConfiguration.getCurrentConfig().fuelMassScale;
         try {
+            ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
+            float base = we.getWeight(testFluid(), 1000f);
+
             ARConfiguration.getCurrentConfig().fuelMassScale = 2.5;
-            assertEquals(2.5f, we.getWeight(testFluid(), 1000f), 1e-4);
+            assertEquals("fluid weight must scale by fuelMassScale",
+                    2.5f * base, we.getWeight(testFluid(), 1000f), 1e-4);
         } finally {
             ARConfiguration.getCurrentConfig().fuelMassScale = prevScale;
         }
