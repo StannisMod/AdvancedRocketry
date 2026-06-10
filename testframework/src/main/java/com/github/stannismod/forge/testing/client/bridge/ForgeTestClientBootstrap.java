@@ -514,6 +514,26 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "interact_block":
+                // Real right-click: PlayerControllerMP.processRightClickBlock
+                // sends CPacketPlayerTryUseItemOnBlock, so the server's
+                // interaction path (reach checks, Block.onBlockActivated, bed
+                // trySleep, ...) runs against the real player.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.player == null || mc.world == null) {
+                        throw new IllegalStateException("interact_block: client world/player not ready");
+                    }
+                    BlockPos pos = new BlockPos(requireInt(request, "x"),
+                            requireInt(request, "y"), requireInt(request, "z"));
+                    Vec3d hit = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                    net.minecraft.util.EnumActionResult result = mc.playerController
+                            .processRightClickBlock(mc.player, mc.world, pos,
+                                    EnumFacing.UP, hit, EnumHand.MAIN_HAND);
+                    JsonObject response = ok();
+                    response.addProperty("result", result.name());
+                    return response;
+                });
             case "report_mods":
                 // The two counts the vanilla main menu shows ("N mods loaded,
                 // M mods active" — FMLCommonHandler.getBrandings reads exactly

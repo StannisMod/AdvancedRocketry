@@ -266,6 +266,40 @@ public class TestProbeCommand extends CommandBase {
             send(sender, builder.toString());
             return;
         }
+        if ("time".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Per-dimension clock readout — worldTime is per-dim on AR planets
+            // (ARDimensionWorldInfo, TASK-47), so this is the probe that can
+            // tell a planet's clock apart from the overworld's. Lazily loads +
+            // pins the dim like the weather probes, so a fresh dim can be read.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            if (dim == Integer.MIN_VALUE) {
+                send(sender, "{\"error\":\"invalid dim id\",\"value\":\"" + args[1] + "\"}");
+                return;
+            }
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = sender.getServer() != null
+                    ? sender.getServer().getWorld(dim) : null;
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("dim", dim);
+            map.put("worldInfoClass", world.getWorldInfo().getClass().getName());
+            map.put("worldTime", world.getWorldInfo().getWorldTime());
+            map.put("totalTime", world.getWorldInfo().getWorldTotalTime());
+            map.put("rotationalPeriod",
+                    world.provider instanceof zmaster587.advancedRocketry.api.IPlanetaryProvider
+                            ? ((zmaster587.advancedRocketry.api.IPlanetaryProvider) world.provider)
+                                    .getRotationalPeriod(null)
+                            : 24000);
+            map.put("isDaytime", world.provider.isDaytime());
+            send(sender, jsonMap(map));
+            return;
+        }
         if ("info".equalsIgnoreCase(args[0]) && args.length >= 2) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             if (dim == Integer.MIN_VALUE) {

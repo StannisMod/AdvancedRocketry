@@ -230,6 +230,23 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Right-clicks a block exactly as the player would: routes through
+     * {@code PlayerControllerMP.processRightClickBlock} on the client thread,
+     * which sends the real {@code CPacketPlayerTryUseItemOnBlock} — so the
+     * server runs its production interaction path (reach checks,
+     * {@code Block.onBlockActivated}, bed {@code trySleep}, …) with the real
+     * player. Returns the client-side {@code EnumActionResult} name under
+     * {@code result}.
+     */
+    public JsonObject interactBlock(int x, int y, int z) throws IOException {
+        JsonObject command = command("interact_block");
+        command.addProperty("x", x);
+        command.addProperty("y", y);
+        command.addProperty("z", z);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Forge mod registry as the CLIENT sees it: {@code loadedCount} /
      * {@code activeCount} (the two numbers the vanilla main menu renders as
      * "N mods loaded, M mods active" via {@code FMLCommonHandler.getBrandings})
