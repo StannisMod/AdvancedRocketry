@@ -514,6 +514,26 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "report_mods":
+                // The two counts the vanilla main menu shows ("N mods loaded,
+                // M mods active" — FMLCommonHandler.getBrandings reads exactly
+                // these lists), plus the loaded modids. A loaded-but-never-
+                // active container shows up here as a count mismatch.
+                return runOnClientThread(() -> {
+                    JsonObject response = ok();
+                    List<net.minecraftforge.fml.common.ModContainer> loaded =
+                            net.minecraftforge.fml.common.Loader.instance().getModList();
+                    List<net.minecraftforge.fml.common.ModContainer> active =
+                            net.minecraftforge.fml.common.Loader.instance().getActiveModList();
+                    response.addProperty("loadedCount", loaded.size());
+                    response.addProperty("activeCount", active.size());
+                    JsonArray ids = new JsonArray();
+                    for (net.minecraftforge.fml.common.ModContainer mod : loaded) {
+                        ids.add(mod.getModId());
+                    }
+                    response.add("loadedModIds", ids);
+                    return response;
+                });
             case "send_chat":
                 // One chat line exactly as typed by the player (commands
                 // included): EntityPlayerSP.sendChatMessage → CPacketChatMessage,

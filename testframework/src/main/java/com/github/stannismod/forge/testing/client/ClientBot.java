@@ -230,6 +230,17 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Forge mod registry as the CLIENT sees it: {@code loadedCount} /
+     * {@code activeCount} (the two numbers the vanilla main menu renders as
+     * "N mods loaded, M mods active" via {@code FMLCommonHandler.getBrandings})
+     * plus {@code loadedModIds}. Lets a test pin loaded/active parity and the
+     * presence/absence of specific containers at the layer the player reads.
+     */
+    public JsonObject reportMods() throws IOException {
+        return assertOk(execute(command("report_mods")));
+    }
+
+    /**
      * Sends one chat line exactly as if the player typed it — leading-{@code /}
      * commands included. Routes through {@code EntityPlayerSP.sendChatMessage}
      * (the real {@code CPacketChatMessage} path), so the server handles it with
