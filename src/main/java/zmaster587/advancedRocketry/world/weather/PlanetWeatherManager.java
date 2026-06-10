@@ -187,6 +187,24 @@ public final class PlanetWeatherManager {
 
         world.worldInfo = wrapped;
 
+        // The WorldServer constructor ran calculateInitialWeather() BEFORE this
+        // wrapper existed, against the vanilla DerivedWorldInfo — whose
+        // isRaining() delegates to the OVERWORLD. A planet world (re)created
+        // while the overworld rains is therefore born with rainingStrength=1.0
+        // even though its per-dim weather says clear; the per-tick lerp then
+        // pulls it back down, streaming a ~5 s "phantom rain" fade
+        // (SPacketChangeGameState 7) to every player entering the dim.
+        // Re-run the initial-weather seeding against the wrapped (effective)
+        // state so the strengths match it from tick one. Direct field writes:
+        // World.setRainStrength/setThunderStrength are @SideOnly(CLIENT) and
+        // do not exist on a dedicated server.
+        float rain = wrapped.isRaining() ? 1.0F : 0.0F;
+        float thunder = wrapped.isRaining() && wrapped.isThundering() ? 1.0F : 0.0F;
+        world.prevRainingStrength = rain;
+        world.rainingStrength = rain;
+        world.prevThunderingStrength = thunder;
+        world.thunderingStrength = thunder;
+
         if (ARConfiguration.getCurrentConfig().logPlanetWeatherWrapping) {
             LOGGER.info("Wrapped WorldInfo for AR planet dim={} provider={}",
                     dim,
