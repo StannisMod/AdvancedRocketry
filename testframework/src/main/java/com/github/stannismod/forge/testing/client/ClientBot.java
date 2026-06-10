@@ -230,6 +230,21 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Sends one chat line exactly as if the player typed it — leading-{@code /}
+     * commands included. Routes through {@code EntityPlayerSP.sendChatMessage}
+     * (the real {@code CPacketChatMessage} path), so the server handles it with
+     * a PLAYER sender: permission checks, the sender's world/dimension, and
+     * {@code CommandEvent} hooks all run their production path. This is the
+     * canonical way to e2e a command whose behaviour depends on where the
+     * player stands — console-driven commands can't reproduce that.
+     */
+    public void sendChat(String message) throws IOException {
+        JsonObject command = command("send_chat");
+        command.addProperty("message", message);
+        assertOk(execute(command));
+    }
+
+    /**
      * Client-side view of vanilla weather state for whatever dim the player is
      * currently in. Reports {@code dim}, {@code worldInfoClass}, {@code isRaining},
      * {@code isThundering}, {@code rainTime}, {@code thunderTime},

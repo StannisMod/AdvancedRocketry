@@ -514,6 +514,20 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "send_chat":
+                // One chat line exactly as typed by the player (commands
+                // included): EntityPlayerSP.sendChatMessage → CPacketChatMessage,
+                // so the server sees a real player sender — its world,
+                // permissions and CommandEvent hooks follow the production
+                // path, unlike console-driven commands.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.player == null) {
+                        throw new IllegalStateException("send_chat: client player not in world yet");
+                    }
+                    mc.player.sendChatMessage(requireString(request, "message"));
+                    return ok();
+                });
             case "report_weather":
                 // Client-side view of vanilla weather state for whatever
                 // dimension the client is currently in. Reports what the
