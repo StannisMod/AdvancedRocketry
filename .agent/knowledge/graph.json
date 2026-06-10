@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-06-02T10:26:34.379623Z",
+  "last_updated": "2026-06-10T12:28:26.822412Z",
   "stats": {
-    "total_nodes": 120,
-    "total_edges": 418,
+    "total_nodes": 121,
+    "total_edges": 423,
     "memory_count": 8
   },
   "nodes": {
@@ -635,6 +635,18 @@
           "deployment",
           "database",
           "context"
+        ]
+      },
+      "TASK-50": {
+        "path": ".agent/tasks/TASK-50-directional-gravity-camera-feature-request.md",
+        "title": "Directional Gravity + Camera Rotation (feature request)",
+        "status": "backlog",
+        "concepts": [
+          "api",
+          "testing",
+          "context",
+          "deployment",
+          "database"
         ]
       }
     },
@@ -3742,6 +3754,31 @@
       "from": "TASK-48",
       "to": "context",
       "type": "implements"
+    },
+    {
+      "from": "TASK-50",
+      "to": "deployment",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-50",
+      "to": "api",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-50",
+      "to": "testing",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-50",
+      "to": "context",
+      "type": "implements"
+    },
+    {
+      "from": "TASK-50",
+      "to": "database",
+      "type": "implements"
     }
   ],
   "concept_index": {
@@ -3831,7 +3868,8 @@
       "TASK-40",
       "TASK-45",
       "TASK-46",
-      "TASK-48"
+      "TASK-48",
+      "TASK-50"
     ],
     "knowledge": [
       "TASK-09",
@@ -3994,7 +4032,8 @@
       "TASK-44",
       "TASK-45",
       "TASK-46",
-      "TASK-47"
+      "TASK-47",
+      "TASK-50"
     ],
     "backend": [
       "TASK-09",
@@ -4078,7 +4117,8 @@
       "2026-05-20-2030_task04-terraformer-orbitallaser",
       "TASK-42",
       "TASK-43",
-      "TASK-48"
+      "TASK-48",
+      "TASK-50"
     ],
     "markers": [
       "TASK-09",
@@ -4280,7 +4320,8 @@
       "TASK-44",
       "TASK-45",
       "TASK-46",
-      "TASK-47"
+      "TASK-47",
+      "TASK-50"
     ],
     "deployment": [
       "TASK-03",
@@ -4319,7 +4360,8 @@
       "TASK-45",
       "TASK-46",
       "TASK-47",
-      "TASK-48"
+      "TASK-48",
+      "TASK-50"
     ],
     "frontend": [
       "TASK-03",
