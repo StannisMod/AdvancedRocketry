@@ -374,6 +374,7 @@ entry is an actionable TASK with a defined plan + acceptance.
 |---|---|---|---|
 | [TASK-15](TASK-15-visual-regression.md) | Visual regression infrastructure for Minecraft client | ❌ Not planned | Closed 2026-05-29 — speculative infra with no live trigger and high build cost. Original 4 promotion triggers retained in task file; re-open via a new TASK if any fires. |
 | [TASK-16](TASK-16-test-stability-flake-watch.md) | Test-stability flake watch — investigation deliverable. Three flake shapes root-caused; shape #3 mitigated in TASK-26 via kit retry; #1+#2 split into TASK-27; #4 (worldgen sampling) confirmed across 3 sightings, promoted to TASK-28 F7. | 🟡 Investigation complete | Investigation done 2026-05-23. |
+| [TASK-46](TASK-46-free-flight-v2-perception-engines-fa.md) | Free Flight v2 — camera-nose lock (mouse-as-rate), Elite-style engine start (hold Space 3 s, auto-shutdown on touchdown), velocity-setpoint Flight Assist (X = zero setpoint, N = Newtonian, H/B removed), per-axis HUD thrust/velocity bars. Every phase gated on perception-contract client e2e. | 🔵 In Progress | Approved 2026-06-10 from manual-playtest feedback on FF v1. |
 
 ## Conscious non-goals
 
