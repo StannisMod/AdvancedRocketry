@@ -47,9 +47,7 @@ public class KeyBindings {
     // Free Flight vertical along the craft's up axis. R/F — R shares with toggleRCS, F with vanilla swap-hands (resolved by ARKeyConflictContext).
     static KeyBinding flightVerticalUp   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightVerticalUp"),   Keyboard.KEY_R, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding flightVerticalDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightVerticalDown"), Keyboard.KEY_F, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
-    static KeyBinding flightStop          = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightStop"),          Keyboard.KEY_B, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding flightAssistToggle  = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightAssistToggle"),  Keyboard.KEY_N, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
-    static KeyBinding flightHoverHold     = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightHoverHold"),     Keyboard.KEY_H, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
@@ -69,6 +67,19 @@ public class KeyBindings {
     public static boolean isCameraPinnedThisFlight() {
         return cameraPinValid;
     }
+
+    // ---- Engine-start ritual (TASK-46 D3) -------------------------------
+    /** Ticks the jump key must be held (pre-flight, FF mode) to start the engines. */
+    public static final int ENGINE_START_HOLD_TICKS = 60;
+    /** Client-side hold progress, 0..ENGINE_START_HOLD_TICKS. Published for the
+     *  HUD progress line and for client e2e readback. */
+    public static volatile int engineStartHoldTicks = 0;
+    /** Ticks left to flash the engine-state line ("Engines started/stopped"). */
+    public static volatile int engineFlashTicks = 0;
+    /** Which flash: true = "Engines started", false = "Engines stopped". */
+    public static volatile boolean engineFlashStarted = false;
+    /** Guards the one-shot ENGINE_START send per hold. */
+    private boolean engineStartSent = false;
 
     /**
      * Undo the vanilla riding echo. While a player rides, the server answers
@@ -118,9 +129,7 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(strafeRight);
         ClientRegistry.registerKeyBinding(flightVerticalUp);
         ClientRegistry.registerKeyBinding(flightVerticalDown);
-        ClientRegistry.registerKeyBinding(flightStop);
         ClientRegistry.registerKeyBinding(flightAssistToggle);
-        ClientRegistry.registerKeyBinding(flightHoverHold);
         scopeSteeringKeysToCockpit();
     }
 
@@ -183,20 +192,31 @@ public class KeyBindings {
         java.util.List<String> lines = new java.util.ArrayList<>();
         if (!inFlight) {
             lines.add(I18n.format("msg.ff.hud.title"));
-            lines.add(I18n.format("msg.ff.hud.prelaunch",
-                    GameSettings.getKeyDisplayString(Keyboard.KEY_SPACE), key(toggleFlightMode)));
+            // Engine state (TASK-46 D3): off → how to start; mid-hold → progress.
+            if (engineStartHoldTicks > 0) {
+                lines.add(I18n.format("msg.ff.hud.engines.starting",
+                        engineStartHoldTicks * 100 / ENGINE_START_HOLD_TICKS));
+            } else if (engineFlashTicks > 0 && !engineFlashStarted) {
+                lines.add(I18n.format("msg.ff.engines.stopped"));
+            } else {
+                lines.add(I18n.format("msg.ff.hud.engines.off", key(gs.keyBindJump)));
+            }
+            lines.add(I18n.format("msg.ff.hud.prelaunch", key(toggleFlightMode)));
             return lines;
         }
         lines.add(I18n.format("msg.ff.hud.active",
                 I18n.format(flightAssistOn ? "msg.ff.hud.fa.on" : "msg.ff.hud.fa.off")));
+        lines.add(engineFlashTicks > 0 && engineFlashStarted
+                ? I18n.format("msg.ff.engines.started")
+                : I18n.format("msg.ff.hud.engines.on"));
         lines.add(I18n.format("msg.ff.hud.move",   key(gs.keyBindForward), key(gs.keyBindBack)));
         lines.add(I18n.format("msg.ff.hud.strafe", key(strafeLeft),        key(strafeRight)));
         lines.add(I18n.format("msg.ff.hud.vert",   key(flightVerticalUp),  key(flightVerticalDown)));
         lines.add(I18n.format("msg.ff.hud.yaw",    key(turnRocketLeft),    key(turnRocketRight)));
         lines.add(I18n.format("msg.ff.hud.pitchmouse"));
         lines.add(I18n.format("msg.ff.hud.cut",    key(turnRocketDown)));
-        lines.add(I18n.format("msg.ff.hud.brake",  key(gs.keyBindSneak),   key(flightStop)));
-        lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle), key(flightHoverHold)));
+        lines.add(I18n.format("msg.ff.hud.brake",  key(gs.keyBindSneak)));
+        lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle)));
         return lines;
     }
 
@@ -216,8 +236,11 @@ public class KeyBindings {
         // inGameHasFocus — losing window focus shouldn't freeze the controls,
         // and the headless test bot never reports focus.)
         if (player == null || mc.currentScreen != null) return;
+        if (engineFlashTicks > 0) engineFlashTicks--;
         if (!(player.getRidingEntity() instanceof EntityRocket)) {
             if (wasFreeFlightActive) { kbTrace("FF gate -> inactive (no longer riding a rocket)"); wasFreeFlightActive = false; }
+            engineStartHoldTicks = 0;
+            engineStartSent = false;
             return;
         }
 
@@ -226,6 +249,13 @@ public class KeyBindings {
         if (active != wasFreeFlightActive) {
             kbTrace("FF gate active=" + active + " (isFreeFlight=" + rocket.isFreeFlight()
                     + " isInFlight=" + rocket.isInFlight() + ")");
+            // Engine-state flash (TASK-46 D3): in FF, "in flight" IS "engines
+            // on" — entering shows "Engines started", leaving (touchdown)
+            // shows "Engines stopped".
+            if (rocket.isFreeFlight()) {
+                engineFlashTicks = 60;
+                engineFlashStarted = active;
+            }
             wasFreeFlightActive = active;
         }
         if (!active) {
@@ -233,20 +263,44 @@ public class KeyBindings {
             // and the camera re-aligns to the craft on the next takeoff.
             lastSentInput = FreeFlightInput.zero();
             cameraPinValid = false;
+
+            // Engine-start ritual (TASK-46 D3): pre-flight in FF mode, hold
+            // the jump key for ENGINE_START_HOLD_TICKS; releasing early
+            // cancels. One ENGINE_START packet per completed hold — the
+            // server validates (mode, fuel, climb authority) and starts.
+            if (rocket.isFreeFlight()) {
+                if (mc.gameSettings.keyBindJump.isKeyDown()) {
+                    if (engineStartHoldTicks < ENGINE_START_HOLD_TICKS) engineStartHoldTicks++;
+                    if (engineStartHoldTicks >= ENGINE_START_HOLD_TICKS && !engineStartSent) {
+                        kbTrace("engine-start hold complete -> ENGINE_START");
+                        PacketHandler.sendToServer(new PacketEntity(
+                                rocket, (byte) EntityRocket.PacketType.ENGINE_START.ordinal()));
+                        engineStartSent = true;
+                    }
+                } else {
+                    if (engineStartHoldTicks > 0) kbTrace("engine-start hold released at " + engineStartHoldTicks);
+                    engineStartHoldTicks = 0;
+                    engineStartSent = false;
+                }
+            } else {
+                engineStartHoldTicks = 0;
+                engineStartSent = false;
+            }
             return;
         }
+        engineStartHoldTicks = 0;
+        engineStartSent = false;
 
-        // Throttle cut (X): hold to neutralise all translation thrust this tick.
+        // Throttle cut (X): with FA on the server zeroes the velocity setpoint
+        // (brake-to-hover); with FA off it neutralises translation thrust.
+        // Either way the raw channels still travel — the server decides.
         boolean cut = turnRocketDown.isKeyDown();
 
-        float fwd = cut ? 0f
-                : (mc.gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
+        float fwd = (mc.gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
                 + (mc.gameSettings.keyBindBack.isKeyDown()    ? -1f : 0f);
-        float strafe = cut ? 0f
-                : (strafeRight.isKeyDown() ?  1f : 0f)
+        float strafe = (strafeRight.isKeyDown() ?  1f : 0f)
                 + (strafeLeft.isKeyDown()  ? -1f : 0f);
-        float vert = cut ? 0f
-                : (flightVerticalUp.isKeyDown()   ?  1f : 0f)
+        float vert = (flightVerticalUp.isKeyDown()   ?  1f : 0f)
                 + (flightVerticalDown.isKeyDown() ? -1f : 0f);
 
         // ---- Mouse-as-rate steering + camera-nose lock (TASK-46 D1) --------
@@ -278,10 +332,8 @@ public class KeyBindings {
                 mousePitchDelta, FreeFlightPhysics.MAX_PITCH_RATE);
 
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
-        boolean stop  = flightStop.isKeyDown();
-        boolean hover = flightHoverHold.isKeyDown();
 
-        FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, stop, hover);
+        FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, cut);
         if (!input.equals(lastSentInput)) {
             kbTrace("send FF input " + input);
             rocket.applyFreeFlightInput(input);
@@ -329,10 +381,14 @@ public class KeyBindings {
                 }
                 */
             if (Minecraft.getMinecraft().inGameHasFocus && player.equals(Minecraft.getMinecraft().player)) {
+                // Classic mode keeps the instant Space launch. Free Flight
+                // replaces it with the 3 s engine-start hold sampled per tick
+                // in onClientTick (TASK-46 D3) — no instant path there.
                 if (!rocket.isInFlight()
+                        && !rocket.isFreeFlight()
                         && Keyboard.getEventKey() == Keyboard.KEY_SPACE
                         && Keyboard.getEventKeyState()) {
-                    kbTrace("SPACE -> prepareLaunch (isFreeFlight=" + rocket.isFreeFlight() + ")");
+                    kbTrace("SPACE -> prepareLaunch (classic)");
                     rocket.prepareLaunch();
                 }
 

@@ -39,6 +39,7 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
     private static final Pattern MOTION_X = Pattern.compile("\"motionX\":(-?[0-9.E\\-]+)");
     private static final Pattern MOTION_Z = Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)");
     private static final Pattern MOTION_Y = Pattern.compile("\"motionY\":(-?[0-9.E\\-]+)");
+    private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern FUEL_PRIMARY_AMOUNT =
             Pattern.compile("\"primaryFuelType\":\"([^\"]+)\".*?\"\\1\":\\{\"amount\":(-?\\d+)");
 
@@ -47,9 +48,12 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
     }
 
     private int buildAndAssemble(int baseX, int baseY, int baseZ) throws Exception {
+        // Clear the full flight column: the world seed is random per run and
+        // overhanging terrain above the pad pins the craft (move() zeroes
+        // motionY on the ceiling collision) — see the client suite's note.
         String fillAir = ok(client().execute(
                 "artest fill 0 " + (baseX - 2) + " " + (baseY + 1) + " " + (baseZ - 2)
-                        + " " + (baseX + 7) + " " + (baseY + 10) + " " + (baseZ + 7)
+                        + " " + (baseX + 7) + " " + (baseY + 50) + " " + (baseZ + 7)
                         + " minecraft:air"));
         assertTrue("pre-clear failed: " + fillAir, fillAir.contains("\"ok\":true"));
 
@@ -204,24 +208,63 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
     @Test
     public void freeFlightTickLoopRunsAndMutatesMotion() throws Exception {
         // Contract: tickFreeFlight is invoked when the rocket is in FF +
-        // isInFlight, and it mutates motion. We DON'T pin a specific +Y or
-        // +Z direction — the test fixture has a tiny thrust=100 against
-        // gravity=0.04, so the outcome direction depends on the fixture
-        // rather than our code. What we DO pin: across 10 ticks with full
-        // vertical input, motionY must have changed AWAY from the initial
-        // launch kick (proves the tick loop runs and applies physics).
+        // isInFlight, and pilot input mutates motion. With the TASK-46 D3
+        // engine start there is no takeoff kick: the craft rests in the
+        // liftoff hover until input arrives, so 10 ticks of full vertical
+        // throttle must produce a clearly positive climb rate.
         int id = buildAndAssemble(2550, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // After startFreeFlight the initial kick sets motionY=0.3.
         ok(client().execute("artest rocket free-flight-input " + id + " 0 1.0 0 0 0"));
         String tickRes = ok(client().execute(
                 "artest rocket free-flight-tick " + id + " 10"));
         double my = parseDouble(tickRes, MOTION_Y, "motionY");
-        assertTrue("tick loop must mutate motionY away from initial 0.3 kick "
-                        + "(got motionY=" + my + ")",
-                Math.abs(my - 0.3) > 0.01);
+        assertTrue("full vertical throttle must build upward motion "
+                        + "(got motionY=" + my + ")", my > 0.1);
+    }
+
+    @Test
+    public void engineStartHoversOneBlockAboveThePad() throws Exception {
+        // TASK-46 D3: starting the engines is NOT a launch — the craft eases
+        // ~1 block off the pad and HOVERS there (near-zero motion), without
+        // any takeoff kick and without auto-landing.
+        int id = buildAndAssemble(2900, 64, 500);
+        ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
+        String info0 = ok(client().execute("artest rocket info " + id));
+        double y0 = parseDouble(info0, POS_Y, "posY");
+
+        ok(client().execute("artest rocket start-free-flight " + id));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 60"));
+
+        String info = ok(client().execute("artest rocket info " + id));
+        double y = parseDouble(info, POS_Y, "posY");
+        double my = parseDouble(info, MOTION_Y, "motionY");
+        assertTrue("engines-on craft must still be in flight (hovering): " + info,
+                info.contains("\"isInFlight\":true"));
+        assertEquals("must hover ~1 block above the start height (y0=" + y0 + ")",
+                y0 + 1.0, y, 0.35);
+        assertEquals("hover must be near-stationary", 0.0, my, 0.05);
+    }
+
+    @Test
+    public void descendingToTheGroundShutsTheEnginesOff() throws Exception {
+        // TASK-46 D3: touchdown auto-shutdown. From the engine-start hover,
+        // pilot descent input drives the craft into ground contact, which
+        // exits flight (engines off) and zeroes motion.
+        int id = buildAndAssemble(2950, 64, 500);
+        ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
+        ok(client().execute("artest rocket start-free-flight " + id));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 40")); // reach the hover
+
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 -1.0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 80"));
+
+        String info = ok(client().execute("artest rocket info " + id));
+        assertTrue("touchdown must shut the engines off (isInFlight=false): " + info,
+                info.contains("\"isInFlight\":false"));
+        double my = parseDouble(info, MOTION_Y, "motionY");
+        assertEquals("landed craft must be stationary", 0.0, my, 0.01);
     }
 
     @Test

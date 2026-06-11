@@ -461,8 +461,10 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         assertTrue("pre-launch FF HUD must show the mode title: " + hud,
                 hud.contains("Free Flight Mode"));
-        assertTrue("pre-launch FF HUD must show the launch hint: " + hud,
-                hud.contains("Launch"));
+        assertTrue("pre-launch FF HUD must show the engine-start hint: " + hud,
+                hud.contains("ENGINES OFF"));
+        assertTrue("pre-launch FF HUD must show the classic-mode toggle hint: " + hud,
+                hud.contains("Classic mode"));
 
         exec("artest player dismount");
     }
@@ -620,8 +622,8 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void throttleCutKeyNeutralisesThrust() throws Exception {
-        // X cuts throttle: while held, vertical/strafe/forward input is ignored,
-        // so a climbing rocket stops gaining upward velocity.
+        // X (cut) with FA on zeroes the velocity setpoint even while R is held:
+        // a climbing craft stops accelerating and eases back toward hover.
         int rocketId = mountFreshFreeFlightRocket(4600, 64, 500);
 
         // Establish a climb.
@@ -647,38 +649,152 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void hoverKeyHoldsPositionByDampingMotion() throws Exception {
-        // H is a gradual hover autopilot: from a moving start it eases motion to
-        // ~0 and holds altitude. Build motion via probe, then hold H and watch
-        // |motion| shrink across ticks.
+    public void cutKeyBrakesToAGravityCancelledHover() throws Exception {
+        // X with Flight Assist on (TASK-46 D4): zero the velocity setpoint —
+        // the craft eases to a stop AND holds altitude. Build a climb via the
+        // real R key first, then hold the real X.
         int rocketId = mountFreshFreeFlightRocket(4700, 64, 500);
-        String inputResp = exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
-        assertTrue("vertical probe input must apply: " + inputResp,
-                inputResp.contains("\"applied\":true"));
-        bot().waitTicks(10);
+
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(15);
+        bot().releaseKey(Keyboard.KEY_R);
         String preInfo = exec("artest rocket info " + rocketId);
         double myMoving = parseDouble(preInfo, MOTION_Y, "motionY");
         if (!(Math.abs(myMoving) > 0.02)) {
             // Diagnose before failing: one SYNCHRONOUS physics step shows whether
-            // step()+move() produces thrust and what immediately eats it.
+            // the physics produces thrust and what immediately eats it.
             String singleStep = exec("artest rocket free-flight-tick " + rocketId + " 1");
             String postStep = exec("artest rocket info " + rocketId);
-            throw new AssertionError("precondition: rocket must be moving before hover, got "
+            throw new AssertionError("precondition: rocket must be climbing before the cut, got "
                     + myMoving + "\n  state: " + preInfo
                     + "\n  single-step: " + singleStep
                     + "\n  after-step: " + postStep);
         }
 
-        // Engage hover via the real key; it ignores throttle and damps to ~0.
-        bot().holdKey(Keyboard.KEY_H);
-        bot().waitTicks(30);
-        double myHover = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
-        bot().releaseKey(Keyboard.KEY_H);
+        bot().holdKey(Keyboard.KEY_X);
+        bot().waitTicks(40);
+        String info = exec("artest rocket info " + rocketId);
+        double myCut = parseDouble(info, MOTION_Y, "motionY");
+        bot().releaseKey(Keyboard.KEY_X);
 
-        assertTrue("hover must damp vertical motion toward zero (moving=" + myMoving
-                + " hover=" + myHover + ")", Math.abs(myHover) < Math.abs(myMoving) * 0.5);
+        assertTrue("cut must brake the climb into a hover (was " + myMoving
+                + ", now " + myCut + ")", Math.abs(myCut) < 0.05);
+        assertTrue("the hover must hold altitude, not land: " + info,
+                info.contains("\"isInFlight\":true"));
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    // ===== Engine start (TASK-46 D3) =====================================
+    //
+    // The REAL path: hold the actual jump key (Space) on the client for 3 s;
+    // KeyBindings.onClientTick accumulates the hold and sends ENGINE_START;
+    // the server validates and starts the hover. No probe shortcut here.
+
+    /** Build + mount + flip to FREE_FLIGHT, but do NOT start the engines. */
+    private int mountColdFreeFlightRocket(int baseX, int baseY, int baseZ) throws Exception {
+        exec("tp @a " + (baseX + 10) + " " + (baseY + 15) + " " + (baseZ + 10) + " 0 0");
+        bot().waitTicks(10);
+        int rocketId = buildAndAssemble(baseX, baseY, baseZ);
+        exec("tp @a " + (baseX + 0.5) + " " + (baseY + 1) + " " + (baseZ + 0.5) + " 0 0");
+        bot().waitTicks(5);
+        exec("artest player mount-entity " + rocketId);
+        exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
+        // Fuel up (a freshly-assembled fixture is empty): the ENGINE_START
+        // validation honestly rejects a dry rocket, which is its own contract —
+        // these tests exercise the start RITUAL, so they fly fuelled.
+        String fuel = exec("artest rocket fill-fuel " + rocketId);
+        assertTrue("fill-fuel must succeed: " + fuel, fuel.contains("\"ok\":true"));
+        bot().waitTicks(5);
+        return rocketId;
+    }
+
+    @Test
+    public void realSpaceHoldStartsEnginesAndHoversOneBlock() throws Exception {
+        int rocketId = mountColdFreeFlightRocket(5100, 64, 500);
+        String before = exec("artest rocket info " + rocketId);
+        assertTrue("precondition: engines off before the hold: " + before,
+                before.contains("\"isInFlight\":false"));
+        double y0 = parseDouble(before, POS_Y, "posY");
+
+        bot().holdKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(75);             // 60-tick hold + margin
+        bot().releaseKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(40);             // let the liftoff hover settle
+
+        String info = exec("artest rocket info " + rocketId);
+        assertTrue("3 s Space hold must start the engines (isInFlight=true): " + info,
+                info.contains("\"isInFlight\":true"));
+        double y = parseDouble(info, POS_Y, "posY");
+        double my = parseDouble(info, MOTION_Y, "motionY");
+        assertTrue("craft must hover ~1 block above the pad (y0=" + y0 + " y=" + y + ")",
+                y > y0 + 0.5 && y < y0 + 1.6);
+        assertTrue("hover must be near-stationary (motionY=" + my + ")",
+                Math.abs(my) < 0.06);
+
+        // The pilot SEES the engine state: the rendered HUD reports ENGINES ON
+        // (or the transient "Engines started" flash right after the start).
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertTrue("HUD must show the engines running: " + hud,
+                hud.contains("ENGINES ON") || hud.contains("Engines started"));
+
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void spaceEarlyReleaseCancelsEngineStart() throws Exception {
+        int rocketId = mountColdFreeFlightRocket(5200, 64, 500);
+
+        bot().holdKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(25);             // well under the 60-tick requirement
+
+        // Mid-hold the pilot must SEE the start progress.
+        String hudMidHold = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertTrue("HUD must show engine-start progress while holding: " + hudMidHold,
+                hudMidHold.contains("STARTING ENGINES"));
+
+        bot().releaseKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(20);
+
+        String info = exec("artest rocket info " + rocketId);
+        assertTrue("early release must cancel the start (still not in flight): " + info,
+                info.contains("\"isInFlight\":false"));
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertTrue("HUD must be back to ENGINES OFF after the cancel: " + hud,
+                hud.contains("ENGINES OFF"));
+
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void descendKeyLandsAndShutsEnginesOff() throws Exception {
+        // Full cycle through real keys: start via probe (covered above), then
+        // descend with the real F key until touchdown — engines must shut off
+        // and the HUD must say so.
+        int rocketId = mountFreshFreeFlightRocket(5300, 64, 500);
+        bot().waitTicks(30); // settle into the liftoff hover
+
+        bot().holdKey(Keyboard.KEY_F);
+        // Poll for landing rather than a fixed wait (descent into ground
+        // contact + landed-event latency varies with load).
+        boolean landed = false;
+        for (int i = 0; i < 40 && !landed; i++) {
+            bot().waitTicks(5);
+            landed = exec("artest rocket info " + rocketId).contains("\"isInFlight\":false");
+        }
+        bot().releaseKey(Keyboard.KEY_F);
+        assertTrue("descending into the ground must shut the engines off", landed);
+
+        bot().waitTicks(5);
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertTrue("HUD must reflect the shutdown (stopped flash or ENGINES OFF): " + hud,
+                hud.contains("Engines stopped") || hud.contains("ENGINES OFF"));
+
         exec("artest player dismount");
     }
 
@@ -750,12 +866,20 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
                 + "(current divergence " + restErr + "°)", restErr < 1.0);
         JsonObject cam = bot().reportState();
 
-        // And the camera attitude must match the SERVER craft too (replication).
-        String info = exec("artest rocket info " + rocketId);
-        double svrYaw = parseDouble(info, YAW, "rotationYaw");
-        assertTrue("camera yaw must match the server craft yaw (cam="
-                        + cam.get("playerYaw") + " server=" + svrYaw + ")",
-                angDiff(cam.get("playerYaw").getAsDouble(), svrYaw) < 2.0);
+        // And the camera attitude must CONVERGE to the SERVER craft heading
+        // (replication). Convergence is asynchronous — the final resync packet
+        // (sent on the turn→idle edge) can be in flight for several ticks on a
+        // loaded box — so poll for it instead of a single-shot read; what we
+        // pin is that the divergence DOES settle under the tracker quantum.
+        double convErr = Double.MAX_VALUE;
+        for (int i = 0; i < 20 && convErr >= 2.0; i++) {
+            double svrYaw = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+            double camYaw = bot().reportState().get("playerYaw").getAsDouble();
+            convErr = angDiff(camYaw, svrYaw);
+            if (convErr >= 2.0) bot().waitTicks(4);
+        }
+        assertTrue("camera yaw must converge to the server craft heading "
+                + "(residual " + convErr + "°)", convErr < 2.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");

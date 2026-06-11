@@ -10,19 +10,15 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Server-side end-to-end coverage for Free Flight ASSISTS (Option A):
- *  - Stop (X / probe stop flag)
- *  - Flight Assist toggle (N / set-flight-assist)
- *  - Hover Hold (H / probe hover flag)
- *
- * <p>Contracts pinned:
- *  - Default FA state is ON; flips through probe + round-trips to info.
- *  - Stop flag through free-flight-input is observable in info (proves the
- *    extended packet wire path stores stopActive correctly).
- *  - Hover flag similarly observable.
- *  - With Hover active and gravity, a one-tick step keeps motionY ≈ 0
- *    (within fp epsilon) — the cancel-gravity contract.
- *  - With Stop active and motion > 0, ticks drive motion magnitude toward 0.
+ * Server-side e2e for the Flight Assist velocity-setpoint law (TASK-46 D4)
+ * through the real probe surface:
+ *  - FA defaults ON and round-trips through set-flight-assist;
+ *  - the cut flag (X) travels the input wire and is stored;
+ *  - holding forward RAMPS the setpoint, releasing KEEPS the cruise;
+ *  - cut eases the craft into a gravity-cancelled hover (not a fall);
+ *  - the setpoint is body-frame: yawing rotates the world velocity;
+ *  - re-enabling FA captures the current velocity (no jerk);
+ *  - FA off remains raw Newtonian, with the manual brake still honoured.
  */
 public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
 
@@ -40,7 +36,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
     private int buildAndAssemble(int baseX, int baseY, int baseZ) throws Exception {
         String fillAir = ok(client().execute(
                 "artest fill 0 " + (baseX - 2) + " " + (baseY + 1) + " " + (baseZ - 2)
-                        + " " + (baseX + 7) + " " + (baseY + 10) + " " + (baseZ + 7)
+                        + " " + (baseX + 7) + " " + (baseY + 50) + " " + (baseZ + 7)
                         + " minecraft:air"));
         assertTrue("pre-clear failed: " + fillAir, fillAir.contains("\"ok\":true"));
 
@@ -106,94 +102,133 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
     }
 
     @Test
-    public void stopFlagThroughInputIsStoredOnServer() throws Exception {
+    public void cutFlagThroughInputIsStoredOnServer() throws Exception {
         int id = buildAndAssemble(4100, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // stop=1 at position 7.
+        // cut=1 at position 7.
         String applied = ok(client().execute(
-                "artest rocket free-flight-input " + id + " 0 0 0 0 0 1 0"));
+                "artest rocket free-flight-input " + id + " 0 0 0 0 0 1"));
         assertTrue("input must apply on FF rocket: " + applied,
                 applied.contains("\"applied\":true"));
-        assertTrue("probe echoes stop=true: " + applied,
-                applied.contains("\"stop\":true"));
+        assertTrue("probe echoes cut=true: " + applied,
+                applied.contains("\"cut\":true"));
 
         String info = ok(client().execute("artest rocket info " + id));
-        assertTrue("info must store ffInputStop=true: " + info,
-                info.contains("\"ffInputStop\":true"));
-        assertTrue("info must store ffInputHover=false: " + info,
-                info.contains("\"ffInputHover\":false"));
+        assertTrue("info must store ffInputCut=true: " + info,
+                info.contains("\"ffInputCut\":true"));
     }
 
     @Test
-    public void hoverFlagThroughInputIsStoredOnServer() throws Exception {
+    public void setpointPersistsAfterReleasingTheKey() throws Exception {
+        // THE Flight Assist feature (TASK-46 D4): holding forward RAMPS the
+        // velocity setpoint; releasing the key KEEPS it — the craft cruises
+        // hands-off instead of coasting down.
         int id = buildAndAssemble(4150, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // hover=1 at position 8.
-        String applied = ok(client().execute(
-                "artest rocket free-flight-input " + id + " 0 0 0 0 0 0 1"));
-        assertTrue("probe echoes hover=true: " + applied,
-                applied.contains("\"hover\":true"));
+        // Hold forward for 20 ticks: setpoint ramps to ~1.0 blocks/tick.
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
+
+        // Release (all-zero input) and keep flying.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 40"));
 
         String info = ok(client().execute("artest rocket info " + id));
-        assertTrue("info must store ffInputHover=true: " + info,
-                info.contains("\"ffInputHover\":true"));
+        double mz = parseDouble(info, Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("released key must NOT bleed the cruise (motionZ=" + mz
+                + ", expected to keep cruising +Z): " + info, mz > 0.5);
+        assertTrue("setpoint must persist on the server: " + info,
+                info.contains("\"faSetpointFwd\""));
     }
 
     @Test
-    public void stopAssistDrivesMotionMagnitudeDownOverTicks() throws Exception {
+    public void cutEasesTheCraftIntoAGravityCancelledHover() throws Exception {
+        // X (cut): zero the setpoint → FA damps motion to zero AND holds
+        // altitude (gravity cancelled) — brake-to-hover, not brake-to-fall.
         int id = buildAndAssemble(4200, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // Build up some +Z motion by setting motion directly via set-state.
-        // (The fixture's tiny thrust can't accelerate fast enough for a clean signal.)
-        ok(client().execute("artest rocket set-state " + id + " motionY=0.5"));
-        // motionX/motionZ aren't exposed via set-state — use motionY as the
-        // observable; Stop must drive |motion| down regardless of axis.
+        // Build a cruise first (also cancels the liftoff assist).
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
 
-        // Snapshot speed-ish baseline.
-        String before = ok(client().execute("artest rocket info " + id));
-        double myBefore = parseDouble(before, MOTION_Y, "motionY");
-        assertTrue("baseline must have motion to stop: motionY=" + myBefore,
-                Math.abs(myBefore) > 0.1);
+        // Cut.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 60"));
 
-        // Engage Stop and tick.
-        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1 0"));
-        ok(client().execute("artest rocket free-flight-tick " + id + " 10"));
-
-        String after = ok(client().execute("artest rocket info " + id));
-        double myAfter = parseDouble(after, MOTION_Y, "motionY");
-        assertTrue("Stop assist must reduce |motionY| from " + myBefore + " toward 0, got "
-                        + myAfter,
-                Math.abs(myAfter) < Math.abs(myBefore));
+        String info = ok(client().execute("artest rocket info " + id));
+        double my = parseDouble(info, MOTION_Y, "motionY");
+        double mz = parseDouble(info, Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("cut must ease the cruise to a stop (motionZ=" + mz + ")",
+                Math.abs(mz) < 0.05);
+        assertTrue("cut must HOLD ALTITUDE, not drop the craft (motionY=" + my + ")",
+                Math.abs(my) < 0.05);
+        assertTrue("hovering craft must still be in flight: " + info,
+                info.contains("\"isInFlight\":true"));
     }
 
     @Test
-    public void hoverAssistHoldsAltitudeAgainstGravity() throws Exception {
-        // Pin the cancel-gravity contract end-to-end: with Hover engaged and
-        // fuel available, a free-flight-tick must NOT drain motionY by the
-        // gravity amount.
+    public void yawingTheCraftRotatesTheCruiseVelocity() throws Exception {
+        // The setpoint is body-frame: cruise forward, then yaw ~90° — the
+        // WORLD velocity must rotate with the nose (from +Z toward -X).
         int id = buildAndAssemble(4300, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // Wipe the initial kick from startFreeFlight so we measure pure
-        // hover-vs-gravity.
-        ok(client().execute("artest rocket set-state " + id + " motionY=0.0"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
+        // Release forward, hold yaw for 15 ticks (= 90° at 6°/tick).
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 1 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 15"));
+        // Let FA re-align the velocity to the rotated setpoint.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 40"));
 
-        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 0 1"));
-        String tickRes = ok(client().execute(
-                "artest rocket free-flight-tick " + id + " 1"));
-        double my = parseDouble(tickRes, MOTION_Y, "motionY");
-        // Without hover, one tick of gravity drops motionY by ~0.04
-        // (default mult=1.0). With hover, it should stay at 0.
-        assertTrue("Hover hold must keep motionY at ~0 against gravity, got "
-                        + my,
-                Math.abs(my) < 0.01);
+        String info = ok(client().execute("artest rocket info " + id));
+        double mx = parseDouble(info, Pattern.compile("\"motionX\":(-?[0-9.E\\-]+)"), "motionX");
+        double mz = parseDouble(info, Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("after a 90° yaw the cruise must point -X (mx=" + mx + " mz=" + mz + ")",
+                mx < -0.5 && Math.abs(mz) < 0.35);
+    }
+
+    @Test
+    public void reEnablingFlightAssistCapturesTheCurrentVelocity() throws Exception {
+        // Toggling FA back on mid-flight must NOT jerk the craft: the setpoint
+        // initialises to the current velocity (Elite behaviour).
+        int id = buildAndAssemble(4350, 64, 500);
+        ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
+        ok(client().execute("artest rocket start-free-flight " + id));
+
+        // Climb away from the ground first: the Newtonian phase sheds altitude
+        // under gravity, and starting from the 1-block engine hover it would
+        // touch down (engines off) before the capture could be observed.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 1 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 25"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1")); // cut -> hover
+        ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
+
+        // FA off, build a Newtonian cruise with direct thrust, then coast.
+        ok(client().execute("artest rocket set-flight-assist " + id + " off"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 8"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 2"));
+        double mzBefore = parseDouble(ok(client().execute("artest rocket info " + id)),
+                Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("precondition: must be coasting (+Z), got " + mzBefore, mzBefore > 0.2);
+
+        // FA back on → setpoint captured → cruise continues, no jerk.
+        ok(client().execute("artest rocket set-flight-assist " + id + " on"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
+        double mzAfter = parseDouble(ok(client().execute("artest rocket info " + id)),
+                Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
+        assertTrue("FA re-enable must keep the cruise (was " + mzBefore + ", now "
+                + mzAfter + ")", Math.abs(mzAfter - mzBefore) < 0.25);
     }
 
     @Test

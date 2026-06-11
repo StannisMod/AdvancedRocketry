@@ -761,11 +761,14 @@ public class TestProbeCommand extends CommandBase {
                 info.put("ffInputYaw",   ffin.yawInput);
                 info.put("ffInputPitch", ffin.pitchInput);
                 info.put("ffInputBrake", ffin.brakeInput);
-                info.put("ffInputStop",  ffin.stopActive);
-                info.put("ffInputHover", ffin.hoverActive);
+                info.put("ffInputCut",  ffin.cutActive);
             }
             info.put("freeFlightPitch", rocket.getFreeFlightPitch());
             info.put("flightAssistOn", rocket.isFlightAssistOn());
+            // FA velocity setpoint (TASK-46 D4), body frame, blocks/tick.
+            info.put("faSetpointFwd",   rocket.getFaSetpointForward());
+            info.put("faSetpointRight", rocket.getFaSetpointRight());
+            info.put("faSetpointUp",    rocket.getFaSetpointUp());
             // FF liveness telemetry: how many FF physics ticks have actually run
             // since the last startFreeFlight, plus ground contact — discriminates
             // "FF branch not executing" from "physics ran but produced no motion"
@@ -1320,7 +1323,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("free-flight-input".equalsIgnoreCase(args[0]) && args.length >= 7) {
-            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [stop=0|1] [hover=0|1] [strafe]
+            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [cut=0|1] [strafe]
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
             EntityRocket rocket = findRocket(server, entityId);
             if (rocket == null) {
@@ -1335,16 +1338,15 @@ public class TestProbeCommand extends CommandBase {
                 pitch = Float.parseFloat(args[5]);
                 brake = Float.parseFloat(args[6]);
                 // Strafe is the trailing optional arg so legacy 5-number calls
-                // (fwd vert yaw pitch brake [stop] [hover]) keep working.
-                if (args.length >= 10) strafe = Float.parseFloat(args[9]);
+                // (fwd vert yaw pitch brake [cut]) keep working.
+                if (args.length >= 9) strafe = Float.parseFloat(args[8]);
             } catch (NumberFormatException ex) {
                 send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
                 return;
             }
-            boolean stop  = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
-            boolean hover = args.length >= 9 && !"0".equals(args[8]) && !"false".equalsIgnoreCase(args[8]);
+            boolean cut = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
             zmaster587.advancedRocketry.api.FreeFlightInput input =
-                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, stop, hover);
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, cut);
             rocket.applyFreeFlightInput(input);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId
                     + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
@@ -1354,8 +1356,7 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"yaw\":" + input.yawInput
                     + ",\"pitch\":" + input.pitchInput
                     + ",\"brake\":" + input.brakeInput
-                    + ",\"stop\":" + input.stopActive
-                    + ",\"hover\":" + input.hoverActive + "}");
+                    + ",\"cut\":" + input.cutActive + "}");
             return;
         }
         if ("set-flight-assist".equalsIgnoreCase(args[0]) && args.length >= 3) {
@@ -1395,6 +1396,25 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"motionY\":" + rocket.motionY
                     + ",\"motionZ\":" + rocket.motionZ
                     + ",\"isInFlight\":" + rocket.isInFlight() + "}");
+            return;
+        }
+        if ("fill-fuel".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket fill-fuel <id> — fill every fuel tank to capacity
+            // WITHOUT starting anything. Lets engine-start tests exercise the
+            // real ENGINE_START validation (which honestly rejects an empty
+            // rocket) instead of piggybacking on start-free-flight's auto-fill.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            for (zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType type :
+                    zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType.values()) {
+                int cap = rocket.stats.getFuelCapacity(type);
+                if (cap > 0) rocket.setFuelAmount(type, cap);
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"fuelFilled\":true}");
             return;
         }
         if ("start-free-flight".equalsIgnoreCase(args[0]) && args.length >= 2) {

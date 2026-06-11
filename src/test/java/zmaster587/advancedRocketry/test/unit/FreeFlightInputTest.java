@@ -86,9 +86,9 @@ public class FreeFlightInputTest {
     @Test
     public void strafeChannelClampsAndRoundTrips() {
         // Strafe is the 3rd float in the full 8-arg constructor (fwd, vert, strafe, ...).
-        FreeFlightInput hi = new FreeFlightInput(0f, 0f, 9f, 0f, 0f, 0f, false, false);
+        FreeFlightInput hi = new FreeFlightInput(0f, 0f, 9f, 0f, 0f, 0f, false);
         assertEquals(1f, hi.strafeInput, EPS);
-        FreeFlightInput orig = new FreeFlightInput(0.1f, 0.2f, -0.6f, 0.3f, 0.4f, 0.5f, true, false);
+        FreeFlightInput orig = new FreeFlightInput(0.1f, 0.2f, -0.6f, 0.3f, 0.4f, 0.5f, true);
         ByteBuf buf = Unpooled.buffer();
         orig.write(buf);
         FreeFlightInput rt = FreeFlightInput.read(buf);
@@ -98,7 +98,7 @@ public class FreeFlightInputTest {
 
     @Test
     public void isIdleFalseWhenStrafeNonZero() {
-        assertFalse(new FreeFlightInput(0f, 0f, 0.01f, 0f, 0f, 0f, false, false).isIdle());
+        assertFalse(new FreeFlightInput(0f, 0f, 0.01f, 0f, 0f, 0f, false).isIdle());
     }
 
     @Test
