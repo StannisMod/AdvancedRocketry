@@ -1446,8 +1446,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // staircase would make mouse look feel like ~7 fps) and only the
             // ERROR vs the server is recorded here, bled over a few ticks in
             // the FF branch of onUpdate().
-            this.rotcorrectionYaw = MathHelper.wrapDegrees(yaw - this.rotationYaw);
-            this.rotcorrectionPitch = pitch - this.rotationPitch;
+            //
+            // Move-only tracker packets carry NO rotation — the vanilla handler
+            // echoes the client's own current rotation back, i.e. delta ≈ 0.
+            // Overwriting a still-bleeding correction with that zero would
+            // erase it within a tick of arriving (e.g. the heading resync
+            // teleport on rotation stop), so only REAL rotation deltas replace
+            // the pending correction.
+            float dyaw   = MathHelper.wrapDegrees(yaw - this.rotationYaw);
+            float dpitch = pitch - this.rotationPitch;
+            if (Math.abs(dyaw) > 1e-3f || Math.abs(dpitch) > 1e-3f) {
+                this.rotcorrectionYaw = dyaw;
+                this.rotcorrectionPitch = dpitch;
+            }
             this.poscorrection = new Vec3d(x, y, z).subtract(this.posX, this.posY, this.posZ);
             return;
         }

@@ -23,6 +23,13 @@ import zmaster587.advancedRocketry.client.KeyBindings;
 @Mixin(NetHandlerPlayClient.class)
 public class MixinNetHandlerFFCameraRepin {
 
+    @Inject(method = "handlePlayerPosLook", at = @At("HEAD"))
+    private void advancedrocketry$captureMouseBeforeTeleport(SPacketPlayerPosLook packet, CallbackInfo ci) {
+        // The echo overwrites the player rotation fields the pending mouse
+        // delta lives in — capture it before the vanilla handler runs.
+        KeyBindings.captureMouseBeforeTeleport();
+    }
+
     @Inject(method = "handlePlayerPosLook", at = @At("RETURN"))
     private void advancedrocketry$repinFreeFlightCamera(SPacketPlayerPosLook packet, CallbackInfo ci) {
         KeyBindings.repinCameraAfterTeleport();

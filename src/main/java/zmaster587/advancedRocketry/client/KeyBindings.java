@@ -84,29 +84,61 @@ public class KeyBindings {
      *  turn-rate dot (Phase 4). */
     public static volatile float hudYawRate = 0f, hudPitchRate = 0f;
 
+    /** Mouse motion accumulated since the last pin, captured at the HEAD of
+     *  a PosLook teleport so the vanilla handler can't destroy it (the echo
+     *  overwrites the player rotation fields the delta lives in). */
+    private static volatile float pendingMouseYaw = 0f, pendingMousePitch = 0f;
+
+    /** True between the HEAD capture and the RETURN re-pin of one PosLook. */
+    private static boolean teleportCaptureArmed = false;
+
+    /** Guards shared by the two PosLook hooks: a pinned FF flight on the MC thread. */
+    private static EntityRocket pinnedFlightCraft() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || !cameraPinValid) return null;
+        if (!mc.isCallingFromMinecraftThread()) return null; // netty-thread early return path
+        if (!(mc.player.getRidingEntity() instanceof EntityRocket)) return null;
+        EntityRocket rocket = (EntityRocket) mc.player.getRidingEntity();
+        return (rocket.isFreeFlight() && rocket.isInFlight()) ? rocket : null;
+    }
+
     /**
-     * Undo the vanilla riding echo. While a player rides, the server answers
-     * every position report with an SPacketPlayerPosLook that carries the
-     * rotation the client sent ~1 RTT ago — with the camera hard-locked to a
-     * turning craft that snaps the view back by (turn rate × latency), a
-     * visible per-frame hiccup. Called from the PosLook mixin after the vanilla
-     * handler ran: re-pin the camera to the craft and move the mouse-delta
-     * baseline with it, so the next tick still reads pure mouse motion (no
-     * feedback). Mouse motion pending at the moment of the teleport is lost —
-     * rare and at most one tick's worth.
+     * PosLook HEAD hook: capture the mouse motion accumulated since the last
+     * camera pin BEFORE the vanilla handler overwrites the player rotation
+     * with the riding echo's ~1-RTT-stale values. Without this, every echo
+     * (which arrives about once per tick while riding) destroys the pending
+     * swipe — imperceptible drops for a human moving the mouse continuously,
+     * but it eats discrete injected swipes wholesale.
+     */
+    public static void captureMouseBeforeTeleport() {
+        EntityPlayerSP player = Minecraft.getMinecraft() == null ? null : Minecraft.getMinecraft().player;
+        if (player == null || pinnedFlightCraft() == null) return;
+        pendingMouseYaw   = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - lastPinnedYaw);
+        pendingMousePitch = player.rotationPitch - lastPinnedPitch;
+        teleportCaptureArmed = true;
+    }
+
+    /**
+     * PosLook RETURN hook — undo the vanilla riding echo. While a player
+     * rides, the server answers every position report with an
+     * SPacketPlayerPosLook carrying the rotation the client sent ~1 RTT ago;
+     * with the camera hard-locked to a turning craft that snaps the view back
+     * by (turn rate × latency) — a visible per-frame hiccup. Re-pin the camera
+     * to the craft, re-apply the mouse motion captured at HEAD on top, and
+     * keep the delta baseline at the pin so the next tick still reads pure
+     * mouse motion (no feedback).
      */
     public static void repinCameraAfterTeleport() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null || !cameraPinValid) return;
-        if (!mc.isCallingFromMinecraftThread()) return; // netty-thread early return path
-        EntityPlayerSP player = mc.player;
-        if (!(player.getRidingEntity() instanceof EntityRocket)) return;
-        EntityRocket rocket = (EntityRocket) player.getRidingEntity();
-        if (!rocket.isFreeFlight() || !rocket.isInFlight()) return;
-        player.rotationYaw       = rocket.rotationYaw;
-        player.prevRotationYaw   = rocket.prevRotationYaw;
-        player.rotationPitch     = rocket.rotationPitch;
-        player.prevRotationPitch = rocket.prevRotationPitch;
+        EntityRocket rocket = pinnedFlightCraft();
+        if (rocket == null) return;
+        EntityPlayerSP player = Minecraft.getMinecraft().player;
+        float pendYaw   = teleportCaptureArmed ? pendingMouseYaw   : 0f;
+        float pendPitch = teleportCaptureArmed ? pendingMousePitch : 0f;
+        teleportCaptureArmed = false;
+        player.rotationYaw       = rocket.rotationYaw + pendYaw;
+        player.prevRotationYaw   = rocket.prevRotationYaw + pendYaw;
+        player.rotationPitch     = rocket.rotationPitch + pendPitch;
+        player.prevRotationPitch = rocket.prevRotationPitch + pendPitch;
         lastPinnedYaw   = rocket.rotationYaw;
         lastPinnedPitch = rocket.rotationPitch;
     }
