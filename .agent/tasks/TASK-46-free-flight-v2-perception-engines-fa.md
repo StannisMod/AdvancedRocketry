@@ -195,14 +195,29 @@ Rendered in `RocketEventHandler` (existing FF HUD hook), published to
       Verified: unit 25/25, server FF 17/17, client e2e 20/20 twice in a row.
       *Manual playtest checkpoint: perception must feel right before
       anything is built on top.* ← **pending user check**
-- [ ] **Phase 2 — Engine start/shutdown** state machine, HUD progress +
-      messages, server & client e2e. Removes the takeoff kick + land grace.
-- [ ] **Phase 3 — FA setpoint core**: pure logic, server integration, NBT +
-      replication, unit + server e2e. H/B removal lands here.
-- [ ] **Phase 4 — HUD indication** (bars, engine/FA lines, turn-rate dot) +
-      client e2e.
-- [ ] **Phase 5 — Cleanup**: lang sweep (en+ru), dead constants, docs,
-      decide fate of `[FF-TRACE]/[FF-DEBUG]`, update task docs + README.
+- [x] **Phase 2 — Engine start/shutdown** — shipped 2026-06-11 (commit
+      `5c156c1b`, joint with Phase 3: the liftoff hover is a special case of
+      the FA control law and both ride the same input-wire change, so the
+      two phases are one commit). Hold-jump 3 s ritual (client accumulator,
+      HUD progress, early-release cancel) → ENGINE_START packet → server
+      validation (passenger/mode/fuel/TWR>1). No kick: liftoffStep eases to
+      pad+1 and hovers; landing detector arms on first ground departure
+      (grace window deleted); touchdown auto-stops. "Engines on" ≡
+      isInFlight for FF — no new replicated state. New probe `fill-fuel`
+      (ENGINE_START honestly rejects a dry rocket).
+- [x] **Phase 3 — FA setpoint core** — shipped 2026-06-11 (`5c156c1b`).
+      rampSetpoint/faStep pure laws + worldToBody/bodyToWorld shared basis;
+      setpoint in DataParameters (HUD) + NBT; X = cut flag on the wire
+      (stop/hover flags and H/B keys removed); FA re-enable captures the
+      current velocity; FA off = raw Newtonian (idle-drag removed, Shift
+      brake stays).
+- [x] **Phase 4 — HUD indication** — shipped 2026-06-11 (`b3522844`).
+      FWD/LAT/VRT setpoint-vs-actual text pairs + graphic bipolar bars,
+      turn-rate dot, SPD readout, "Newtonian" FA-off label.
+- [x] **Phase 5 — Cleanup** — shipped 2026-06-11. Lang sweep (orphaned
+      msg.ff.hud.pitch dropped, X line reworded to "Brake to hover");
+      `[FF-TRACE]/[FF-DEBUG]` KEPT — harness-only (test-mode gated),
+      repeatedly earned their keep during the Phase 1 flake hunt.
 
 ### Defaults taken without asking (overridable)
 
@@ -221,7 +236,8 @@ Rendered in `RocketEventHandler` (existing FF HUD hook), published to
   old FreeFlightPhysics; reconcile after v2 lands).
 
 ## Completion checklist
-- [ ] All phases complete, manual playtest sign-off on perception
-- [ ] Unit + server + client suites green (bounded runs)
-- [ ] Lang en+ru complete; no orphaned keys
-- [ ] tasks/README.md + navigator updated per task-lifecycle SOP
+- [x] All phases implemented (manual playtest sign-off PENDING — the user
+      tests all phases together)
+- [x] Unit + server + client suites green (bounded runs)
+- [x] Lang en+ru complete; no orphaned keys
+- [x] tasks/README.md updated

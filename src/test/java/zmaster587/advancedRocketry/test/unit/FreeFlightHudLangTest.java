@@ -17,7 +17,7 @@ public class FreeFlightHudLangTest {
     private static final String[] KEYS = {
             "msg.ff.hud.title", "msg.ff.hud.prelaunch", "msg.ff.hud.active",
             "msg.ff.hud.fa.on", "msg.ff.hud.fa.off", "msg.ff.hud.move",
-            "msg.ff.hud.yaw", "msg.ff.hud.vert", "msg.ff.hud.pitch",
+            "msg.ff.hud.yaw", "msg.ff.hud.vert",
             "msg.ff.hud.brake", "msg.ff.hud.assist",
             // Engine start (TASK-46 D3)
             "msg.ff.hud.engines.off", "msg.ff.hud.engines.starting",
