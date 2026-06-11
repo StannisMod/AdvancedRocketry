@@ -514,6 +514,107 @@ public final class ForgeTestClientBootstrap {
                     }
                     return response;
                 });
+            case "use_item":
+                // Right-click the held item "in the air" (no block target):
+                // PlayerControllerMP.processRightClick sends the real
+                // CPacketPlayerTryUseItem, so Item.onItemRightClick runs on
+                // both sides against the real player.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.player == null || mc.world == null) {
+                        throw new IllegalStateException("use_item: client world/player not ready");
+                    }
+                    net.minecraft.util.EnumActionResult result = mc.playerController
+                            .processRightClick(mc.player, mc.world, EnumHand.MAIN_HAND);
+                    JsonObject response = ok();
+                    response.addProperty("result", result.name());
+                    return response;
+                });
+            case "report_chat":
+                // Recent lines of the client chat overlay (GuiNewChat), newest
+                // first — i18n ALREADY RESOLVED, exactly what the player reads.
+                // The honest observation for "the player got a chat message".
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    int limit = request.has("limit") ? request.get("limit").getAsInt() : 20;
+                    JsonObject response = ok();
+                    JsonArray lines = new JsonArray();
+                    if (mc.ingameGUI != null) {
+                        try {
+                            net.minecraft.client.gui.GuiNewChat chat = mc.ingameGUI.getChatGUI();
+                            java.lang.reflect.Field f = findField(chat.getClass(), "chatLines");
+                            f.setAccessible(true);
+                            @SuppressWarnings("unchecked")
+                            List<net.minecraft.client.gui.ChatLine> raw =
+                                    (List<net.minecraft.client.gui.ChatLine>) f.get(chat);
+                            for (int i = 0; i < raw.size() && i < limit; i++) {
+                                lines.add(raw.get(i).getChatComponent().getUnformattedText());
+                            }
+                        } catch (Throwable t) {
+                            throw new IllegalStateException("report_chat failed: " + t, t);
+                        }
+                    }
+                    response.add("lines", lines);
+                    response.addProperty("count", lines.size());
+                    return response;
+                });
+            case "report_player_items":
+                // Client-side view of the player's held/offhand/armor/main
+                // inventory stacks (id, count, NBT string). This is the synced
+                // state the HUD and inventory screen render from — the honest
+                // layer for "the suit's air tank drained" style assertions.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.player == null) {
+                        response.addProperty("worldReady", false);
+                        return response;
+                    }
+                    response.addProperty("worldReady", true);
+                    response.add("held", stackJson(mc.player.getHeldItemMainhand()));
+                    response.add("offhand", stackJson(mc.player.getHeldItemOffhand()));
+                    JsonArray armor = new JsonArray();
+                    for (ItemStack stack : mc.player.inventory.armorInventory) {
+                        armor.add(stackJson(stack)); // index 0=feet … 3=head
+                    }
+                    response.add("armor", armor);
+                    JsonArray main = new JsonArray();
+                    for (ItemStack stack : mc.player.inventory.mainInventory) {
+                        main.add(stackJson(stack));
+                    }
+                    response.add("main", main);
+                    return response;
+                });
+            case "report_entities":
+                // Entities in the CLIENT world near the player, optionally
+                // filtered by a class-name substring. Pins "the client actually
+                // sees the spawned/tracked entity", which no server query can.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.player == null || mc.world == null) {
+                        throw new IllegalStateException("report_entities: client world/player not ready");
+                    }
+                    double radius = request.has("radius") ? request.get("radius").getAsDouble() : 64.0D;
+                    String needle = request.has("classContains")
+                            ? requireString(request, "classContains") : "";
+                    JsonObject response = ok();
+                    JsonArray entities = new JsonArray();
+                    for (net.minecraft.entity.Entity entity : mc.world.loadedEntityList) {
+                        if (entity == mc.player) continue;
+                        if (!needle.isEmpty() && !entity.getClass().getName().contains(needle)) continue;
+                        if (mc.player.getDistance(entity) > radius) continue;
+                        JsonObject je = new JsonObject();
+                        je.addProperty("class", entity.getClass().getName());
+                        je.addProperty("id", entity.getEntityId());
+                        je.addProperty("x", entity.posX);
+                        je.addProperty("y", entity.posY);
+                        je.addProperty("z", entity.posZ);
+                        entities.add(je);
+                    }
+                    response.add("entities", entities);
+                    response.addProperty("count", entities.size());
+                    return response;
+                });
             case "interact_block":
                 // Real right-click: PlayerControllerMP.processRightClickBlock
                 // sends CPacketPlayerTryUseItemOnBlock, so the server's
@@ -685,6 +786,21 @@ public final class ForgeTestClientBootstrap {
             throw new IllegalStateException("Client player is not available");
         }
         return mc.player;
+    }
+
+    /** {id, count, nbt} of a client-side ItemStack; empty stacks → id="" count=0. */
+    private static JsonObject stackJson(ItemStack stack) {
+        JsonObject json = new JsonObject();
+        if (stack == null || stack.isEmpty()) {
+            json.addProperty("id", "");
+            json.addProperty("count", 0);
+            json.addProperty("nbt", "");
+            return json;
+        }
+        json.addProperty("id", String.valueOf(stack.getItem().getRegistryName()));
+        json.addProperty("count", stack.getCount());
+        json.addProperty("nbt", stack.getTagCompound() == null ? "" : stack.getTagCompound().toString());
+        return json;
     }
 
     private static JsonObject ok() {

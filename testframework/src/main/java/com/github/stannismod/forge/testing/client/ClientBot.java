@@ -230,6 +230,50 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Right-clicks the HELD item with no block target: routes through
+     * {@code PlayerControllerMP.processRightClick} (the real
+     * {@code CPacketPlayerTryUseItem} path), so {@code Item.onItemRightClick}
+     * runs on both sides against the real player. Returns the client-side
+     * {@code EnumActionResult} name under {@code result}.
+     */
+    public JsonObject useItem() throws IOException {
+        return assertOk(execute(command("use_item")));
+    }
+
+    /**
+     * Recent lines of the client chat overlay, newest first, i18n already
+     * resolved — exactly the text the player reads. The honest observation
+     * for "the player received a chat message".
+     */
+    public JsonObject reportChat(int limit) throws IOException {
+        JsonObject command = command("report_chat");
+        command.addProperty("limit", limit);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Client-side view of the player's held / offhand / armor / main-inventory
+     * stacks ({@code id}, {@code count}, {@code nbt} string). This is the
+     * synced state the HUD and inventory screen render from.
+     */
+    public JsonObject reportPlayerItems() throws IOException {
+        return assertOk(execute(command("report_player_items")));
+    }
+
+    /**
+     * Entities in the CLIENT world within {@code radius} of the player whose
+     * class name contains {@code classContains} (empty = all). Pins "the
+     * client actually sees the entity" — spawn sync, tracking range, render
+     * presence — which no server-side query can.
+     */
+    public JsonObject reportEntities(String classContains, double radius) throws IOException {
+        JsonObject command = command("report_entities");
+        command.addProperty("classContains", classContains);
+        command.addProperty("radius", radius);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Right-clicks a block exactly as the player would: routes through
      * {@code PlayerControllerMP.processRightClickBlock} on the client thread,
      * which sends the real {@code CPacketPlayerTryUseItemOnBlock} — so the
