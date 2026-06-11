@@ -57,6 +57,18 @@ public class RocketEventHandler extends Gui {
     /** Last rendered Free Flight HUD text (joined with " | "), for client e2e
      *  assertions. Empty when not riding a FF rocket. Updated each HUD frame. */
     public static volatile String lastFreeFlightHud = "";
+    /** Frame-time camera-lock telemetry (TASK-46 D1): worst divergence (deg)
+     *  between the player camera and the craft axes seen on any rendered HUD
+     *  frame of the current FF flight — i.e. what the pilot literally saw,
+     *  sampled atomically on the render thread. Bounded small while flying
+     *  (intra-tick mouse deflection only); a runaway means the lock broke.
+     *  Reset when the flight ends. Read reflectively by client e2e. */
+    public static volatile double maxCameraLockErrorDeg = 0.0;
+    /** Same divergence for the MOST RECENT rendered frame (not the running
+     *  max) — at rest this is what the pilot currently sees, readable in one
+     *  atomic reflective call (a bot reading camera and craft separately can
+     *  straddle a tracker-quantisation bleed tick and see a phantom gap). */
+    public static volatile double lastCameraLockErrorDeg = 0.0;
     private ResourceLocation background = TextureResources.rocketHud;
     private static long suppressSuffocationWarningUntil = Long.MIN_VALUE;
     private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
@@ -171,6 +183,24 @@ public class RocketEventHandler extends Gui {
                         int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
                         fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
                     }
+                }
+
+                // Camera-nose lock telemetry (TASK-46 D1): on every rendered
+                // frame of an FF flight, record the worst player-camera vs
+                // craft-axes divergence. Small values = intra-tick mouse
+                // deflection (by design); a runaway means the lock broke.
+                if (rocket.isFreeFlight() && rocket.isInFlight()
+                        && KeyBindings.isCameraPinnedThisFlight()) {
+                    double yawErr = Math.abs(MathHelper.wrapDegrees(
+                            mc.player.rotationYaw - rocket.rotationYaw));
+                    double pitchErr = Math.abs(
+                            mc.player.rotationPitch - rocket.rotationPitch);
+                    double err = Math.max(yawErr, pitchErr);
+                    lastCameraLockErrorDeg = err;
+                    if (err > maxCameraLockErrorDeg) maxCameraLockErrorDeg = err;
+                } else if (!rocket.isInFlight()) {
+                    maxCameraLockErrorDeg = 0.0;
+                    lastCameraLockErrorDeg = 0.0;
                 }
 
             }

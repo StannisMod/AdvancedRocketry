@@ -239,7 +239,29 @@ public final class FreeFlightPhysics {
         return onGround && Math.abs(motionY) < 0.05;
     }
 
-    static float clampPitch(float p) {
+    /**
+     * Mouse-as-rate steering (TASK-46 D1): convert the look delta the mouse
+     * accumulated over one tick into a normalised rate command in [-1, 1].
+     *
+     * <p>Below the craft's turn rate the response is 1:1 — a {@code deltaDeg}
+     * swipe turns the nose by exactly {@code deltaDeg} on the next tick
+     * (rate = delta/max, integrated as rate*max). Faster swipes saturate at
+     * the craft's max turn rate and the excess is discarded ("mouse slip"),
+     * which is the Elite-style rate limit rather than a queued turn.
+     *
+     * @param deltaDeg       look degrees accumulated since the last camera pin
+     * @param maxRatePerTick the craft's max turn rate for this axis (deg/tick)
+     */
+    public static double rateFromMouseDelta(double deltaDeg, double maxRatePerTick) {
+        if (Double.isNaN(deltaDeg) || maxRatePerTick <= 0.0) return 0.0;
+        double rate = deltaDeg / maxRatePerTick;
+        if (rate > 1.0) return 1.0;
+        if (rate < -1.0) return -1.0;
+        return rate;
+    }
+
+    /** Clamp a pitch angle to the FF envelope (±{@link #PITCH_MAX}). */
+    public static float clampPitch(float p) {
         if (p > PITCH_MAX) return (float) PITCH_MAX;
         if (p < -PITCH_MAX) return (float) -PITCH_MAX;
         return p;

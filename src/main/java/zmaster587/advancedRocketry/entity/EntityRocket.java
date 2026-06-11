@@ -32,6 +32,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
 import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import net.minecraft.world.World;
+import net.minecraft.network.play.server.SPacketEntityTeleport;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.MinecraftForge;
@@ -167,10 +168,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
     private transient int freeFlightTicksSinceStart = 0;
     /** Grace window (ticks) after takeoff during which auto-land is suppressed. */
-    private static final int FF_LAND_GRACE_TICKS = 30;
+    private static final int FF_LAND_GRACE_TICKS = 60;
     /** Ticks over which the FF client absorbs a server-position correction
      *  (~ the entity updateFrequency, so jitter is smoothed, not snapped). */
     private static final double FF_CLIENT_CORRECT_TICKS = 3.0;
+    /** Client-side FF rotation error vs the last server update (degrees),
+     *  dead-reckoned away alongside poscorrection — see setPositionAndRotationDirect. */
+    private transient float rotcorrectionYaw = 0f, rotcorrectionPitch = 0f;
+    /** Server-side: whether last tick had non-zero rotation input — edge-detects
+     *  "pilot stopped turning" for the heading resync in tickFreeFlight. */
+    private transient boolean freeFlightRotInputWasActive = false;
     /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
     private boolean flightAssistOn = true;
 
@@ -935,6 +942,25 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.motionZ = result.motionZ;
         this.rotationYaw = result.yaw;
         this.freeFlightPitch = result.pitch;
+        // Mirror the FF pitch into the vanilla rotation field so the entity
+        // tracker replicates it — the client camera is hard-locked to the craft
+        // axes (TASK-46 D1) and needs the real attitude, not a stale 0.
+        this.rotationPitch = result.pitch;
+
+        // Heading resync on rotation stop. Client and server both integrate the
+        // rotation-rate input, but over THEIR OWN ticks — under uneven tick
+        // rates the integrals drift apart by a few degrees, and once rotation
+        // stops the tracker goes silent (it only re-sends rotation on a ≥1.4°
+        // quantum change), so the drift would persist until the next maneuver.
+        // One explicit teleport packet pins the client to the authoritative
+        // pose (within the byte quantum) the moment the pilot stops turning.
+        boolean rotInputActive = Math.abs(currentFreeFlightInput.yawInput) > 1e-5f
+                || Math.abs(currentFreeFlightInput.pitchInput) > 1e-5f;
+        if (!rotInputActive && freeFlightRotInputWasActive && world instanceof WorldServer) {
+            ((WorldServer) world).getEntityTracker().sendToTracking(
+                    this, new SPacketEntityTeleport(this));
+        }
+        freeFlightRotInputWasActive = rotInputActive;
 
         // Fuel burn — classic semantics: while thrust is applied AND fuel is
         // required, drain getFuelConsumptionRate per tick (oxidizer too for
@@ -960,10 +986,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Landing: ground contact + slow vertical motion → exit FF active flight.
         // Grace window: ignore the landing detector for the first FF_LAND_GRACE_TICKS
-        // after takeoff. The startFreeFlight kick decays under gravity in ~15 ticks,
-        // which can be faster than the pilot's keypress → packet round-trip; without
-        // this window the rocket re-lands before any thrust input can arrive and it
-        // looks like "jerk on space, no response to thrust".
+        // after takeoff. The startFreeFlight kick decays under gravity in ~15 ticks
+        // and the rocket falls back onto the pad by ~30, which can beat the pilot's
+        // keypress → packet round-trip (or a few laggy ticks); without this window
+        // the rocket re-lands before any thrust input arrives and it looks like
+        // "jerk on space, no response to thrust". Interim crutch — the TASK-46
+        // Phase 2 engine-start hover replaces the kick and deletes this window.
         if (FreeFlightPhysics.shouldLand(this.onGround, this.motionY)
                 && !freeFlightLandedLatched
                 && freeFlightTicksSinceStart > FF_LAND_GRACE_TICKS) {
@@ -1314,8 +1342,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // client dead-reckon by velocity each tick, absorbing the (small) error
         // over a few ticks — see the FF branch in onUpdate().
         if (isFreeFlight() && isInFlight()) {
-            this.rotationYaw = yaw;
-            this.rotationPitch = pitch;
+            // Rotation gets the same treatment as position: the client
+            // dead-reckons it every tick from the locally-known steering rates
+            // (the camera is hard-locked to the craft, so a 3-tick rotation
+            // staircase would make mouse look feel like ~7 fps) and only the
+            // ERROR vs the server is recorded here, bled over a few ticks in
+            // the FF branch of onUpdate().
+            this.rotcorrectionYaw = MathHelper.wrapDegrees(yaw - this.rotationYaw);
+            this.rotcorrectionPitch = pitch - this.rotationPitch;
             this.poscorrection = new Vec3d(x, y, z).subtract(this.posX, this.posY, this.posZ);
             return;
         }
@@ -1647,6 +1681,22 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 this.setPosition(this.posX + this.motionX + cx,
                                  this.posY + this.motionY + cy,
                                  this.posZ + this.motionZ + cz);
+
+                // Rotation dead-reckoning: integrate the locally-known steering
+                // rates every client tick (the camera is hard-locked to the
+                // craft, and the tracker only syncs rotation every ~3 ticks —
+                // without this, mouse look would step at ~7 fps), and bleed the
+                // recorded server error the same way as position.
+                float ry = rotcorrectionYaw   / (float) FF_CLIENT_CORRECT_TICKS;
+                float rp = rotcorrectionPitch / (float) FF_CLIENT_CORRECT_TICKS;
+                rotcorrectionYaw   -= ry;
+                rotcorrectionPitch -= rp;
+                FreeFlightInput in = currentFreeFlightInput == null
+                        ? FreeFlightInput.zero() : currentFreeFlightInput;
+                this.rotationYaw  += (float) (in.yawInput * FreeFlightPhysics.MAX_YAW_RATE) + ry;
+                this.rotationPitch = FreeFlightPhysics.clampPitch(
+                        this.rotationPitch
+                                + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE) + rp);
             }
             return;
         }

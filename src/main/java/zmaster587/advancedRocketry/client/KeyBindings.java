@@ -55,6 +55,47 @@ public class KeyBindings {
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
     /** Tracks FF-gate transitions for [FF-TRACE] logging. */
     private boolean wasFreeFlightActive = false;
+    /** Camera-pin state for mouse-as-rate steering (TASK-46 D1): the player
+     *  rotation we pinned at the end of the previous tick. Whatever the mouse
+     *  added on top of it since is this tick's turn command. Static so the
+     *  PosLook re-pin (see {@link #repinCameraAfterTeleport()}) can keep the
+     *  pin and the delta baseline consistent. */
+    private static volatile float lastPinnedYaw, lastPinnedPitch;
+    /** True once the camera has been pinned to the craft this flight — gates
+     *  the frame-time lock telemetry in RocketEventHandler so pre-takeoff
+     *  frames (arbitrary look) don't pollute it. */
+    private static volatile boolean cameraPinValid = false;
+
+    public static boolean isCameraPinnedThisFlight() {
+        return cameraPinValid;
+    }
+
+    /**
+     * Undo the vanilla riding echo. While a player rides, the server answers
+     * every position report with an SPacketPlayerPosLook that carries the
+     * rotation the client sent ~1 RTT ago — with the camera hard-locked to a
+     * turning craft that snaps the view back by (turn rate × latency), a
+     * visible per-frame hiccup. Called from the PosLook mixin after the vanilla
+     * handler ran: re-pin the camera to the craft and move the mouse-delta
+     * baseline with it, so the next tick still reads pure mouse motion (no
+     * feedback). Mouse motion pending at the moment of the teleport is lost —
+     * rare and at most one tick's worth.
+     */
+    public static void repinCameraAfterTeleport() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || !cameraPinValid) return;
+        if (!mc.isCallingFromMinecraftThread()) return; // netty-thread early return path
+        EntityPlayerSP player = mc.player;
+        if (!(player.getRidingEntity() instanceof EntityRocket)) return;
+        EntityRocket rocket = (EntityRocket) player.getRidingEntity();
+        if (!rocket.isFreeFlight() || !rocket.isInFlight()) return;
+        player.rotationYaw       = rocket.rotationYaw;
+        player.prevRotationYaw   = rocket.prevRotationYaw;
+        player.rotationPitch     = rocket.rotationPitch;
+        player.prevRotationPitch = rocket.prevRotationPitch;
+        lastPinnedYaw   = rocket.rotationYaw;
+        lastPinnedPitch = rocket.rotationPitch;
+    }
 
     /** Harness-only ([FF-TRACE/K]) client keybind log; pass -Dadvancedrocketry.tests=true. */
     private static void kbTrace(String msg) {
@@ -188,8 +229,10 @@ public class KeyBindings {
             wasFreeFlightActive = active;
         }
         if (!active) {
-            // Reset so the next entry into FF sends a fresh, current snapshot.
+            // Reset so the next entry into FF sends a fresh, current snapshot
+            // and the camera re-aligns to the craft on the next takeoff.
             lastSentInput = FreeFlightInput.zero();
+            cameraPinValid = false;
             return;
         }
 
@@ -205,21 +248,34 @@ public class KeyBindings {
         float vert = cut ? 0f
                 : (flightVerticalUp.isKeyDown()   ?  1f : 0f)
                 + (flightVerticalDown.isKeyDown() ? -1f : 0f);
-        float yaw  = (turnRocketRight.isKeyDown() ?  1f : 0f)
-                   + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
 
-        // Pitch: the nose tracks where the player looks (mouse). We feed a rate
-        // toward the look pitch through the existing rate-integrated channel, so
-        // the nose eases onto the aim point. MC convention: pitch<0 = nose up.
-        float lookPitch = player.rotationPitch;
-        float pmax = (float) FreeFlightPhysics.PITCH_MAX;
-        if (lookPitch >  pmax) lookPitch =  pmax;
-        if (lookPitch < -pmax) lookPitch = -pmax;
-        float pitchErr = lookPitch - rocket.getFreeFlightPitch();
-        float pitch = (float) (pitchErr / FreeFlightPhysics.MAX_PITCH_RATE);
-        if (pitch >  1f) pitch =  1f;
-        if (pitch < -1f) pitch = -1f;
-        if (Math.abs(pitchErr) < 0.5f) pitch = 0f; // dead-zone: no jitter at rest
+        // ---- Mouse-as-rate steering + camera-nose lock (TASK-46 D1) --------
+        // The look delta the mouse accumulated since the last camera pin IS
+        // this tick's turn command: clamped to the craft turn rate (1:1 below
+        // it, excess discarded — Elite-style rate limit), then the camera is
+        // re-pinned to the craft axes so view and nose can never diverge.
+        float mouseYawDelta, mousePitchDelta;
+        if (!cameraPinValid) {
+            // First active tick (takeoff / remount): align the view to the
+            // craft and DISCARD the stale look-offset — otherwise the
+            // pilot's arbitrary pre-takeoff look would read as a huge
+            // phantom swipe and kick the nose around on tick one.
+            mouseYawDelta = 0f;
+            mousePitchDelta = 0f;
+            cameraPinValid = true;
+            kbTrace("camera pinned to craft (yaw=" + rocket.rotationYaw
+                    + " pitch=" + rocket.rotationPitch + ")");
+        } else {
+            mouseYawDelta   = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - lastPinnedYaw);
+            mousePitchDelta = player.rotationPitch - lastPinnedPitch;
+        }
+
+        float yawKeys = (turnRocketRight.isKeyDown() ?  1f : 0f)
+                      + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
+        float yaw   = FreeFlightInput.clamp((float) FreeFlightPhysics.rateFromMouseDelta(
+                mouseYawDelta, FreeFlightPhysics.MAX_YAW_RATE) + yawKeys);
+        float pitch = (float) FreeFlightPhysics.rateFromMouseDelta(
+                mousePitchDelta, FreeFlightPhysics.MAX_PITCH_RATE);
 
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
         boolean stop  = flightStop.isKeyDown();
@@ -234,11 +290,15 @@ public class KeyBindings {
             lastSentInput = input;
         }
 
-        // Bind the camera yaw to the nose so forward/strafe match the view; mouse
-        // X is consumed (yaw is steered by A/D). Pitch stays mouse-driven (the
-        // nose chases it above), keeping the camera aligned with the craft.
-        player.rotationYaw = rocket.rotationYaw;
-        player.prevRotationYaw = rocket.rotationYaw;
+        // Hard camera-nose lock: mirror BOTH current and prev rotation from the
+        // craft so the per-frame render interpolation sweeps the camera exactly
+        // with the craft (pinning prev=current would step the view at 20 fps).
+        player.rotationYaw       = rocket.rotationYaw;
+        player.prevRotationYaw   = rocket.prevRotationYaw;
+        player.rotationPitch     = rocket.rotationPitch;
+        player.prevRotationPitch = rocket.prevRotationPitch;
+        lastPinnedYaw   = rocket.rotationYaw;
+        lastPinnedPitch = rocket.rotationPitch;
     }
 
     @SubscribeEvent

@@ -62,8 +62,14 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     }
 
     private int buildAndAssemble(int baseX, int baseY, int baseZ) throws Exception {
+        // Clear the full flight column, not just the build site. The world is
+        // generated with a RANDOM seed each run; a hill or tree overhanging the
+        // pad above the old +10 ceiling pins the assembled rocket in place
+        // (Entity.move() zeroes motionY on the vertical collision) and every
+        // thrust assertion downstream reads an exactly-0.0 motion. Caught via
+        // collidedVertically=true after a run-to-run flaky "rocket never moves".
         String fillAir = exec("artest fill 0 " + (baseX - 2) + " " + (baseY + 1) + " "
-                + (baseZ - 2) + " " + (baseX + 7) + " " + (baseY + 10) + " "
+                + (baseZ - 2) + " " + (baseX + 7) + " " + (baseY + 50) + " "
                 + (baseZ + 7) + " minecraft:air");
         assertTrue("pre-clear failed: " + fillAir, fillAir.contains("\"ok\":true"));
 
@@ -243,6 +249,21 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player mount-entity " + rocketId);
         exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
         exec("artest rocket start-free-flight " + rocketId);
+        // The v1 takeoff is a decaying kick + grace window; on a slow/contended
+        // harness the bot round-trips can outlast it and the rocket re-lands
+        // before the test's input arrives, failing on "never moved" instead of
+        // the contract under test. Confirm we're airborne, retrying the start —
+        // same pattern as the assemble retry above. (The TASK-46 Phase 2
+        // engine-start hover removes the kick and this crutch with it.)
+        for (int attempt = 0; attempt < 3; attempt++) {
+            if (exec("artest rocket info " + rocketId).contains("\"isInFlight\":true")) {
+                return rocketId;
+            }
+            exec("artest rocket start-free-flight " + rocketId);
+            bot().waitTicks(2);
+        }
+        assertTrue("rocket must be in flight after start-free-flight (retried)",
+                exec("artest rocket info " + rocketId).contains("\"isInFlight\":true"));
         return rocketId;
     }
 
@@ -631,11 +652,22 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // ~0 and holds altitude. Build motion via probe, then hold H and watch
         // |motion| shrink across ticks.
         int rocketId = mountFreshFreeFlightRocket(4700, 64, 500);
-        exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        String inputResp = exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
+        assertTrue("vertical probe input must apply: " + inputResp,
+                inputResp.contains("\"applied\":true"));
         bot().waitTicks(10);
-        double myMoving = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
-        assertTrue("precondition: rocket must be moving before hover, got " + myMoving,
-                Math.abs(myMoving) > 0.02);
+        String preInfo = exec("artest rocket info " + rocketId);
+        double myMoving = parseDouble(preInfo, MOTION_Y, "motionY");
+        if (!(Math.abs(myMoving) > 0.02)) {
+            // Diagnose before failing: one SYNCHRONOUS physics step shows whether
+            // step()+move() produces thrust and what immediately eats it.
+            String singleStep = exec("artest rocket free-flight-tick " + rocketId + " 1");
+            String postStep = exec("artest rocket info " + rocketId);
+            throw new AssertionError("precondition: rocket must be moving before hover, got "
+                    + myMoving + "\n  state: " + preInfo
+                    + "\n  single-step: " + singleStep
+                    + "\n  after-step: " + postStep);
+        }
 
         // Engage hover via the real key; it ignores throttle and damps to ~0.
         bot().holdKey(Keyboard.KEY_H);
@@ -650,48 +682,149 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
+    // ===== Camera-nose lock + mouse-as-rate (TASK-46 D1) =================
+    //
+    // THE perception contract that v1 missed: the view and the nose must
+    // never diverge. These tests read BOTH sides from the real client
+    // (reportState for the player camera, reportRidingEntity for the craft)
+    // and inject look changes the way the mouse produces them (setLook).
+
+    /** Wrapped angular distance on the circle, degrees in [0, 180]. */
+    private static double angDiff(double a, double b) {
+        return Math.abs(((a - b + 540) % 360) - 180);
+    }
+
     @Test
-    public void cameraYawBindsToNoseWhilePiloting() throws Exception {
-        // The client camera yaw is locked to the rocket nose: after yawing the
-        // craft with D, the CLIENT player's rotationYaw must track the server
-        // rocket's rotationYaw (read from the real client, not a probe).
+    public void cameraIsLockedToCraftYawAndPitchWhileManeuvering() throws Exception {
+        // While actively maneuvering (climb + yaw key + mouse swipes), the
+        // client camera must stay pinned to the craft axes on every sampled
+        // tick (loose eps: the two bot reads aren't atomic, one tick may pass
+        // between them — max craft turn is 6°/tick). Then, with all input
+        // released and corrections bled out, the lock must be exact.
         int rocketId = mountFreshFreeFlightRocket(4800, 64, 500);
 
         bot().holdKey(Keyboard.KEY_R);   // stay airborne
         bot().holdKey(Keyboard.KEY_D);   // yaw the nose
-        bot().waitTicks(15);
+        for (int i = 0; i < 8; i++) {
+            // A mouse swipe on top of the key yaw: down-right each tick.
+            JsonObject st = bot().reportState();
+            bot().setLook(st.get("playerYaw").getAsFloat() + 4f,
+                          st.get("playerPitch").getAsFloat() + 3f);
+            bot().waitTicks(1);
+        }
         bot().releaseKey(Keyboard.KEY_D);
-        bot().waitTicks(2);
-
-        double rocketYaw = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
-        double clientYaw = bot().reportState().get("playerYaw").getAsDouble();
         bot().releaseKey(Keyboard.KEY_R);
+        // Wait for the craft rotation to actually settle (the client bleeds the
+        // server correction geometrically; under load the residual takes longer
+        // than a fixed tick count, and a non-atomic read pair straddling the
+        // bleed reads as a phantom lock error).
+        double prevYaw = Double.NaN;
+        for (int i = 0; i < 20; i++) {
+            bot().waitTicks(2);
+            double yawNow = bot().reportRidingEntity().get("rotationYaw").getAsDouble();
+            if (!Double.isNaN(prevYaw) && angDiff(yawNow, prevYaw) < 0.02) break;
+            prevYaw = yawNow;
+        }
 
-        // Compare on the circle (wrap to [-180,180]).
-        double diff = Math.abs(((rocketYaw - clientYaw + 540) % 360) - 180);
-        assertTrue("client camera yaw must track the nose yaw (rocket=" + rocketYaw
-                + " client=" + clientYaw + " diff=" + diff + ")", diff < 5.0);
+        // Frame-time lock telemetry: the worst divergence the pilot SAW on any
+        // rendered frame of this flight (sampled atomically on the render
+        // thread — immune to the bot's non-atomic read pairs). The legitimate
+        // transient is one frame straddling an injected look swipe (≤6°) plus
+        // a slow tick or two of craft turn (6°/tick) ≈ up to ~18°, consumed by
+        // the very next pin. What this pins is "no runaway": v1's broken look
+        // detached by tens of degrees and STAYED detached.
+        double maxErr = Double.parseDouble(bot()
+                .readStaticField(ROCKET_EVENT_HANDLER, "maxCameraLockErrorDeg")
+                .get("value").getAsString());
+        assertTrue("camera must never detach from the craft on any rendered frame "
+                + "(worst frame divergence " + maxErr + "°)", maxErr < 20.0);
+
+        // At-rest exactness, measured atomically on the render thread (a bot
+        // reading camera and craft in two calls can straddle a tracker
+        // quantisation-bleed tick and see a phantom 1-2° gap): the CURRENT
+        // frame divergence must be sub-degree once input stops.
+        double restErr = Double.parseDouble(bot()
+                .readStaticField(ROCKET_EVENT_HANDLER, "lastCameraLockErrorDeg")
+                .get("value").getAsString());
+        assertTrue("at rest the camera lock must be exact on the rendered frame "
+                + "(current divergence " + restErr + "°)", restErr < 1.0);
+        JsonObject cam = bot().reportState();
+
+        // And the camera attitude must match the SERVER craft too (replication).
+        String info = exec("artest rocket info " + rocketId);
+        double svrYaw = parseDouble(info, YAW, "rotationYaw");
+        assertTrue("camera yaw must match the server craft yaw (cam="
+                        + cam.get("playerYaw") + " server=" + svrYaw + ")",
+                angDiff(cam.get("playerYaw").getAsDouble(), svrYaw) < 2.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");
     }
 
     @Test
-    public void mouseLookAimsTheNosePitch() throws Exception {
-        // Pitch is mouse-driven: the nose tracks the player's look pitch. Inject a
-        // real client look (down 40°) and the server nose pitch must ease toward
-        // it through the P-controller in KeyBindings.onClientTick.
+    public void mouseSwipesPitchTheNoseAndCameraFollows() throws Exception {
+        // Mouse-as-rate: repeated downward swipes (a real drag) pitch the nose
+        // down tick by tick; the camera never detaches from the craft. The
+        // server nose pitch must integrate the swipes through the real
+        // key→packet path.
         int rocketId = mountFreshFreeFlightRocket(4900, 64, 500);
         bot().holdKey(Keyboard.KEY_R); // keep airborne so tickFreeFlight integrates pitch
 
-        bot().setLook(0f, 40f);        // look down 40° (MC: +pitch = down)
-        bot().waitTicks(25);
-        double nosePitch = parseDouble(exec("artest rocket info " + rocketId),
-                FF_PITCH, "freeFlightPitch");
+        // A real mouse drag: repeated +6° swipes (above MAX_PITCH_RATE=4, so
+        // each tick integrates at the rate cap and discards the excess). Loop
+        // until the nose passes 20° or we run out of budget — under load the
+        // bot round-trips can skip ticks, so a fixed count undershoots.
+        double nosePitch = 0;
+        for (int i = 0; i < 30 && nosePitch <= 20.0; i++) {
+            JsonObject st = bot().reportState();
+            bot().setLook(st.get("playerYaw").getAsFloat(),
+                          st.get("playerPitch").getAsFloat() + 6f);
+            bot().waitTicks(1);
+            nosePitch = parseDouble(exec("artest rocket info " + rocketId),
+                    FF_PITCH, "freeFlightPitch");
+        }
+        double maxErr = Double.parseDouble(bot()
+                .readStaticField(ROCKET_EVENT_HANDLER, "maxCameraLockErrorDeg")
+                .get("value").getAsString());
         bot().releaseKey(Keyboard.KEY_R);
 
-        assertTrue("nose pitch must track the look pitch toward +40° (got " + nosePitch + ")",
-                nosePitch > 25.0);
+        assertTrue("mouse drag must pitch the nose down through the real "
+                + "swipe→rate→server path (got " + nosePitch + "°)", nosePitch > 20.0);
+        assertTrue("camera must stay locked to the nose during the drag "
+                + "(worst frame divergence " + maxErr + "°)", maxErr < 20.0);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void fastMouseSwipeIsRateCappedAndExcessDiscarded() throws Exception {
+        // One violent 90° yaw flick in a single tick: the craft must turn at
+        // most a few times MAX_YAW_RATE (6°/tick) over the next couple of
+        // ticks, and the camera must be re-pinned to the craft — NOT jump the
+        // full 90° (the discarded excess is the Elite-style "mouse slip").
+        int rocketId = mountFreshFreeFlightRocket(5000, 64, 500);
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(5);
+
+        JsonObject before = bot().reportRidingEntity();
+        double yaw0 = before.get("rotationYaw").getAsDouble();
+        bot().setLook((float) yaw0 + 90f, 0f);  // one-tick flick
+        bot().waitTicks(3);
+
+        JsonObject craft = bot().reportRidingEntity();
+        JsonObject cam = bot().reportState();
+        bot().releaseKey(Keyboard.KEY_R);
+
+        double turned = angDiff(craft.get("rotationYaw").getAsDouble(), yaw0);
+        assertTrue("craft must have started turning after the flick (turned=" + turned + ")",
+                turned > 3.0);
+        assertTrue("craft turn must be rate-capped, excess discarded (turned=" + turned
+                + " over ~4 ticks, cap 6°/tick)", turned < 30.0);
+        assertTrue("camera must be re-pinned to the craft after the flick (cam="
+                        + cam.get("playerYaw") + " craft=" + craft.get("rotationYaw") + ")",
+                angDiff(cam.get("playerYaw").getAsDouble(),
+                        craft.get("rotationYaw").getAsDouble()) < 7.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");

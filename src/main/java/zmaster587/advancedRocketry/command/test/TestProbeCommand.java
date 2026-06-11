@@ -766,6 +766,17 @@ public class TestProbeCommand extends CommandBase {
             }
             info.put("freeFlightPitch", rocket.getFreeFlightPitch());
             info.put("flightAssistOn", rocket.isFlightAssistOn());
+            // FF liveness telemetry: how many FF physics ticks have actually run
+            // since the last startFreeFlight, plus ground contact — discriminates
+            // "FF branch not executing" from "physics ran but produced no motion"
+            // when a test sees a motionless craft that claims to be in flight.
+            info.put("freeFlightTicksSinceStart", reflectInt(rocket, "freeFlightTicksSinceStart"));
+            info.put("onGround", rocket.onGround);
+            // Exactly-zero motionY while airborne smells of Entity.move() zeroing
+            // it on a vertical collision — surface the collision flags so a test
+            // can tell "blocked by a block" from "no thrust produced".
+            info.put("collidedVertically", rocket.collidedVertically);
+            info.put("collidedHorizontally", rocket.collidedHorizontally);
             info.put("destinationDim", reflectInt(rocket, "destinationDimId"));
             // errorStr is private + set by setError(...) when launch() bails
             // on a precondition. Without surfacing it, A1 launch-depth tests

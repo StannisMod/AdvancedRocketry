@@ -260,4 +260,32 @@ public class FreeFlightPhysicsTest {
         assertEquals("strafe X must not change with pitch", level.motionX, pitched.motionX, DELTA);
         assertEquals("strafe stays horizontal (no Y) when pitched", 0.0, pitched.motionY, DELTA);
     }
+
+    // ===== Mouse-as-rate steering (TASK-46 D1) ===========================
+
+    @Test
+    public void mouseRateIsOneToOneBelowTheTurnRate() {
+        // A swipe smaller than the per-tick turn rate must come out as exactly
+        // delta/max — integrated by the physics as rate*max, i.e. the nose turns
+        // by exactly the swiped degrees (slip-free 1:1 feel below the cap).
+        assertEquals(0.5, FreeFlightPhysics.rateFromMouseDelta(3.0, 6.0), DELTA);
+        assertEquals(-0.25, FreeFlightPhysics.rateFromMouseDelta(-1.0, 4.0), DELTA);
+        assertEquals(0.0, FreeFlightPhysics.rateFromMouseDelta(0.0, 6.0), DELTA);
+    }
+
+    @Test
+    public void mouseRateSaturatesAtTheTurnRate() {
+        // Faster swipes saturate at ±1 (the craft's max turn rate); the excess
+        // is discarded, not queued — Elite-style rate limit.
+        assertEquals(1.0, FreeFlightPhysics.rateFromMouseDelta(90.0, 6.0), DELTA);
+        assertEquals(-1.0, FreeFlightPhysics.rateFromMouseDelta(-720.0, 4.0), DELTA);
+        assertEquals(1.0, FreeFlightPhysics.rateFromMouseDelta(6.0 + 1e-9, 6.0), DELTA);
+    }
+
+    @Test
+    public void mouseRateIsHygienicOnDegenerateInput() {
+        assertEquals(0.0, FreeFlightPhysics.rateFromMouseDelta(Double.NaN, 6.0), DELTA);
+        assertEquals(0.0, FreeFlightPhysics.rateFromMouseDelta(10.0, 0.0), DELTA);
+        assertEquals(0.0, FreeFlightPhysics.rateFromMouseDelta(10.0, -1.0), DELTA);
+    }
 }
