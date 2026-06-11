@@ -2617,6 +2617,23 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
+        if ("poslist-size".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest satellite poslist-size <dim> <satId> — save-format view
+            // of a SatelliteBiomeChanger's queued positions (posList ints).
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            long satId = parseLongOr(args[2], Long.MIN_VALUE);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            SatelliteBase sat = props == null ? null : props.getSatellite(satId);
+            if (sat == null) {
+                send(sender, "{\"error\":\"satellite not found\",\"dim\":" + dim + ",\"satId\":" + satId + "}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound snap = new net.minecraft.nbt.NBTTagCompound();
+            sat.writeToNBT(snap);
+            int size = snap.getIntArray("posList").length;
+            send(sender, "{\"ok\":true,\"satId\":" + satId + ",\"posListSize\":" + size + "}");
+            return;
+        }
         if ("weather-list-size".equalsIgnoreCase(args[0]) && args.length >= 3) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             long satId = parseLongOr(args[2], Long.MIN_VALUE);
@@ -10777,6 +10794,84 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"key\":" + (head == null ? "null" : "\"" + escapeJson(head) + "\"")
                     + ",\"branch\":" + (branch == null ? "null" : "\"" + escapeJson(branch) + "\"")
                     + "}");
+            return;
+        }
+        if ("equip-orescanner".equals(sub)) {
+            // /artest player equip-orescanner [register-satellite-on-dim|none]
+            //
+            // Arrange-only split of try-orescanner-rclick for honest client
+            // e2e: registers the SatelliteOreMapping (when a dim is given),
+            // seeds the held item's NBT, equips — and does NOT click. The
+            // click comes from the real client (ClientBot.useItem).
+            int satRegisterDim = (args.length >= 2 && !"none".equalsIgnoreCase(args[1]))
+                    ? parseIntOr(args[1], Integer.MIN_VALUE) : Integer.MIN_VALUE;
+            long satId = -1;
+            if (satRegisterDim != Integer.MIN_VALUE) {
+                net.minecraft.world.WorldServer satWorld = server.getWorld(satRegisterDim);
+                zmaster587.advancedRocketry.dimension.DimensionProperties props = satWorld == null ? null
+                        : zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                                .getDimensionProperties(satRegisterDim);
+                if (satWorld != null && props != null) {
+                    zmaster587.advancedRocketry.satellite.SatelliteOreMapping sat =
+                            new zmaster587.advancedRocketry.satellite.SatelliteOreMapping();
+                    // INT-SAFE id: ItemOreScanner.onItemRightClick casts the
+                    // stored id to (int) before the registry lookup — a full
+                    // nanoTime() long would never resolve and the GUI would
+                    // silently not open (the bug the old try- probe couldn't
+                    // see because it only pinned "no crash").
+                    satId = System.nanoTime() & 0x7FFFFFFFL;
+                    sat.getProperties().setId(satId);
+                    props.addSatellite(sat, satWorld);
+                }
+            }
+            net.minecraft.item.Item scanner =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemOreScanner;
+            net.minecraft.item.ItemStack held = new net.minecraft.item.ItemStack(scanner);
+            if (satId != -1) {
+                ((zmaster587.advancedRocketry.item.ItemOreScanner) scanner)
+                        .setSatelliteID(held, satId);
+            }
+            player.setHeldItem(net.minecraft.util.EnumHand.MAIN_HAND, held);
+            send(sender, "{\"ok\":true,\"hadSatelliteId\":" + (satId != -1)
+                    + ",\"satelliteId\":" + satId
+                    + ",\"registeredOnDim\":" + satRegisterDim + "}");
+            return;
+        }
+        if ("equip-biomechanger".equals(sub) && args.length >= 2) {
+            // /artest player equip-biomechanger <dim>
+            //
+            // Arrange-only split of try-biomechanger-rclick: registers the
+            // SatelliteBiomeChanger, equips the NBT-bound chip — no click.
+            // Pair with `artest satellite poslist-size` as the post-click oracle.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"no DimensionProperties for dim\",\"dim\":" + dim + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.satellite.SatelliteBiomeChanger sat =
+                    new zmaster587.advancedRocketry.satellite.SatelliteBiomeChanger();
+            long satId = System.nanoTime();
+            sat.getProperties().setId(satId);
+            props.addSatellite(sat, world);
+
+            net.minecraft.item.Item chip =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemBiomeChanger;
+            net.minecraft.item.ItemStack held = new net.minecraft.item.ItemStack(chip);
+            net.minecraft.nbt.NBTTagCompound chipNbt = new net.minecraft.nbt.NBTTagCompound();
+            chipNbt.setString("satelliteName", sat.getName());
+            chipNbt.setInteger("dimId", dim);
+            chipNbt.setLong("satelliteId", satId);
+            held.setTagCompound(chipNbt);
+            player.setHeldItem(net.minecraft.util.EnumHand.MAIN_HAND, held);
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"satId\":" + satId + "}");
             return;
         }
         if ("try-orescanner-rclick".equals(sub)) {

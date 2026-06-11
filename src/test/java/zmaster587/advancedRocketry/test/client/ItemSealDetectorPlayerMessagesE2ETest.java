@@ -53,7 +53,7 @@ import static org.junit.Assert.assertTrue;
 public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest {
 
     private static final int DIM = 0;
-    private static final int Y = 72;
+    private static final int Y = 150;
     private static final int Z = 300;
 
     // Distinct from SealDetectorDispatchTest (200..260 / y=80 / z=200)
@@ -66,7 +66,6 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
     private static final int X_SAND        = 340;
     private static final int X_SLAB        = 350;
 
-    private static final Pattern KEY    = Pattern.compile("\"key\":\"([^\"]+)\"");
     private static final Pattern BRANCH = Pattern.compile("\"branch\":\"([^\"]+)\"");
 
     private void forceLoadAround(int x, int z) throws Exception {
@@ -98,37 +97,59 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
         return m.group(1);
     }
 
-    /** Calls the chat-tap-aware seal-detector probe at (x, Y, Z) and
-     *  asserts the captured chat key is {@code msg.sealdetector.<expected>}.
-     *  Also cross-pins the result against the server-tier seal-detector
-     *  probe so any drift between production dispatch and the mirroring
-     *  probe surfaces immediately. */
-    private void assertSealDetectorBranch(int x, String fixtureBlock, String expected) throws Exception {
-        place(x, fixtureBlock);
+    /** Polls until the CLIENT renders {@code itemId} in the main hand (~10 s cap). */
+    private void waitForHeld(String itemId) throws Exception {
+        String held = "";
+        for (int waited = 0; waited < 200; waited += 5) {
+            bot().waitTicks(5);
+            held = bot().reportPlayerItems().getAsJsonObject("held").get("id").getAsString();
+            if (itemId.equals(held)) return;
+        }
+        throw new AssertionError("client never rendered " + itemId + " in hand; held=" + held);
+    }
 
-        serverClient().execute("artest player chat-clear");
-        String tryResp = String.join("\n", serverClient().execute(
-                "artest player try-seal-detect " + DIM + " " + x + " " + Y + " " + Z));
-        assertFalse("try-seal-detect must not error at " + x + " (" + fixtureBlock
-                + "); resp=" + tryResp, tryResp.contains("\"error\""));
-        String capturedKey = fieldOf(KEY, tryResp, "key");
-        assertEquals("ItemSealDetector.onItemUse on " + fixtureBlock
-                        + " at " + x + "," + Y + "," + Z + " must dispatch "
-                        + "msg.sealdetector." + expected + "; resp=" + tryResp,
-                "msg.sealdetector." + expected, capturedKey);
-        String capturedBranch = fieldOf(BRANCH, tryResp, "branch");
-        assertEquals("try-seal-detect branch field must equal i18n suffix",
-                expected, capturedBranch);
+    /** Stages the fixture at (x, Y, Z), stands the player on a stone perch one
+     *  block away holding the seal detector, RIGHT-CLICKS the fixture through
+     *  the real client ({@code interactBlock} → CPacketPlayerTryUseItemOnBlock),
+     *  and asserts the i18n-RESOLVED reply lands on the player's chat overlay.
+     *  Cross-pins the branch against the server-tier seal-detector mirror. */
+    private void assertSealDetectorBranch(int x, String fixtureBlock, String expected,
+                                          String expectedChatText) throws Exception {
+        place(x, fixtureBlock);
+        // Perch for the player one block south of the fixture.
+        String perch = String.join("\n", serverClient().execute(
+                "artest place " + DIM + " " + x + " " + Y + " " + (Z - 2) + " minecraft:stone"));
+        assertFalse("perch place must not error: " + perch, perch.contains("\"error\""));
+
+        String give = String.join("\n", serverClient().execute(
+                "artest player give-held advancedrocketry:sealdetector"));
+        assertTrue("give-held sealdetector must succeed: " + give, give.contains("\"ok\":true"));
+        serverClient().execute("tp @a " + (x + 0.5) + " " + (Y + 1) + " " + (Z - 1.5));
+        waitForHeld("advancedrocketry:sealdetector");
+
+        // The REAL right-click on the fixture block from the client.
+        bot().interactBlock(x, Y, Z);
+
+        // The player must READ the branch's resolved message on their chat.
+        boolean found = false;
+        String newest = "";
+        for (int waited = 0; waited < 100 && !found; waited += 10) {
+            bot().waitTicks(10);
+            com.google.gson.JsonArray lines = bot().reportChat(5).getAsJsonArray("lines");
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i).getAsString();
+                if (newest.isEmpty()) newest = line;
+                if (line.contains(expectedChatText)) { found = true; break; }
+            }
+        }
+        assertTrue("client chat must show '" + expectedChatText + "' for " + fixtureBlock
+                + " at " + x + "," + Y + "," + Z + " (newest line: '" + newest + "')", found);
 
         // Cross-pin against the server-tier dispatch mirror.
         String checkResp = String.join("\n", serverClient().execute(
                 "artest seal-detector check " + DIM + " " + x + " " + Y + " " + Z));
-        String mirrorBranch = fieldOf(BRANCH, checkResp, "branch");
-        assertEquals("production dispatch and server-tier mirror must agree on "
-                        + "branch for " + fixtureBlock + " at " + x + "," + Y + "," + Z
-                        + "; player-msg branch=" + capturedBranch
-                        + " mirror branch=" + mirrorBranch,
-                capturedBranch, mirrorBranch);
+        assertEquals("production dispatch and server-tier mirror must agree on branch for "
+                        + fixtureBlock, expected, fieldOf(BRANCH, checkResp, "branch"));
     }
 
     // ───────────────────── sealed branch ──────────────────────────────────
@@ -136,7 +157,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
     /** Solid ROCK material full-block → "sealed". */
     @Test
     public void stoneFixtureDispatchesSealedMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_STONE, "minecraft:stone", "sealed");
+        assertSealDetectorBranch(X_STONE, "minecraft:stone", "sealed", "Should hold a nice seal");
     }
 
     /** Pins that "sealed" isn't pinned to the singular stone block —
@@ -144,7 +165,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  "sealed", per SealableBlockHandler.isBlockSealed's material gate. */
     @Test
     public void cobblestoneFixtureDispatchesSealedMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_COBBLESTONE, "minecraft:cobblestone", "sealed");
+        assertSealDetectorBranch(X_COBBLESTONE, "minecraft:cobblestone", "sealed", "Should hold a nice seal");
     }
 
     // ───────────────────── notsealmat branch ──────────────────────────────
@@ -152,14 +173,14 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
     /** Material.AIR is on the default materialBanList → "notsealmat". */
     @Test
     public void airFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_AIR, "minecraft:air", "notsealmat");
+        assertSealDetectorBranch(X_AIR, "minecraft:air", "notsealmat", "Material will not hold a seal");
     }
 
     /** Material.LEAVES is on the default materialBanList — multi-material
      *  ban-list pin (not just AIR). */
     @Test
     public void leavesFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_LEAVES, "minecraft:leaves", "notsealmat");
+        assertSealDetectorBranch(X_LEAVES, "minecraft:leaves", "notsealmat", "Material will not hold a seal");
     }
 
     /** Material.SAND is on the default materialBanList — silent removal
@@ -167,7 +188,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  regression). */
     @Test
     public void sandFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_SAND, "minecraft:sand", "notsealmat");
+        assertSealDetectorBranch(X_SAND, "minecraft:sand", "notsealmat", "Material will not hold a seal");
     }
 
     // ───────────────────── other branch ───────────────────────────────────
@@ -177,34 +198,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  short-circuiting on the non-IFluidBlock check). */
     @Test
     public void stoneSlabFixtureDispatchesOtherMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_SLAB, "minecraft:stone_slab", "other");
+        assertSealDetectorBranch(X_SLAB, "minecraft:stone_slab", "other", "Air will leak through this block");
     }
 
-    // ───────────────────── chat-tap shape ─────────────────────────────────
-
-    /** chat-clear must drain the deque so a follow-up last-chat reports
-     *  no captured key — guards tests against cross-contamination from
-     *  prior chat traffic (login messages, /tp output, etc.). */
-    @Test
-    public void chatClearEmptiesTheCaptureDeque() throws Exception {
-        serverClient().execute("artest player chat-clear");
-        String resp = String.join("\n", serverClient().execute(
-                "artest player last-chat"));
-        assertTrue("after chat-clear, last-chat must report size=0; resp=" + resp,
-                resp.contains("\"size\":0"));
-        assertTrue("after chat-clear, last-chat must report key=null; resp=" + resp,
-                resp.contains("\"key\":null"));
-    }
-
-    /** Probe must surface an error JSON for missing args, matching the
-     *  rest of the /artest player surface. Catches accidental signature
-     *  changes that would silently no-op. */
-    @Test
-    public void trySealDetectErrorsWithoutCoordinates() throws Exception {
-        String resp = String.join("\n", serverClient().execute(
-                "artest player try-seal-detect"));
-        assertNotNull(resp);
-        assertTrue("missing args must surface an error; resp=" + resp,
-                resp.contains("\"error\""));
-    }
 }

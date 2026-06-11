@@ -3,38 +3,27 @@ package zmaster587.advancedRocketry.test.client;
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import org.junit.Test;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
  * Coverage-audit gap (Tier 3 #12, client slice) — {@code ItemOreScanner}
- * right-click smoke.
+ * right-click, driven through the REAL client item-use path
+ * ({@code ClientBot.useItem} → {@code CPacketPlayerTryUseItem}) with the
+ * outcome read from the CLIENT screen state.
  *
- * <p>Pin: {@code onItemRightClick} doesn't crash regardless of the
- * stored satellite-ID resolving to a registered satellite. The
- * production code path opens the OreMapping GUI when the stored
- * satellite-ID resolves to a {@code SatelliteOreMapping} on the
- * current dim. In headless harness, GUI-open is a no-op; what we
- * actually verify is "right-click runs without throwing".</p>
- *
- * <p>Two test methods:</p>
+ * <p>Arrange uses the arrange-only {@code artest player equip-orescanner}
+ * probe (register satellite + seed NBT + equip — no click); the click itself
+ * is the client's.</p>
  *
  * <ul>
- *   <li><b>Empty satellite-ID branch</b> — held OreScanner has no NBT;
- *       {@code getSatelliteID} returns -1; {@code getSatellite(-1)}
- *       returns null; {@code instanceof SatelliteOreMapping} is false →
- *       early-out, no GUI, no crash.</li>
+ *   <li><b>Empty satellite-ID branch</b> — held OreScanner has no NBT →
+ *       early-out: no GUI opens on the client, no crash.</li>
  *   <li><b>Resolved satellite-ID branch</b> — a registered
- *       SatelliteOreMapping on dim 0; held OreScanner NBT points at
- *       it; matches both class + dim guards → would open GUI in real
- *       client. Pin: no crash, no error reported.</li>
+ *       SatelliteOreMapping on dim 0 → the OreMapping GUI must actually
+ *       OPEN on the client. (The old probe-driven test only pinned
+ *       "no crash" — it could not see whether the GUI opened.)</li>
  * </ul>
- *
- * <p>Why testClient: server-side probe-driven test would be enough
- * for "no crash", but the GUI-open code path interacts with player
- * state in ways that only manifest in the full client harness. Even
- * if the harness skips actual rendering, the openGui packet path
- * runs server-side.</p>
  */
 public class OreScannerRightClickClientE2ETest extends AbstractClientE2ETest {
 
@@ -42,33 +31,60 @@ public class OreScannerRightClickClientE2ETest extends AbstractClientE2ETest {
         return String.join("\n", serverClient().execute(cmd));
     }
 
-    @Test
-    public void rightClickWithEmptySatelliteIdDoesNotCrash() throws Exception {
-        String resp = exec("artest player try-orescanner-rclick none");
-        assertTrue("ore-scanner right-click probe must succeed: " + resp,
-                resp.contains("\"ok\":true"));
-        assertTrue("empty-satellite branch must not error: " + resp,
-                resp.contains("\"error\":null"));
-        assertTrue("empty branch must report hadSatelliteId:false: " + resp,
-                resp.contains("\"hadSatelliteId\":false"));
-        // Player is still alive (didn't crash the server thread).
-        String state = exec("artest player held-air");
-        assertFalse("held-air probe must succeed post-right-click (proves "
-                        + "player state still intact): " + state,
-                state.contains("\"error\""));
+    /** Polls until the CLIENT renders {@code itemId} in the main hand (~10 s cap)
+     *  — server-side equips need a sync round-trip before the click. */
+    private void waitForHeld(String itemId) throws Exception {
+        String held = "";
+        for (int waited = 0; waited < 200; waited += 5) {
+            bot().waitTicks(5);
+            held = bot().reportPlayerItems().getAsJsonObject("held").get("id").getAsString();
+            if (itemId.equals(held)) return;
+        }
+        throw new AssertionError("client never rendered " + itemId
+                + " in hand; held=" + held);
     }
 
     @Test
-    public void rightClickWithRegisteredSatelliteIdResolvesWithoutError() throws Exception {
-        // Register a fresh SatelliteOreMapping on dim 0 (overworld —
-        // headless harness has a working DimensionProperties for it).
-        String resp = exec("artest player try-orescanner-rclick 0");
-        assertTrue("ore-scanner right-click probe must succeed: " + resp,
-                resp.contains("\"ok\":true"));
-        assertTrue("registered-satellite branch must report hadSatelliteId:true: "
-                        + resp,
-                resp.contains("\"hadSatelliteId\":true"));
-        assertTrue("registered-satellite branch must not error: " + resp,
-                resp.contains("\"error\":null"));
+    public void rightClickWithEmptySatelliteIdOpensNoGuiAndDoesNotCrash() throws Exception {
+        bot().waitForWorld();
+        String equip = exec("artest player equip-orescanner none");
+        assertTrue("equip-orescanner must succeed: " + equip, equip.contains("\"ok\":true"));
+        assertTrue("empty branch must report hadSatelliteId:false: " + equip,
+                equip.contains("\"hadSatelliteId\":false"));
+        waitForHeld("advancedrocketry:orescanner");
+
+        // The REAL right-click from the client.
+        bot().useItem();
+        bot().waitTicks(20);
+
+        // CLIENT truth: no GUI opened, client still alive and responsive.
+        assertEquals("empty-satellite right-click must not open any screen",
+                "", bot().reportState().get("screen").getAsString());
+    }
+
+    @Test
+    public void rightClickWithRegisteredSatelliteIdOpensOreMappingGui() throws Exception {
+        bot().waitForWorld();
+        String equip = exec("artest player equip-orescanner 0");
+        assertTrue("equip-orescanner must succeed: " + equip, equip.contains("\"ok\":true"));
+        assertTrue("resolved branch must report hadSatelliteId:true: " + equip,
+                equip.contains("\"hadSatelliteId\":true"));
+        waitForHeld("advancedrocketry:orescanner");
+
+        // The REAL right-click from the client.
+        bot().useItem();
+
+        // CLIENT truth: the OreMapping GUI actually opens on screen.
+        String screen = "";
+        for (int waited = 0; waited < 100; waited += 10) {
+            bot().waitTicks(10);
+            screen = bot().reportState().get("screen").getAsString();
+            if (!screen.isEmpty()) break;
+        }
+        assertTrue("right-click with a resolved SatelliteOreMapping must open the "
+                + "OreMapping GUI on the client; screen='" + screen + "'",
+                screen.contains("OreMapping"));
+
+        bot().closeScreen();
     }
 }
