@@ -60,6 +60,21 @@ Relocated tests wait off-thread (test-JVM sleep) instead. Follow-up:
 fix or retire the probe and sweep its callers (RocketDescentLandingTest
 et al.).
 
+## Flake note (same day)
+
+`WorldCommandFetchModeratorTest` (3 JVMs: server + 2 GL clients, ~7 GB):
+green standalone at 11:05 after the sendChat rewrite; from ~12:30 the
+first client's bridge dies seconds after world-join ("Client bridge
+closed unexpectedly" at the first waitTicks), reproducibly, while TWO
+sibling-session Minecraft clients run on the same box/display (pgrep
+evidence per the shared-box memory). Code unchanged between green and
+red. Verdict: shared-box display/RAM contention, not a test defect —
+re-run when the box is quiet before treating as a regression.
+`GuidanceComputerGuiE2ETest` and one `ItemSealDetector` method failed
+once in the full-suite run under the same load and passed on re-run
+(the seal test's chat poll was also hardened: 20-line window, 200-tick
+cap).
+
 ## Coverage-audit cross-check (same sweep)
 
 The 2026-05-27/29/31 audit trio remains trustworthy: all Deep/Partial pins

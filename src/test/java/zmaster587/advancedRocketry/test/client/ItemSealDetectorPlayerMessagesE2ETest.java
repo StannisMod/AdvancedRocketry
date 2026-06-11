@@ -133,9 +133,12 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
         // The player must READ the branch's resolved message on their chat.
         boolean found = false;
         String newest = "";
-        for (int waited = 0; waited < 100 && !found; waited += 10) {
+        // 20-line window + 200-tick poll: the harness' console markers
+        // ([Server] FORGE_TEST_DONE …) also land on the overlay and can
+        // push the reply down, and a loaded box stretches the roundtrip.
+        for (int waited = 0; waited < 200 && !found; waited += 10) {
             bot().waitTicks(10);
-            com.google.gson.JsonArray lines = bot().reportChat(5).getAsJsonArray("lines");
+            com.google.gson.JsonArray lines = bot().reportChat(20).getAsJsonArray("lines");
             for (int i = 0; i < lines.size(); i++) {
                 String line = lines.get(i).getAsString();
                 if (newest.isEmpty()) newest = line;
