@@ -1375,6 +1375,12 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             rocket.setFlightAssistOn(on);
+            // Mirror the SET_FLIGHT_ASSIST packet handler: replicate the new
+            // state to tracking clients, otherwise their HUD keeps the old FA
+            // label (the probe used to flip the server field silently).
+            zmaster587.libVulpes.network.PacketHandler.sendToPlayersTrackingEntity(
+                    new zmaster587.libVulpes.network.PacketEntity(rocket,
+                            (byte) EntityRocket.PacketType.SET_FLIGHT_ASSIST.ordinal()), rocket);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId
                     + ",\"flightAssistOn\":" + rocket.isFlightAssistOn() + "}");
             return;

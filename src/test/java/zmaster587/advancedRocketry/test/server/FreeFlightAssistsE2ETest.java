@@ -129,8 +129,10 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // Hold forward for 20 ticks: setpoint ramps to ~1.0 blocks/tick.
-        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        // Hold forward+up for 20 ticks: the setpoint ramps to ~1.0 blocks/tick
+        // on both axes. The upward component keeps the cruise climbing away
+        // from terrain — the world outside the cleared pad column is random.
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 1 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
 
         // Release (all-zero input) and keep flying.
@@ -153,8 +155,9 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // Build a cruise first (also cancels the liftoff assist).
-        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        // Build a climbing cruise first (also cancels the liftoff assist; the
+        // upward component keeps it clear of un-cleared terrain).
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 1 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
 
         // Cut.
@@ -180,7 +183,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        ok(client().execute("artest rocket free-flight-input " + id + " 1 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 1 1 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
         // Release forward, hold yaw for 15 ticks (= 90° at 6°/tick).
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 1 0 0"));
