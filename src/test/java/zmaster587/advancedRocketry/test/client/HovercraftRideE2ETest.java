@@ -31,15 +31,14 @@ import static org.junit.Assert.assertTrue;
  *   <li>No input → hovercraft hovers (lateral position stable).</li>
  * </ol>
  *
- * <p><b>Bot-driven vs probe-driven inputs</b>: AR's testClient
- * {@code ClientBot} surface doesn't include "right-click on entity",
- * "sneak", or "forward movement input" — only block right-clicks
- * and GUI clicks are exposed. To pin hovercraft ride behaviour we
- * drive mount / dismount / moveForward via new server-side probe
- * verbs ({@code /artest player mount-entity}, {@code dismount},
- * {@code set-move-forward}). The observable result is identical:
- * the EntityHoverCraft sees the same {@code player.moveForward}
- * field that {@code getPassengerMovingForward()} reads from.</p>
+ * <p><b>Honest-e2e shape</b> (per honest-client-e2e.md): mounting stays a
+ * server probe — the SOP explicitly allows "mount" as arrange. The RIDE
+ * contracts are then driven through the real client input surface: the
+ * forward key (W) feeds {@code MovementInput} → {@code CPacketInput} →
+ * server {@code player.moveForward} → {@code getPassengerMovingForward()},
+ * and sneak (LSHIFT) drives the vanilla wants-to-stop-riding dismount.
+ * Observations read the CLIENT view via {@code reportRidingEntity}, with
+ * server probes kept as cross-side oracles.</p>
  *
  * <p><b>No fuel test</b>: the EntityHoverCraft class has zero fuel
  * or energy logic — onUpdate only reads player input and applies
@@ -49,6 +48,10 @@ import static org.junit.Assert.assertTrue;
  * contract pin.</p>
  */
 public class HovercraftRideE2ETest extends AbstractClientE2ETest {
+
+    /** LWJGL key codes for the vanilla default binds. */
+    private static final int KEY_W = 17;
+    private static final int KEY_LSHIFT = 42;
 
     private static final Pattern ENTITY_ID = Pattern.compile("\"entityId\":(-?\\d+)");
     private static final Pattern RIDING_ID = Pattern.compile("\"ridingEntityId(?:Now)?\":(-?\\d+)");
@@ -87,11 +90,21 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
         assertTrue("mount-entity must report mounted:true: " + mount,
                 mount.contains("\"mounted\":true"));
 
+        // CLIENT truth: the bot's own client must render itself riding the
+        // craft — datawatcher/mount sync reaching the rendered frame.
+        com.google.gson.JsonObject clientRiding = waitForClientRiding(true);
+        assertTrue("client must report riding=true after mount: " + clientRiding,
+                clientRiding.get("riding").getAsBoolean());
+        assertEquals("client-side ridden entity id must be the craft's id",
+                craftId, clientRiding.get("entityId").getAsInt());
+        assertTrue("client-side ridden entity class must be EntityHoverCraft: "
+                        + clientRiding,
+                clientRiding.get("entityClass").getAsString().contains("EntityHoverCraft"));
+
+        // Cross-side oracle: the server agrees.
         String riding = exec("artest player riding-entity");
         assertEquals("after mount, riding-entity probe must report the craft's id",
                 craftId, extract(riding, RIDING_ID));
-        assertTrue("riding entity class must be EntityHoverCraft: " + riding,
-                riding.contains("EntityHoverCraft"));
     }
 
     @Test
@@ -102,13 +115,23 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
 
         int craftId = spawnHovercraftAt(28.5, 79, 10.5);
         exec("artest player mount-entity " + craftId);
+        com.google.gson.JsonObject mounted = waitForClientRiding(true);
+        assertEquals("arrange: client must be riding the craft first",
+                craftId, mounted.get("entityId").getAsInt());
 
-        String dismount = exec("artest player dismount");
-        assertTrue("dismount probe must succeed: " + dismount,
-                dismount.contains("\"ok\":true"));
-        assertEquals("dismount must report ridingEntityIdNow:-1",
-                -1, extract(dismount, RIDING_ID));
+        // The REAL dismount input: hold sneak — EntityPlayerSP's
+        // wants-to-stop-riding path sends the dismount to the server.
+        bot().setKey(KEY_LSHIFT, true);
+        try {
+            com.google.gson.JsonObject clientRiding = waitForClientRiding(false);
+            assertTrue("client must report riding=false after sneak-dismount: "
+                            + clientRiding,
+                    !clientRiding.get("riding").getAsBoolean());
+        } finally {
+            bot().setKey(KEY_LSHIFT, false);
+        }
 
+        // Cross-side oracle: the server agrees.
         String riding = exec("artest player riding-entity");
         assertEquals("after dismount, player must report no riding entity (-1)",
                 -1, extract(riding, RIDING_ID));
@@ -126,25 +149,28 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
 
         int craftId = spawnHovercraftAt(48.5, 79, 10.5);
         exec("artest player mount-entity " + craftId);
-        // Reset any latent moveForward from prior input.
-        exec("artest player set-move-forward 0");
-        bot().waitTicks(2);
+        waitForClientRiding(true);
 
-        // Snapshot baseline lateral position.
-        String preInfo = exec("artest entity info 0 " + craftId);
-        double xBefore = extractDouble(preInfo, POS_X);
-        double zBefore = extractDouble(preInfo, POS_Z);
+        // Baseline lateral position as the CLIENT renders the ridden craft.
+        com.google.gson.JsonObject pre = bot().reportRidingEntity();
+        double xBefore = pre.get("posX").getAsDouble();
+        double zBefore = pre.get("posZ").getAsDouble();
 
-        // Drive forward — the combined probe re-applies moveForward
-        // inline before each onUpdate so the bot client's CPacketInput
-        // doesn't reset the field between iterations.
-        String drive = exec("artest player drive-ridden-entity 1 40");
-        assertTrue("drive-ridden-entity must succeed: " + drive,
-                drive.contains("\"ok\":true"));
+        // Drive forward with the REAL forward key: W feeds MovementInput →
+        // CPacketInput → server player.moveForward, which EntityHoverCraft's
+        // getPassengerMovingForward() reads each tick.
+        bot().setKey(KEY_W, true);
+        try {
+            bot().waitTicks(40);
+        } finally {
+            bot().setKey(KEY_W, false);
+        }
 
-        String postInfo = exec("artest entity info 0 " + craftId);
-        double xAfter = extractDouble(postInfo, POS_X);
-        double zAfter = extractDouble(postInfo, POS_Z);
+        com.google.gson.JsonObject post = bot().reportRidingEntity();
+        assertTrue("client must still be riding after the throttle window: " + post,
+                post.get("riding").getAsBoolean());
+        double xAfter = post.get("posX").getAsDouble();
+        double zAfter = post.get("posZ").getAsDouble();
 
         double dx = xAfter - xBefore;
         double dz = zAfter - zBefore;
@@ -155,8 +181,13 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
                         + " after=(" + xAfter + "," + zAfter + ")",
                 lateralDist > 0.1);
 
-        // Cleanup — release throttle so subsequent tests start fresh.
-        exec("artest player set-move-forward 0");
+        // Cross-side oracle: the server's craft position agrees with the
+        // client-rendered one (within interpolation tolerance).
+        String postInfo = exec("artest entity info 0 " + craftId);
+        assertTrue("server craft X must agree with the client view: " + postInfo,
+                Math.abs(extractDouble(postInfo, POS_X) - xAfter) < 4.0);
+
+        // Cleanup — dismount so subsequent tests start fresh.
         exec("artest player dismount");
     }
 
@@ -196,6 +227,20 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
                         + "drift=" + lateralDrift + " before=(" + xBefore + ","
                         + zBefore + ") after=(" + xAfter + "," + zAfter + ")",
                 lateralDrift < 0.5);
+    }
+
+    /** Polls until the CLIENT reports riding == expected (~10 s cap). */
+    private com.google.gson.JsonObject waitForClientRiding(boolean expected) throws Exception {
+        com.google.gson.JsonObject last = null;
+        for (int waited = 0; waited < 200; waited += 5) {
+            bot().waitTicks(5);
+            last = bot().reportRidingEntity();
+            if (last.get("riding").getAsBoolean() == expected) {
+                return last;
+            }
+        }
+        throw new AssertionError("client never reached riding=" + expected
+                + "; last report: " + last);
     }
 
     private static int extract(String src, Pattern pattern) {
