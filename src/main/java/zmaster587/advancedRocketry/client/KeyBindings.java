@@ -80,6 +80,9 @@ public class KeyBindings {
     public static volatile boolean engineFlashStarted = false;
     /** Guards the one-shot ENGINE_START send per hold. */
     private boolean engineStartSent = false;
+    /** Commanded turn rates of the current tick, [-1,1] — drawn as the HUD
+     *  turn-rate dot (Phase 4). */
+    public static volatile float hudYawRate = 0f, hudPitchRate = 0f;
 
     /**
      * Undo the vanilla riding echo. While a player rides, the server answers
@@ -187,7 +190,13 @@ public class KeyBindings {
      * switch mode; in-flight shows the steering legend + Flight Assist state.
      * Client-only (reads GameSettings + I18n).
      */
-    public static java.util.List<String> freeFlightHudLines(boolean inFlight, boolean flightAssistOn) {
+    /** One signed body-frame pair "setpoint/actual" for the HUD vector line. */
+    private static String vecPair(double sp, double act) {
+        return String.format("%+.2f/%+.2f", sp, act);
+    }
+
+    public static java.util.List<String> freeFlightHudLines(EntityRocket rocket, boolean inFlight) {
+        boolean flightAssistOn = rocket.isFlightAssistOn();
         GameSettings gs = Minecraft.getMinecraft().gameSettings;
         java.util.List<String> lines = new java.util.ArrayList<>();
         if (!inFlight) {
@@ -217,6 +226,27 @@ public class KeyBindings {
         lines.add(I18n.format("msg.ff.hud.cut",    key(turnRocketDown)));
         lines.add(I18n.format("msg.ff.hud.brake",  key(gs.keyBindSneak)));
         lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle)));
+
+        // Per-axis vector readout (TASK-46 Phase 4): body-frame setpoint vs
+        // actual velocity, blocks/tick — the textual twin of the graphic bars
+        // (and what the client e2e reads). FA off shows the actual only.
+        double[] act = FreeFlightPhysics.worldToBody(
+                rocket.motionX, rocket.motionY, rocket.motionZ,
+                rocket.rotationYaw, rocket.rotationPitch);
+        if (flightAssistOn) {
+            lines.add(I18n.format("msg.ff.hud.vector",
+                    vecPair(rocket.getFaSetpointForward(), act[0]),
+                    vecPair(rocket.getFaSetpointRight(),   act[1]),
+                    vecPair(rocket.getFaSetpointUp(),      act[2])));
+        } else {
+            lines.add(I18n.format("msg.ff.hud.vector",
+                    String.format("%+.2f", act[0]),
+                    String.format("%+.2f", act[1]),
+                    String.format("%+.2f", act[2])));
+        }
+        double speed = Math.sqrt(rocket.motionX * rocket.motionX
+                + rocket.motionY * rocket.motionY + rocket.motionZ * rocket.motionZ);
+        lines.add(I18n.format("msg.ff.hud.speed", String.format("%.1f", speed * 20.0)));
         return lines;
     }
 
@@ -332,6 +362,10 @@ public class KeyBindings {
                 mousePitchDelta, FreeFlightPhysics.MAX_PITCH_RATE);
 
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
+
+        // HUD turn-rate indicator (TASK-46 D1/Phase 4): the commanded rates.
+        hudYawRate = yaw;
+        hudPitchRate = pitch;
 
         FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, cut);
         if (!input.equals(lastSentInput)) {

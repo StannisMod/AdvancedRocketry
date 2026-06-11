@@ -74,6 +74,12 @@ public class RocketEventHandler extends Gui {
     private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
 
 
+    /** [-1,1] clamp for HUD bar/dot geometry; NaN-safe. */
+    private static double clampUnit(double v) {
+        if (Double.isNaN(v)) return 0;
+        return Math.max(-1.0, Math.min(1.0, v));
+    }
+
     @SideOnly(Side.CLIENT)
     public static void setOverlay(long endTime, String msg) {
         displayString = msg;
@@ -169,7 +175,7 @@ public class RocketEventHandler extends Gui {
                 if (mc.currentScreen == null && rocket.isFreeFlight()) {
                     FontRenderer fr = mc.fontRenderer;
                     List<String> ffLines = KeyBindings.freeFlightHudLines(
-                            rocket.isInFlight(), rocket.isFlightAssistOn());
+                            rocket, rocket.isInFlight());
                     // Expose the rendered text for client-side e2e assertions
                     // (read reflectively by the test bridge — no test-only code path).
                     lastFreeFlightHud = String.join(" | ", ffLines);
@@ -182,6 +188,46 @@ public class RocketEventHandler extends Gui {
                         // Title/indicator line brighter; legend lines in FF cyan.
                         int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
                         fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
+                    }
+
+                    // Graphic thrust/velocity bars + turn-rate dot (TASK-46
+                    // Phase 4), to the right of the text block. Per body axis:
+                    // a bipolar ±MAX_SPEED bar — cyan fill = actual velocity,
+                    // bright notch = FA setpoint marker (FA on only).
+                    if (rocket.isInFlight()) {
+                        int barX = ffX + 150, barW = 60, barH = 4;
+                        int barsTop = scaledH2 - 4 - 3 * (barH + 3) - 22;
+                        double[] act = zmaster587.advancedRocketry.api.FreeFlightPhysics.worldToBody(
+                                rocket.motionX, rocket.motionY, rocket.motionZ,
+                                rocket.rotationYaw, rocket.rotationPitch);
+                        double[] sp = {rocket.getFaSetpointForward(),
+                                rocket.getFaSetpointRight(), rocket.getFaSetpointUp()};
+                        String[] axis = {"FWD", "LAT", "VRT"};
+                        double max = zmaster587.advancedRocketry.api.FreeFlightPhysics.MAX_SPEED;
+                        for (int i = 0; i < 3; i++) {
+                            int y = barsTop + i * (barH + 3);
+                            fr.drawStringWithShadow(axis[i], barX - 22, y - 2, 0xB0F0FF);
+                            drawRect(barX, y, barX + barW, y + barH, 0xA0202830);
+                            int mid = barX + barW / 2;
+                            drawRect(mid, y - 1, mid + 1, y + barH + 1, 0xFF607078);
+                            int actPx = (int) (clampUnit(act[i] / max) * (barW / 2.0));
+                            if (actPx >= 0) drawRect(mid, y, mid + Math.max(actPx, 0) + 1, y + barH, 0xFF40D0FF);
+                            else            drawRect(mid + actPx, y, mid + 1, y + barH, 0xFF40D0FF);
+                            if (rocket.isFlightAssistOn()) {
+                                int spPx = mid + (int) (clampUnit(sp[i] / max) * (barW / 2.0));
+                                drawRect(spPx - 1, y - 1, spPx + 1, y + barH + 1, 0xFFFFE060);
+                            }
+                        }
+                        // Turn-rate dot: deflection from center = commanded
+                        // yaw (x) / pitch (y) rates, the mouse-as-rate echo.
+                        int boxC = barX + barW + 18, boxR = 8;
+                        int boxYc = barsTop + (3 * (barH + 3)) / 2;
+                        drawRect(boxC - boxR, boxYc - boxR, boxC + boxR, boxYc + boxR, 0xA0202830);
+                        drawRect(boxC - boxR, boxYc, boxC + boxR, boxYc + 1, 0xFF607078);
+                        drawRect(boxC, boxYc - boxR, boxC + 1, boxYc + boxR, 0xFF607078);
+                        int dx = (int) (clampUnit(KeyBindings.hudYawRate)   * (boxR - 2));
+                        int dy = (int) (clampUnit(KeyBindings.hudPitchRate) * (boxR - 2));
+                        drawRect(boxC + dx - 1, boxYc + dy - 1, boxC + dx + 2, boxYc + dy + 2, 0xFF40D0FF);
                     }
                 }
 

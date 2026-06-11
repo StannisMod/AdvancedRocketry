@@ -23,6 +23,8 @@ public class FreeFlightHudLangTest {
             "msg.ff.hud.engines.off", "msg.ff.hud.engines.starting",
             "msg.ff.hud.engines.on", "msg.ff.engines.started",
             "msg.ff.engines.stopped",
+            // HUD indication (TASK-46 Phase 4)
+            "msg.ff.hud.vector", "msg.ff.hud.speed",
     };
 
     @Test

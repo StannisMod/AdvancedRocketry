@@ -798,6 +798,75 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
+    // ===== HUD indication (TASK-46 Phase 4) ===============================
+
+    private static final Pattern HUD_VRT =
+            Pattern.compile("VRT ([+-][0-9.]+)/([+-][0-9.]+)");
+
+    @Test
+    public void hudVectorLineTracksSetpointAndVelocity() throws Exception {
+        // The per-axis vector readout: holding R ramps the VRT setpoint and the
+        // actual velocity follows; X zeroes the setpoint back. Read from the
+        // REAL rendered HUD text.
+        int rocketId = mountFreshFreeFlightRocket(5400, 64, 500);
+
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(25);
+        String hudClimb = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        bot().releaseKey(Keyboard.KEY_R);
+
+        Matcher m = HUD_VRT.matcher(hudClimb);
+        assertTrue("HUD must render the VRT setpoint/actual pair: " + hudClimb, m.find());
+        double sp = Double.parseDouble(m.group(1));
+        double act = Double.parseDouble(m.group(2));
+        assertTrue("VRT setpoint must have ramped up while R held (got " + sp + ")",
+                sp > 0.4);
+        assertTrue("actual velocity must chase the setpoint (got " + act + ")",
+                act > 0.1);
+        assertTrue("HUD must show the speed readout: " + hudClimb,
+                hudClimb.contains("SPD"));
+
+        // Cut: the setpoint marker must return to zero on the rendered HUD.
+        bot().holdKey(Keyboard.KEY_X);
+        bot().waitTicks(15);
+        String hudCut = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        bot().releaseKey(Keyboard.KEY_X);
+        Matcher m2 = HUD_VRT.matcher(hudCut);
+        assertTrue("HUD must still render the VRT pair after the cut: " + hudCut, m2.find());
+        assertEquals("cut must zero the rendered VRT setpoint",
+                0.0, Double.parseDouble(m2.group(1)), 0.01);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    @Test
+    public void hudShowsNewtonianLabelWhenFlightAssistIsOff() throws Exception {
+        // FA state is part of the perception contract: with FA off the HUD
+        // must say so (the N keybind path is edge-driven and not injectable —
+        // the probe flips the same server state the key would).
+        int rocketId = mountFreshFreeFlightRocket(5500, 64, 500);
+        bot().waitTicks(5);
+
+        exec("artest rocket set-flight-assist " + rocketId + " off");
+        bot().waitTicks(5);
+        String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertTrue("HUD must label the Newtonian mode when FA is off: " + hud,
+                hud.contains("Newtonian"));
+
+        exec("artest rocket set-flight-assist " + rocketId + " on");
+        bot().waitTicks(5);
+        String hudOn = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                .get("value").getAsString();
+        assertFalse("HUD must drop the Newtonian label when FA is back on: " + hudOn,
+                hudOn.contains("Newtonian"));
+
+        exec("artest player dismount");
+    }
+
     // ===== Camera-nose lock + mouse-as-rate (TASK-46 D1) =================
     //
     // THE perception contract that v1 missed: the view and the nose must
