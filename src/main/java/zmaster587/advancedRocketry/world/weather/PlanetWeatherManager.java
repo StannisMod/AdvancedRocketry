@@ -292,6 +292,8 @@ public final class PlanetWeatherManager {
      */
     public static void syncToPlayer(EntityPlayerMP player) {
         if (player == null || player.world == null || player.world.isRemote) return;
+        // FakePlayers have no network connection — sendPacket would NPE.
+        if (player.connection == null) return;
         if (!(player.world instanceof WorldServer)) return;
         WorldServer ws = (WorldServer) player.world;
         WorldInfo info = ws.getWorldInfo();

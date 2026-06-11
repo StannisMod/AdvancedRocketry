@@ -3667,6 +3667,9 @@ public class TestProbeCommand extends CommandBase {
             // (or null) for the first connected player.
             java.util.List<net.minecraft.entity.player.EntityPlayerMP> ps =
                     server.getPlayerList().getPlayers();
+            if (ps.isEmpty() && fakePlayer != null) {
+                ps = java.util.Collections.singletonList(fakePlayer);
+            }
             if (ps.isEmpty()) {
                 send(sender, "{\"error\":\"no players connected\"}");
                 return;
@@ -10460,13 +10463,91 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        if ("ensure-fake".equals(sub) && args.length >= 5) {
+            // /artest player ensure-fake <dim> <x> <y> <z>
+            //
+            // Headless-server-tier player: creates (or moves) a persistent
+            // FakePlayer so player-shaped probes work without a connected
+            // client. Cross-dim moves fire PlayerChangedDimensionEvent —
+            // the same FML event Forge's transfer path fires last — so
+            // per-player dim-change handlers run their production path.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            double x = Double.parseDouble(args[2]);
+            double y = Double.parseDouble(args[3]);
+            double z = Double.parseDouble(args[4]);
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            // Deliberately NOT world.spawnEntity()'d: a connectionless
+            // EntityPlayerMP in the EntityTracker NPEs in
+            // EntityTrackerEntry.sendToTrackingAndSelf (it sends metadata to
+            // ITSELF through player.connection). The probes only need the
+            // player object to carry a world + position; per-tick events come
+            // from `tick-living` and the dim-change event is fired here.
+            int fromDim = Integer.MIN_VALUE;
+            if (fakePlayer == null) {
+                fakePlayer = new net.minecraft.entity.player.EntityPlayerMP(server, world,
+                        new com.mojang.authlib.GameProfile(
+                                java.util.UUID.nameUUIDFromBytes("ARTestFakePlayer".getBytes()),
+                                "ARTestFakePlayer"),
+                        new net.minecraft.server.management.PlayerInteractionManager(world));
+                // Invulnerable like a FakePlayer: damage paths (vacuum
+                // suffocation etc.) end in connection.sendPacket → NPE on a
+                // connectionless player and crash the server tick loop.
+                fakePlayer.capabilities.disableDamage = true;
+                fakePlayer.setLocationAndAngles(x, y, z, 0, 0);
+            } else {
+                fromDim = fakePlayer.world.provider.getDimension();
+                fakePlayer.setWorld(world);
+                fakePlayer.dimension = dim;
+                fakePlayer.setLocationAndAngles(x, y, z, 0, 0);
+                fakePlayer.setPosition(x, y, z);
+                if (fromDim != dim) {
+                    net.minecraftforge.fml.common.FMLCommonHandler.instance()
+                            .firePlayerChangedDimensionEvent(fakePlayer, fromDim, dim);
+                }
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"fromDim\":" + fromDim
+                    + ",\"x\":" + x + ",\"y\":" + y + ",\"z\":" + z + "}");
+            return;
+        }
+        if ("tick-living".equals(sub) && args.length >= 2) {
+            // /artest player tick-living <ticks>
+            //
+            // The test player is never spawned into a world, so nothing ticks
+            // it and it never fires LivingUpdateEvent on its own. This verb posts ONE
+            // LivingUpdateEvent per server tick for the next <ticks> ticks —
+            // the same event, on the same bus, at the same once-per-tick
+            // cadence a ticking player produces. Pair with `server wait`.
+            if (fakePlayer == null) {
+                send(sender, "{\"error\":\"no fake player — run ensure-fake first\"}");
+                return;
+            }
+            int ticks = parseIntOr(args[1], 0);
+            if (!fakeTickerRegistered) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new FakePlayerTicker());
+                fakeTickerRegistered = true;
+            }
+            fakeLivingTicksRemaining = ticks;
+            send(sender, "{\"ok\":true,\"ticks\":" + ticks + "}");
+            return;
+        }
         java.util.List<net.minecraft.entity.player.EntityPlayerMP> players =
                 server.getPlayerList().getPlayers();
-        if (players.isEmpty()) {
+        if (players.isEmpty() && fakePlayer == null) {
             send(sender, "{\"error\":\"no players connected\"}");
             return;
         }
-        net.minecraft.entity.player.EntityPlayerMP player = players.get(0);
+        // Headless tier: fall back to the persistent FakePlayer when no real
+        // client is connected (see ensure-fake above).
+        net.minecraft.entity.player.EntityPlayerMP player =
+                players.isEmpty() ? fakePlayer : players.get(0);
         if ("inv-bypass".equals(sub) && args.length >= 2) {
             String action = args[1].toLowerCase(java.util.Locale.ROOT);
             switch (action) {
@@ -10677,6 +10758,17 @@ public class TestProbeCommand extends CommandBase {
                     + escapeJson(player.getName()) + "\""
                     + ",\"dim\":" + player.world.provider.getDimension()
                     + ",\"canceled\":" + ev.isCanceled() + "}");
+            return;
+        }
+        if ("advancement-trigger-direct".equals(sub)) {
+            // Debug verb: invoke WENT_TO_THE_MOON.trigger(player) directly and
+            // report listener wiring — separates the handler-gate path from
+            // the grant path when diagnosing fake-player advancement tests.
+            zmaster587.advancedRocketry.advancements.ARAdvancements.WENT_TO_THE_MOON.trigger(player);
+            net.minecraft.advancements.Advancement adv = server.getAdvancementManager()
+                    .getAdvancement(new net.minecraft.util.ResourceLocation("advancedrocketry:normal/wenttothemoon"));
+            boolean done = adv != null && player.getAdvancements().getProgress(adv).isDone();
+            send(sender, "{\"ok\":true,\"isDone\":" + done + "}");
             return;
         }
         if ("advancement".equals(sub) && args.length >= 2) {
@@ -13071,6 +13163,31 @@ public class TestProbeCommand extends CommandBase {
      * "*EventDelta" fields in their responses for inline cause-effect
      * verification.
      */
+    /** Headless-tier test player (see `/artest player ensure-fake`).
+     *  A BARE EntityPlayerMP, deliberately NOT a Forge FakePlayer:
+     *  PlayerAdvancements.grantCriterion hard-refuses FakePlayer instances
+     *  (Forge policy), and advancement grants are part of what the server
+     *  tier pins. It is never spawned into a world (a connectionless player
+     *  in the EntityTracker NPEs), so the FakePlayer no-ops aren't needed. */
+    private static net.minecraft.entity.player.EntityPlayerMP fakePlayer;
+    private static volatile int fakeLivingTicksRemaining = 0;
+    private static boolean fakeTickerRegistered = false;
+
+    /** Posts one LivingUpdateEvent per server tick for the fake player while
+     *  `tick-living` has remaining budget — the un-spawned test player never
+     *  ticks, so this supplies the once-per-tick cadence a real player has. */
+    public static final class FakePlayerTicker {
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public void onServerTick(net.minecraftforge.fml.common.gameevent.TickEvent.ServerTickEvent event) {
+            if (event.phase != net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END) return;
+            if (fakeLivingTicksRemaining > 0 && fakePlayer != null) {
+                fakeLivingTicksRemaining--;
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                        new net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent(fakePlayer));
+            }
+        }
+    }
+
     public static final class RocketEventRecorder {
         public static volatile int launchCount = 0;
         public static volatile int preLaunchCount = 0;

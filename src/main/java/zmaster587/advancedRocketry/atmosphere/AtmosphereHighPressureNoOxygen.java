@@ -39,7 +39,7 @@ public class AtmosphereHighPressureNoOxygen extends AtmosphereNeedsSuit {
                 player.addPotionEffect(new PotionEffect(Potion.getPotionById(9), 400, 2));
             }
             if (player instanceof EntityPlayer)
-                PacketHandler.sendToPlayer(new PacketOxygenState(), (EntityPlayer) player);
+                AtmosphereType.sendToRealPlayer(new PacketOxygenState(), (EntityPlayer) player);
         }
     }
 }
