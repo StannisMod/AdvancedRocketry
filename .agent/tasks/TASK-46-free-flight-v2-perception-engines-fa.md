@@ -171,9 +171,30 @@ Rendered in `RocketEventHandler` (existing FF HUD hook), published to
 
 ### 6. Phased plan
 
-- [ ] **Phase 1 — Camera-nose lock + mouse-as-rate** (client) + camera e2e.
+- [x] **Phase 1 — Camera-nose lock + mouse-as-rate** (client) + camera e2e.
+      Shipped 2026-06-11. Beyond the planned scope, the perception-contract
+      tests caught and fixed three real defects:
+      (1) v1 never replicated the FF pitch to the client at all (rotationPitch
+      now mirrors it; renderer/passenger seating unaffected);
+      (2) the vanilla riding echo (server answers every passenger report with
+      a PosLook carrying ~1-RTT-stale rotation) yanked the locked camera by
+      6–18° per frame during turns — killed by `MixinNetHandlerFFCameraRepin`
+      re-pinning after the vanilla handler (baseline moved together with the
+      pin: no feedback);
+      (3) client and server integrate turn-rate input over their own ticks, so
+      headings drifted a few degrees per maneuver with the tracker silent
+      after rotation stops — server now force-resyncs pose (SPacketEntityTeleport)
+      on the turn→idle edge.
+      Test infrastructure: frame-time camera-lock telemetry
+      (`RocketEventHandler.maxCameraLockErrorDeg`/`lastCameraLockErrorDeg`),
+      FF liveness + collision flags in the `rocket info` probe, full-column
+      pre-clear in the e2e fixture (random per-run world seed could overhang
+      terrain above the pad → `move()` zeroed motionY on the ceiling collision —
+      the root of every "rocket never moves" flake). FF_LAND_GRACE_TICKS 30→60
+      as an interim crutch until Phase 2 deletes the kick.
+      Verified: unit 25/25, server FF 17/17, client e2e 20/20 twice in a row.
       *Manual playtest checkpoint: perception must feel right before
-      anything is built on top.*
+      anything is built on top.* ← **pending user check**
 - [ ] **Phase 2 — Engine start/shutdown** state machine, HUD progress +
       messages, server & client e2e. Removes the takeoff kick + land grace.
 - [ ] **Phase 3 — FA setpoint core**: pure logic, server integration, NBT +
