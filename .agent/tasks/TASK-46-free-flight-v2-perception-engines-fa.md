@@ -228,6 +228,21 @@ Rendered in `RocketEventHandler` (existing FF HUD hook), published to
   deflection-hold needs cursor-capture UI; can be a later option.
 - A/D stay additive yaw; no roll channel.
 
+## Post-phase e2e harvest (2026-06-11)
+
+Running the full client suite repeatedly surfaced and fixed two real
+client-sync defects beyond the phase scope (commit `01990f67`):
+1. move-only tracker packets (rotation echoed, delta 0) erased a pending
+   rotation correction before it finished bleeding — the craft kept a
+   stable 5-6° heading offset from the server after every maneuver;
+2. the riding PosLook echo (~1/tick) destroyed the mouse delta accumulated
+   since the camera pin — the mixin now captures it at HEAD and re-applies
+   it over the re-pin.
+Plus probe/test infra: `set-flight-assist` now replicates to clients like
+the packet path; FA cruise tests climb while cruising (random-seed terrain
+outside the cleared column). Final state: unit+integration green, server
+FF 20/20, client FF 25/25.
+
 ## Dependencies
 - Requires: forge-test-framework ≥ 0.4.5 (mouse injection may need a new
   FTF capability — `moveMouse(dx, dy)`; if so, FTF change goes straight to
