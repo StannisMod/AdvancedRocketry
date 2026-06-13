@@ -153,31 +153,58 @@ coexistence — see ⚠️). Sources: three web-research passes over VS GitHub
 - Must compile against **VS Core internals** (`org.valkyrienskies.mod.common.*`),
   not the thin `valkyrienwarfare.api` jar (transform helpers only).
 
-### Mixin coexistence ⚠️ — THE remaining blocker
+### Mixin coexistence ✅ CLEARED in dev (obf functional test still pending)
 - **Injection-point conflict: LOW.** VS does NOT mix into `Entity#onUpdate` (only
   `EntityMinecart#onUpdate`). Our `MixinEntityGravity` injects `Entity#onUpdate`
   HEAD → different method, coexists. VS touches `Entity#move` (HEAD/RETURN inject,
   not @Overwrite), `getLook`, `getDistanceSq`, water/lava checks — none collide
   with ours. `EntityDraggable` is a `WorldTickEvent`, not a mixin.
-- **Bootstrap conflict: MUST TEST.** VS self-bootstraps Mixin **0.8.2** via its own
-  coremod `org.valkyrienskies.mixin.MixinLoaderForge` (an `IFMLLoadingPlugin`)
-  calling `MixinBootstrap.init()`. **AR uses MixinBooter 10.7** (newer Mixin,
-  hosted via `IEarlyMixinLoader`). This repo's own history (ledger / the
-  `22b70c56` fix) shows that a `MixinBootstrap.init()` self-bootstrap under a
-  MixinBooter host crashed launch ("No mixin host service available"). VS does
-  exactly that self-bootstrap. MixinBooter is *designed* to host many Mixin mods
-  and 1.12.2 packs do run VS alongside it, so it likely works — but **our prior
-  crash makes this the one item we must verify live**, plus Mixin-version skew
-  (0.8.2 vs MixinBooter's 0.8.5+) on a single classpath.
+- **Bootstrap conflict: TESTED — coexist.** Dev smoke (2026-06-13, `runServer`
+  with `curse.maven:valkyrien-skies-258371:3286262` via CurseMaven, RFG
+  auto-deobf to MCP): MixinBooter's `MixinBooterPlugin` AND VS's
+  `MixinLoaderForge` both loaded ("Finished gathering 6 coremods"), VS ran its
+  `MixinBootstrap.init()` ("Valkyrien Skies mixin init"/"searge"), **NO "No mixin
+  host service" crash**, FML loaded **11 mods**, `ValkyrienSkiesMod` initialized
+  its physics threads, and the server reached running/tick state with AR's
+  planet dimensions loaded. So the historical self-bootstrap-under-host crash
+  does NOT reproduce with VS + MixinBooter 10.7.
+- **Non-fatal noise to handle in prod:** (1) `module-info.class … corrupt zip`
+  warning — VS's multi-release jar's module descriptor; 1.12.2 FML/ASM can't
+  parse it; mod still loads (strip module-info or ignore). (2) jar-signature
+  mismatch WARN (CurseMaven/RFG repackaged → signature stripped). (3)
+  `mixins.valkyrienskies-sponge-compat.json` fails without SpongeForge —
+  expected, `required:false`, non-fatal; the main `mixins.valkyrienskies.json`
+  did not fatal-fail.
+- **Still open (needs the obf run):** whether VS's *main* mixins (Entity.move
+  ship-collision, etc.) actually WEAVE and ships FUNCTION. VS set obf context
+  `searge`; dev is MCP. The dev boot proves coexistence + no crash, not full VS
+  functionality. The authoritative functional test is `runObfServer`/packaged
+  with VS in the obf mods folder (per mixin-coremod-dev-vs-prod SOP).
 
-### Dependency-mode recommendation
-**Hard compile-time dep on VS Core, but AR must still boot if VS is absent.**
-Rationale: the API is large and internal → reflection/soft-dep would be painful;
-but VS is EOL/archived and the bootstrap risk is real, so **all VS-touching code
-must sit behind a runtime presence guard** (feature disables cleanly, AR doesn't
-crash, when VS isn't installed). This satisfies the user's "hard unless fragile":
-hard enough to use the rich API, isolated enough not to brick AR. Revisit if the
-live mixin spike shows the two loaders can't coexist.
+### Dependency-mode decision → SOFT / optional (compile against VS, do NOT require it)
+Decided 2026-06-13 after weighing "does depending on VS impose physics on
+unwilling users?":
+- VS physics acts **only on assembled ships** — normal blocks/building/gameplay
+  are untouched. A user who installs VS but never assembles a ship sees ~vanilla.
+  So no, ship physics doesn't "leak" onto normal AR play.
+- BUT VS is a **heavy, invasive, EOL coremod**: once installed it always weaves
+  into `Entity.move`/`World`/`Chunk`/rendering, adds a physics thread + shipyard
+  region + ship save-data, and carries **known mod incompatibilities** (Thicc
+  Entities, OpenComputers, LittleTiles, CubicChunks crash on assembly, …). A
+  **hard** dep would force all of that onto every AR install — including the
+  large slice of AR's audience that only wants rockets/planets — and would graft
+  VS's whole compat-conflict surface onto AR's, while chaining AR to an archived
+  dependency.
+- Therefore: **compileOnly against VS Core, never bundle/require it.** All
+  VS-touching code lives in one isolated integration module behind a runtime
+  presence check (`Loader.isModLoaded("valkyrienskies")`) + Forge
+  `@Optional.Interface`/`@Optional.Method`. Without VS: the true-spaceship feature
+  is simply absent and AR behaves exactly as today (zero VS overhead, zero VS
+  conflicts). With VS: it lights up. This is the standard Forge soft-dep pattern;
+  the dev smoke already proved the two load cleanly together, so making VS
+  *optional* (the easy direction) is low-risk. Effort: MODERATE — mostly module-
+  boundary discipline + a "boots without VS" CI smoke to catch any leaked VS
+  class reference (→ NoClassDefFoundError).
 
 ## Technical decisions
 
