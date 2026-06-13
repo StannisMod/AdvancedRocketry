@@ -2,6 +2,10 @@ apply from: 'gradle/scripts/helpers.gradle'
 
 def run_the_one_probe = true
 def run_hwyla = false
+// TASK-47: pull Valkyrien Skies into the DEV runtime for hands-on testing of the
+// true-spaceship feature. compileOnly is always on (AR compiles against the VS
+// API); this toggle only adds the runtime jar so a dev boot actually has VS.
+def run_valkyrien_skies = false
 
 repositories {
     maven {
@@ -97,6 +101,16 @@ dependencies {
 
     compileOnly rfg.deobf('curse.maven:galacticraft-legacy-564236:4671122')
     compileOnly rfg.deobf('curse.maven:matter-overdrive-557428:6439254')
+
+    // Valkyrien Skies — optional/soft integration for TASK-47 "true spaceships".
+    // compileOnly: AR compiles against the VS API but never bundles or requires
+    // it; the feature lights up only when VS is also installed (gated in
+    // integration/vs/VSIntegration). Flip run_valkyrien_skies (top of this file)
+    // to add VS to the dev runtime for hands-on testing. VS Core 1.12.2-1.1.7.
+    compileOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
+    if (run_valkyrien_skies) {
+        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
+    }
     // Optional Mouse Tweaks API annotations, e.g. @MouseTweaksIgnore
     compileOnly(rfg.deobf("curse.maven:mouse-tweaks-unofficial-461660:5876158")) {
         transitive = false

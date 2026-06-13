@@ -77,6 +77,7 @@ import zmaster587.advancedRocketry.entity.*;
 import zmaster587.advancedRocketry.event.*;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.integration.theoneprobe.TopIntegration;
 import zmaster587.advancedRocketry.item.*;
 import zmaster587.advancedRocketry.item.components.ItemJetpack;
@@ -1143,6 +1144,7 @@ public class AdvancedRocketry {
                 FMLCommonHandler.instance().bus().register(eventHandler);
         }
         CompatibilityMgr.isSpongeInstalled = Loader.isModLoaded("sponge");
+        VSIntegration.init();
         // End compat stuff
 
         MinecraftForge.EVENT_BUS.register(SpaceObjectManager.getSpaceManager());

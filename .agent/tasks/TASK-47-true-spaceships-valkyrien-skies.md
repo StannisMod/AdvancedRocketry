@@ -1,7 +1,7 @@
 # TASK-47: True movable spaceships via Valkyrien Skies integration
 
 ## Ticket
-- **Status**: 🚧 In Progress — Planning / Spike (Phase 0 not yet started)
+- **Status**: 🚧 In Progress — Phase 0 GO (done); Phase 1 soft-dep scaffold landed
 - **Branch**: `feature/true_spaceships` (off `origin/1.12`, RFG-buildable)
 - **Created**: 2026-06-13
 - **Type**: Feature (not a test-coverage task)
