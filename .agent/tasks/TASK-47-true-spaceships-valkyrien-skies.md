@@ -101,8 +101,13 @@ until they are green.
   (hard, or soft via optional + runtime guard). Document per
   [`build-and-run-env.md`](../sops/development/build-and-run-env.md).
 - **Phase 2 — Bridge AR → VS.** Convert an assembled structure into a VS ship
-  (reuse scanner bounds + capture). Helm/controller block (new or repurposed
-  assembler). Decide `EntityRocket` coexistence.
+  (reuse scanner bounds + capture). **Product decision: the rocket IS the ship —
+  every assembled rocket becomes a VS ship at assembly time** (no separate helm
+  block for now). This entangles with Free Flight (who owns rocket movement), so
+  Phase 2 is gated on **[TASK-48](TASK-48-freeflight-valkyrien-skies-junction.md)**
+  (FF↔VS junction); the `EntityRocket`↔VS-ship dual-representation question is
+  TASK-48 Q6. Needs the `feature/true_rcs` (FF) and `feature/true_spaceships` (VS)
+  branches merged together.
 - **Phase 3 — Gravity & atmosphere on ships.** Integrate AR per-planet
   gravity/atmosphere with entities on VS ships; implement chosen local-down
   semantics; extend `GravityHandler`.
