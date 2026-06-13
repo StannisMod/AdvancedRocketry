@@ -175,11 +175,26 @@ coexistence — see ⚠️). Sources: three web-research passes over VS GitHub
   `mixins.valkyrienskies-sponge-compat.json` fails without SpongeForge —
   expected, `required:false`, non-fatal; the main `mixins.valkyrienskies.json`
   did not fatal-fail.
-- **Still open (needs the obf run):** whether VS's *main* mixins (Entity.move
-  ship-collision, etc.) actually WEAVE and ships FUNCTION. VS set obf context
-  `searge`; dev is MCP. The dev boot proves coexistence + no crash, not full VS
-  functionality. The authoritative functional test is `runObfServer`/packaged
-  with VS in the obf mods folder (per mixin-coremod-dev-vs-prod SOP).
+- **Obf smoke (2026-06-13, `runObfServer`): coexistence ALSO confirmed in the
+  faithful SRG environment.** Both tweakers loaded (`!mixinbooter-10.7.jar`
+  prioritized + `valkyrien-skies-…jar`), a **single unified Mixin 0.8.7**
+  (MixinBooter's — version skew resolved in its favour over VS's bundled 0.8.2),
+  MixinBooter initialized then VS's `MixinLoaderForge` ran ("Valkyrien Skies
+  mixin init"/"searge"), AR's mixins loaded via MixinBooter's `IEarlyMixinLoader`
+  — again **no "No mixin host service" crash**. So coexistence holds in dev AND
+  obf.
+- **Obf boot then stopped on an AR-side plumbing gap, NOT VS:**
+  `MissingModsException: advancedrocketry requires [libvulpes@[0.5.0,)]`.
+  libVulpes is declared as a local **dev** jar (`implementation
+  files(".../libs/libvulpes-0.5.3-dev.jar")`, `gradle/scripts/dependencies.gradle`),
+  so RFG never places it in `run/obfuscated/mods` (only maven-coordinate mods
+  land there). Unrelated to VS.
+- **Deferred to Phase 2 (full functional validation, not a Phase 0 gate):**
+  proving VS's main mixins weave onto runtime classes + a ship actually moves in
+  prod requires (a) libVulpes in the obf mods folder, (b) VS World+Control, and
+  (c) assembling a real ship — i.e. integration code + a live ship, which only
+  exists once Phase 2 lands. The Phase 0 *go/no-go* (loader coexistence) is
+  answered; ship-physics-works is a Phase 2 acceptance test.
 
 ### Dependency-mode decision → SOFT / optional (compile against VS, do NOT require it)
 Decided 2026-06-13 after weighing "does depending on VS impose physics on
