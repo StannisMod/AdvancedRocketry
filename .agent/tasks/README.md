@@ -374,6 +374,7 @@ entry is an actionable TASK with a defined plan + acceptance.
 |---|---|---|---|
 | [TASK-15](TASK-15-visual-regression.md) | Visual regression infrastructure for Minecraft client | ❌ Not planned | Closed 2026-05-29 — speculative infra with no live trigger and high build cost. Original 4 promotion triggers retained in task file; re-open via a new TASK if any fires. |
 | [TASK-16](TASK-16-test-stability-flake-watch.md) | Test-stability flake watch — investigation deliverable. Three flake shapes root-caused; shape #3 mitigated in TASK-26 via kit retry; #1+#2 split into TASK-27; #4 (worldgen sampling) confirmed across 3 sightings, promoted to TASK-28 F7. | 🟡 Investigation complete | Investigation done 2026-05-23. |
+| [TASK-47](TASK-47-true-spaceships-valkyrien-skies.md) | True movable spaceships via Valkyrien Skies integration (**feature**, not test-coverage). Block-built ships you can walk on, move, with their own gravity — Path B: integrate VS, don't reimplement physics. Developed on `feature/true_spaceships`. | 🚧 In Progress (Planning / Spike) | Phase 0 spike (VS 1.12.2 build availability + license + AR-mixin coexistence) is BLOCKING — no integration code until it's green. |
 
 ## Conscious non-goals
 
