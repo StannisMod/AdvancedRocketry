@@ -11,12 +11,13 @@ import java.util.Set;
 /**
  * Mixin config plugin for {@code mixins.advancedrocketry.json}.
  *
- * <p>Its only job today: gate the two WEATHER mixins
- * ({@link MixinWorldServerMulti}, {@link MixinPlayerList}) on the
- * {@code enableCustomPlanetWeather} config flag, so that with custom planet
- * weather turned off those mixins are never woven into their target classes
- * at all — not merely no-ops at runtime. The other mixins (gravity, atmosphere
- * block-place, rocket inventory access) are unrelated to weather and always
+ * <p>Its only job today: gate the three per-dimension WorldInfo mixins
+ * ({@link MixinWorldServerMulti} wrapper install, {@code MixinWorldServer}
+ * per-dim time / sleep, {@link MixinPlayerList} weather sync) on the
+ * {@code perDimWorldInfo} MASTER config flag, so that with the per-dimension
+ * WorldInfo subsystem turned off those mixins are never woven into their target
+ * classes at all — not merely no-ops at runtime. The other mixins (gravity,
+ * atmosphere block-place, rocket inventory access) are unrelated and always
  * apply.</p>
  *
  * <p><b>Timing.</b> {@code shouldApplyMixin} is evaluated lazily, when each
@@ -30,19 +31,23 @@ import java.util.Set;
  *
  * <p><b>Fail-open.</b> If the config can't be read for any reason (missing
  * file on first launch, parse error), we default to {@code true} — i.e. the
- * weather mixins apply, exactly as they did before this plugin existed. A
- * disabled-by-accident weather system would be a worse surprise than the
+ * WorldInfo mixins apply, exactly as they did before this plugin existed. A
+ * disabled-by-accident subsystem would be a worse surprise than the
  * pre-existing always-on behaviour.</p>
  */
 public class ARMixinPlugin implements IMixinConfigPlugin {
 
-    /** Fully-qualified names of the weather mixins gated by the config flag. */
+    /** Fully-qualified names of the per-dimension WorldInfo mixins gated by the
+     *  {@code perDimWorldInfo} master flag: wrapper install, per-dim time/sleep,
+     *  and weather sync. */
     private static final String MIXIN_WORLD_SERVER_MULTI =
             "zmaster587.advancedRocketry.mixin.MixinWorldServerMulti";
     private static final String MIXIN_PLAYER_LIST =
             "zmaster587.advancedRocketry.mixin.MixinPlayerList";
+    private static final String MIXIN_WORLD_SERVER =
+            "zmaster587.advancedRocketry.mixin.MixinWorldServer";
 
-    private boolean customPlanetWeather = true;
+    private boolean perDimWorldInfo = true;
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -51,30 +56,32 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
             if (cfgFile.isFile()) {
                 Configuration cfg = new Configuration(cfgFile);
                 cfg.load();
-                customPlanetWeather = cfg
-                        .get("Planet", "enableCustomPlanetWeather", true)
+                perDimWorldInfo = cfg
+                        .get("Planet", "perDimWorldInfo", true)
                         .getBoolean(true);
             }
         } catch (Throwable t) {
-            // Fail-open: behave exactly as before the plugin (weather mixins on).
-            customPlanetWeather = true;
+            // Fail-open: behave exactly as before the plugin (mixins on).
+            perDimWorldInfo = true;
         }
     }
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return shouldApply(customPlanetWeather, mixinClassName);
+        return shouldApply(perDimWorldInfo, mixinClassName);
     }
 
     /**
      * Pure decision function (no I/O, no state) so it can be unit-tested
-     * directly: the two weather mixins apply iff custom planet weather is
+     * directly: the three per-dimension WorldInfo mixins (wrapper install,
+     * per-dim time/sleep, weather sync) apply iff {@code perDimWorldInfo} is
      * enabled; every other mixin always applies.
      */
-    public static boolean shouldApply(boolean customPlanetWeatherEnabled, String mixinClassName) {
+    public static boolean shouldApply(boolean perDimWorldInfoEnabled, String mixinClassName) {
         if (MIXIN_WORLD_SERVER_MULTI.equals(mixinClassName)
-                || MIXIN_PLAYER_LIST.equals(mixinClassName)) {
-            return customPlanetWeatherEnabled;
+                || MIXIN_PLAYER_LIST.equals(mixinClassName)
+                || MIXIN_WORLD_SERVER.equals(mixinClassName)) {
+            return perDimWorldInfoEnabled;
         }
         return true;
     }

@@ -121,7 +121,9 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         // XML carries non-default rain/thunder markers. Without this, the custom
         // cycle keeps running against an UN-wrapped (shared overworld) WorldInfo and
         // silently overwrites the overworld's weather — see PlanetWeatherManager.
-        if (!ARConfiguration.getCurrentConfig().enableCustomPlanetWeather || !props.usesCustomWorldInfo()) {
+        if (!ARConfiguration.getCurrentConfig().perDimWorldInfo
+                || !ARConfiguration.getCurrentConfig().enableCustomPlanetWeather
+                || !props.usesCustomWorldInfo()) {
             super.updateWeather();
             return;
         }

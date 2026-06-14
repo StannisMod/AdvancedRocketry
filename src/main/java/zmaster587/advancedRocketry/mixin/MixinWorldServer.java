@@ -34,7 +34,13 @@ public abstract class MixinWorldServer {
                     target = "Lnet/minecraft/world/WorldServer;setWorldTime(J)V",
                     ordinal = 0))
     private void ar$roundSleepWakeToRotationalPeriod(WorldServer self, long vanillaRounded) {
-        if (self.provider instanceof IPlanetaryProvider) {
+        // Runtime belt-and-suspenders for the perDimWorldInfo master switch:
+        // ARMixinPlugin already skips weaving this mixin when the master is off,
+        // but if it is woven we still defer to vanilla rounding unless per-dim
+        // WorldInfo is active (so the planet's per-dim clock is what we round).
+        zmaster587.advancedRocketry.api.ARConfiguration cfg =
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig();
+        if (cfg != null && cfg.perDimWorldInfo && self.provider instanceof IPlanetaryProvider) {
             int rotationalPeriod = ((IPlanetaryProvider) self.provider).getRotationalPeriod(null);
             self.setWorldTime(ARDimensionWorldInfo.computeSleepWakeTime(self.getWorldTime(), rotationalPeriod));
         } else {

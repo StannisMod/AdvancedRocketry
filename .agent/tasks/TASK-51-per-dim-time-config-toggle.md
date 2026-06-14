@@ -6,14 +6,28 @@
   The review flagged that [[TASK-47]] shipped per-dimension time with **no
   off-switch**, a gap against
   [`config-flag-disableability.md`](../sops/development/config-flag-disableability.md).
-- Status: 🟡 **Backlog — not started.**
+- Status: ✅ **SUPERSEDED 2026-06-14 by the `perDimWorldInfo` master flag.**
+  Rather than a granular per-mechanic `enablePerDimensionTime` toggle, the user
+  chose a single MASTER switch — `perDimWorldInfo` (default true) — that gates
+  the WHOLE per-dimension WorldInfo subsystem (weather + time + wrapper install).
+  Shipped on `feature/postponed` after the `1.12 → feature/postponed` merge:
+  `ARConfiguration.perDimWorldInfo`; `ARMixinPlugin` weave-gates all three
+  WorldInfo mixins (`MixinWorldServerMulti` / `MixinWorldServer` / `MixinPlayerList`)
+  on it; `PlanetWeatherManager.shouldWrap` + `isWeatherManaged` gate on it;
+  `MixinWorldServer` runtime-gates on it; `WorldProviderPlanet.updateWeather`
+  gates on it. `enableCustomPlanetWeather` is retained as a weather SUB-toggle
+  (weather managed vs delegated, only when the master is on). Pinned by the
+  updated `ARMixinPluginTest` (all three mixins gated; off-state regression
+  guard). This closes the config-flag-disableability gap AND fixes the leak
+  where `enableCustomPlanetWeather=false` accidentally un-wove the per-dim TIME
+  mixin. **Conscious non-goal**: per-dim weather WITHOUT per-dim time (the
+  granular split TASK-51 originally proposed) is not supported — the master is
+  all-or-nothing for the subsystem.
 - Created: 2026-06-14.
-- **Activation trigger: when `feature/postponed` is merged into `1.12`.**
-  That merge brings `ARMixinPlugin` (an `IMixinConfigPlugin`), which the
-  `fix/various` line does not have and which is the clean vehicle for
-  weave-gating `MixinWorldServer`. Implementing before the merge would force
-  either a Rule-4 deviation (runtime-gate the mixin) or an early `ARMixinPlugin`
-  port that the merge would then have to reconcile — double work. Defer.
+- Original activation trigger (now moot): when `feature/postponed` merges into
+  `1.12`. The merge happened in the *reverse* direction first (1.12 →
+  feature/postponed), which brought `MixinWorldServer` onto the same branch as
+  `ARMixinPlugin`, enabling the master-flag implementation directly.
 
 ## Context
 
