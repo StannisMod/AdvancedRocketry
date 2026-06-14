@@ -70,6 +70,44 @@ public class PlanetWeatherStateTest {
     }
 
     @Test
+    public void perDimTimeNbtRoundTrip() {
+        // TASK-47: per-dim worldTime/worldTotalTime persist independently.
+        PlanetWeatherState source = new PlanetWeatherState();
+        source.setWorldTime(123_456L);
+        source.setWorldTotalTime(789_012L);
+
+        NBTTagCompound tag = new NBTTagCompound();
+        source.writeToNBT(tag);
+
+        PlanetWeatherState round = new PlanetWeatherState();
+        round.readFromNBT(tag);
+
+        assertEquals(123_456L, round.getWorldTime());
+        assertEquals(789_012L, round.getWorldTotalTime());
+        assertEquals("time flagged initialised after load", true, round.isTimeInitialized());
+    }
+
+    @Test
+    public void uninitialisedTimeIsNotPersistedAndSeedingApplies() {
+        // A fresh state has no time keys, so seedTimeIfNeeded must take effect;
+        // once seeded it is sticky (a second seed is ignored).
+        PlanetWeatherState fresh = new PlanetWeatherState();
+        assertFalse("fresh state has no initialised time", fresh.isTimeInitialized());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        fresh.writeToNBT(tag);
+        assertFalse("uninitialised time must not be written to NBT", tag.hasKey("worldTime"));
+
+        fresh.seedTimeIfNeeded(1000L, 2000L);
+        assertEquals(1000L, fresh.getWorldTime());
+        assertEquals(2000L, fresh.getWorldTotalTime());
+
+        // Second seed is a no-op (clock already owned).
+        fresh.seedTimeIfNeeded(9999L, 9999L);
+        assertEquals("seed is sticky", 1000L, fresh.getWorldTime());
+    }
+
+    @Test
     public void lastSyncedFlagsAreSettable() {
         // lastSynced* are transient (not in NBT) and only used by the manager
         // to detect edge transitions for explicit client packets — but the

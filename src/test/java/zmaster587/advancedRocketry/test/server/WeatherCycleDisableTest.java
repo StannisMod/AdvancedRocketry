@@ -96,7 +96,7 @@ public class WeatherCycleDisableTest {
                 dimList.contains(String.valueOf(FIXTURE_DIM)));
 
         // Load the planet while custom weather is still ENABLED (boot default) so it
-        // wraps with its own ARWeatherWorldInfo. Wrapping is sticky for the dim's
+        // wraps with its own ARDimensionWorldInfo. Wrapping is sticky for the dim's
         // lifetime, so the later config-off sub-case operates on the same wrapped,
         // overworld-isolated WorldInfo — isolating the updateWeather() gate from the
         // separate (already-tested) wrapping gate.
@@ -105,7 +105,7 @@ public class WeatherCycleDisableTest {
         // Anchor on the probe's named worldInfoClass field, not a bare substring
         // of the whole response (see artest-probe-authoring SOP).
         assertTrue("planet must be wrapped while custom weather is on: " + wrapped,
-                Pattern.compile("\"worldInfoClass\":\"[^\"]*ARWeatherWorldInfo\"")
+                Pattern.compile("\"worldInfoClass\":\"[^\"]*ARDimensionWorldInfo\"")
                         .matcher(wrapped).find());
 
         // Forced-clear marker (rain=-1, thunder=-1): the custom cycle, when it runs,

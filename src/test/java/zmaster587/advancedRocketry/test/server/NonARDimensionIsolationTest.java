@@ -41,18 +41,18 @@ public class NonARDimensionIsolationTest extends AbstractHeadlessServerTest {
     public void overworldAndVanillaDimsAreNotWrapped() throws Exception {
         String overworld = String.join("\n", client().execute("artest weather get 0"));
         assertFalse("overworld must NOT have the AR weather wrapper installed: " + overworld,
-                overworld.contains("ARWeatherWorldInfo"));
+                overworld.contains("ARDimensionWorldInfo"));
 
         String nether = String.join("\n", client().execute("artest weather get -1"));
         assertFalse("nether must NOT have the AR weather wrapper installed: " + nether,
-                nether.contains("ARWeatherWorldInfo"));
+                nether.contains("ARDimensionWorldInfo"));
 
         String end = String.join("\n", client().execute("artest weather get 1"));
         assertFalse("end must NOT have the AR weather wrapper installed: " + end,
-                end.contains("ARWeatherWorldInfo"));
+                end.contains("ARDimensionWorldInfo"));
 
         // Sanity check — these three vanilla dims still respond and look
-        // like real WorldInfo (the wrapper would say "ARWeatherWorldInfo",
+        // like real WorldInfo (the wrapper would say "ARDimensionWorldInfo",
         // a missing world would say "error", a misconfigured probe would
         // say neither — make sure we're observing real worldInfoClass data).
         assertTrue("overworld weather get must return a worldInfoClass field: " + overworld,

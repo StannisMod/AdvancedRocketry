@@ -1,13 +1,20 @@
 package zmaster587.advancedRocketry.world.weather;
 
+import net.minecraft.command.CommandWeather;
+import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.WorldServer;
+import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
+import zmaster587.advancedRocketry.world.provider.WorldProviderPlanet;
+
+import java.util.StringJoiner;
 
 /**
- * Two responsibilities:
+ * Three responsibilities:
  *
  * <ol>
  *   <li><b>Wrap fallback.</b> {@link MixinWorldServerMulti} is the primary wrap
@@ -22,9 +29,32 @@ import net.minecraftforge.fml.common.gameevent.PlayerEvent;
  *       explicit syncs below cover the gaps and make the client-visible
  *       weather match the wrapped {@link net.minecraft.world.storage.WorldInfo}
  *       of whichever dimension the player is actually in.</li>
+ *   <li><b>{@code /weather} redirect.</b> Vanilla {@code CommandWeather}
+ *       hard-codes {@code server.worlds[0]} — run on a planet it silently
+ *       mutates the OVERWORLD and leaves the planet untouched. Redirect it to
+ *       the per-dimension {@code /advancedrocketry weather} when the sender
+ *       stands on an AR planet.</li>
  * </ol>
  */
 public final class PlanetWeatherEventHandler {
+
+    @SubscribeEvent
+    public void redirectWeatherCommand(CommandEvent event) {
+        if (!(event.getCommand() instanceof CommandWeather)) return;
+        ICommandSender sender = event.getSender();
+        if (!(sender.getEntityWorld().provider instanceof WorldProviderPlanet)) return;
+        MinecraftServer server = sender.getServer();
+        if (server == null) return;
+
+        StringJoiner redirected = new StringJoiner(" ");
+        redirected.add("advancedrocketry").add("weather");
+        for (String param : event.getParameters()) {
+            redirected.add(param);
+        }
+
+        event.setCanceled(true);
+        server.getCommandManager().executeCommand(sender, redirected.toString());
+    }
 
     @SubscribeEvent
     public void onWorldLoad(WorldEvent.Load event) {

@@ -22,7 +22,7 @@ import static org.junit.Assert.fail;
  * AR planets. After the B1 Mixin weather wrapper landed, per-dimension weather
  * is the only supported behaviour: rain on the overworld must NOT propagate to
  * AR planets, and each AR planet's {@code WorldInfo} must be the
- * {@code ARWeatherWorldInfo} wrapper.
+ * {@code ARDimensionWorldInfo} wrapper.
  */
 public class WeatherBaselineTest {
 
@@ -109,7 +109,23 @@ public class WeatherBaselineTest {
         // AR planet WorldInfo MUST be the B1 wrapper. If it isn't, the
         // isolation assertion above passed for the wrong reason (e.g. server
         // tick simply didn't propagate weather yet), and we'd ship a regression.
-        assertTrue("planet A is NOT wrapped: " + wA, wA.contains("ARWeatherWorldInfo"));
-        assertTrue("planet B is NOT wrapped: " + wB, wB.contains("ARWeatherWorldInfo"));
+        assertTrue("planet A is NOT wrapped: " + wA, wA.contains("ARDimensionWorldInfo"));
+        assertTrue("planet B is NOT wrapped: " + wB, wB.contains("ARDimensionWorldInfo"));
+
+        // Strength must match the wrapped per-dim state from tick one. Both
+        // planet worlds were lazily constructed by the `weather get` probes
+        // above — i.e. WHILE the overworld was raining — and the WorldServer
+        // constructor seeds rainingStrength from the pre-wrap DerivedWorldInfo
+        // (the overworld's flag). Without the post-wrap reseed in
+        // wrapWorldInfoIfNeeded these worlds are born at strength 1.0 and
+        // stream a ~5 s phantom-rain fade to every arriving player.
+        assertTrue("planet A born with non-zero rainStrength (seeded from raining overworld): " + wA,
+                wA.contains("\"rainStrength\":0.0,"));
+        assertTrue("planet B born with non-zero rainStrength (seeded from raining overworld): " + wB,
+                wB.contains("\"rainStrength\":0.0,"));
+        assertTrue("planet A born with non-zero thunderStrength: " + wA,
+                wA.contains("\"thunderStrength\":0.0"));
+        assertTrue("planet B born with non-zero thunderStrength: " + wB,
+                wB.contains("\"thunderStrength\":0.0"));
     }
 }

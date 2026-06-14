@@ -44,6 +44,9 @@ import static org.junit.Assert.assertTrue;
  */
 public class ElevatorCapsuleRideE2ETest extends AbstractClientE2ETest {
 
+    /** LWJGL key code for the vanilla default sneak bind (LSHIFT). */
+    private static final int KEY_LSHIFT = 42;
+
     private static final Pattern ENTITY_ID = Pattern.compile("\"entityId\":(-?\\d+)");
     private static final Pattern RIDING_ID = Pattern.compile("\"ridingEntityId(?:Now)?\":(-?\\d+)");
 
@@ -82,11 +85,18 @@ public class ElevatorCapsuleRideE2ETest extends AbstractClientE2ETest {
         assertTrue("mount-entity must report mounted:true: " + mount,
                 mount.contains("\"mounted\":true"));
 
+        // CLIENT truth: the bot's own client renders itself riding the capsule.
+        com.google.gson.JsonObject clientRiding = waitForClientRiding(true);
+        assertEquals("client-side ridden entity id must be the capsule's id",
+                capsuleId, clientRiding.get("entityId").getAsInt());
+        assertTrue("client-side ridden entity class must be EntityElevatorCapsule: "
+                        + clientRiding,
+                clientRiding.get("entityClass").getAsString().contains("EntityElevatorCapsule"));
+
+        // Cross-side oracle: the server agrees.
         String riding = exec("artest player riding-entity");
         assertEquals("after mount, riding-entity probe must report the capsule's id",
                 capsuleId, extract(riding, RIDING_ID));
-        assertTrue("riding entity class must be EntityElevatorCapsule: " + riding,
-                riding.contains("EntityElevatorCapsule"));
 
         // Cleanup — dismount so subsequent tests in the same JVM start fresh.
         exec("artest player dismount");
@@ -100,16 +110,40 @@ public class ElevatorCapsuleRideE2ETest extends AbstractClientE2ETest {
 
         int capsuleId = spawnCapsuleAt(128.5, 79, 10.5);
         exec("artest player mount-entity " + capsuleId);
+        com.google.gson.JsonObject mounted = waitForClientRiding(true);
+        assertEquals("arrange: client must be riding the capsule first",
+                capsuleId, mounted.get("entityId").getAsInt());
 
-        String dismount = exec("artest player dismount");
-        assertTrue("dismount probe must succeed: " + dismount,
-                dismount.contains("\"ok\":true"));
-        assertEquals("dismount must report ridingEntityIdNow:-1",
-                -1, extract(dismount, RIDING_ID));
+        // The REAL dismount input: hold sneak — the vanilla
+        // wants-to-stop-riding path sends the dismount to the server.
+        bot().setKey(KEY_LSHIFT, true);
+        try {
+            com.google.gson.JsonObject clientRiding = waitForClientRiding(false);
+            assertTrue("client must report riding=false after sneak-dismount: "
+                            + clientRiding,
+                    !clientRiding.get("riding").getAsBoolean());
+        } finally {
+            bot().setKey(KEY_LSHIFT, false);
+        }
 
+        // Cross-side oracle: the server agrees.
         String riding = exec("artest player riding-entity");
         assertEquals("after dismount, player must report no riding entity (-1)",
                 -1, extract(riding, RIDING_ID));
+    }
+
+    /** Polls until the CLIENT reports riding == expected (~10 s cap). */
+    private com.google.gson.JsonObject waitForClientRiding(boolean expected) throws Exception {
+        com.google.gson.JsonObject last = null;
+        for (int waited = 0; waited < 200; waited += 5) {
+            bot().waitTicks(5);
+            last = bot().reportRidingEntity();
+            if (last.get("riding").getAsBoolean() == expected) {
+                return last;
+            }
+        }
+        throw new AssertionError("client never reached riding=" + expected
+                + "; last report: " + last);
     }
 
     private static int extract(String src, Pattern pattern) {

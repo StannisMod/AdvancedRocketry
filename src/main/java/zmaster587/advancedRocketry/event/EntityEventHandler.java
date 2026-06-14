@@ -12,8 +12,15 @@ public class EntityEventHandler {
 
     @SubscribeEvent
     public void onJoinWorld(EntityJoinWorldEvent event) {
-        if (event.getEntity() instanceof EntityPlayer && !event.getWorld().isRemote) {
+        if (event.getEntity() instanceof EntityPlayerMP && !event.getWorld().isRemote) {
             EntityPlayerMP player = (EntityPlayerMP) event.getEntity();
+            // FakePlayers (turtles, block placers, test harnesses, …) join
+            // worlds with no network connection — sendPacket would NPE.
+            // Non-MP EntityPlayer impls would CCE on the cast above, hence
+            // the tightened instanceof as well.
+            if (player.connection == null) {
+                return;
+            }
             World world = event.getWorld();
 //            if (world.isRaining()) {
 //                player.connection.sendPacket(new SPacketChangeGameState(2, ));
@@ -32,8 +39,12 @@ public class EntityEventHandler {
 
     @SubscribeEvent
     public void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
-        if (!event.player.world.isRemote) {
+        if (event.player instanceof EntityPlayerMP && !event.player.world.isRemote) {
             EntityPlayerMP player = (EntityPlayerMP) event.player;
+            // FakePlayers have no network connection — sendPacket would NPE.
+            if (player.connection == null) {
+                return;
+            }
             World world = player.world;
 //            if (world.isRaining()) {
 //                player.connection.sendPacket(new SPacketChangeGameState(2, ));

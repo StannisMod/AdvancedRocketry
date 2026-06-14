@@ -92,12 +92,14 @@ client contract beats ten server probes pretending.
 ## If the harness can't observe it honestly — extend the harness, don't fake it
 
 If a client contract has no honest observation/stimulus yet, add the
-capability to ForgeTestFramework (its functional changes go straight to
-`master`), bump its version, `publishToMavenLocal`, bump the AR dep — then
-write the honest test. Recent examples: `setKey/holdKey` (real key path),
-`setLook` (real mouse aim), `report_state.player*` and
-`reportRidingEntity.rotation*` (client-observed look/orientation). Never
-weaken the test to fit a missing capability.
+capability to the vendored framework (`testframework/src/main/java/...`,
+a git subtree since 2026-06-10) in the SAME commit as the first test that
+uses it — no version bumps, no publishing. Recent examples: `setKey/holdKey`
+(real key path), `setLook` (real mouse aim), `sendChat` (real chat/command
+path), `useItem`/`interactBlock` (real right-clicks), `reportRidingEntity`,
+`reportChat` (i18n-resolved overlay), `reportPlayerItems` (client-rendered
+stacks incl. NBT), `reportEntities` (client-world entity presence),
+`reportMods`. Never weaken the test to fit a missing capability.
 
 ## Prevention
 
@@ -106,6 +108,13 @@ weaken the test to fit a missing capability.
 - [ ] At least one assertion reads client-observed state.
 - [ ] Server probes appear only as setup or as a cross-side oracle.
 - [ ] Missing observability was added to FTF, not worked around.
+
+## Known trap: `artest server wait`
+
+`/artest server wait <dim> <ticks>` runs ON the server thread and therefore
+blocks ticking while it waits — it is a no-op stall (returns
+`elapsedTicks:0`). To let server ticks elapse, wait OFF-thread: client-tier
+tests use `bot().waitTicks(n)`; server-tier tests sleep in the test JVM.
 
 ## Related documents
 

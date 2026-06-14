@@ -17,6 +17,37 @@
 
 ## ⚠️ Required reading before any non-trivial work
 
+### At session start + before working any bug report
+
+**[SOP: Bug-report workflow](./sops/development/bug-report-workflow.md)** —
+read at the start of every session, and before fixing any reported
+issue/bug.
+
+**TL;DR**: the pipeline is repro-FIRST → trace report → user decides.
+(1) Write reproduction tests against the clean default build before
+touching production — **a `testClient` e2e is mandatory** (plus a
+`testServer` e2e when the bug is catchable there); they confirm the
+bug now and guard regression forever. (2) Only after the behaviour is
+confirmed, deliver a structured trace report: cause (`file:line`),
+provenance (when it was introduced), and fix options. (3) The user
+picks: **Path A** — file a `Type: Bug report — confirmed` /
+`Priority: urgent` task (status `Backlog`), fix deferred; **Path B** —
+fix now, flip the repro tests to the corrected contract, close the
+task. **Session-start duty**: scan `tasks/` for open
+`Type: Bug report — confirmed` tasks and offer to fix them.
+
+### Before writing any issue reference (commit / PR / TASK / ledger)
+
+**[SOP: Issue-reference discipline](./sops/development/issue-reference-discipline.md)** —
+read before referencing an issue number anywhere.
+
+**TL;DR**: this repo is in a GitHub fork network
+(`Advanced-Rocketry` root → `StannisMod` → `dercodeKoenig`). A **bare
+`#NN` leaks to the root** and notifies unrelated 2015-era issues —
+never use it. **Always fully-qualify** as `owner/AdvancedRocketry#NN`
+using the `owner/repo` from the issue link the user gave you (it may be
+`StannisMod` or `dercodeKoenig`). Never reference the root.
+
 ### Before writing or auditing tests
 
 **[SOP: Testing Principles](./sops/development/testing-principles.md)** —
