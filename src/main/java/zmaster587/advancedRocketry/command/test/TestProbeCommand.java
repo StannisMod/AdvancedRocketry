@@ -4594,7 +4594,11 @@ public class TestProbeCommand extends CommandBase {
                     "minLaunchTWR",
                     "partsWearSystem",
                     "increaseWearIntensityProb",
-                    "enableCustomPlanetWeather"));
+                    "enableCustomPlanetWeather",
+                    // perDimWorldInfo master switch (gates weather + time + wrapper):
+                    // PerDimWorldInfoMasterToggleTest flips it to pin both off (vanilla
+                    // WorldInfo) and weather-off-but-master-on (per-dim time survives).
+                    "perDimWorldInfo"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {

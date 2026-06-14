@@ -14,10 +14,13 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 874 (testUnit **279** / testIntegration **89** /
-  testServer **459** / testClient **47**). Counter **regenerated from
-  source 2026-06-14** at the feature/postponed ↔ 1.12 merge (`grep -rc
-  '@Test$'` per tier on the merged tree, SOP §2.5) — the two branches'
+- **Pyramid**: 876 (testUnit **279** / testIntegration **89** /
+  testServer **461** / testClient **47**). +2 testServer on 2026-06-14 from
+  `PerDimWorldInfoMasterToggleTest` (the perDimWorldInfo master-switch
+  disableability pins: off→vanilla WorldInfo + weather-off-keeps-per-dim-time).
+  Earlier this day **regenerated from source** at the feature/postponed ↔ 1.12
+  merge (`grep -rc '@Test$'` per tier on the merged tree, SOP §2.5) — the two
+  branches'
   pre-merge headlines (postponed 859, 1.12 851) each predated the other's
   tests, so neither total held post-merge. testClient is 47 (not 61/63):
   1.12 pushed four client-e2e suites (Advancements / AtmospherePlayerEvent /
