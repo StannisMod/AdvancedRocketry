@@ -84,5 +84,16 @@ public class RocketBuilderGuiE2ETest extends AbstractClientE2ETest {
         }
         assertTrue("clicking Scan then Build did not assemble a rocket: " + rocketList,
                 !rocketList.contains("\"rockets\":[]") && rocketList.contains("\"id\":"));
+
+        // Player truth: the CLIENT world renders the assembled rocket entity —
+        // the spawn was synced to the player's screen, not just the registry.
+        int seen = -1;
+        for (int waited = 0; waited < 100; waited += 10) {
+            bot().waitTicks(10);
+            seen = bot().reportEntities("EntityRocket", 64).get("count").getAsInt();
+            if (seen >= 1) break;
+        }
+        assertTrue("the client must see the assembled EntityRocket near the pad; count="
+                + seen, seen >= 1);
     }
 }

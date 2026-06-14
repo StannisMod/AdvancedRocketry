@@ -169,28 +169,40 @@ public class WorldCommandFetchModeratorTest {
         assertTrue("op-named must succeed for bot1: " + op,
                 op.contains("\"opped\":true"));
 
-        // The moderator (bot1) runs /ar fetch bot2.
-        String fetch = exec("artest player exec-as-named " + BOT1_NAME
-                + " /ar fetch " + BOT2_NAME);
-        assertTrue("exec-as-named /ar fetch must succeed: " + fetch,
-                fetch.contains("\"ok\":true"));
+        // The moderator (bot1) TYPES /ar fetch bot2 in the real client chat —
+        // CPacketChatMessage, real player sender, production command path.
+        bot1Harness.bot().sendChat("/ar fetch " + BOT2_NAME);
 
-        // Verify bot2's position is now bot1's pre-fetch position.
-        String bot2Post = exec("artest player position-of " + BOT2_NAME);
-        double bot2PostX = extractDouble(bot2Post, PLAYER_POS_X);
-        double bot2PostZ = extractDouble(bot2Post, PLAYER_POS_Z);
-        // setPosition copies sender coords exactly — sub-block tolerance
-        // covers any same-dim transferPlayerToDimension nudging.
-        assertTrue("post-fetch: bot2 must be at bot1's pre-fetch X ("
+        // The TARGET's client must end up rendering itself at the moderator's
+        // pre-fetch position — that's what bot2's player sees on screen.
+        // setPosition copies sender coords exactly; sub-block tolerance covers
+        // same-dim transferPlayerToDimension nudging. Poll: the chat packet +
+        // transfer land a few ticks after send.
+        double bot2PostX = Double.NaN, bot2PostZ = Double.NaN;
+        for (int waited = 0; waited < 200; waited += 10) {
+            bot2Harness.bot().waitTicks(10);
+            com.google.gson.JsonObject state = bot2Harness.bot().reportState();
+            bot2PostX = state.get("playerX").getAsDouble();
+            bot2PostZ = state.get("playerZ").getAsDouble();
+            if (Math.abs(bot2PostX - bot1PreX) < 1.5 && Math.abs(bot2PostZ - bot1PreZ) < 1.5) {
+                break;
+            }
+        }
+        assertTrue("post-fetch: bot2's CLIENT must render itself at bot1's pre-fetch X ("
                         + bot1PreX + "), got " + bot2PostX,
                 Math.abs(bot2PostX - bot1PreX) < 1.5);
-        assertTrue("post-fetch: bot2 must be at bot1's pre-fetch Z ("
+        assertTrue("post-fetch: bot2's CLIENT must render itself at bot1's pre-fetch Z ("
                         + bot1PreZ + "), got " + bot2PostZ,
                 Math.abs(bot2PostZ - bot1PreZ) < 1.5);
         // And NOT at its prior position any more.
         assertTrue("post-fetch: bot2 must have moved away from its prior X ("
                         + bot2PreX + "), got " + bot2PostX,
                 Math.abs(bot2PostX - bot2PreX) > 10.0);
+
+        // Cross-side oracle: the server agrees about bot2's new position.
+        String bot2Post = exec("artest player position-of " + BOT2_NAME);
+        assertTrue("server must agree bot2 sits at bot1's pre-fetch X: " + bot2Post,
+                Math.abs(extractDouble(bot2Post, PLAYER_POS_X) - bot1PreX) < 1.5);
     }
 
     private static double extractDouble(String src, Pattern pattern) {

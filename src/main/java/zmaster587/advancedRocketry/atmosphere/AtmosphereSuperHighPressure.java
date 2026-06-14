@@ -33,7 +33,7 @@ public class AtmosphereSuperHighPressure extends AtmosphereNeedsSuit {
             player.addPotionEffect(new PotionEffect(Potion.getPotionById(4), 40, 3));
             player.attackEntityFrom(AtmosphereHandler.oxygenToxicityDamage, 1);
             if (player instanceof EntityPlayer)
-                PacketHandler.sendToPlayer(new PacketOxygenState(), (EntityPlayer) player);
+                AtmosphereType.sendToRealPlayer(new PacketOxygenState(), (EntityPlayer) player);
         }
     }
 }

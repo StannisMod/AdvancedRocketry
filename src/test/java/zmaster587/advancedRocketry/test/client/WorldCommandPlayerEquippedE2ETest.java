@@ -1,6 +1,8 @@
 package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -9,45 +11,34 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-21 — {@code /ar} player-equipped verbs positive paths.
+ * TASK-21 — {@code /ar} player-equipped verbs positive paths, driven the way
+ * a player drives them: typed into the REAL client chat
+ * ({@code ClientBot.sendChat} → {@code CPacketChatMessage}), with the outcome
+ * observed from the CLIENT side (dim via {@code reportWeather}, inventory via
+ * {@code reportPlayerItems}, command replies via {@code reportChat}) and the
+ * server consulted only as a cross-side oracle.
  *
  * <p>{@code WorldCommandGuardContractTest} closed the guard side
- * (non-player sender rejection). This test closes the symmetric
- * positive side — verbs that DO mutate state when a real player
- * with op privileges runs them:</p>
+ * (non-player sender rejection). This test closes the symmetric positive
+ * side — verbs that DO mutate state when a real opped player runs them:</p>
  *
  * <ul>
- *   <li>{@code /ar goto <dim>} — transfers player to dim.</li>
- *   <li>{@code /ar giveStation <id>} — adds station chip to player
- *       inventory.</li>
+ *   <li>{@code /ar goto dimension <dim>} — transfers player to dim.</li>
+ *   <li>{@code /ar station give <id>} — adds station chip to inventory.</li>
  *   <li>{@code /ar addTorch} — adds held block to torch list.</li>
- *   <li>{@code /ar addSealant} — adds held block to
- *       sealed-block list.</li>
+ *   <li>{@code /ar addSealant} — adds held block to sealed-block list.</li>
+ *   <li>{@code /ar goto station <id>} — teleports to station spawn.</li>
  * </ul>
  *
- * <p>Out of scope here:</p>
- * <ul>
- *   <li>{@code /ar fetch} — needs a second connected player. The
- *       testClient harness supports one bot only.</li>
- *   <li>{@code /ar fillData} — needs a fixture with an
- *       {@code itemMultiData} stack; the verb itself is exercised by
- *       the production assembly flow elsewhere.</li>
- * </ul>
- *
- * <p>The bot is opped in {@code @Before} and de-opped in {@code @After}.
- * AR config-list mutations (torch / sealed-block) are restored where
- * mutated — they're harness-globals shared with sibling tests.</p>
+ * <p>Out of scope here: {@code /ar fillData} (needs an {@code itemMultiData}
+ * fixture; the verb is exercised by the production assembly flow elsewhere).
+ * The bot is opped in {@code @Before} and de-opped in {@code @After}.</p>
  */
 public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
-
-    private static final Pattern PLAYER_DIM = Pattern.compile("\"playerDim\":(-?\\d+)");
-    private static final Pattern INV_COUNT = Pattern.compile("\"count\":(-?\\d+)");
-    private static final Pattern RESULT = Pattern.compile("\"result\":(-?\\d+)");
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));
@@ -68,8 +59,9 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
     @After
     public void deopTheBot() throws Exception {
         try {
-            // Return to overworld in case a goto test moved us.
-            exec("artest player exec-as-player /ar goto dimension 0");
+            // Return to overworld in case a goto test moved us (console-side
+            // cleanup — not part of any assertion).
+            exec("artest tp 0");
         } catch (Exception ignored) {
         }
         try {
@@ -80,102 +72,97 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void arGotoTransfersPlayerToTargetDim() throws Exception {
-        // Generate an AR planet to provide a known destination dim
-        // distinct from overworld. The harness keeps 0 (overworld)
-        // available always; an AR-generated planet gives a non-zero
-        // dim id we can verify against.
-        // (uses the same probe pattern as TASK-19 Phase 1a.)
+        // Generate an AR planet to provide a known destination dim distinct
+        // from overworld (same probe pattern as TASK-19 Phase 1a) — arrange.
         String before = exec("ar planet list");
         exec("ar planet generate 0 GotoTarget 10 10 10");
         String after = exec("ar planet list");
-        // Naive id extraction — find a DIM<n> in `after` that's not in `before`.
         int targetDim = newDimFromDiff(before, after);
         assertNotEquals("planet generate must yield a new dim id", -1, targetDim);
         try {
             exec("artest dim load " + targetDim);
 
-            String resp = exec("artest player exec-as-player /ar goto dimension " + targetDim);
-            assertTrue("exec-as-player /ar goto must succeed: " + resp,
-                    resp.contains("\"ok\":true"));
-            // result>=1 means the command parsed + ran. /ar's outcome
-            // is observed via the post-call playerDim.
-            assertTrue("/ar goto result must be > 0: " + resp,
-                    extract(resp, RESULT) > 0);
-            assertEquals("/ar goto must transfer the player to the target dim "
-                            + "(was overworld=0, now " + targetDim + "): " + resp,
-                    targetDim, extract(resp, PLAYER_DIM));
+            // The player types the command in the real chat.
+            bot().sendChat("/ar goto dimension " + targetDim);
+
+            // The CLIENT must end up rendering the target dim.
+            waitForClientDim(targetDim);
+
+            // Cross-side oracle: the server agrees about the player's dim.
+            String health = exec("artest player health");
+            assertTrue("server must agree the player is in dim " + targetDim
+                    + ": " + health, health.contains("\"dim\":" + targetDim));
         } finally {
-            // Force-transfer back to overworld + clean up the generated dim.
-            exec("artest player exec-as-player /ar goto dimension 0");
+            exec("artest tp 0");
             exec("ar planet delete " + targetDim);
         }
     }
 
     @Test
     public void arGiveStationAddsChipToPlayerInventory() throws Exception {
-        // Pre-create a station so /ar giveStation has a real ID to bind.
+        // Pre-create a station so /ar station give has a real ID to bind.
         String create = exec("artest station create 0");
         Matcher idM = Pattern.compile("\"id\":(-?\\d+)").matcher(create);
         assertTrue("station create response must include id: " + create,
                 idM.find());
         int stationId = Integer.parseInt(idM.group(1));
 
-        // Baseline: no chip yet.
-        String pre = exec("artest player inventory-contains advancedrocketry:spacestationchip");
-        assertEquals("baseline: bot inventory has no station chip",
-                0, extract(pre, INV_COUNT));
+        // Baseline: no chip in the CLIENT-rendered inventory yet.
+        assertEquals("baseline: bot inventory has no station chip (client view)",
+                0, countClientItems("advancedrocketry:spacestationchip"));
 
-        String resp = exec("artest player exec-as-player /ar station give " + stationId);
-        assertTrue("exec-as-player /ar giveStation must succeed: " + resp,
-                resp.contains("\"ok\":true"));
+        // The player types the command in the real chat.
+        bot().sendChat("/ar station give " + stationId);
 
+        // The chip must show up in the CLIENT-rendered inventory — that's
+        // what the player sees when they open their inventory screen.
+        int count = -1;
+        for (int waited = 0; waited < 100; waited += 10) {
+            bot().waitTicks(10);
+            count = countClientItems("advancedrocketry:spacestationchip");
+            if (count >= 1) break;
+        }
+        assertTrue("/ar station give must add a station chip to the bot's "
+                + "client-rendered inventory; client count=" + count, count >= 1);
+
+        // Cross-side oracle: server inventory agrees.
         String post = exec("artest player inventory-contains advancedrocketry:spacestationchip");
-        assertTrue("/ar giveStation must add at least one station chip to "
-                        + "the bot's inventory: " + post,
-                extract(post, INV_COUNT) >= 1);
+        assertTrue("server inventory must also contain the chip: " + post,
+                !post.contains("\"count\":0"));
     }
 
     @Test
     public void arAddTorchAddsHeldBlockToTorchList() throws Exception {
-        // Equip the bot with a torch-eligible block — the AR
-        // `commandAddTorch` reads getHeldItemMainhand and adds its
-        // block to torchBlocks.
-        // minecraft:cobblestone is a safe choice — likely not in the
-        // default torchBlocks list, and easy to confirm.
+        // Equip the bot with a torch-eligible block (arrange) — the verb
+        // reads getHeldItemMainhand.
         String give = exec("artest player give-held minecraft:cobblestone");
         assertTrue("give-held must succeed: " + give,
                 give.contains("\"ok\":true"));
 
-        // Sanity baseline: cobblestone NOT in torch list yet. We rely
-        // on the command's chat message — the production verb sends
-        // either "added to the torch list" or "is already in the torch
-        // list" depending on prior state. Idempotent re-runs would
-        // catch the second branch; we accept either since the
-        // observable post-state is the same.
-        String resp = exec("artest player exec-as-player /ar addTorch");
-        assertTrue("exec-as-player /ar addTorch must succeed: " + resp,
-                resp.contains("\"ok\":true"));
-        assertTrue("/ar addTorch result must be >= 1 (command ran): " + resp,
-                extract(resp, RESULT) >= 1);
+        // The player types the command in the real chat.
+        bot().sendChat("/ar addTorch");
+
+        // The command replies on the sender's chat: either "%s added to the
+        // torch list" or "%s is already in the torch list" (idempotent
+        // re-runs hit the second branch; the post-state is the same). Both
+        // resolve through the client's lang — assert at the layer the player
+        // reads.
+        assertTrue("client chat must show the torch-list reply",
+                waitForChatContaining("torch list", 100));
     }
 
     @Test
     public void arAddSolidBlockOverrideAddsHeldBlockToSealedList() throws Exception {
-        // Same shape as addTorch. Use a different block (dirt) so the
-        // two tests don't accidentally share state via the torchBlocks
-        // list (which addTorch + addSolidBlockOverride both check by
-        // membership for the duplicate-warning branch — see
-        // WorldCommand.java:126).
+        // Different block than addTorch so the two tests don't share state
+        // via the torchBlocks list (see WorldCommand duplicate-warning branch).
         String give = exec("artest player give-held minecraft:dirt");
         assertTrue("give-held must succeed: " + give,
                 give.contains("\"ok\":true"));
 
-        String resp = exec("artest player exec-as-player /ar addSealant");
-        assertTrue("exec-as-player /ar addSealant must succeed: "
-                        + resp,
-                resp.contains("\"ok\":true"));
-        assertTrue("/ar addSealant result must be >= 1: " + resp,
-                extract(resp, RESULT) >= 1);
+        bot().sendChat("/ar addSealant");
+
+        assertTrue("client chat must show the sealed-block-list reply",
+                waitForChatContaining("sealed block list", 100));
     }
 
     @Test
@@ -186,16 +173,14 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
         assertTrue("station create must succeed: " + create, idM.find());
         int stationId = Integer.parseInt(idM.group(1));
 
-        // Make sure space dim is loaded.
+        // Make sure space dim is loaded (arrange).
         exec("artest dim load -2");
 
-        String resp = exec("artest player exec-as-player /ar goto station " + stationId);
-        assertTrue("exec-as-player /ar goto station must succeed: " + resp,
-                resp.contains("\"ok\":true"));
-        // Player must end up in spaceDim (-2 default).
-        assertEquals("/ar goto station must transfer player to spaceDim (-2): "
-                        + resp,
-                -2, extract(resp, PLAYER_DIM));
+        // The player types the command in the real chat.
+        bot().sendChat("/ar goto station " + stationId);
+
+        // The CLIENT must end up rendering the space dim (-2 default).
+        waitForClientDim(-2);
     }
 
     // ─── helpers ───────────────────────────────────────────────────────
@@ -214,10 +199,45 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
         return -1;
     }
 
-    private static int extract(String src, Pattern pattern) {
-        Matcher m = pattern.matcher(src);
-        assertFalse("pattern " + pattern.pattern() + " not found in: " + src,
-                !m.find());
-        return Integer.parseInt(m.group(1));
+    /** Polls until the CLIENT world reports the expected dimension (~10 s cap). */
+    private void waitForClientDim(int expectedDim) throws Exception {
+        JsonObject last = null;
+        for (int waited = 0; waited < 200; waited += 10) {
+            bot().waitTicks(10);
+            last = bot().reportWeather();
+            if (last != null && last.has("dim") && last.get("dim").getAsInt() == expectedDim) {
+                return;
+            }
+        }
+        throw new AssertionError("client never reached dim " + expectedDim
+                + " (last client report: " + last + ")");
+    }
+
+    /** Counts stacks of {@code itemId} in the CLIENT-rendered main inventory + offhand. */
+    private int countClientItems(String itemId) throws Exception {
+        JsonObject items = bot().reportPlayerItems();
+        int count = 0;
+        JsonArray main = items.getAsJsonArray("main");
+        for (int i = 0; i < main.size(); i++) {
+            if (itemId.equals(main.get(i).getAsJsonObject().get("id").getAsString())) {
+                count += main.get(i).getAsJsonObject().get("count").getAsInt();
+            }
+        }
+        return count;
+    }
+
+    /** Polls the CLIENT chat overlay until a line contains {@code needle}. */
+    private boolean waitForChatContaining(String needle, int maxTicks) throws Exception {
+        for (int waited = 0; waited < maxTicks; waited += 10) {
+            bot().waitTicks(10);
+            JsonArray lines = bot().reportChat(10).getAsJsonArray("lines");
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).getAsString().toLowerCase(java.util.Locale.ROOT)
+                        .contains(needle.toLowerCase(java.util.Locale.ROOT))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

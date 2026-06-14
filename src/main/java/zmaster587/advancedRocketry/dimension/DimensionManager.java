@@ -834,24 +834,12 @@ public class DimensionManager implements IGalaxy {
         if (file.exists()) {
             logger.info("Advanced Planet Config file Found!  Loading from file.");
             loader = new XMLPlanetLoader();
-            boolean loadSuccessful = true;
 
-            try {
-                if (loader.loadFile(file)) {
-                    dimCouplingList = loader.readAllPlanets();
-                    DimensionManager.dimOffset += dimCouplingList.dims.size();
-                } else {
-                    loadSuccessful = false;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                loadSuccessful = false;
-            }
-
-            if (!loadSuccessful) {
-                logger.fatal("A serious error has occurred while loading the planetDefs XML");
-                FMLCommonHandler.instance().exitJava(-1, false);
-            }
+            // A fatal/structural failure propagates so Forge produces a normal crash
+            // report (diagnosable) instead of the old silent FMLCommonHandler.exitJava.
+            // Recoverable per-planet config mistakes are skipped inside readAllPlanets.
+            dimCouplingList = loader.loadPlanetsOrThrow(file);
+            DimensionManager.dimOffset += dimCouplingList.dims.size();
         }
         //End load planet files
 

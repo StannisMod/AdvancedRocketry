@@ -14,8 +14,16 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 856 (testUnit **288** / testIntegration 81 /
-  testServer **426** / testClient **61**). +1 on 2026-05-29 from
+- **Pyramid**: 851 (testUnit 267 / testIntegration 89 /
+  testServer 432 / testClient 63). Counter regenerated 2026-06-03
+  per SOP §2.5 (prior 856/288/81/426/61 headline was stale — trust
+  the regen, not the "+N" arithmetic). TASK-49 (issue #61):
+  +2 testServer + 2 testClient on 2026-06-02 (repro), then +1 testServer
+  on 2026-06-03 when the fix flipped `RailgunFiringContractTest` 2→3
+  tests. Classes: `RailgunFiringContractTest` (3) +
+  `RailgunCargoTransitE2ETest` (2). Historical "+N" narrative below is
+  retained for provenance only.
+  +1 on 2026-05-29 from
   TASK-40b Batch 2 (Gap F.2 GasChargePad — testClient harness fix unlocked
   it). +1 on 2026-05-29 from
   TASK-40d Batch 4 (Gap L force field projector). +8 on 2026-05-29 from
@@ -142,11 +150,13 @@ Bug-ledger history lives in
   Counter regenerated via
   `grep -rc '@Test$' src/test/java/.../{unit,integration,server,client}/`.
 - **testServer wall time**: 8m 27s (50 % faster than pre-B2).
-- **Bug ledger**: 4 live bugs. Arithmetic: 7 entries total minus
+- **Bug ledger**: 4 live bugs. Arithmetic: 8 entries total minus
   #4 (fixed by TASK-41 2026-05-29) minus #6 (fixed by TASK-43 Phase 3
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
-  = 4 live (#1, #3, #5, #7). Batch #2 opened 2026-05-25; entry #5 added
-  2026-05-29; entry #7 added 2026-05-31. Batch #1 fully drained by
+  minus #8 (fixed by TASK-49 2026-06-03) = 4 live (#1, #3, #5, #7).
+  Batch #2 opened 2026-05-25; entry #5 added 2026-05-29; entry #7 added
+  2026-05-31; entry #8 (railgun silent fire-failure / unloaded-dest, #61)
+  added 2026-06-02 and FIXED 2026-06-03, both by TASK-49. Batch #1 fully drained by
   TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —
@@ -307,6 +317,20 @@ Bug-ledger history lives in
   `TilePumpFillsFromAdjacentWaterSourceTest` instead pins the real
   contract (drains an AR Forge-fluid source) and documents this in its
   docstring. Found during TASK-44 Gap F.4 un-ignore (2026-05-31).
+  (8) ✅ **FIXED 2026-06-03 by TASK-49** (load destination dim on fire +
+  `FireStatus` GUI feedback). Original below.
+  `TileRailgun.attemptCargoTransfer` failed **silently** on every
+  failure branch (no player feedback); the dominant field cause is a
+  destination railgun in an **unloaded dimension** —
+  `net.minecraftforge.common.DimensionManager.getWorld(destDim)` returns
+  null and the railgun chunk-loads only its own chunk
+  (`TileRailgun.java:340`,`:252`,`:309-364`). Player-visible: "Railgun just
+  does not fire" (#61) when sender and receiver are on different planets and
+  the player is not at the destination; cargo is NOT lost. Same-dimension
+  firing works. Pinned by `RailgunFiringContractTest` (positive same-dim +
+  silent unloaded-dest characterization) via the new `infra railgun-fire`
+  probe. Fix (load dest dim on fire + per-cause feedback) tracked by
+  TASK-49. Found 2026-06-02 during #61 investigation.
 
 ## Done
 
@@ -363,6 +387,7 @@ Bug-ledger history lives in
 | [TASK-41](TASK-41-runclient-mixin-accessorworld-bug.md) | `./gradlew runClient` mixin AccessorWorld apply error — fixed 2026-05-29 by swapping `@Accessor` for an access transformer (`public net.minecraft.world.World field_72986_A`) and direct `world.worldInfo = ...` assignment in PlanetWeatherManager. AccessorWorld mixin + mixin-config entry deleted. Added `stageMixinRefmapForRun` build task copying the AP-generated refmap into `build/resources/main/` so future @Inject mixins don't trip the same dev-classpath gap. Option C (`@Mixin(targets="...")`) tried first, failed identically — confirmed root cause was refmap-driven SRG-name lookup, not class-load ordering. Validated: runClient boots to main menu, FML loads 9 mods, testUnit + testIntegration green; testServer 423/427 PASS, 3 pre-existing recipe-registration failures unrelated to TASK-41 (logged as ledger entry #5). | ✅ |
 | [TASK-42](TASK-42-pre-existing-test-failures-investigation.md) | Triage of 5 pre-existing testServer + testClient failures surfaced during TASK-41 validation. Phase 0 revealed three shape buckets: 1 broken-since-inception (`InventoryBypassRedirectE2ETest` — verified at 149c361e worktree, same failure shape; @Ignore'd 2026-05-30, contract still pinned by `testUnit.RocketInventoryHelperRedirectTest`); 3 parallel-fork flakes (`Electrolyser` / `PrecisionAssembler` / `PrecisionLaserEtcher` recipe tests — PASS in isolation, FAIL only in full suite); 1 stable-isolation failure (`WorldCommandFetchModeratorTest` — fails in 3m 10s even alone, real test-design or production bug). Remaining 4 promoted to TASK-43. | ✅ |
 | [TASK-43](TASK-43-flaky-and-stable-test-failures.md) | Mitigate the 4 deferred TASK-42 failures across two shapes: Shape A (3 recipe tests, parallel-fork contention — plan: `wait-for-recipe-registry` probe verb + kit hook); Shape B (FetchModerator, stable-fail-in-isolation — plan: per-step bot instrumentation to bisect bridge-drop tick). **Phase 3 shipped** (2026-05-30 — `mixin.env.disableRefMap=true` fix, ledger #6 closed); Shapes A/B still open. | 🟡 Phase 3 done; A/B open |
+| [TASK-49](TASK-49-railgun-silent-fire-failure.md) | Railgun silent fire-failure (#61) — root cause = unloaded destination dim + zero feedback (ledger #8). Fix (Option 1): `attemptCargoTransfer` now `initDimension`s a registered-but-unloaded destination, and a `FireStatus` enum surfaces each failure cause in the GUI. Pinned by 3 server (`RailgunFiringContractTest`) + 2 client e2e (`RailgunCargoTransitE2ETest`) flipped to the corrected behaviour; `infra railgun-fire` probe extended with `destLoadedBefore`/`fireStatus`. | ✅ |
 | [TASK-44](TASK-44-shallow-to-deep-batch.md) | Shallow→deep conversion batch — 4 real contracts + 1 mixin-CI gap shipped: F.4 (TilePump drains Forge IFluidBlock, ledger #7), B (laser-drill MINING dispatch breaks column + drops), C (area-gravity resets fallDistance in-radius only; found controller not machine-enabled by default), N (asteroid worldprovider generates fill blocks), U (un-`@Ignore`'d `InventoryBypassRedirectE2ETest` via server-side `player open-chest` probe, ledger #6 resolved). 5 new probe verbs. Dropped per SOP: G/H/I/K/M/T (impl-only/unwired/wrong-framing). 429/430 full-suite after batch. | ✅ |
 
 ## Backlog
@@ -374,6 +399,11 @@ entry is an actionable TASK with a defined plan + acceptance.
 |---|---|---|---|
 | [TASK-15](TASK-15-visual-regression.md) | Visual regression infrastructure for Minecraft client | ❌ Not planned | Closed 2026-05-29 — speculative infra with no live trigger and high build cost. Original 4 promotion triggers retained in task file; re-open via a new TASK if any fires. |
 | [TASK-16](TASK-16-test-stability-flake-watch.md) | Test-stability flake watch — investigation deliverable. Three flake shapes root-caused; shape #3 mitigated in TASK-26 via kit retry; #1+#2 split into TASK-27; #4 (worldgen sampling) confirmed across 3 sightings, promoted to TASK-28 F7. | 🟡 Investigation complete | Investigation done 2026-05-23. |
+| [TASK-45](TASK-45-oregen-clumpsize-clamp-disables-impossible.md) | `<oreGen>` `clumpSize`/`chancePerChunk` clamp to a floor of 1 (and empty `<oreGen>` falls through to the global pressure/temp default), so "disable this ore" is inexpressible per planet — likely the real cause behind #73's "zeroing veins still spawns ore". Analysis only; fix-vs-document undecided. | 🟡 Backlog — not started | Found 2026-06-01 alongside the #73 round-trip test. |
+| [TASK-46](TASK-46-compatibilitymgr-vestigial.md) | `CompatibilityMgr` is vestigial — `compat` instance never read, mod-presence flags written-but-not-read / set-by-uncalled-method, `reloadRecipes()` commented out. Kept on purpose (may regain meaning); decide revive vs remove. | 🟡 Backlog — not started | Found 2026-06-01 during the #76 JEI-ref audit. |
+| [TASK-47](TASK-47-per-dim-time-and-sleep.md) | Beds skip no time on planets (#66). Root cause: derived `WorldInfo.setWorldTime` is a no-op so the sleep skip is swallowed; `rotationalPeriod ≠ 24000` means vanilla's 24000-rounding misses planetary dawn. Fix: per-dim time owned by the custom WorldInfo (renamed `ARDimensionWorldInfo`) + `MixinWorldServer` sleep-site rounding to `rotationalPeriod`. | ✅ Shipped 2026-06-02 | Bot-sleep e2e covered 2026-06-10 (`PlanetBedSleepE2ETest`, framework `interact_block`). |
+| [TASK-48](TASK-48-per-dim-worldinfo-delegation.md) | Make other `DerivedWorldInfo` state per-dimension that vanilla forces to the overworld: GameRules (sharpest — `doDaylightCycle`/`doWeatherCycle` still shared after TASK-47), spawn point, difficulty, terrain type, game type. Weather (shipped) + time (TASK-47) are the precedent. | 🟦 Feature request — not urgent, needs design | Research spun off TASK-47 on 2026-06-02. |
+| [TASK-50](TASK-50-directional-gravity-camera-feature-request.md) | Directional gravity + camera rotation — resurrect kaduvill's experimental ASM prototype (`EntityLivingBase` move/jump/look hooks + `EntityRenderer.orientCamera`, ~95% commented out upstream) on the Mixin platform. Hook skeleton was deleted with `ClassTransformer` in `877d1495`; prototype readable at `c1c791d3` (kaduvill tip); dead math still in tree as commented-out `client/ClientHelper.java`. | 🟦 Feature request — not urgent, needs design | Recorded 2026-06-10 from the kaduvill-port audit; never functional upstream, so no regression pressure. |
 
 ## Conscious non-goals
 
