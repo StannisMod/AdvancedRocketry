@@ -1,4 +1,7 @@
-# TASK-45 — Solar-map deep-space flight: redesign on top of Free Flight Mode
+# TASK-55 — Solar-map deep-space flight: redesign on top of Free Flight Mode
+
+> Renumbered from TASK-45 on the 2026-06-15 `origin/1.12` merge — TASK-45 stays
+> with the (completed) maintenance-station rework. Pre-merge notes call this TASK-45.
 
 **Status:** 📐 Feature request — DESIGN required before implementation
 **Type:** Architecture / Refactor

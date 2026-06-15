@@ -591,8 +591,8 @@
           "tom"
         ]
       },
-      "TASK-45": {
-        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-45-oregen-clumpsize-clamp-disables-impossible.md",
+      "TASK-54": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-54-oregen-clumpsize-clamp-disables-impossible.md",
         "title": "`<oreGen>` clumpSize/chancePerChunk clamp to 1 makes \"disable ore\" impossible",
         "status": "unknown",
         "concepts": [
@@ -603,8 +603,8 @@
           "testing"
         ]
       },
-      "TASK-46": {
-        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-46-compatibilitymgr-vestigial.md",
+      "TASK-56": {
+        "path": "/workspace/AdvancedRocketry/.claude/worktrees/from-1.12/.agent/tasks/TASK-56-compatibilitymgr-vestigial.md",
         "title": "`CompatibilityMgr` is currently vestigial \u2014 decide revive vs remove",
         "status": "unknown",
         "concepts": [
@@ -3666,52 +3666,52 @@
       "type": "implements"
     },
     {
-      "from": "TASK-45",
+      "from": "TASK-54",
       "to": "api",
       "type": "implements"
     },
     {
-      "from": "TASK-45",
+      "from": "TASK-54",
       "to": "context",
       "type": "implements"
     },
     {
-      "from": "TASK-45",
+      "from": "TASK-54",
       "to": "workflow",
       "type": "implements"
     },
     {
-      "from": "TASK-45",
+      "from": "TASK-54",
       "to": "deployment",
       "type": "implements"
     },
     {
-      "from": "TASK-45",
+      "from": "TASK-54",
       "to": "testing",
       "type": "implements"
     },
     {
-      "from": "TASK-46",
+      "from": "TASK-56",
       "to": "deployment",
       "type": "implements"
     },
     {
-      "from": "TASK-46",
+      "from": "TASK-56",
       "to": "context",
       "type": "implements"
     },
     {
-      "from": "TASK-46",
+      "from": "TASK-56",
       "to": "skills",
       "type": "implements"
     },
     {
-      "from": "TASK-46",
+      "from": "TASK-56",
       "to": "testing",
       "type": "implements"
     },
     {
-      "from": "TASK-46",
+      "from": "TASK-56",
       "to": "api",
       "type": "implements"
     },
@@ -3866,8 +3866,8 @@
       "TASK-38",
       "TASK-39",
       "TASK-40",
-      "TASK-45",
-      "TASK-46",
+      "TASK-54",
+      "TASK-56",
       "TASK-48",
       "TASK-50"
     ],
@@ -3929,7 +3929,7 @@
       "TASK-39",
       "TASK-40",
       "TASK-44",
-      "TASK-45"
+      "TASK-54"
     ],
     "testing": [
       "TASK-09",
@@ -4030,8 +4030,8 @@
       "TASK-42",
       "TASK-43",
       "TASK-44",
-      "TASK-45",
-      "TASK-46",
+      "TASK-54",
+      "TASK-56",
       "TASK-47",
       "TASK-50"
     ],
@@ -4283,7 +4283,7 @@
       "2026-05-19-2030_multiblock-fixtures-bhg-beacon",
       "TASK-41",
       "TASK-43",
-      "TASK-46"
+      "TASK-56"
     ],
     "api": [
       "TASK-11",
@@ -4318,8 +4318,8 @@
       "TASK-42",
       "TASK-43",
       "TASK-44",
-      "TASK-45",
-      "TASK-46",
+      "TASK-54",
+      "TASK-56",
       "TASK-47",
       "TASK-50"
     ],
@@ -4357,8 +4357,8 @@
       "TASK-42",
       "TASK-43",
       "TASK-44",
-      "TASK-45",
-      "TASK-46",
+      "TASK-54",
+      "TASK-56",
       "TASK-47",
       "TASK-48",
       "TASK-50"

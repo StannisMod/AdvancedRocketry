@@ -1,4 +1,7 @@
-# TASK-45: `<oreGen>` clumpSize/chancePerChunk clamp to 1 makes "disable ore" impossible
+# TASK-54: `<oreGen>` clumpSize/chancePerChunk clamp to 1 makes "disable ore" impossible
+
+> Renumbered from TASK-45 on the 2026-06-15 `origin/1.12` merge — TASK-45 stays
+> with the (completed) maintenance-station rework. Pre-merge notes call this TASK-45.
 
 ## Ticket
 

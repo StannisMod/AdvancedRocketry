@@ -1,4 +1,8 @@
-# TASK-46: `CompatibilityMgr` is currently vestigial — decide revive vs remove
+# TASK-56: `CompatibilityMgr` is currently vestigial — decide revive vs remove
+
+> Renumbered from TASK-46 on the 2026-06-15 `origin/1.12` merge — TASK-46 stays
+> with the (completed) config-disableability work it collided with. Pre-merge
+> 1.12 notes call this TASK-46.
 
 ## Ticket
 
