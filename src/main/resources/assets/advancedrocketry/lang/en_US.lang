@@ -780,6 +780,8 @@ msg.orbitalregistry.writechip.hint.station.unlaunched=This station is not in orb
 commands.weather.always_not_clear=This planet is always not clear...
 commands.weather.cannot_rain=Cannot start a rain here
 commands.weather.cannot_thunder=Cannot start a thunder here
+commands.weather.cannot_rain_atmosphere=This planet's atmosphere is too thin to hold rain
+commands.weather.cannot_thunder_norain=This planet cannot thunder - rain is impossible here
 
 # Jeistuff
 jei.machinerecipe.power=Power:
