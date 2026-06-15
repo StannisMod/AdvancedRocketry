@@ -1,4 +1,8 @@
-# TASK-46: Free Flight v2 — camera-nose lock, engine start ritual, velocity-setpoint Flight Assist
+# TASK-53: Free Flight v2 — camera-nose lock, engine start ritual, velocity-setpoint Flight Assist
+
+> Renumbered from TASK-46 on the `origin/1.12` merge (2026-06-15): TASK-46 was
+> reused by 1.12's CompatibilityMgr task. Commit history before that merge
+> references this work as TASK-46.
 
 ## Ticket
 - Ticket: (internal — manual playtest feedback, 2026-06-10)
