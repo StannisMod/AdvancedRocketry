@@ -120,11 +120,14 @@ public final class PlanetWeatherManager {
      */
     public static boolean shouldWrap(WorldServer world) {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
-        // NOTE: deliberately NOT gated by enableCustomPlanetWeather. AR planets
-        // are wrapped regardless so per-dimension time / working beds (issue #66)
-        // always apply; whether the wrapper *manages weather* is decided
-        // separately by isWeatherManaged().
-        if (cfg == null) return false;
+        // Gated by the perDimWorldInfo MASTER switch only (NOT by
+        // enableCustomPlanetWeather): while the master is on, AR planets are
+        // wrapped regardless of the weather sub-toggle so per-dimension time /
+        // working beds (issue #66) apply; whether the wrapper *manages weather*
+        // is decided separately by isWeatherManaged(). With the master off, no
+        // wrapper is installed at all (and ARMixinPlugin skips weaving the
+        // WorldInfo mixins) — fully vanilla shared-overworld WorldInfo.
+        if (cfg == null || !cfg.perDimWorldInfo) return false;
         if (world == null || world.isRemote) return false;
         if (world.provider == null) return false;
         int dim = world.provider.getDimension();
@@ -156,7 +159,7 @@ public final class PlanetWeatherManager {
      */
     public static boolean isWeatherManaged(WorldServer world) {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
-        if (cfg == null) return false;
+        if (cfg == null || !cfg.perDimWorldInfo) return false;
         return cfg.enableCustomPlanetWeather || cfg.forcePlanetWeatherWorldInfoWrapper;
     }
 

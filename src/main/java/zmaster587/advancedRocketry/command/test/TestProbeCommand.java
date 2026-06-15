@@ -160,6 +160,12 @@ public class TestProbeCommand extends CommandBase {
                 case "item":
                     handleItem(server, sender, tail(args));
                     break;
+                case "weight":
+                    handleWeight(sender, tail(args));
+                    break;
+                case "wear":
+                    handleWear(server, sender, tail(args));
+                    break;
                 case "enchant":
                     handleEnchant(server, sender, tail(args));
                     break;
@@ -499,6 +505,54 @@ public class TestProbeCommand extends CommandBase {
                     return;
             }
             send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"mode\":\"" + mode + "\",\"ticks\":" + ticks + "}");
+            return;
+        }
+        // weather set-marker <dim> <rainMarker> <thunderMarker> — set the planet's
+        // XML-style weather markers at runtime and refresh usesCustomWorldInfo().
+        // A non-default marker (e.g. rain=-1 = forced-clear) makes the custom
+        // weather cycle eligible to run, which is what we toggle the config against.
+        if (args.length >= 4 && "set-marker".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int rainMarker = parseIntOr(args[2], 0);
+            int thunderMarker = parseIntOr(args[3], 0);
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"no dimension properties\",\"dim\":" + dim + "}");
+                return;
+            }
+            props.setRainMarker(rainMarker);
+            props.setThunderMarker(thunderMarker);
+            props.updateCustomWorldInfo();
+            send(sender, "{\"ok\":true,\"dim\":" + dim
+                    + ",\"rainMarker\":" + props.getRainMarker()
+                    + ",\"thunderMarker\":" + props.getThunderMarker()
+                    + ",\"usesCustomWorldInfo\":" + props.usesCustomWorldInfo() + "}");
+            return;
+        }
+        // weather tick-provider <dim> [n] — call WorldProvider.updateWeather()
+        // directly n times (default 1), bypassing the natural per-tick schedule.
+        // This is the production weather-cycle entry point; driving it lets a test
+        // observe whether the custom planet cycle runs (config on) or delegates to
+        // vanilla (config off) without waiting on real ticks.
+        if (args.length >= 2 && "tick-provider".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int n = args.length >= 3 ? parseIntOr(args[2], 1) : 1;
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            for (int i = 0; i < n; i++) {
+                world.provider.updateWeather();
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"ticks\":" + n
+                    + ",\"providerClass\":\"" + world.provider.getClass().getName() + "\"}");
             return;
         }
         send(sender, "{\"error\":\"unknown weather subcommand\"}");
@@ -852,6 +906,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("fuel", fuel);
             info.put("thrust", rocket.stats.getThrust());
             info.put("weight_no_fuel", rocket.stats.getWeight_NoFuel());
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
             // TASK-37/TASK-38 — expose stats fields that aggregate per-block
             // contributions during scanRocket. drillingPower sums every
             // IMiningDrill.getMiningSpeed(); thrust above already reflects
@@ -4532,7 +4587,18 @@ public class TestProbeCommand extends CommandBase {
                     "allowTerraformNonAR",
                     "terraformRequiresFluid",
                     "oxygenVentSize",
-                    "atmosphereHandleBitMask"));
+                    "atmosphereHandleBitMask",
+                    // Disableability-contract tests (TASK-46): toggle each opt-in
+                    // mechanic and its tuning knobs from the test JVM.
+                    "advancedWeightSystem",
+                    "minLaunchTWR",
+                    "partsWearSystem",
+                    "increaseWearIntensityProb",
+                    "enableCustomPlanetWeather",
+                    // perDimWorldInfo master switch (gates weather + time + wrapper):
+                    // PerDimWorldInfoMasterToggleTest flips it to pin both off (vanilla
+                    // WorldInfo) and weather-off-but-master-on (per-dim time survives).
+                    "perDimWorldInfo"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -9400,6 +9466,220 @@ public class TestProbeCommand extends CommandBase {
             info.put("capability", capName);
             info.put("hasCapability", has);
         }
+        send(sender, jsonMap(info));
+    }
+
+    /**
+     * {@code /artest weight ...} — probes the {@link zmaster587.advancedRocketry.util.WeightEngine}.
+     * Verbs:
+     *   reset                         — restore default tables + scales (test isolation)
+     *   item <registry-id> [count]    — resolved weight of an ItemStack
+     *   fluid <fluid-name> <amount>   — resolved weight of a FluidStack-equivalent
+     *   set <registry-id> <weight>    — register an individual override
+     *   set-regex <pattern> <weight>  — register a regex rule
+     *   material-scale <value>        — set ARConfiguration.weightMaterialScale
+     *   fuel-scale <value>            — set ARConfiguration.fuelMassScale
+     */
+    private void handleWeight(ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.util.WeightEngine we = zmaster587.advancedRocketry.util.WeightEngine.INSTANCE;
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"unknown weight subcommand — try reset|item|fluid|set|set-regex|material-scale|fuel-scale\"}");
+            return;
+        }
+        Map<String, Object> info = new LinkedHashMap<>();
+        String verb = args[0].toLowerCase();
+        switch (verb) {
+            case "reset":
+                we.resetTables();
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = 1.0;
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
+                info.put("reset", true);
+                info.put("materialCount", we.materialCount());
+                break;
+            case "item": {
+                String id = args[1];
+                int count = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(id));
+                info.put("id", id);
+                info.put("registered", item != null);
+                if (item != null) {
+                    net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, count);
+                    info.put("count", count);
+                    info.put("weight", we.getWeight(stack));
+                }
+                break;
+            }
+            case "fluid": {
+                String name = args[1];
+                float amount = Float.parseFloat(args[2]);
+                net.minecraftforge.fluids.Fluid f = net.minecraftforge.fluids.FluidRegistry.getFluid(name);
+                info.put("fluid", name);
+                info.put("registered", f != null);
+                if (f != null) {
+                    info.put("amount", amount);
+                    info.put("weight", we.getWeight(f, amount));
+                }
+                break;
+            }
+            case "set":
+                we.setIndividual(args[1], Double.parseDouble(args[2]));
+                info.put("set", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "set-regex":
+                we.setRegex(args[1], Double.parseDouble(args[2]));
+                info.put("regex", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "material-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = Double.parseDouble(args[1]);
+                we.clearResolveCache();
+                info.put("materialScale", Double.parseDouble(args[1]));
+                break;
+            case "fuel-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = Double.parseDouble(args[1]);
+                info.put("fuelScale", Double.parseDouble(args[1]));
+                break;
+            default:
+                send(sender, "{\"error\":\"unknown weight subcommand\",\"sub\":\"" + verb + "\"}");
+                return;
+        }
+        info.put("ok", true);
+        send(sender, jsonMap(info));
+    }
+
+    /**
+     * {@code /artest wear ...} — probes the part-wear capability on world blocks
+     * (motors / fuel tanks / seats hosting a TileWearable):
+     *   get <dim> <x> <y> <z>           — registered + current/max wear stage
+     *   set <dim> <x> <y> <z> <stage>   — force the wear stage at a position
+     */
+    private void handleWear(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"usage: wear get|set|station-load|rocket-status ...\"}");
+            return;
+        }
+        String verb = args[0].toLowerCase();
+
+        // wear rocket-status <entityId> <seatFraction> — worn tanks + worn-seat
+        // predicate of an assembled rocket (the data the launch gate reads).
+        if ("rocket-status".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            double frac = args.length >= 3 ? Double.parseDouble(args[2]) : 0.7;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            info.put("found", true);
+            info.put("wornTankCount", rocket.storage.getWornTanks().size());
+            info.put("hasCriticallyWornSeat", rocket.storage.hasCriticallyWornSeat(frac));
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear damage-parts <entityId> [iterations] — drive StorageChunk.damageParts()
+        // directly (the same accrual entry point production calls on landing) N times,
+        // then report the resulting breaking probability. Lets a test observe whether
+        // wear ACCRUES (partsWearSystem on) or stays put (system off) deterministically,
+        // without depending on a free-flight landing tick.
+        if ("damage-parts".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            int iterations = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null || rocket.storage == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            double before = rocket.storage.getBreakingProbability();
+            for (int i = 0; i < iterations; i++) {
+                rocket.storage.damageParts();
+            }
+            info.put("found", true);
+            info.put("iterations", iterations);
+            info.put("breakingProbBefore", before);
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear station-load <dim> <x> <y> <z> <slot> <ore:name|item-id> <count>
+        if ("station-load".equals(verb)) {
+            int dim = Integer.parseInt(args[1]);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+            TileEntity te = world.getTileEntity(pos);
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (!(te instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation)) {
+                info.put("error", "no service station at pos");
+                send(sender, jsonMap(info));
+                return;
+            }
+            int slot = Integer.parseInt(args[5]);
+            String spec = args[6];
+            int count = Integer.parseInt(args[7]);
+            net.minecraft.item.ItemStack stack;
+            if (spec.startsWith("ore:")) {
+                java.util.List<net.minecraft.item.ItemStack> ores =
+                        net.minecraftforge.oredict.OreDictionary.getOres(spec.substring(4));
+                if (ores.isEmpty()) {
+                    info.put("error", "ore dict empty: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = ores.get(0).copy();
+            } else {
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(spec));
+                if (item == null) {
+                    info.put("error", "item not found: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = new net.minecraft.item.ItemStack(item);
+            }
+            stack.setCount(count);
+            ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation) te)
+                    .getRepairInventory().setStackInSlot(slot, stack);
+            info.put("loaded", stack.getItem().getRegistryName().toString());
+            info.put("count", count);
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear get|set <dim> <x> <y> <z> [stage]
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: wear get|set <dim> <x> <y> <z> [stage]\"}");
+            return;
+        }
+        int dim = Integer.parseInt(args[1]);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+        zmaster587.advancedRocketry.api.capability.IPartWear wear =
+                zmaster587.advancedRocketry.api.capability.CapabilityWear.get(world.getTileEntity(pos));
+
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("pos", new int[]{pos.getX(), pos.getY(), pos.getZ()});
+        info.put("registered", wear != null);
+        if (wear == null) {
+            send(sender, jsonMap(info));
+            return;
+        }
+        if ("set".equals(verb)) {
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: wear set <dim> <x> <y> <z> <stage>\"}");
+                return;
+            }
+            wear.setStage(Integer.parseInt(args[5]));
+        }
+        info.put("stage", wear.getStage());
+        info.put("maxStage", wear.getMaxStage());
+        info.put("ok", true);
         send(sender, jsonMap(info));
     }
 

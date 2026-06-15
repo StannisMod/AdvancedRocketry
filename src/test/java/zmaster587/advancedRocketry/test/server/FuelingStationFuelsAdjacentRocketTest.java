@@ -54,6 +54,24 @@ public class FuelingStationFuelsAdjacentRocketTest extends AbstractHeadlessServe
 
     @Test
     public void stationDrainsTankAndRocketFuelRisesAfterLinkAndTick() throws Exception {
+        // ─── 0. Pre-clear terrain above the pad ────────────────────────
+        // Natural overworld terrain (trees/hills) poking into the scan's
+        // bbCache volume confuses scanRocket's component detection, making
+        // fuel-tank counts depend on the biome at (RX,RZ) — the rocket then
+        // assembles with cap=0 and this test flakes under the parallel
+        // full-suite run (passes in isolation). Warm the chunks first so
+        // cross-chunk populate() (trees/leaves) has landed, THEN clear it —
+        // same mitigation as RocketAssemblySmokeTest#buildAndAssemble.
+        int cx1 = (RX - 2) >> 4, cz1 = (RZ - 2) >> 4;
+        int cx2 = (RX + 7) >> 4, cz2 = (RZ + 7) >> 4;
+        String warmup = join(client().execute(
+                "artest chunk warmup 0 " + cx1 + " " + cz1 + " " + cx2 + " " + cz2));
+        assertTrue("chunk warmup failed: " + warmup, warmup.contains("\"ok\":true"));
+        String fillAir = join(client().execute(
+                "artest fill 0 " + (RX - 2) + " " + (RY + 1) + " " + (RZ - 2)
+                        + " " + (RX + 7) + " " + (RY + 10) + " " + (RZ + 7) + " minecraft:air"));
+        assertTrue("pre-clear failed: " + fillAir, fillAir.contains("\"ok\":true"));
+
         // ─── 1. Build + assemble rocket fixture ────────────────────────
         String fixture = join(client().execute(
                 "artest fixture rocket 0 " + RX + " " + RY + " " + RZ));

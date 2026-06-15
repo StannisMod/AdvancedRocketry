@@ -222,17 +222,34 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public float getNeededThrust() {
-        return getWeight();
+        // With the weight system off there is no TWR launch gate (see
+        // StatsRocket.canLaunch), so there is no thrust requirement to display.
+        if (!ARConfiguration.getCurrentConfig().advancedWeightSystem) {
+            return 0;
+        }
+        return getWeight() * (float) ARConfiguration.getCurrentConfig().minLaunchTWR;
+    }
+
+    public float getThrustToWeightRatio() {
+        return stats.getThrustToWeightRatio();
     }
 
     public boolean hasEnoughFuel(@Nonnull FuelType fuelType) {
-        //return getAcceleration(getGravityMultiplier()) > 0 ? 2 * stats.getBaseFuelRate(fuelType) * MathHelper.sqrt((2 * (ARConfiguration.getCurrentConfig().orbit - this.getPos().getY())) / getAcceleration(getGravityMultiplier())) : 0;
-        float a = getAcceleration(getGravityMultiplier());
+        if (stats.getBaseFuelRate(fuelType) <= 0) {
+            return false;
+        }
+        float g = getGravityMultiplier();
+        // Acceleration grows as fuel burns off (wet -> dry), so integrate over the burn using the
+        // average of the full-tank and empty-tank accelerations rather than the (often near-zero)
+        // full-tank value alone.
+        float aAvg = (getAcceleration(g) + stats.getDryAcceleration(g)) / 2f;
+        if (aAvg <= 0) {
+            return false;
+        }
         float fueltime = (float) stats.getFuelCapacity(fuelType) / stats.getBaseFuelRate(fuelType);
-        float s_can = a/2f*fueltime*fueltime;
+        float s_can = aAvg / 2f * fueltime * fueltime;
         float target_s = 1 * ARConfiguration.getCurrentConfig().orbit - this.getPos().getY(); // for way back *2
         return s_can > target_s;
-
     }
 
     public float getGravityMultiplier() {
@@ -939,7 +956,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         thrustText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust") + ": ???") : String.format("%s: %dkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust"), getThrust()));
         weightText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight") + ": ???") : String.format("%s: %.2fkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight"), (getWeight() * getGravityMultiplier())));
         fuelText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel") + ": ???") : String.format("%s: %dmb/s", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel"), 20* getRocketStats().getFuelRate((stats.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT) > 0) ? FuelType.LIQUID_MONOPROPELLANT : (stats.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID) > 0) ? FuelType.NUCLEAR_WORKING_FLUID : FuelType.LIQUID_BIPROPELLANT)));
-        accelerationText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc") + ": ???") : String.format("%s: %.2fm/s\u00b2", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc"), getAcceleration(getGravityMultiplier()) * 20f));
+        accelerationText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc") + ": ???") : String.format("%s: %.2fm/s\u00b2 (TWR %.2f)", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc"), getAcceleration(getGravityMultiplier()) * 20f, getThrustToWeightRatio()));
         if (!world.isRemote) {
             if (getRocketPadBounds(world, pos) == null)
                 setStatus(ErrorCodes.INCOMPLETESTRCUTURE.ordinal());

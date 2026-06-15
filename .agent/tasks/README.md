@@ -14,16 +14,22 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 851 (testUnit 267 / testIntegration 89 /
-  testServer 432 / testClient 63). Counter regenerated 2026-06-03
-  per SOP §2.5 (prior 856/288/81/426/61 headline was stale — trust
-  the regen, not the "+N" arithmetic). TASK-49 (issue #61):
-  +2 testServer + 2 testClient on 2026-06-02 (repro), then +1 testServer
-  on 2026-06-03 when the fix flipped `RailgunFiringContractTest` 2→3
-  tests. Classes: `RailgunFiringContractTest` (3) +
-  `RailgunCargoTransitE2ETest` (2). Historical "+N" narrative below is
-  retained for provenance only.
-  +1 on 2026-05-29 from
+- **Pyramid**: 877 (testUnit **279** / testIntegration **89** /
+  testServer **462** / testClient **47**). +1 testServer on 2026-06-15 from
+  `ServiceStationUnlinkedPerformFunctionTest` (PR #23 review #5 regression
+  guard: performFunction on an unlinked station is a safe no-op — the
+  standalone-repair null-deref invariant holds by construction). +2 testServer
+  on 2026-06-14 from `PerDimWorldInfoMasterToggleTest` (the perDimWorldInfo
+  master-switch disableability pins: off→vanilla WorldInfo +
+  weather-off-keeps-per-dim-time).
+  Earlier this day **regenerated from source** at the feature/postponed ↔ 1.12
+  merge (`grep -rc '@Test$'` per tier on the merged tree, SOP §2.5) — the two
+  branches'
+  pre-merge headlines (postponed 859, 1.12 851) each predated the other's
+  tests, so neither total held post-merge. testClient is 47 (not 61/63):
+  1.12 pushed four client-e2e suites (Advancements / AtmospherePlayerEvent /
+  LowGravFallDamage / VacuumGuards) down to server tier, and the merge
+  applies that. Earlier changelog below is historical. +1 on 2026-05-29 from
   TASK-40b Batch 2 (Gap F.2 GasChargePad — testClient harness fix unlocked
   it). +1 on 2026-05-29 from
   TASK-40d Batch 4 (Gap L force field projector). +8 on 2026-05-29 from
@@ -150,14 +156,16 @@ Bug-ledger history lives in
   Counter regenerated via
   `grep -rc '@Test$' src/test/java/.../{unit,integration,server,client}/`.
 - **testServer wall time**: 8m 27s (50 % faster than pre-B2).
-- **Bug ledger**: 4 live bugs. Arithmetic: 8 entries total minus
+- **Bug ledger**: 4 live bugs. Arithmetic: 14 entries total minus
   #4 (fixed by TASK-41 2026-05-29) minus #6 (fixed by TASK-43 Phase 3
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
-  minus #8 (fixed by TASK-49 2026-06-03) = 4 live (#1, #3, #5, #7).
-  Batch #2 opened 2026-05-25; entry #5 added 2026-05-29; entry #7 added
-  2026-05-31; entry #8 (railgun silent fire-failure / unloaded-dest, #61)
-  added 2026-06-02 and FIXED 2026-06-03, both by TASK-49. Batch #1 fully drained by
-  TASK-12 on 2026-05-23. Entries:
+  minus the 2026-06-01/02 fixed batch — #8 (weight-rework) / #9 (mod-container,
+  PR #22) / #10 (planetDefs tolerance, PR #22) / #11 (JEI guard, PR #22) /
+  #12 (TASK-45) / #13 (beds, PR #22) / #14 (railgun #61, TASK-49) = 4 live
+  (#1, #3, #5, #7). Entries #8–#14 were renumbered chronologically when the
+  feature/postponed and 1.12 ledgers merged (2026-06-14), resolving a #8/#9
+  collision. Batch #2 opened 2026-05-25; entry #5 added 2026-05-29; entry #7
+  added 2026-05-31. Batch #1 fully drained by TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —
   pinned by `SatelliteRegistryFallbackTest._documentsKnownBug` pair.
@@ -317,7 +325,32 @@ Bug-ledger history lives in
   `TilePumpFillsFromAdjacentWaterSourceTest` instead pins the real
   contract (drains an AR Forge-fluid source) and documents this in its
   docstring. Found during TASK-44 Gap F.4 un-ignore (2026-05-31).
-  (8) ✅ **FIXED 2026-06-03 by TASK-49** (load destination dim on fire +
+  (8) ✅ **FIXED 2026-06-01 by the weight-rework.**
+  `StatsRocket.getAcceleration` divided by `getWeight()` with no
+  zero-guard, so a zero-weight rocket produced `NaN`/`Infinity`
+  acceleration (visible in the assembler GUI and fed into
+  `EntityRocket` motion). Fixed: acceleration getters + TWR getter
+  return 0 when weight ≤ 0; pinned by
+  `StatsRocketTest.accelerationOnWeightlessRocketIsZeroNotInfinite`.
+  (9) ✅ **FIXED 2026-06-01 (PR #22).** Vestigial `DummyModContainer`
+  (`advancedrocketrycore`) showed one more "loaded" than "active" mod on the
+  title screen (#71). Pinned by `ModCountParityE2ETest`. Full text: ledger #9.
+  (10) ✅ **FIXED 2026-06-01 (PR #22).** planetDefs.xml referencing
+  uninstalled-mod content crashed world creation via a silent
+  `FMLCommonHandler.exitJava` (#77). Pinned by `XMLPlanetLoaderTest` +
+  `PlanetDefsFaultToleranceTest`. Full text: ledger #10.
+  (11) ✅ **FIXED 2026-06-01 (PR #22).** `PacketDimInfo.executeClient` touched
+  the JEI `ARPlugin` unconditionally → `NoClassDefFoundError` without JEI
+  (#76). Approved e2e exception (no no-JEI harness). Full text: ledger #11.
+  (12) ✅ **FIXED 2026-06-02 by TASK-45 (maintenance-station rework).**
+  `TileRocketServiceStation` showed seat/tank wear counters that were
+  permanently 0 (only motors had wear state) — dead UI. Tanks/seats now carry
+  a `TileWearable` state. Full text: ledger #12.
+  (13) ✅ **FIXED 2026-06-02 (PR #22).** Beds skipped no time on AR planets and
+  vanilla's 24000-rounded wake missed planetary dawn (#66, TASK-47). Pinned by
+  `SleepWakeTimeTest` + `ARDimensionWorldInfoTest` + `PlanetBedSleepE2ETest`.
+  Full text: ledger #13.
+  (14) ✅ **FIXED 2026-06-03 by TASK-49** (load destination dim on fire +
   `FireStatus` GUI feedback). Original below.
   `TileRailgun.attemptCargoTransfer` failed **silently** on every
   failure branch (no player feedback); the dominant field cause is a
@@ -389,6 +422,8 @@ Bug-ledger history lives in
 | [TASK-43](TASK-43-flaky-and-stable-test-failures.md) | Mitigate the 4 deferred TASK-42 failures across two shapes: Shape A (3 recipe tests, parallel-fork contention — plan: `wait-for-recipe-registry` probe verb + kit hook); Shape B (FetchModerator, stable-fail-in-isolation — plan: per-step bot instrumentation to bisect bridge-drop tick). **Phase 3 shipped** (2026-05-30 — `mixin.env.disableRefMap=true` fix, ledger #6 closed); Shapes A/B still open. | 🟡 Phase 3 done; A/B open |
 | [TASK-49](TASK-49-railgun-silent-fire-failure.md) | Railgun silent fire-failure (#61) — root cause = unloaded destination dim + zero feedback (ledger #8). Fix (Option 1): `attemptCargoTransfer` now `initDimension`s a registered-but-unloaded destination, and a `FireStatus` enum surfaces each failure cause in the GUI. Pinned by 3 server (`RailgunFiringContractTest`) + 2 client e2e (`RailgunCargoTransitE2ETest`) flipped to the corrected behaviour; `infra railgun-fire` probe extended with `destLoadedBefore`/`fireStatus`. | ✅ |
 | [TASK-44](TASK-44-shallow-to-deep-batch.md) | Shallow→deep conversion batch — 4 real contracts + 1 mixin-CI gap shipped: F.4 (TilePump drains Forge IFluidBlock, ledger #7), B (laser-drill MINING dispatch breaks column + drops), C (area-gravity resets fallDistance in-radius only; found controller not machine-enabled by default), N (asteroid worldprovider generates fill blocks), U (un-`@Ignore`'d `InventoryBypassRedirectE2ETest` via server-side `player open-chest` probe, ledger #6 resolved). 5 new probe verbs. Dropped per SOP: G/H/I/K/M/T (impl-only/unwired/wrong-framing). 429/430 full-suite after batch. | ✅ |
+| [TASK-45](TASK-45-maintenance-station-rework.md) | Maintenance-station / parts-wear rework — wear extracted to a Forge capability (motors + tanks + seats via `TileWearable`), graduated launch consequences (tank leak / crewed-seat block / explosion + pre-launch pilot warning, config-switchable), standalone service-station repair without an assembler, cap-based rocket damage-view GUI, `/artest wear` probe group. Ledger #9 (dead tank/seat counters) found + fixed. | ✅ |
+| [TASK-46](TASK-46-config-disableability.md) | Weight / wear / weather / mixin mechanics made **fully disableable** in config — 5 single-source production gates + the `IEarlyMixinLoader` coremod fix (prevents a MixinBooter launch crash) + 6 tests (4 unit / 2 server, OFF-state pinned as a revert guard) + 8 `/artest` probe additions + `config-flag-disableability` SOP. No new bugs (leaks only). | ✅ |
 
 ## Backlog
 
@@ -404,7 +439,8 @@ entry is an actionable TASK with a defined plan + acceptance.
 | [TASK-47](TASK-47-per-dim-time-and-sleep.md) | Beds skip no time on planets (#66). Root cause: derived `WorldInfo.setWorldTime` is a no-op so the sleep skip is swallowed; `rotationalPeriod ≠ 24000` means vanilla's 24000-rounding misses planetary dawn. Fix: per-dim time owned by the custom WorldInfo (renamed `ARDimensionWorldInfo`) + `MixinWorldServer` sleep-site rounding to `rotationalPeriod`. | ✅ Shipped 2026-06-02 | Bot-sleep e2e covered 2026-06-10 (`PlanetBedSleepE2ETest`, framework `interact_block`). |
 | [TASK-48](TASK-48-per-dim-worldinfo-delegation.md) | Make other `DerivedWorldInfo` state per-dimension that vanilla forces to the overworld: GameRules (sharpest — `doDaylightCycle`/`doWeatherCycle` still shared after TASK-47), spawn point, difficulty, terrain type, game type. Weather (shipped) + time (TASK-47) are the precedent. | 🟦 Feature request — not urgent, needs design | Research spun off TASK-47 on 2026-06-02. |
 | [TASK-50](TASK-50-directional-gravity-camera-feature-request.md) | Directional gravity + camera rotation — resurrect kaduvill's experimental ASM prototype (`EntityLivingBase` move/jump/look hooks + `EntityRenderer.orientCamera`, ~95% commented out upstream) on the Mixin platform. Hook skeleton was deleted with `ClassTransformer` in `877d1495`; prototype readable at `c1c791d3` (kaduvill tip); dead math still in tree as commented-out `client/ClientHelper.java`. | 🟦 Feature request — not urgent, needs design | Recorded 2026-06-10 from the kaduvill-port audit; never functional upstream, so no regression pressure. |
-| [TASK-51](TASK-51-per-dim-time-config-toggle.md) | `enablePerDimensionTime` config toggle — TASK-47 forced per-dim time on every planet with no off-switch (`shouldWrap` dropped the `enableCustomPlanetWeather` gate), violating the config-flag-disableability SOP. Add a flag (default true) + `timeManaged` wrapper gate + weave-gate `MixinWorldServer` via `ARMixinPlugin`. | 🟡 Backlog — not started | **Activate when `feature/postponed` merges into `1.12`** (brings `ARMixinPlugin` for the weave-gate). Found 2026-06-14 during PR #22 review. |
+| [TASK-51](TASK-51-per-dim-time-config-toggle.md) | Make the per-dim WorldInfo subsystem fully disableable — **superseded by the `perDimWorldInfo` master flag** (one switch gating weather + time + wrapper install, default true) instead of a granular `enablePerDimensionTime`. Shipped on `feature/postponed`: `ARMixinPlugin` weave-gates all 3 WorldInfo mixins on it; `shouldWrap`/`isWeatherManaged`/`MixinWorldServer`/`WorldProviderPlanet` gate on it; `enableCustomPlanetWeather` kept as weather sub-toggle. Also fixes the leak where weather-off un-wove the time mixin. Pinned by `ARMixinPluginTest`. | ✅ Superseded — shipped 2026-06-14 | Done. |
+| [TASK-52](TASK-52-nonar-isolation-suite-hang.md) | `NonARDimensionIsolationTest.netherAndEndAreNotARPlanets` deterministically HANGS the full `testServer` tier (~44th class) — `dim info -1/1` force-loads Nether/End on the long-lived shared harness server which deadlocks after ~43 prior classes; passes 2/2 in isolation. NOT a wrap-policy / PR-23 regression. Mitigated with `@Ignore` (wrapper-isolation half still pinned green by the sibling method); real fix = harness thread-dump + per-class reset or non-loading `dim info`. | 🟡 Backlog — mitigated (@Ignore) | Found 2026-06-15 during the PR #23 full-suite gate. |
 
 ## Conscious non-goals
 
