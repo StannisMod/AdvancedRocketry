@@ -161,11 +161,14 @@ Bug-ledger history lives in
   2026-05-30) minus #2 (dropped 2026-05-31 as impl-trivia — see entry)
   minus the 2026-06-01/02 fixed batch — #8 (weight-rework) / #9 (mod-container,
   PR #22) / #10 (planetDefs tolerance, PR #22) / #11 (JEI guard, PR #22) /
-  #12 (TASK-45) / #13 (beds, PR #22) / #14 (railgun #61, TASK-49) = 4 live
+  #12 (TASK-45) / #13 (beds, PR #22) / #14 (railgun #61, TASK-49) /
+  #15 (canDoRainSnowIce density-scale, feature/better_weather) = 4 live
   (#1, #3, #5, #7). Entries #8–#14 were renumbered chronologically when the
   feature/postponed and 1.12 ledgers merged (2026-06-14), resolving a #8/#9
-  collision. Batch #2 opened 2026-05-25; entry #5 added 2026-05-29; entry #7
-  added 2026-05-31. Batch #1 fully drained by TASK-12 on 2026-05-23. Entries:
+  collision; #15 was added when feature/better_weather merged into 1.12 (its
+  own ledger #8 renumbered to avoid colliding). Batch #2 opened 2026-05-25;
+  entry #5 added 2026-05-29; entry #7 added 2026-05-31. Batch #1 fully drained
+  by TASK-12 on 2026-05-23. Entries:
   (1) `SatelliteRegistry.getNewSatellite` returns `null` for unknown
   types instead of the documented `SatelliteDefunct` fallback —
   pinned by `SatelliteRegistryFallbackTest._documentsKnownBug` pair.
@@ -364,6 +367,20 @@ Bug-ledger history lives in
   silent unloaded-dest characterization) via the new `infra railgun-fire`
   probe. Fix (load dest dim on fire + per-cause feedback) tracked by
   TASK-49. Found 2026-06-02 during #61 investigation.
+  (15) ✅ **FIXED 2026-06-01 in `feature/better_weather`.**
+  `WorldProviderPlanet.canDoRainSnowIce` compared
+  `getAtmosphereDensity(pos)` — which returns the density already
+  divided by 100 (range ~0..2) — against the literal `75`, so the
+  predicate was effectively always false. Player-visible: AR planets
+  never accumulated rain/snow/ice through this gate regardless of
+  atmosphere. Fixed while wiring the new `minAtmosphereDensityForRain`
+  config threshold: the check now compares the raw 0..100
+  `props.getAtmosphereDensity()` against the configurable threshold
+  (default 75), matching the scale used everywhere else
+  (XML `atmosphereDensity`, `AtmosphereTypes`). Found during the
+  feature/better_weather atmosphere-gate work. Does NOT change the live
+  count (found and fixed in the same change). Renumbered from its
+  original ledger #8 on the feature/better_weather → 1.12 merge.
 
 ## Done
 

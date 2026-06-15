@@ -202,6 +202,12 @@ public class ARConfiguration {
     public boolean logPlanetWeatherWrapping = true;
     @ConfigProperty
     public boolean forcePlanetWeatherWorldInfoWrapper = false;
+    @ConfigProperty(needsSync = true)
+    public float minAtmosphereDensityForRain = 75f;
+    @ConfigProperty
+    public float acidRainDamage = 1f;
+    @ConfigProperty
+    public int acidRainDamageInterval = 20;
     @ConfigProperty
     public float spaceLaserPowerMult;
     @ConfigProperty
@@ -487,6 +493,9 @@ public class ARConfiguration {
         arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "Sub-toggle of perDimWorldInfo (no effect when that is false): if true, each AR planet has its own weather state (rain, thunder, /weather, isRaining); if false, weather delegates to the overworld while per-dimension time-of-day still applies.").getBoolean();
         arConfig.logPlanetWeatherWrapping = config.get(PLANET, "logPlanetWeatherWrapping", true, "Log an info line every time an AR planet's WorldInfo is wrapped for per-dimension weather. Useful for diagnosing weather-wrapping issues; safe to disable in production.").getBoolean();
         arConfig.forcePlanetWeatherWorldInfoWrapper = config.get(PLANET, "forcePlanetWeatherWorldInfoWrapper", false, "Force per-dimension weather wrapping on every secondary (non-overworld) dimension, including non-AR dims of other mods. Compatibility/debug flag — do NOT enable unless you know exactly what you are doing.").getBoolean();
+        arConfig.minAtmosphereDensityForRain = (float) config.get(PLANET, "minAtmosphereDensityForRain", 75d, "Minimum atmosphere density (0-100 scale, same as planet atmosphereDensity) required for rain/snow and thunder on a planet. Below this, rain is suppressed regardless of the planet's weather markers, and thunder cannot occur. Thin/airless worlds stay clear.", 0d, 200d).getDouble();
+        arConfig.acidRainDamage = (float) config.get(PLANET, "acidRainDamage", 1d, "Damage dealt to an unprotected player standing under open sky while it rains on a planet whose rain is acidic (acidicRain=true in the planet definition). Set 0 to disable acid-rain damage.", 0d, Float.MAX_VALUE).getDouble();
+        arConfig.acidRainDamageInterval = config.get(PLANET, "acidRainDamageInterval", 20, "Ticks between successive acid-rain damage applications (20 = once per second).", 1, Integer.MAX_VALUE).getInt();
         arConfig.blackListAllVanillaBiomes = config.getBoolean("blackListVanillaBiomes", PLANET, false, "Prevent vanilla biomes from spawning on planets.");
         arConfig.maxBiomesPerPlanet = config.get(PLANET, "maxBiomesPerPlanet", 99, "Maximum unique biomes per planet.").getInt();
 
