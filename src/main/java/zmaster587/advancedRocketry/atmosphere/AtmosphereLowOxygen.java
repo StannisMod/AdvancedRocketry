@@ -27,7 +27,7 @@ public class AtmosphereLowOxygen extends AtmosphereNeedsSuit {
             player.addPotionEffect(new PotionEffect(Potion.getPotionById(2), 40, 2));
             player.addPotionEffect(new PotionEffect(Potion.getPotionById(4), 40, 2));
             if (player instanceof EntityPlayer)
-                PacketHandler.sendToPlayer(new PacketOxygenState(), (EntityPlayer) player);
+                AtmosphereType.sendToRealPlayer(new PacketOxygenState(), (EntityPlayer) player);
         }
     }
 

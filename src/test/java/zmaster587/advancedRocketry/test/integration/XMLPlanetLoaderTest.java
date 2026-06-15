@@ -1,5 +1,11 @@
 package zmaster587.advancedRocketry.test.integration;
 
+import net.minecraft.block.Block;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import net.minecraftforge.oredict.OreDictionary;
+import zmaster587.advancedRocketry.util.OreGenProperties;
+import zmaster587.advancedRocketry.util.OreGenProperties.OreEntry;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -17,6 +23,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -141,6 +148,7 @@ public class XMLPlanetLoaderTest {
               + "  <thunderProlongationLength>6000</thunderProlongationLength>\n"
               + "  <rainMarker>1</rainMarker>\n"
               + "  <thunderMarker>-1</thunderMarker>\n"
+              + "  <acidicRain>true</acidicRain>\n"
               + "</planet>\n")));
         DimensionProperties props = coupling.dims.get(0);
         assertEquals(3000, props.getRainStartLength());
@@ -149,6 +157,7 @@ public class XMLPlanetLoaderTest {
         assertEquals(6000, props.getThunderProlongationLength());
         assertEquals("rainMarker=1 → always rain", 1, props.getRainMarker());
         assertEquals("thunderMarker=-1 → never thunder", -1, props.getThunderMarker());
+        assertTrue("acidicRain=true must be parsed from the planet XML", props.isAcidicRain());
     }
 
     @Test
@@ -163,26 +172,22 @@ public class XMLPlanetLoaderTest {
         assertEquals(168000, props.getThunderStartLength());
         assertEquals("default rainMarker=0 (regular weather)", 0, props.getRainMarker());
         assertEquals("default thunderMarker=0 (regular weather)", 0, props.getThunderMarker());
+        assertFalse("acidicRain must default to false when the tag is absent", props.isAcidicRain());
     }
 
     @Test
-    public void invalidWeatherMarkerFailsExplicitly() throws Exception {
-        // ELEMENT_RAIN_MARKER parsing uses Integer.parseInt with no try/catch
-        // around it (production code). Verify the existing behaviour: parser
-        // throws NumberFormatException loudly rather than silently accepting
-        // garbage. Future hardening can replace this assertion with a
-        // "normalized to 0" check if the parsing path adds a try/catch.
-        try {
-            parse(galaxy(star("Sol",
-                    "<planet name=\"BadWeather\" DIMID=\"7102\">\n"
-                  + "  <isKnown>true</isKnown>\n"
-                  + "  <rainMarker>NOT_A_NUMBER</rainMarker>\n"
-                  + "</planet>\n")));
-            fail("XMLPlanetLoader must reject non-numeric rainMarker (or be updated to "
-                    + "normalize it — adjust this assertion when production adds the guard)");
-        } catch (NumberFormatException expected) {
-            // OK — current behaviour: parser propagates the exception.
-        }
+    public void invalidWeatherMarkerSkipsPlanetInsteadOfCrashing() throws Exception {
+        // A non-numeric rainMarker makes Integer.parseInt throw deep inside
+        // readPlanetFromNode. Per-planet isolation (issue #77 fix) must catch
+        // that, skip the offending planet, and keep loading the rest — rather
+        // than the old behaviour of propagating up to a fatal exitJava.
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"BadWeather\" DIMID=\"7102\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <rainMarker>NOT_A_NUMBER</rainMarker>\n"
+              + "</planet>\n")));
+        assertTrue("a planet with a non-numeric rainMarker must be skipped, not crash",
+                coupling.dims.isEmpty());
     }
 
     // ---- Clamping ------------------------------------------------------------
@@ -329,6 +334,173 @@ public class XMLPlanetLoaderTest {
         assertEquals("gravity must clamp to MIN_GRAVITY/100",
                 DimensionProperties.MIN_GRAVITY / 100f,
                 props.getGravitationalMultiplier(), 1e-6);
+    }
+
+    // ---- laser drill ores: tolerant ore-name resolution ----------------------
+
+    /**
+     * Regression for dercodeKoenig/AdvancedRocketry#77 — creating a world with a
+     * subset of mods crashed with {@code IndexOutOfBoundsException: Index 0 out of
+     * bounds for length 0} at the {@code <laserDrillOres>} parse path.
+     *
+     * <p>{@link OreDictionary#doesOreNameExist} returns {@code true} for any ore
+     * name that has merely been <em>reserved</em> in the dictionary, even when no
+     * items are registered under it (the mod that would provide them isn't
+     * installed). The old code did {@code getOres(name).get(0)} on that empty
+     * list → crash that killed the server via {@code FMLCommonHandler.exitJava}.
+     * The parser must now skip the entry and keep loading.</p>
+     */
+    @Test
+    public void laserDrillOresReservedButEmptyOreNameDoesNotCrash() throws Exception {
+        String phantom = "arPhantomOreNoItems77";
+        OreDictionary.getOreID(phantom); // reserve the name without registering items
+        assertTrue("precondition: name must be reserved in the dictionary",
+                OreDictionary.doesOreNameExist(phantom));
+        assertTrue("precondition: no items registered under the name",
+                OreDictionary.getOres(phantom).isEmpty());
+
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"PhantomOreWorld\" DIMID=\"7400\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <laserDrillOres>" + phantom + "</laserDrillOres>\n"
+              + "</planet>\n")));
+        DimensionProperties props = coupling.dims.get(0);
+        assertTrue("unresolved ore name must be skipped, not added and not thrown on",
+                props.laserDrillOres.isEmpty());
+    }
+
+    /**
+     * Pins the trim + count handling on the {@code <laserDrillOres>} path:
+     * whitespace around the ore name and the {@code ;count} suffix must be
+     * tolerated, and the resolved stack must be a {@code copy()} so writing its
+     * count back does not mutate the shared OreDictionary prototype.
+     */
+    @Test
+    public void laserDrillOresTrimsWhitespaceParsesCountAndCopiesStack() throws Exception {
+        String oreName = "arTestDrillOreWithItem77";
+        OreDictionary.registerOre(oreName, new ItemStack(Items.IRON_INGOT));
+
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"DrillOreWorld\" DIMID=\"7401\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <laserDrillOres>  " + oreName + " ; 5 </laserDrillOres>\n"
+              + "</planet>\n")));
+        DimensionProperties props = coupling.dims.get(0);
+        assertEquals("whitespace-padded ore name must resolve to exactly 1 entry",
+                1, props.laserDrillOres.size());
+        assertEquals("count must be parsed from the trimmed second field",
+                5, props.laserDrillOres.get(0).getCount());
+        assertEquals("copy() must protect the OreDictionary prototype from count mutation",
+                1, OreDictionary.getOres(oreName).get(0).getCount());
+    }
+
+    // ---- fault tolerance: skip bad planet, crash loudly on broken file -------
+
+    /**
+     * Issue #77 broader fix (A) — a single malformed planet must not take down
+     * the whole config. One well-formed planet plus one with a non-numeric
+     * {@code rainMarker} (throws deep in {@code readPlanetFromNode}): the bad one
+     * is skipped, the good one survives, and the loader returns normally instead
+     * of killing the JVM via {@code FMLCommonHandler.exitJava} — the test
+     * returning at all proves no silent process exit happened.
+     */
+    @Test
+    public void malformedPlanetIsSkippedAndOthersStillLoad() throws Exception {
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"GoodWorld\" DIMID=\"7500\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "</planet>\n"
+              + "<planet name=\"BrokenWorld\" DIMID=\"7501\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <rainMarker>NOT_A_NUMBER</rainMarker>\n"
+              + "</planet>\n")));
+        assertEquals("only the well-formed planet must survive", 1, coupling.dims.size());
+        assertEquals("GoodWorld", coupling.dims.get(0).getName());
+    }
+
+    /**
+     * Issue #77 broader fix (C) — a completely unparseable planetDefs file is a
+     * genuinely fatal/structural error. It must throw so that Forge produces a
+     * normal crash report at server start, rather than the old silent
+     * {@code FMLCommonHandler.exitJava} that closed the window with no report.
+     * Catching a {@link RuntimeException} here (instead of the test JVM dying)
+     * is the testable proxy for "crashes with a report, doesn't exit silently".
+     */
+    @Test
+    public void completelyMalformedXmlThrowsForCrashReportInsteadOfSilentExit() throws Exception {
+        File garbage = tempFolder.newFile("garbage-planetDefs.xml");
+        Files.write(garbage.toPath(),
+                "this is not xml <<< &&& >>>".getBytes(StandardCharsets.UTF_8));
+
+        XMLPlanetLoader loader = new XMLPlanetLoader();
+        try {
+            loader.loadPlanetsOrThrow(garbage);
+            fail("unparseable planetDefs XML must throw so Forge generates a crash "
+                    + "report — it must not be swallowed or trigger a silent exitJava");
+        } catch (RuntimeException expected) {
+            assertNotNull("fatal load failure must carry a diagnostic message",
+                    expected.getMessage());
+            assertTrue("the message should point at the planetDefs XML file: "
+                            + expected.getMessage(),
+                    expected.getMessage().contains("planetDefs XML"));
+        }
+    }
+
+    // ---- oregen persistence (issue #73) --------------------------------------
+
+    /**
+     * Issue #73 — per-planet {@code <oreGen>} must survive the planetDefs.xml
+     * write/read round-trip. AR persists a planet's ore generation config only
+     * through the per-world planetDefs.xml (it is NOT written to the per-dimension
+     * NBT), so {@code writeXML} → {@code readAllPlanets} losing the {@code <oreGen>}
+     * block is exactly the "oregen doesn't stick to the worldsave" bug kaduvill
+     * traced back to 2019. This pins the round-trip so it can't regress.
+     */
+    @Test
+    public void oreGenPropertiesSurviveWriteReadRoundTrip() throws Exception {
+        Block ironOre = Block.getBlockFromName("minecraft:iron_ore");
+        assertNotNull("precondition: minecraft:iron_ore must be registered", ironOre);
+
+        zmaster587.advancedRocketry.api.dimension.solar.StellarBody star =
+                new zmaster587.advancedRocketry.api.dimension.solar.StellarBody();
+        star.setId(7600);
+        star.setName("OreGenStar");
+        star.setTemperature(120);
+        star.setSize(1.0f);
+        star.setBlackHole(false);
+
+        DimensionProperties planet = new DimensionProperties(7601, "OreGenWorld");
+        planet.setStar(star);
+
+        OreGenProperties ore = new OreGenProperties();
+        ore.addEntry(ironOre.getDefaultState(), 5, 60, 8, 20);
+        planet.oreProperties = ore;
+
+        star.addPlanet(planet);
+
+        String xml = XMLPlanetLoader.writeXML(new SingleStarGalaxyFixture(star));
+        assertTrue("writeXML must emit the <oreGen> block", xml.contains("oreGen"));
+        assertTrue("writeXML must reference the ore block by registry name",
+                xml.contains("minecraft:iron_ore"));
+
+        File out = tempFolder.newFile("oregen-planets.xml");
+        Files.write(out.toPath(), xml.getBytes(StandardCharsets.UTF_8));
+
+        XMLPlanetLoader reader = new XMLPlanetLoader();
+        assertTrue("loadFile must accept the written XML", reader.loadFile(out));
+        DimensionPropertyCoupling restored = reader.readAllPlanets();
+
+        assertEquals(1, restored.dims.size());
+        OreGenProperties restoredOre = restored.dims.get(0).oreProperties;
+        assertNotNull("oreProperties must round-trip, not be dropped", restoredOre);
+        assertEquals("exactly one ore entry must survive", 1, restoredOre.getOreEntries().size());
+
+        OreEntry entry = restoredOre.getOreEntries().get(0);
+        assertEquals("ore block must round-trip", ironOre, entry.getBlockState().getBlock());
+        assertEquals("minHeight must round-trip", 5, entry.getMinHeight());
+        assertEquals("maxHeight must round-trip", 60, entry.getMaxHeight());
+        assertEquals("clumpSize must round-trip", 8, entry.getClumpSize());
+        assertEquals("chancePerChunk must round-trip", 20, entry.getChancePerChunk());
     }
 
     // ---- helpers -------------------------------------------------------------

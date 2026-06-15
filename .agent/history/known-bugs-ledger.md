@@ -4,9 +4,14 @@
 2026-05-23). Batch #2 below is **live** and is kept in sync with the
 summary in [`../tasks/README.md`](../tasks/README.md) bug-ledger section.
 
-**Live bug count (as of 2026-05-31)**: 4 live — Batch #2 entries
-#1, #3, #5, #7. Entry #2 dropped as impl-trivia, #4 fixed by TASK-41,
-#6 fixed by TASK-43 Phase 3 (see per-entry notes below).
+**Live bug count (as of 2026-06-14, after the feature/postponed ↔ 1.12
+merge)**: 4 live — Batch #2 entries #1, #3, #5, #7. Entry #2 dropped as
+impl-trivia, #4 fixed by TASK-41, #6 fixed by TASK-43 Phase 3. Entries
+#8–#14 (the 2026-06-01/02 batch: #8 weight-rework, #9 mod-container,
+#10 planetDefs tolerance, #11 JEI guard, #12 TASK-45, #13 beds / per-dim
+time, #14 railgun #61) are all fixed — **renumbered chronologically when
+the two branch ledgers were merged** (resolving a #8/#9 collision: both
+branches had independently reused #8/#9). See per-entry notes below.
 When a future production bug is uncovered, follow the rule in
 [`CLAUDE.md`](../../CLAUDE.md#bug-tracking--every-discovered-production-bug-must-be-logged)
 and append it to Batch #2 here AND to the README summary.
@@ -255,3 +260,112 @@ authoring that have not yet been fixed.
    `TilePumpFillsFromAdjacentWaterSourceTest` pins the real contract
    (drains an AR Forge-fluid source) and documents this in its docstring.
    **Found**: 2026-05-31 during TASK-44 Gap F.4 un-ignore.
+
+8. ✅ **FIXED 2026-06-01 by the weight-rework (feature/postponed).**
+   `StatsRocket.getAcceleration` computed `N / getWeight() / 20f` with no
+   guard, so a rocket whose `getWeight()` resolved to 0 (possible with
+   `advancedWeightSystem` on and a structure of all-zero-weight blocks)
+   yielded `Infinity`/`NaN`.
+   File: `src/main/java/zmaster587/advancedRocketry/api/StatsRocket.java`
+   (`getAcceleration`, also new `getDryAcceleration`).
+   **Consequence**: player-visible — the assembler GUI printed a NaN/∞
+   acceleration and the value propagated into `EntityRocket` `motionY`,
+   producing undefined flight motion.
+   **Fixed**: both acceleration getters return 0 when weight ≤ 0;
+   `getThrustToWeightRatio()` guards the same way.
+   **Pinned by**: `StatsRocketTest.accelerationOnWeightlessRocketIsZeroNotInfinite`
+   (positive contract, not a `_documentsKnownBug`).
+   **Found**: 2026-06-01 during the weight-system rework.
+
+9. ✅ **FIXED 2026-06-01 (PR #22, `7f8ee7f0`).** Vestigial `DummyModContainer`
+   (`advancedrocketrycore`) made the title screen count one more "loaded" mod
+   than "active" (dercodeKoenig/AdvancedRocketry#71). Backfilled entry — fixed
+   before this ledger row existed.
+   **Pinned by**: `ModCountParityE2ETest` (client tier, via the framework's
+   `report_mods` probe — the same `Loader` lists the menu line renders;
+   red-proven against the restored container).
+
+10. ✅ **FIXED 2026-06-01 (PR #22, `ae379cac`).** planetDefs.xml referencing
+   content from an uninstalled mod crashed world creation through a silent
+   `FMLCommonHandler.exitJava` — window closed, no crash report
+   (dercodeKoenig/AdvancedRocketry#77). Backfilled entry.
+   **Pinned by**: `XMLPlanetLoaderTest` (reserved-but-empty ore, per-planet
+   isolation) + `PlanetDefsFaultToleranceTest` (server tier: boots with a
+   dirty file, malformed planet skipped, good planet survives).
+   **Client e2e: approved exception (user, 2026-06-10)** — the symptom is the
+   client window closing on a server-side startup crash; the server-tier boot
+   pin covers the substance, a client shutter assert adds nothing.
+
+11. ✅ **FIXED 2026-06-01 (PR #22, `cac31155`).** `PacketDimInfo.executeClient`
+   touched the JEI `ARPlugin` unconditionally → `NoClassDefFoundError` without
+   JEI installed, re-introducing dercodeKoenig/AdvancedRocketry#76 via the
+   dimension-sync path. Backfilled entry.
+   **Pinned by**: nothing executable — **approved exception (user,
+   2026-06-10)**: reproducing needs a client WITHOUT JEI on the classpath, and
+   both harnesses always carry JEI; no no-JEI harness profile is planned.
+   Source-level guard (`Loader.isModLoaded("jei")`) audited at fix time.
+
+12. ✅ **FIXED 2026-06-02 by TASK-45 (maintenance-station rework).**
+   `TileRocketServiceStation` GUI showed "Worn motors / Seats / Tanks"
+   counters, but only motors ever had a `TileBrokenPart` — tanks and
+   seats had no wear state at all, so the seat/tank counters were
+   permanently 0.
+   File: `src/main/java/zmaster587/advancedRocketry/tile/infrastructure/TileRocketServiceStation.java`
+   (`updateText`).
+   **Consequence**: player-visible — the station promised seat/tank wear
+   readouts that could never be non-zero (dead UI).
+   **Fixed**: TASK-45 0c gives tanks/seats a `TileWearable` wear state and
+   the counters now read it through the wear capability.
+   **Pinned by**: ledger-only; `WearSystemTest` covers the wear data model
+   the counters read.
+   **Found**: 2026-06-02 during the maintenance-station rework.
+
+13. ✅ **FIXED 2026-06-02 (PR #22, `d1eb4794`) — e2e closed 2026-06-10.** Beds
+   skipped no time on AR planets and vanilla's 24000-rounded wake missed
+   planetary dawn (dercodeKoenig/AdvancedRocketry#66, TASK-47). Backfilled
+   entry.
+   **Pinned by**: `SleepWakeTimeTest` (dawn math), `ARDimensionWorldInfoTest`
+   (per-dim clock ownership), and since 2026-06-10 the live
+   `PlanetBedSleepE2ETest` (real client sleeps in a real bed via the
+   framework's `interact_block`; red-proven: without `MixinWorldServer` the
+   skip lands at vanilla 24000 — mid-night on a 30000-tick planet).
+
+14. ✅ **FIXED 2026-06-03 by TASK-49.** `attemptCargoTransfer` now loads a
+   registered-but-unloaded destination dimension on fire
+   (`getWorld==null && isDimensionRegistered → initDimension → getWorld`,
+   the `TileSpaceElevator` idiom; the destination railgun's own `onLoad`
+   ticket sustains it after), and every non-firing outcome sets a
+   `FireStatus` (`NO_TARGET` / `TARGET_UNAVAILABLE` / `TARGET_FULL` /
+   `DIFFERENT_SYSTEM`) synced to the client and shown as a red GUI line —
+   no more silent no-op. Repro tests flipped to the corrected behaviour
+   (3 server + 2 client, green). Original description below.
+   **`TileRailgun.attemptCargoTransfer` fails silently — no player feedback
+   on any failure branch; the dominant field cause is an unloaded destination
+   dimension.** The railgun is a paired item-teleport: a source pulls a stack
+   from its input port and dispatches it to a linked destination railgun.
+   Firing is gated by ~5 AND-conditions and returns `false` with **no message**
+   when any fails. The most likely field failure (matching the related
+   Advanced-Rocketry#1172 "Station→Moon doesn't fire") is the destination being
+   in an unloaded dimension: production resolves it via
+   `net.minecraftforge.common.DimensionManager.getWorld(destDim)`, which
+   returns `null` for an unloaded dim, and the railgun only chunk-loads its OWN
+   chunk (`onLoad:252`), never the destination's.
+   File: `src/main/java/zmaster587/advancedRocketry/tile/multiblock/TileRailgun.java:309-364`
+   (silent `false` branches), `:340` (Forge `getWorld` → null on unloaded dim),
+   `:252` (own-chunk-only force-load).
+   **Consequence**: player-visible — "Railgun just does not fire" (#61). Sender
+   on planet A, receiver on planet B, player on A → B unloaded → nothing
+   happens, no feedback. Cargo is NOT lost (verified). Same-dimension firing
+   works. Other silent modes: no output hatch on the destination / output full,
+   redstone state not satisfied, insufficient RF/t, linker not re-targetable
+   without a sneak-`resetPosition`.
+   **Pinned by**: `RailgunFiringContractTest` —
+   `railgunFiresCargoToLinkedRailgunInSameDimension` (positive same-dim
+   contract) + `railgunSilentlyFailsWhenDestinationDimensionUnloaded`
+   (characterizes the silent unloaded-dest no-op + cargo-preservation), and at
+   client tier by `RailgunCargoTransitE2ETest` (same two contracts with a real
+   client connected). New `artest infra railgun-fire` probe verb drives the
+   source-side path.
+   Fix candidates (TASK-49): load/resolve the destination dim on fire +
+   surface a failure message per cause.
+   **Found**: 2026-06-02 during issue #61 investigation (TASK-49).

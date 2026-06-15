@@ -43,6 +43,19 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
         return String.join("\n", serverClient().execute(cmd));
     }
 
+    /** CLIENT-rendered chest-slot air: parses the synced armor[2] NBT string
+     *  ("air:<n>" for the suit buffer, "Amount:<n>" for the fluid tank) — the
+     *  state the HUD/inventory screen draw from. Returns -1 if absent. */
+    private int clientChestAir() throws Exception {
+        com.google.gson.JsonObject items = bot().reportPlayerItems();
+        String nbt = items.getAsJsonArray("armor").get(2).getAsJsonObject().get("nbt").getAsString();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\bair:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        m = java.util.regex.Pattern.compile("\\bAmount:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        return -1;
+    }
+
     private int readChestAir() throws Exception {
         String resp = exec("artest player held-air-component-route");
         Matcher m = CHEST_AIR.matcher(resp);
@@ -104,6 +117,11 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
         bot().waitTicks(100);
 
         int airAfter = readChestAir();
+        // Player truth: the CLIENT-rendered tank state rose as well.
+        int clientAfter = clientChestAir();
+        assertTrue("client-rendered chest tank must show the refill; client="
+                        + clientAfter + " serverBefore=" + airBefore,
+                clientAfter > airBefore);
         assertTrue("chest air must increase after standing on powered+"
                         + "filled GasChargePad; before=" + airBefore
                         + " after=" + airAfter,

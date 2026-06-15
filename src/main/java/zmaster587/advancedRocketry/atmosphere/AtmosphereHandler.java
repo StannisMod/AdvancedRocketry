@@ -239,8 +239,18 @@ public class AtmosphereHandler {
             IAtmosphere atmosType = getAtmosphereType(entity);
 
             if (entity instanceof EntityPlayer && atmosType != prevAtmosphere.get(entity)) {
-                PacketHandler.sendToPlayer(new PacketAtmSync(atmosType.getUnlocalizedName(), getAtmospherePressure(entity)), (EntityPlayer) entity);
+                AtmosphereType.sendToRealPlayer(new PacketAtmSync(atmosType.getUnlocalizedName(), getAtmospherePressure(entity)), (EntityPlayer) entity);
                 prevAtmosphere.put((EntityPlayer) entity, atmosType);
+            }
+
+            // Connectionless player-shaped entities (FakePlayers, headless
+            // test players) can't receive the packets the effect paths send
+            // (potion sync, oxygen state) — vanilla NPEs in connection.sendPacket
+            // and takes the server tick loop down. They still get the cache/
+            // sync bookkeeping above; only the effects are skipped.
+            if (entity instanceof net.minecraft.entity.player.EntityPlayerMP
+                    && ((net.minecraft.entity.player.EntityPlayerMP) entity).connection == null) {
+                return;
             }
 
             if (atmosType.canTick() &&

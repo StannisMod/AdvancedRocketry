@@ -69,6 +69,19 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
         return String.join("\n", serverClient().execute(cmd));
     }
 
+    /** CLIENT-rendered chest-slot air: parses the synced armor[2] NBT string
+     *  ("air:<n>" for the suit buffer, "Amount:<n>" for the fluid tank) — the
+     *  state the HUD/inventory screen draw from. Returns -1 if absent. */
+    private int clientChestAir() throws Exception {
+        com.google.gson.JsonObject items = bot().reportPlayerItems();
+        String nbt = items.getAsJsonArray("armor").get(2).getAsJsonObject().get("nbt").getAsString();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\bair:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        m = java.util.regex.Pattern.compile("\\bAmount:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        return -1;
+    }
+
     private int readChestAir() throws Exception {
         String resp = exec("artest player held-air");
         Matcher m = CHEST_AIR.matcher(resp);
@@ -138,6 +151,10 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             assertTrue("chest air must decrease in vacuum with suit; "
                             + "before=1000 after=" + chestAirAfter,
                     chestAirAfter < 1000);
+            // Player truth: the CLIENT-rendered chest NBT shows the drain too.
+            int clientAir = clientChestAir();
+            assertTrue("client-rendered chest air must reflect the drain; client="
+                            + clientAir, clientAir >= 0 && clientAir < 1000);
             // Health must hold — suit absorbed; if isImmune returned
             // false the vacuum-damage tick would have shaved hearts.
             double healthAfter = health(bot().reportState());
@@ -171,6 +188,8 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             bot().waitTicks(80);
 
             int chestAirAfter = readChestAir();
+            assertEquals("client-rendered chest air must hold in breathable atmosphere",
+                    1000, clientChestAir());
             assertEquals("chest air must be unchanged in breathable atmosphere; "
                             + "before=1000 after=" + chestAirAfter,
                     1000, chestAirAfter);

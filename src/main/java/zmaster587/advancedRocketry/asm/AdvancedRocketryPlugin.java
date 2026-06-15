@@ -40,7 +40,9 @@ public class AdvancedRocketryPlugin implements IFMLLoadingPlugin, IEarlyMixinLoa
 
     @Override
     public String getModContainerClass() {
-        return "zmaster587.advancedRocketry.asm.ModContainer";
+        // fix/various removed the vestigial dummy ModContainer (7f8ee7f0);
+        // pointing FML at the deleted class crashes mod identification.
+        return null;
     }
 
     @Override

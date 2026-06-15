@@ -250,7 +250,7 @@ assembly + at least one recipe end-to-end + power-drain pin via
 | Per-dimension weather isolation | Deep (TASK-09 `PerDimensionWeatherIsolationTest`) |
 | Non-AR dimension exclusion | Deep (`NonARDimensionIsolationTest`) |
 | Weather persistence | Deep (`WeatherPersistenceTest`, `PlanetWeatherSavedDataTest`) |
-| Weather sync to client | Deep (`WeatherClientSyncE2ETest`, `ARWeatherWorldInfoTest`) |
+| Weather sync to client | Deep (`WeatherClientSyncE2ETest`, `ARDimensionWorldInfoTest`) |
 | Worldgen determinism (within-session) | Deep (`WorldgenDeterminismAndSamplingTest`) |
 | Worldgen cross-session reboot determinism | **Non-goal** (README §"Conscious non-goals") |
 | OreGen properties registry | Deep (`OreGenPropertiesTest`) |

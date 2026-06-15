@@ -1,0 +1,82 @@
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'base'
+    id 'eclipse'
+    id 'maven-publish'
+    id 'com.gtnewhorizons.retrofuturagradle' version '1.4.0'
+}
+
+group = 'com.github.stannismod.forge'
+version = '0.4.5'
+
+base {
+    archivesName = 'forge-test-framework'
+}
+
+sourceCompatibility = targetCompatibility = '1.8'
+
+java {
+    withSourcesJar()
+}
+
+minecraft {
+    mcVersion = '1.12.2'
+    username = 'Developer'
+    useDependencyAccessTransformers = true
+}
+
+if (file('repositories.gradle').exists()) {
+    apply from: 'repositories.gradle'
+}
+
+if (file('dependencies.gradle').exists()) {
+    apply from: 'dependencies.gradle'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+}
+
+test {
+    useJUnit()
+    testLogging {
+        events 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            // Pin coordinates explicitly so the artifactId matches `archivesName`
+            // (kebab-case) instead of `rootProject.name` (CamelCase). Consumers
+            // depend on `com.github.stannismod.forge:forge-test-framework:<ver>`.
+            groupId = project.group
+            artifactId = base.archivesName.get()
+            version = project.version
+
+            from components.java
+
+            pom {
+                name = 'Forge Test Framework'
+                description = 'Reusable headless/dedicated-server + real-client test framework for Forge 1.12.2 mods.'
+                url = 'https://github.com/StannisMod/ForgeTestFramework'
+                // TODO: add <licenses> block once a LICENSE file is added to the repo.
+                developers {
+                    developer {
+                        id = 'stannismod'
+                        name = 'StannisMod'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/StannisMod/ForgeTestFramework'
+                    connection = 'scm:git:https://github.com/StannisMod/ForgeTestFramework.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/StannisMod/ForgeTestFramework.git'
+                }
+            }
+        }
+    }
+}

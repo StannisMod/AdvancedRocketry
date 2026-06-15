@@ -27,5 +27,8 @@ AdvancedRocketry.txt
 changelog.html
 lasthash.txt
 *.bak
-logs/
 
+# Runtime gen dirs from in-tree gradle test/run (not source)
+logs/
+/config/
+/run/

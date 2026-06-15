@@ -381,6 +381,7 @@ public class AdvancedRocketry {
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.TileWearable.class, "ARwearablePart");
         GameRegistry.registerTileEntity(TileRocketServiceStation.class, "ARserviceStation");
         GameRegistry.registerTileEntity(TileRocketAssemblingMachine.class, "ARrocketBuilder");
         GameRegistry.registerTileEntity(TileWarpCore.class, "ARwarpCore");
@@ -727,7 +728,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockMonitoringStation = new BlockTileNeighborUpdate(TileRocketMonitoringStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("monitoringstation");
         AdvancedRocketryBlocks.blockSatelliteControlCenter = new BlockTile(TileSatelliteTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteMonitor");
         AdvancedRocketryBlocks.blockTerraformingTerminal = new BlockTileTerraformer(TileTerraformingTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("terraformingTerminal");
-        AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
+        AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
 
 
         //Station machines
@@ -1075,6 +1076,7 @@ public class AdvancedRocketry {
     public void postInit(FMLPostInitializationEvent event) {
 
         CapabilitySpaceArmor.register();
+        zmaster587.advancedRocketry.api.capability.CapabilityWear.register();
         //Need to raise the Max Entity Radius to allow player interaction with rockets
         World.MAX_ENTITY_RADIUS = 20;
 
@@ -1125,6 +1127,8 @@ public class AdvancedRocketry {
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
         // Async weather info injection
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
+        // Acid rain damage on planets flagged acidicRain
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.event.AcidRainHandler());
 
         WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
         MinecraftForge.EVENT_BUS.register(wirelessTickHandler);

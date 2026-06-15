@@ -110,6 +110,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_THUNDER_PROLONGATION_LENGTH = "thunderProlongationLength";
     private static final String ELEMENT_RAIN_MARKER = "rainMarker";
     private static final String ELEMENT_THUNDER_MARKER = "thunderMarker";
+    private static final String ELEMENT_ACIDIC_RAIN = "acidicRain";
 
     NodeList currentList;
     private Document doc;
@@ -274,6 +275,7 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_PROLONGATION_LENGTH, properties.getThunderProlongationLength()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RAIN_MARKER, properties.getRainMarker()));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_THUNDER_MARKER, properties.getThunderMarker()));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_ACIDIC_RAIN, properties.isAcidicRain()));
 
         nodePlanet.appendChild(createTextNode(doc, GENERATECRATERS, properties.canGenerateCraters()));
         nodePlanet.appendChild(createTextNode(doc, GENERATECAVES, properties.canGenerateCaves()));
@@ -612,6 +614,8 @@ public class XMLPlanetLoader {
                 properties.setRainMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_THUNDER_MARKER))
                 properties.setThunderMarker(Integer.parseInt(planetPropertyNode.getTextContent()));
+            else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_ACIDIC_RAIN))
+                properties.setAcidicRain(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_ATMDENSITY)) {
 
                 try {
@@ -847,17 +851,27 @@ public class XMLPlanetLoader {
                 for (String entry : entries) {
 
                     String[] parts = entry.split(";");
+                    String oreName = parts[0].trim();
 
-                    if (OreDictionary.doesOreNameExist(parts[0].trim())) {
-                        ItemStack item = OreDictionary.getOres(parts[0]).get(0);
-                        if (parts.length > 1) {
-                            try {
-                                item.setCount(Integer.parseInt(parts[1]));
-                            } catch (NumberFormatException ignored) {
+                    if (OreDictionary.doesOreNameExist(oreName)) {
+                        // doesOreNameExist returns true for any *reserved* ore name even
+                        // when no items are registered under it (e.g. the providing mod
+                        // isn't installed), so getOres can hand back an empty list.
+                        List<ItemStack> ores = OreDictionary.getOres(oreName);
+                        if (ores.isEmpty()) {
+                            AdvancedRocketry.logger.warn(oreName + " is a known ore dictionary name but has no "
+                                    + "registered items (providing mod not installed?); skipping laser drill ore entry");
+                        } else {
+                            ItemStack item = ores.get(0).copy();
+                            if (parts.length > 1) {
+                                try {
+                                    item.setCount(Integer.parseInt(parts[1].trim()));
+                                } catch (NumberFormatException ignored) {
+                                }
                             }
+                            properties.laserDrillOres.add(item);
                         }
-                        properties.laserDrillOres.add(item);
-                    } else if (Item.getByNameOrId(parts[0].trim()) != null) {
+                    } else if (Item.getByNameOrId(oreName) != null) {
                         int quantity = 1;
                         int damage = 0;
                         if (parts.length > 1) {
@@ -872,9 +886,9 @@ public class XMLPlanetLoader {
                                 }
                             }
                         }
-                        properties.laserDrillOres.add(new ItemStack(Objects.requireNonNull(Item.getByNameOrId(parts[0].trim())), quantity, damage));
+                        properties.laserDrillOres.add(new ItemStack(Objects.requireNonNull(Item.getByNameOrId(oreName)), quantity, damage));
                     } else {
-                        AdvancedRocketry.logger.warn(parts[0] + " is not a valid OreDictionary name or item ID");
+                        AdvancedRocketry.logger.warn(oreName + " is not a valid OreDictionary name or item ID");
                     }
                 }
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_GEODE_ORES)) {
@@ -1121,7 +1135,11 @@ public class XMLPlanetLoader {
     public DimensionPropertyCoupling readAllPlanets() {
         DimensionPropertyCoupling coupling = new DimensionPropertyCoupling();
 
-        Node masterNode = doc.getElementsByTagName("galaxy").item(0).getFirstChild();
+        NodeList galaxyNodes = doc.getElementsByTagName("galaxy");
+        if (galaxyNodes.getLength() == 0) {
+            throw new RuntimeException("planetDefs XML has no <galaxy> root element");
+        }
+        Node masterNode = galaxyNodes.item(0).getFirstChild();
 
         //readPlanetFromNode changes value
         //Yes it's hacky but that's another reason why it's private
@@ -1142,7 +1160,15 @@ public class XMLPlanetLoader {
 
             while (planetNode != null) {
                 if (planetNode.getNodeName().equalsIgnoreCase(ELEMENT_PLANET)) {
-                    coupling.dims.addAll(readPlanetFromNode(planetNode, star));
+                    // Isolate each planet: a malformed definition (e.g. an ore name
+                    // from a mod that isn't installed) is logged and skipped rather
+                    // than aborting the whole config load. See issue #77.
+                    try {
+                        coupling.dims.addAll(readPlanetFromNode(planetNode, star));
+                    } catch (RuntimeException e) {
+                        AdvancedRocketry.logger.warn("Skipping malformed planet definition under star '"
+                                + star.getName() + "' — check your planetDefs.xml: " + e, e);
+                    }
                 }
                 if (planetNode.getNodeName().equalsIgnoreCase("star")) {
                     StellarBody star2 = readSubStar(planetNode);
@@ -1154,6 +1180,28 @@ public class XMLPlanetLoader {
             masterNode = masterNode.getNextSibling();
         }
         return coupling;
+    }
+
+    /**
+     * Loads {@code file} and parses every planet, throwing a {@link RuntimeException}
+     * on a fatal/structural failure (unparseable XML, missing {@code <galaxy>} root)
+     * instead of terminating the JVM. At the call site (server start) Forge turns the
+     * thrown exception into a normal crash report, which is far more diagnosable than
+     * the old silent {@link net.minecraftforge.fml.common.FMLCommonHandler#exitJava}.
+     * Recoverable per-planet config mistakes are skipped-and-warned inside
+     * {@link #readAllPlanets()} and never reach here.
+     */
+    public DimensionPropertyCoupling loadPlanetsOrThrow(File file) {
+        try {
+            if (!loadFile(file)) {
+                throw new RuntimeException("planetDefs XML at " + file.getAbsolutePath()
+                        + " could not be parsed as valid XML");
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("planetDefs XML at " + file.getAbsolutePath()
+                    + " could not be read", e);
+        }
+        return readAllPlanets();
     }
 
     public static class DimensionPropertyCoupling {

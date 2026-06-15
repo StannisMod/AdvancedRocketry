@@ -142,15 +142,19 @@ dependencies {
         }
     }
     if (propertyBool('enable_junit_testing')) {
-        // JUnit 4 + the reusable Forge 1.12.2 test framework (see src/test/README.md).
-        // The :dev classifier is REQUIRED: the Forge dev workspace links against
-        // MCP-named MC classes; the reobf (no-classifier) jar has SRG names and
-        // won't compile against the dev classpath.
-        // Resolution: composite build when -PuseLocalFramework=true and
-        // ../ForgeTestFramework exists (settings.gradle), else mavenLocal.
         testImplementation 'junit:junit:4.13.2'
-        testImplementation 'com.github.stannismod.forge:forge-test-framework:0.4.5:dev'
     }
+}
+
+if (propertyBool('enable_junit_testing')) {
+    // The Forge 1.12.2 test framework is vendored as a git subtree under
+    // testframework/ (see testframework/TEST_FRAMEWORK.md) and compiled as
+    // part of the test source set, against the same RFG-patched MCP-named MC
+    // classes the tests link against. This replaces the published
+    // com.github.stannismod.forge:forge-test-framework:<ver>:dev artifact and
+    // its clone-sibling + publishToMavenLocal setup step. The external repo
+    // (github.com/StannisMod/ForgeTestFramework) lives on for other consumers.
+    sourceSets.test.java.srcDir 'testframework/src/main/java'
 }
 
 apply from: 'gradle/scripts/dependencies.gradle'

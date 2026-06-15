@@ -35,10 +35,13 @@ import net.minecraftforge.items.CapabilityItemHandler;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.*;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
+import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.stations.IStorageChunk;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
+import zmaster587.advancedRocketry.api.capability.CapabilityWear;
+import zmaster587.advancedRocketry.api.capability.IPartWear;
 import zmaster587.advancedRocketry.tile.TileBrokenPart;
 import zmaster587.advancedRocketry.tile.TileGuidanceComputer;
 import zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch;
@@ -217,15 +220,19 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             }
 
                             if (eligible) {
+                                // Worn motors produce less thrust (partsWearSystem): a
+                                // motor at max wear keeps (1 - wearThrustPenaltyMax) of
+                                // its rated thrust. Feeds TWR → may fail the launch gate.
+                                float wear = wearThrustFactor(currBlockPos);
                                 if (block instanceof BlockNuclearRocketMotor) {
                                     nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustNuclearNozzleLimit  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustNuclearNozzleLimit  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 } else if (block instanceof BlockBipropellantRocketMotor) {
                                     bipropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustBipropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustBipropellant  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 } else if (block instanceof BlockRocketMotor) {
                                     monopropellantfuelUse += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);
-                                    thrustMonopropellant  += ((IRocketEngine) block).getThrust(world, currBlockPos);
+                                    thrustMonopropellant  += (int) (((IRocketEngine) block).getThrust(world, currBlockPos) * wear);
                                 }
                                 stats.addEngineLocation(xCurr - (float)this.sizeX/2 + 0.5f, yCurr+0.5f, zCurr - (float)this.sizeZ/2 + 0.5f);
                             }
@@ -787,9 +794,16 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
     public void damageParts() {
+        // Single gate for wear ACCRUAL. When the parts-wear system is disabled no
+        // part ever advances a wear stage, so a worn save loaded with the system
+        // off neither grows nor (combined with the gated consequences) bites.
+        if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
+            return;
+        }
         for (TileEntity tile : tileEntities) {
-            if (tile instanceof TileBrokenPart) {
-                ((TileBrokenPart) tile).transition();
+            IPartWear wear = CapabilityWear.get(tile);
+            if (wear != null) {
+                wear.transition();
             }
         }
     }
@@ -867,12 +881,37 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         return null;
     }
 
+    /**
+     * Thrust multiplier for a motor at the given position based on its wear
+     * stage: 1.0 when pristine, (1 - wearThrustPenaltyMax) when fully worn.
+     * Returns 1.0 when the wear system is off or the block has no wear state.
+     */
+    private float wearThrustFactor(BlockPos pos) {
+        if (!ARConfiguration.getCurrentConfig().partsWearSystem) {
+            return 1f;
+        }
+        double maxPenalty = ARConfiguration.getCurrentConfig().wearThrustPenaltyMax;
+        if (maxPenalty <= 0) {
+            return 1f;
+        }
+        IPartWear wear = CapabilityWear.get(world.getTileEntity(pos));
+        if (wear != null) {
+            int max = wear.getMaxStage();
+            if (max <= 0) {
+                return 1f;
+            }
+            float frac = (float) wear.getStage() / max; // 0 = pristine, 1 = fully worn
+            return (float) Math.max(0.0, 1.0 - maxPenalty * frac);
+        }
+        return 1f;
+    }
+
     public float getBreakingProbability() {
         float prob = 0;
 
         for (TileEntity te : tileEntities) {
-            if (te instanceof TileBrokenPart) {
-                TileBrokenPart brokenPart = (TileBrokenPart) te;
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear != null) {
                 float additionalProb = 0;
 
                 if (te.getBlockType() instanceof BlockNuclearRocketMotor) {
@@ -880,7 +919,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 } else if (te.getBlockType() instanceof BlockRocketMotor || te.getBlockType() instanceof BlockBipropellantRocketMotor) {
                     additionalProb = 0.2F;
                 }
-                prob += additionalProb * brokenPart.getStage() / 10;
+                prob += additionalProb * wear.getStage() / 10;
                 if (prob >= 1) {
                     return Math.min(1, prob);
                 }
@@ -888,6 +927,79 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         }
 
         return prob;
+    }
+
+    /** A worn fuel tank: which fuel type it holds and how worn it is (0..1). */
+    public static class WornTank {
+        public final FuelType type;
+        public final float wornFraction;
+
+        public WornTank(FuelType type, float wornFraction) {
+            this.type = type;
+            this.wornFraction = wornFraction;
+        }
+    }
+
+    @Nullable
+    private static FuelType tankFuelType(Block b) {
+        // Subclasses first — Oxidizer/Bipropellant/Nuclear all extend BlockFuelTank.
+        if (b instanceof BlockOxidizerFuelTank) return FuelType.LIQUID_OXIDIZER;
+        if (b instanceof BlockBipropellantFuelTank) return FuelType.LIQUID_BIPROPELLANT;
+        if (b instanceof BlockNuclearFuelTank) return FuelType.NUCLEAR_WORKING_FLUID;
+        if (b instanceof BlockFuelTank) return FuelType.LIQUID_MONOPROPELLANT;
+        return null;
+    }
+
+    /** Worn fuel tanks (stage &gt; 0) with their fuel type and wear fraction. */
+    public List<WornTank> getWornTanks() {
+        List<WornTank> res = new ArrayList<>();
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getMaxStage() <= 0 || wear.getStage() <= 0) {
+                continue;
+            }
+            FuelType ft = tankFuelType(te.getBlockType());
+            if (ft != null) {
+                res.add(new WornTank(ft, (float) wear.getStage() / wear.getMaxStage()));
+            }
+        }
+        return res;
+    }
+
+    /** True if any seat is worn at/above the given fraction of its max stage. */
+    public boolean hasCriticallyWornSeat(double stageFraction) {
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getMaxStage() <= 0) {
+                continue;
+            }
+            if (te.getBlockType() instanceof BlockSeat
+                    && wear.getStage() >= Math.ceil(wear.getMaxStage() * stageFraction)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Display stacks for every worn part (stage &gt; 0) for the rocket GUI damage
+     * view: motors show their staged drop (with wear overlay), tanks/seats show
+     * their block icon.
+     */
+    public List<ItemStack> getWornPartDisplayStacks() {
+        List<ItemStack> res = new ArrayList<>();
+        for (TileEntity te : tileEntities) {
+            IPartWear wear = CapabilityWear.get(te);
+            if (wear == null || wear.getStage() <= 0) {
+                continue;
+            }
+            if (te instanceof TileBrokenPart) {
+                res.add(((TileBrokenPart) te).getDrop());
+            } else if (te.getBlockType() != null) {
+                res.add(new ItemStack(te.getBlockType()));
+            }
+        }
+        return res;
     }
 
     public List<TileBrokenPart> getBrokenBlocks() {
