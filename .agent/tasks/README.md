@@ -14,10 +14,14 @@ Bug-ledger history lives in
 
 ## Current state
 
-- **Pyramid**: 876 (testUnit **279** / testIntegration **89** /
-  testServer **461** / testClient **47**). +2 testServer on 2026-06-14 from
-  `PerDimWorldInfoMasterToggleTest` (the perDimWorldInfo master-switch
-  disableability pins: off→vanilla WorldInfo + weather-off-keeps-per-dim-time).
+- **Pyramid**: 877 (testUnit **279** / testIntegration **89** /
+  testServer **462** / testClient **47**). +1 testServer on 2026-06-15 from
+  `ServiceStationUnlinkedPerformFunctionTest` (PR #23 review #5 regression
+  guard: performFunction on an unlinked station is a safe no-op — the
+  standalone-repair null-deref invariant holds by construction). +2 testServer
+  on 2026-06-14 from `PerDimWorldInfoMasterToggleTest` (the perDimWorldInfo
+  master-switch disableability pins: off→vanilla WorldInfo +
+  weather-off-keeps-per-dim-time).
   Earlier this day **regenerated from source** at the feature/postponed ↔ 1.12
   merge (`grep -rc '@Test$'` per tier on the merged tree, SOP §2.5) — the two
   branches'
