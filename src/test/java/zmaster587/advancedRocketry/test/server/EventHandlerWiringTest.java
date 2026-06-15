@@ -73,7 +73,7 @@ public class EventHandlerWiringTest extends AbstractSharedServerTest {
         String weather = String.join("\n", client().execute("artest weather get " + dim));
         assertTrue("WeatherEventHandler did not install the B1 wrapper on AR dim load: "
                         + weather,
-                weather.contains("ARWeatherWorldInfo"));
+                weather.contains("ARDimensionWorldInfo"));
     }
 
     @Test
@@ -83,9 +83,9 @@ public class EventHandlerWiringTest extends AbstractSharedServerTest {
         // and this fixes the polarity of that gate.)
         client().execute("artest dim load 0");
         String weather = String.join("\n", client().execute("artest weather get 0"));
-        // Vanilla overworld WorldInfo class — neither ARWeatherWorldInfo
+        // Vanilla overworld WorldInfo class — neither ARDimensionWorldInfo
         // nor anything that contains "ARWeather".
         assertTrue("overworld was incorrectly wrapped — wrapping gate broken: " + weather,
-                !weather.contains("ARWeatherWorldInfo"));
+                !weather.contains("ARDimensionWorldInfo"));
     }
 }

@@ -33,7 +33,7 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderCavePlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderPlanet;
-import zmaster587.advancedRocketry.world.weather.ARWeatherWorldInfo;
+import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
 import zmaster587.advancedRocketry.world.weather.PlanetWeatherManager;
 
 import javax.annotation.Nonnull;
@@ -117,7 +117,14 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
     @Override
     public void updateWeather() {
         DimensionProperties props = getDimensionProperties();
-        if (!props.usesCustomWorldInfo()) {
+        // Gate the custom weather cycle on the config flag too: with custom planet
+        // weather disabled we fall straight back to vanilla, even for planets whose
+        // XML carries non-default rain/thunder markers. Without this, the custom
+        // cycle keeps running against an UN-wrapped (shared overworld) WorldInfo and
+        // silently overwrites the overworld's weather — see PlanetWeatherManager.
+        if (!ARConfiguration.getCurrentConfig().perDimWorldInfo
+                || !ARConfiguration.getCurrentConfig().enableCustomPlanetWeather
+                || !props.usesCustomWorldInfo()) {
             super.updateWeather();
             return;
         }
@@ -126,12 +133,12 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         if (world.provider.hasSkyLight()) {
             if (!world.isRemote) {
                 // All weather setters below go through world.getWorldInfo(). On AR
-                // planets that's an ARWeatherWorldInfo wrapping the per-dim state;
+                // planets that's an ARDimensionWorldInfo wrapping the per-dim state;
                 // if it isn't (wrap failed for some reason — config off, Mixin not
                 // applied, etc.) we'd silently mutate the shared overworld weather.
                 // Warn once per dim so the issue is visible in logs.
                 if (ARConfiguration.getCurrentConfig().enableCustomPlanetWeather
-                        && !(world.getWorldInfo() instanceof ARWeatherWorldInfo)) {
+                        && !(world.getWorldInfo() instanceof ARDimensionWorldInfo)) {
                     PlanetWeatherManager.warnUnwrappedOnce(world.provider.getDimension());
                 }
                 boolean flag = world.getGameRules().getBoolean("doWeatherCycle");

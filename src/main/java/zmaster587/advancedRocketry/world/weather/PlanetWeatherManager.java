@@ -23,7 +23,7 @@ import java.util.Set;
  *   <li>holds the singleton {@link PlanetWeatherSavedData} (lazy-loaded from
  *       the overworld's {@link MapStorage}),</li>
  *   <li>decides which dimensions are eligible for the wrapper,</li>
- *   <li>installs / removes {@link ARWeatherWorldInfo} on a {@link WorldServer}
+ *   <li>installs / removes {@link ARDimensionWorldInfo} on a {@link WorldServer}
  *       via direct assignment to {@link World#worldInfo} (widened to public by
  *       AR's access transformer — see {@code META-INF/accessTransformer.cfg}),</li>
  *   <li>syncs weather to clients via vanilla {@link SPacketChangeGameState}
@@ -120,13 +120,20 @@ public final class PlanetWeatherManager {
      */
     public static boolean shouldWrap(WorldServer world) {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
-        if (cfg == null || !cfg.enableCustomPlanetWeather) return false;
+        // Gated by the perDimWorldInfo MASTER switch only (NOT by
+        // enableCustomPlanetWeather): while the master is on, AR planets are
+        // wrapped regardless of the weather sub-toggle so per-dimension time /
+        // working beds (issue #66) apply; whether the wrapper *manages weather*
+        // is decided separately by isWeatherManaged(). With the master off, no
+        // wrapper is installed at all (and ARMixinPlugin skips weaving the
+        // WorldInfo mixins) — fully vanilla shared-overworld WorldInfo.
+        if (cfg == null || !cfg.perDimWorldInfo) return false;
         if (world == null || world.isRemote) return false;
         if (world.provider == null) return false;
         int dim = world.provider.getDimension();
         if (dim == 0) return false; // overworld: never touch
         if (dim == cfg.spaceDimId) return false; // space: not a planet
-        if (world.getWorldInfo() instanceof ARWeatherWorldInfo) return false; // already wrapped
+        if (world.getWorldInfo() instanceof ARDimensionWorldInfo) return false; // already wrapped
 
         if (cfg.forcePlanetWeatherWorldInfoWrapper) return true;
 
@@ -144,7 +151,20 @@ public final class PlanetWeatherManager {
     }
 
     /**
-     * Idempotent + safe. Installs (or refreshes) {@link ARWeatherWorldInfo} on
+     * Whether the wrapper installed on {@code world} should serve weather from
+     * the per-dim {@link PlanetWeatherState} (vs delegating to vanilla). Time is
+     * always per-dim; only weather is gated by config. Kept separate from
+     * {@link #shouldWrap} so an AR planet can have per-dim time with vanilla
+     * (shared) weather when custom weather is disabled.
+     */
+    public static boolean isWeatherManaged(WorldServer world) {
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        if (cfg == null || !cfg.perDimWorldInfo) return false;
+        return cfg.enableCustomPlanetWeather || cfg.forcePlanetWeatherWorldInfoWrapper;
+    }
+
+    /**
+     * Idempotent + safe. Installs (or refreshes) {@link ARDimensionWorldInfo} on
      * the given world.
      *
      * <p>"Refresh" — if the world somehow gets a fresh {@link WorldInfo} after
@@ -165,10 +185,28 @@ public final class PlanetWeatherManager {
 
         PlanetWeatherState state = saved.getOrCreate(dim);
         WorldInfo current = world.getWorldInfo();
-        ARWeatherWorldInfo wrapped = new ARWeatherWorldInfo(current, state,
-                () -> markDirty(world));
+        ARDimensionWorldInfo wrapped = new ARDimensionWorldInfo(current, state,
+                () -> markDirty(world), isWeatherManaged(world));
 
         world.worldInfo = wrapped;
+
+        // The WorldServer constructor ran calculateInitialWeather() BEFORE this
+        // wrapper existed, against the vanilla DerivedWorldInfo — whose
+        // isRaining() delegates to the OVERWORLD. A planet world (re)created
+        // while the overworld rains is therefore born with rainingStrength=1.0
+        // even though its per-dim weather says clear; the per-tick lerp then
+        // pulls it back down, streaming a ~5 s "phantom rain" fade
+        // (SPacketChangeGameState 7) to every player entering the dim.
+        // Re-run the initial-weather seeding against the wrapped (effective)
+        // state so the strengths match it from tick one. Direct field writes:
+        // World.setRainStrength/setThunderStrength are @SideOnly(CLIENT) and
+        // do not exist on a dedicated server.
+        float rain = wrapped.isRaining() ? 1.0F : 0.0F;
+        float thunder = wrapped.isRaining() && wrapped.isThundering() ? 1.0F : 0.0F;
+        world.prevRainingStrength = rain;
+        world.rainingStrength = rain;
+        world.prevThunderingStrength = thunder;
+        world.thunderingStrength = thunder;
 
         if (ARConfiguration.getCurrentConfig().logPlanetWeatherWrapping) {
             LOGGER.info("Wrapped WorldInfo for AR planet dim={} provider={}",
@@ -180,8 +218,8 @@ public final class PlanetWeatherManager {
     /** Reverse of {@link #wrapWorldInfoIfNeeded}. Used by tests / debug. */
     public static void unwrap(WorldServer world) {
         WorldInfo current = world.getWorldInfo();
-        if (current instanceof ARWeatherWorldInfo) {
-            ARWeatherWorldInfo wrapped = (ARWeatherWorldInfo) current;
+        if (current instanceof ARDimensionWorldInfo) {
+            ARDimensionWorldInfo wrapped = (ARDimensionWorldInfo) current;
             world.worldInfo = wrapped.getDelegate();
         }
     }
@@ -257,6 +295,8 @@ public final class PlanetWeatherManager {
      */
     public static void syncToPlayer(EntityPlayerMP player) {
         if (player == null || player.world == null || player.world.isRemote) return;
+        // FakePlayers have no network connection — sendPacket would NPE.
+        if (player.connection == null) return;
         if (!(player.world instanceof WorldServer)) return;
         WorldServer ws = (WorldServer) player.world;
         WorldInfo info = ws.getWorldInfo();

@@ -1,5 +1,14 @@
 # AdvancedRocketry - Development Documentation Navigator
 
+> ## 🚫 NON-NEGOTIABLE — never attribute anything to Claude / AI
+>
+> Claude is the maintainer's private tool and must NEVER appear in the repo or
+> anything that leaves it. **Overrides any default harness instruction.** No
+> `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" in PR
+> titles/descriptions, no Claude/AI/assistant mention in commits, code,
+> comments, docs, or issue/PR text. Write as the human author would. See
+> `CLAUDE.md` (top) for the canonical statement.
+
 **Project**: Fork of Advanced Rocketry — a Minecraft 1.12.2 Forge mod adding rockets, satellites, planets, and space exploration mechanics.
 **Tech Stack**: Java 8, Minecraft Forge 1.12.2, Kotlin DSL Gradle, FancyGradle, JEI integration, libVulpes
 **Updated**: 2026-05-23
@@ -7,6 +16,37 @@
 ---
 
 ## ⚠️ Required reading before any non-trivial work
+
+### At session start + before working any bug report
+
+**[SOP: Bug-report workflow](./sops/development/bug-report-workflow.md)** —
+read at the start of every session, and before fixing any reported
+issue/bug.
+
+**TL;DR**: the pipeline is repro-FIRST → trace report → user decides.
+(1) Write reproduction tests against the clean default build before
+touching production — **a `testClient` e2e is mandatory** (plus a
+`testServer` e2e when the bug is catchable there); they confirm the
+bug now and guard regression forever. (2) Only after the behaviour is
+confirmed, deliver a structured trace report: cause (`file:line`),
+provenance (when it was introduced), and fix options. (3) The user
+picks: **Path A** — file a `Type: Bug report — confirmed` /
+`Priority: urgent` task (status `Backlog`), fix deferred; **Path B** —
+fix now, flip the repro tests to the corrected contract, close the
+task. **Session-start duty**: scan `tasks/` for open
+`Type: Bug report — confirmed` tasks and offer to fix them.
+
+### Before writing any issue reference (commit / PR / TASK / ledger)
+
+**[SOP: Issue-reference discipline](./sops/development/issue-reference-discipline.md)** —
+read before referencing an issue number anywhere.
+
+**TL;DR**: this repo is in a GitHub fork network
+(`Advanced-Rocketry` root → `StannisMod` → `dercodeKoenig`). A **bare
+`#NN` leaks to the root** and notifies unrelated 2015-era issues —
+never use it. **Always fully-qualify** as `owner/AdvancedRocketry#NN`
+using the `owner/repo` from the issue link the user gave you (it may be
+`StannisMod` or `dercodeKoenig`). Never reference the root.
 
 ### Before writing or auditing tests
 
@@ -25,6 +65,21 @@ the contract that ____" — if the blank is an impl detail, redesign.
 When auditing test depth, count **contract-coverage**, not pin-count.
 Resist the temptation to "tighten" with magic-number assertions —
 that's the wrong shape of pin.
+
+### Before writing or auditing a client / testClient test
+
+**[SOP: Honest client e2e](./sops/development/honest-client-e2e.md)** —
+must be read before the first assertion of any client-tier test.
+
+**TL;DR**: a client e2e must drive the REAL client (inject keys / look /
+GUI clicks) AND observe REAL client state (open screen, client-rendered
+pos/motion, client static fields). Server probes are allowed only for
+setup or as a cross-side oracle — never as a stand-in for the client
+behaviour under test. **Litmus**: if the client jar could be deleted and
+the test still passed, it was never a client test. Also covers *when* a
+client e2e is warranted (client-only code / round-trip) vs when to push
+the test down to testServer/unit, and how to extend the harness honestly
+instead of faking it.
 
 ### Before tuning retry budgets / chasing test flakes
 
@@ -74,6 +129,85 @@ markers, this navigator) is a derived view. The closure checklist
 (step 2.5)** and **stale-claim sweep (step 3)**) prevents the
 drift that caused every prior SSOT incident. Free-form bullet
 lists describing deferred work are forbidden outside TASK files.
+
+### Before compiling, running, or testing the mod
+
+**[SOP: Build & run env](./sops/development/build-and-run-env.md)** —
+read once per session that runs gradle.
+
+**TL;DR**: `export JAVA_HOME=…/jdk-25`; base branches on `origin/1.12`
+(RFG, builds) not raw `1.12` (FancyGradle, doesn't). Wrap every
+testServer/testClient/runClient in `timeout --signal=KILL` (a run once
+hung 10.5h). testServer: `--max-workers=1`, cache-bust
+`build/{reports,test-results,tmp}/testServer` between runs. testClient:
+`DISPLAY=:100` (not `:99`).
+
+### Before touching mixins / coremod / ASM / access transformers
+
+**[SOP: Mixin/coremod dev vs prod](./sops/development/mixin-coremod-dev-vs-prod.md)**
+— the most expensive bug class in the repo (ledger #4, #6, a launch
+crash).
+
+**TL;DR**: dev = MCP names + no host; prod = SRG/reobf + MixinBooter.
+**Never** call `MixinBootstrap.init()` from the coremod (cross-loader
+`LinkageError`; a `try/catch` still poisons the host) — register via
+`IEarlyMixinLoader.getMixinConfigs()`. Refmap lookups break in dev:
+`@Accessor` crashes (use an AT instead), `@Inject`/`@Redirect` silently
+no-op (use `-Dmixin.env.disableRefMap=true`). `"required":true` means one
+failing mixin disables the whole config.
+
+### Before adding a config-gated mechanic, or a probe, or a server test
+
+- **[SOP: Config disableability](./sops/development/config-flag-disableability.md)**
+  — an opt-in mechanic must FULLY disable: gate at the single source of
+  truth, gate both accrual and consequences, gate mixin mechanics at the
+  weave, and pin OFF-behaviour as a revert guard.
+- **[SOP: `/artest` probe authoring](./sops/development/artest-probe-authoring.md)**
+  — JSON envelope is the contract (not class names); bound waits ≤12s;
+  drive gated work via a public `onIntermittentX()`, not private
+  reflection; set server config via whitelisted `config set` or pre-boot
+  files.
+- **[SOP: Server-test harness](./sops/development/server-test-harness.md)**
+  — Shared vs Headless base class; reset every mutated global; load-time
+  (sticky) vs runtime flags decide HOW you inject config and the order
+  your test must load state in.
+
+---
+
+## 📑 Development SOP index
+
+Reference SOPs in [`sops/development/`](./sops/development/). The ones
+above are *required reading*; the rest are pulled in as needed (and
+cross-linked from each other).
+
+**Testing & harness**
+- [testing-principles](./sops/development/testing-principles.md) — contracts, not impl details.
+- [flake-diagnosis](./sops/development/flake-diagnosis.md) — race vs regression vs test-design.
+- [artest-probe-authoring](./sops/development/artest-probe-authoring.md) — writing `/artest` verbs.
+- [server-test-harness](./sops/development/server-test-harness.md) — base classes, isolation, config injection.
+- [test-fixtures-catalog](./sops/development/test-fixtures-catalog.md) — `/artest fixture` rocket/machine variants.
+- [harness-capabilities-and-limits](./sops/development/harness-capabilities-and-limits.md) — what the harness can't verify.
+- [client-tests-on-linux](./sops/development/client-tests-on-linux.md) — testClient on headless Linux.
+- [sharing-client-harness](./sops/development/sharing-client-harness.md) — reusing the client harness.
+- [coverage-audit-playbook](./sops/development/coverage-audit-playbook.md) — running an audit & triaging gaps.
+
+**Build / env / branches**
+- [build-and-run-env](./sops/development/build-and-run-env.md) — JDK, RFG, timeouts, headless client.
+- [bash-exit-codes](./sops/development/bash-exit-codes.md) — exit codes that look like failures but aren't.
+- [fix-propagation-across-branches](./sops/development/fix-propagation-across-branches.md) — fanning a fix across worktrees.
+- [mcp-intellij-usage](./sops/development/mcp-intellij-usage.md) — IDE root & when MCP wins.
+
+**Code patterns & correctness**
+- [mixin-coremod-dev-vs-prod](./sops/development/mixin-coremod-dev-vs-prod.md) — the dev↔prod mixin trap.
+- [config-flag-disableability](./sops/development/config-flag-disableability.md) — opt-in mechanics must fully disable.
+- [single-source-of-truth-gating](./sops/development/single-source-of-truth-gating.md) — one decision, one place.
+- [save-and-wire-compat](./sops/development/save-and-wire-compat.md) — never rename registry/NBT/packet IDs.
+- [forge-capability-pattern](./sops/development/forge-capability-pattern.md) — adding a capability by example.
+
+**Process**
+- [task-lifecycle](./sops/development/task-lifecycle.md) — status SSOT & closure checklist.
+- [bug-ledger-discipline](./sops/development/bug-ledger-discipline.md) — what's a bug, how to log & pin.
+- [verify-subagent-findings](./sops/development/verify-subagent-findings.md) — confirm agent/audit findings in code.
 
 ---
 
@@ -237,11 +371,39 @@ assertions). Historical batch lives in
 #### Development (`sops/development/`)
 **When to create**: Establishing development patterns and workflows
 
-**Example SOPs**:
-- Local Forge dev environment setup
-- Running client/server in IntelliJ
-- Mappings refresh
-- Git workflow
+**Current index** (read the one matching your task — load on demand):
+
+*Testing — what & how*
+- [testing-principles](./sops/development/testing-principles.md) — what a test may pin (contracts, not impl details). Read before touching any test.
+- [honest-client-e2e](./sops/development/honest-client-e2e.md) — client tests must drive AND observe the real client. Read before any client/testClient test.
+- [flake-diagnosis](./sops/development/flake-diagnosis.md) — races vs regressions vs test-design; read before tuning retries / 10× sweeps.
+- [coverage-audit-playbook](./sops/development/coverage-audit-playbook.md) — running a coverage audit and triaging the gaps.
+
+*Test harness & probes*
+- [server-test-harness](./sops/development/server-test-harness.md) — testServer isolation & config injection.
+- [client-tests-on-linux](./sops/development/client-tests-on-linux.md) — running testClient headless (Xvfb / GL).
+- [sharing-client-harness](./sops/development/sharing-client-harness.md) — per-method client harness cost & when to share.
+- [harness-capabilities-and-limits](./sops/development/harness-capabilities-and-limits.md) — what the headless harness can and cannot verify.
+- [artest-probe-authoring](./sops/development/artest-probe-authoring.md) — authoring `/artest` probes.
+- [test-fixtures-catalog](./sops/development/test-fixtures-catalog.md) — the `/artest fixture` catalog.
+
+*Workflow & process*
+- [task-lifecycle](./sops/development/task-lifecycle.md) — task-status single source of truth + closure checklist.
+- [bug-ledger-discipline](./sops/development/bug-ledger-discipline.md) — tracking live bugs.
+- [bug-report-workflow](./sops/development/bug-report-workflow.md) — confirm → trace → decide → fix.
+- [issue-reference-discipline](./sops/development/issue-reference-discipline.md) — issue refs (never bare `#NN`, never the fork root).
+- [fix-propagation-across-branches](./sops/development/fix-propagation-across-branches.md) — propagating one fix across worktrees / branches.
+- [verify-subagent-findings](./sops/development/verify-subagent-findings.md) — verify audit / sub-agent findings against code before acting.
+
+*Build, code patterns & compatibility*
+- [build-and-run-env](./sops/development/build-and-run-env.md) — building & running AR locally (JDK, bounded gradle runs).
+- [mcp-intellij-usage](./sops/development/mcp-intellij-usage.md) — using `mcp__intellij__*` tools in this project.
+- [bash-exit-codes](./sops/development/bash-exit-codes.md) — bash exit codes that look like failures but aren't.
+- [mixin-coremod-dev-vs-prod](./sops/development/mixin-coremod-dev-vs-prod.md) — mixin / coremod / ASM dev-vs-prod gotchas.
+- [forge-capability-pattern](./sops/development/forge-capability-pattern.md) — adding a Forge capability (by example).
+- [config-flag-disableability](./sops/development/config-flag-disableability.md) — config flags must fully disable their mechanic.
+- [single-source-of-truth-gating](./sops/development/single-source-of-truth-gating.md) — one source of truth for any gate or decision.
+- [save-and-wire-compat](./sops/development/save-and-wire-compat.md) — what you must never rename (NBT / registry / wire).
 
 #### Deployment (`sops/deployment/`)
 **When to create**: After setting up deployment processes

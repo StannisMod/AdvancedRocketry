@@ -195,6 +195,8 @@ public class ARConfiguration {
     @ConfigProperty
     public boolean forcePlayerRespawnInSpace;
     @ConfigProperty
+    public boolean perDimWorldInfo = true;
+    @ConfigProperty
     public boolean enableCustomPlanetWeather = true;
     @ConfigProperty
     public boolean logPlanetWeatherWrapping = true;
@@ -312,6 +314,26 @@ public class ARConfiguration {
     public boolean advancedWeightSystem;
     @ConfigProperty
     public boolean advancedWeightSystemInventories;
+    @ConfigProperty(needsSync = true)
+    public double weightMaterialScale = 1.0;
+    @ConfigProperty(needsSync = true)
+    public double fuelMassScale = 1.0;
+    @ConfigProperty(needsSync = true)
+    public double minLaunchTWR = 1.05;
+    @ConfigProperty(needsSync = true)
+    public double wearThrustPenaltyMax = 0.5;
+    @ConfigProperty(needsSync = true)
+    public double wearWarnProbability = 0.05;
+    @ConfigProperty(needsSync = true)
+    public boolean wearCriticalBlocksLaunch = false;
+    @ConfigProperty(needsSync = true)
+    public double serviceStationStandaloneRepairMultiplier = 3.0;
+    @ConfigProperty(needsSync = true)
+    public double wearTankLeakChanceMax = 0.5;
+    @ConfigProperty(needsSync = true)
+    public double wearTankLeakFuelLoss = 0.25;
+    @ConfigProperty(needsSync = true)
+    public double wearSeatBlockStageFraction = 0.7;
 
     @ConfigProperty
     public boolean partsWearSystem;
@@ -467,7 +489,8 @@ public class ARConfiguration {
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
-        arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "If true, each AR planet has its own vanilla weather state (rain, thunder, /weather, isRaining) instead of sharing the overworld's. Disable to fall back to vanilla-shared weather.").getBoolean();
+        arConfig.perDimWorldInfo = config.get(PLANET, "perDimWorldInfo", true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
+        arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "Sub-toggle of perDimWorldInfo (no effect when that is false): if true, each AR planet has its own weather state (rain, thunder, /weather, isRaining); if false, weather delegates to the overworld while per-dimension time-of-day still applies.").getBoolean();
         arConfig.logPlanetWeatherWrapping = config.get(PLANET, "logPlanetWeatherWrapping", true, "Log an info line every time an AR planet's WorldInfo is wrapped for per-dimension weather. Useful for diagnosing weather-wrapping issues; safe to disable in production.").getBoolean();
         arConfig.forcePlanetWeatherWorldInfoWrapper = config.get(PLANET, "forcePlanetWeatherWorldInfoWrapper", false, "Force per-dimension weather wrapping on every secondary (non-overworld) dimension, including non-AR dims of other mods. Compatibility/debug flag — do NOT enable unless you know exactly what you are doing.").getBoolean();
         arConfig.minAtmosphereDensityForRain = (float) config.get(PLANET, "minAtmosphereDensityForRain", 75d, "Minimum atmosphere density (0-100 scale, same as planet atmosphereDensity) required for rain/snow and thunder on a planet. Below this, rain is suppressed regardless of the planet's weather markers, and thunder cannot occur. Thin/airless worlds stay clear.", 0d, 200d).getDouble();
@@ -513,6 +536,16 @@ public class ARConfiguration {
         blackListRocketBlocksStr = config.getStringList("rocketBlockBlackList", ROCKET, new String[]{"minecraft:portal", "minecraft:bedrock", "minecraft:snow_layer", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava", "minecraft:fire", "advancedrocketry:rocketfire"}, "Blocks that cannot be part of rocket. Format: modid:block e.g \"minecraft:chest\"");
         arConfig.advancedWeightSystem = config.get(ROCKET, "advancedWeightSystem", true, "Enable advanced rocket weight calculation, including the handled inventories. Block weights are stored in weights.json").getBoolean();
         arConfig.advancedWeightSystemInventories = config.get(ROCKET, "advancedWeightSystemInventories", true, "Include inventory contents in rocket weight. Note: may not work with modded inventories (eg IE storage chests)").getBoolean();
+        arConfig.weightMaterialScale = config.get(ROCKET, "weightMaterialScale", 1.0, "Global multiplier applied to material-derived and fallback block weights (does not affect explicit overrides or rocket component parts). Raise to make hulls/structure mass matter more").getDouble();
+        arConfig.fuelMassScale = config.get(ROCKET, "fuelMassScale", 1.0, "Global multiplier applied to the mass of fuel/oxidizer carried by a rocket. Raise to make full tanks weigh more relative to thrust").getDouble();
+        arConfig.minLaunchTWR = config.get(ROCKET, "minLaunchTWR", 1.05, "Minimum thrust-to-weight ratio (thrust / wet weight) a rocket needs before it is allowed to launch. 1.0 means it can barely lift itself; values above 1.0 add a safety margin").getDouble();
+        arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses (partsWearSystem). 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty (wear then only affects explosion chance)").getDouble();
+        arConfig.wearWarnProbability = config.get(ROCKET, "wearWarnProbability", 0.05, "Failure probability (0..1) at or above which the pilot is warned before launch that the rocket is worn. Also the threshold that blocks launch when wearCriticalBlocksLaunch is true").getDouble();
+        arConfig.wearCriticalBlocksLaunch = config.get(ROCKET, "wearCriticalBlocksLaunch", false, "If true, a rocket whose failure probability is at/above wearWarnProbability is refused launch (no explosion). If false, the pilot is warned but may still launch and risk the stochastic explosion").getBoolean();
+        arConfig.serviceStationStandaloneRepairMultiplier = config.get(ROCKET, "serviceStationStandaloneRepairMultiplier", 3.0, "Resource cost multiplier when the service station repairs a worn part WITHOUT a linked PrecisionAssembler (consumes the repair recipe's non-part ingredients times this factor). The assembler-backed path stays at 1x").getDouble();
+        arConfig.wearTankLeakChanceMax = config.get(ROCKET, "wearTankLeakChanceMax", 0.5, "Chance (0..1) that a fully-worn fuel tank carrying fuel/oxidizer leaks at launch. Scaled by the tank's wear stage. A leak both bleeds fuel and adds to the launch failure (explosion) probability").getDouble();
+        arConfig.wearTankLeakFuelLoss = config.get(ROCKET, "wearTankLeakFuelLoss", 0.25, "Fraction of a fuel type's loaded fuel lost when a worn tank of that type leaks at launch").getDouble();
+        arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

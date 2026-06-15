@@ -34,6 +34,19 @@ public class BlockSeat extends Block {
     }
 
     @Override
+    public boolean hasTileEntity(IBlockState state) {
+        return true;
+    }
+
+    @Nullable
+    @Override
+    public net.minecraft.tileentity.TileEntity createTileEntity(World worldIn, IBlockState state) {
+        // Seats wear slowly; a worn seat blocks a crewed launch (see EntityRocket).
+        return new zmaster587.advancedRocketry.tile.TileWearable(
+                10, 0.25f * (float) zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().increaseWearIntensityProb);
+    }
+
+    @Override
     public boolean isOpaqueCube(IBlockState state) {
         return false;
     }

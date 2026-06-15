@@ -109,10 +109,10 @@ public class PerDimensionWeatherIsolationTest {
         // Wrapper must actually be installed — otherwise the isolation above
         // could pass for the wrong reason (no propagation simply because we
         // changed nothing on the other dims yet).
-        assertTrue("planet A WorldInfo class should be ARWeatherWorldInfo: " + wA,
-                wA.contains("ARWeatherWorldInfo"));
-        assertTrue("planet B WorldInfo class should be ARWeatherWorldInfo: " + wB,
-                wB.contains("ARWeatherWorldInfo"));
+        assertTrue("planet A WorldInfo class should be ARDimensionWorldInfo: " + wA,
+                wA.contains("ARDimensionWorldInfo"));
+        assertTrue("planet B WorldInfo class should be ARDimensionWorldInfo: " + wB,
+                wB.contains("ARDimensionWorldInfo"));
     }
 
     @Test
