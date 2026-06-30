@@ -235,6 +235,13 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public boolean hasEnoughFuel(@Nonnull FuelType fuelType) {
+        // rocketRequireFuel=false means fuel is not needed to fly, so assembly
+        // must never gate on fuel adequacy. Returning early here is required:
+        // getBaseFuelRate() is 0 by design when fuel isn't required, which the
+        // guard below would otherwise read as "can't reach orbit" -> NOFUEL.
+        if (!ARConfiguration.getCurrentConfig().rocketRequireFuel) {
+            return true;
+        }
         if (stats.getBaseFuelRate(fuelType) <= 0) {
             return false;
         }
@@ -531,13 +538,15 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             int totalFuelUse = bipropellantfuelUse + nuclearWorkingFluidUse + monopropellantfuelUse;
             //System.out.println("rocket fuel use:"+totalFuelUse);
 
-            // Biprop requirement: if any bipropellant thrust exists, require both tanks
-            if (thrustBipropellant > 0) {
+            // Biprop requirement: if any bipropellant thrust exists, require both tanks.
+            // Skipped entirely when fuel isn't required (rocketRequireFuel=false) — no
+            // tanks of any kind are needed to assemble then.
+            if (ARConfiguration.getCurrentConfig().rocketRequireFuel && thrustBipropellant > 0) {
                 if (fuelCapacityBipropellant <= 0 || fuelCapacityOxidizer <= 0) {
                     status = ErrorCodes.NOFUEL;
                     return new AxisAlignedBB(actualMinX, actualMinY, actualMinZ, actualMaxX, actualMaxY, actualMaxZ);
                 }
-            }            
+            }
 
             //Set status
             if (invalidBlock) {
@@ -558,7 +567,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             } else if (getThrust() <= getNeededThrust()) {
                 status = ErrorCodes.NOENGINES;
 
-            } else if (thrustBipropellant > 0 && (fuelCapacityBipropellant <= 0 || fuelCapacityOxidizer <= 0)) {
+            } else if (ARConfiguration.getCurrentConfig().rocketRequireFuel && thrustBipropellant > 0
+                    && (fuelCapacityBipropellant <= 0 || fuelCapacityOxidizer <= 0)) {
                 // Biprop engines require BOTH bipropellant AND oxidizer capacity
                 status = ErrorCodes.NOFUEL;
 

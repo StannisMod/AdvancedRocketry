@@ -4793,7 +4793,11 @@ public class TestProbeCommand extends CommandBase {
                     // perDimWorldInfo master switch (gates weather + time + wrapper):
                     // PerDimWorldInfoMasterToggleTest flips it to pin both off (vanilla
                     // WorldInfo) and weather-off-but-master-on (per-dim time survives).
-                    "perDimWorldInfo"));
+                    "perDimWorldInfo",
+                    // rocketRequireFuel: RocketRequireFuelDisableAssemblesTest flips it
+                    // off to pin that a valid rocket still assembles (no fuel-adequacy
+                    // gate) — the regression the weight-system merge introduced.
+                    "rocketRequireFuel"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
