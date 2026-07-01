@@ -148,8 +148,27 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
 
         GL11.glPushMatrix();
         GL11.glTranslatef((float) x, (float) y + halfy, (float) z);
-        GL11.glRotatef(((EntityRocket) entity).getRCSRotateProgress() * 0.9f, 1f, 0f, 0f);
-        GL11.glRotatef(entity.rotationYaw, 0f, 0f, 1f);
+        EntityRocket rocket = (EntityRocket) entity;
+        if (rocket.isFreeFlight() && rocket.isInFlight()) {
+            // Free Flight: orient the model to the craft body frame so the
+            // rendered attitude matches FreeFlightPhysics.bodyBasis — the nose
+            // (model +Y) points along the forward/look vector. Yaw about world
+            // up (Y), then pitch about the lateral axis (X); the +90 maps the
+            // vertically-built model's +Y nose onto the horizontal forward axis
+            // at pitch 0, exactly as bodyBasis defines forward. Interpolate by
+            // partialTicks (f2) — prevRotation* are advanced per tick in the FF
+            // branch of EntityRocket, so this sweeps smoothly instead of stepping.
+            float renderYaw   = rocket.prevRotationYaw
+                    + (rocket.rotationYaw - rocket.prevRotationYaw) * f2;
+            float renderPitch = rocket.prevRotationPitch
+                    + (rocket.rotationPitch - rocket.prevRotationPitch) * f2;
+            GL11.glRotatef(-renderYaw, 0f, 1f, 0f);
+            GL11.glRotatef(renderPitch + 90f, 1f, 0f, 0f);
+        } else {
+            // Classic launch / RCS animation — unchanged legacy behaviour.
+            GL11.glRotatef(rocket.getRCSRotateProgress() * 0.9f, 1f, 0f, 0f);
+            GL11.glRotatef(rocket.rotationYaw, 0f, 0f, 1f);
+        }
         GL11.glTranslatef(-halfx, (float) 0 - halfy, -halfz);
         Minecraft.getMinecraft().getTextureManager().bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
         GL11.glCallList(storage.world.displayListIndex);

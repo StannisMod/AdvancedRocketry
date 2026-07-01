@@ -1031,6 +1031,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     thrustMag, gravity, canThrust);
         }
 
+        // Advance prev-rotation each tick before overwriting: render/tracker
+        // interpolation (and the hard-locked FF camera, which mirrors these
+        // fields) sweep one tick's delta per frame instead of snapping. Nothing
+        // else sets prevRotation* on this entity, so we own the bookkeeping.
+        this.prevRotationYaw = this.rotationYaw;
+        this.prevRotationPitch = this.rotationPitch;
+
         this.motionX = result.motionX;
         this.motionY = result.motionY;
         this.motionZ = result.motionZ;
@@ -1814,6 +1821,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 rotcorrectionPitch -= rp;
                 FreeFlightInput in = currentFreeFlightInput == null
                         ? FreeFlightInput.zero() : currentFreeFlightInput;
+                // Snapshot prev before the per-tick advance so the render (and
+                // the FF camera pin that mirrors prevRotation*) interpolates one
+                // tick's rotation per frame — the source of the smooth sweep.
+                this.prevRotationYaw = this.rotationYaw;
+                this.prevRotationPitch = this.rotationPitch;
                 this.rotationYaw  += (float) (in.yawInput * FreeFlightPhysics.MAX_YAW_RATE) + ry;
                 this.rotationPitch = FreeFlightPhysics.clampPitch(
                         this.rotationPitch
