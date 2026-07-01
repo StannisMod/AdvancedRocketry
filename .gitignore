@@ -32,3 +32,12 @@ lasthash.txt
 /logs/
 /config/
 /run/
+
+# Navigator / agent meta repository — tracked separately in a private repo
+# (.AdvancedRocketry-navigator.git; see .agent/sops/development/agent-meta-repo.md).
+# These paths are owned by the meta repo and must NOT be tracked by main.
+.agent/
+/CLAUDE.md
+/AGENTS.md
+.claude/
+.AdvancedRocketry-navigator.git/
