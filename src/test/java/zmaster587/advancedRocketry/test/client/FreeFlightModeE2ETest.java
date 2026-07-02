@@ -1022,4 +1022,136 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");
     }
+
+    /**
+     * MEASUREMENT harness (feature/true_rcs, temporary) — not a contract test.
+     * Prints the live seat geometry (storage sizes, seat block, passenger offset
+     * from the craft) at level flight and at a nose-down attitude so the
+     * camera-in-seat transform can be tuned from real numbers instead of
+     * eyeballed screenshots. Deliberately throws so the JSON lands in the report.
+     */
+    @Test
+    public void measureSeatOffset() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(5600, 64, 500);
+        bot().waitTicks(30); // let the liftoff hover settle
+        String serverLevel = exec("artest rocket info " + rocketId);
+
+        // CLIENT-side truth: where the local camera actually sits vs the craft
+        // the client renders. If this differs from the server dPos, the local
+        // player isn't being placed by updateFreeFlightPassenger on the client.
+        JsonObject cam = bot().reportState();
+        JsonObject craft = bot().reportRidingEntity();
+        double cDX = cam.get("playerX").getAsDouble() - craft.get("posX").getAsDouble();
+        double cDY = cam.get("playerY").getAsDouble() - craft.get("posY").getAsDouble();
+        double cDZ = cam.get("playerZ").getAsDouble() - craft.get("posZ").getAsDouble();
+
+        throw new AssertionError(String.format(
+                "@@SEAT@@%nSERVER=%s%nCLIENT dPos = %.3f / %.3f / %.3f  (playerY=%.3f craftY=%.3f)",
+                serverLevel, cDX, cDY, cDZ,
+                cam.get("playerY").getAsDouble(), craft.get("posY").getAsDouble()));
+    }
+
+    /**
+     * MEASUREMENT harness (feature/true_rcs, temporary) — not a contract test.
+     * Samples the CLIENT camera position tick-by-tick during a steady forward
+     * cruise and reports the per-tick displacement (velocity), its jerk
+     * (tick-to-tick variation = the visible shiver), the vertical bob, and the
+     * client-vs-server craft divergence. Steady cruise ⇒ constant displacement;
+     * any jerk / divergence swing is the motion jitter. Throws to surface data.
+     */
+    @Test
+    public void measureMotionJitter() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(5700, 64, 500);
+        bot().waitTicks(30); // settle hover
+        // Steady forward cruise: FA ramps the setpoint to max over ~3 s.
+        exec("artest rocket free-flight-input " + rocketId + " 1 0 0 0 0");
+        bot().waitTicks(80); // reach steady-state cruise before sampling
+
+        int N = 40;
+        double[] px = new double[N], py = new double[N], pz = new double[N];
+        double[] crx = new double[N], svx = new double[N];
+        for (int i = 0; i < N; i++) {
+            JsonObject cam = bot().reportState();
+            JsonObject craft = bot().reportRidingEntity();
+            px[i] = cam.get("playerX").getAsDouble();
+            py[i] = cam.get("playerY").getAsDouble();
+            pz[i] = cam.get("playerZ").getAsDouble();
+            crx[i] = craft.get("posX").getAsDouble();
+            svx[i] = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
+            bot().waitTicks(1);
+        }
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+
+        StringBuilder sb = new StringBuilder("@@JITTER@@\n");
+        double prevD = Double.NaN, maxJerk = 0, sumD = 0, minD = 1e9, maxD = -1e9;
+        int cnt = 0;
+        for (int i = 1; i < N; i++) {
+            double dx = px[i] - px[i - 1], dz = pz[i] - pz[i - 1];
+            double d = Math.hypot(dx, dz);           // per-tick camera displacement
+            double bob = py[i] - py[i - 1];           // vertical wobble
+            double div = crx[i] - svx[i];             // client-vs-server craft X gap
+            if (!Double.isNaN(prevD)) {
+                double jerk = Math.abs(d - prevD);
+                if (jerk > maxJerk) maxJerk = jerk;
+            }
+            prevD = d; sumD += d; cnt++;
+            minD = Math.min(minD, d); maxD = Math.max(maxD, d);
+            sb.append(String.format("t%02d dSpd=%.4f bob=%+.4f cli-svrX=%+.4f%n", i, d, bob, div));
+        }
+        sb.append(String.format("mean=%.4f min=%.4f max=%.4f spread=%.4f maxJerk=%.4f%n",
+                sumD / cnt, minD, maxD, maxD - minD, maxJerk));
+        throw new AssertionError(sb.toString());
+    }
+
+    /**
+     * MEASUREMENT harness (feature/true_rcs, temporary) — not a contract test.
+     * Simulates a STEADY mouse turn (the reported jitter case) by nudging the
+     * camera-locked look a fixed amount every tick, and samples tick-by-tick:
+     * client craft yaw advance + jerk (uneven turn = rotation shiver), camera
+     * vs craft lock error, client-vs-server yaw divergence, and the camera
+     * position sweep + jerk (the seat sits off the spin axis, so yaw noise is
+     * levered into position wobble). Throws to surface the data.
+     */
+    @Test
+    public void measureTurnJitter() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(5800, 64, 500);
+        bot().waitTicks(30); // settle hover
+
+        int N = 40;
+        double[] cyaw = new double[N], syaw = new double[N], camyaw = new double[N];
+        double[] px = new double[N], pz = new double[N];
+        for (int i = 0; i < N; i++) {
+            JsonObject s0 = bot().reportState();
+            // Steady "mouse" turn through the real camera-lock path: +5°/tick.
+            bot().setLook(s0.get("playerYaw").getAsFloat() + 5f, s0.get("playerPitch").getAsFloat());
+            bot().waitTicks(1);
+            JsonObject cam = bot().reportState();
+            JsonObject craft = bot().reportRidingEntity();
+            camyaw[i] = cam.get("playerYaw").getAsDouble();
+            cyaw[i]   = craft.get("rotationYaw").getAsDouble();
+            px[i]     = cam.get("playerX").getAsDouble();
+            pz[i]     = cam.get("playerZ").getAsDouble();
+            syaw[i]   = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+        }
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+
+        StringBuilder sb = new StringBuilder("@@TURNJIT@@\n");
+        double prevStep = Double.NaN, maxYawJerk = 0;
+        double prevPos = Double.NaN, maxPosJerk = 0;
+        for (int i = 1; i < N; i++) {
+            double yawStep = angDiff(cyaw[i], cyaw[i - 1]);      // per-tick craft turn
+            double lockErr = angDiff(camyaw[i], cyaw[i]);        // camera vs craft
+            double divYaw  = angDiff(cyaw[i], syaw[i]);          // client vs server
+            double posStep = Math.hypot(px[i] - px[i - 1], pz[i] - pz[i - 1]);
+            if (!Double.isNaN(prevStep)) maxYawJerk = Math.max(maxYawJerk, Math.abs(yawStep - prevStep));
+            if (!Double.isNaN(prevPos))  maxPosJerk = Math.max(maxPosJerk, Math.abs(posStep - prevPos));
+            prevStep = yawStep; prevPos = posStep;
+            sb.append(String.format("t%02d yawStep=%.3f lockErr=%.3f cli-svrYaw=%+.3f posStep=%.4f%n",
+                    i, yawStep, lockErr, divYaw, posStep));
+        }
+        sb.append(String.format("maxYawJerk=%.3f  maxPosJerk=%.4f%n", maxYawJerk, maxPosJerk));
+        throw new AssertionError(sb.toString());
+    }
 }

@@ -857,6 +857,29 @@ public class TestProbeCommand extends CommandBase {
             info.put("faSetpointFwd",   rocket.getFaSetpointForward());
             info.put("faSetpointRight", rocket.getFaSetpointRight());
             info.put("faSetpointUp",    rocket.getFaSetpointUp());
+            // Seat geometry for FF camera-in-seat debugging (feature/true_rcs).
+            // Storage sizes + seat block + the live passenger offset let a test
+            // measure where updateFreeFlightPassenger actually places the eye.
+            if (rocket.storage != null) {
+                info.put("storageSizeX", rocket.storage.getSizeX());
+                info.put("storageSizeY", rocket.storage.getSizeY());
+                info.put("storageSizeZ", rocket.storage.getSizeZ());
+                try {
+                    zmaster587.libVulpes.util.HashedBlockPosition seat = rocket.stats.getPassengerSeat(0);
+                    info.put("seatX", seat.x);
+                    info.put("seatY", seat.y);
+                    info.put("seatZ", seat.z);
+                } catch (Exception e) {
+                    info.put("seatErr", e.toString());
+                }
+            }
+            if (!rocket.getPassengers().isEmpty()) {
+                net.minecraft.entity.Entity pax = rocket.getPassengers().get(0);
+                info.put("passengerDX", pax.posX - rocket.posX);
+                info.put("passengerDY", pax.posY - rocket.posY);
+                info.put("passengerDZ", pax.posZ - rocket.posZ);
+                info.put("passengerEyeHeight", pax.getEyeHeight());
+            }
             // FF liveness telemetry: how many FF physics ticks have actually run
             // since the last startFreeFlight, plus ground contact — discriminates
             // "FF branch not executing" from "physics ran but produced no motion"

@@ -1471,7 +1471,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // Overwriting a still-bleeding correction with that zero would
             // erase it within a tick of arriving (e.g. the heading resync
             // teleport on rotation stop), so only REAL rotation deltas replace
-            // the pending correction.
+            // the pending correction. With updateFrequency=1 the server sends the
+            // authoritative yaw every tick, so the correction is applied and bled
+            // (over FF_CLIENT_CORRECT_TICKS) continuously — no deadband: a
+            // deadband lets the client/server integrals drift to its threshold
+            // during a turn, then snaps, which reads as a periodic camera jolt.
             float dyaw   = MathHelper.wrapDegrees(yaw - this.rotationYaw);
             float dpitch = pitch - this.rotationPitch;
             if (Math.abs(dyaw) > 1e-3f || Math.abs(dpitch) > 1e-3f) {
@@ -3331,6 +3335,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public void updatePassenger(@Nonnull Entity entity) {
+        // Free Flight: seat the passenger with the SAME body-frame transform the
+        // renderer uses (yaw about world up, pitch about the lateral axis, the
+        // +90 nose mapping) so the camera sits IN the seat block and rotates
+        // rigidly with the craft — see RendererRocket's FF branch.
+        if (isFreeFlight() && isInFlight() && this.storage != null) {
+            updateFreeFlightPassenger(entity);
+            return;
+        }
         //Bind player to the seat
         if (this.storage != null) {
             try {
@@ -3365,6 +3377,51 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             }
         } else
             entity.setPosition(this.posX, this.posY, this.posZ);
+    }
+
+    /**
+     * Seat a Free-Flight passenger at the seat block, transformed by the exact
+     * same body-frame rotation the renderer applies to the model
+     * ({@code Ry(-yaw) · Rx(freeFlightPitch + 90)} about the render pivot). The
+     * camera then sits IN the cockpit and yaws/pitches rigidly with the craft,
+     * instead of hanging at the entity origin while the model rotates away.
+     */
+    private void updateFreeFlightPassenger(@Nonnull Entity entity) {
+        try {
+            HashedBlockPosition seatPos = stats.getPassengerSeat(this.getPassengers().indexOf(entity));
+            float halfx = storage.getSizeX() / 2f;
+            float halfy = storage.getSizeY() / 2f;
+            float halfz = storage.getSizeZ() / 2f;
+
+            // Seat block CENTRE in model space (+0.5 on every axis, the same way
+            // RendererRocket's display list places a block), re-based onto the
+            // render pivot (model centre, vertical origin at +halfy) so this
+            // matches the rendered model exactly.
+            double cx = (seatPos.x + 0.5) - halfx;
+            double cy = (seatPos.y + 0.5) - halfy;
+            double cz = (seatPos.z + 0.5) - halfz;
+
+            // Rx(pitch + 90) — pitch about the lateral axis, nose (+Y) → forward.
+            double a = Math.toRadians(this.freeFlightPitch + 90.0);
+            double ca = Math.cos(a), sa = Math.sin(a);
+            double x1 = cx;
+            double y1 = cy * ca - cz * sa;
+            double z1 = cy * sa + cz * ca;
+
+            // Ry(-yaw) — heading about world up.
+            double b = Math.toRadians(-this.rotationYaw);
+            double cb = Math.cos(b), sb = Math.sin(b);
+            double wx = x1 * cb + z1 * sb;
+            double wy = y1;
+            double wz = -x1 * sb + z1 * cb;
+
+            // World seat position (eye height), then drop to the passenger's feet
+            // so the camera lands at the seat.
+            double seatWorldY = this.posY + halfy + wy;
+            entity.setPosition(this.posX + wx, seatWorldY - entity.getEyeHeight(), this.posZ + wz);
+        } catch (IndexOutOfBoundsException e) {
+            entity.setPosition(this.posX, this.posY, this.posZ);
+        }
     }
 
     @Override

@@ -63,7 +63,12 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
         float halfy = storage.getSizeY() / 2f;
         float halfz = storage.getSizeZ() / 2f;
 
-        if (Minecraft.getMinecraft().player != null && entity.getPassengers().contains(Minecraft.getMinecraft().player)) {
+        // In Free Flight the passenger is seated at the true seat block (see
+        // EntityRocket.updateFreeFlightPassenger), so the model must render at
+        // its real position — the legacy seatY shim would double-shift it. The
+        // shim stays for the classic upright-seat view.
+        if (!(((EntityRocket) entity).isFreeFlight() && ((EntityRocket) entity).isInFlight())
+                && Minecraft.getMinecraft().player != null && entity.getPassengers().contains(Minecraft.getMinecraft().player)) {
             y = -((EntityRocket) entity).stats.getSeatY();
         }
 

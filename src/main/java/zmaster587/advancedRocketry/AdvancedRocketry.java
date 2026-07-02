@@ -369,7 +369,13 @@ public class AdvancedRocketry {
 
         //Entity Registration ---------------------------------------------------------------------------------------------
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "mountDummy"), EntityDummy.class, "mountDummy", 0, this, 16, 20, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", 1, this, 64, 3, true);
+        // updateFrequency=1: Free Flight is a fast, piloted arcade craft whose
+        // server motion the FA control loop nudges every tick. At the old 3-tick
+        // cadence the client dead-reckoned across stale samples and the position
+        // error sawtoothed the first-person camera (visible jitter). Per-tick
+        // pos/rotation/velocity sync shrinks the correction to one tick's error —
+        // smooth. One piloted rocket's extra tracker traffic is negligible.
+        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", 1, this, 64, 1, true);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "laserNode"), EntityLaserNode.class, "laserNode", 2, instance, 256, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "deployedRocket"), EntityStationDeployedRocket.class, "deployedRocket", 3, this, 256, 600, true);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARAbductedItem"), EntityItemAbducted.class, "ARAbductedItem", 4, this, 127, 600, false);
