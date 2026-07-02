@@ -993,9 +993,12 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     @Test
     public void fastMouseSwipeIsRateCappedAndExcessDiscarded() throws Exception {
         // One violent 90° yaw flick in a single tick: the craft must turn at
-        // most a few times MAX_YAW_RATE (6°/tick) over the next couple of
-        // ticks, and the camera must be re-pinned to the craft — NOT jump the
-        // full 90° (the discarded excess is the Elite-style "mouse slip").
+        // most a few times MAX_YAW_RATE (6°/tick) over the following ticks, and
+        // the camera must be re-pinned to the craft — NOT jump the full 90° (the
+        // discarded excess is the Elite-style "mouse slip"). The mouse rate is
+        // EMA-smoothed (KeyBindings.FF_RATE_SMOOTH), so a single-tick flick now
+        // accumulates its (still rate-capped, excess-discarded) turn over more
+        // ticks — hence the wider observation window below.
         int rocketId = mountFreshFreeFlightRocket(5000, 64, 500);
         bot().holdKey(Keyboard.KEY_R);
         bot().waitTicks(5);
@@ -1003,7 +1006,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         JsonObject before = bot().reportRidingEntity();
         double yaw0 = before.get("rotationYaw").getAsDouble();
         bot().setLook((float) yaw0 + 90f, 0f);  // one-tick flick
-        bot().waitTicks(3);
+        bot().waitTicks(8);
 
         JsonObject craft = bot().reportRidingEntity();
         JsonObject cam = bot().reportState();

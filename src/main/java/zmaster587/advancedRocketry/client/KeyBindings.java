@@ -59,6 +59,14 @@ public class KeyBindings {
      *  PosLook re-pin (see {@link #repinCameraAfterTeleport()}) can keep the
      *  pin and the delta baseline consistent. */
     private static volatile float lastPinnedYaw, lastPinnedPitch;
+    /** EMA state for mouse-derived turn-rate smoothing (see onClientTick). Reset
+     *  to 0 whenever FF steering goes inactive so a new flight starts crisp. */
+    private static volatile float smoothMouseYawRate, smoothMousePitchRate;
+    /** EMA weight for the mouse turn-rate filter: higher = crisper/less smooth,
+     *  lower = smoother/more lag. Keyboard yaw is a hard constant (glass smooth);
+     *  the mouse rate must be filtered toward near-constant to match, so this
+     *  errs on the smooth side. */
+    private static final float FF_RATE_SMOOTH = 0.2f;
     /** True once the camera has been pinned to the craft this flight — gates
      *  the frame-time lock telemetry in RocketEventHandler so pre-takeoff
      *  frames (arbitrary look) don't pollute it. */
@@ -335,6 +343,8 @@ public class KeyBindings {
             // and the camera re-aligns to the craft on the next takeoff.
             lastSentInput = FreeFlightInput.zero();
             cameraPinValid = false;
+            smoothMouseYawRate = 0f;
+            smoothMousePitchRate = 0f;
 
             // Engine-start ritual (TASK-46 D3): pre-flight in FF mode, hold
             // the jump key for ENGINE_START_HOLD_TICKS; releasing early
@@ -398,10 +408,21 @@ public class KeyBindings {
 
         float yawKeys = (turnRocketRight.isKeyDown() ?  1f : 0f)
                       + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
-        float yaw   = FreeFlightInput.clamp((float) FreeFlightPhysics.rateFromMouseDelta(
-                mouseYawDelta, FreeFlightPhysics.MAX_YAW_RATE) + yawKeys);
-        float pitch = (float) FreeFlightPhysics.rateFromMouseDelta(
+        // EMA-smooth the mouse-derived rate. Raw per-tick mouse delta is spiky
+        // (uneven sensor polling), so the turn rate jitters tick-to-tick and the
+        // off-axis seat levers that into a visible shiver — whereas keyboard yaw
+        // is a constant rate and stays glass-smooth. Filtering the mouse rate to
+        // near-constant matches that. The smoothed value is what we SEND, so the
+        // server integral and the client dead-reckon stay in lockstep (no drift).
+        // Keyboard yaw is added AFTER the filter so it keeps its crisp response.
+        float mouseYawRate   = (float) FreeFlightPhysics.rateFromMouseDelta(
+                mouseYawDelta, FreeFlightPhysics.MAX_YAW_RATE);
+        float mousePitchRate = (float) FreeFlightPhysics.rateFromMouseDelta(
                 mousePitchDelta, FreeFlightPhysics.MAX_PITCH_RATE);
+        smoothMouseYawRate   += FF_RATE_SMOOTH * (mouseYawRate   - smoothMouseYawRate);
+        smoothMousePitchRate += FF_RATE_SMOOTH * (mousePitchRate - smoothMousePitchRate);
+        float yaw   = FreeFlightInput.clamp(smoothMouseYawRate + yawKeys);
+        float pitch = smoothMousePitchRate;
 
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
 
