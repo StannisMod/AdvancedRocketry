@@ -144,6 +144,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Float> FF_QX = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FF_QY = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FF_QZ = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    /** FF engine power level [0,1], replicated so the client engine sound tracks
+     *  actual thrust. Set each FF tick to the magnitude of the thrust the engines
+     *  applied this tick (world-frame Δv minus gravity, normalised by
+     *  MAX_THRUST_ACCEL) — non-zero whenever thrust is produced in ANY direction
+     *  (climb, cruise, strafe, or just cancelling gravity in a hover), which the
+     *  classic {@code areEnginesRunning} (motionY&gt;0) missed → intermittent sound. */
+    private static final DataParameter<Float> FF_ENGINE_POWER = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static long ERROR_DISPLAY_TIME = 100;
     //Offset for buttons linking to the tileEntityGrid
     private final int tilebuttonOffset = 3;
@@ -1084,6 +1091,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.set(FF_QY, (float) newQuat.y);
         this.dataManager.set(FF_QZ, (float) newQuat.z);
 
+        // Engine power = magnitude of the thrust the engines applied this tick,
+        // i.e. the world-frame Δv MINUS gravity (gravity is not thrust): the
+        // difference between the resulting motion and where the craft would have
+        // coasted. Non-zero for thrust in ANY direction — climb, cruise, strafe,
+        // or just holding a hover against gravity — so the client sound plays
+        // whenever the engines actually fire, at a volume proportional to |thrust|.
+        double tdx = result.motionX - this.motionX;
+        double tdy = result.motionY - (this.motionY - gravity);
+        double tdz = result.motionZ - this.motionZ;
+        float enginePow = (float) Math.min(1.0,
+                Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz) / FreeFlightPhysics.MAX_THRUST_ACCEL);
+        this.dataManager.set(FF_ENGINE_POWER, enginePow);
+
         this.motionX = result.motionX;
         this.motionY = result.motionY;
         this.motionZ = result.motionZ;
@@ -1222,6 +1242,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.register(FF_QX, 0f);
         this.dataManager.register(FF_QY, 0f);
         this.dataManager.register(FF_QZ, 0f);
+        this.dataManager.register(FF_ENGINE_POWER, 0f);
     }
 
     // ---- Flight Assist setpoint accessors (TASK-46 D4) -------------------
@@ -1459,6 +1480,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     }
 
     public float getEnginePower() {
+        // Free Flight: thrust fires in any direction, so drive the sound off the
+        // replicated per-tick thrust magnitude (set in tickFreeFlight) instead of
+        // the classic motionY>0 gate — volume is proportional to |thrust vector|,
+        // and it sounds whenever the engines actually work (incl. a hover).
+        if (isFreeFlight())
+            return isInFlight() ? this.dataManager.get(FF_ENGINE_POWER) : 0f;
+
         float mult = 1;
         int countdown = this.dataManager.get(LAUNCH_COUNTER);
         if (countdown > -1 && isStartupPhase()) {

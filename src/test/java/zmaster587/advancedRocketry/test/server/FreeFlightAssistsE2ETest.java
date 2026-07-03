@@ -28,6 +28,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
     private static final Pattern MOTION_X = Pattern.compile("\"motionX\":(-?[0-9.E\\-]+)");
     private static final Pattern MOTION_Y = Pattern.compile("\"motionY\":(-?[0-9.E\\-]+)");
     private static final Pattern MOTION_Z = Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)");
+    private static final Pattern ENGINE_POWER = Pattern.compile("\"enginePower\":(-?[0-9.E\\-]+)");
 
     private static String ok(java.util.List<String> resp) {
         return String.join("\n", resp);
@@ -256,5 +257,37 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         assertTrue("FA off + brake must still attenuate motionY (was "
                         + myBefore + ", now " + myAfter + ")",
                 Math.abs(myAfter) < Math.abs(myBefore));
+    }
+
+    @Test
+    public void engineSoundPowerTracksThrustNotJustClimb() throws Exception {
+        // The client engine sound is driven by getEnginePower(); in FF that must be
+        // non-zero for thrust in ANY direction — not only motionY>0 (the classic
+        // areEnginesRunning gate that made the sound cut out in cruise/hover).
+        int id = buildAndAssemble(4250, 64, 500);
+        ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
+        ok(client().execute("artest rocket start-free-flight " + id));
+
+        // Climb clear of the pad, then CUT to a gravity-cancelled hover: FA fires
+        // the engines to hold altitude, so motionY settles ~0 while thrust is still
+        // being produced — exactly the case the old motionY>0 gate silenced.
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 1 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1")); // cut → hover
+        ok(client().execute("artest rocket free-flight-tick " + id + " 25"));
+        String hover = ok(client().execute("artest rocket info " + id));
+        double myHover  = parseDouble(hover, MOTION_Y, "motionY");
+        double powHover = parseDouble(hover, ENGINE_POWER, "enginePower");
+        assertTrue("hover thrust (no climb) must still register engine power for the sound "
+                + "(motionY=" + myHover + " enginePower=" + powHover + ")", powHover > 0.0);
+
+        // FA off + no input: pure coast under gravity, no thrust → engines silent.
+        ok(client().execute("artest rocket set-flight-assist " + id + " off"));
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 3"));
+        double powCoast = parseDouble(ok(client().execute("artest rocket info " + id)),
+                ENGINE_POWER, "enginePower");
+        assertTrue("coasting with no thrust must be silent (enginePower=" + powCoast + ")",
+                powCoast < 1e-3);
     }
 }

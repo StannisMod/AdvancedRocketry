@@ -855,6 +855,9 @@ public class TestProbeCommand extends CommandBase {
             info.put("freeFlightPitch", rocket.getFreeFlightPitch());
             info.put("freeFlightRoll", rocket.getFreeFlightRoll());
             info.put("flightAssistOn", rocket.isFlightAssistOn());
+            // Engine power [0,1] driving the client engine sound — thrust-magnitude
+            // based in FF (sounds for thrust in ANY direction, incl. hover).
+            info.put("enginePower", rocket.getEnginePower());
             // FA velocity setpoint (TASK-46 D4), body frame, blocks/tick.
             info.put("faSetpointFwd",   rocket.getFaSetpointForward());
             info.put("faSetpointRight", rocket.getFaSetpointRight());
