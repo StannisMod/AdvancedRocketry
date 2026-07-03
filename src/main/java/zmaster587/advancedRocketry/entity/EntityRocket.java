@@ -433,10 +433,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      * design followup task).
      */
     public void toggleRCS() {
-        // Server-side: report deprecation to the pilot. No mutation of
-        // RCS_MODE — legacy state remains, solar-map flight unaffected.
+        // Server-side: report deprecation to the pilot via a plain message. No
+        // mutation of RCS_MODE — legacy state remains, solar-map flight
+        // unaffected. Uses messagePilot, NOT setError: setError carries
+        // launch-abort semantics (LAUNCH_COUNTER = -1 + RocketAbortEvent), which
+        // a deprecation notice must never trigger.
         if (!world.isRemote) {
-            setError("msg.entity.rocket.rcsDeprecated");
+            messagePilot("msg.entity.rocket.rcsDeprecated");
         }
     }
 
@@ -981,6 +984,26 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         if (ft == FuelType.LIQUID_BIPROPELLANT)
             return getFuelAmount(ft) > 0 && getFuelAmount(FuelType.LIQUID_OXIDIZER) > 0;
         return getFuelAmount(ft) > 0;
+    }
+
+    /**
+     * Shared gate for EVERY entry into {@link #startFreeFlight()}: the craft must
+     * have fuel AND positive climb authority (TWR &gt; 1) to leave the pad. Without
+     * this a fuel-less / underpowered FF rocket launched via {@link #prepareLaunch()}
+     * (Space, or a redstone monitoring station calling prepareLaunch directly) would
+     * set isInFlight but never thrust, never leave the ground, and thus never
+     * re-land ({@code freeFlightHasLeftGround} stays false so the landing detector
+     * never arms) — a permanent on-pad in-flight dead-state with no way to restart
+     * the engine. Mirrors the classic-launch fuel gate. Server-side only.
+     */
+    private boolean canStartFreeFlight() {
+        if (!hasFreeFlightThrustFuel()) {
+            return false;
+        }
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        return stats.getAcceleration(gravMult) > 0;
     }
 
     /** Harness-only ([FF-TRACE]) lifecycle log for the live FF path. Gated on the
@@ -2543,7 +2566,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             if (world.isRemote) {
                 PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.LAUNCH.ordinal()));
             } else if (!isInFlight()) {
-                startFreeFlight();
+                // Same fuel/TWR gate as the ENGINE_START ritual. prepareLaunch is
+                // reachable WITHOUT that ritual (Space, or a redstone monitoring
+                // station calling prepareLaunch directly), so entering flight here
+                // without lift authority would strand the craft in a thrustless
+                // on-pad in-flight dead-state it can never leave. Report the
+                // reason to any pilot and stay grounded instead.
+                if (canStartFreeFlight()) {
+                    startFreeFlight();
+                } else {
+                    ffTrace("prepareLaunch FF rejected: no fuel / no climb authority (TWR <= 1)");
+                    messagePilot("msg.entity.rocket.ffNoLiftoff");
+                }
             }
             return;
         }
@@ -3356,20 +3390,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             this.flightAssistOn = nbt.getBoolean("flightAssistOn");
         } else if (id == PacketType.ENGINE_START.ordinal() && !world.isRemote) {
             // Engine-start ritual (TASK-46 D3). Authority: a passenger of THIS
-            // rocket, FF mode, not already flying. Gates mirror the classic
-            // launch: fuel available AND positive climb authority (TWR > 1) —
-            // a craft that can't lift just doesn't start.
+            // rocket, FF mode, not already flying. Gate mirrors the classic
+            // launch (fuel available AND positive climb authority, TWR > 1) via
+            // the shared canStartFreeFlight() check — a craft that can't lift
+            // just doesn't start.
             if (!this.getPassengers().contains(player)) return;
             if (!isFreeFlight() || isInFlight()) return;
-            if (!hasFreeFlightThrustFuel()) {
-                ffTrace("ENGINE_START rejected: no fuel");
-                return;
-            }
-            float gravMult = DimensionManager.getInstance()
-                    .getDimensionProperties(this.world.provider.getDimension())
-                    .getGravitationalMultiplier();
-            if (stats.getAcceleration(gravMult) <= 0) {
-                ffTrace("ENGINE_START rejected: no climb authority (TWR <= 1)");
+            if (!canStartFreeFlight()) {
+                ffTrace("ENGINE_START rejected: no fuel / no climb authority (TWR <= 1)");
                 return;
             }
             ffTrace("ENGINE_START accepted");

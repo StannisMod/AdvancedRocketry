@@ -661,6 +661,7 @@ msg.sealdetector.fluid=Air will bubble through this block.
 msg.sealdetector.other=Air will leak through this block.
 msg.stationchip.sation=Station 
 msg.entity.rocket.rcsDeprecated=RCS toggle is deprecated. Press [M] to switch to Free Flight Mode before launch.
+msg.entity.rocket.ffNoLiftoff=Not enough fuel or thrust to lift off. Fuel the rocket or reduce its mass before launch.
 msg.entity.rocket.descend.1=Press Space to descend!
 msg.entity.rocket.descend.2=Auto descend in 
 msg.entity.rocket.ascend.1=Press Space to take off!

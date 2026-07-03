@@ -193,14 +193,17 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         String infoAfter = exec("artest rocket info " + rocketId);
         double myAfter = parseDouble(infoAfter, MOTION_Y, "motionY");
 
-        // After 20 ticks of vertical-up thrust the motionY should be net
-        // upward (thrust ≫ gravity for the simple fixture). Even if gravity
-        // dominates, motion must have CHANGED — a frozen rocket means the
-        // tick loop isn't running the FF branch.
-        assertNotEquals(
-                "FF tick must mutate motionY across 20 server ticks "
+        // After 20 ticks of commanded vertical-up thrust motionY must be net
+        // UPWARD relative to the start — thrust ≫ gravity for the simple fixture.
+        // Asserting strict increase (not merely "changed") is deliberate: a
+        // mere "changed" check passes on gravity alone even if vertical thrust
+        // is completely broken, so it would not actually pin the up-thrust
+        // contract. A frozen rocket (tick loop not running the FF branch) also
+        // fails this.
+        assertTrue(
+                "commanded vertical-up thrust must raise motionY across 20 server ticks "
                         + "(was " + myBefore + ", now " + myAfter + ")",
-                myBefore, myAfter, 1e-9);
+                myAfter > myBefore);
 
         // Bot still riding — FF tick preserves passenger across server ticks.
         String riding = exec("artest player riding-entity");

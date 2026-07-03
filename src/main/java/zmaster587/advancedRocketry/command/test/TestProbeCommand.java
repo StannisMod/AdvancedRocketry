@@ -1360,6 +1360,41 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"motionY\":" + rocket.motionY + "}");
             return;
         }
+        if ("toggle-rcs".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Drive the (deprecated) TOGGLE_RCS server path directly, bypassing
+            // the passenger-packet requirement the R keybind imposes, so the
+            // deprecation contract — toggleRCS no longer flips RCS_MODE — is
+            // actually pinnable. Emits rcs state before/after the call.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            boolean before = rocket.getRCS();
+            rocket.toggleRCS();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"rcsBefore\":" + before
+                    + ",\"rcsAfter\":" + rocket.getRCS() + "}");
+            return;
+        }
+        if ("ff-prepare-launch".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Drives EntityRocket.prepareLaunch() server-side — the same entry a
+            // redstone monitoring station uses — so a test can pin the Free
+            // Flight launch gate: a fuel-less / underpowered FF craft must NOT
+            // enter flight, else it strands in a thrustless on-pad dead-state.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            rocket.prepareLaunch();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"isFreeFlight\":" + rocket.isFreeFlight()
+                    + ",\"isInFlight\":" + rocket.isInFlight() + "}");
+            return;
+        }
         if ("explode".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // TASK-07 Phase 5: invoke production EntityRocket.explode().
             // The current production code calls explode() from launch() iff
@@ -10882,7 +10917,95 @@ public class TestProbeCommand extends CommandBase {
             send(sender, b.toString());
             return;
         }
-        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id>\"}");
+        if (args.length >= 3 && "rocket-nbt-roundtrip".equalsIgnoreCase(args[0])) {
+            // Sets a canonical NON-default Free Flight state on the rocket, then
+            // drives the real save path (writeEntityToNBT -> readEntityFromNBT,
+            // via reflection) into a fresh peer and emits the peer's FF state, so
+            // a test can pin that FF attitude / mode / assist / setpoint survive a
+            // save/load cycle. Also emits a "legacy" readback (FF keys stripped)
+            // so the missing-key defaults (identity quat, flight-assist ON) are
+            // pinned. Guards the "saves must survive" invariant against a
+            // read/write asymmetry that no other test would catch.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int id = parseIntOr(args[2], -1);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.entity.Entity entity = world.getEntityByID(id);
+            if (!(entity instanceof EntityRocket)) {
+                send(sender, "{\"error\":\"entity not an EntityRocket\",\"entityId\":" + id + "}");
+                return;
+            }
+            EntityRocket src = (EntityRocket) entity;
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat q =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.integrateBodyRates(
+                            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat.IDENTITY, 30, 45, 15);
+            try {
+                src.setFlightMode(zmaster587.advancedRocketry.api.RocketFlightMode.FREE_FLIGHT);
+                java.lang.reflect.Field fq = EntityRocket.class.getDeclaredField("ffQuat");
+                fq.setAccessible(true);
+                fq.set(src, q);
+                java.lang.reflect.Field ffa = EntityRocket.class.getDeclaredField("flightAssistOn");
+                ffa.setAccessible(true);
+                ffa.setBoolean(src, true);
+                java.lang.reflect.Method sfs = EntityRocket.class.getDeclaredMethod(
+                        "setFaSetpoint", double.class, double.class, double.class);
+                sfs.setAccessible(true);
+                sfs.invoke(src, 0.3d, -0.2d, 0.5d);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"probe setup failed: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            EntityRocket peer = new EntityRocket(world);
+            EntityRocket legacyPeer = new EntityRocket(world);
+            try {
+                java.lang.reflect.Method write = net.minecraft.entity.Entity.class
+                        .getDeclaredMethod("writeEntityToNBT", net.minecraft.nbt.NBTTagCompound.class);
+                write.setAccessible(true);
+                write.invoke(src, nbt);
+                java.lang.reflect.Method read = net.minecraft.entity.Entity.class
+                        .getDeclaredMethod("readEntityFromNBT", net.minecraft.nbt.NBTTagCompound.class);
+                read.setAccessible(true);
+                read.invoke(peer, nbt);
+                // Legacy save: strip the FF-specific keys, keep everything else,
+                // to exercise the missing-key default branches.
+                net.minecraft.nbt.NBTTagCompound legacy = nbt.copy();
+                legacy.removeTag("ffQuatW");
+                legacy.removeTag("ffQuatX");
+                legacy.removeTag("ffQuatY");
+                legacy.removeTag("ffQuatZ");
+                legacy.removeTag("flightAssistOn");
+                legacy.removeTag("ffHasLeftGround");
+                read.invoke(legacyPeer, legacy);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"reflective NBT round-trip failed: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat sq = src.getFfQuat();
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat pq = peer.getFfQuat();
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat lq = legacyPeer.getFfQuat();
+            send(sender, "{\"ok\":true,\"entityId\":" + id
+                    + ",\"srcMode\":\"" + src.getFlightMode().name() + "\""
+                    + ",\"peerMode\":\"" + peer.getFlightMode().name() + "\""
+                    + ",\"srcQuatW\":" + sq.w + ",\"srcQuatX\":" + sq.x
+                    + ",\"srcQuatY\":" + sq.y + ",\"srcQuatZ\":" + sq.z
+                    + ",\"peerQuatW\":" + pq.w + ",\"peerQuatX\":" + pq.x
+                    + ",\"peerQuatY\":" + pq.y + ",\"peerQuatZ\":" + pq.z
+                    + ",\"peerFaOn\":" + peer.isFlightAssistOn()
+                    + ",\"peerFaFwd\":" + peer.getFaSetpointForward()
+                    + ",\"peerFaRight\":" + peer.getFaSetpointRight()
+                    + ",\"peerFaUp\":" + peer.getFaSetpointUp()
+                    + ",\"legacyQuatW\":" + lq.w + ",\"legacyQuatX\":" + lq.x
+                    + ",\"legacyQuatY\":" + lq.y + ",\"legacyQuatZ\":" + lq.z
+                    + ",\"legacyFaOn\":" + legacyPeer.isFlightAssistOn() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id> | rocket-nbt-roundtrip <dim> <id>\"}");
     }
 
     /**

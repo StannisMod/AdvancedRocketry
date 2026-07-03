@@ -5,6 +5,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -14,24 +15,33 @@ import static org.junit.Assert.assertTrue;
  *
  * <ul>
  *   <li>The legacy TOGGLE_RCS server handler ({@code EntityRocket.toggleRCS})
- *       no longer flips the {@code RCS_MODE} datawatcher. The RCS field stays
- *       at its initial value, even in an asteroid dimension where the old
- *       code would have toggled it.</li>
- *   <li>It instead writes a deprecation error to {@code errorStr} so the
- *       pilot sees a redirect message pointing at Free Flight Mode (M-key).</li>
+ *       no longer flips the {@code RCS_MODE} datawatcher — the field keeps its
+ *       value across a toggle, even where the old code would have flipped it.</li>
+ *   <li>It instead notifies the pilot with a deprecation message pointing at
+ *       Free Flight Mode (M-key), sent via {@code messagePilot} — deliberately
+ *       NOT via {@code setError}, so the notice carries no launch-abort side
+ *       effect ({@code setError} would post a RocketAbortEvent and set
+ *       LAUNCH_COUNTER = -1).</li>
  *   <li>The {@code RCS_MODE} datawatcher key itself is intact so save-compat
  *       and solar-map deep-space navigation (which still uses it internally)
  *       continue to work.</li>
  * </ul>
  *
- * <p>This is the "Option B" half of the migration — see solar-map design task
- * for the eventual full removal.</p>
+ * <p>Note the R keybind cannot reach {@code toggleRCS} from a seated pilot: it
+ * wears the {@code NOT_PILOTING} conflict context AND its handler additionally
+ * requires riding a rocket, which are mutually exclusive. The probe drives the
+ * server-side method directly so the contract is pinnable regardless.
+ *
+ * <p>This is the "Option B" half of the migration — see the solar-map design
+ * task for the eventual full removal.</p>
  */
 public class RcsDeprecationTest extends AbstractSharedServerTest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern ROCKET_LIST_ID = Pattern.compile("\"id\":(-?\\d+)");
+    private static final Pattern RCS_BEFORE = Pattern.compile("\"rcsBefore\":(true|false)");
+    private static final Pattern RCS_AFTER = Pattern.compile("\"rcsAfter\":(true|false)");
 
     private static String ok(java.util.List<String> resp) {
         return String.join("\n", resp);
@@ -66,29 +76,23 @@ public class RcsDeprecationTest extends AbstractSharedServerTest {
     }
 
     @Test
-    public void rcsToggleNoLongerMutatesRcsModeOnOverworld() throws Exception {
+    public void rcsToggleNoLongerMutatesRcsMode() throws Exception {
         int id = buildAndAssemble(3300, 64, 500);
 
-        // Force a TOGGLE_RCS through the same path the R-key keybind uses on
-        // the server: useNetworkData with PacketType.TOGGLE_RCS. The probe
-        // ticks the rocket so onUpdate runs, exercising the handler.
-        String before = ok(client().execute("artest rocket info " + id));
-        // Issue toggle through the server-side method directly via tick + state.
-        // We don't have a probe verb for the packet, but toggleRCS is what
-        // useNetworkData calls — same observable contract. Use the rocket
-        // tick driver after the toggle to surface state changes.
-        ok(client().execute("artest entity tick 0 " + id + " 1"));
+        // Drive the deprecated TOGGLE_RCS server path directly — the probe
+        // invokes EntityRocket.toggleRCS() and reports RCS_MODE before/after.
+        String resp = ok(client().execute("artest rocket toggle-rcs " + id));
+        assertTrue("toggle-rcs probe failed: " + resp, resp.contains("\"ok\":true"));
 
-        // (We can't programmatically invoke toggleRCS without a passenger
-        // packet, but the deprecation contract is at the toggleRCS method
-        // itself — verified via the error-message check below.)
+        Matcher b = RCS_BEFORE.matcher(resp);
+        Matcher a = RCS_AFTER.matcher(resp);
+        assertTrue("response missing rcsBefore: " + resp, b.find());
+        assertTrue("response missing rcsAfter: " + resp, a.find());
 
-        String after = ok(client().execute("artest rocket info " + id));
-        // The errorMessage on a freshly-spawned rocket is "" initially.
-        // We pin: on a fresh rocket no error is present (regression guard
-        // that we don't accidentally set the deprecation error on every tick).
-        assertTrue("fresh rocket must not carry deprecation error spuriously: " + after,
-                after.contains("\"errorMessage\":\"\""));
+        // The deprecation contract: toggleRCS is now a no-op on RCS_MODE.
+        // A regression that restored the flip would make after != before.
+        assertEquals("deprecated toggleRCS must NOT flip RCS_MODE: " + resp,
+                b.group(1), a.group(1));
     }
 
     @Test
