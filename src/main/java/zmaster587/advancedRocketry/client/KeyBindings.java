@@ -62,6 +62,10 @@ public class KeyBindings {
     /** Elite-style flight-cursor deflection in [-1,1]² (X = roll, Y = pitch).
      *  Absolute: stays where the mouse leaves it; reset when FF goes inactive. */
     private static volatile float flightCursorX, flightCursorY;
+    /** Previous-tick cursor deflection, so the HUD can interpolate the dot by
+     *  partialTicks — the cursor is sampled at 20 Hz (client tick) but drawn per
+     *  frame, and without this the dot visibly steps at the tick rate. */
+    private static volatile float prevFlightCursorX, prevFlightCursorY;
     /** Deflection added per degree of mouse movement (≈ full deflection at 25°). */
     private static final float FF_CURSOR_SENS = 0.04f;
     /** Centre deadzone: |deflection| below this reads as zero (no drift at rest). */
@@ -75,6 +79,13 @@ public class KeyBindings {
     /** Current flight-cursor deflection (X = roll, Y = pitch), for the HUD. */
     public static float flightCursorX() { return flightCursorX; }
     public static float flightCursorY() { return flightCursorY; }
+    /** partialTicks-interpolated cursor deflection for smooth per-frame HUD draw. */
+    public static float flightCursorX(float partialTicks) {
+        return prevFlightCursorX + (flightCursorX - prevFlightCursorX) * partialTicks;
+    }
+    public static float flightCursorY(float partialTicks) {
+        return prevFlightCursorY + (flightCursorY - prevFlightCursorY) * partialTicks;
+    }
     /** True once the camera has been pinned to the craft this flight — gates
      *  the frame-time lock telemetry in RocketEventHandler so pre-takeoff
      *  frames (arbitrary look) don't pollute it. */
@@ -343,6 +354,8 @@ public class KeyBindings {
             cameraPinValid = false;
             flightCursorX = 0f;
             flightCursorY = 0f;
+            prevFlightCursorX = 0f;
+            prevFlightCursorY = 0f;
 
             // Engine-start ritual (TASK-46 D3): pre-flight in FF mode, hold
             // the jump key for ENGINE_START_HOLD_TICKS; releasing early
@@ -412,6 +425,10 @@ public class KeyBindings {
         // a fixed, non-spiky input exactly like a held key, which is what makes
         // the mouse as glass-smooth as A/D (rate-from-movement was the jitter).
         // Vertical → pitch rate, horizontal → roll (bank) rate. Yaw is keyboard.
+        // Snapshot the previous-tick cursor so the HUD interpolates the dot per
+        // frame (sampled 20 Hz, drawn 60+ fps) instead of stepping at tick rate.
+        prevFlightCursorX = flightCursorX;
+        prevFlightCursorY = flightCursorY;
         flightCursorX = FreeFlightInput.clamp(flightCursorX + mouseYawDelta   * FF_CURSOR_SENS);
         flightCursorY = FreeFlightInput.clamp(flightCursorY + mousePitchDelta * FF_CURSOR_SENS);
         float yaw   = FreeFlightInput.clamp(yawKeys);

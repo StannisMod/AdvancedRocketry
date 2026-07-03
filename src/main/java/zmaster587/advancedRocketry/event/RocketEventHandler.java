@@ -125,6 +125,25 @@ public class RocketEventHandler extends Gui {
         event.setRoll(roll);
     }
 
+    /**
+     * Suppress the first-person hand/held-item render while piloting a Free
+     * Flight craft. The camera is hard-locked to the craft axes every frame
+     * ({@link #onFreeFlightCameraSetup}) while the held item still renders off
+     * the player's own (now-overridden) rotation, so it jitters against the
+     * locked view — and a block bobbing in the cockpit adds nothing anyway.
+     */
+    @SubscribeEvent
+    public void onFreeFlightRenderHand(net.minecraftforge.client.event.RenderSpecificHandEvent event) {
+        net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
+        if (view == null) return;
+        net.minecraft.entity.Entity ridden = view.getRidingEntity();
+        if (ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket
+                && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isFreeFlight()
+                && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isInFlight()) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public void onScreenRender(RenderGameOverlayEvent.Post event) {
         Entity ride;
@@ -274,8 +293,9 @@ public class RocketEventHandler extends Gui {
                         drawRect(ccx - zone, ccy + zone, ccx + zone, ccy + zone + 1, 0x50FFFFFF);
                         drawRect(ccx - zone, ccy - zone, ccx - zone + 1, ccy + zone, 0x50FFFFFF);
                         drawRect(ccx + zone, ccy - zone, ccx + zone + 1, ccy + zone, 0x50FFFFFF);
-                        int fcx = (int) (clampUnit(KeyBindings.flightCursorX()) * zone);
-                        int fcy = (int) (clampUnit(KeyBindings.flightCursorY()) * zone);
+                        float pt = event.getPartialTicks();
+                        int fcx = (int) (clampUnit(KeyBindings.flightCursorX(pt)) * zone);
+                        int fcy = (int) (clampUnit(KeyBindings.flightCursorY(pt)) * zone);
                         drawRect(ccx + fcx - 2, ccy + fcy - 2, ccx + fcx + 3, ccy + fcy + 3, 0xFFFFE060);
                     }
                 }
