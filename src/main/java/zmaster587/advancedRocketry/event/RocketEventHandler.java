@@ -228,6 +228,22 @@ public class RocketEventHandler extends Gui {
                         int dx = (int) (clampUnit(KeyBindings.hudYawRate)   * (boxR - 2));
                         int dy = (int) (clampUnit(KeyBindings.hudPitchRate) * (boxR - 2));
                         drawRect(boxC + dx - 1, boxYc + dy - 1, boxC + dx + 2, boxYc + dy + 2, 0xFF40D0FF);
+
+                        // Elite-style flight cursor at screen centre: a square
+                        // deflection zone with a dot at the current (roll = X,
+                        // pitch = Y) deflection. Absolute — the dot stays where
+                        // the mouse leaves it (that fixed deflection IS the
+                        // command, which is what makes the mouse smooth).
+                        ScaledResolution sr = new ScaledResolution(Minecraft.getMinecraft());
+                        int ccx = sr.getScaledWidth() / 2, ccy = sr.getScaledHeight() / 2;
+                        int zone = 40;
+                        drawRect(ccx - zone, ccy - zone, ccx + zone, ccy - zone + 1, 0x50FFFFFF);
+                        drawRect(ccx - zone, ccy + zone, ccx + zone, ccy + zone + 1, 0x50FFFFFF);
+                        drawRect(ccx - zone, ccy - zone, ccx - zone + 1, ccy + zone, 0x50FFFFFF);
+                        drawRect(ccx + zone, ccy - zone, ccx + zone + 1, ccy + zone, 0x50FFFFFF);
+                        int fcx = (int) (clampUnit(KeyBindings.flightCursorX()) * zone);
+                        int fcy = (int) (clampUnit(KeyBindings.flightCursorY()) * zone);
+                        drawRect(ccx + fcx - 2, ccy + fcy - 2, ccx + fcx + 3, ccy + fcy + 3, 0xFFFFE060);
                     }
                 }
 

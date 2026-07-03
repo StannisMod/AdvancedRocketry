@@ -49,6 +49,8 @@ public final class FreeFlightPhysics {
     public static final double MAX_YAW_RATE       = 6.0;
     /** Per-tick pitch delta (degrees) at full pitch input. */
     public static final double MAX_PITCH_RATE     = 4.0;
+    /** Per-tick roll (bank) delta (degrees) at full roll input. */
+    public static final double MAX_ROLL_RATE      = 5.0;
     /** Max scalar speed (blocks/tick) — hard cap. */
     public static final double MAX_SPEED          = 3.0;
     /** Brake retention factor at full brake (0..1, lower = more aggressive). */
@@ -95,16 +97,23 @@ public final class FreeFlightPhysics {
     /** Snapshot of post-step rocket kinematics. Immutable. */
     public static final class Step {
         public final double motionX, motionY, motionZ;
-        public final float  yaw, pitch;
+        public final float  yaw, pitch, roll;
         public final boolean thrustApplied;
 
+        /** Legacy constructor (no roll) — roll echoes 0. */
         public Step(double motionX, double motionY, double motionZ,
                     float yaw, float pitch, boolean thrustApplied) {
+            this(motionX, motionY, motionZ, yaw, pitch, 0f, thrustApplied);
+        }
+
+        public Step(double motionX, double motionY, double motionZ,
+                    float yaw, float pitch, float roll, boolean thrustApplied) {
             this.motionX = motionX;
             this.motionY = motionY;
             this.motionZ = motionZ;
             this.yaw = yaw;
             this.pitch = pitch;
+            this.roll = roll;
             this.thrustApplied = thrustApplied;
         }
     }
@@ -113,29 +122,50 @@ public final class FreeFlightPhysics {
 
     // -- Body frame --------------------------------------------------------
 
-    /**
-     * Orthonormal body basis from yaw+pitch (no roll), MC conventions
-     * (pitch&lt;0 = nose up). Returns 9 doubles: rows = forward, right, up.
-     */
+    /** Roll-free basis (delegates with roll = 0). */
     public static double[] bodyBasis(float yawDeg, float pitchDeg) {
+        return bodyBasis(yawDeg, pitchDeg, 0f);
+    }
+
+    /**
+     * Orthonormal body basis from yaw+pitch+roll, MC conventions
+     * (pitch&lt;0 = nose up). Returns 9 doubles: rows = forward, right, up.
+     *
+     * <p>Roll banks the craft about its nose: the roll-free right/up axes are
+     * rotated around the (roll-invariant) forward axis by {@code rollDeg}
+     * (+roll = bank right). Forward is unchanged, so roll never alters heading.
+     */
+    public static double[] bodyBasis(float yawDeg, float pitchDeg, float rollDeg) {
         double yawRad   = Math.toRadians(yawDeg);
         double pitchRad = Math.toRadians(pitchDeg);
         double sinYaw = Math.sin(yawRad), cosYaw = Math.cos(yawRad);
         double sinPit = Math.sin(pitchRad), cosPit = Math.cos(pitchRad);
+        // Roll-free axes.
+        double fx = -sinYaw * cosPit, fy = -sinPit, fz = cosYaw * cosPit; // forward
+        double rx =  cosYaw,          ry =  0.0,    rz = sinYaw;          // right
+        double ux = -sinYaw * sinPit, uy =  cosPit, uz = cosYaw * sinPit; // up
+        // Bank right/up about forward by roll.
+        double rollRad = Math.toRadians(rollDeg);
+        double cr = Math.cos(rollRad), sr = Math.sin(rollRad);
+        double rrx = rx * cr + ux * sr, rry = ry * cr + uy * sr, rrz = rz * cr + uz * sr;
+        double urx = ux * cr - rx * sr, ury = uy * cr - ry * sr, urz = uz * cr - rz * sr;
         return new double[] {
-                // Nose (forward)
-                -sinYaw * cosPit, -sinPit,  cosYaw * cosPit,
-                // Right axis (horizontal, perpendicular to the heading)
-                 cosYaw,           0.0,     sinYaw,
-                // Up axis (= forward × right) — tilts with pitch
-                -sinYaw * sinPit,  cosPit,  cosYaw * sinPit
+                fx,  fy,  fz,
+                rrx, rry, rrz,
+                urx, ury, urz
         };
+    }
+
+    /** Roll-free body→world (delegates with roll = 0). */
+    public static double[] bodyToWorld(double fwd, double right, double up,
+                                       float yawDeg, float pitchDeg) {
+        return bodyToWorld(fwd, right, up, yawDeg, pitchDeg, 0f);
     }
 
     /** Body-frame vector (forward, right, up) → world (x, y, z). */
     public static double[] bodyToWorld(double fwd, double right, double up,
-                                       float yawDeg, float pitchDeg) {
-        double[] b = bodyBasis(yawDeg, pitchDeg);
+                                       float yawDeg, float pitchDeg, float rollDeg) {
+        double[] b = bodyBasis(yawDeg, pitchDeg, rollDeg);
         return new double[] {
                 fwd * b[0] + right * b[3] + up * b[6],
                 fwd * b[1] + right * b[4] + up * b[7],
@@ -143,11 +173,17 @@ public final class FreeFlightPhysics {
         };
     }
 
+    /** Roll-free world→body (delegates with roll = 0). */
+    public static double[] worldToBody(double x, double y, double z,
+                                       float yawDeg, float pitchDeg) {
+        return worldToBody(x, y, z, yawDeg, pitchDeg, 0f);
+    }
+
     /** World vector (x, y, z) → body frame (forward, right, up). The basis is
      *  orthonormal, so the inverse is the transpose. */
     public static double[] worldToBody(double x, double y, double z,
-                                       float yawDeg, float pitchDeg) {
-        double[] b = bodyBasis(yawDeg, pitchDeg);
+                                       float yawDeg, float pitchDeg, float rollDeg) {
+        double[] b = bodyBasis(yawDeg, pitchDeg, rollDeg);
         return new double[] {
                 x * b[0] + y * b[1] + z * b[2],
                 x * b[3] + y * b[4] + z * b[5],
@@ -199,8 +235,17 @@ public final class FreeFlightPhysics {
      * @return Step with new motion (yaw/pitch echoed back) and whether thrust
      *         was commanded this tick (→ fuel burn)
      */
+    /** Roll-free faStep (delegates with roll = 0). */
     public static Step faStep(double mx, double my, double mz,
                               float yawDeg, float pitchDeg,
+                              double spFwd, double spRight, double spUp,
+                              double thrustMag, double gravity, boolean canThrust) {
+        return faStep(mx, my, mz, yawDeg, pitchDeg, 0f, spFwd, spRight, spUp,
+                thrustMag, gravity, canThrust);
+    }
+
+    public static Step faStep(double mx, double my, double mz,
+                              float yawDeg, float pitchDeg, float rollDeg,
                               double spFwd, double spRight, double spUp,
                               double thrustMag, double gravity, boolean canThrust) {
         double accel = thrustMag;
@@ -209,11 +254,11 @@ public final class FreeFlightPhysics {
 
         if (!canThrust || accel <= 0.0) {
             // Newtonian brick: gravity only.
-            return new Step(mx, my - gravity, mz, yawDeg, pitchDeg, false);
+            return new Step(mx, my - gravity, mz, yawDeg, pitchDeg, rollDeg, false);
         }
 
         double[] desired = bodyToWorld(sane(spFwd), sane(spRight), sane(spUp),
-                yawDeg, pitchDeg);
+                yawDeg, pitchDeg, rollDeg);
         // Commanded acceleration = velocity error + gravity compensation.
         double cx = desired[0] - mx;
         double cy = desired[1] - my + gravity;
@@ -236,7 +281,7 @@ public final class FreeFlightPhysics {
             newMx *= s; newMy *= s; newMz *= s;
         }
 
-        return new Step(newMx, newMy, newMz, yawDeg, pitchDeg, thrustApplied);
+        return new Step(newMx, newMy, newMz, yawDeg, pitchDeg, rollDeg, thrustApplied);
     }
 
     // -- Newtonian (Flight Assist off) --------------------------------------
@@ -260,16 +305,27 @@ public final class FreeFlightPhysics {
      *                   not required)
      * @return Step with new motion, yaw, pitch, and whether thrust was applied
      */
+    /** Roll-free step (delegates with roll = 0) — for callers that don't bank. */
     public static Step step(double mx, double my, double mz,
                             float yawDeg, float pitchDeg,
                             FreeFlightInput input,
                             double thrustMag, double gravity,
                             boolean canThrust) {
+        return step(mx, my, mz, yawDeg, pitchDeg, 0f, input, thrustMag, gravity, canThrust);
+    }
+
+    public static Step step(double mx, double my, double mz,
+                            float yawDeg, float pitchDeg, float rollDeg,
+                            FreeFlightInput input,
+                            double thrustMag, double gravity,
+                            boolean canThrust) {
         if (input == null) input = FreeFlightInput.zero();
 
-        // Yaw/pitch rotate regardless of thrust — purely orientation.
+        // Yaw/pitch/roll rotate regardless of thrust — purely orientation. Roll
+        // wraps (no clamp); pitch is clamped to the envelope.
         float newYaw   = yawDeg   + (float) (input.yawInput   * MAX_YAW_RATE);
         float newPitch = clampPitch(pitchDeg + (float) (input.pitchInput * MAX_PITCH_RATE));
+        float newRoll  = wrapDeg(rollDeg + (float) (input.rollInput * MAX_ROLL_RATE));
 
         // Clamp the supplied thrust acceleration into the arcade range.
         double accel = thrustMag;
@@ -288,7 +344,7 @@ public final class FreeFlightPhysics {
         double vrtMag = thrustApplied ? accel * vrtIn : 0.0;
         double strMag = thrustApplied ? accel * strIn : 0.0;
 
-        double[] t = bodyToWorld(fwdMag, strMag, vrtMag, newYaw, newPitch);
+        double[] t = bodyToWorld(fwdMag, strMag, vrtMag, newYaw, newPitch, newRoll);
         double newMx = mx + t[0];
         double newMy = my + t[1] - gravity;
         double newMz = mz + t[2];
@@ -311,7 +367,15 @@ public final class FreeFlightPhysics {
             newMz *= s;
         }
 
-        return new Step(newMx, newMy, newMz, newYaw, newPitch, thrustApplied);
+        return new Step(newMx, newMy, newMz, newYaw, newPitch, newRoll, thrustApplied);
+    }
+
+    /** Wrap an angle to [-180, 180) so roll accumulates without unbounded growth. */
+    public static float wrapDeg(float deg) {
+        float d = deg % 360f;
+        if (d >= 180f) d -= 360f;
+        if (d < -180f) d += 360f;
+        return d;
     }
 
     // -- Engine-start liftoff ------------------------------------------------

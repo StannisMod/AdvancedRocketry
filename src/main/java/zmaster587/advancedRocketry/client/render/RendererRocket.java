@@ -167,8 +167,15 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
                     + (rocket.rotationYaw - rocket.prevRotationYaw) * f2;
             float renderPitch = rocket.prevRotationPitch
                     + (rocket.rotationPitch - rocket.prevRotationPitch) * f2;
+            // Roll wraps at ±180, so interpolate the shortest-arc delta.
+            float rollDelta = zmaster587.advancedRocketry.api.FreeFlightPhysics.wrapDeg(
+                    rocket.getFreeFlightRoll() - rocket.getPrevFreeFlightRoll());
+            float renderRoll = rocket.getPrevFreeFlightRoll() + rollDelta * f2;
             GL11.glRotatef(-renderYaw, 0f, 1f, 0f);
             GL11.glRotatef(renderPitch + 90f, 1f, 0f, 0f);
+            // Bank about the nose (model +Y, the long axis) — innermost so it
+            // spins the cross-section, matching FreeFlightPhysics.bodyBasis roll.
+            GL11.glRotatef(renderRoll, 0f, 1f, 0f);
         } else {
             // Classic launch / RCS animation — unchanged legacy behaviour.
             GL11.glRotatef(rocket.getRCSRotateProgress() * 0.9f, 1f, 0f, 0f);

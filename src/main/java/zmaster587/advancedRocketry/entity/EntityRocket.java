@@ -135,6 +135,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Float> FA_SP_FWD   = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_RIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_UP    = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    /** Roll (bank) angle, degrees. Replicated as a full-precision float (not via
+     *  the byte-quantised entity tracker) so the banked camera stays smooth. */
+    private static final DataParameter<Float> FF_ROLL     = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static long ERROR_DISPLAY_TIME = 100;
     //Offset for buttons linking to the tileEntityGrid
     private final int tilebuttonOffset = 3;
@@ -169,6 +172,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
     /** Pitch tracked separately from rotationPitch so passenger updatePassenger() can ignore it. */
     private float freeFlightPitch = 0f;
+    /** Roll (bank) angle in degrees — a Free-Flight-only rotational DOF with no
+     *  vanilla field, so it is replicated via {@link #FF_ROLL} and rendered /
+     *  banked from here. prev tracks the last tick for partialTicks interp. */
+    private float freeFlightRoll = 0f;
+    private float prevFreeFlightRoll = 0f;
     /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
     private transient boolean freeFlightLandedLatched = false;
     /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
@@ -869,6 +877,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return freeFlightPitch;
     }
 
+    public float getFreeFlightRoll() {
+        return freeFlightRoll;
+    }
+
+    public float getPrevFreeFlightRoll() {
+        return prevFreeFlightRoll;
+    }
+
     public boolean isFlightAssistOn() {
         return flightAssistOn;
     }
@@ -993,14 +1009,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // pitch integrate exactly as in normal flight (no thrust, no
             // gravity — the hover assist already accounts for both).
             FreeFlightInput steerOnly = new FreeFlightInput(
-                    0f, 0f, 0f, in.yawInput, in.pitchInput, 0f, false);
+                    0f, 0f, 0f, in.yawInput, in.pitchInput, in.rollInput, 0f, false);
             FreeFlightPhysics.Step steered = FreeFlightPhysics.step(
                     lift.motionX, lift.motionY, lift.motionZ,
-                    this.rotationYaw, this.freeFlightPitch,
+                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
                     steerOnly, 0.0, 0.0, false);
             result = new FreeFlightPhysics.Step(
                     lift.motionX, lift.motionY, lift.motionZ,
-                    steered.yaw, steered.pitch, lift.thrustApplied);
+                    steered.yaw, steered.pitch, steered.roll, lift.thrustApplied);
         } else if (this.flightAssistOn) {
             // Flight Assist (TASK-46 D4): translation keys edit the body-frame
             // velocity SETPOINT (release keeps it; X zeroes it); FA computes
@@ -1011,14 +1027,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             setFaSetpoint(sp[0], sp[1], sp[2]);
 
             FreeFlightInput steerOnly = new FreeFlightInput(
-                    0f, 0f, 0f, in.yawInput, in.pitchInput, 0f, false);
+                    0f, 0f, 0f, in.yawInput, in.pitchInput, in.rollInput, 0f, false);
             FreeFlightPhysics.Step steered = FreeFlightPhysics.step(
                     this.motionX, this.motionY, this.motionZ,
-                    this.rotationYaw, this.freeFlightPitch,
+                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
                     steerOnly, 0.0, 0.0, false);
             FreeFlightPhysics.Step fa = FreeFlightPhysics.faStep(
                     this.motionX, this.motionY, this.motionZ,
-                    steered.yaw, steered.pitch,
+                    steered.yaw, steered.pitch, steered.roll,
                     sp[0], sp[1], sp[2],
                     thrustMag, gravity, canThrust);
             result = fa;
@@ -1026,7 +1042,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // Newtonian (FA off): direct thrust, coast on release.
             result = FreeFlightPhysics.step(
                     this.motionX, this.motionY, this.motionZ,
-                    this.rotationYaw, this.freeFlightPitch,
+                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
                     in,
                     thrustMag, gravity, canThrust);
         }
@@ -1037,12 +1053,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // else sets prevRotation* on this entity, so we own the bookkeeping.
         this.prevRotationYaw = this.rotationYaw;
         this.prevRotationPitch = this.rotationPitch;
+        this.prevFreeFlightRoll = this.freeFlightRoll;
 
         this.motionX = result.motionX;
         this.motionY = result.motionY;
         this.motionZ = result.motionZ;
         this.rotationYaw = result.yaw;
         this.freeFlightPitch = result.pitch;
+        this.freeFlightRoll = result.roll;
+        // Roll has no vanilla field, so replicate it as a full-precision float.
+        this.dataManager.set(FF_ROLL, result.roll);
         // Mirror the FF pitch into the vanilla rotation field so the entity
         // tracker replicates it — the client camera is hard-locked to the craft
         // axes (TASK-46 D1) and needs the real attitude, not a stale 0.
@@ -1193,6 +1213,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.register(FA_SP_FWD,   0f);
         this.dataManager.register(FA_SP_RIGHT, 0f);
         this.dataManager.register(FA_SP_UP,    0f);
+        this.dataManager.register(FF_ROLL,     0f);
     }
 
     // ---- Flight Assist setpoint accessors (TASK-46 D4) -------------------
@@ -1834,6 +1855,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 this.rotationPitch = FreeFlightPhysics.clampPitch(
                         this.rotationPitch
                                 + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE) + rp);
+                // Roll follows the authoritative full-precision replica directly
+                // (float DataParameter, synced every tick) — no dead-reckoning,
+                // no byte quantisation, so the banked model/camera stay smooth.
+                this.prevFreeFlightRoll = this.freeFlightRoll;
+                this.freeFlightRoll = this.dataManager.get(FF_ROLL);
             }
             return;
         }
@@ -2923,6 +2949,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
         flightMode = RocketFlightMode.readFromNBT(nbt);
         freeFlightPitch = nbt.getFloat("freeFlightPitch");
+        freeFlightRoll = nbt.getFloat("freeFlightRoll");
+        prevFreeFlightRoll = freeFlightRoll;
         // Flight Assist default ON for missing-key (legacy) saves.
         flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
         // Engine-start liftoff state (TASK-46 D3); missing keys (legacy saves)
@@ -2982,6 +3010,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
         RocketFlightMode.writeToNBT(nbt, flightMode);
         nbt.setFloat("freeFlightPitch", freeFlightPitch);
+        nbt.setFloat("freeFlightRoll", freeFlightRoll);
         nbt.setBoolean("flightAssistOn", flightAssistOn);
         if (!Double.isNaN(ffLiftoffTargetY))
             nbt.setDouble("ffLiftoffTargetY", ffLiftoffTargetY);
@@ -3401,12 +3430,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             double cy = (seatPos.y + 0.5) - halfy;
             double cz = (seatPos.z + 0.5) - halfz;
 
+            // Ry(roll) about the nose (model +Y) FIRST — the renderer's innermost
+            // rotation — so the off-axis seat banks with the cockpit.
+            double rr = Math.toRadians(this.freeFlightRoll);
+            double cRoll = Math.cos(rr), sRoll = Math.sin(rr);
+            double rx = cx * cRoll + cz * sRoll;
+            double ry = cy;
+            double rz = -cx * sRoll + cz * cRoll;
+
             // Rx(pitch + 90) — pitch about the lateral axis, nose (+Y) → forward.
             double a = Math.toRadians(this.freeFlightPitch + 90.0);
             double ca = Math.cos(a), sa = Math.sin(a);
-            double x1 = cx;
-            double y1 = cy * ca - cz * sa;
-            double z1 = cy * sa + cz * ca;
+            double x1 = rx;
+            double y1 = ry * ca - rz * sa;
+            double z1 = ry * sa + rz * ca;
 
             // Ry(-yaw) — heading about world up.
             double b = Math.toRadians(-this.rotationYaw);

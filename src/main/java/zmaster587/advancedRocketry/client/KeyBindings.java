@@ -59,14 +59,22 @@ public class KeyBindings {
      *  PosLook re-pin (see {@link #repinCameraAfterTeleport()}) can keep the
      *  pin and the delta baseline consistent. */
     private static volatile float lastPinnedYaw, lastPinnedPitch;
-    /** EMA state for mouse-derived turn-rate smoothing (see onClientTick). Reset
-     *  to 0 whenever FF steering goes inactive so a new flight starts crisp. */
-    private static volatile float smoothMouseYawRate, smoothMousePitchRate;
-    /** EMA weight for the mouse turn-rate filter: higher = crisper/less smooth,
-     *  lower = smoother/more lag. Keyboard yaw is a hard constant (glass smooth);
-     *  the mouse rate must be filtered toward near-constant to match, so this
-     *  errs on the smooth side. */
-    private static final float FF_RATE_SMOOTH = 0.2f;
+    /** Elite-style flight-cursor deflection in [-1,1]² (X = roll, Y = pitch).
+     *  Absolute: stays where the mouse leaves it; reset when FF goes inactive. */
+    private static volatile float flightCursorX, flightCursorY;
+    /** Deflection added per degree of mouse movement (≈ full deflection at 25°). */
+    private static final float FF_CURSOR_SENS = 0.04f;
+    /** Centre deadzone: |deflection| below this reads as zero (no drift at rest). */
+    private static final float FF_CURSOR_DEADZONE = 0.05f;
+
+    /** Apply the centre deadzone to a deflection component. */
+    private static float deadzone(float v) {
+        return Math.abs(v) < FF_CURSOR_DEADZONE ? 0f : v;
+    }
+
+    /** Current flight-cursor deflection (X = roll, Y = pitch), for the HUD. */
+    public static float flightCursorX() { return flightCursorX; }
+    public static float flightCursorY() { return flightCursorY; }
     /** True once the camera has been pinned to the craft this flight — gates
      *  the frame-time lock telemetry in RocketEventHandler so pre-takeoff
      *  frames (arbitrary look) don't pollute it. */
@@ -343,8 +351,8 @@ public class KeyBindings {
             // and the camera re-aligns to the craft on the next takeoff.
             lastSentInput = FreeFlightInput.zero();
             cameraPinValid = false;
-            smoothMouseYawRate = 0f;
-            smoothMousePitchRate = 0f;
+            flightCursorX = 0f;
+            flightCursorY = 0f;
 
             // Engine-start ritual (TASK-46 D3): pre-flight in FF mode, hold
             // the jump key for ENGINE_START_HOLD_TICKS; releasing early
@@ -408,29 +416,25 @@ public class KeyBindings {
 
         float yawKeys = (turnRocketRight.isKeyDown() ?  1f : 0f)
                       + (turnRocketLeft.isKeyDown()  ? -1f : 0f);
-        // EMA-smooth the mouse-derived rate. Raw per-tick mouse delta is spiky
-        // (uneven sensor polling), so the turn rate jitters tick-to-tick and the
-        // off-axis seat levers that into a visible shiver — whereas keyboard yaw
-        // is a constant rate and stays glass-smooth. Filtering the mouse rate to
-        // near-constant matches that. The smoothed value is what we SEND, so the
-        // server integral and the client dead-reckon stay in lockstep (no drift).
-        // Keyboard yaw is added AFTER the filter so it keeps its crisp response.
-        float mouseYawRate   = (float) FreeFlightPhysics.rateFromMouseDelta(
-                mouseYawDelta, FreeFlightPhysics.MAX_YAW_RATE);
-        float mousePitchRate = (float) FreeFlightPhysics.rateFromMouseDelta(
-                mousePitchDelta, FreeFlightPhysics.MAX_PITCH_RATE);
-        smoothMouseYawRate   += FF_RATE_SMOOTH * (mouseYawRate   - smoothMouseYawRate);
-        smoothMousePitchRate += FF_RATE_SMOOTH * (mousePitchRate - smoothMousePitchRate);
-        float yaw   = FreeFlightInput.clamp(smoothMouseYawRate + yawKeys);
-        float pitch = smoothMousePitchRate;
+        // Elite-style flight cursor: the mouse drives a VIRTUAL cursor that stays
+        // where you put it (absolute deflection), clamped to a rectangular zone
+        // mapped to [-1,1]². Its POSITION is the command — a stationary cursor is
+        // a fixed, non-spiky input exactly like a held key, which is what makes
+        // the mouse as glass-smooth as A/D (rate-from-movement was the jitter).
+        // Vertical → pitch rate, horizontal → roll (bank) rate. Yaw is keyboard.
+        flightCursorX = FreeFlightInput.clamp(flightCursorX + mouseYawDelta   * FF_CURSOR_SENS);
+        flightCursorY = FreeFlightInput.clamp(flightCursorY + mousePitchDelta * FF_CURSOR_SENS);
+        float yaw   = FreeFlightInput.clamp(yawKeys);
+        float pitch = deadzone(flightCursorY);
+        float roll  = deadzone(flightCursorX);
 
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
 
-        // HUD turn-rate indicator (TASK-46 D1/Phase 4): the commanded rates.
-        hudYawRate = yaw;
+        // HUD indicators: commanded pitch/roll deflection.
+        hudYawRate = roll;
         hudPitchRate = pitch;
 
-        FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, cut);
+        FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
         if (!input.equals(lastSentInput)) {
             kbTrace("send FF input " + input);
             rocket.applyFreeFlightInput(input);

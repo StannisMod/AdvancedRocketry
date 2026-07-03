@@ -54,6 +54,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern YAW   = Pattern.compile("\"rotationYaw\":(-?[0-9.E\\-]+)");
     private static final Pattern FF_PITCH = Pattern.compile("\"freeFlightPitch\":(-?[0-9.E\\-]+)");
+    private static final Pattern FF_ROLL  = Pattern.compile("\"freeFlightRoll\":(-?[0-9.E\\-]+)");
     private static final Pattern FUEL_PRIMARY_AMOUNT =
             Pattern.compile("\"primaryFuelType\":\"([^\"]+)\".*?\"\\1\":\\{\"amount\":(-?\\d+)");
 
@@ -1156,5 +1157,37 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         }
         sb.append(String.format("maxYawJerk=%.3f  maxPosJerk=%.4f%n", maxYawJerk, maxPosJerk));
         throw new AssertionError(sb.toString());
+    }
+
+    /**
+     * Roll DOF smoke: a commanded bank integrates server-side AND the real
+     * client renders through it (the camera-roll mixin runs every frame) without
+     * crashing. Pins the roll channel end-to-end; camera-bank direction/feel is
+     * a manual-playtest perception check.
+     */
+    @Test
+    public void rollChannelIntegratesAndClientRendersWithoutCrash() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(5900, 64, 500);
+        bot().waitTicks(20);
+        double roll0 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");
+
+        // Command a steady bank-right: probe args are
+        // id fwd vert yaw pitch brake cut strafe roll → roll = last (=+1).
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0 0 0 1");
+        bot().waitTicks(10);
+        double roll1 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");
+
+        // Stop and let the client keep rendering the banked craft a moment.
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0 0 0 0");
+        bot().waitTicks(10);
+        boolean stillRiding = bot().reportState().get("screen").getAsString() != null
+                && bot().reportRidingEntity() != null;
+
+        exec("artest player dismount");
+
+        assertTrue("commanded roll must integrate server-side (roll0=" + roll0
+                + " roll1=" + roll1 + ")", angDiff(roll1, roll0) > 3.0);
+        assertTrue("client must survive rendering the banked craft (camera-roll mixin)",
+                stillRiding);
     }
 }

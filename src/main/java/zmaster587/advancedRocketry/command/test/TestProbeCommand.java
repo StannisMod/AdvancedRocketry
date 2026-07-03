@@ -852,6 +852,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("ffInputCut",  ffin.cutActive);
             }
             info.put("freeFlightPitch", rocket.getFreeFlightPitch());
+            info.put("freeFlightRoll", rocket.getFreeFlightRoll());
             info.put("flightAssistOn", rocket.isFlightAssistOn());
             // FA velocity setpoint (TASK-46 D4), body frame, blocks/tick.
             info.put("faSetpointFwd",   rocket.getFaSetpointForward());
@@ -1442,23 +1443,24 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
                 return;
             }
-            float fwd, vert, yaw, pitch, brake, strafe = 0f;
+            float fwd, vert, yaw, pitch, brake, strafe = 0f, roll = 0f;
             try {
                 fwd   = Float.parseFloat(args[2]);
                 vert  = Float.parseFloat(args[3]);
                 yaw   = Float.parseFloat(args[4]);
                 pitch = Float.parseFloat(args[5]);
                 brake = Float.parseFloat(args[6]);
-                // Strafe is the trailing optional arg so legacy 5-number calls
-                // (fwd vert yaw pitch brake [cut]) keep working.
+                // Strafe / roll are trailing optional args so legacy 5-number
+                // calls (fwd vert yaw pitch brake [cut]) keep working.
                 if (args.length >= 9) strafe = Float.parseFloat(args[8]);
+                if (args.length >= 10) roll = Float.parseFloat(args[9]);
             } catch (NumberFormatException ex) {
                 send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
                 return;
             }
             boolean cut = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
             zmaster587.advancedRocketry.api.FreeFlightInput input =
-                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, brake, cut);
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
             rocket.applyFreeFlightInput(input);
             send(sender, "{\"ok\":true,\"entityId\":" + entityId
                     + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
@@ -1467,6 +1469,7 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"strafe\":" + input.strafeInput
                     + ",\"yaw\":" + input.yawInput
                     + ",\"pitch\":" + input.pitchInput
+                    + ",\"roll\":" + input.rollInput
                     + ",\"brake\":" + input.brakeInput
                     + ",\"cut\":" + input.cutActive + "}");
             return;
