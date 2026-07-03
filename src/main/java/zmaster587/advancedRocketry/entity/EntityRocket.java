@@ -32,6 +32,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
 import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import net.minecraft.world.World;
+import net.minecraft.network.play.server.SPacketEntityTeleport;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.MinecraftForge;
@@ -49,6 +50,10 @@ import net.minecraftforge.oredict.OreDictionary;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.advancements.ARAdvancements;
 import zmaster587.advancedRocketry.api.*;
+import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.api.RocketFlightMode;
+import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketLaunchEvent;
 import zmaster587.advancedRocketry.api.RocketEvent.RocketPreLaunchEvent;
 import zmaster587.advancedRocketry.api.dimension.IDimensionProperties;
@@ -124,6 +129,28 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Boolean> INSPACEFLIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.BOOLEAN);
     private static final DataParameter<Boolean> RCS_MODE = EntityDataManager.createKey(EntityRocket.class, DataSerializers.BOOLEAN);
     private static final DataParameter<Integer> LAUNCH_COUNTER = EntityDataManager.createKey(EntityRocket.class, DataSerializers.VARINT);
+    // Flight Assist velocity setpoint (TASK-46 D4), body frame (fwd/right/up),
+    // blocks/tick. Server-authoritative; replicated so the HUD can render
+    // setpoint-vs-actual bars.
+    private static final DataParameter<Float> FA_SP_FWD   = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FA_SP_RIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FA_SP_UP    = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    /** FF body-frame attitude quaternion (w, x, y, z), body→world (TASK-53
+     *  Phase 7). Replicated as four full-precision floats — NOT the byte-quantised
+     *  yaw/pitch tracker or a single roll float — so the client has the complete,
+     *  pole-free orientation. This is the FF attitude source of truth: loops and
+     *  inversions have no gimbal lock, and the camera/render/seat derive from it. */
+    private static final DataParameter<Float> FF_QW = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QX = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QY = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QZ = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    /** FF engine power level [0,1], replicated so the client engine sound tracks
+     *  actual thrust. Set each FF tick to the magnitude of the thrust the engines
+     *  applied this tick (world-frame Δv minus gravity, normalised by
+     *  MAX_THRUST_ACCEL) — non-zero whenever thrust is produced in ANY direction
+     *  (climb, cruise, strafe, or just cancelling gravity in a hover), which the
+     *  classic {@code areEnginesRunning} (motionY&gt;0) missed → intermittent sound. */
+    private static final DataParameter<Float> FF_ENGINE_POWER = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static long ERROR_DISPLAY_TIME = 100;
     //Offset for buttons linking to the tileEntityGrid
     private final int tilebuttonOffset = 3;
@@ -151,6 +178,48 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private int rcs_mode_counter = 0;
     // Used to most of the logic, determining if in RCS mode or not
     private boolean rcs_mode = false;
+
+    // ----- Free Flight Mode (additive — default mode is CLASSIC_LAUNCH, behaviour
+    //       below is opt-in and bypassed entirely when classic) -----
+    private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
+    private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
+    /** FF attitude source of truth (body→world quaternion, TASK-53 Phase 7).
+     *  Integrated by BODY rates on the server; on the client it is the smoothed
+     *  local estimate (predict from input + slerp toward the replicated
+     *  {@link #FF_QW}/QX/QY/QZ). prev tracks the last tick for render slerp. */
+    private FreeFlightPhysics.Quat ffQuat     = FreeFlightPhysics.Quat.IDENTITY;
+    private FreeFlightPhysics.Quat prevFfQuat = FreeFlightPhysics.Quat.IDENTITY;
+    /** Euler view of {@link #ffQuat}, derived every tick — kept only for legacy
+     *  consumers that still read yaw/pitch/roll (seat, HUD bars, probes, vanilla
+     *  systems). NEVER the source of truth; the quaternion is (avoids gimbal lock
+     *  through loops/inversions). */
+    private float freeFlightPitch = 0f;
+    private float freeFlightRoll = 0f;
+    private float prevFreeFlightRoll = 0f;
+    /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
+    private transient boolean freeFlightLandedLatched = false;
+    /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
+    private transient int freeFlightTicksSinceStart = 0;
+    /** Engine-start liftoff target (TASK-46 D3): hover altitude the craft eases
+     *  onto after the engines start; NaN once the pilot takes over translation. */
+    private double ffLiftoffTargetY = Double.NaN;
+    /** Arms the landing detector: false from engine start until the craft first
+     *  leaves the ground, so the liftoff itself can't read as a touchdown. */
+    private boolean freeFlightHasLeftGround = false;
+    /** Ticks over which the FF client absorbs a server-position correction
+     *  (~ the entity updateFrequency, so jitter is smoothed, not snapped). */
+    private static final double FF_CLIENT_CORRECT_TICKS = 3.0;
+    /** Client-side FF snapshot targets: the latest authoritative server pose,
+     *  used by the predict-then-correct smoothing in {@link #onUpdate()}. Each
+     *  client tick dead-reckons from local velocity/rates and pulls the RESIDUAL
+     *  toward these — never the raw gap, which already contains this tick's motion
+     *  (double-counting it left the client a full tick ahead of the server: a
+     *  constant lead that shifted with velocity → the FA-off jitter). Position is
+     *  null / angles are NaN until the first FF packet arrives; all transient
+     *  (client-only, re-seeded on load). */
+    private transient Vec3d ffServerPos = null;
+    /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
+    private boolean flightAssistOn = true;
 
     // Mirror PlanetSelector Progressbars
     private DimensionProperties dimCache;
@@ -352,16 +421,26 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     }
 
 
+    /**
+     * Deprecated by Free Flight Mode (feature/true_rcs). The R-keybind path
+     * still arrives here for save-compat, but instead of toggling RCS we
+     * surface a redirect message pointing the pilot at FF mode (M-key).
+     *
+     * <p>The {@link #RCS_MODE} datawatcher field and {@link #setRCS} mutator
+     * remain functional — solar-map deep-space navigation ({@code getInSpaceFlight()})
+     * still flips RCS internally to drive its own steering branch. That path
+     * is untouched until {@code solar-map flight} migrates to FF (see
+     * design followup task).
+     */
     public void toggleRCS() {
-        if (DimensionManager.getInstance().getDimensionProperties(this.world.provider.getDimension()).isAsteroid()) {
-            rcs_mode = !rcs_mode;
-            setRCS(rcs_mode);
-            setPosition(this.posX, this.posY, this.posZ);
-        } else {
-            rcs_mode = false;
-            setRCS(false);
+        // Server-side: report deprecation to the pilot via a plain message. No
+        // mutation of RCS_MODE — legacy state remains, solar-map flight
+        // unaffected. Uses messagePilot, NOT setError: setError carries
+        // launch-abort semantics (LAUNCH_COUNTER = -1 + RocketAbortEvent), which
+        // a deprecation notice must never trigger.
+        if (!world.isRemote) {
+            messagePilot("msg.entity.rocket.rcsDeprecated");
         }
-
     }
 
     public boolean getRCS() {
@@ -561,6 +640,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             sb.append(s.replace("|", "/"));
         }
         return sb.toString();
+    }
+
+    /** Send a translated informational message to the rocket's passengers (no abort). */
+    private void messagePilot(String key, Object... args) {
+        if (world.isRemote) {
+            return;
+        }
+        for (Entity e : this.getPassengers()) {
+            if (e instanceof EntityPlayerMP) {
+                ((EntityPlayerMP) e).sendMessage(new net.minecraft.util.text.TextComponentTranslation(key, args));
+            }
+        }
     }
 
     private void setError(String key, Object... args) {
@@ -765,6 +856,374 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.setDirty(INFLIGHT);
     }
 
+    // ---- Free Flight Mode accessors / mutators ----
+
+    public RocketFlightMode getFlightMode() {
+        return flightMode == null ? RocketFlightMode.DEFAULT : flightMode;
+    }
+
+    /**
+     * Set the rocket's flight mode. Persisted to NBT. Server-side mutation only
+     * (callers from packet handlers must validate sender authority first).
+     */
+    public void setFlightMode(RocketFlightMode mode) {
+        this.flightMode = (mode == null ? RocketFlightMode.DEFAULT : mode);
+    }
+
+    public boolean isFreeFlight() {
+        return getFlightMode() == RocketFlightMode.FREE_FLIGHT;
+    }
+
+    public boolean isClassicLaunch() {
+        return getFlightMode() == RocketFlightMode.CLASSIC_LAUNCH;
+    }
+
+    /**
+     * Server-side application of a pilot input packet. The {@link FreeFlightInput}
+     * constructor already clamps per-channel; callers may forward a freshly-deserialised
+     * input without re-validating ranges.
+     *
+     * <p>No-op if the rocket is not in {@link RocketFlightMode#FREE_FLIGHT} —
+     * input is dropped silently to keep the contract symmetric ("input is intent,
+     * server decides").
+     */
+    public void applyFreeFlightInput(FreeFlightInput input) {
+        if (input == null) return;
+        if (!isFreeFlight()) return;
+        this.currentFreeFlightInput = input;
+        ffTrace("applyFreeFlightInput " + input);
+    }
+
+    public FreeFlightInput getCurrentFreeFlightInput() {
+        return currentFreeFlightInput;
+    }
+
+    public float getFreeFlightPitch() {
+        return freeFlightPitch;
+    }
+
+    public float getFreeFlightRoll() {
+        return freeFlightRoll;
+    }
+
+    public float getPrevFreeFlightRoll() {
+        return prevFreeFlightRoll;
+    }
+
+    /** Current FF attitude (body→world). Client render/camera slerp between
+     *  {@link #getPrevFfQuat()} and this by partialTicks. */
+    public FreeFlightPhysics.Quat getFfQuat() {
+        return ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
+    }
+
+    public FreeFlightPhysics.Quat getPrevFfQuat() {
+        return prevFfQuat == null ? FreeFlightPhysics.Quat.IDENTITY : prevFfQuat;
+    }
+
+    public boolean isFlightAssistOn() {
+        return flightAssistOn;
+    }
+
+    /** Persistent flight-assist toggle. Server-side authority only.
+     *  Re-enabling FA mid-flight captures the CURRENT velocity (projected into
+     *  the body frame) as the setpoint, so the toggle never jerks the craft
+     *  (TASK-46 D4 — Elite behaviour); disabling zeroes the setpoint. */
+    public void setFlightAssistOn(boolean on) {
+        if (!world.isRemote && on != this.flightAssistOn && isFreeFlight()) {
+            if (on && isInFlight()) {
+                double[] sp = FreeFlightPhysics.worldToBodyQ(
+                        this.motionX, this.motionY, this.motionZ, this.ffQuat);
+                setFaSetpoint(sp[0], sp[1], sp[2]);
+                ffTrace("FA re-enabled: setpoint captured from velocity "
+                        + sp[0] + "/" + sp[1] + "/" + sp[2]);
+            } else {
+                setFaSetpoint(0, 0, 0);
+            }
+        }
+        this.flightAssistOn = on;
+    }
+
+    /**
+     * Start the Free Flight engines (TASK-46 D3). Sets isInFlight, resets the
+     * latched-landed flag, zeros input so the rocket doesn't inherit stale
+     * intent, and arms the liftoff assist: the craft eases ~1 block off the
+     * pad and hovers there until the pilot takes over (no decaying takeoff
+     * kick, no land-grace window — the landing detector is simply disarmed
+     * until the craft has actually left the ground). Server-side only.
+     */
+    public void startFreeFlight() {
+        if (world.isRemote) return;
+        setInFlight(true);
+        freeFlightLandedLatched = false;
+        freeFlightHasLeftGround = false;
+        freeFlightTicksSinceStart = 0;
+        ffLiftoffTargetY = this.posY + 1.0;
+        currentFreeFlightInput = FreeFlightInput.zero();
+        setFaSetpoint(0, 0, 0); // fresh flight starts at hover intent
+        this.ffQuat = FreeFlightPhysics.Quat.IDENTITY; // upright reference attitude
+        this.prevFfQuat = FreeFlightPhysics.Quat.IDENTITY;
+        this.dataManager.set(FF_QW, 1f);
+        this.dataManager.set(FF_QX, 0f);
+        this.dataManager.set(FF_QY, 0f);
+        this.dataManager.set(FF_QZ, 0f);
+        ffTrace("startFreeFlight mode=" + getFlightMode() + " thrust=" + stats.getThrust()
+                + " weight=" + stats.getWeight() + " accel=" + stats.getAcceleration(1f)
+                + " liftoffTargetY=" + ffLiftoffTargetY);
+    }
+
+    /**
+     * Fuel availability for FF thrust — mirrors the classic isBurningFuel()
+     * gate: bipropellant needs BOTH fuel and oxidizer; when fuel isn't
+     * required by config, thrust is always available. Used by the per-tick
+     * physics AND the engine-start validation.
+     */
+    private boolean hasFreeFlightThrustFuel() {
+        if (!ARConfiguration.getCurrentConfig().rocketRequireFuel) return true;
+        FuelType ft = getRocketFuelType();
+        if (ft == null) return false;
+        if (ft == FuelType.LIQUID_BIPROPELLANT)
+            return getFuelAmount(ft) > 0 && getFuelAmount(FuelType.LIQUID_OXIDIZER) > 0;
+        return getFuelAmount(ft) > 0;
+    }
+
+    /**
+     * Shared gate for EVERY entry into {@link #startFreeFlight()}: the craft must
+     * have fuel AND positive climb authority (TWR &gt; 1) to leave the pad. Without
+     * this a fuel-less / underpowered FF rocket launched via {@link #prepareLaunch()}
+     * (Space, or a redstone monitoring station calling prepareLaunch directly) would
+     * set isInFlight but never thrust, never leave the ground, and thus never
+     * re-land ({@code freeFlightHasLeftGround} stays false so the landing detector
+     * never arms) — a permanent on-pad in-flight dead-state with no way to restart
+     * the engine. Mirrors the classic-launch fuel gate. Server-side only.
+     */
+    private boolean canStartFreeFlight() {
+        if (!hasFreeFlightThrustFuel()) {
+            return false;
+        }
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        return stats.getAcceleration(gravMult) > 0;
+    }
+
+    /** Harness-only ([FF-TRACE]) lifecycle log for the live FF path. Gated on the
+     *  same flag as the /artest probes; pass -Dadvancedrocketry.tests=true. */
+    private void ffTrace(String msg) {
+        if (TestProbeCommandRegistration.isTestMode()) {
+            AdvancedRocketry.logger.info("[FF-TRACE/" + (world.isRemote ? "C" : "S") + "] " + msg);
+        }
+    }
+
+    /**
+     * One server-side free-flight physics step. Pure delegation to
+     * {@link FreeFlightPhysics#step}: this method exists so the test harness
+     * can also single-step from the probe command without booting MC physics.
+     */
+    public void tickFreeFlight() {
+        if (world.isRemote) return;
+        if (!isFreeFlight() || !isInFlight()) return;
+
+        freeFlightTicksSinceStart++;
+        if (freeFlightTicksSinceStart == 1) ffTrace("tickFreeFlight first tick");
+
+        FuelType ft = getRocketFuelType();
+        boolean requireFuel = ARConfiguration.getCurrentConfig().rocketRequireFuel;
+        boolean canThrust = hasFreeFlightThrustFuel();
+
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        // Per-tick gravity decrement scaled to existing space-flight convention.
+        double gravity = 0.04 * gravMult;
+
+        // Thrust authority comes from the SAME classic stat the launch path uses:
+        // getAcceleration(g) is the net per-tick climb at full thrust and is
+        // thrust-multiplier / weight-system / gravityAffectsFuel aware. Adding the
+        // per-tick gravity back yields the gross thrust accel, so that at full
+        // vertical throttle net == getAcceleration → the FF climb gate is exactly
+        // the classic thrust-to-weight gate (TWR > 1). No invented /10000 scale.
+        double thrustMag = stats.getAcceleration(gravMult) + gravity;
+
+        // Engine-start liftoff (TASK-46 D3): until the pilot first gives any
+        // translation input, ease onto the hover point ~1 block above the pad
+        // (orientation channels stay live through the regular step below it).
+        FreeFlightInput in = this.currentFreeFlightInput == null
+                ? FreeFlightInput.zero() : this.currentFreeFlightInput;
+        boolean translationIdle = Math.abs(in.throttleForward) < 1e-5f
+                && Math.abs(in.throttleVertical) < 1e-5f
+                && Math.abs(in.strafeInput) < 1e-5f
+                && !in.cutActive;
+        if (!translationIdle) {
+            ffLiftoffTargetY = Double.NaN; // pilot took over — assist ends for this flight
+        }
+        boolean liftoffHover = !Double.isNaN(ffLiftoffTargetY) && canThrust;
+
+        // Integrate the body-frame ATTITUDE by this tick's rotation rates: pitch
+        // about the craft right axis, yaw about up, roll about the nose. A
+        // quaternion (not a world-frame Euler triple) → no gimbal lock, so loops
+        // work and the controls never invert relative to the pilot when the craft
+        // is rolled or inverted.
+        double pitchRate = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
+        double yawRate   = in.yawInput   * FreeFlightPhysics.MAX_YAW_RATE;
+        double rollRate  = in.rollInput  * FreeFlightPhysics.MAX_ROLL_RATE;
+        FreeFlightPhysics.Quat newQuat = FreeFlightPhysics.integrateBodyRates(
+                this.ffQuat, pitchRate, yawRate, rollRate);
+
+        FreeFlightPhysics.Step result;
+        if (liftoffHover) {
+            // Ease onto the hover point ~1 block off the pad; orientation still
+            // integrates (newQuat above), so the pilot can aim while lifting off.
+            result = FreeFlightPhysics.liftoffStep(
+                    this.posY, ffLiftoffTargetY,
+                    this.motionX, this.motionY, this.motionZ,
+                    0f, 0f, thrustMag);
+        } else if (this.flightAssistOn) {
+            // Flight Assist (TASK-46 D4): translation keys edit the body-frame
+            // velocity SETPOINT (release keeps it; X zeroes it); FA computes the
+            // thrust that tracks it in the freshly-integrated attitude frame.
+            double[] sp = FreeFlightPhysics.rampSetpoint(
+                    getFaSetpointForward(), getFaSetpointRight(), getFaSetpointUp(), in);
+            setFaSetpoint(sp[0], sp[1], sp[2]);
+            result = FreeFlightPhysics.faStep(
+                    this.motionX, this.motionY, this.motionZ, newQuat,
+                    sp[0], sp[1], sp[2], thrustMag, gravity, canThrust);
+        } else {
+            // Newtonian (FA off): direct body-frame thrust, coast on release.
+            result = FreeFlightPhysics.translateNewtonian(
+                    this.motionX, this.motionY, this.motionZ, newQuat,
+                    in, thrustMag, gravity, canThrust);
+        }
+
+        // Commit the attitude; snapshot prev for render/camera slerp. Derive the
+        // Euler view for legacy consumers (seat, HUD bars, probes, vanilla
+        // rotationYaw/Pitch readers), and replicate the quaternion. The client
+        // reads FF_Q* directly, so the old yaw/pitch tracker drift-resync teleport
+        // is gone — the full attitude is authoritative every tick.
+        this.prevFfQuat = this.ffQuat;
+        this.ffQuat = newQuat;
+        float[] e = FreeFlightPhysics.eulerFromQuat(newQuat);
+        this.prevRotationYaw = this.rotationYaw;
+        this.prevRotationPitch = this.rotationPitch;
+        this.prevFreeFlightRoll = this.freeFlightRoll;
+        this.rotationYaw     = e[0];
+        this.rotationPitch   = e[1];
+        this.freeFlightPitch = e[1];
+        this.freeFlightRoll  = e[2];
+        this.dataManager.set(FF_QW, (float) newQuat.w);
+        this.dataManager.set(FF_QX, (float) newQuat.x);
+        this.dataManager.set(FF_QY, (float) newQuat.y);
+        this.dataManager.set(FF_QZ, (float) newQuat.z);
+
+        // Engine power = magnitude of the thrust the engines applied this tick,
+        // i.e. the world-frame Δv MINUS gravity (gravity is not thrust): the
+        // difference between the resulting motion and where the craft would have
+        // coasted. Non-zero for thrust in ANY direction — climb, cruise, strafe,
+        // or just holding a hover against gravity — so the client sound plays
+        // whenever the engines actually fire, at a volume proportional to |thrust|.
+        double tdx = result.motionX - this.motionX;
+        double tdy = result.motionY - (this.motionY - gravity);
+        double tdz = result.motionZ - this.motionZ;
+        float enginePow = (float) Math.min(1.0,
+                Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz) / FreeFlightPhysics.MAX_THRUST_ACCEL);
+        this.dataManager.set(FF_ENGINE_POWER, enginePow);
+
+        this.motionX = result.motionX;
+        this.motionY = result.motionY;
+        this.motionZ = result.motionZ;
+
+        // Fuel burn — classic semantics: while thrust is applied AND fuel is
+        // required, drain getFuelConsumptionRate per tick (oxidizer too for
+        // bipropellant), and null out the fluid when a tank empties — exactly
+        // like the classic ascent burn in onUpdate().
+        if (requireFuel && result.thrustApplied && ft != null) {
+            setFuelAmount(ft, getFuelAmount(ft) - getFuelConsumptionRate(ft));
+            if (ft == FuelType.LIQUID_BIPROPELLANT)
+                setFuelAmount(FuelType.LIQUID_OXIDIZER,
+                        getFuelAmount(FuelType.LIQUID_OXIDIZER) - getFuelConsumptionRate(FuelType.LIQUID_OXIDIZER));
+
+            if (getFuelAmount(ft) == 0) {
+                stats.setFuelFluid("null");
+                stats.setWorkingFluid("null");
+            }
+            if (ft == FuelType.LIQUID_BIPROPELLANT && getFuelAmount(FuelType.LIQUID_OXIDIZER) == 0) {
+                stats.setOxidizerFluid("null");
+            }
+        }
+
+        // Apply motion to the world.
+        this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
+
+        // Landing: ground contact + slow vertical motion → engines off (TASK-46
+        // D3: touchdown auto-shutdown). The detector arms only once the craft
+        // has actually left the ground, so the engine-start hover can never
+        // read as a touchdown — no timed grace window needed.
+        if (!freeFlightHasLeftGround && !this.onGround) {
+            freeFlightHasLeftGround = true;
+            ffTrace("liftoff: craft left the ground, landing detector armed");
+        }
+        if (freeFlightHasLeftGround
+                && FreeFlightPhysics.shouldLand(this.onGround, this.motionY)
+                && !freeFlightLandedLatched) {
+            // Harness-only diagnostics: explain WHY FF just switched off, with the
+            // concrete climb-authority numbers so manual testers can tell an
+            // out-of-thrust rocket apart from an over-eager auto-land. Gated on the
+            // same flag as the /artest probes (-Dadvancedrocketry.tests=true), so
+            // players never see it.
+            if (TestProbeCommandRegistration.isTestMode()) {
+                logFreeFlightLandReason(result.thrustApplied);
+            }
+            this.motionX = 0;
+            this.motionY = 0;
+            this.motionZ = 0;
+            this.setInFlight(false); // touchdown = engines off (TASK-46 D3)
+            this.setInOrbit(false);
+            this.currentFreeFlightInput = FreeFlightInput.zero();
+            this.freeFlightLandedLatched = true;
+            this.ffLiftoffTargetY = Double.NaN;
+            MinecraftForge.EVENT_BUS.post(new RocketEvent.RocketLandedEvent(this));
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.ROCKETLANDEVENT.ordinal()), this);
+        }
+
+        this.velocityChanged = true;
+    }
+
+    /**
+     * Harness-only diagnostic for "Free Flight switched off". Recomputes the
+     * climb-authority numbers the way {@link FreeFlightPhysics} does and logs
+     * whether the rocket physically could not climb (thrust too low for the
+     * local gravity) versus simply having re-landed without sustained vertical
+     * input. Gated by the caller on {@link TestProbeCommandRegistration#isTestMode()}.
+     *
+     * @param thrustAppliedLastTick whether the final physics step actually applied thrust
+     */
+    private void logFreeFlightLandReason(boolean thrustAppliedLastTick) {
+        int thrust = stats.getThrust();
+        float weight = stats.getWeight();
+        float gravMult = DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier();
+        double gravity = 0.04 * gravMult;
+
+        // Climb authority is exactly the classic ascent acceleration: > 0 means
+        // the rocket can gain altitude at full vertical thrust (i.e. TWR > 1).
+        double netAccel = stats.getAcceleration(gravMult);
+        double twr = weight > 0 ? (double) thrust / weight : Double.POSITIVE_INFINITY;
+        boolean canClimb = netAccel > 0;
+        String verdict = canClimb
+                ? "thrust OK (getAcceleration > 0, TWR > 1) — re-landed without sustained vertical (Z) input, or auto-land fired near the pad"
+                : "INSUFFICIENT THRUST: getAcceleration <= 0 (TWR <= effective gravity) — full vertical thrust cannot climb here";
+
+        AdvancedRocketry.logger.info(String.format(
+                "[FF-DEBUG] FreeFlight OFF (landed) after %d ticks: onGround=%b motionY=%.4f thrustAppliedLastTick=%b%n"
+              + "           climb: thrust=%d weight=%.2f TWR=%.3f getAcceleration=%.5f gravity=%.5f canClimb=%b%n"
+              + "           verdict: %s%n"
+              + "           lastInput=%s",
+                freeFlightTicksSinceStart, this.onGround, this.motionY, thrustAppliedLastTick,
+                thrust, weight, twr, netAccel, gravity, canClimb,
+                verdict, String.valueOf(currentFreeFlightInput)));
+    }
+
     /**
      * If the rocket is in flight, ie the rocket has taken off and has not touched the ground
      *
@@ -799,6 +1258,26 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.register(RCS_MODE, false);
         this.dataManager.register(LAUNCH_COUNTER, -1);
         this.dataManager.register(INSPACEFLIGHT, false);
+        this.dataManager.register(FA_SP_FWD,   0f);
+        this.dataManager.register(FA_SP_RIGHT, 0f);
+        this.dataManager.register(FA_SP_UP,    0f);
+        this.dataManager.register(FF_QW, 1f);
+        this.dataManager.register(FF_QX, 0f);
+        this.dataManager.register(FF_QY, 0f);
+        this.dataManager.register(FF_QZ, 0f);
+        this.dataManager.register(FF_ENGINE_POWER, 0f);
+    }
+
+    // ---- Flight Assist setpoint accessors (TASK-46 D4) -------------------
+
+    public float getFaSetpointForward() { return this.dataManager.get(FA_SP_FWD); }
+    public float getFaSetpointRight()   { return this.dataManager.get(FA_SP_RIGHT); }
+    public float getFaSetpointUp()      { return this.dataManager.get(FA_SP_UP); }
+
+    private void setFaSetpoint(double fwd, double right, double up) {
+        this.dataManager.set(FA_SP_FWD,   (float) fwd);
+        this.dataManager.set(FA_SP_RIGHT, (float) right);
+        this.dataManager.set(FA_SP_UP,    (float) up);
     }
 
     //Set the size and position of the rocket from storage
@@ -1024,6 +1503,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     }
 
     public float getEnginePower() {
+        // Free Flight: thrust fires in any direction, so drive the sound off the
+        // replicated per-tick thrust magnitude (set in tickFreeFlight) instead of
+        // the classic motionY>0 gate — volume is proportional to |thrust vector|,
+        // and it sounds whenever the engines actually work (incl. a hover).
+        if (isFreeFlight())
+            return isInFlight() ? this.dataManager.get(FF_ENGINE_POWER) : 0f;
+
         float mult = 1;
         int countdown = this.dataManager.get(LAUNCH_COUNTER);
         if (countdown > -1 && isStartupPhase()) {
@@ -1044,6 +1530,24 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public void setPositionAndRotationDirect(double x, double y, double z, float yaw, float pitch, int posRotationIncrements, boolean teleport) {
+
+        // Free Flight is fast/arcade. The classic poscorrection smoothing (closed
+        // at only 1/ct=50 per tick) lags ~150 blocks behind; a hard snap on every
+        // tracker update (every updateFrequency=3 ticks) is the opposite problem —
+        // the rocket freezes between updates then jumps, which reads as violent
+        // jitter. Instead we just record the position ERROR here and let the
+        // client dead-reckon by velocity each tick, absorbing the (small) error
+        // over a few ticks — see the FF branch in onUpdate().
+        if (isFreeFlight() && isInFlight()) {
+            // FF ATTITUDE replicates via the FF_Q* DataParameters (read directly in
+            // onUpdate), NOT the byte-quantised yaw/pitch tracker — so the yaw/pitch
+            // this vanilla path carries is ignored. Only POSITION is recorded, as
+            // the authoritative target: the client predicts by velocity and corrects
+            // the residual toward it each tick (see the FF branch in onUpdate()),
+            // which removes the fast craft's sample-rate lag without a hard snap.
+            this.ffServerPos = new Vec3d(x, y, z);
+            return;
+        }
 
         if(last_was_in_orbit != this.dataManager.get(INORBIT)){
             last_was_in_orbit = this.dataManager.get(INORBIT);
@@ -1207,6 +1711,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     @Override
     public void setVelocity(double x, double y, double z) {
 
+        // Free Flight: take the server velocity verbatim (see
+        // setPositionAndRotationDirect) — no slow velcorrection blending.
+        if (isFreeFlight() && isInFlight()) {
+            this.motionX = x;
+            this.motionY = y;
+            this.motionZ = z;
+            this.velcorrection = new Vec3d(0, 0, 0);
+            return;
+        }
+
         if (reset_motion){
             velcorrection = new Vec3d(0,0,0);
             this.motionX = x;
@@ -1239,7 +1753,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 postedLandedAfterLoad = true;
             }
         }
-        if (world.isRemote) {
+        // Skip the classic poscorrection/velcorrection smoothing while in Free
+        // Flight — FF snaps to the server transform in setPositionAndRotationDirect
+        // / setVelocity, so applying stale corrections here would re-introduce the
+        // lag/jerk this fix removes.
+        if (world.isRemote && !(isFreeFlight() && isInFlight())) {
 
             double ct = 50;
 
@@ -1337,6 +1855,74 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             rcs_mode_counter--;
             this.rotationYaw = 0;
         }
+
+        // ---- Free Flight Mode branch -------------------------------------------
+        // Server runs the arcade physics; client smooths the render. Either way
+        // we SKIP every classic-launch branch below.
+        if (isFreeFlight() && isInFlight()) {
+            if (!world.isRemote) {
+                tickFreeFlight();
+            } else {
+                // Predict-then-correct smoothing. The craft is fast and the tracker
+                // samples pose ~once per tick; freezing between samples then snapping
+                // reads as violent jitter, so each CLIENT tick we PREDICT from the
+                // synced velocity / local steering rates (dead-reckon) and pull the
+                // RESIDUAL error toward the latest server target over
+                // FF_CLIENT_CORRECT_TICKS. Correcting the residual (target − predicted)
+                // rather than the raw gap (target − pos) is the whole point: the raw
+                // gap already contains this tick's motion, so adding motion AND the gap
+                // double-counts it and leaves the client a full tick ahead of the
+                // server — a constant lead that shifts whenever velocity changes, which
+                // is the FA-off sawtooth. Attitude uses the same predict-then-correct
+                // shape below, on the quaternion (slerp) instead of Euler.
+                FreeFlightInput in = currentFreeFlightInput == null
+                        ? FreeFlightInput.zero() : currentFreeFlightInput;
+
+                // Position: dead-reckon by synced velocity, then correct the residual
+                // to the server target. e → 0 in steady state (no lead, no lag).
+                double px = this.posX + this.motionX;
+                double py = this.posY + this.motionY;
+                double pz = this.posZ + this.motionZ;
+                if (this.ffServerPos != null) {
+                    px += (this.ffServerPos.x - px) / FF_CLIENT_CORRECT_TICKS;
+                    py += (this.ffServerPos.y - py) / FF_CLIENT_CORRECT_TICKS;
+                    pz += (this.ffServerPos.z - pz) / FF_CLIENT_CORRECT_TICKS;
+                }
+                this.setPosition(px, py, pz);
+
+                // Attitude: predict from the local input rates, then slerp a
+                // fraction toward the replicated server quaternion (FF_Q*). For the
+                // pilot the prediction ≈ the server, so the slerp barely moves →
+                // smooth; an observer has zero input, so the correction carries the
+                // server attitude. Snapshot prev BEFORE the advance so the render and
+                // the hard-locked FF camera slerp one tick's rotation per frame — the
+                // source of the smooth 60 fps sweep despite the 20 Hz physics.
+                double pr = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
+                double yr = in.yawInput   * FreeFlightPhysics.MAX_YAW_RATE;
+                double rr = in.rollInput  * FreeFlightPhysics.MAX_ROLL_RATE;
+                FreeFlightPhysics.Quat predicted =
+                        FreeFlightPhysics.integrateBodyRates(this.ffQuat, pr, yr, rr);
+                FreeFlightPhysics.Quat target = new FreeFlightPhysics.Quat(
+                        this.dataManager.get(FF_QW), this.dataManager.get(FF_QX),
+                        this.dataManager.get(FF_QY), this.dataManager.get(FF_QZ)).normalized();
+                this.prevFfQuat = this.ffQuat;
+                this.ffQuat = FreeFlightPhysics.slerp(predicted, target, 1.0 / FF_CLIENT_CORRECT_TICKS);
+
+                // Mirror the Euler view for legacy consumers (seat, HUD bars, vanilla
+                // rotationYaw/Pitch readers); render/camera read the quaternion.
+                float[] e = FreeFlightPhysics.eulerFromQuat(this.ffQuat);
+                this.prevRotationYaw    = this.rotationYaw;
+                this.prevRotationPitch  = this.rotationPitch;
+                this.prevFreeFlightRoll = this.freeFlightRoll;
+                this.rotationYaw     = e[0];
+                this.rotationPitch   = e[1];
+                this.freeFlightPitch = e[1];
+                this.freeFlightRoll  = e[2];
+            }
+            return;
+        }
+        // ------------------------------------------------------------------------
+
         //Count down
         int launchCount = this.dataManager.get(LAUNCH_COUNTER);
         if (launchCount >= 0) {
@@ -1973,6 +2559,29 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             return;
         }
 
+        // Free Flight Mode short-circuit: skip classic countdown + destination
+        // validation. The pilot just enters arcade flight directly.
+        ffTrace("prepareLaunch isFreeFlight=" + isFreeFlight() + " isInFlight=" + isInFlight());
+        if (isFreeFlight()) {
+            if (world.isRemote) {
+                PacketHandler.sendToServer(new PacketEntity(this, (byte) EntityRocket.PacketType.LAUNCH.ordinal()));
+            } else if (!isInFlight()) {
+                // Same fuel/TWR gate as the ENGINE_START ritual. prepareLaunch is
+                // reachable WITHOUT that ritual (Space, or a redstone monitoring
+                // station calling prepareLaunch directly), so entering flight here
+                // without lift authority would strand the craft in a thrustless
+                // on-pad in-flight dead-state it can never leave. Report the
+                // reason to any pilot and stay grounded instead.
+                if (canStartFreeFlight()) {
+                    startFreeFlight();
+                } else {
+                    ffTrace("prepareLaunch FF rejected: no fuel / no climb authority (TWR <= 1)");
+                    messagePilot("msg.entity.rocket.ffNoLiftoff");
+                }
+            }
+            return;
+        }
+
         if (isInOrbit()) {
             setInFlight(true);
             return;
@@ -2061,9 +2670,46 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             }
         }
 
-        if (ARConfiguration.getCurrentConfig().partsWearSystem && storage.shouldBreak()) {
-            this.explode();
-            return;
+        if (ARConfiguration.getCurrentConfig().partsWearSystem) {
+            ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+
+            // A worn seat is unsafe: refuse a CREWED launch (automated rockets fly).
+            if (!this.getPassengers().isEmpty() && storage.hasCriticallyWornSeat(cfg.wearSeatBlockStageFraction)) {
+                setError("error.rocket.seatWorn");
+                return;
+            }
+
+            // Failure probability = motor wear + leak-ignition risk of worn tanks
+            // that actually carry fuel/oxidizer. Computed without side effects so
+            // the block decision below does not strand a half-leaked rocket.
+            float failProb = storage.getBreakingProbability();
+            for (StorageChunk.WornTank tank : storage.getWornTanks()) {
+                if (getFuelAmount(tank.type) > 0) {
+                    failProb += (float) cfg.wearTankLeakChanceMax * tank.wornFraction;
+                }
+            }
+            failProb = Math.min(1f, failProb);
+
+            if (failProb >= cfg.wearWarnProbability) {
+                messagePilot("warning.rocket.worn", (int) (failProb * 100));
+                if (cfg.wearCriticalBlocksLaunch) {
+                    setError("error.rocket.tooWorn", (int) (failProb * 100));
+                    return;
+                }
+            }
+
+            if (failProb > 0 && world.rand.nextFloat() < failProb) {
+                this.explode();
+                return;
+            }
+
+            // Launch proceeds, but worn tanks bleed some of their fuel.
+            for (StorageChunk.WornTank tank : storage.getWornTanks()) {
+                int amt = getFuelAmount(tank.type);
+                if (amt > 0 && world.rand.nextFloat() < cfg.wearTankLeakChanceMax * tank.wornFraction) {
+                    setFuelAmount(tank.type, (int) (amt * (1 - cfg.wearTankLeakFuelLoss)));
+                }
+            }
         }
 
         if (ARConfiguration.getCurrentConfig().experimentalSpaceFlight && storage.getGuidanceComputer() != null && storage.getGuidanceComputer().isEmpty()) {
@@ -2153,7 +2799,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
 
-        if (this.stats.getWeight() >= this.stats.getThrust()) {
+        if (!this.stats.canLaunch()) {
             setError("error.rocket.tooHeavy");
             return; // hard stop; no silent fall-through
         }
@@ -2369,6 +3015,37 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         motionY = nbt.getDouble("motionY");
         motionZ = nbt.getDouble("motionZ");
 
+        // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
+        flightMode = RocketFlightMode.readFromNBT(nbt);
+        // FF attitude quaternion (TASK-53 Phase 7). Missing key (older save /
+        // never-flown rocket) → upright identity; the pilot re-orients in flight.
+        if (nbt.hasKey("ffQuatW")) {
+            ffQuat = new FreeFlightPhysics.Quat(nbt.getFloat("ffQuatW"), nbt.getFloat("ffQuatX"),
+                    nbt.getFloat("ffQuatY"), nbt.getFloat("ffQuatZ")).normalized();
+        } else {
+            ffQuat = FreeFlightPhysics.Quat.IDENTITY;
+        }
+        prevFfQuat = ffQuat;
+        if (isFreeFlight()) {
+            float[] eLoad = FreeFlightPhysics.eulerFromQuat(ffQuat);
+            rotationYaw = eLoad[0];
+            rotationPitch = eLoad[1];
+            freeFlightPitch = eLoad[1];
+            freeFlightRoll = eLoad[2];
+            prevFreeFlightRoll = freeFlightRoll;
+        }
+        // Flight Assist default ON for missing-key (legacy) saves.
+        flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
+        // Engine-start liftoff state (TASK-46 D3); missing keys (legacy saves)
+        // → assist inactive + landing detector armed, i.e. plain in-flight.
+        ffLiftoffTargetY = nbt.hasKey("ffLiftoffTargetY")
+                ? nbt.getDouble("ffLiftoffTargetY") : Double.NaN;
+        freeFlightHasLeftGround = !nbt.hasKey("ffHasLeftGround") || nbt.getBoolean("ffHasLeftGround");
+        // FA velocity setpoint (TASK-46 D4); missing keys → zero (hover intent).
+        setFaSetpoint(nbt.getFloat("faSetpointFwd"),
+                nbt.getFloat("faSetpointRight"),
+                nbt.getFloat("faSetpointUp"));
+
         readMissionPersistentNBT(nbt);
         if (nbt.hasKey("data")) {
             if (storage == null)
@@ -2412,6 +3089,23 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         nbt.setDouble("motionX", motionX);
         nbt.setDouble("motionY", motionY);
         nbt.setDouble("motionZ", motionZ);
+        // Free Flight Mode — written unconditionally so the field round-trips
+        // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
+        RocketFlightMode.writeToNBT(nbt, flightMode);
+        // FF attitude quaternion (TASK-53 Phase 7) — the source of truth; the
+        // Euler freeFlightPitch/Roll are derived and no longer persisted.
+        FreeFlightPhysics.Quat wq = ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
+        nbt.setFloat("ffQuatW", (float) wq.w);
+        nbt.setFloat("ffQuatX", (float) wq.x);
+        nbt.setFloat("ffQuatY", (float) wq.y);
+        nbt.setFloat("ffQuatZ", (float) wq.z);
+        nbt.setBoolean("flightAssistOn", flightAssistOn);
+        if (!Double.isNaN(ffLiftoffTargetY))
+            nbt.setDouble("ffLiftoffTargetY", ffLiftoffTargetY);
+        nbt.setBoolean("ffHasLeftGround", freeFlightHasLeftGround);
+        nbt.setFloat("faSetpointFwd",   getFaSetpointForward());
+        nbt.setFloat("faSetpointRight", getFaSetpointRight());
+        nbt.setFloat("faSetpointUp",    getFaSetpointUp());
         stats.writeToNBT(nbt);
 
         if (!infrastructureCoords.isEmpty()) {
@@ -2495,6 +3189,24 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 position.star = DimensionManager.getInstance().getStar(in.readInt());
 
             position.writeToNBT(nbt);
+        } else if (packetId == PacketType.SET_FLIGHT_MODE.ordinal()) {
+            // Wire: 1 byte = ordinal of RocketFlightMode (-1 → default).
+            byte ord = in.readByte();
+            RocketFlightMode[] all = RocketFlightMode.values();
+            RocketFlightMode mode = (ord >= 0 && ord < all.length) ? all[ord] : RocketFlightMode.DEFAULT;
+            nbt.setString("flightMode", mode.name());
+        } else if (packetId == PacketType.FREE_FLIGHT_INPUT.ordinal()) {
+            FreeFlightInput input = FreeFlightInput.read(in);
+            nbt.setFloat("ffFwd",   input.throttleForward);
+            nbt.setFloat("ffVert",  input.throttleVertical);
+            nbt.setFloat("ffStrafe", input.strafeInput);
+            nbt.setFloat("ffYaw",   input.yawInput);
+            nbt.setFloat("ffPitch", input.pitchInput);
+            nbt.setFloat("ffRoll",  input.rollInput);
+            nbt.setFloat("ffBrake", input.brakeInput);
+            nbt.setBoolean("ffCut", input.cutActive);
+        } else if (packetId == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
+            nbt.setBoolean("flightAssistOn", in.readBoolean());
         }
     }
 
@@ -2541,6 +3253,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             out.writeBoolean(hasStar);
             if (hasStar)
                 out.writeInt(spacePosition.star.getId());
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal()) {
+            out.writeByte((byte) getFlightMode().ordinal());
+        } else if (id == PacketType.FREE_FLIGHT_INPUT.ordinal()) {
+            // Client→server send: client writes its current input intent.
+            // The current intent on server is the latest applied input, so
+            // re-broadcasting it (server→client mirror) is also coherent.
+            getCurrentFreeFlightInput().write(out);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
+            out.writeBoolean(isFlightAssistOn());
         }
     }
 
@@ -2624,6 +3345,63 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             releaseDestinationPreload();
         } else if (id == PacketType.SENDSPACEPOS.ordinal()) {
             this.spacePosition.readFromNBT(nbt);
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal() && !world.isRemote) {
+            // Authority: only a passenger of THIS rocket may change its mode,
+            // and only while the rocket is not actively in flight (you don't
+            // get to switch mid-ascent).
+            if (this.isInFlight()) return;
+            if (!this.getPassengers().contains(player)) return;
+            String name = nbt.getString("flightMode");
+            RocketFlightMode mode = RocketFlightMode.DEFAULT;
+            for (RocketFlightMode m : RocketFlightMode.values()) {
+                if (m.name().equals(name)) { mode = m; break; }
+            }
+            setFlightMode(mode);
+            // Propagate to clients so the UI can react.
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.SET_FLIGHT_MODE.ordinal()), this);
+        } else if (id == PacketType.SET_FLIGHT_MODE.ordinal() && world.isRemote) {
+            // Echo from server → mutate local cache to keep client UI in sync.
+            String name = nbt.getString("flightMode");
+            for (RocketFlightMode m : RocketFlightMode.values()) {
+                if (m.name().equals(name)) { this.flightMode = m; break; }
+            }
+        } else if (id == PacketType.FREE_FLIGHT_INPUT.ordinal() && !world.isRemote) {
+            // Authority: only the active pilot (= a passenger) may push input.
+            if (!this.getPassengers().contains(player)) return;
+            if (!isFreeFlight()) return; // silent drop — mode mismatch
+            FreeFlightInput input = new FreeFlightInput(
+                    nbt.getFloat("ffFwd"),
+                    nbt.getFloat("ffVert"),
+                    nbt.getFloat("ffStrafe"),
+                    nbt.getFloat("ffYaw"),
+                    nbt.getFloat("ffPitch"),
+                    nbt.getFloat("ffRoll"),
+                    nbt.getFloat("ffBrake"),
+                    nbt.getBoolean("ffCut"));
+            applyFreeFlightInput(input);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal() && !world.isRemote) {
+            // Authority: passenger only. Allowed in-flight (unlike SET_FLIGHT_MODE).
+            if (!this.getPassengers().contains(player)) return;
+            setFlightAssistOn(nbt.getBoolean("flightAssistOn"));
+            PacketHandler.sendToPlayersTrackingEntity(
+                    new PacketEntity(this, (byte) PacketType.SET_FLIGHT_ASSIST.ordinal()), this);
+        } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal() && world.isRemote) {
+            this.flightAssistOn = nbt.getBoolean("flightAssistOn");
+        } else if (id == PacketType.ENGINE_START.ordinal() && !world.isRemote) {
+            // Engine-start ritual (TASK-46 D3). Authority: a passenger of THIS
+            // rocket, FF mode, not already flying. Gate mirrors the classic
+            // launch (fuel available AND positive climb authority, TWR > 1) via
+            // the shared canStartFreeFlight() check — a craft that can't lift
+            // just doesn't start.
+            if (!this.getPassengers().contains(player)) return;
+            if (!isFreeFlight() || isInFlight()) return;
+            if (!canStartFreeFlight()) {
+                ffTrace("ENGINE_START rejected: no fuel / no climb authority (TWR <= 1)");
+                return;
+            }
+            ffTrace("ENGINE_START accepted");
+            startFreeFlight();
         } else if (id >= STATION_LOC_OFFSET + BUTTON_ID_OFFSET) {
             int id2 = id - (STATION_LOC_OFFSET + BUTTON_ID_OFFSET) - 1;
             setDestLandingPad(id2);
@@ -2670,6 +3448,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public void updatePassenger(@Nonnull Entity entity) {
+        // Free Flight: seat the passenger with the SAME body-frame transform the
+        // renderer uses (yaw about world up, pitch about the lateral axis, the
+        // +90 nose mapping) so the camera sits IN the seat block and rotates
+        // rigidly with the craft — see RendererRocket's FF branch.
+        if (isFreeFlight() && isInFlight() && this.storage != null) {
+            updateFreeFlightPassenger(entity);
+            return;
+        }
         //Bind player to the seat
         if (this.storage != null) {
             try {
@@ -2706,6 +3492,47 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             entity.setPosition(this.posX, this.posY, this.posZ);
     }
 
+    /**
+     * Seat a Free-Flight passenger at the seat block, transformed by the exact
+     * same body-frame rotation the renderer applies to the model
+     * ({@code Ry(-yaw) · Rx(freeFlightPitch + 90)} about the render pivot). The
+     * camera then sits IN the cockpit and yaws/pitches rigidly with the craft,
+     * instead of hanging at the entity origin while the model rotates away.
+     */
+    private void updateFreeFlightPassenger(@Nonnull Entity entity) {
+        try {
+            HashedBlockPosition seatPos = stats.getPassengerSeat(this.getPassengers().indexOf(entity));
+            float halfx = storage.getSizeX() / 2f;
+            float halfy = storage.getSizeY() / 2f;
+            float halfz = storage.getSizeZ() / 2f;
+
+            // Seat block CENTRE in model space (+0.5 on every axis, the same way
+            // RendererRocket's display list places a block), re-based onto the
+            // render pivot (model centre, vertical origin at +halfy) so this
+            // matches the rendered model exactly.
+            double cx = (seatPos.x + 0.5) - halfx;
+            double cy = (seatPos.y + 0.5) - halfy;
+            double cz = (seatPos.z + 0.5) - halfz;
+
+            // Transform the model-space seat offset by the exact render orientation
+            // (attitude quaternion ∘ the Rx(90) build offset that maps the
+            // vertically-built model's +Y nose onto the body forward axis), so the
+            // camera sits IN the cockpit and banks/pitches/loops rigidly with it —
+            // pole-safe, unlike the derived Euler.
+            double bx = cx;      // model→body via Rx(90): (x, -z, y)
+            double by = -cz;
+            double bz = cy;
+            double[] w = getFfQuat().rotate(bx, by, bz);
+
+            // World seat position (eye height), then drop to the passenger's feet
+            // so the camera lands at the seat.
+            double seatWorldY = this.posY + halfy + w[1];
+            entity.setPosition(this.posX + w[0], seatWorldY - entity.getEyeHeight(), this.posZ + w[2]);
+        } catch (IndexOutOfBoundsException e) {
+            entity.setPosition(this.posX, this.posY, this.posZ);
+        }
+    }
+
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
         List<ModuleBase> modules;
@@ -2720,15 +3547,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 modules.add(new ModuleImage(173, 168, new IconResource(98, 168, 78, 3, CommonResources.genericBackground)));
             }
 
-            // Broken parts
-            // TODO Add check for the service monitor
-
+            // Worn parts damage view — gated on a service monitor in the rocket.
             if (storage.hasServiceMonitor()) {
                 List<ModuleBase> serviceMonitorList = new ArrayList<>();
 
                 int ii = 0;
-                for (TileBrokenPart part : storage.getBrokenBlocks()) {
-                    serviceMonitorList.add(new ModuleBrokenPart(1 + (ii % 5) * 18, 1 + (ii / 5) * 18, part.getDrop()));
+                for (ItemStack worn : storage.getWornPartDisplayStacks()) {
+                    serviceMonitorList.add(new ModuleBrokenPart(1 + (ii % 5) * 18, 1 + (ii / 5) * 18, worn));
                     ii++;
                 }
 
@@ -3019,6 +3844,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         TOGGLE_RCS,
         TURNUPDATE,
         ABORTLAUNCH,
-        SENDSPACEPOS
+        SENDSPACEPOS,
+        // Free Flight Mode (TASK: feature/true_rcs) — APPEND-ONLY so wire IDs stay stable.
+        SET_FLIGHT_MODE,
+        FREE_FLIGHT_INPUT,
+        SET_FLIGHT_ASSIST,
+        /** Client→server: the pilot completed the 3 s engine-start hold (TASK-46 D3). No payload. */
+        ENGINE_START
     }
 }

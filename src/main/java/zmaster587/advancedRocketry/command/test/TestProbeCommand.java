@@ -160,6 +160,12 @@ public class TestProbeCommand extends CommandBase {
                 case "item":
                     handleItem(server, sender, tail(args));
                     break;
+                case "weight":
+                    handleWeight(sender, tail(args));
+                    break;
+                case "wear":
+                    handleWear(server, sender, tail(args));
+                    break;
                 case "enchant":
                     handleEnchant(server, sender, tail(args));
                     break;
@@ -264,6 +270,40 @@ public class TestProbeCommand extends CommandBase {
             }
             builder.append("]}");
             send(sender, builder.toString());
+            return;
+        }
+        if ("time".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Per-dimension clock readout — worldTime is per-dim on AR planets
+            // (ARDimensionWorldInfo, TASK-47), so this is the probe that can
+            // tell a planet's clock apart from the overworld's. Lazily loads +
+            // pins the dim like the weather probes, so a fresh dim can be read.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            if (dim == Integer.MIN_VALUE) {
+                send(sender, "{\"error\":\"invalid dim id\",\"value\":\"" + args[1] + "\"}");
+                return;
+            }
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = sender.getServer() != null
+                    ? sender.getServer().getWorld(dim) : null;
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("dim", dim);
+            map.put("worldInfoClass", world.getWorldInfo().getClass().getName());
+            map.put("worldTime", world.getWorldInfo().getWorldTime());
+            map.put("totalTime", world.getWorldInfo().getWorldTotalTime());
+            map.put("rotationalPeriod",
+                    world.provider instanceof zmaster587.advancedRocketry.api.IPlanetaryProvider
+                            ? ((zmaster587.advancedRocketry.api.IPlanetaryProvider) world.provider)
+                                    .getRotationalPeriod(null)
+                            : 24000);
+            map.put("isDaytime", world.provider.isDaytime());
+            send(sender, jsonMap(map));
             return;
         }
         if ("info".equalsIgnoreCase(args[0]) && args.length >= 2) {
@@ -465,6 +505,54 @@ public class TestProbeCommand extends CommandBase {
                     return;
             }
             send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"mode\":\"" + mode + "\",\"ticks\":" + ticks + "}");
+            return;
+        }
+        // weather set-marker <dim> <rainMarker> <thunderMarker> — set the planet's
+        // XML-style weather markers at runtime and refresh usesCustomWorldInfo().
+        // A non-default marker (e.g. rain=-1 = forced-clear) makes the custom
+        // weather cycle eligible to run, which is what we toggle the config against.
+        if (args.length >= 4 && "set-marker".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int rainMarker = parseIntOr(args[2], 0);
+            int thunderMarker = parseIntOr(args[3], 0);
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"no dimension properties\",\"dim\":" + dim + "}");
+                return;
+            }
+            props.setRainMarker(rainMarker);
+            props.setThunderMarker(thunderMarker);
+            props.updateCustomWorldInfo();
+            send(sender, "{\"ok\":true,\"dim\":" + dim
+                    + ",\"rainMarker\":" + props.getRainMarker()
+                    + ",\"thunderMarker\":" + props.getThunderMarker()
+                    + ",\"usesCustomWorldInfo\":" + props.usesCustomWorldInfo() + "}");
+            return;
+        }
+        // weather tick-provider <dim> [n] — call WorldProvider.updateWeather()
+        // directly n times (default 1), bypassing the natural per-tick schedule.
+        // This is the production weather-cycle entry point; driving it lets a test
+        // observe whether the custom planet cycle runs (config on) or delegates to
+        // vanilla (config off) without waiting on real ticks.
+        if (args.length >= 2 && "tick-provider".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int n = args.length >= 3 ? parseIntOr(args[2], 1) : 1;
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            for (int i = 0; i < n; i++) {
+                world.provider.updateWeather();
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"ticks\":" + n
+                    + ",\"providerClass\":\"" + world.provider.getClass().getName() + "\"}");
             return;
         }
         send(sender, "{\"error\":\"unknown weather subcommand\"}");
@@ -746,6 +834,68 @@ public class TestProbeCommand extends CommandBase {
             info.put("isInFlight", rocket.isInFlight());
             info.put("isInOrbit", rocket.isInOrbit());
             info.put("ticksExisted", rocket.ticksExisted);
+            // Free Flight Mode probe surface (TASK: feature/true_rcs).
+            info.put("flightMode", rocket.getFlightMode().name());
+            info.put("motionX", rocket.motionX);
+            info.put("motionY", rocket.motionY);
+            info.put("motionZ", rocket.motionZ);
+            info.put("rotationYaw", rocket.rotationYaw);
+            zmaster587.advancedRocketry.api.FreeFlightInput ffin = rocket.getCurrentFreeFlightInput();
+            if (ffin != null) {
+                // Flat keys (jsonMap does not recurse into nested Maps).
+                info.put("ffInputFwd",   ffin.throttleForward);
+                info.put("ffInputVert",  ffin.throttleVertical);
+                info.put("ffInputStrafe", ffin.strafeInput);
+                info.put("ffInputYaw",   ffin.yawInput);
+                info.put("ffInputPitch", ffin.pitchInput);
+                info.put("ffInputRoll", ffin.rollInput);
+                info.put("ffInputBrake", ffin.brakeInput);
+                info.put("ffInputCut",  ffin.cutActive);
+            }
+            info.put("freeFlightPitch", rocket.getFreeFlightPitch());
+            info.put("freeFlightRoll", rocket.getFreeFlightRoll());
+            info.put("flightAssistOn", rocket.isFlightAssistOn());
+            // Engine power [0,1] driving the client engine sound — thrust-magnitude
+            // based in FF (sounds for thrust in ANY direction, incl. hover).
+            info.put("enginePower", rocket.getEnginePower());
+            // FA velocity setpoint (TASK-46 D4), body frame, blocks/tick.
+            info.put("faSetpointFwd",   rocket.getFaSetpointForward());
+            info.put("faSetpointRight", rocket.getFaSetpointRight());
+            info.put("faSetpointUp",    rocket.getFaSetpointUp());
+            // Seat geometry for FF camera-in-seat debugging (feature/true_rcs).
+            // Storage sizes + seat block + the live passenger offset let a test
+            // measure where updateFreeFlightPassenger actually places the eye.
+            if (rocket.storage != null) {
+                info.put("storageSizeX", rocket.storage.getSizeX());
+                info.put("storageSizeY", rocket.storage.getSizeY());
+                info.put("storageSizeZ", rocket.storage.getSizeZ());
+                try {
+                    zmaster587.libVulpes.util.HashedBlockPosition seat = rocket.stats.getPassengerSeat(0);
+                    info.put("seatX", seat.x);
+                    info.put("seatY", seat.y);
+                    info.put("seatZ", seat.z);
+                } catch (Exception e) {
+                    info.put("seatErr", e.toString());
+                }
+            }
+            if (!rocket.getPassengers().isEmpty()) {
+                net.minecraft.entity.Entity pax = rocket.getPassengers().get(0);
+                info.put("passengerDX", pax.posX - rocket.posX);
+                info.put("passengerDY", pax.posY - rocket.posY);
+                info.put("passengerDZ", pax.posZ - rocket.posZ);
+                info.put("passengerEyeHeight", pax.getEyeHeight());
+            }
+            // FF liveness telemetry: how many FF physics ticks have actually run
+            // since the last startFreeFlight, plus ground contact — discriminates
+            // "FF branch not executing" from "physics ran but produced no motion"
+            // when a test sees a motionless craft that claims to be in flight.
+            info.put("freeFlightTicksSinceStart", reflectInt(rocket, "freeFlightTicksSinceStart"));
+            info.put("onGround", rocket.onGround);
+            // Exactly-zero motionY while airborne smells of Entity.move() zeroing
+            // it on a vertical collision — surface the collision flags so a test
+            // can tell "blocked by a block" from "no thrust produced".
+            info.put("collidedVertically", rocket.collidedVertically);
+            info.put("collidedHorizontally", rocket.collidedHorizontally);
             info.put("destinationDim", reflectInt(rocket, "destinationDimId"));
             // errorStr is private + set by setError(...) when launch() bails
             // on a precondition. Without surfacing it, A1 launch-depth tests
@@ -818,6 +968,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("fuel", fuel);
             info.put("thrust", rocket.stats.getThrust());
             info.put("weight_no_fuel", rocket.stats.getWeight_NoFuel());
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
             // TASK-37/TASK-38 — expose stats fields that aggregate per-block
             // contributions during scanRocket. drillingPower sums every
             // IMiningDrill.getMiningSpeed(); thrust above already reflects
@@ -1209,6 +1360,41 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"motionY\":" + rocket.motionY + "}");
             return;
         }
+        if ("toggle-rcs".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Drive the (deprecated) TOGGLE_RCS server path directly, bypassing
+            // the passenger-packet requirement the R keybind imposes, so the
+            // deprecation contract — toggleRCS no longer flips RCS_MODE — is
+            // actually pinnable. Emits rcs state before/after the call.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            boolean before = rocket.getRCS();
+            rocket.toggleRCS();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"rcsBefore\":" + before
+                    + ",\"rcsAfter\":" + rocket.getRCS() + "}");
+            return;
+        }
+        if ("ff-prepare-launch".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // Drives EntityRocket.prepareLaunch() server-side — the same entry a
+            // redstone monitoring station uses — so a test can pin the Free
+            // Flight launch gate: a fuel-less / underpowered FF craft must NOT
+            // enter flight, else it strands in a thrustless on-pad dead-state.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            rocket.prepareLaunch();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"isFreeFlight\":" + rocket.isFreeFlight()
+                    + ",\"isInFlight\":" + rocket.isInFlight() + "}");
+            return;
+        }
         if ("explode".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // TASK-07 Phase 5: invoke production EntityRocket.explode().
             // The current production code calls explode() from launch() iff
@@ -1258,7 +1444,170 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"deOrbiting\":" + RocketEventRecorder.deOrbitingCount + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full\"}");
+        if ("set-flight-mode".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest rocket set-flight-mode <entityId> <CLASSIC_LAUNCH|FREE_FLIGHT>
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.api.RocketFlightMode mode = null;
+            for (zmaster587.advancedRocketry.api.RocketFlightMode m :
+                    zmaster587.advancedRocketry.api.RocketFlightMode.values()) {
+                if (m.name().equalsIgnoreCase(args[2])) { mode = m; break; }
+            }
+            if (mode == null) {
+                send(sender, "{\"error\":\"unknown mode\",\"value\":\"" + args[2] + "\"}");
+                return;
+            }
+            rocket.setFlightMode(mode);
+            // Mirror the real SET_FLIGHT_MODE server handler: broadcast to tracking
+            // clients so the client-side flightMode field updates (otherwise a real
+            // client / test bot would still see CLASSIC and its FF input gate would
+            // never open).
+            zmaster587.libVulpes.network.PacketHandler.sendToPlayersTrackingEntity(
+                    new zmaster587.libVulpes.network.PacketEntity(
+                            rocket, (byte) EntityRocket.PacketType.SET_FLIGHT_MODE.ordinal()),
+                    rocket);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"flightMode\":\""
+                    + mode.name() + "\"}");
+            return;
+        }
+        if ("free-flight-input".equalsIgnoreCase(args[0]) && args.length >= 7) {
+            // /artest rocket free-flight-input <id> <fwd> <vert> <yaw> <pitch> <brake> [cut=0|1] [strafe]
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            float fwd, vert, yaw, pitch, brake, strafe = 0f, roll = 0f;
+            try {
+                fwd   = Float.parseFloat(args[2]);
+                vert  = Float.parseFloat(args[3]);
+                yaw   = Float.parseFloat(args[4]);
+                pitch = Float.parseFloat(args[5]);
+                brake = Float.parseFloat(args[6]);
+                // Strafe / roll are trailing optional args so legacy 5-number
+                // calls (fwd vert yaw pitch brake [cut]) keep working.
+                if (args.length >= 9) strafe = Float.parseFloat(args[8]);
+                if (args.length >= 10) roll = Float.parseFloat(args[9]);
+            } catch (NumberFormatException ex) {
+                send(sender, "{\"error\":\"bad float input\",\"msg\":\"" + ex.getMessage() + "\"}");
+                return;
+            }
+            boolean cut = args.length >= 8 && !"0".equals(args[7]) && !"false".equalsIgnoreCase(args[7]);
+            zmaster587.advancedRocketry.api.FreeFlightInput input =
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
+            rocket.applyFreeFlightInput(input);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"applied\":" + (rocket.isFreeFlight() ? "true" : "false")
+                    + ",\"fwd\":" + input.throttleForward
+                    + ",\"vert\":" + input.throttleVertical
+                    + ",\"strafe\":" + input.strafeInput
+                    + ",\"yaw\":" + input.yawInput
+                    + ",\"pitch\":" + input.pitchInput
+                    + ",\"roll\":" + input.rollInput
+                    + ",\"brake\":" + input.brakeInput
+                    + ",\"cut\":" + input.cutActive + "}");
+            return;
+        }
+        if ("set-flight-assist".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest rocket set-flight-assist <id> on|off
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            boolean on;
+            if ("on".equalsIgnoreCase(args[2]) || "true".equalsIgnoreCase(args[2]) || "1".equals(args[2])) on = true;
+            else if ("off".equalsIgnoreCase(args[2]) || "false".equalsIgnoreCase(args[2]) || "0".equals(args[2])) on = false;
+            else {
+                send(sender, "{\"error\":\"bad value — expected on|off\",\"value\":\"" + args[2] + "\"}");
+                return;
+            }
+            rocket.setFlightAssistOn(on);
+            // Mirror the SET_FLIGHT_ASSIST packet handler: replicate the new
+            // state to tracking clients, otherwise their HUD keeps the old FA
+            // label (the probe used to flip the server field silently).
+            zmaster587.libVulpes.network.PacketHandler.sendToPlayersTrackingEntity(
+                    new zmaster587.libVulpes.network.PacketEntity(rocket,
+                            (byte) EntityRocket.PacketType.SET_FLIGHT_ASSIST.ordinal()), rocket);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"flightAssistOn\":" + rocket.isFlightAssistOn() + "}");
+            return;
+        }
+        if ("free-flight-tick".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket free-flight-tick <id> [n] — invoke tickFreeFlight n times.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            int n = args.length >= 3 ? parseIntOr(args[2], 1) : 1;
+            if (n < 1) n = 1;
+            if (n > 200) n = 200;
+            for (int i = 0; i < n; i++) rocket.tickFreeFlight();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"ticks\":" + n
+                    + ",\"motionX\":" + rocket.motionX
+                    + ",\"motionY\":" + rocket.motionY
+                    + ",\"motionZ\":" + rocket.motionZ
+                    + ",\"isInFlight\":" + rocket.isInFlight() + "}");
+            return;
+        }
+        if ("fill-fuel".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket fill-fuel <id> — fill every fuel tank to capacity
+            // WITHOUT starting anything. Lets engine-start tests exercise the
+            // real ENGINE_START validation (which honestly rejects an empty
+            // rocket) instead of piggybacking on start-free-flight's auto-fill.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            for (zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType type :
+                    zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType.values()) {
+                int cap = rocket.stats.getFuelCapacity(type);
+                if (cap > 0) rocket.setFuelAmount(type, cap);
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"fuelFilled\":true}");
+            return;
+        }
+        if ("start-free-flight".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket start-free-flight <id> [fuelFill] — server-only bypass;
+            // sets isInFlight=true without classic countdown. Bails harmlessly if
+            // mode != FREE_FLIGHT. fuelFill defaults to true so tests don't need a
+            // separate fuel-loading step.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            boolean fuelFill = args.length >= 3 ? Boolean.parseBoolean(args[2]) : true;
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            if (!rocket.isFreeFlight()) {
+                send(sender, "{\"error\":\"rocket not in FREE_FLIGHT\",\"flightMode\":\""
+                        + rocket.getFlightMode().name() + "\"}");
+                return;
+            }
+            if (fuelFill) {
+                for (zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType type :
+                        zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType.values()) {
+                    int cap = rocket.stats.getFuelCapacity(type);
+                    if (cap > 0) rocket.setFuelAmount(type, cap);
+                }
+            }
+            rocket.startFreeFlight();
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"isInFlight\":" + rocket.isInFlight()
+                    + ",\"fuelFilled\":" + fuelFill + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full | set-flight-mode <id> MODE | free-flight-input <id> fwd vert yaw pitch brake | free-flight-tick <id> [n] | start-free-flight <id>\"}");
     }
 
     /** {@code /artest rocket assemble <dim> <x> <y> <z>} — synchronously assembles
@@ -2583,6 +2932,23 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
+        if ("poslist-size".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest satellite poslist-size <dim> <satId> — save-format view
+            // of a SatelliteBiomeChanger's queued positions (posList ints).
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            long satId = parseLongOr(args[2], Long.MIN_VALUE);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            SatelliteBase sat = props == null ? null : props.getSatellite(satId);
+            if (sat == null) {
+                send(sender, "{\"error\":\"satellite not found\",\"dim\":" + dim + ",\"satId\":" + satId + "}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound snap = new net.minecraft.nbt.NBTTagCompound();
+            sat.writeToNBT(snap);
+            int size = snap.getIntArray("posList").length;
+            send(sender, "{\"ok\":true,\"satId\":" + satId + ",\"posListSize\":" + size + "}");
+            return;
+        }
         if ("weather-list-size".equalsIgnoreCase(args[0]) && args.length >= 3) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             long satId = parseLongOr(args[2], Long.MIN_VALUE);
@@ -3616,6 +3982,9 @@ public class TestProbeCommand extends CommandBase {
             // (or null) for the first connected player.
             java.util.List<net.minecraft.entity.player.EntityPlayerMP> ps =
                     server.getPlayerList().getPlayers();
+            if (ps.isEmpty() && fakePlayer != null) {
+                ps = java.util.Collections.singletonList(fakePlayer);
+            }
             if (ps.isEmpty()) {
                 send(sender, "{\"error\":\"no players connected\"}");
                 return;
@@ -4478,7 +4847,22 @@ public class TestProbeCommand extends CommandBase {
                     "allowTerraformNonAR",
                     "terraformRequiresFluid",
                     "oxygenVentSize",
-                    "atmosphereHandleBitMask"));
+                    "atmosphereHandleBitMask",
+                    // Disableability-contract tests (TASK-46): toggle each opt-in
+                    // mechanic and its tuning knobs from the test JVM.
+                    "advancedWeightSystem",
+                    "minLaunchTWR",
+                    "partsWearSystem",
+                    "increaseWearIntensityProb",
+                    "enableCustomPlanetWeather",
+                    // perDimWorldInfo master switch (gates weather + time + wrapper):
+                    // PerDimWorldInfoMasterToggleTest flips it to pin both off (vanilla
+                    // WorldInfo) and weather-off-but-master-on (per-dim time survives).
+                    "perDimWorldInfo",
+                    // rocketRequireFuel: RocketRequireFuelDisableAssemblesTest flips it
+                    // off to pin that a valid rocket still assembles (no fuel-adequacy
+                    // gate) — the regression the weight-system merge introduced.
+                    "rocketRequireFuel"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -6326,6 +6710,167 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"matchedCount\":" + matchedCount + "}");
             return;
         }
+        if (args.length >= 10 && "railgun-fire".equalsIgnoreCase(args[0])) {
+            // Issue #61 repro — the SOURCE-side firing path. Unlike
+            // railgun-receive-cargo (which probes only the receiver endpoint
+            // on a solo railgun), this drives the full
+            // TileRailgun.attemptCargoTransfer() across TWO assembled
+            // railguns: it programs a libVulpes Linker to point at the
+            // destination controller, drops it in the source controller's
+            // slot, loads <itemId>×<count> into the source's first input
+            // port, then reflectively invokes attemptCargoTransfer() and
+            // reports whether it fired plus where the cargo ended up.
+            //
+            // Usage: railgun-fire <srcDim> <sx> <sy> <sz>
+            //                     <destDim> <dx> <dy> <dz> <itemId> [count]
+            int sDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int sx = parseIntOr(args[2], 0);
+            int sy = parseIntOr(args[3], 0);
+            int sz = parseIntOr(args[4], 0);
+            int dDim = parseIntOr(args[5], Integer.MIN_VALUE);
+            int dx = parseIntOr(args[6], 0);
+            int dy = parseIntOr(args[7], 0);
+            int dz = parseIntOr(args[8], 0);
+            String itemId = args[9];
+            int count = args.length >= 11 ? parseIntOr(args[10], 1) : 1;
+
+            net.minecraft.world.WorldServer sWorld = server.getWorld(sDim);
+            if (sWorld == null) {
+                send(sender, "{\"error\":\"source world not loaded\",\"dim\":" + sDim + "}");
+                return;
+            }
+            TileEntity sTile = sWorld.getTileEntity(new BlockPos(sx, sy, sz));
+            if (!(sTile instanceof zmaster587.advancedRocketry.tile.multiblock.TileRailgun)) {
+                send(sender, "{\"error\":\"source not a TileRailgun\",\"tile\":\""
+                        + (sTile == null ? "null" : sTile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.item.Item item =
+                    ForgeRegistries.ITEMS.getValue(new ResourceLocation(itemId));
+            if (item == null) {
+                send(sender, "{\"error\":\"unknown item id\",\"id\":\""
+                        + escapeJson(itemId) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.multiblock.TileRailgun src =
+                    (zmaster587.advancedRocketry.tile.multiblock.TileRailgun) sTile;
+
+            // Program a Linker to point at the destination controller, exactly
+            // as TileRailgun.onLinkStart would on a right-click.
+            net.minecraft.item.ItemStack linker =
+                    new net.minecraft.item.ItemStack(zmaster587.libVulpes.api.LibVulpesItems.itemLinker);
+            zmaster587.libVulpes.items.ItemLinker.setMasterCoords(linker, new BlockPos(dx, dy, dz));
+            zmaster587.libVulpes.items.ItemLinker.setDimId(linker, dDim);
+            boolean linkerSet = zmaster587.libVulpes.items.ItemLinker.isSet(linker);
+            src.setInventorySlotContents(0, linker);
+
+            // Load the cargo into the source's first input port.
+            int inPortCount = 0;
+            boolean loadedInput = false;
+            try {
+                java.lang.reflect.Field fin = zmaster587.libVulpes.tile.multiblock
+                        .TileMultiBlock.class.getDeclaredField("itemInPorts");
+                fin.setAccessible(true);
+                Object obj = fin.get(src);
+                if (obj instanceof java.util.List) {
+                    for (Object inv : (java.util.List<?>) obj) {
+                        if (!(inv instanceof net.minecraft.inventory.IInventory)) continue;
+                        inPortCount++;
+                        if (!loadedInput) {
+                            ((net.minecraft.inventory.IInventory) inv).setInventorySlotContents(
+                                    0, new net.minecraft.item.ItemStack(item, count));
+                            loadedInput = true;
+                        }
+                    }
+                }
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"itemInPorts reflection failed\","
+                        + "\"detail\":\"" + escapeJson(
+                                e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+
+            // Was the destination dimension loaded BEFORE firing? Issue #61's
+            // fix makes attemptCargoTransfer initDimension a registered-but-
+            // unloaded destination, so a false→true transition here proves the
+            // load branch ran.
+            boolean destLoadedBefore =
+                    net.minecraftforge.common.DimensionManager.getWorld(dDim) != null;
+
+            // Fire: invoke the private attemptCargoTransfer() directly so the
+            // result isolates the cargo/linker/planetary gate from the
+            // enabled/redstone/power gating in useEnergy().
+            boolean fired;
+            try {
+                java.lang.reflect.Method m = zmaster587.advancedRocketry.tile.multiblock
+                        .TileRailgun.class.getDeclaredMethod("attemptCargoTransfer");
+                m.setAccessible(true);
+                fired = (Boolean) m.invoke(src);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"attemptCargoTransfer reflection failed\","
+                        + "\"detail\":\"" + escapeJson(
+                                e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+
+            // Inspect the aftermath.
+            int srcInputRemaining;
+            try {
+                srcInputRemaining = countItemsInPortList(src, "itemInPorts", item);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"itemInPorts recount failed\",\"detail\":\""
+                        + escapeJson(e.getMessage()) + "\"}");
+                return;
+            }
+            // Read the fire status the production code just set (issue #61
+            // feedback). Reflective — the field is private transient state.
+            String fireStatus = "<unknown>";
+            try {
+                java.lang.reflect.Field fsf = zmaster587.advancedRocketry.tile.multiblock
+                        .TileRailgun.class.getDeclaredField("fireStatus");
+                fsf.setAccessible(true);
+                Object fs = fsf.get(src);
+                fireStatus = fs == null ? "null" : fs.toString();
+            } catch (ReflectiveOperationException ignored) {
+                // older build without the status field — leave "<unknown>"
+            }
+
+            boolean destLoaded = false;
+            boolean destIsRailgun = false;
+            int destMatched = 0;
+            // Use Forge's DimensionManager.getWorld (no auto-init) so this
+            // reflects the dim's ACTUAL post-fire state — i.e. whether
+            // production itself loaded it (issue #61 fix), not a probe side
+            // effect. server.getWorld would auto-init and mask that.
+            net.minecraft.world.WorldServer dWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(dDim);
+            if (dWorld != null) {
+                destLoaded = true;
+                TileEntity dTile = dWorld.getTileEntity(new BlockPos(dx, dy, dz));
+                if (dTile instanceof zmaster587.advancedRocketry.tile.multiblock.TileRailgun) {
+                    destIsRailgun = true;
+                    try {
+                        destMatched = countItemsInPortList(
+                                dTile, "itemOutPorts", item);
+                    } catch (ReflectiveOperationException e) {
+                        send(sender, "{\"error\":\"dest itemOutPorts scan failed\",\"detail\":\""
+                                + escapeJson(e.getMessage()) + "\"}");
+                        return;
+                    }
+                }
+            }
+
+            send(sender, "{\"ok\":true,\"fired\":" + fired
+                    + ",\"linkerSet\":" + linkerSet
+                    + ",\"inPortCount\":" + inPortCount
+                    + ",\"srcInputRemaining\":" + srcInputRemaining
+                    + ",\"destLoadedBefore\":" + destLoadedBefore
+                    + ",\"destLoaded\":" + destLoaded
+                    + ",\"destIsRailgun\":" + destIsRailgun
+                    + ",\"destMatched\":" + destMatched
+                    + ",\"fireStatus\":\"" + escapeJson(fireStatus) + "\"}");
+            return;
+        }
         if (args.length >= 5 && "astrobody-set-research".equalsIgnoreCase(args[0])) {
             // TASK-40 Gap D — reshape note: the audit's "PlanetAnalyser /
             // SatelliteData scan output" framing was wrong. The actual class
@@ -6498,7 +7043,7 @@ public class TestProbeCommand extends CommandBase {
                     + "\",\"amount\":" + amount + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown infra subcommand — try info <dim> <x> <y> <z> | link <dim> <x> <y> <z> <entityId> | unlink <dim> <x> <y> <z> <entityId> | monitor-info <dim> <x> <y> <z> | inject-broken-part <entityId> <stage> | service-relink <dim> <x> <y> <z> | service-scan-assemblers <dim> <x> <y> <z> | railgun-receive-cargo <dim> <x> <y> <z> <itemId> [count] | astrobody-set-research <dim> <x> <y> <z> <bits> | astrobody-load-chip <dim> <x> <y> <z> | astrobody-chip-data <dim> <x> <y> <z> | databus-set-data <dim> <x> <y> <z> <type> <amount>\"}");
+        send(sender, "{\"error\":\"unknown infra subcommand — try info <dim> <x> <y> <z> | link <dim> <x> <y> <z> <entityId> | unlink <dim> <x> <y> <z> <entityId> | monitor-info <dim> <x> <y> <z> | inject-broken-part <entityId> <stage> | service-relink <dim> <x> <y> <z> | service-scan-assemblers <dim> <x> <y> <z> | railgun-receive-cargo <dim> <x> <y> <z> <itemId> [count] | railgun-fire <srcDim> <sx> <sy> <sz> <destDim> <dx> <dy> <dz> <itemId> [count] | astrobody-set-research <dim> <x> <y> <z> <bits> | astrobody-load-chip <dim> <x> <y> <z> | astrobody-chip-data <dim> <x> <y> <z> | databus-set-data <dim> <x> <y> <z> <type> <amount>\"}");
     }
 
     // §9.2 Fixture-building primitives -----------------------------------------
@@ -9189,6 +9734,220 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
+     * {@code /artest weight ...} — probes the {@link zmaster587.advancedRocketry.util.WeightEngine}.
+     * Verbs:
+     *   reset                         — restore default tables + scales (test isolation)
+     *   item <registry-id> [count]    — resolved weight of an ItemStack
+     *   fluid <fluid-name> <amount>   — resolved weight of a FluidStack-equivalent
+     *   set <registry-id> <weight>    — register an individual override
+     *   set-regex <pattern> <weight>  — register a regex rule
+     *   material-scale <value>        — set ARConfiguration.weightMaterialScale
+     *   fuel-scale <value>            — set ARConfiguration.fuelMassScale
+     */
+    private void handleWeight(ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.util.WeightEngine we = zmaster587.advancedRocketry.util.WeightEngine.INSTANCE;
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"unknown weight subcommand — try reset|item|fluid|set|set-regex|material-scale|fuel-scale\"}");
+            return;
+        }
+        Map<String, Object> info = new LinkedHashMap<>();
+        String verb = args[0].toLowerCase();
+        switch (verb) {
+            case "reset":
+                we.resetTables();
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = 1.0;
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
+                info.put("reset", true);
+                info.put("materialCount", we.materialCount());
+                break;
+            case "item": {
+                String id = args[1];
+                int count = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(id));
+                info.put("id", id);
+                info.put("registered", item != null);
+                if (item != null) {
+                    net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, count);
+                    info.put("count", count);
+                    info.put("weight", we.getWeight(stack));
+                }
+                break;
+            }
+            case "fluid": {
+                String name = args[1];
+                float amount = Float.parseFloat(args[2]);
+                net.minecraftforge.fluids.Fluid f = net.minecraftforge.fluids.FluidRegistry.getFluid(name);
+                info.put("fluid", name);
+                info.put("registered", f != null);
+                if (f != null) {
+                    info.put("amount", amount);
+                    info.put("weight", we.getWeight(f, amount));
+                }
+                break;
+            }
+            case "set":
+                we.setIndividual(args[1], Double.parseDouble(args[2]));
+                info.put("set", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "set-regex":
+                we.setRegex(args[1], Double.parseDouble(args[2]));
+                info.put("regex", args[1]);
+                info.put("value", Double.parseDouble(args[2]));
+                break;
+            case "material-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = Double.parseDouble(args[1]);
+                we.clearResolveCache();
+                info.put("materialScale", Double.parseDouble(args[1]));
+                break;
+            case "fuel-scale":
+                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = Double.parseDouble(args[1]);
+                info.put("fuelScale", Double.parseDouble(args[1]));
+                break;
+            default:
+                send(sender, "{\"error\":\"unknown weight subcommand\",\"sub\":\"" + verb + "\"}");
+                return;
+        }
+        info.put("ok", true);
+        send(sender, jsonMap(info));
+    }
+
+    /**
+     * {@code /artest wear ...} — probes the part-wear capability on world blocks
+     * (motors / fuel tanks / seats hosting a TileWearable):
+     *   get <dim> <x> <y> <z>           — registered + current/max wear stage
+     *   set <dim> <x> <y> <z> <stage>   — force the wear stage at a position
+     */
+    private void handleWear(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"usage: wear get|set|station-load|rocket-status ...\"}");
+            return;
+        }
+        String verb = args[0].toLowerCase();
+
+        // wear rocket-status <entityId> <seatFraction> — worn tanks + worn-seat
+        // predicate of an assembled rocket (the data the launch gate reads).
+        if ("rocket-status".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            double frac = args.length >= 3 ? Double.parseDouble(args[2]) : 0.7;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            info.put("found", true);
+            info.put("wornTankCount", rocket.storage.getWornTanks().size());
+            info.put("hasCriticallyWornSeat", rocket.storage.hasCriticallyWornSeat(frac));
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear damage-parts <entityId> [iterations] — drive StorageChunk.damageParts()
+        // directly (the same accrual entry point production calls on landing) N times,
+        // then report the resulting breaking probability. Lets a test observe whether
+        // wear ACCRUES (partsWearSystem on) or stays put (system off) deterministically,
+        // without depending on a free-flight landing tick.
+        if ("damage-parts".equals(verb)) {
+            EntityRocket rocket = findRocket(server, Integer.parseInt(args[1]));
+            int iterations = args.length >= 3 ? Integer.parseInt(args[2]) : 1;
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (rocket == null || rocket.storage == null) {
+                info.put("found", false);
+                send(sender, jsonMap(info));
+                return;
+            }
+            double before = rocket.storage.getBreakingProbability();
+            for (int i = 0; i < iterations; i++) {
+                rocket.storage.damageParts();
+            }
+            info.put("found", true);
+            info.put("iterations", iterations);
+            info.put("breakingProbBefore", before);
+            info.put("breakingProb", rocket.storage.getBreakingProbability());
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear station-load <dim> <x> <y> <z> <slot> <ore:name|item-id> <count>
+        if ("station-load".equals(verb)) {
+            int dim = Integer.parseInt(args[1]);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+            TileEntity te = world.getTileEntity(pos);
+            Map<String, Object> info = new LinkedHashMap<>();
+            if (!(te instanceof zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation)) {
+                info.put("error", "no service station at pos");
+                send(sender, jsonMap(info));
+                return;
+            }
+            int slot = Integer.parseInt(args[5]);
+            String spec = args[6];
+            int count = Integer.parseInt(args[7]);
+            net.minecraft.item.ItemStack stack;
+            if (spec.startsWith("ore:")) {
+                java.util.List<net.minecraft.item.ItemStack> ores =
+                        net.minecraftforge.oredict.OreDictionary.getOres(spec.substring(4));
+                if (ores.isEmpty()) {
+                    info.put("error", "ore dict empty: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = ores.get(0).copy();
+            } else {
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(spec));
+                if (item == null) {
+                    info.put("error", "item not found: " + spec);
+                    send(sender, jsonMap(info));
+                    return;
+                }
+                stack = new net.minecraft.item.ItemStack(item);
+            }
+            stack.setCount(count);
+            ((zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation) te)
+                    .getRepairInventory().setStackInSlot(slot, stack);
+            info.put("loaded", stack.getItem().getRegistryName().toString());
+            info.put("count", count);
+            info.put("ok", true);
+            send(sender, jsonMap(info));
+            return;
+        }
+
+        // wear get|set <dim> <x> <y> <z> [stage]
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: wear get|set <dim> <x> <y> <z> [stage]\"}");
+            return;
+        }
+        int dim = Integer.parseInt(args[1]);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        BlockPos pos = new BlockPos(Integer.parseInt(args[2]), Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+        zmaster587.advancedRocketry.api.capability.IPartWear wear =
+                zmaster587.advancedRocketry.api.capability.CapabilityWear.get(world.getTileEntity(pos));
+
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("pos", new int[]{pos.getX(), pos.getY(), pos.getZ()});
+        info.put("registered", wear != null);
+        if (wear == null) {
+            send(sender, jsonMap(info));
+            return;
+        }
+        if ("set".equals(verb)) {
+            if (args.length < 6) {
+                send(sender, "{\"error\":\"usage: wear set <dim> <x> <y> <z> <stage>\"}");
+                return;
+            }
+            wear.setStage(Integer.parseInt(args[5]));
+        }
+        info.put("stage", wear.getStage());
+        info.put("maxStage", wear.getMaxStage());
+        info.put("ok", true);
+        send(sender, jsonMap(info));
+    }
+
+    /**
      * {@code /artest enchant check <enchant-id>} — reports whether an
      * enchantment is registered. Used to verify the spacebreathing enchant lands
      * during AR init.
@@ -10158,7 +10917,95 @@ public class TestProbeCommand extends CommandBase {
             send(sender, b.toString());
             return;
         }
-        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id>\"}");
+        if (args.length >= 3 && "rocket-nbt-roundtrip".equalsIgnoreCase(args[0])) {
+            // Sets a canonical NON-default Free Flight state on the rocket, then
+            // drives the real save path (writeEntityToNBT -> readEntityFromNBT,
+            // via reflection) into a fresh peer and emits the peer's FF state, so
+            // a test can pin that FF attitude / mode / assist / setpoint survive a
+            // save/load cycle. Also emits a "legacy" readback (FF keys stripped)
+            // so the missing-key defaults (identity quat, flight-assist ON) are
+            // pinned. Guards the "saves must survive" invariant against a
+            // read/write asymmetry that no other test would catch.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int id = parseIntOr(args[2], -1);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.entity.Entity entity = world.getEntityByID(id);
+            if (!(entity instanceof EntityRocket)) {
+                send(sender, "{\"error\":\"entity not an EntityRocket\",\"entityId\":" + id + "}");
+                return;
+            }
+            EntityRocket src = (EntityRocket) entity;
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat q =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.integrateBodyRates(
+                            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat.IDENTITY, 30, 45, 15);
+            try {
+                src.setFlightMode(zmaster587.advancedRocketry.api.RocketFlightMode.FREE_FLIGHT);
+                java.lang.reflect.Field fq = EntityRocket.class.getDeclaredField("ffQuat");
+                fq.setAccessible(true);
+                fq.set(src, q);
+                java.lang.reflect.Field ffa = EntityRocket.class.getDeclaredField("flightAssistOn");
+                ffa.setAccessible(true);
+                ffa.setBoolean(src, true);
+                java.lang.reflect.Method sfs = EntityRocket.class.getDeclaredMethod(
+                        "setFaSetpoint", double.class, double.class, double.class);
+                sfs.setAccessible(true);
+                sfs.invoke(src, 0.3d, -0.2d, 0.5d);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"probe setup failed: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            EntityRocket peer = new EntityRocket(world);
+            EntityRocket legacyPeer = new EntityRocket(world);
+            try {
+                java.lang.reflect.Method write = net.minecraft.entity.Entity.class
+                        .getDeclaredMethod("writeEntityToNBT", net.minecraft.nbt.NBTTagCompound.class);
+                write.setAccessible(true);
+                write.invoke(src, nbt);
+                java.lang.reflect.Method read = net.minecraft.entity.Entity.class
+                        .getDeclaredMethod("readEntityFromNBT", net.minecraft.nbt.NBTTagCompound.class);
+                read.setAccessible(true);
+                read.invoke(peer, nbt);
+                // Legacy save: strip the FF-specific keys, keep everything else,
+                // to exercise the missing-key default branches.
+                net.minecraft.nbt.NBTTagCompound legacy = nbt.copy();
+                legacy.removeTag("ffQuatW");
+                legacy.removeTag("ffQuatX");
+                legacy.removeTag("ffQuatY");
+                legacy.removeTag("ffQuatZ");
+                legacy.removeTag("flightAssistOn");
+                legacy.removeTag("ffHasLeftGround");
+                read.invoke(legacyPeer, legacy);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"reflective NBT round-trip failed: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat sq = src.getFfQuat();
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat pq = peer.getFfQuat();
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat lq = legacyPeer.getFfQuat();
+            send(sender, "{\"ok\":true,\"entityId\":" + id
+                    + ",\"srcMode\":\"" + src.getFlightMode().name() + "\""
+                    + ",\"peerMode\":\"" + peer.getFlightMode().name() + "\""
+                    + ",\"srcQuatW\":" + sq.w + ",\"srcQuatX\":" + sq.x
+                    + ",\"srcQuatY\":" + sq.y + ",\"srcQuatZ\":" + sq.z
+                    + ",\"peerQuatW\":" + pq.w + ",\"peerQuatX\":" + pq.x
+                    + ",\"peerQuatY\":" + pq.y + ",\"peerQuatZ\":" + pq.z
+                    + ",\"peerFaOn\":" + peer.isFlightAssistOn()
+                    + ",\"peerFaFwd\":" + peer.getFaSetpointForward()
+                    + ",\"peerFaRight\":" + peer.getFaSetpointRight()
+                    + ",\"peerFaUp\":" + peer.getFaSetpointUp()
+                    + ",\"legacyQuatW\":" + lq.w + ",\"legacyQuatX\":" + lq.x
+                    + ",\"legacyQuatY\":" + lq.y + ",\"legacyQuatZ\":" + lq.z
+                    + ",\"legacyFaOn\":" + legacyPeer.isFlightAssistOn() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id> | rocket-nbt-roundtrip <dim> <id>\"}");
     }
 
     /**
@@ -10248,13 +11095,91 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        if ("ensure-fake".equals(sub) && args.length >= 5) {
+            // /artest player ensure-fake <dim> <x> <y> <z>
+            //
+            // Headless-server-tier player: creates (or moves) a persistent
+            // FakePlayer so player-shaped probes work without a connected
+            // client. Cross-dim moves fire PlayerChangedDimensionEvent —
+            // the same FML event Forge's transfer path fires last — so
+            // per-player dim-change handlers run their production path.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            double x = Double.parseDouble(args[2]);
+            double y = Double.parseDouble(args[3]);
+            double z = Double.parseDouble(args[4]);
+            net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, true);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            // Deliberately NOT world.spawnEntity()'d: a connectionless
+            // EntityPlayerMP in the EntityTracker NPEs in
+            // EntityTrackerEntry.sendToTrackingAndSelf (it sends metadata to
+            // ITSELF through player.connection). The probes only need the
+            // player object to carry a world + position; per-tick events come
+            // from `tick-living` and the dim-change event is fired here.
+            int fromDim = Integer.MIN_VALUE;
+            if (fakePlayer == null) {
+                fakePlayer = new net.minecraft.entity.player.EntityPlayerMP(server, world,
+                        new com.mojang.authlib.GameProfile(
+                                java.util.UUID.nameUUIDFromBytes("ARTestFakePlayer".getBytes()),
+                                "ARTestFakePlayer"),
+                        new net.minecraft.server.management.PlayerInteractionManager(world));
+                // Invulnerable like a FakePlayer: damage paths (vacuum
+                // suffocation etc.) end in connection.sendPacket → NPE on a
+                // connectionless player and crash the server tick loop.
+                fakePlayer.capabilities.disableDamage = true;
+                fakePlayer.setLocationAndAngles(x, y, z, 0, 0);
+            } else {
+                fromDim = fakePlayer.world.provider.getDimension();
+                fakePlayer.setWorld(world);
+                fakePlayer.dimension = dim;
+                fakePlayer.setLocationAndAngles(x, y, z, 0, 0);
+                fakePlayer.setPosition(x, y, z);
+                if (fromDim != dim) {
+                    net.minecraftforge.fml.common.FMLCommonHandler.instance()
+                            .firePlayerChangedDimensionEvent(fakePlayer, fromDim, dim);
+                }
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"fromDim\":" + fromDim
+                    + ",\"x\":" + x + ",\"y\":" + y + ",\"z\":" + z + "}");
+            return;
+        }
+        if ("tick-living".equals(sub) && args.length >= 2) {
+            // /artest player tick-living <ticks>
+            //
+            // The test player is never spawned into a world, so nothing ticks
+            // it and it never fires LivingUpdateEvent on its own. This verb posts ONE
+            // LivingUpdateEvent per server tick for the next <ticks> ticks —
+            // the same event, on the same bus, at the same once-per-tick
+            // cadence a ticking player produces. Pair with `server wait`.
+            if (fakePlayer == null) {
+                send(sender, "{\"error\":\"no fake player — run ensure-fake first\"}");
+                return;
+            }
+            int ticks = parseIntOr(args[1], 0);
+            if (!fakeTickerRegistered) {
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new FakePlayerTicker());
+                fakeTickerRegistered = true;
+            }
+            fakeLivingTicksRemaining = ticks;
+            send(sender, "{\"ok\":true,\"ticks\":" + ticks + "}");
+            return;
+        }
         java.util.List<net.minecraft.entity.player.EntityPlayerMP> players =
                 server.getPlayerList().getPlayers();
-        if (players.isEmpty()) {
+        if (players.isEmpty() && fakePlayer == null) {
             send(sender, "{\"error\":\"no players connected\"}");
             return;
         }
-        net.minecraft.entity.player.EntityPlayerMP player = players.get(0);
+        // Headless tier: fall back to the persistent FakePlayer when no real
+        // client is connected (see ensure-fake above).
+        net.minecraft.entity.player.EntityPlayerMP player =
+                players.isEmpty() ? fakePlayer : players.get(0);
         if ("inv-bypass".equals(sub) && args.length >= 2) {
             String action = args[1].toLowerCase(java.util.Locale.ROOT);
             switch (action) {
@@ -10467,6 +11392,17 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"canceled\":" + ev.isCanceled() + "}");
             return;
         }
+        if ("advancement-trigger-direct".equals(sub)) {
+            // Debug verb: invoke WENT_TO_THE_MOON.trigger(player) directly and
+            // report listener wiring — separates the handler-gate path from
+            // the grant path when diagnosing fake-player advancement tests.
+            zmaster587.advancedRocketry.advancements.ARAdvancements.WENT_TO_THE_MOON.trigger(player);
+            net.minecraft.advancements.Advancement adv = server.getAdvancementManager()
+                    .getAdvancement(new net.minecraft.util.ResourceLocation("advancedrocketry:normal/wenttothemoon"));
+            boolean done = adv != null && player.getAdvancements().getProgress(adv).isDone();
+            send(sender, "{\"ok\":true,\"isDone\":" + done + "}");
+            return;
+        }
         if ("advancement".equals(sub) && args.length >= 2) {
             // /artest player advancement <id>
             // /artest player advancement reset <id>
@@ -10582,6 +11518,84 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"key\":" + (head == null ? "null" : "\"" + escapeJson(head) + "\"")
                     + ",\"branch\":" + (branch == null ? "null" : "\"" + escapeJson(branch) + "\"")
                     + "}");
+            return;
+        }
+        if ("equip-orescanner".equals(sub)) {
+            // /artest player equip-orescanner [register-satellite-on-dim|none]
+            //
+            // Arrange-only split of try-orescanner-rclick for honest client
+            // e2e: registers the SatelliteOreMapping (when a dim is given),
+            // seeds the held item's NBT, equips — and does NOT click. The
+            // click comes from the real client (ClientBot.useItem).
+            int satRegisterDim = (args.length >= 2 && !"none".equalsIgnoreCase(args[1]))
+                    ? parseIntOr(args[1], Integer.MIN_VALUE) : Integer.MIN_VALUE;
+            long satId = -1;
+            if (satRegisterDim != Integer.MIN_VALUE) {
+                net.minecraft.world.WorldServer satWorld = server.getWorld(satRegisterDim);
+                zmaster587.advancedRocketry.dimension.DimensionProperties props = satWorld == null ? null
+                        : zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                                .getDimensionProperties(satRegisterDim);
+                if (satWorld != null && props != null) {
+                    zmaster587.advancedRocketry.satellite.SatelliteOreMapping sat =
+                            new zmaster587.advancedRocketry.satellite.SatelliteOreMapping();
+                    // INT-SAFE id: ItemOreScanner.onItemRightClick casts the
+                    // stored id to (int) before the registry lookup — a full
+                    // nanoTime() long would never resolve and the GUI would
+                    // silently not open (the bug the old try- probe couldn't
+                    // see because it only pinned "no crash").
+                    satId = System.nanoTime() & 0x7FFFFFFFL;
+                    sat.getProperties().setId(satId);
+                    props.addSatellite(sat, satWorld);
+                }
+            }
+            net.minecraft.item.Item scanner =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemOreScanner;
+            net.minecraft.item.ItemStack held = new net.minecraft.item.ItemStack(scanner);
+            if (satId != -1) {
+                ((zmaster587.advancedRocketry.item.ItemOreScanner) scanner)
+                        .setSatelliteID(held, satId);
+            }
+            player.setHeldItem(net.minecraft.util.EnumHand.MAIN_HAND, held);
+            send(sender, "{\"ok\":true,\"hadSatelliteId\":" + (satId != -1)
+                    + ",\"satelliteId\":" + satId
+                    + ",\"registeredOnDim\":" + satRegisterDim + "}");
+            return;
+        }
+        if ("equip-biomechanger".equals(sub) && args.length >= 2) {
+            // /artest player equip-biomechanger <dim>
+            //
+            // Arrange-only split of try-biomechanger-rclick: registers the
+            // SatelliteBiomeChanger, equips the NBT-bound chip — no click.
+            // Pair with `artest satellite poslist-size` as the post-click oracle.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"no DimensionProperties for dim\",\"dim\":" + dim + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.satellite.SatelliteBiomeChanger sat =
+                    new zmaster587.advancedRocketry.satellite.SatelliteBiomeChanger();
+            long satId = System.nanoTime();
+            sat.getProperties().setId(satId);
+            props.addSatellite(sat, world);
+
+            net.minecraft.item.Item chip =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemBiomeChanger;
+            net.minecraft.item.ItemStack held = new net.minecraft.item.ItemStack(chip);
+            net.minecraft.nbt.NBTTagCompound chipNbt = new net.minecraft.nbt.NBTTagCompound();
+            chipNbt.setString("satelliteName", sat.getName());
+            chipNbt.setInteger("dimId", dim);
+            chipNbt.setLong("satelliteId", satId);
+            held.setTagCompound(chipNbt);
+            player.setHeldItem(net.minecraft.util.EnumHand.MAIN_HAND, held);
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"satId\":" + satId + "}");
             return;
         }
         if ("try-orescanner-rclick".equals(sub)) {
@@ -12197,6 +13211,35 @@ public class TestProbeCommand extends CommandBase {
         throw new NoSuchFieldException(name);
     }
 
+    /** Sums the count of {@code item} across every slot of every IInventory in
+     *  a libVulpes {@code TileMultiBlock} port list ({@code itemInPorts} /
+     *  {@code itemOutPorts}), reached reflectively. Used by the railgun-fire
+     *  probe (issue #61) to verify cargo left the source's input and arrived
+     *  at the destination's output. */
+    private static int countItemsInPortList(Object tile, String fieldName,
+                                            net.minecraft.item.Item item)
+            throws ReflectiveOperationException {
+        java.lang.reflect.Field f = zmaster587.libVulpes.tile.multiblock
+                .TileMultiBlock.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        Object obj = f.get(tile);
+        int matched = 0;
+        if (obj instanceof java.util.List) {
+            for (Object inv : (java.util.List<?>) obj) {
+                if (!(inv instanceof net.minecraft.inventory.IInventory)) continue;
+                net.minecraft.inventory.IInventory ii =
+                        (net.minecraft.inventory.IInventory) inv;
+                for (int i = 0; i < ii.getSizeInventory(); i++) {
+                    net.minecraft.item.ItemStack s = ii.getStackInSlot(i);
+                    if (!s.isEmpty() && s.getItem() == item) {
+                        matched += s.getCount();
+                    }
+                }
+            }
+        }
+        return matched;
+    }
+
     /** Reads a private static final int field via reflection. Returns
      *  {@code Integer.MIN_VALUE} on reflective failure (caller treats
      *  that as "field missing"). Used by TASK-22 to expose
@@ -12378,7 +13421,7 @@ public class TestProbeCommand extends CommandBase {
     //      advance under normal server ticks); a regression in the @Mod init
     //      wiring would silently leave AR running without an event handler.
     //   2. The dim-side wrap-up effects we DO have a probe surface for
-    //      (ARWeatherWorldInfo install, atmosphere registration, sky-color
+    //      (ARDimensionWorldInfo install, atmosphere registration, sky-color
     //      override) are pinned on a freshly loaded AR dim.
     //   3. The transition queue size is observable — a counter-test for the
     //      "no leaked transitions when the harness has no players" invariant.
@@ -12443,7 +13486,7 @@ public class TestProbeCommand extends CommandBase {
         if ("dim-side-effects".equals(sub) && args.length >= 2) {
             // For the given AR dim, dump the player-facing side effects
             // that *would* fire when a player joins:
-            //   - WorldInfo class (ARWeatherWorldInfo wrapper present? — B1)
+            //   - WorldInfo class (ARDimensionWorldInfo wrapper present? — B1)
             //   - AtmosphereHandler registered? (dictates oxygen/vacuum on join)
             //   - DimensionProperties.skyColor (rendered by client on join)
             //   - DimensionProperties.gravity (applied by gravity handler)
@@ -12752,6 +13795,31 @@ public class TestProbeCommand extends CommandBase {
      * "*EventDelta" fields in their responses for inline cause-effect
      * verification.
      */
+    /** Headless-tier test player (see `/artest player ensure-fake`).
+     *  A BARE EntityPlayerMP, deliberately NOT a Forge FakePlayer:
+     *  PlayerAdvancements.grantCriterion hard-refuses FakePlayer instances
+     *  (Forge policy), and advancement grants are part of what the server
+     *  tier pins. It is never spawned into a world (a connectionless player
+     *  in the EntityTracker NPEs), so the FakePlayer no-ops aren't needed. */
+    private static net.minecraft.entity.player.EntityPlayerMP fakePlayer;
+    private static volatile int fakeLivingTicksRemaining = 0;
+    private static boolean fakeTickerRegistered = false;
+
+    /** Posts one LivingUpdateEvent per server tick for the fake player while
+     *  `tick-living` has remaining budget — the un-spawned test player never
+     *  ticks, so this supplies the once-per-tick cadence a real player has. */
+    public static final class FakePlayerTicker {
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public void onServerTick(net.minecraftforge.fml.common.gameevent.TickEvent.ServerTickEvent event) {
+            if (event.phase != net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END) return;
+            if (fakeLivingTicksRemaining > 0 && fakePlayer != null) {
+                fakeLivingTicksRemaining--;
+                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                        new net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent(fakePlayer));
+            }
+        }
+    }
+
     public static final class RocketEventRecorder {
         public static volatile int launchCount = 0;
         public static volatile int preLaunchCount = 0;

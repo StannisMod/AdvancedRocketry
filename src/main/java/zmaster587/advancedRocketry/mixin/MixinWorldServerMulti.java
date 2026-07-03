@@ -16,7 +16,7 @@ import zmaster587.advancedRocketry.world.weather.PlanetWeatherManager;
  * constructor completes, ask the weather manager whether this dimension is an
  * AR planet that wants its own vanilla weather; if so, replace the freshly
  * installed {@link net.minecraft.world.storage.DerivedWorldInfo} with our
- * {@code ARWeatherWorldInfo} wrapper.
+ * {@code ARDimensionWorldInfo} wrapper.
  *
  * <p>The provider may not yet be ready at constructor RETURN — the manager
  * tolerates that and skips. The {@link net.minecraftforge.event.world.WorldEvent.Load}

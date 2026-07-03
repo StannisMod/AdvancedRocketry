@@ -28,6 +28,11 @@ changelog.html
 lasthash.txt
 *.bak
 
+# Runtime gen dirs from in-tree gradle test/run (not source)
+logs/
+/config/
+/run/
+
 # Navigator / agent meta repository — tracked separately in a private repo
 # (.AdvancedRocketry-navigator.git; see .agent/sops/development/agent-meta-repo.md).
 # These paths are owned by the meta repo and must NOT be tracked by main.

@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.test.unit;
 
 import net.minecraft.nbt.NBTTagCompound;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import zmaster587.advancedRocketry.api.ARConfiguration;
@@ -21,14 +22,26 @@ import static org.junit.Assert.assertTrue;
  */
 public class StatsRocketTest {
 
+    private static double prevThrustMultiplier;
+    private static boolean prevRequireFuel;
+
     @BeforeClass
     public static void primeConfig() {
         // Ensure the multiplier-applying getters are observable. ARConfiguration's
         // public field defaults to 0 (no @ConfigProperty default) which would make
         // getThrust() always return 0, which is correct in production but masks our
         // per-field assertions.
+        prevThrustMultiplier = ARConfiguration.getCurrentConfig().rocketThrustMultiplier;
+        prevRequireFuel = ARConfiguration.getCurrentConfig().rocketRequireFuel;
         ARConfiguration.getCurrentConfig().rocketThrustMultiplier = 1.0;
         ARConfiguration.getCurrentConfig().rocketRequireFuel = true;
+    }
+
+    @AfterClass
+    public static void restoreConfig() {
+        // The config singleton is shared with every other unit test in this JVM.
+        ARConfiguration.getCurrentConfig().rocketThrustMultiplier = prevThrustMultiplier;
+        ARConfiguration.getCurrentConfig().rocketRequireFuel = prevRequireFuel;
     }
 
     private static StatsRocket sample() {
@@ -292,6 +305,132 @@ public class StatsRocketTest {
                 restored.hasSeat());
         assertEquals(0, restored.getSeatX());
         assertEquals(0, restored.getNumPassengerSeats()); // passenger list still empty
+    }
+
+    @Test
+    public void accelerationOnWeightlessRocketIsZeroNotInfinite() {
+        // getAcceleration divides by weight; a zero-weight rocket must not yield
+        // NaN/Infinity (which would propagate into motion and the assembler GUI).
+        StatsRocket stats = new StatsRocket();
+        stats.setThrust(100);
+        stats.setWeight(0f);
+
+        float a = stats.getAcceleration(1f);
+        assertEquals(0f, a, 0f);
+        assertEquals(0f, stats.getThrustToWeightRatio(), 0f);
+
+        // With the weight system ENABLED a weightless rocket (TWR 0) is refused.
+        // (The TWR launch gate only applies when advancedWeightSystem is on.)
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
+            assertFalse(stats.canLaunch());
+        } finally {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void thrustToWeightRatioIsThrustOverWeight() {
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false; // getWeight() == dry weight
+            StatsRocket stats = new StatsRocket();
+            stats.setThrust(200);
+            stats.setWeight(100f);
+            assertEquals(2.0f, stats.getThrustToWeightRatio(), 1e-6);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void canLaunchRespectsMinLaunchTWR() {
+        double prevTWR = ARConfiguration.getCurrentConfig().minLaunchTWR;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            // The TWR gate only exists when the weight system is enabled. With a
+            // zero (unregistered "null") fuel fluid, getWeight() is the dry weight,
+            // so the ratios below are deterministic even with the system on.
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
+            ARConfiguration.getCurrentConfig().minLaunchTWR = 1.5;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setWeight(100f);
+
+            stats.setThrust(160); // TWR 1.6 >= 1.5
+            assertTrue("TWR above the threshold must allow launch", stats.canLaunch());
+
+            stats.setThrust(140); // TWR 1.4 < 1.5
+            assertFalse("TWR below the threshold must block launch", stats.canLaunch());
+
+            stats.setThrust(150); // TWR exactly 1.5 — boundary is inclusive
+            assertTrue("TWR exactly at the threshold must allow launch", stats.canLaunch());
+        } finally {
+            ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void canLaunchIgnoresTwrGateWhenWeightSystemDisabled() {
+        // Disableability contract: with advancedWeightSystem off, the weight-based
+        // launch gate is OFF entirely. A rocket that the gate would reject when the
+        // system is on (TWR below minLaunchTWR — here even TWR 0 from a heavy, low-
+        // thrust rocket) must launch freely. This is the player-facing promise that
+        // "turning the weight system off in the config disables it completely".
+        double prevTWR = ARConfiguration.getCurrentConfig().minLaunchTWR;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().minLaunchTWR = 1.5;
+
+            StatsRocket underweight = new StatsRocket();
+            underweight.setWeight(100f);
+            underweight.setThrust(10); // TWR 0.1 — far below the 1.5 gate
+
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
+            assertFalse("sanity: the gate rejects this rocket while the system is on",
+                    underweight.canLaunch());
+
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            assertTrue("with the weight system disabled the TWR gate must not block launch",
+                    underweight.canLaunch());
+        } finally {
+            ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void dryAccelerationUsesEmptyTankWeight() {
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = false;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setWeight(100f); // dry weight
+
+            // Contract: the sign follows the net force (thrust vs dry weight),
+            // and more thrust accelerates harder. The exact scaling constant is
+            // an implementation detail (see testing-principles SOP).
+            stats.setThrust(100); // thrust == counter-gravity weight → no net force
+            assertEquals(0f, stats.getDryAcceleration(1f), 1e-6);
+
+            stats.setThrust(300);
+            float a300 = stats.getDryAcceleration(1f);
+            assertTrue("thrust above dry weight must give positive dry acceleration", a300 > 0);
+
+            stats.setThrust(600);
+            assertTrue("more thrust must accelerate the dry rocket harder",
+                    stats.getDryAcceleration(1f) > a300);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
     }
 
     @Test

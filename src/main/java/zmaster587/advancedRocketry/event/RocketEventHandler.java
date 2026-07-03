@@ -54,10 +54,42 @@ public class RocketEventHandler extends Gui {
     public static GuiBox atmBar = new GuiBox(8, 27, 200, 48);
     private static String displayString = "";
     private static long lastDisplayTime = -1000;
+    /** Last rendered Free Flight HUD text (joined with " | "), for client e2e
+     *  assertions. Empty when not riding a FF rocket. Updated each HUD frame. */
+    public static volatile String lastFreeFlightHud = "";
+    /** Frame-time camera-lock telemetry (TASK-46 D1): worst divergence (deg)
+     *  between the player camera and the craft axes seen on any rendered HUD
+     *  frame of the current FF flight — i.e. what the pilot literally saw,
+     *  sampled atomically on the render thread. Bounded small while flying
+     *  (intra-tick mouse deflection only); a runaway means the lock broke.
+     *  Reset when the flight ends. Read reflectively by client e2e. */
+    public static volatile double maxCameraLockErrorDeg = 0.0;
+    /** Same divergence for the MOST RECENT rendered frame (not the running
+     *  max) — at rest this is what the pilot currently sees, readable in one
+     *  atomic reflective call (a bot reading camera and craft separately can
+     *  straddle a tracker-quantisation bleed tick and see a phantom gap). */
+    public static volatile double lastCameraLockErrorDeg = 0.0;
+    /** Client-rendered FF attitude readback (TASK-53 Phase 7), sampled on the
+     *  render thread from the interpolated attitude quaternion the camera used —
+     *  the pilot's actual view. For perception-contract client e2e:
+     *  {@link #ffClientCamRoll} pins mouse-horizontal → bank; {@link #ffClientMinForwardZ}
+     *  (most-negative nose Z over the flight) pins a pitch LOOP past vertical with
+     *  no ±85° clamp (a clamped nose can never point backwards → Z stays ≳ 0).
+     *  Reset when the flight ends. */
+    public static volatile double ffClientCamPitch = 0.0;
+    public static volatile double ffClientCamRoll  = 0.0;
+    public static volatile double ffClientForwardZ = 1.0;
+    public static volatile double ffClientMinForwardZ = 1.0;
     private ResourceLocation background = TextureResources.rocketHud;
     private static long suppressSuffocationWarningUntil = Long.MIN_VALUE;
     private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
 
+
+    /** [-1,1] clamp for HUD bar/dot geometry; NaN-safe. */
+    private static double clampUnit(double v) {
+        if (Double.isNaN(v)) return 0;
+        return Math.max(-1.0, Math.min(1.0, v));
+    }
 
     @SideOnly(Side.CLIENT)
     public static void setOverlay(long endTime, String msg) {
@@ -69,6 +101,65 @@ public class RocketEventHandler extends Gui {
     public void playerTeleportEvent(PlayerEvent.PlayerChangedDimensionEvent event) {
         //Fix O2, space elevator popup displaying after teleporting
         lastDisplayTime = -1000;
+    }
+
+    /**
+     * Free Flight camera attitude. Locks the render camera to the craft's
+     * yaw/pitch/roll every FRAME (interpolated), overriding the vanilla
+     * mouse-driven view. This is what makes the mouse smooth while moving: the
+     * mouse only feeds the deflection cursor (read per tick in KeyBindings) and
+     * never leaks into the camera between ticks — plus it applies the roll
+     * (bank) DOF, which vanilla has no player-camera field for.
+     */
+    @SubscribeEvent
+    public void onFreeFlightCameraSetup(net.minecraftforge.client.event.EntityViewRenderEvent.CameraSetup event) {
+        net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
+        if (view == null) return;
+        net.minecraft.entity.Entity ridden = view.getRidingEntity();
+        if (!(ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket)) return;
+        zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                (zmaster587.advancedRocketry.entity.EntityRocket) ridden;
+        if (!(rocket.isFreeFlight() && rocket.isInFlight())) return;
+
+        float p = (float) event.getRenderPartialTicks();
+        // Slerp the attitude quaternion this frame, then derive the camera Euler —
+        // pole-safe through loops (see RendererRocket). The quaternion is the FF
+        // attitude source of truth; deriving yaw/pitch/roll here reproduces the
+        // craft basis exactly, so the view looks out the nose and banks with roll.
+        zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cq =
+                zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                        rocket.getPrevFfQuat(), rocket.getFfQuat(), p);
+        float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cq);
+        // +180: the vanilla camera-yaw convention faces opposite the raw
+        // heading, so the ship yaw must be flipped to look out the nose.
+        event.setYaw(e[0] + 180f);
+        event.setPitch(e[1]);
+        event.setRoll(e[2]);
+        // Client-attitude readback for perception-contract e2e (see the fields).
+        ffClientCamPitch = e[1];
+        ffClientCamRoll  = e[2];
+        double fz = cq.rotate(0, 0, 1)[2]; // client nose Z (world)
+        ffClientForwardZ = fz;
+        if (fz < ffClientMinForwardZ) ffClientMinForwardZ = fz;
+    }
+
+    /**
+     * Suppress the first-person hand/held-item render while piloting a Free
+     * Flight craft. The camera is hard-locked to the craft axes every frame
+     * ({@link #onFreeFlightCameraSetup}) while the held item still renders off
+     * the player's own (now-overridden) rotation, so it jitters against the
+     * locked view — and a block bobbing in the cockpit adds nothing anyway.
+     */
+    @SubscribeEvent
+    public void onFreeFlightRenderHand(net.minecraftforge.client.event.RenderSpecificHandEvent event) {
+        net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
+        if (view == null) return;
+        net.minecraft.entity.Entity ridden = view.getRidingEntity();
+        if (ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket
+                && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isFreeFlight()
+                && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isInFlight()) {
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -147,7 +238,104 @@ public class RocketEventHandler extends Gui {
                     GL11.glScalef(scale, scale, scale);
                     fontRenderer.drawStringWithShadow(hint, x, y, 0xFFFFFF);
                     GL11.glPopMatrix();
-                }               
+                }
+
+                // Free Flight Mode HUD: mode indicator + control legend with the
+                // pilot's actual bound keys. Only while riding a FF-mode rocket.
+                if (mc.currentScreen == null && rocket.isFreeFlight()) {
+                    FontRenderer fr = mc.fontRenderer;
+                    List<String> ffLines = KeyBindings.freeFlightHudLines(
+                            rocket, rocket.isInFlight());
+                    // Expose the rendered text for client-side e2e assertions
+                    // (read reflectively by the test bridge — no test-only code path).
+                    lastFreeFlightHud = String.join(" | ", ffLines);
+                    int lineH = fr.FONT_HEIGHT + 1;
+                    int scaledH2 = event.getResolution().getScaledHeight();
+                    // Bottom-left, to the right of the instrument panel, stacked up.
+                    int ffX = 22;
+                    int ffY = scaledH2 - 4 - ffLines.size() * lineH;
+                    for (int i = 0; i < ffLines.size(); i++) {
+                        // Title/indicator line brighter; legend lines in FF cyan.
+                        int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
+                        fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
+                    }
+
+                    // Graphic thrust/velocity bars + turn-rate dot (TASK-46
+                    // Phase 4), to the right of the text block. Per body axis:
+                    // a bipolar ±MAX_SPEED bar — cyan fill = actual velocity,
+                    // bright notch = FA setpoint marker (FA on only).
+                    if (rocket.isInFlight()) {
+                        int barX = ffX + 150, barW = 60, barH = 4;
+                        int barsTop = scaledH2 - 4 - 3 * (barH + 3) - 22;
+                        double[] act = zmaster587.advancedRocketry.api.FreeFlightPhysics.worldToBody(
+                                rocket.motionX, rocket.motionY, rocket.motionZ,
+                                rocket.rotationYaw, rocket.rotationPitch);
+                        double[] sp = {rocket.getFaSetpointForward(),
+                                rocket.getFaSetpointRight(), rocket.getFaSetpointUp()};
+                        String[] axis = {"FWD", "LAT", "VRT"};
+                        double max = zmaster587.advancedRocketry.api.FreeFlightPhysics.MAX_SPEED;
+                        for (int i = 0; i < 3; i++) {
+                            int y = barsTop + i * (barH + 3);
+                            fr.drawStringWithShadow(axis[i], barX - 22, y - 2, 0xB0F0FF);
+                            drawRect(barX, y, barX + barW, y + barH, 0xA0202830);
+                            int mid = barX + barW / 2;
+                            drawRect(mid, y - 1, mid + 1, y + barH + 1, 0xFF607078);
+                            int actPx = (int) (clampUnit(act[i] / max) * (barW / 2.0));
+                            if (actPx >= 0) drawRect(mid, y, mid + Math.max(actPx, 0) + 1, y + barH, 0xFF40D0FF);
+                            else            drawRect(mid + actPx, y, mid + 1, y + barH, 0xFF40D0FF);
+                            if (rocket.isFlightAssistOn()) {
+                                int spPx = mid + (int) (clampUnit(sp[i] / max) * (barW / 2.0));
+                                drawRect(spPx - 1, y - 1, spPx + 1, y + barH + 1, 0xFFFFE060);
+                            }
+                        }
+                        // Turn-rate dot: deflection from center = commanded
+                        // yaw (x) / pitch (y) rates, the mouse-as-rate echo.
+                        int boxC = barX + barW + 18, boxR = 8;
+                        int boxYc = barsTop + (3 * (barH + 3)) / 2;
+                        drawRect(boxC - boxR, boxYc - boxR, boxC + boxR, boxYc + boxR, 0xA0202830);
+                        drawRect(boxC - boxR, boxYc, boxC + boxR, boxYc + 1, 0xFF607078);
+                        drawRect(boxC, boxYc - boxR, boxC + 1, boxYc + boxR, 0xFF607078);
+                        int dx = (int) (clampUnit(KeyBindings.hudYawRate)   * (boxR - 2));
+                        int dy = (int) (clampUnit(KeyBindings.hudPitchRate) * (boxR - 2));
+                        drawRect(boxC + dx - 1, boxYc + dy - 1, boxC + dx + 2, boxYc + dy + 2, 0xFF40D0FF);
+
+                        // Elite-style flight cursor at screen centre: a square
+                        // deflection zone with a dot at the current (roll = X,
+                        // pitch = Y) deflection. Absolute — the dot stays where
+                        // the mouse leaves it (that fixed deflection IS the
+                        // command, which is what makes the mouse smooth).
+                        ScaledResolution sr = new ScaledResolution(Minecraft.getMinecraft());
+                        int ccx = sr.getScaledWidth() / 2, ccy = sr.getScaledHeight() / 2;
+                        int zone = 40;
+                        drawRect(ccx - zone, ccy - zone, ccx + zone, ccy - zone + 1, 0x50FFFFFF);
+                        drawRect(ccx - zone, ccy + zone, ccx + zone, ccy + zone + 1, 0x50FFFFFF);
+                        drawRect(ccx - zone, ccy - zone, ccx - zone + 1, ccy + zone, 0x50FFFFFF);
+                        drawRect(ccx + zone, ccy - zone, ccx + zone + 1, ccy + zone, 0x50FFFFFF);
+                        float pt = event.getPartialTicks();
+                        int fcx = (int) (clampUnit(KeyBindings.flightCursorX(pt)) * zone);
+                        int fcy = (int) (clampUnit(KeyBindings.flightCursorY(pt)) * zone);
+                        drawRect(ccx + fcx - 2, ccy + fcy - 2, ccx + fcx + 3, ccy + fcy + 3, 0xFFFFE060);
+                    }
+                }
+
+                // Camera-nose lock telemetry (TASK-46 D1): on every rendered
+                // frame of an FF flight, record the worst player-camera vs
+                // craft-axes divergence. Small values = intra-tick mouse
+                // deflection (by design); a runaway means the lock broke.
+                if (rocket.isFreeFlight() && rocket.isInFlight()
+                        && KeyBindings.isCameraPinnedThisFlight()) {
+                    double yawErr = Math.abs(MathHelper.wrapDegrees(
+                            mc.player.rotationYaw - rocket.rotationYaw));
+                    double pitchErr = Math.abs(
+                            mc.player.rotationPitch - rocket.rotationPitch);
+                    double err = Math.max(yawErr, pitchErr);
+                    lastCameraLockErrorDeg = err;
+                    if (err > maxCameraLockErrorDeg) maxCameraLockErrorDeg = err;
+                } else if (!rocket.isInFlight()) {
+                    maxCameraLockErrorDeg = 0.0;
+                    lastCameraLockErrorDeg = 0.0;
+                    ffClientMinForwardZ = 1.0; // fresh loop witness per flight
+                }
 
             }
 

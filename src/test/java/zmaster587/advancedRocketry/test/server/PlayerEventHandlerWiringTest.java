@@ -137,7 +137,7 @@ public class PlayerEventHandlerWiringTest extends AbstractSharedServerTest {
     @Test
     public void arDimensionPreJoinSideEffectsAreCoherent() throws Exception {
         // For an AR dim, the pre-join side-effects MUST all line up:
-        //   - WorldInfo wrapped (ARWeatherWorldInfo) — required for the
+        //   - WorldInfo wrapped (ARDimensionWorldInfo) — required for the
         //     B1 weather isolation chain to fire on player join
         //   - AtmosphereHandler registered — required for vacuum / oxygen
         //     handling the moment the player tick starts
@@ -150,8 +150,8 @@ public class PlayerEventHandlerWiringTest extends AbstractSharedServerTest {
 
         assertTrue("AR dim must be loaded for side-effect probing: " + resp,
                 resp.contains("\"loaded\":true"));
-        assertTrue("AR dim WorldInfo must be wrapped by ARWeatherWorldInfo: " + resp,
-                resp.contains("ARWeatherWorldInfo"));
+        assertTrue("AR dim WorldInfo must be wrapped by ARDimensionWorldInfo: " + resp,
+                resp.contains("ARDimensionWorldInfo"));
         assertTrue("AR dim must have an AtmosphereHandler registered: " + resp,
                 resp.contains("\"hasAtmosphereHandler\":true"));
         assertTrue("dim must be classified as AR planet: " + resp,
@@ -192,10 +192,10 @@ public class PlayerEventHandlerWiringTest extends AbstractSharedServerTest {
                 resp.contains("\"loaded\":true"));
         assertTrue("non-AR dim " + nonArDim + " must NOT be classified as AR planet: " + resp,
                 resp.contains("\"isARPlanet\":false"));
-        // ARWeatherWorldInfo wrapping is the per-AR-dim B1 isolation chain;
+        // ARDimensionWorldInfo wrapping is the per-AR-dim B1 isolation chain;
         // a non-AR dim must stay vanilla so weather doesn't bleed in/out.
         assertTrue("non-AR dim " + nonArDim + " WorldInfo must NOT be wrapped: " + resp,
-                !resp.contains("ARWeatherWorldInfo"));
+                !resp.contains("ARDimensionWorldInfo"));
     }
 
     @Test

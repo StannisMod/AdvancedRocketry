@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.api.IRocketEngine;
 import zmaster587.libVulpes.block.BlockFullyRotatable;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -196,6 +197,20 @@ public class BlockFuelTank extends BlockFullyRotatable implements IFuelTank {
     @Override
     public int getMaxFill(World world, BlockPos pos, IBlockState state) {
         return 1000;
+    }
+
+    @Override
+    public boolean hasTileEntity(IBlockState state) {
+        return true;
+    }
+
+    @Nullable
+    @Override
+    public net.minecraft.tileentity.TileEntity createTileEntity(World worldIn, IBlockState state) {
+        // Wear lives only in the tile (no meta overload, no breaking render):
+        // a worn tank may leak/explode on launch; replacing the block resets wear.
+        return new zmaster587.advancedRocketry.tile.TileWearable(
+                10, (float) zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().increaseWearIntensityProb);
     }
 
     public enum TankStates implements IStringSerializable {

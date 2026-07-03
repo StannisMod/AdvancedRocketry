@@ -32,13 +32,22 @@ import javax.annotation.Nullable;
  * reference (the wrapper outlives world unload during dim flicker — a hard
  * world reference would leak the entire dimension).</p>
  */
-public final class ARWeatherWorldInfo extends WorldInfo {
+public final class ARDimensionWorldInfo extends WorldInfo {
 
     private final WorldInfo delegate;
     private final PlanetWeatherState weatherState;
     private final Runnable dirtyMarker;
+    /**
+     * When {@code true} weather is served from the per-dim {@link PlanetWeatherState}
+     * (custom planet weather); when {@code false} weather delegates to the
+     * underlying {@link WorldInfo} (vanilla shared behaviour). Time-of-day is
+     * always per-dim regardless of this flag — that is the sleep/day-night fix
+     * and must work even when custom weather is disabled.
+     */
+    private final boolean weatherManaged;
 
-    public ARWeatherWorldInfo(WorldInfo delegate, PlanetWeatherState weatherState, Runnable dirtyMarker) {
+    public ARDimensionWorldInfo(WorldInfo delegate, PlanetWeatherState weatherState,
+                              Runnable dirtyMarker, boolean weatherManaged) {
         // Call the WorldInfo no-arg ctor — initialises the (never-read)
         // internal scaffolding (GameRules, dimensionData, customBossEvents)
         // to safe defaults. We deliberately do NOT seed from the delegate's
@@ -51,6 +60,28 @@ public final class ARWeatherWorldInfo extends WorldInfo {
         this.delegate = delegate;
         this.weatherState = weatherState;
         this.dirtyMarker = dirtyMarker;
+        this.weatherManaged = weatherManaged;
+        // Seed the per-dim clock from the delegate on first install so existing
+        // saves (which shared the overworld clock) don't visibly jump.
+        weatherState.seedTimeIfNeeded(delegate.getWorldTime(), delegate.getWorldTotalTime());
+    }
+
+    /**
+     * Rounds a sleep wake-up to the next planetary dawn for a world whose day is
+     * {@code rotationalPeriod} ticks long (vanilla hard-codes 24000). Result is
+     * the smallest multiple of {@code rotationalPeriod} strictly after
+     * {@code current}, i.e. {@code result % rotationalPeriod == 0} (dawn).
+     *
+     * <p>Used by {@code MixinWorldServer} at the sleep site so beds bring the
+     * planet's morning instead of vanilla's 24000-rounded (often still-night)
+     * time. See issue #66 / TASK-47.</p>
+     */
+    public static long computeSleepWakeTime(long current, int rotationalPeriod) {
+        if (rotationalPeriod <= 0) {
+            rotationalPeriod = 24000;
+        }
+        long next = current + rotationalPeriod;
+        return next - Math.floorMod(next, (long) rotationalPeriod);
     }
 
     /** Used by {@link PlanetWeatherManager#unwrap} to peel the wrapper off without losing state. */
@@ -62,56 +93,104 @@ public final class ARWeatherWorldInfo extends WorldInfo {
 
     @Override
     public int getCleanWeatherTime() {
-        return weatherState.getCleanWeatherTime();
+        return weatherManaged ? weatherState.getCleanWeatherTime() : delegate.getCleanWeatherTime();
     }
 
     @Override
     public void setCleanWeatherTime(int cleanWeatherTimeIn) {
-        weatherState.setCleanWeatherTime(cleanWeatherTimeIn);
-        dirtyMarker.run();
+        if (weatherManaged) {
+            weatherState.setCleanWeatherTime(cleanWeatherTimeIn);
+            dirtyMarker.run();
+        } else {
+            delegate.setCleanWeatherTime(cleanWeatherTimeIn);
+        }
     }
 
     @Override
     public boolean isRaining() {
-        return weatherState.isRaining();
+        return weatherManaged ? weatherState.isRaining() : delegate.isRaining();
     }
 
     @Override
     public void setRaining(boolean isRaining) {
-        weatherState.setRaining(isRaining);
-        dirtyMarker.run();
+        if (weatherManaged) {
+            weatherState.setRaining(isRaining);
+            dirtyMarker.run();
+        } else {
+            delegate.setRaining(isRaining);
+        }
     }
 
     @Override
     public int getRainTime() {
-        return weatherState.getRainTime();
+        return weatherManaged ? weatherState.getRainTime() : delegate.getRainTime();
     }
 
     @Override
     public void setRainTime(int time) {
-        weatherState.setRainTime(time);
-        dirtyMarker.run();
+        if (weatherManaged) {
+            weatherState.setRainTime(time);
+            dirtyMarker.run();
+        } else {
+            delegate.setRainTime(time);
+        }
     }
 
     @Override
     public boolean isThundering() {
-        return weatherState.isThundering();
+        return weatherManaged ? weatherState.isThundering() : delegate.isThundering();
     }
 
     @Override
     public void setThundering(boolean thunderingIn) {
-        weatherState.setThundering(thunderingIn);
-        dirtyMarker.run();
+        if (weatherManaged) {
+            weatherState.setThundering(thunderingIn);
+            dirtyMarker.run();
+        } else {
+            delegate.setThundering(thunderingIn);
+        }
     }
 
     @Override
     public int getThunderTime() {
-        return weatherState.getThunderTime();
+        return weatherManaged ? weatherState.getThunderTime() : delegate.getThunderTime();
     }
 
     @Override
     public void setThunderTime(int time) {
-        weatherState.setThunderTime(time);
+        if (weatherManaged) {
+            weatherState.setThunderTime(time);
+            dirtyMarker.run();
+        } else {
+            delegate.setThunderTime(time);
+        }
+    }
+
+    // ── Time-of-day + world age: per-dimension, always (not gated by weather) ─
+    //
+    // Vanilla DerivedWorldInfo delegates these to the overworld and no-ops the
+    // setters, so AR planets shared the overworld clock and the sleep skip was
+    // swallowed (issue #66). We own them in PlanetWeatherState instead.
+
+    @Override
+    public long getWorldTime() {
+        return weatherState.getWorldTime();
+    }
+
+    @Override
+    public void setWorldTime(long time) {
+        weatherState.setWorldTime(time);
+        dirtyMarker.run();
+    }
+
+    @Override
+    public long getWorldTotalTime() {
+        return weatherState.getWorldTotalTime();
+    }
+
+    @Override
+    public void setWorldTotalTime(long time) {
+        weatherState.setWorldTotalTime(time);
         dirtyMarker.run();
     }
 
@@ -145,16 +224,6 @@ public final class ARWeatherWorldInfo extends WorldInfo {
     @Override
     public int getSpawnZ() {
         return delegate.getSpawnZ();
-    }
-
-    @Override
-    public long getWorldTotalTime() {
-        return delegate.getWorldTotalTime();
-    }
-
-    @Override
-    public long getWorldTime() {
-        return delegate.getWorldTime();
     }
 
     @Override
@@ -197,10 +266,6 @@ public final class ARWeatherWorldInfo extends WorldInfo {
     @Override
     @SideOnly(Side.CLIENT)
     public void setSpawnY(int y) {
-    }
-
-    @Override
-    public void setWorldTotalTime(long time) {
     }
 
     @Override

@@ -240,6 +240,9 @@ mission.gascollection.name=Gas Collection
 
 error.rocket.notEnoughMissionFuel=Not enough fuel!
 error.rocket.tooHeavy=Rocket is too heavy to launch (insufficient thrust).
+error.rocket.tooWorn=Rocket is too worn to launch safely (%s%% chance of failure). Service it first.
+error.rocket.seatWorn=A seat is too worn for a crewed launch. Repair or replace it, or launch uncrewed.
+warning.rocket.worn=§eWarning: worn rocket parts — %s%% chance of failure on launch.
 error.rocket.cannotGetThere=Selected destination cannot be reached. (Are you trying to land on a Gas Giant?)
 error.rocket.destinationNotExist=Selected space station does not exist.
 error.rocket.partsWornOut=Critical parts are worn out — launch aborted.
@@ -291,6 +294,14 @@ key.turnRocketLeft=Rotate Vehicle Left
 key.turnRocketRight=Rotate Vehicle Right
 key.turnRocketUp=Move Vehicle Up
 key.turnRocketDown=Move Vehicle Down
+key.toggleFlightMode=Toggle Flight Mode
+key.pitchRocketUp=Pitch Vehicle Up
+key.pitchRocketDown=Pitch Vehicle Down
+key.strafeLeft=Strafe Left (Free Flight)
+key.strafeRight=Strafe Right (Free Flight)
+key.flightVerticalUp=Move Up (Free Flight)
+key.flightVerticalDown=Move Down (Free Flight)
+key.flightAssistToggle=Toggle Flight Assist
 
 enchantment.advancedrocketry.spacebreathing.desc=Allows the piece of armor to form an airtight seal
 
@@ -314,6 +325,7 @@ commands.advancedrocketry.goto.dimension.usage=goto dimension <dimId> (alias: d,
 commands.advancedrocketry.goto.station.usage=goto station <stationId> (alias: s) - teleports the player to the supplied station
 
 commands.advancedrocketry.planet.usage=/advancedrocketry planet help - lists subcommands.
+commands.advancedrocketry.planet.weather.usage=planet weather [dimId]
 commands.advancedrocketry.planet.reset.usage=planet reset [dimId]
 commands.advancedrocketry.planet.list.usage=planet list
 commands.advancedrocketry.planet.list.dimensions=Dimensions:
@@ -512,6 +524,10 @@ msg.gravitycontroller.activeset=Add Force (combine directions) + lift
 msg.gravitycontroller.targetdir.1=Target->
 msg.gravitycontroller.targetdir.2=Direction
 msg.railgun.transfermin=Min Transfer Size
+msg.railgun.status.no_target=No destination set - link to another railgun
+msg.railgun.status.target_unavailable=Destination railgun not found
+msg.railgun.status.target_full=Destination output is full or has no output hatch
+msg.railgun.status.different_system=Destination is in a different planetary system
 msg.spacelaser.reset=Reset
 msg.spacelaser.notarget1=No target found!
 msg.spacelaser.notarget2=Go down and survey the area!
@@ -644,6 +660,8 @@ msg.sealdetector.notfullblock=Air will pass around this block.
 msg.sealdetector.fluid=Air will bubble through this block.
 msg.sealdetector.other=Air will leak through this block.
 msg.stationchip.sation=Station 
+msg.entity.rocket.rcsDeprecated=RCS toggle is deprecated. Press [M] to switch to Free Flight Mode before launch.
+msg.entity.rocket.ffNoLiftoff=Not enough fuel or thrust to lift off. Fuel the rocket or reduce its mass before launch.
 msg.entity.rocket.descend.1=Press Space to descend!
 msg.entity.rocket.descend.2=Auto descend in 
 msg.entity.rocket.ascend.1=Press Space to take off!
@@ -658,6 +676,26 @@ msg.entity.rocket.clear=Clear
 msg.entity.rocket.rcs=RCS Mode
 msg.entity.rocket.none=None Selected
 msg.entity.rocket.openGuiHint=Press %s to open Rocket GUI
+msg.ff.hud.title=Free Flight Mode
+msg.ff.hud.prelaunch=%s Classic mode
+msg.ff.hud.engines.off=ENGINES OFF — hold %s to start
+msg.ff.hud.engines.starting=STARTING ENGINES... %d%%
+msg.ff.hud.engines.on=ENGINES ON
+msg.ff.engines.started=Engines started
+msg.ff.engines.stopped=Engines stopped
+msg.ff.hud.vector=FWD %s   LAT %s   VRT %s
+msg.ff.hud.speed=SPD %s m/s
+msg.ff.hud.active=FREE FLIGHT    Flight Assist: %s
+msg.ff.hud.fa.on=ON
+msg.ff.hud.fa.off=OFF — Newtonian
+msg.ff.hud.move=%s / %s  Forward / Back
+msg.ff.hud.strafe=%s / %s  Strafe
+msg.ff.hud.yaw=%s / %s  Yaw
+msg.ff.hud.vert=%s / %s  Up / Down
+msg.ff.hud.pitchmouse=Mouse  Steer nose (view locked to craft)
+msg.ff.hud.cut=%s  Brake to hover
+msg.ff.hud.brake=%s Brake
+msg.ff.hud.assist=%s Flight Assist
 msg.wirelessTransceiver.extract=extract
 msg.wirelessTransceiver.insert=insert
 msg.wirelessTransceiver.type=Type: %s
@@ -772,6 +810,8 @@ msg.orbitalregistry.writechip.hint.station.unlaunched=This station is not in orb
 commands.weather.always_not_clear=This planet is always not clear...
 commands.weather.cannot_rain=Cannot start a rain here
 commands.weather.cannot_thunder=Cannot start a thunder here
+commands.weather.cannot_rain_atmosphere=This planet's atmosphere is too thin to hold rain
+commands.weather.cannot_thunder_norain=This planet cannot thunder - rain is impossible here
 
 # Jeistuff
 jei.machinerecipe.power=Power:
@@ -907,9 +947,9 @@ tooltip.advancedrocketry.guidancecomputer.alt.2=when deploying Satellites or Spa
 
 # Service Monitor
 tooltip.advancedrocketry.servicemonitor=§cPart of Rocket
-tooltip.advancedrocketry.servicemonitor.shift.1=Enables damage view
-tooltip.advancedrocketry.servicemonitor.shift.2=in rocket GUI
-tooltip.advancedrocketry.servicemonitor.alt.1=WIP
+tooltip.advancedrocketry.servicemonitor.shift.1=Shows worn parts and failure
+tooltip.advancedrocketry.servicemonitor.shift.2=chance in the rocket GUI
+tooltip.advancedrocketry.servicemonitor.alt.1=Place one inside a rocket
 tooltip.advancedrocketry.servicemonitor.alt.2=
 
 # Docking Pad (landingPad)
@@ -1025,8 +1065,8 @@ tooltip.advancedrocketry.fuelingstation.alt.2=§fRockets landing here will auto-
 
 # Service Station
 tooltip.advancedrocketry.servicestation=§cInfrastructure
-tooltip.advancedrocketry.servicestation.shift.1=Repair rocket
-tooltip.advancedrocketry.servicestation.shift.2=§o(WIP)
+tooltip.advancedrocketry.servicestation.shift.1=Link to a rocket to repair
+tooltip.advancedrocketry.servicestation.shift.2=worn parts (needs power)
 
 ## // Infrastructure
 
@@ -1257,8 +1297,8 @@ tooltip.advancedrocketry.satfunc.weather.alt.1=Combine with Weather Remote when 
 tooltip.advancedrocketry.weathercontrollerremote=§bShift-Right Click to open GUI
 tooltip.advancedrocketry.weathercontrollerremote.shift.1=§fRight-click in hand to use
 tooltip.advancedrocketry.weathercontrollerremote.alt.1=Combine with Weather Controller when assembling
-tooltip.advancedrocketry.weathercontrollerremote.mode.rain=§eMode: Rain - Fills small basins in the terrain with water
-tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Dries all water in a radius of 16
+tooltip.advancedrocketry.weathercontrollerremote.mode.rain=§eMode: Rain - Makes it rain on the planet and fills small basins in the terrain with water
+tooltip.advancedrocketry.weathercontrollerremote.mode.dry=§eMode: Dry - Keeps the sky clear and dries all water in a radius of 16
 tooltip.advancedrocketry.weathercontrollerremote.mode.flood=§eMode: Flood - Floods area with a radius of 16 with water
 
 

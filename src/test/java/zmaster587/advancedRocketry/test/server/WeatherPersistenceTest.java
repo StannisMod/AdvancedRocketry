@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
  *
  * Previously this test exercised the overworld (dim 0), which is intentionally
  * NOT wrapped by B1 — so it was actually a vanilla persistence test in disguise.
- * Rewritten to write rain into an AR planet (where {@code ARWeatherWorldInfo}
+ * Rewritten to write rain into an AR planet (where {@code ARDimensionWorldInfo}
  * is installed and {@code PlanetWeatherSavedData} is the actual persistence
  * target), then verify it survives a clean stop/start cycle on the same
  * workdir.
@@ -90,7 +90,7 @@ public class WeatherPersistenceTest {
         assertTrue("rain didn't take effect on first boot: " + beforeStop,
                 beforeStop.contains("\"isRaining\":true"));
         assertTrue("wrapper not installed on first boot: " + beforeStop,
-                beforeStop.contains("ARWeatherWorldInfo"));
+                beforeStop.contains("ARDimensionWorldInfo"));
 
         // Stop cleanly — saved-data must flush via vanilla MapStorage save.
         firstBoot.close();
@@ -105,6 +105,6 @@ public class WeatherPersistenceTest {
         assertTrue("planet rain DID NOT persist across restart: " + after,
                 after.contains("\"isRaining\":true"));
         assertTrue("wrapper should still be installed after restart: " + after,
-                after.contains("ARWeatherWorldInfo"));
+                after.contains("ARDimensionWorldInfo"));
     }
 }

@@ -118,6 +118,7 @@ public class DimensionPropertiesTest {
         original.setThunderProlongationLength(4_000);
         original.setRainMarker(1);
         original.setThunderMarker(-1);
+        original.setAcidicRain(true);
 
         NBTTagCompound nbt = new NBTTagCompound();
         original.writeToNBT(nbt);
@@ -130,6 +131,7 @@ public class DimensionPropertiesTest {
         assertEquals(4_000, restored.getThunderProlongationLength());
         assertEquals(1, restored.getRainMarker());
         assertEquals(-1, restored.getThunderMarker());
+        assertTrue("acidicRain must survive the save round-trip", restored.isAcidicRain());
     }
 
     @Test

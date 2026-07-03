@@ -24,7 +24,7 @@ plugins {
 // rootProject.name = archives_base_name
 rootProject.name = rootProject.projectDir.getName()
 
-// ForgeTestFramework is resolved from mavenLocal — publish it once with
-// `./gradlew publishToMavenLocal` from a sibling ../ForgeTestFramework checkout.
-// (Composite build via includeBuild is incompatible with RetroFuturaGradle's
-// dependency-variant transforms, so the mavenLocal path is used instead.)
+// ForgeTestFramework is vendored as a git subtree under testframework/ and
+// compiled inside the test source set (build.gradle) — no sibling checkout,
+// no publishToMavenLocal, no composite build (the latter is incompatible
+// with RetroFuturaGradle's dependency-variant transforms anyway).

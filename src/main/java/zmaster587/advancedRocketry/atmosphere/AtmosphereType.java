@@ -8,6 +8,19 @@ import zmaster587.advancedRocketry.api.atmosphere.AtmosphereRegister;
 
 public class AtmosphereType implements IAtmosphere {
 
+    /** Packet-safe send for atmosphere effects: FakePlayers / headless test
+     *  players have no network connection — a raw sendToPlayer would NPE in
+     *  the netty pipeline and crash the server tick loop. */
+    public static void sendToRealPlayer(zmaster587.libVulpes.network.BasePacket packet,
+                                        net.minecraft.entity.player.EntityPlayer player) {
+        if (player instanceof net.minecraft.entity.player.EntityPlayerMP
+                && ((net.minecraft.entity.player.EntityPlayerMP) player).connection == null) {
+            return;
+        }
+        zmaster587.libVulpes.network.PacketHandler.sendToPlayer(packet, player);
+    }
+
+
     //We're probably not getting a polluted atmosphere type
     public static final AtmosphereType AIR = new AtmosphereType(false, true, "air");
     public static final AtmosphereType PRESSURIZEDAIR = new AtmosphereType(false, true, true, "PressurizedAir");

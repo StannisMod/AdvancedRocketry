@@ -8,7 +8,6 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -56,7 +55,6 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
     private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?\\d+(?:\\.\\d+)?)");
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern RESULT = Pattern.compile("\"result\":(-?\\d+)");
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));
@@ -82,73 +80,83 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
         }
     }
 
-    /** {@code /ar fetch <bot's-own-username>} must complete without
-     *  crashing and leave the bot at the same coords (sender pos ==
-     *  target pos in a self-fetch). Pins the
-     *  resolve → transfer → setPosition path. */
+    /** {@code /ar fetch <bot's-own-username>} typed in the real client chat
+     *  must complete without crashing and leave the bot at the same coords
+     *  (sender pos == target pos in a self-fetch). Pins the chat → server
+     *  command → resolve → transfer → setPosition path, observed from the
+     *  CLIENT side. */
     @Test
     public void selfFetchCompletesAndPreservesPosition() throws Exception {
-        // Discover the bot's username via /artest player health, which
-        // echoes player.getName() in its JSON. The bot's username is
-        // set by the harness and not exposed as a constant we can
-        // import — health probe is the canonical readback.
+        // Discover the bot's username via /artest player health (arrange-only
+        // server read), which echoes player.getName() in its JSON.
         String health = exec("artest player health");
         Matcher nameM = PLAYER_NAME.matcher(health);
         assertTrue("player health must echo player name: " + health, nameM.find());
         String botName = nameM.group(1);
         assertNotEquals("bot name must be non-empty", "", botName);
 
-        // Snapshot pre-call position so we can verify setPosition's
-        // effect (the bot is teleporting itself to its OWN current
-        // sender position — should net to a no-op).
-        double preX = extractDouble(health, POS_X);
-        double preZ = extractDouble(health, POS_Z);
+        // Snapshot the CLIENT-observed position — the layer the player sees.
+        com.google.gson.JsonObject pre = bot().reportState();
+        double preX = pre.get("playerX").getAsDouble();
+        double preZ = pre.get("playerZ").getAsDouble();
 
-        String fetch = exec("artest player exec-as-player /ar fetch " + botName);
-        assertTrue("exec-as-player /ar fetch must succeed: " + fetch,
-                fetch.contains("\"ok\":true"));
-        assertTrue("/ar fetch result must be >= 1 (command ran): " + fetch,
-                extractInt(fetch, RESULT) >= 1);
+        // The real stimulus: the player types the command in chat.
+        bot().sendChat("/ar fetch " + botName);
+        bot().waitTicks(20);
 
-        // Post-call: bot must still exist + still be at (approximately)
-        // the pre-call coords (a self-fetch sets position to sender's
-        // own position).
-        String post = exec("artest player health");
-        double postX = extractDouble(post, POS_X);
-        double postZ = extractDouble(post, POS_Z);
-        // Sub-block tolerance — transferPlayerToDimension may nudge by
-        // sub-block fractions even in the same-dim path. We pin
-        // "didn't teleport to a wrong location", not "exact float
-        // equality".
+        // Post-call: the CLIENT must still render itself at (approximately)
+        // the pre-call coords. Sub-block tolerance — the same-dim transfer
+        // path may nudge by fractions; we pin "didn't teleport to a wrong
+        // location", not float equality.
+        com.google.gson.JsonObject post = bot().reportState();
+        double postX = post.get("playerX").getAsDouble();
+        double postZ = post.get("playerZ").getAsDouble();
         assertTrue("self-fetch must leave bot within 1 block of its prior position: "
                         + "preX=" + preX + " postX=" + postX,
                 Math.abs(postX - preX) < 1.0);
         assertTrue("self-fetch must leave bot within 1 block of its prior position: "
                         + "preZ=" + preZ + " postZ=" + postZ,
                 Math.abs(postZ - preZ) < 1.0);
+
+        // Cross-side oracle: the server agrees about where the player is.
+        String postServer = exec("artest player health");
+        assertTrue("server-side X must agree with the client view: " + postServer,
+                Math.abs(extractDouble(postServer, POS_X) - postX) < 1.0);
     }
 
-    /** {@code /ar fetch <unknown-name>} returns the "Invalid player
-     *  name: ..." error chat without crashing. Pins the
-     *  {@code getPlayerByName == null} branch. */
+    /** {@code /ar fetch <unknown-name>} typed in the real client chat must
+     *  surface vanilla's "player cannot be found" error ON THE PLAYER'S CHAT
+     *  OVERLAY (i18n resolved) without crashing. Pins the
+     *  {@code getPlayer → PlayerNotFoundException} branch at the layer the
+     *  player reads it. */
     @Test
     public void fetchUnknownNameReportsInvalidPlayerName() throws Exception {
-        // Use a name that's extremely unlikely to collide with any
-        // real player. The contract: production hits the
-        // "Invalid player name: <arg>" reply branch.
         String bogus = "_no_such_player_xyz_TASK35_";
-        String fetch = exec("artest player exec-as-player /ar fetch " + bogus);
-        assertTrue("exec-as-player /ar fetch must dispatch without crash: " + fetch,
-                fetch.contains("\"ok\":true"));
-        // FetchCommand resolves the target via vanilla getPlayer(), which
-        // throws PlayerNotFoundException on an unknown name. The server's
-        // CommandHandler catches it, sends the "player not found" error to
-        // the sender's chat, and the command yields 0 (not executed). So
-        // the contract is: unknown name fails cleanly — the probe dispatch
-        // does not crash (ok:true) and the command's result is 0, with the
-        // error surfaced to chat (not in the probe JSON).
-        assertEquals("/ar fetch unknown-name must fail cleanly (result 0): "
-                        + fetch, 0, extractInt(fetch, RESULT));
+
+        // The real stimulus: the player types the command in chat.
+        bot().sendChat("/ar fetch " + bogus);
+
+        // FetchCommand resolves via vanilla getPlayer(), which throws
+        // PlayerNotFoundException; CommandHandler turns that into the red
+        // commands.generic.player.notFound chat reply. Poll the CLIENT chat
+        // overlay (newest line first) for the resolved text.
+        String newest = "";
+        boolean found = false;
+        for (int waited = 0; waited < 100 && !found; waited += 10) {
+            bot().waitTicks(10);
+            com.google.gson.JsonObject chat = bot().reportChat(10);
+            com.google.gson.JsonArray lines = chat.getAsJsonArray("lines");
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i).getAsString();
+                newest = newest.isEmpty() ? line : newest;
+                if (line.toLowerCase(java.util.Locale.ROOT).contains("cannot be found")) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assertTrue("client chat must show the vanilla player-not-found error "
+                + "for an unknown fetch target (newest line: '" + newest + "')", found);
     }
 
     private static double extractDouble(String src, Pattern pattern) {
@@ -157,9 +165,4 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
         return Double.parseDouble(m.group(1));
     }
 
-    private static int extractInt(String src, Pattern pattern) {
-        Matcher m = pattern.matcher(src);
-        assertTrue("pattern not found in: " + src, m.find());
-        return Integer.parseInt(m.group(1));
-    }
 }

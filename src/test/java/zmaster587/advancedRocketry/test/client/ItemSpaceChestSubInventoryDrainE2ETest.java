@@ -54,6 +54,19 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
         return String.join("\n", serverClient().execute(cmd));
     }
 
+    /** CLIENT-rendered chest-slot air: parses the synced armor[2] NBT string
+     *  ("air:<n>" for the suit buffer, "Amount:<n>" for the fluid tank) — the
+     *  state the HUD/inventory screen draw from. Returns -1 if absent. */
+    private int clientChestAir() throws Exception {
+        com.google.gson.JsonObject items = bot().reportPlayerItems();
+        String nbt = items.getAsJsonArray("armor").get(2).getAsJsonObject().get("nbt").getAsString();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\bair:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        m = java.util.regex.Pattern.compile("\\bAmount:(\\d+)").matcher(nbt);
+        if (m.find()) return Integer.parseInt(m.group(1));
+        return -1;
+    }
+
     private int readChestAir() throws Exception {
         // For ItemSpaceChest (capability route), use the component-aware
         // probe — the static "air" NBT route used by /artest player
@@ -126,7 +139,10 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             // decrement the pressure-tank FluidStack by 1.
             bot().waitTicks(80);
 
+            int clientAirAfter = clientChestAir();
             int chestAirAfter = readChestAir();
+            assertTrue("client-rendered chest state must reflect the drain; client="
+                            + clientAirAfter, clientAirAfter < 1000);
             assertTrue("chest air must decrease through the CHEST sub-inventory "
                             + "route in vacuum; before=1000 after=" + chestAirAfter,
                     chestAirAfter < 1000);
@@ -154,6 +170,7 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             assertTrue("equip-space-chest must succeed: " + equip,
                     equip.contains("\"ok\":true"));
             assertEquals("baseline chestAir", 1000, readChestAir());
+            assertEquals("client-rendered baseline must agree", 1000, clientChestAir());
 
             bot().waitTicks(80);
 

@@ -1,92 +1,71 @@
 package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
+import com.google.gson.JsonArray;
 import org.junit.Test;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 7 — player-visible side of
- * {@link zmaster587.advancedRocketry.item.ItemAtmosphereAnalzer#onItemRightClick}.
+ * Player-visible side of
+ * {@code ItemAtmosphereAnalzer#onItemRightClick}, driven through the REAL
+ * client item-use path ({@code ClientBot.useItem}) and observed on the REAL
+ * client chat overlay ({@code reportChat}) — i18n already resolved, exactly
+ * the two lines the player reads.
  *
- * <p>Production dispatches TWO chat lines on right-click:</p>
- * <ul>
- *   <li>line 1: {@code "%s %s %s"} wrapping
- *       ({@code msg.atmanal.atmtype}, atmType name, pressure string)</li>
- *   <li>line 2: {@code "%s %s"} wrapping
- *       ({@code msg.atmanal.canbreathe}, {@code msg.yes} or {@code msg.no})</li>
- * </ul>
- *
- * <p>On dim 0 there's typically no {@code AtmosphereHandler} registered,
- * so {@code getOxygenHandler} returns null and
- * {@code getAtmosphereReadout} substitutes {@code AtmosphereType.AIR}
- * — the i18n suffix is the literal {@code "air"} (from
- * {@code AtmosphereType.AIR.getUnlocalizedName()}) and breathable=yes.
- * That is the contract pinned here: a vanilla-dim right-click reports
- * AIR + breathable, regardless of whether an oxygen handler exists.</p>
- *
- * <p>The chat-tap captures translation keys by joining the outer key
- * with every nested translation key (DFS) separated by {@code |}; tests
- * assert on substring presence so they don't depend on i18n output.</p>
- *
- * <p>Gated by {@code forge.test.client.enabled=true}; auto-skips on
- * headless CI.</p>
+ * <p>Dim 0 has no AtmosphereHandler → production falls back to
+ * {@code AtmosphereType.AIR}. Both lines must reach the player's screen:
+ * "Atmosphere Type: …air…" and "Breathable: yes".</p>
  */
 public class ItemAtmosphereAnalzerReadoutE2ETest extends AbstractClientE2ETest {
 
-    /** Dim 0 has no AtmosphereHandler → production falls back to
-     *  AtmosphereType.AIR. Both lines must reach the player: line 1
-     *  carries msg.atmanal.atmtype + the AIR i18n suffix ("air"), line 2
-     *  carries msg.atmanal.canbreathe + msg.yes (AIR is breathable). */
-    @Test
-    public void rightClickInVanillaDimDispatchesAirReadoutToPlayer() throws Exception {
-        serverClient().execute("artest player chat-clear");
-        String resp = String.join("\n", serverClient().execute(
-                "artest player try-atm-analyze 0"));
-        assertFalse("try-atm-analyze must not error; resp=" + resp,
-                resp.contains("\"error\""));
-        // Exactly two messages must have been dispatched.
-        assertTrue("expected messageCount=2; resp=" + resp,
-                resp.contains("\"messageCount\":2"));
-
-        // Line 1 (atmType): outer format + msg.atmanal.atmtype + AIR
-        // i18n key "air". All three must be present in the captured key.
-        assertTrue("line 1 must include msg.atmanal.atmtype; resp=" + resp,
-                resp.contains("msg.atmanal.atmtype"));
-        assertTrue("line 1 must include the AIR atm-name key (\"air\"); resp=" + resp,
-                resp.contains("|air"));
-
-        // Line 2 (canbreathe): outer format + msg.atmanal.canbreathe + msg.yes
-        assertTrue("line 2 must include msg.atmanal.canbreathe; resp=" + resp,
-                resp.contains("msg.atmanal.canbreathe"));
-        assertTrue("line 2 must include msg.yes (AIR is breathable); resp=" + resp,
-                resp.contains("msg.yes"));
-        // And must NOT report msg.no (no false negatives on a breathable atm).
-        assertFalse("line 2 must NOT report msg.no for breathable AIR; resp=" + resp,
-                resp.contains("msg.no"));
+    private String exec(String cmd) throws Exception {
+        return String.join("\n", serverClient().execute(cmd));
     }
 
-    /** Probe must surface an error JSON when the dim arg is missing,
-     *  matching the rest of the /artest player error envelope. Catches
-     *  accidental signature changes that would silently no-op. */
-    @Test
-    public void tryAtmAnalyzeErrorsWithoutDim() throws Exception {
-        String resp = String.join("\n", serverClient().execute(
-                "artest player try-atm-analyze"));
-        assertTrue("missing args must surface an error; resp=" + resp,
-                resp.contains("\"error\""));
+    /** Polls until the CLIENT renders {@code itemId} in the main hand (~10 s cap)
+     *  — server-side equips need a sync round-trip before the click. */
+    private void waitForHeld(String itemId) throws Exception {
+        String held = "";
+        for (int waited = 0; waited < 200; waited += 5) {
+            bot().waitTicks(5);
+            held = bot().reportPlayerItems().getAsJsonObject("held").get("id").getAsString();
+            if (itemId.equals(held)) return;
+        }
+        throw new AssertionError("client never rendered " + itemId
+                + " in hand; held=" + held);
     }
 
-    /** Probe must surface a clear error for an unloaded dim rather than
-     *  silently emitting no messages — catches typo'd dim ids. */
     @Test
-    public void tryAtmAnalyzeErrorsForUnloadedDim() throws Exception {
-        String resp = String.join("\n", serverClient().execute(
-                "artest player try-atm-analyze 999999"));
-        assertTrue("unloaded dim must surface an error; resp=" + resp,
-                resp.contains("\"error\""));
-        assertTrue("error must identify the dim id; resp=" + resp,
-                resp.contains("\"dim\":999999"));
+    public void rightClickInVanillaDimDispatchesAirReadoutToPlayerChat() throws Exception {
+        bot().waitForWorld();
+        String give = exec("artest player give-held advancedrocketry:atmanalyser");
+        assertTrue("give-held atmanalyser must succeed: " + give,
+                give.contains("\"ok\":true"));
+        waitForHeld("advancedrocketry:atmanalyser");
+
+        // The REAL right-click from the client.
+        bot().useItem();
+
+        // Both readout lines must land on the CLIENT chat overlay, with the
+        // lang keys resolved (msg.atmanal.atmtype → "Atmosphere Type: ",
+        // msg.atmanal.canbreathe → "Breathable: " + msg.yes → "yes").
+        boolean sawType = false;
+        boolean sawBreathableYes = false;
+        for (int waited = 0; waited < 100 && !(sawType && sawBreathableYes); waited += 10) {
+            bot().waitTicks(10);
+            JsonArray lines = bot().reportChat(10).getAsJsonArray("lines");
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i).getAsString().toLowerCase(java.util.Locale.ROOT);
+                if (line.contains("atmosphere type") && line.contains("air")) sawType = true;
+                if (line.contains("breathable")) {
+                    assertTrue("breathable line must read 'yes' for AIR, got: " + line,
+                            line.contains("yes"));
+                    sawBreathableYes = true;
+                }
+            }
+        }
+        assertTrue("client chat must show the resolved 'Atmosphere Type: …air' line", sawType);
+        assertTrue("client chat must show the resolved 'Breathable: yes' line", sawBreathableYes);
     }
 }

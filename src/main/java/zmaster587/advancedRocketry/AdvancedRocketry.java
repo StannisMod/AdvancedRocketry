@@ -370,7 +370,13 @@ public class AdvancedRocketry {
 
         //Entity Registration ---------------------------------------------------------------------------------------------
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "mountDummy"), EntityDummy.class, "mountDummy", 0, this, 16, 20, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", 1, this, 64, 3, true);
+        // updateFrequency=1: Free Flight is a fast, piloted arcade craft whose
+        // server motion the FA control loop nudges every tick. At the old 3-tick
+        // cadence the client dead-reckoned across stale samples and the position
+        // error sawtoothed the first-person camera (visible jitter). Per-tick
+        // pos/rotation/velocity sync shrinks the correction to one tick's error —
+        // smooth. One piloted rocket's extra tracker traffic is negligible.
+        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", 1, this, 64, 1, true);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "laserNode"), EntityLaserNode.class, "laserNode", 2, instance, 256, 20, false);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "deployedRocket"), EntityStationDeployedRocket.class, "deployedRocket", 3, this, 256, 600, true);
         EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARAbductedItem"), EntityItemAbducted.class, "ARAbductedItem", 4, this, 127, 600, false);
@@ -382,6 +388,7 @@ public class AdvancedRocketry {
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.TileWearable.class, "ARwearablePart");
         GameRegistry.registerTileEntity(TileRocketServiceStation.class, "ARserviceStation");
         GameRegistry.registerTileEntity(TileRocketAssemblingMachine.class, "ARrocketBuilder");
         GameRegistry.registerTileEntity(TileWarpCore.class, "ARwarpCore");
@@ -728,7 +735,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockMonitoringStation = new BlockTileNeighborUpdate(TileRocketMonitoringStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("monitoringstation");
         AdvancedRocketryBlocks.blockSatelliteControlCenter = new BlockTile(TileSatelliteTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("satelliteMonitor");
         AdvancedRocketryBlocks.blockTerraformingTerminal = new BlockTileTerraformer(TileTerraformingTerminal.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("terraformingTerminal");
-        AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
+        AdvancedRocketryBlocks.blockServiceStation = new BlockTile(TileRocketServiceStation.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("serviceStation");
 
 
         //Station machines
@@ -1076,6 +1083,7 @@ public class AdvancedRocketry {
     public void postInit(FMLPostInitializationEvent event) {
 
         CapabilitySpaceArmor.register();
+        zmaster587.advancedRocketry.api.capability.CapabilityWear.register();
         //Need to raise the Max Entity Radius to allow player interaction with rockets
         World.MAX_ENTITY_RADIUS = 20;
 
@@ -1126,6 +1134,8 @@ public class AdvancedRocketry {
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
         // Async weather info injection
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
+        // Acid rain damage on planets flagged acidicRain
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.event.AcidRainHandler());
 
         WirelessDataTickHandler wirelessTickHandler = new WirelessDataTickHandler();
         MinecraftForge.EVENT_BUS.register(wirelessTickHandler);
