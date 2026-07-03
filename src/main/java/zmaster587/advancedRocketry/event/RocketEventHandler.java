@@ -69,6 +69,17 @@ public class RocketEventHandler extends Gui {
      *  atomic reflective call (a bot reading camera and craft separately can
      *  straddle a tracker-quantisation bleed tick and see a phantom gap). */
     public static volatile double lastCameraLockErrorDeg = 0.0;
+    /** Client-rendered FF attitude readback (TASK-53 Phase 7), sampled on the
+     *  render thread from the interpolated attitude quaternion the camera used —
+     *  the pilot's actual view. For perception-contract client e2e:
+     *  {@link #ffClientCamRoll} pins mouse-horizontal → bank; {@link #ffClientMinForwardZ}
+     *  (most-negative nose Z over the flight) pins a pitch LOOP past vertical with
+     *  no ±85° clamp (a clamped nose can never point backwards → Z stays ≳ 0).
+     *  Reset when the flight ends. */
+    public static volatile double ffClientCamPitch = 0.0;
+    public static volatile double ffClientCamRoll  = 0.0;
+    public static volatile double ffClientForwardZ = 1.0;
+    public static volatile double ffClientMinForwardZ = 1.0;
     private ResourceLocation background = TextureResources.rocketHud;
     private static long suppressSuffocationWarningUntil = Long.MIN_VALUE;
     private static int lastSuffocationWarningDim = Integer.MIN_VALUE;
@@ -124,6 +135,12 @@ public class RocketEventHandler extends Gui {
         event.setYaw(e[0] + 180f);
         event.setPitch(e[1]);
         event.setRoll(e[2]);
+        // Client-attitude readback for perception-contract e2e (see the fields).
+        ffClientCamPitch = e[1];
+        ffClientCamRoll  = e[2];
+        double fz = cq.rotate(0, 0, 1)[2]; // client nose Z (world)
+        ffClientForwardZ = fz;
+        if (fz < ffClientMinForwardZ) ffClientMinForwardZ = fz;
     }
 
     /**
@@ -317,6 +334,7 @@ public class RocketEventHandler extends Gui {
                 } else if (!rocket.isInFlight()) {
                     maxCameraLockErrorDeg = 0.0;
                     lastCameraLockErrorDeg = 0.0;
+                    ffClientMinForwardZ = 1.0; // fresh loop witness per flight
                 }
 
             }

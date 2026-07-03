@@ -548,7 +548,8 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         // Hold vertical-up (R, keeps it airborne so the FF tick keeps running) AND
         // the inventory key (E). On foot E opens the inventory; here it must
-        // strafe (right = +X at yaw 0).
+        // strafe. E = strafe right, which after the polarity fix commands -X at
+        // yaw 0 (world +X renders on the pilot's left out the nose).
         bot().holdKey(Keyboard.KEY_R);
         bot().holdKey(KEY_INVENTORY);
         bot().waitTicks(25);
@@ -562,9 +563,9 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         assertEquals("inventory key must NOT open the inventory while piloting "
                 + "(would also freeze steering): " + screenDuring, "", screenDuring);
-        assertTrue("inventory key must instead strafe the craft (+X at yaw 0) while piloting "
+        assertTrue("inventory key must instead strafe the craft (-X at yaw 0) while piloting "
                         + "(xBefore=" + xBefore + " xAfter=" + xAfter + ")",
-                xAfter - xBefore > 1.0);
+                xAfter - xBefore < -1.0);
         assertTrue("rocket must stay in flight (override must not have frozen control): " + info,
                 info.contains("\"isInFlight\":true"));
 
@@ -573,9 +574,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void strafeLeftKeyMovesNegativeX() throws Exception {
-        // Q (strafe left) → -X at yaw 0, the mirror of E. Drop key on foot;
-        // strafe in the cockpit.
+    public void strafeLeftKeyMovesPositiveX() throws Exception {
+        // Q (strafe left) → +X at yaw 0 after the polarity fix: with the camera
+        // looking out the nose, world +X renders on the pilot's LEFT, so the
+        // strafe-left key must push the craft toward +X to feel correct (the raw
+        // body-right mapping felt inverted in playtest). E is the mirror.
         int rocketId = mountFreshFreeFlightRocket(4400, 64, 500);
         double xBefore = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
 
@@ -586,8 +589,8 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         bot().releaseKey(Keyboard.KEY_Q);
         bot().releaseKey(Keyboard.KEY_R);
 
-        assertTrue("Q must strafe -X at yaw 0 (xBefore=" + xBefore + " xAfter=" + xAfter + ")",
-                xAfter - xBefore < -1.0);
+        assertTrue("Q must strafe +X at yaw 0 (xBefore=" + xBefore + " xAfter=" + xAfter + ")",
+                xAfter - xBefore > 1.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");
@@ -992,39 +995,86 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void fastMouseSwipeIsRateCappedAndExcessDiscarded() throws Exception {
-        // One violent 90° yaw flick in a single tick: the craft must turn at
-        // most a few times MAX_YAW_RATE (6°/tick) over the following ticks, and
-        // the camera must be re-pinned to the craft — NOT jump the full 90° (the
-        // discarded excess is the Elite-style "mouse slip"). The mouse rate is
-        // EMA-smoothed (KeyBindings.FF_RATE_SMOOTH), so a single-tick flick now
-        // accumulates its (still rate-capped, excess-discarded) turn over more
-        // ticks — hence the wider observation window below.
+    public void mouseHorizontalBanksTheCraftNotItsHeading() throws Exception {
+        // Deflection scheme (TASK-53 Phase 6/7): the mouse is a virtual cursor —
+        // HORIZONTAL drives ROLL (bank), not yaw (yaw is A/D only). A real
+        // rightward mouse drag must bank the craft (client camera roll grows) while
+        // the heading (client yaw) stays put. Supersedes the pre-deflection
+        // "fast mouse swipe yaws the craft" test, whose premise no longer holds.
         int rocketId = mountFreshFreeFlightRocket(5000, 64, 500);
-        bot().holdKey(Keyboard.KEY_R);
+        bot().holdKey(Keyboard.KEY_R);   // climb clear of the pad while banking
         bot().waitTicks(5);
 
-        JsonObject before = bot().reportRidingEntity();
-        double yaw0 = before.get("rotationYaw").getAsDouble();
-        bot().setLook((float) yaw0 + 90f, 0f);  // one-tick flick
-        bot().waitTicks(8);
+        double yaw0 = bot().reportRidingEntity().get("rotationYaw").getAsDouble();
+        // A real rightward mouse drag: repeated +8° horizontal swipes saturate the
+        // absolute roll cursor, which then holds a steady bank rate.
+        for (int i = 0; i < 8; i++) {
+            JsonObject st = bot().reportState();
+            bot().setLook(st.get("playerYaw").getAsFloat() + 8f, st.get("playerPitch").getAsFloat());
+            bot().waitTicks(1);
+        }
+        bot().waitTicks(15); // let the held bank integrate
 
-        JsonObject craft = bot().reportRidingEntity();
-        JsonObject cam = bot().reportState();
+        double camRoll = readClientDouble("ffClientCamRoll");
+        double yaw1 = bot().reportRidingEntity().get("rotationYaw").getAsDouble();
         bot().releaseKey(Keyboard.KEY_R);
 
-        double turned = angDiff(craft.get("rotationYaw").getAsDouble(), yaw0);
-        assertTrue("craft must have started turning after the flick (turned=" + turned + ")",
-                turned > 3.0);
-        assertTrue("craft turn must be rate-capped, excess discarded (turned=" + turned
-                + " over ~4 ticks, cap 6°/tick)", turned < 30.0);
-        assertTrue("camera must be re-pinned to the craft after the flick (cam="
-                        + cam.get("playerYaw") + " craft=" + craft.get("rotationYaw") + ")",
-                angDiff(cam.get("playerYaw").getAsDouble(),
-                        craft.get("rotationYaw").getAsDouble()) < 7.0);
+        assertTrue("mouse-horizontal must BANK the craft — client camera roll must "
+                + "grow (roll=" + camRoll + "°)", Math.abs(camRoll) > 15.0);
+        assertTrue("mouse-horizontal must NOT change the heading — client yaw drifted "
+                + angDiff(yaw1, yaw0) + "° (roll must not couple into yaw)",
+                angDiff(yaw1, yaw0) < 12.0);
 
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
         exec("artest player dismount");
+    }
+
+    /**
+     * The headline Phase-7 perception contract: a sustained pitch input drives the
+     * nose all the way OVER THE TOP (a loop), which the world-frame Euler ±85°
+     * clamp made impossible. Witnessed on the CLIENT render thread: the nose Z the
+     * camera actually pointed goes negative (points backwards) — a clamped attitude
+     * can never do that (forward.z ≳ cos 85° ≈ 0.09). Also proves the client
+     * survives rendering an inverted / looping craft.
+     */
+    @Test
+    public void sustainedPitchLoopsPastVerticalWithNoClamp() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(5100, 64, 500);
+        // Climb well clear of the pad, then CUT to a gravity-cancelled hover: with
+        // a zero velocity setpoint FA holds position regardless of attitude, so the
+        // craft can loop in place without body-up thrust flying it into the ground.
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(30);
+        bot().releaseKey(Keyboard.KEY_R);
+        bot().holdKey(Keyboard.KEY_X);   // cut → hover (attitude-independent)
+        bot().waitTicks(5);
+
+        // Real downward mouse drag: saturate the absolute pitch cursor, which then
+        // holds full pitch rate and carries the nose past vertical and over.
+        for (int i = 0; i < 8; i++) {
+            JsonObject st = bot().reportState();
+            bot().setLook(st.get("playerYaw").getAsFloat(), st.get("playerPitch").getAsFloat() + 8f);
+            bot().waitTicks(1);
+        }
+        bot().waitTicks(60); // held cursor → the nose loops over the top
+
+        double minFwdZ = readClientDouble("ffClientMinForwardZ");
+        boolean stillRiding = bot().reportRidingEntity() != null;
+        bot().releaseKey(Keyboard.KEY_X);
+
+        assertTrue("the nose must loop past vertical — client min forward.z must go "
+                + "negative (was " + minFwdZ + "; a ±85° clamp keeps it ≳ 0.09)",
+                minFwdZ < -0.5);
+        assertTrue("client must survive rendering the looping/inverted craft", stillRiding);
+
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+    }
+
+    /** Read a client-side double static from {@link #ROCKET_EVENT_HANDLER}. */
+    private double readClientDouble(String field) throws Exception {
+        return Double.parseDouble(
+                bot().readStaticField(ROCKET_EVENT_HANDLER, field).get("value").getAsString());
     }
 
     /**

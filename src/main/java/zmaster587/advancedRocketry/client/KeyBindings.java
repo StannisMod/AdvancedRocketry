@@ -391,8 +391,14 @@ public class KeyBindings {
 
         float fwd = (mc.gameSettings.keyBindForward.isKeyDown() ?  1f : 0f)
                 + (mc.gameSettings.keyBindBack.isKeyDown()    ? -1f : 0f);
-        float strafe = (strafeRight.isKeyDown() ?  1f : 0f)
-                + (strafeLeft.isKeyDown()  ? -1f : 0f);
+        // Q/E strafe polarity is flipped relative to the raw body-right axis: with
+        // the FF camera looking out the nose, world +X (body right) renders on the
+        // pilot's LEFT, so "strafe right" (E) must command −right to move the craft
+        // the way the pilot sees it. (Playtest fix — the raw-axis mapping felt
+        // inverted.) The physics strafe→right-axis mapping is unchanged; only which
+        // key drives which sign flips here.
+        float strafe = (strafeRight.isKeyDown() ? -1f : 0f)
+                + (strafeLeft.isKeyDown()  ?  1f : 0f);
         float vert = (flightVerticalUp.isKeyDown()   ?  1f : 0f)
                 + (flightVerticalDown.isKeyDown() ? -1f : 0f);
 
