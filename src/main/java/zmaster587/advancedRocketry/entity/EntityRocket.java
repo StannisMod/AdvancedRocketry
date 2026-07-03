@@ -190,9 +190,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     /** Ticks over which the FF client absorbs a server-position correction
      *  (~ the entity updateFrequency, so jitter is smoothed, not snapped). */
     private static final double FF_CLIENT_CORRECT_TICKS = 3.0;
-    /** Client-side FF rotation error vs the last server update (degrees),
-     *  dead-reckoned away alongside poscorrection — see setPositionAndRotationDirect. */
-    private transient float rotcorrectionYaw = 0f, rotcorrectionPitch = 0f;
+    /** Client-side FF snapshot targets: the latest authoritative server pose,
+     *  used by the predict-then-correct smoothing in {@link #onUpdate()}. Each
+     *  client tick dead-reckons from local velocity/rates and pulls the RESIDUAL
+     *  toward these — never the raw gap, which already contains this tick's motion
+     *  (double-counting it left the client a full tick ahead of the server: a
+     *  constant lead that shifted with velocity → the FA-off jitter). Position is
+     *  null / angles are NaN until the first FF packet arrives; all transient
+     *  (client-only, re-seeded on load). */
+    private transient Vec3d ffServerPos = null;
+    private transient float ffServerYaw = Float.NaN, ffServerPitch = Float.NaN;
     /** Server-side: whether last tick had non-zero rotation input — edge-detects
      *  "pilot stopped turning" for the heading resync in tickFreeFlight. */
     private transient boolean freeFlightRotInputWasActive = false;
@@ -1497,13 +1504,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // (over FF_CLIENT_CORRECT_TICKS) continuously — no deadband: a
             // deadband lets the client/server integrals drift to its threshold
             // during a turn, then snaps, which reads as a periodic camera jolt.
+            // Record the authoritative server pose as a tracking TARGET (not a
+            // pre-computed gap): onUpdate predicts from local motion/rates first,
+            // then corrects the residual toward these. Position always updates;
+            // rotation only on a REAL delta — move-only tracker packets echo the
+            // client's own rotation back (delta ≈ 0), and adopting that as the
+            // target would erase a still-converging correction (e.g. the
+            // heading-resync teleport sent when the pilot stops turning).
             float dyaw   = MathHelper.wrapDegrees(yaw - this.rotationYaw);
             float dpitch = pitch - this.rotationPitch;
             if (Math.abs(dyaw) > 1e-3f || Math.abs(dpitch) > 1e-3f) {
-                this.rotcorrectionYaw = dyaw;
-                this.rotcorrectionPitch = dpitch;
+                this.ffServerYaw   = yaw;
+                this.ffServerPitch = pitch;
             }
-            this.poscorrection = new Vec3d(x, y, z).subtract(this.posX, this.posY, this.posZ);
+            this.ffServerPos = new Vec3d(x, y, z);
             return;
         }
 
@@ -1821,52 +1835,64 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             if (!world.isRemote) {
                 tickFreeFlight();
             } else {
-                // Client smoothing (the rocket is fast and the tracker only sends
-                // a position every updateFrequency=3 ticks). Dead-reckon by the
-                // synced velocity EVERY client tick so the rocket advances each
-                // frame, and bleed the small position error toward the server over
-                // FF_CLIENT_CORRECT_TICKS — instead of freezing between updates and
-                // snapping (which read as violent jitter).
-                double cx = poscorrection.x / FF_CLIENT_CORRECT_TICKS;
-                double cy = poscorrection.y / FF_CLIENT_CORRECT_TICKS;
-                double cz = poscorrection.z / FF_CLIENT_CORRECT_TICKS;
-                poscorrection = poscorrection.subtract(cx, cy, cz);
-                this.setPosition(this.posX + this.motionX + cx,
-                                 this.posY + this.motionY + cy,
-                                 this.posZ + this.motionZ + cz);
-
-                // Rotation dead-reckoning: integrate the locally-known steering
-                // rates every client tick (the camera is hard-locked to the
-                // craft, and the tracker only syncs rotation every ~3 ticks —
-                // without this, mouse look would step at ~7 fps), and bleed the
-                // recorded server error the same way as position.
-                float ry = rotcorrectionYaw   / (float) FF_CLIENT_CORRECT_TICKS;
-                float rp = rotcorrectionPitch / (float) FF_CLIENT_CORRECT_TICKS;
-                rotcorrectionYaw   -= ry;
-                rotcorrectionPitch -= rp;
+                // Predict-then-correct smoothing. The craft is fast and the tracker
+                // samples pose ~once per tick; freezing between samples then snapping
+                // reads as violent jitter, so each CLIENT tick we PREDICT from the
+                // synced velocity / local steering rates (dead-reckon) and pull the
+                // RESIDUAL error toward the latest server target over
+                // FF_CLIENT_CORRECT_TICKS. Correcting the residual (target − predicted)
+                // rather than the raw gap (target − pos) is the whole point: the raw
+                // gap already contains this tick's motion, so adding motion AND the gap
+                // double-counts it and leaves the client a full tick ahead of the
+                // server — a constant lead that shifts whenever velocity changes, which
+                // is the FA-off sawtooth. Roll already used this scheme; yaw/pitch/pos
+                // now match it.
                 FreeFlightInput in = currentFreeFlightInput == null
                         ? FreeFlightInput.zero() : currentFreeFlightInput;
-                // Snapshot prev before the per-tick advance so the render (and
-                // the FF camera pin that mirrors prevRotation*) interpolates one
-                // tick's rotation per frame — the source of the smooth sweep.
-                this.prevRotationYaw = this.rotationYaw;
-                this.prevRotationPitch = this.rotationPitch;
-                this.rotationYaw  += (float) (in.yawInput * FreeFlightPhysics.MAX_YAW_RATE) + ry;
-                this.rotationPitch = FreeFlightPhysics.clampPitch(
-                        this.rotationPitch
-                                + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE) + rp);
-                // Roll is DEAD-RECKONED every tick from the local input (like
-                // yaw/pitch) so the banked camera advances smoothly instead of
-                // stepping at the FF_ROLL replication cadence, then softly bled
-                // toward the authoritative full-precision replica (float, no byte
-                // quantisation). The pilot integrates its own input (error ≈ 0);
-                // an observer has zero input so the bleed carries the server roll.
+
+                // Position: dead-reckon by synced velocity, then correct the residual
+                // to the server target. e → 0 in steady state (no lead, no lag).
+                double px = this.posX + this.motionX;
+                double py = this.posY + this.motionY;
+                double pz = this.posZ + this.motionZ;
+                if (this.ffServerPos != null) {
+                    px += (this.ffServerPos.x - px) / FF_CLIENT_CORRECT_TICKS;
+                    py += (this.ffServerPos.y - py) / FF_CLIENT_CORRECT_TICKS;
+                    pz += (this.ffServerPos.z - pz) / FF_CLIENT_CORRECT_TICKS;
+                }
+                this.setPosition(px, py, pz);
+
+                // Rotation: snapshot prev BEFORE the advance so the render and the
+                // hard-locked FF camera (which mirror prevRotation*/prevFreeFlightRoll)
+                // interpolate one tick's delta per frame — the source of the smooth
+                // 60 fps sweep despite the 20 Hz physics.
+                this.prevRotationYaw    = this.rotationYaw;
+                this.prevRotationPitch  = this.rotationPitch;
                 this.prevFreeFlightRoll = this.freeFlightRoll;
-                float predictedRoll = this.freeFlightRoll
+
+                float predYaw = this.rotationYaw
+                        + (float) (in.yawInput * FreeFlightPhysics.MAX_YAW_RATE);
+                if (!Float.isNaN(this.ffServerYaw))
+                    predYaw += MathHelper.wrapDegrees(this.ffServerYaw - predYaw)
+                            / (float) FF_CLIENT_CORRECT_TICKS;
+                this.rotationYaw = predYaw;
+
+                float predPitch = this.rotationPitch
+                        + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE);
+                if (!Float.isNaN(this.ffServerPitch))
+                    predPitch += (this.ffServerPitch - predPitch)
+                            / (float) FF_CLIENT_CORRECT_TICKS;
+                this.rotationPitch = FreeFlightPhysics.clampPitch(predPitch);
+
+                // Roll: identical predict-then-correct against the full-precision
+                // FF_ROLL replica (float, no byte quantisation). The pilot integrates
+                // its own input (residual ≈ 0); an observer has zero input, so the
+                // correction carries the server roll.
+                float predRoll = this.freeFlightRoll
                         + (float) (in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
-                float rollErr = FreeFlightPhysics.wrapDeg(this.dataManager.get(FF_ROLL) - predictedRoll);
+                float rollErr = FreeFlightPhysics.wrapDeg(this.dataManager.get(FF_ROLL) - predRoll);
                 this.freeFlightRoll = FreeFlightPhysics.wrapDeg(
-                        predictedRoll + rollErr / (float) FF_CLIENT_CORRECT_TICKS);
+                        predRoll + rollErr / (float) FF_CLIENT_CORRECT_TICKS);
             }
             return;
         }
