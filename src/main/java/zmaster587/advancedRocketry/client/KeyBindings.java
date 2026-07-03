@@ -295,16 +295,6 @@ public class KeyBindings {
         double speed = Math.sqrt(rocket.motionX * rocket.motionX
                 + rocket.motionY * rocket.motionY + rocket.motionZ * rocket.motionZ);
         lines.add(I18n.format("msg.ff.hud.speed", String.format("%.1f", speed * 20.0)));
-
-        // TEMP DIAGNOSTIC — remove after seat/jitter tuning. Shows where the
-        // camera sits relative to the craft and the current attitude, so a
-        // single screenshot pins down the seat offset and any per-tick shiver.
-        EntityPlayerSP dbgP = Minecraft.getMinecraft().player;
-        if (dbgP != null) {
-            lines.add(String.format("DBG dPos %+.2f/%+.2f/%+.2f  yaw %.1f pit %.1f",
-                    dbgP.posX - rocket.posX, dbgP.posY - rocket.posY, dbgP.posZ - rocket.posZ,
-                    rocket.rotationYaw, rocket.rotationPitch));
-        }
         return lines;
     }
 

@@ -45,8 +45,8 @@ public final class FreeFlightPhysics {
 
     // -- Tunables --------------------------------------------------------
 
-    /** Per-tick yaw delta (degrees) at full yaw input. */
-    public static final double MAX_YAW_RATE       = 6.0;
+    /** Per-tick yaw delta (degrees) at full yaw input (A/D keyboard steering). */
+    public static final double MAX_YAW_RATE       = 3.0;
     /** Per-tick pitch delta (degrees) at full pitch input. */
     public static final double MAX_PITCH_RATE     = 4.0;
     /** Per-tick roll (bank) delta (degrees) at full roll input. */

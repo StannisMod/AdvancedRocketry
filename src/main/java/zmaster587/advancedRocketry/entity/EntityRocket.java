@@ -1855,11 +1855,18 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 this.rotationPitch = FreeFlightPhysics.clampPitch(
                         this.rotationPitch
                                 + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE) + rp);
-                // Roll follows the authoritative full-precision replica directly
-                // (float DataParameter, synced every tick) — no dead-reckoning,
-                // no byte quantisation, so the banked model/camera stay smooth.
+                // Roll is DEAD-RECKONED every tick from the local input (like
+                // yaw/pitch) so the banked camera advances smoothly instead of
+                // stepping at the FF_ROLL replication cadence, then softly bled
+                // toward the authoritative full-precision replica (float, no byte
+                // quantisation). The pilot integrates its own input (error ≈ 0);
+                // an observer has zero input so the bleed carries the server roll.
                 this.prevFreeFlightRoll = this.freeFlightRoll;
-                this.freeFlightRoll = this.dataManager.get(FF_ROLL);
+                float predictedRoll = this.freeFlightRoll
+                        + (float) (in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
+                float rollErr = FreeFlightPhysics.wrapDeg(this.dataManager.get(FF_ROLL) - predictedRoll);
+                this.freeFlightRoll = FreeFlightPhysics.wrapDeg(
+                        predictedRoll + rollErr / (float) FF_CLIENT_CORRECT_TICKS);
             }
             return;
         }
