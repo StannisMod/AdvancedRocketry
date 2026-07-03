@@ -848,6 +848,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("ffInputStrafe", ffin.strafeInput);
                 info.put("ffInputYaw",   ffin.yawInput);
                 info.put("ffInputPitch", ffin.pitchInput);
+                info.put("ffInputRoll", ffin.rollInput);
                 info.put("ffInputBrake", ffin.brakeInput);
                 info.put("ffInputCut",  ffin.cutActive);
             }

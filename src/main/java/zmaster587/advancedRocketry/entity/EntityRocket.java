@@ -3114,6 +3114,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             nbt.setFloat("ffStrafe", input.strafeInput);
             nbt.setFloat("ffYaw",   input.yawInput);
             nbt.setFloat("ffPitch", input.pitchInput);
+            nbt.setFloat("ffRoll",  input.rollInput);
             nbt.setFloat("ffBrake", input.brakeInput);
             nbt.setBoolean("ffCut", input.cutActive);
         } else if (packetId == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
@@ -3287,6 +3288,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     nbt.getFloat("ffStrafe"),
                     nbt.getFloat("ffYaw"),
                     nbt.getFloat("ffPitch"),
+                    nbt.getFloat("ffRoll"),
                     nbt.getFloat("ffBrake"),
                     nbt.getBoolean("ffCut"));
             applyFreeFlightInput(input);

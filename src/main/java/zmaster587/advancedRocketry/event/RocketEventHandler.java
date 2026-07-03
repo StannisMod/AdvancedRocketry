@@ -92,6 +92,39 @@ public class RocketEventHandler extends Gui {
         lastDisplayTime = -1000;
     }
 
+    /**
+     * Free Flight camera attitude. Locks the render camera to the craft's
+     * yaw/pitch/roll every FRAME (interpolated), overriding the vanilla
+     * mouse-driven view. This is what makes the mouse smooth while moving: the
+     * mouse only feeds the deflection cursor (read per tick in KeyBindings) and
+     * never leaks into the camera between ticks — plus it applies the roll
+     * (bank) DOF, which vanilla has no player-camera field for.
+     */
+    @SubscribeEvent
+    public void onFreeFlightCameraSetup(net.minecraftforge.client.event.EntityViewRenderEvent.CameraSetup event) {
+        net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
+        if (view == null) return;
+        net.minecraft.entity.Entity ridden = view.getRidingEntity();
+        if (!(ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket)) return;
+        zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                (zmaster587.advancedRocketry.entity.EntityRocket) ridden;
+        if (!(rocket.isFreeFlight() && rocket.isInFlight())) return;
+
+        float p = (float) event.getRenderPartialTicks();
+        float yaw = rocket.prevRotationYaw + net.minecraft.util.math.MathHelper.wrapDegrees(
+                rocket.rotationYaw - rocket.prevRotationYaw) * p;
+        float pitch = rocket.prevRotationPitch
+                + (rocket.rotationPitch - rocket.prevRotationPitch) * p;
+        float roll = rocket.getPrevFreeFlightRoll()
+                + zmaster587.advancedRocketry.api.FreeFlightPhysics.wrapDeg(
+                        rocket.getFreeFlightRoll() - rocket.getPrevFreeFlightRoll()) * p;
+        // +180: the vanilla camera-yaw convention faces opposite the raw
+        // heading, so the ship yaw must be flipped to look out the nose.
+        event.setYaw(yaw + 180f);
+        event.setPitch(pitch);
+        event.setRoll(roll);
+    }
+
     @SubscribeEvent
     public void onScreenRender(RenderGameOverlayEvent.Post event) {
         Entity ride;

@@ -1190,4 +1190,33 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         assertTrue("client must survive rendering the banked craft (camera-roll mixin)",
                 stillRiding);
     }
+
+    /**
+     * DIAGNOSTIC (temporary): does REAL horizontal look input (the mouse path,
+     * not the probe) drive the roll channel? Repeated rightward look nudges feed
+     * the flight-cursor X → rollInput → freeFlightRoll. Throws with the numbers.
+     */
+    @Test
+    public void horizontalLookDrivesRollThroughRealInput() throws Exception {
+        int rocketId = mountFreshFreeFlightRocket(6000, 64, 500);
+        bot().waitTicks(20);
+        double roll0 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");
+        for (int i = 0; i < 15; i++) {
+            JsonObject s = bot().reportState();
+            bot().setLook(s.get("playerYaw").getAsFloat() + 20f, s.get("playerPitch").getAsFloat());
+            bot().waitTicks(1);
+        }
+        bot().waitTicks(5);
+        String info = exec("artest rocket info " + rocketId);
+        double roll1 = parseDouble(info, FF_ROLL, "freeFlightRoll");
+        double rollInput = parseDouble(info, Pattern.compile("\"ffInputRoll\":(-?[0-9.E\\-]+)"), "ffInputRoll");
+        String curX = bot().readStaticField(
+                "zmaster587.advancedRocketry.client.KeyBindings", "flightCursorX").get("value").getAsString();
+        String curY = bot().readStaticField(
+                "zmaster587.advancedRocketry.client.KeyBindings", "flightCursorY").get("value").getAsString();
+        exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0");
+        exec("artest player dismount");
+        throw new AssertionError("@@ROLLWIRE@@ roll0=" + roll0 + " roll1=" + roll1
+                + " ffInputRoll=" + rollInput + " clientCursorX=" + curX + " clientCursorY=" + curY);
+    }
 }
