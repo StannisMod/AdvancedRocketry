@@ -111,18 +111,19 @@ public class RocketEventHandler extends Gui {
         if (!(rocket.isFreeFlight() && rocket.isInFlight())) return;
 
         float p = (float) event.getRenderPartialTicks();
-        float yaw = rocket.prevRotationYaw + net.minecraft.util.math.MathHelper.wrapDegrees(
-                rocket.rotationYaw - rocket.prevRotationYaw) * p;
-        float pitch = rocket.prevRotationPitch
-                + (rocket.rotationPitch - rocket.prevRotationPitch) * p;
-        float roll = rocket.getPrevFreeFlightRoll()
-                + zmaster587.advancedRocketry.api.FreeFlightPhysics.wrapDeg(
-                        rocket.getFreeFlightRoll() - rocket.getPrevFreeFlightRoll()) * p;
+        // Slerp the attitude quaternion this frame, then derive the camera Euler —
+        // pole-safe through loops (see RendererRocket). The quaternion is the FF
+        // attitude source of truth; deriving yaw/pitch/roll here reproduces the
+        // craft basis exactly, so the view looks out the nose and banks with roll.
+        zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cq =
+                zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                        rocket.getPrevFfQuat(), rocket.getFfQuat(), p);
+        float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cq);
         // +180: the vanilla camera-yaw convention faces opposite the raw
         // heading, so the ship yaw must be flipped to look out the nose.
-        event.setYaw(yaw + 180f);
-        event.setPitch(pitch);
-        event.setRoll(roll);
+        event.setYaw(e[0] + 180f);
+        event.setPitch(e[1]);
+        event.setRoll(e[2]);
     }
 
     /**

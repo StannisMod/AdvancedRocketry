@@ -135,9 +135,15 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Float> FA_SP_FWD   = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_RIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_UP    = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
-    /** Roll (bank) angle, degrees. Replicated as a full-precision float (not via
-     *  the byte-quantised entity tracker) so the banked camera stays smooth. */
-    private static final DataParameter<Float> FF_ROLL     = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    /** FF body-frame attitude quaternion (w, x, y, z), body→world (TASK-53
+     *  Phase 7). Replicated as four full-precision floats — NOT the byte-quantised
+     *  yaw/pitch tracker or a single roll float — so the client has the complete,
+     *  pole-free orientation. This is the FF attitude source of truth: loops and
+     *  inversions have no gimbal lock, and the camera/render/seat derive from it. */
+    private static final DataParameter<Float> FF_QW = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QX = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QY = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> FF_QZ = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static long ERROR_DISPLAY_TIME = 100;
     //Offset for buttons linking to the tileEntityGrid
     private final int tilebuttonOffset = 3;
@@ -170,11 +176,17 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     //       below is opt-in and bypassed entirely when classic) -----
     private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
     private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
-    /** Pitch tracked separately from rotationPitch so passenger updatePassenger() can ignore it. */
+    /** FF attitude source of truth (body→world quaternion, TASK-53 Phase 7).
+     *  Integrated by BODY rates on the server; on the client it is the smoothed
+     *  local estimate (predict from input + slerp toward the replicated
+     *  {@link #FF_QW}/QX/QY/QZ). prev tracks the last tick for render slerp. */
+    private FreeFlightPhysics.Quat ffQuat     = FreeFlightPhysics.Quat.IDENTITY;
+    private FreeFlightPhysics.Quat prevFfQuat = FreeFlightPhysics.Quat.IDENTITY;
+    /** Euler view of {@link #ffQuat}, derived every tick — kept only for legacy
+     *  consumers that still read yaw/pitch/roll (seat, HUD bars, probes, vanilla
+     *  systems). NEVER the source of truth; the quaternion is (avoids gimbal lock
+     *  through loops/inversions). */
     private float freeFlightPitch = 0f;
-    /** Roll (bank) angle in degrees — a Free-Flight-only rotational DOF with no
-     *  vanilla field, so it is replicated via {@link #FF_ROLL} and rendered /
-     *  banked from here. prev tracks the last tick for partialTicks interp. */
     private float freeFlightRoll = 0f;
     private float prevFreeFlightRoll = 0f;
     /** Latched once a FF tick lands the rocket so we don't re-fire the landed event each tick. */
@@ -199,10 +211,6 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      *  null / angles are NaN until the first FF packet arrives; all transient
      *  (client-only, re-seeded on load). */
     private transient Vec3d ffServerPos = null;
-    private transient float ffServerYaw = Float.NaN, ffServerPitch = Float.NaN;
-    /** Server-side: whether last tick had non-zero rotation input — edge-detects
-     *  "pilot stopped turning" for the heading resync in tickFreeFlight. */
-    private transient boolean freeFlightRotInputWasActive = false;
     /** Flight Assist (Elite-style FA-on/FA-off). ON by default = legacy drag behaviour. */
     private boolean flightAssistOn = true;
 
@@ -892,6 +900,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return prevFreeFlightRoll;
     }
 
+    /** Current FF attitude (body→world). Client render/camera slerp between
+     *  {@link #getPrevFfQuat()} and this by partialTicks. */
+    public FreeFlightPhysics.Quat getFfQuat() {
+        return ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
+    }
+
+    public FreeFlightPhysics.Quat getPrevFfQuat() {
+        return prevFfQuat == null ? FreeFlightPhysics.Quat.IDENTITY : prevFfQuat;
+    }
+
     public boolean isFlightAssistOn() {
         return flightAssistOn;
     }
@@ -903,9 +921,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     public void setFlightAssistOn(boolean on) {
         if (!world.isRemote && on != this.flightAssistOn && isFreeFlight()) {
             if (on && isInFlight()) {
-                double[] sp = FreeFlightPhysics.worldToBody(
-                        this.motionX, this.motionY, this.motionZ,
-                        this.rotationYaw, this.freeFlightPitch);
+                double[] sp = FreeFlightPhysics.worldToBodyQ(
+                        this.motionX, this.motionY, this.motionZ, this.ffQuat);
                 setFaSetpoint(sp[0], sp[1], sp[2]);
                 ffTrace("FA re-enabled: setpoint captured from velocity "
                         + sp[0] + "/" + sp[1] + "/" + sp[2]);
@@ -933,6 +950,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         ffLiftoffTargetY = this.posY + 1.0;
         currentFreeFlightInput = FreeFlightInput.zero();
         setFaSetpoint(0, 0, 0); // fresh flight starts at hover intent
+        this.ffQuat = FreeFlightPhysics.Quat.IDENTITY; // upright reference attitude
+        this.prevFfQuat = FreeFlightPhysics.Quat.IDENTITY;
+        this.dataManager.set(FF_QW, 1f);
+        this.dataManager.set(FF_QX, 0f);
+        this.dataManager.set(FF_QY, 0f);
+        this.dataManager.set(FF_QZ, 0f);
         ffTrace("startFreeFlight mode=" + getFlightMode() + " thrust=" + stats.getThrust()
                 + " weight=" + stats.getWeight() + " accel=" + stats.getAcceleration(1f)
                 + " liftoffTargetY=" + ffLiftoffTargetY);
@@ -1005,90 +1028,65 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
         boolean liftoffHover = !Double.isNaN(ffLiftoffTargetY) && canThrust;
 
+        // Integrate the body-frame ATTITUDE by this tick's rotation rates: pitch
+        // about the craft right axis, yaw about up, roll about the nose. A
+        // quaternion (not a world-frame Euler triple) → no gimbal lock, so loops
+        // work and the controls never invert relative to the pilot when the craft
+        // is rolled or inverted.
+        double pitchRate = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
+        double yawRate   = in.yawInput   * FreeFlightPhysics.MAX_YAW_RATE;
+        double rollRate  = in.rollInput  * FreeFlightPhysics.MAX_ROLL_RATE;
+        FreeFlightPhysics.Quat newQuat = FreeFlightPhysics.integrateBodyRates(
+                this.ffQuat, pitchRate, yawRate, rollRate);
+
         FreeFlightPhysics.Step result;
         if (liftoffHover) {
-            FreeFlightPhysics.Step lift = FreeFlightPhysics.liftoffStep(
+            // Ease onto the hover point ~1 block off the pad; orientation still
+            // integrates (newQuat above), so the pilot can aim while lifting off.
+            result = FreeFlightPhysics.liftoffStep(
                     this.posY, ffLiftoffTargetY,
                     this.motionX, this.motionY, this.motionZ,
-                    this.rotationYaw, this.freeFlightPitch, thrustMag);
-            // Orientation channels stay live while hovering: run the regular
-            // step on the lifted motion with translation-free input so yaw /
-            // pitch integrate exactly as in normal flight (no thrust, no
-            // gravity — the hover assist already accounts for both).
-            FreeFlightInput steerOnly = new FreeFlightInput(
-                    0f, 0f, 0f, in.yawInput, in.pitchInput, in.rollInput, 0f, false);
-            FreeFlightPhysics.Step steered = FreeFlightPhysics.step(
-                    lift.motionX, lift.motionY, lift.motionZ,
-                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
-                    steerOnly, 0.0, 0.0, false);
-            result = new FreeFlightPhysics.Step(
-                    lift.motionX, lift.motionY, lift.motionZ,
-                    steered.yaw, steered.pitch, steered.roll, lift.thrustApplied);
+                    0f, 0f, thrustMag);
         } else if (this.flightAssistOn) {
             // Flight Assist (TASK-46 D4): translation keys edit the body-frame
-            // velocity SETPOINT (release keeps it; X zeroes it); FA computes
-            // the thrust that tracks it. Orientation integrates through the
-            // regular step with translation muted, then faStep handles motion.
+            // velocity SETPOINT (release keeps it; X zeroes it); FA computes the
+            // thrust that tracks it in the freshly-integrated attitude frame.
             double[] sp = FreeFlightPhysics.rampSetpoint(
                     getFaSetpointForward(), getFaSetpointRight(), getFaSetpointUp(), in);
             setFaSetpoint(sp[0], sp[1], sp[2]);
-
-            FreeFlightInput steerOnly = new FreeFlightInput(
-                    0f, 0f, 0f, in.yawInput, in.pitchInput, in.rollInput, 0f, false);
-            FreeFlightPhysics.Step steered = FreeFlightPhysics.step(
-                    this.motionX, this.motionY, this.motionZ,
-                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
-                    steerOnly, 0.0, 0.0, false);
-            FreeFlightPhysics.Step fa = FreeFlightPhysics.faStep(
-                    this.motionX, this.motionY, this.motionZ,
-                    steered.yaw, steered.pitch, steered.roll,
-                    sp[0], sp[1], sp[2],
-                    thrustMag, gravity, canThrust);
-            result = fa;
+            result = FreeFlightPhysics.faStep(
+                    this.motionX, this.motionY, this.motionZ, newQuat,
+                    sp[0], sp[1], sp[2], thrustMag, gravity, canThrust);
         } else {
-            // Newtonian (FA off): direct thrust, coast on release.
-            result = FreeFlightPhysics.step(
-                    this.motionX, this.motionY, this.motionZ,
-                    this.rotationYaw, this.freeFlightPitch, this.freeFlightRoll,
-                    in,
-                    thrustMag, gravity, canThrust);
+            // Newtonian (FA off): direct body-frame thrust, coast on release.
+            result = FreeFlightPhysics.translateNewtonian(
+                    this.motionX, this.motionY, this.motionZ, newQuat,
+                    in, thrustMag, gravity, canThrust);
         }
 
-        // Advance prev-rotation each tick before overwriting: render/tracker
-        // interpolation (and the hard-locked FF camera, which mirrors these
-        // fields) sweep one tick's delta per frame instead of snapping. Nothing
-        // else sets prevRotation* on this entity, so we own the bookkeeping.
+        // Commit the attitude; snapshot prev for render/camera slerp. Derive the
+        // Euler view for legacy consumers (seat, HUD bars, probes, vanilla
+        // rotationYaw/Pitch readers), and replicate the quaternion. The client
+        // reads FF_Q* directly, so the old yaw/pitch tracker drift-resync teleport
+        // is gone — the full attitude is authoritative every tick.
+        this.prevFfQuat = this.ffQuat;
+        this.ffQuat = newQuat;
+        float[] e = FreeFlightPhysics.eulerFromQuat(newQuat);
         this.prevRotationYaw = this.rotationYaw;
         this.prevRotationPitch = this.rotationPitch;
         this.prevFreeFlightRoll = this.freeFlightRoll;
+        this.rotationYaw     = e[0];
+        this.rotationPitch   = e[1];
+        this.freeFlightPitch = e[1];
+        this.freeFlightRoll  = e[2];
+        this.dataManager.set(FF_QW, (float) newQuat.w);
+        this.dataManager.set(FF_QX, (float) newQuat.x);
+        this.dataManager.set(FF_QY, (float) newQuat.y);
+        this.dataManager.set(FF_QZ, (float) newQuat.z);
 
         this.motionX = result.motionX;
         this.motionY = result.motionY;
         this.motionZ = result.motionZ;
-        this.rotationYaw = result.yaw;
-        this.freeFlightPitch = result.pitch;
-        this.freeFlightRoll = result.roll;
-        // Roll has no vanilla field, so replicate it as a full-precision float.
-        this.dataManager.set(FF_ROLL, result.roll);
-        // Mirror the FF pitch into the vanilla rotation field so the entity
-        // tracker replicates it — the client camera is hard-locked to the craft
-        // axes (TASK-46 D1) and needs the real attitude, not a stale 0.
-        this.rotationPitch = result.pitch;
-
-        // Heading resync on rotation stop. Client and server both integrate the
-        // rotation-rate input, but over THEIR OWN ticks — under uneven tick
-        // rates the integrals drift apart by a few degrees, and once rotation
-        // stops the tracker goes silent (it only re-sends rotation on a ≥1.4°
-        // quantum change), so the drift would persist until the next maneuver.
-        // One explicit teleport packet pins the client to the authoritative
-        // pose (within the byte quantum) the moment the pilot stops turning.
-        boolean rotInputActive = Math.abs(currentFreeFlightInput.yawInput) > 1e-5f
-                || Math.abs(currentFreeFlightInput.pitchInput) > 1e-5f;
-        if (!rotInputActive && freeFlightRotInputWasActive && world instanceof WorldServer) {
-            ((WorldServer) world).getEntityTracker().sendToTracking(
-                    this, new SPacketEntityTeleport(this));
-        }
-        freeFlightRotInputWasActive = rotInputActive;
 
         // Fuel burn — classic semantics: while thrust is applied AND fuel is
         // required, drain getFuelConsumptionRate per tick (oxidizer too for
@@ -1220,7 +1218,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.register(FA_SP_FWD,   0f);
         this.dataManager.register(FA_SP_RIGHT, 0f);
         this.dataManager.register(FA_SP_UP,    0f);
-        this.dataManager.register(FF_ROLL,     0f);
+        this.dataManager.register(FF_QW, 1f);
+        this.dataManager.register(FF_QX, 0f);
+        this.dataManager.register(FF_QY, 0f);
+        this.dataManager.register(FF_QZ, 0f);
     }
 
     // ---- Flight Assist setpoint accessors (TASK-46 D4) -------------------
@@ -1487,36 +1488,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // client dead-reckon by velocity each tick, absorbing the (small) error
         // over a few ticks — see the FF branch in onUpdate().
         if (isFreeFlight() && isInFlight()) {
-            // Rotation gets the same treatment as position: the client
-            // dead-reckons it every tick from the locally-known steering rates
-            // (the camera is hard-locked to the craft, so a 3-tick rotation
-            // staircase would make mouse look feel like ~7 fps) and only the
-            // ERROR vs the server is recorded here, bled over a few ticks in
-            // the FF branch of onUpdate().
-            //
-            // Move-only tracker packets carry NO rotation — the vanilla handler
-            // echoes the client's own current rotation back, i.e. delta ≈ 0.
-            // Overwriting a still-bleeding correction with that zero would
-            // erase it within a tick of arriving (e.g. the heading resync
-            // teleport on rotation stop), so only REAL rotation deltas replace
-            // the pending correction. With updateFrequency=1 the server sends the
-            // authoritative yaw every tick, so the correction is applied and bled
-            // (over FF_CLIENT_CORRECT_TICKS) continuously — no deadband: a
-            // deadband lets the client/server integrals drift to its threshold
-            // during a turn, then snaps, which reads as a periodic camera jolt.
-            // Record the authoritative server pose as a tracking TARGET (not a
-            // pre-computed gap): onUpdate predicts from local motion/rates first,
-            // then corrects the residual toward these. Position always updates;
-            // rotation only on a REAL delta — move-only tracker packets echo the
-            // client's own rotation back (delta ≈ 0), and adopting that as the
-            // target would erase a still-converging correction (e.g. the
-            // heading-resync teleport sent when the pilot stops turning).
-            float dyaw   = MathHelper.wrapDegrees(yaw - this.rotationYaw);
-            float dpitch = pitch - this.rotationPitch;
-            if (Math.abs(dyaw) > 1e-3f || Math.abs(dpitch) > 1e-3f) {
-                this.ffServerYaw   = yaw;
-                this.ffServerPitch = pitch;
-            }
+            // FF ATTITUDE replicates via the FF_Q* DataParameters (read directly in
+            // onUpdate), NOT the byte-quantised yaw/pitch tracker — so the yaw/pitch
+            // this vanilla path carries is ignored. Only POSITION is recorded, as
+            // the authoritative target: the client predicts by velocity and corrects
+            // the residual toward it each tick (see the FF branch in onUpdate()),
+            // which removes the fast craft's sample-rate lag without a hard snap.
             this.ffServerPos = new Vec3d(x, y, z);
             return;
         }
@@ -1845,8 +1822,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 // gap already contains this tick's motion, so adding motion AND the gap
                 // double-counts it and leaves the client a full tick ahead of the
                 // server — a constant lead that shifts whenever velocity changes, which
-                // is the FA-off sawtooth. Roll already used this scheme; yaw/pitch/pos
-                // now match it.
+                // is the FA-off sawtooth. Attitude uses the same predict-then-correct
+                // shape below, on the quaternion (slerp) instead of Euler.
                 FreeFlightInput in = currentFreeFlightInput == null
                         ? FreeFlightInput.zero() : currentFreeFlightInput;
 
@@ -1862,37 +1839,34 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                 }
                 this.setPosition(px, py, pz);
 
-                // Rotation: snapshot prev BEFORE the advance so the render and the
-                // hard-locked FF camera (which mirror prevRotation*/prevFreeFlightRoll)
-                // interpolate one tick's delta per frame — the source of the smooth
-                // 60 fps sweep despite the 20 Hz physics.
+                // Attitude: predict from the local input rates, then slerp a
+                // fraction toward the replicated server quaternion (FF_Q*). For the
+                // pilot the prediction ≈ the server, so the slerp barely moves →
+                // smooth; an observer has zero input, so the correction carries the
+                // server attitude. Snapshot prev BEFORE the advance so the render and
+                // the hard-locked FF camera slerp one tick's rotation per frame — the
+                // source of the smooth 60 fps sweep despite the 20 Hz physics.
+                double pr = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
+                double yr = in.yawInput   * FreeFlightPhysics.MAX_YAW_RATE;
+                double rr = in.rollInput  * FreeFlightPhysics.MAX_ROLL_RATE;
+                FreeFlightPhysics.Quat predicted =
+                        FreeFlightPhysics.integrateBodyRates(this.ffQuat, pr, yr, rr);
+                FreeFlightPhysics.Quat target = new FreeFlightPhysics.Quat(
+                        this.dataManager.get(FF_QW), this.dataManager.get(FF_QX),
+                        this.dataManager.get(FF_QY), this.dataManager.get(FF_QZ)).normalized();
+                this.prevFfQuat = this.ffQuat;
+                this.ffQuat = FreeFlightPhysics.slerp(predicted, target, 1.0 / FF_CLIENT_CORRECT_TICKS);
+
+                // Mirror the Euler view for legacy consumers (seat, HUD bars, vanilla
+                // rotationYaw/Pitch readers); render/camera read the quaternion.
+                float[] e = FreeFlightPhysics.eulerFromQuat(this.ffQuat);
                 this.prevRotationYaw    = this.rotationYaw;
                 this.prevRotationPitch  = this.rotationPitch;
                 this.prevFreeFlightRoll = this.freeFlightRoll;
-
-                float predYaw = this.rotationYaw
-                        + (float) (in.yawInput * FreeFlightPhysics.MAX_YAW_RATE);
-                if (!Float.isNaN(this.ffServerYaw))
-                    predYaw += MathHelper.wrapDegrees(this.ffServerYaw - predYaw)
-                            / (float) FF_CLIENT_CORRECT_TICKS;
-                this.rotationYaw = predYaw;
-
-                float predPitch = this.rotationPitch
-                        + (float) (in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE);
-                if (!Float.isNaN(this.ffServerPitch))
-                    predPitch += (this.ffServerPitch - predPitch)
-                            / (float) FF_CLIENT_CORRECT_TICKS;
-                this.rotationPitch = FreeFlightPhysics.clampPitch(predPitch);
-
-                // Roll: identical predict-then-correct against the full-precision
-                // FF_ROLL replica (float, no byte quantisation). The pilot integrates
-                // its own input (residual ≈ 0); an observer has zero input, so the
-                // correction carries the server roll.
-                float predRoll = this.freeFlightRoll
-                        + (float) (in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
-                float rollErr = FreeFlightPhysics.wrapDeg(this.dataManager.get(FF_ROLL) - predRoll);
-                this.freeFlightRoll = FreeFlightPhysics.wrapDeg(
-                        predRoll + rollErr / (float) FF_CLIENT_CORRECT_TICKS);
+                this.rotationYaw     = e[0];
+                this.rotationPitch   = e[1];
+                this.freeFlightPitch = e[1];
+                this.freeFlightRoll  = e[2];
             }
             return;
         }
@@ -2981,9 +2955,23 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
         flightMode = RocketFlightMode.readFromNBT(nbt);
-        freeFlightPitch = nbt.getFloat("freeFlightPitch");
-        freeFlightRoll = nbt.getFloat("freeFlightRoll");
-        prevFreeFlightRoll = freeFlightRoll;
+        // FF attitude quaternion (TASK-53 Phase 7). Missing key (older save /
+        // never-flown rocket) → upright identity; the pilot re-orients in flight.
+        if (nbt.hasKey("ffQuatW")) {
+            ffQuat = new FreeFlightPhysics.Quat(nbt.getFloat("ffQuatW"), nbt.getFloat("ffQuatX"),
+                    nbt.getFloat("ffQuatY"), nbt.getFloat("ffQuatZ")).normalized();
+        } else {
+            ffQuat = FreeFlightPhysics.Quat.IDENTITY;
+        }
+        prevFfQuat = ffQuat;
+        if (isFreeFlight()) {
+            float[] eLoad = FreeFlightPhysics.eulerFromQuat(ffQuat);
+            rotationYaw = eLoad[0];
+            rotationPitch = eLoad[1];
+            freeFlightPitch = eLoad[1];
+            freeFlightRoll = eLoad[2];
+            prevFreeFlightRoll = freeFlightRoll;
+        }
         // Flight Assist default ON for missing-key (legacy) saves.
         flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
         // Engine-start liftoff state (TASK-46 D3); missing keys (legacy saves)
@@ -3042,8 +3030,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Free Flight Mode — written unconditionally so the field round-trips
         // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
         RocketFlightMode.writeToNBT(nbt, flightMode);
-        nbt.setFloat("freeFlightPitch", freeFlightPitch);
-        nbt.setFloat("freeFlightRoll", freeFlightRoll);
+        // FF attitude quaternion (TASK-53 Phase 7) — the source of truth; the
+        // Euler freeFlightPitch/Roll are derived and no longer persisted.
+        FreeFlightPhysics.Quat wq = ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
+        nbt.setFloat("ffQuatW", (float) wq.w);
+        nbt.setFloat("ffQuatX", (float) wq.x);
+        nbt.setFloat("ffQuatY", (float) wq.y);
+        nbt.setFloat("ffQuatZ", (float) wq.z);
         nbt.setBoolean("flightAssistOn", flightAssistOn);
         if (!Double.isNaN(ffLiftoffTargetY))
             nbt.setDouble("ffLiftoffTargetY", ffLiftoffTargetY);
@@ -3465,32 +3458,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             double cy = (seatPos.y + 0.5) - halfy;
             double cz = (seatPos.z + 0.5) - halfz;
 
-            // Ry(roll) about the nose (model +Y) FIRST — the renderer's innermost
-            // rotation — so the off-axis seat banks with the cockpit.
-            double rr = Math.toRadians(this.freeFlightRoll);
-            double cRoll = Math.cos(rr), sRoll = Math.sin(rr);
-            double rx = cx * cRoll + cz * sRoll;
-            double ry = cy;
-            double rz = -cx * sRoll + cz * cRoll;
-
-            // Rx(pitch + 90) — pitch about the lateral axis, nose (+Y) → forward.
-            double a = Math.toRadians(this.freeFlightPitch + 90.0);
-            double ca = Math.cos(a), sa = Math.sin(a);
-            double x1 = rx;
-            double y1 = ry * ca - rz * sa;
-            double z1 = ry * sa + rz * ca;
-
-            // Ry(-yaw) — heading about world up.
-            double b = Math.toRadians(-this.rotationYaw);
-            double cb = Math.cos(b), sb = Math.sin(b);
-            double wx = x1 * cb + z1 * sb;
-            double wy = y1;
-            double wz = -x1 * sb + z1 * cb;
+            // Transform the model-space seat offset by the exact render orientation
+            // (attitude quaternion ∘ the Rx(90) build offset that maps the
+            // vertically-built model's +Y nose onto the body forward axis), so the
+            // camera sits IN the cockpit and banks/pitches/loops rigidly with it —
+            // pole-safe, unlike the derived Euler.
+            double bx = cx;      // model→body via Rx(90): (x, -z, y)
+            double by = -cz;
+            double bz = cy;
+            double[] w = getFfQuat().rotate(bx, by, bz);
 
             // World seat position (eye height), then drop to the passenger's feet
             // so the camera lands at the seat.
-            double seatWorldY = this.posY + halfy + wy;
-            entity.setPosition(this.posX + wx, seatWorldY - entity.getEyeHeight(), this.posZ + wz);
+            double seatWorldY = this.posY + halfy + w[1];
+            entity.setPosition(this.posX + w[0], seatWorldY - entity.getEyeHeight(), this.posZ + w[2]);
         } catch (IndexOutOfBoundsException e) {
             entity.setPosition(this.posX, this.posY, this.posZ);
         }

@@ -185,9 +185,9 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
 
         ok(client().execute("artest rocket free-flight-input " + id + " 1 1 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
-        // Release forward, hold yaw for 15 ticks (= 90° at 6°/tick).
+        // Release forward, hold yaw for 30 ticks (= 90° at MAX_YAW_RATE 3°/tick).
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 1 0 0"));
-        ok(client().execute("artest rocket free-flight-tick " + id + " 15"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
         // Let FA re-align the velocity to the rotated setpoint.
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 40"));

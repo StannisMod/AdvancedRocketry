@@ -191,6 +191,277 @@ public final class FreeFlightPhysics {
         };
     }
 
+    // -- Body-frame attitude (quaternion) ----------------------------------
+
+    /**
+     * Unit quaternion orientation, body→world (w, x, y, z). The craft body frame
+     * is X = right, Y = up, Z = forward (nose); at {@link #IDENTITY} those map to
+     * world +X/+Y/+Z, matching {@link #bodyBasis} at (0,0,0).
+     *
+     * <p>This is the FF attitude SOURCE OF TRUTH (TASK-53 Phase 7). Integrating
+     * orientation as a quaternion by BODY rates — pitch about the craft's right
+     * axis, yaw about its up axis, roll about its nose — has no gimbal lock, so
+     * loops work and the controls never invert relative to the pilot the way a
+     * world-frame Euler triple does. Euler yaw/pitch/roll are DERIVED from this
+     * for the camera/replication, never integrated.
+     */
+    public static final class Quat {
+        public final double w, x, y, z;
+
+        public Quat(double w, double x, double y, double z) {
+            this.w = w; this.x = x; this.y = y; this.z = z;
+        }
+
+        public static final Quat IDENTITY = new Quat(1, 0, 0, 0);
+
+        /** Renormalise to unit length (guards against per-tick drift); a
+         *  degenerate (zero-norm / NaN) quaternion collapses to identity. */
+        public Quat normalized() {
+            double n = Math.sqrt(w * w + x * x + y * y + z * z);
+            if (n < 1e-9 || Double.isNaN(n)) return IDENTITY;
+            double s = 1.0 / n;
+            return new Quat(w * s, x * s, y * s, z * s);
+        }
+
+        /** Hamilton product {@code this ⊗ o}. */
+        public Quat mul(Quat o) {
+            return new Quat(
+                    w * o.w - x * o.x - y * o.y - z * o.z,
+                    w * o.x + x * o.w + y * o.z - z * o.y,
+                    w * o.y - x * o.z + y * o.w + z * o.x,
+                    w * o.z + x * o.y - y * o.x + z * o.w);
+        }
+
+        /** Rotate a world/body vector by this quaternion (body→world). Returns
+         *  {x, y, z}. */
+        public double[] rotate(double vx, double vy, double vz) {
+            // v' = R·v, R built from the quaternion (body→world).
+            double xx = x * x, yy = y * y, zz = z * z;
+            double xy = x * y, xz = x * z, yz = y * z;
+            double wx = w * x, wy = w * y, wz = w * z;
+            return new double[] {
+                    vx * (1 - 2 * (yy + zz)) + vy * 2 * (xy - wz)     + vz * 2 * (xz + wy),
+                    vx * 2 * (xy + wz)       + vy * (1 - 2 * (xx + zz)) + vz * 2 * (yz - wx),
+                    vx * 2 * (xz - wy)       + vy * 2 * (yz + wx)     + vz * (1 - 2 * (xx + yy))
+            };
+        }
+
+        /** Quaternion for a rotation of {@code deg} degrees about a UNIT axis. */
+        public static Quat fromAxisAngle(double ax, double ay, double az, double deg) {
+            double half = Math.toRadians(deg) * 0.5;
+            double s = Math.sin(half);
+            return new Quat(Math.cos(half), ax * s, ay * s, az * s);
+        }
+    }
+
+    /**
+     * Advance an attitude by one tick of BODY-frame rotation rates (degrees).
+     * The three inputs rotate about the craft's own axes — pitch about right (+X),
+     * yaw about up (+Y), roll about nose (+Z) — composed as a single small delta
+     * and post-multiplied ({@code q ⊗ dq}) so they act in the body frame. The sign
+     * convention reproduces {@link #bodyBasis} near identity (pinned by tests): a
+     * positive pitch rate drops the nose, positive yaw matches Euler yaw, positive
+     * roll banks like {@code bodyBasis}'s roll. No clamp — attitude is free to loop.
+     */
+    public static Quat integrateBodyRates(Quat q, double pitchRateDeg,
+                                          double yawRateDeg, double rollRateDeg) {
+        if (q == null) q = Quat.IDENTITY;
+        Quat dq = Quat.fromAxisAngle(1, 0, 0,  pitchRateDeg)
+                .mul(Quat.fromAxisAngle(0, 1, 0, -yawRateDeg))
+                .mul(Quat.fromAxisAngle(0, 0, 1,  rollRateDeg));
+        return q.mul(dq).normalized();
+    }
+
+    /**
+     * Orthonormal body basis from a quaternion, same layout as
+     * {@link #bodyBasis(float, float, float)}: 9 doubles, rows forward, right, up
+     * (world coords). {@code forward = right × up} (right-handed).
+     */
+    public static double[] bodyBasisFromQuat(Quat q) {
+        if (q == null) q = Quat.IDENTITY;
+        double[] fwd   = q.rotate(0, 0, 1);
+        double[] right = q.rotate(1, 0, 0);
+        double[] up    = q.rotate(0, 1, 0);
+        return new double[] {
+                fwd[0],   fwd[1],   fwd[2],
+                right[0], right[1], right[2],
+                up[0],    up[1],    up[2]
+        };
+    }
+
+    /**
+     * Derive Euler yaw/pitch/roll (degrees) from a quaternion in the
+     * {@link #bodyBasis} convention, i.e. {@code bodyBasis(yaw, pitch, roll)}
+     * reproduces this attitude (away from the ±90° pitch poles, where yaw/roll
+     * gimbal-lock — harmless for the camera, which composes them back into a
+     * continuous basis). Used only to feed the Euler-only MC camera / renderer.
+     *
+     * @return {yawDeg, pitchDeg, rollDeg}
+     */
+    public static float[] eulerFromQuat(Quat q) {
+        double[] b = bodyBasisFromQuat(q);
+        double fx = b[0], fy = b[1], fz = b[2];
+        double rx = b[3], ry = b[4], rz = b[5];
+        // pitch: forward.y = -sin(pitch); yaw: forward = (-sinYaw cosPitch, *, cosYaw cosPitch).
+        double pitch = Math.asin(clampUnitD(-fy));
+        double yaw   = Math.atan2(-fx, fz);
+        // roll: actual right vs the roll-free right/up at this yaw+pitch.
+        double sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+        double sinP = Math.sin(pitch), cosP = Math.cos(pitch);
+        double r0x = cosY,          r0y = 0.0,  r0z = sinY;          // roll-free right
+        double u0x = -sinY * sinP,  u0y = cosP, u0z = cosY * sinP;   // roll-free up
+        double sinRoll = rx * u0x + ry * u0y + rz * u0z;
+        double cosRoll = rx * r0x + ry * r0y + rz * r0z;
+        double roll = Math.atan2(sinRoll, cosRoll);
+        return new float[] {
+                (float) Math.toDegrees(yaw),
+                (float) Math.toDegrees(pitch),
+                (float) Math.toDegrees(roll)
+        };
+    }
+
+    /**
+     * Spherical linear interpolation for client render/correction smoothing.
+     * Takes the shortest arc (negates an endpoint on a negative dot) and falls
+     * back to normalised lerp for nearly-parallel inputs.
+     */
+    public static Quat slerp(Quat a, Quat b, double t) {
+        if (a == null) a = Quat.IDENTITY;
+        if (b == null) b = Quat.IDENTITY;
+        double dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+        double bw = b.w, bx = b.x, by = b.y, bz = b.z;
+        if (dot < 0.0) { dot = -dot; bw = -bw; bx = -bx; by = -by; bz = -bz; }
+        if (dot > 0.9995) {
+            // Near-parallel: nlerp (avoids sin(θ)→0 blowup).
+            return new Quat(a.w + (bw - a.w) * t, a.x + (bx - a.x) * t,
+                    a.y + (by - a.y) * t, a.z + (bz - a.z) * t).normalized();
+        }
+        double theta0 = Math.acos(dot);
+        double theta = theta0 * t;
+        double sin0 = Math.sin(theta0);
+        double s0 = Math.sin(theta0 - theta) / sin0;
+        double s1 = Math.sin(theta) / sin0;
+        return new Quat(a.w * s0 + bw * s1, a.x * s0 + bx * s1,
+                a.y * s0 + by * s1, a.z * s0 + bz * s1);
+    }
+
+    private static double clampUnitD(double v) {
+        if (Double.isNaN(v)) return 0.0;
+        if (v < -1.0) return -1.0;
+        if (v > 1.0) return 1.0;
+        return v;
+    }
+
+    /** Body-frame vector (forward, right, up) → world, via a quaternion basis. */
+    public static double[] bodyToWorldQ(double fwd, double right, double up, Quat q) {
+        double[] b = bodyBasisFromQuat(q);
+        return new double[] {
+                fwd * b[0] + right * b[3] + up * b[6],
+                fwd * b[1] + right * b[4] + up * b[7],
+                fwd * b[2] + right * b[5] + up * b[8]
+        };
+    }
+
+    /** World vector → body frame (forward, right, up), via a quaternion basis
+     *  (orthonormal → inverse is the transpose). Used by FA re-enable to capture
+     *  the current velocity as a body-frame setpoint. */
+    public static double[] worldToBodyQ(double x, double y, double z, Quat q) {
+        double[] b = bodyBasisFromQuat(q);
+        return new double[] {
+                x * b[0] + y * b[1] + z * b[2],
+                x * b[3] + y * b[4] + z * b[5],
+                x * b[6] + y * b[7] + z * b[8]
+        };
+    }
+
+    private static double clampAccel(double a) {
+        if (a < 0.0) return 0.0;
+        if (a > MAX_THRUST_ACCEL) return MAX_THRUST_ACCEL;
+        return a;
+    }
+
+    // -- Quaternion translation (TASK-53 Phase 7) --------------------------
+    // Same control laws as the Euler faStep/step below, but the body→world basis
+    // comes from the attitude quaternion so they are loop/pole-safe. Rotation is
+    // NOT integrated here — the caller advances the quaternion by body rates
+    // (integrateBodyRates) first; these only translate. The returned Step echoes
+    // the derived Euler (eulerFromQuat) for legacy/HUD readers of yaw/pitch/roll.
+
+    /** Flight-Assist velocity-setpoint translation with a quaternion attitude. */
+    public static Step faStep(double mx, double my, double mz, Quat q,
+                              double spFwd, double spRight, double spUp,
+                              double thrustMag, double gravity, boolean canThrust) {
+        double accel = clampAccel(thrustMag);
+        float[] e = eulerFromQuat(q);
+
+        if (!canThrust || accel <= 0.0) {
+            return new Step(mx, my - gravity, mz, e[0], e[1], e[2], false);
+        }
+
+        double[] desired = bodyToWorldQ(sane(spFwd), sane(spRight), sane(spUp), q);
+        double cx = desired[0] - mx;
+        double cy = desired[1] - my + gravity;
+        double cz = desired[2] - mz;
+        double cmdMag = Math.sqrt(cx * cx + cy * cy + cz * cz);
+        boolean thrustApplied = cmdMag > 1e-9;
+        if (cmdMag > accel) {
+            double s = accel / cmdMag;
+            cx *= s; cy *= s; cz *= s;
+        }
+
+        double newMx = mx + cx;
+        double newMy = my + cy - gravity;
+        double newMz = mz + cz;
+
+        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
+        if (speed > MAX_SPEED) {
+            double s = MAX_SPEED / speed;
+            newMx *= s; newMy *= s; newMz *= s;
+        }
+        return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
+    }
+
+    /** Newtonian (FA off) direct body-frame thrust translation with a quaternion
+     *  attitude — the Euler {@link #step} translation half (thrust / brake / speed
+     *  cap), minus the rotation integration the caller now owns. */
+    public static Step translateNewtonian(double mx, double my, double mz, Quat q,
+                                          FreeFlightInput input,
+                                          double thrustMag, double gravity,
+                                          boolean canThrust) {
+        if (input == null) input = FreeFlightInput.zero();
+        double accel = clampAccel(thrustMag);
+        float[] e = eulerFromQuat(q);
+
+        float fwdIn = input.cutActive ? 0f : input.throttleForward;
+        float vrtIn = input.cutActive ? 0f : input.throttleVertical;
+        float strIn = input.cutActive ? 0f : input.strafeInput;
+
+        boolean wantsThrust = (fwdIn != 0.0f || vrtIn != 0.0f || strIn != 0.0f);
+        boolean thrustApplied = canThrust && wantsThrust;
+
+        double fwdMag = thrustApplied ? accel * fwdIn : 0.0;
+        double vrtMag = thrustApplied ? accel * vrtIn : 0.0;
+        double strMag = thrustApplied ? accel * strIn : 0.0;
+
+        double[] t = bodyToWorldQ(fwdMag, strMag, vrtMag, q);
+        double newMx = mx + t[0];
+        double newMy = my + t[1] - gravity;
+        double newMz = mz + t[2];
+
+        double brake = clamp01(input.brakeInput);
+        if (brake > 0.0) {
+            double retain = 1.0 - (1.0 - BRAKE_RETENTION) * brake;
+            newMx *= retain; newMy *= retain; newMz *= retain;
+        }
+
+        double speed = Math.sqrt(newMx * newMx + newMy * newMy + newMz * newMz);
+        if (speed > MAX_SPEED) {
+            double s = MAX_SPEED / speed;
+            newMx *= s; newMy *= s; newMz *= s;
+        }
+        return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
+    }
+
     // -- Flight Assist (velocity setpoint) ---------------------------------
 
     /**

@@ -163,14 +163,16 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
             // at pitch 0, exactly as bodyBasis defines forward. Interpolate by
             // partialTicks (f2) — prevRotation* are advanced per tick in the FF
             // branch of EntityRocket, so this sweeps smoothly instead of stepping.
-            float renderYaw   = rocket.prevRotationYaw
-                    + (rocket.rotationYaw - rocket.prevRotationYaw) * f2;
-            float renderPitch = rocket.prevRotationPitch
-                    + (rocket.rotationPitch - rocket.prevRotationPitch) * f2;
-            // Roll wraps at ±180, so interpolate the shortest-arc delta.
-            float rollDelta = zmaster587.advancedRocketry.api.FreeFlightPhysics.wrapDeg(
-                    rocket.getFreeFlightRoll() - rocket.getPrevFreeFlightRoll());
-            float renderRoll = rocket.getPrevFreeFlightRoll() + rollDelta * f2;
+            // Interpolate the ATTITUDE QUATERNION (slerp) between last tick and
+            // this one, then derive Euler for the glRotate calls. Slerping the
+            // quaternion (not lerping Euler angles) is what stays glitch-free
+            // through a loop apex — the extracted yaw/roll may jump at ±90° pitch
+            // but bodyBasis(euler) reproduces the same continuous orientation.
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat rq =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                            rocket.getPrevFfQuat(), rocket.getFfQuat(), f2);
+            float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(rq);
+            float renderYaw = e[0], renderPitch = e[1], renderRoll = e[2];
             GL11.glRotatef(-renderYaw, 0f, 1f, 0f);
             GL11.glRotatef(renderPitch + 90f, 1f, 0f, 0f);
             // Bank about the nose (model +Y, the long axis) — innermost so it

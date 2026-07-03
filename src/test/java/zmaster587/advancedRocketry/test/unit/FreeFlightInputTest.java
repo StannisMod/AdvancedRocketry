@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
  * Contracts pinned:
  *  - Per-channel clamp to [-1, +1].
  *  - NaN / Infinity collapse to 0 (defensive against client cheats).
- *  - Wire size is fixed: WIRE_SIZE = 25 bytes (6 floats × 4 + 1 flag byte).
+ *  - Wire size is fixed: WIRE_SIZE = 29 bytes (7 floats × 4 + 1 flag byte).
  *  - Round-trip via write→read preserves all channels exactly.
  *  - Out-of-range values from the wire are re-clamped on read (server is source of truth).
  *  - isIdle() true only when every channel ≈ 0.
@@ -75,9 +75,9 @@ public class FreeFlightInputTest {
     }
 
     @Test
-    public void wireSizeIs25Bytes() {
-        // 6 floats (fwd, vert, strafe, yaw, pitch, brake) + 1 flag byte.
-        assertEquals(25, FreeFlightInput.WIRE_SIZE);
+    public void wireSizeIs29Bytes() {
+        // 7 floats (fwd, vert, strafe, yaw, pitch, roll, brake) + 1 flag byte.
+        assertEquals(29, FreeFlightInput.WIRE_SIZE);
         ByteBuf buf = Unpooled.buffer();
         new FreeFlightInput(0.5f, -0.5f, 0.25f, -0.25f, 1f).write(buf);
         assertEquals(FreeFlightInput.WIRE_SIZE, buf.writerIndex());
@@ -120,6 +120,7 @@ public class FreeFlightInputTest {
         buf.writeFloat(3.0f);                      // strafe → 1
         buf.writeFloat(Float.NaN);                 // yaw   → 0
         buf.writeFloat(Float.POSITIVE_INFINITY);   // pitch → 0
+        buf.writeFloat(-4.0f);                     // roll  → -1
         buf.writeFloat(2.0f);                      // brake → 1
         buf.writeByte(0);                          // flag byte (no assists active)
         FreeFlightInput in = FreeFlightInput.read(buf);
@@ -128,6 +129,7 @@ public class FreeFlightInputTest {
         assertEquals( 1f, in.strafeInput,      EPS);
         assertEquals( 0f, in.yawInput,         EPS); // NaN → 0
         assertEquals( 0f, in.pitchInput,       EPS); // Inf → 0
+        assertEquals(-1f, in.rollInput,        EPS);
         assertEquals( 1f, in.brakeInput,       EPS);
     }
 
