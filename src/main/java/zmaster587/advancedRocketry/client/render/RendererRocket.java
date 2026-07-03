@@ -63,7 +63,12 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
         float halfy = storage.getSizeY() / 2f;
         float halfz = storage.getSizeZ() / 2f;
 
-        if (Minecraft.getMinecraft().player != null && entity.getPassengers().contains(Minecraft.getMinecraft().player)) {
+        // In Free Flight the passenger is seated at the true seat block (see
+        // EntityRocket.updateFreeFlightPassenger), so the model must render at
+        // its real position — the legacy seatY shim would double-shift it. The
+        // shim stays for the classic upright-seat view.
+        if (!(((EntityRocket) entity).isFreeFlight() && ((EntityRocket) entity).isInFlight())
+                && Minecraft.getMinecraft().player != null && entity.getPassengers().contains(Minecraft.getMinecraft().player)) {
             y = -((EntityRocket) entity).stats.getSeatY();
         }
 
@@ -148,8 +153,36 @@ public class RendererRocket extends Render implements IRenderFactory<EntityRocke
 
         GL11.glPushMatrix();
         GL11.glTranslatef((float) x, (float) y + halfy, (float) z);
-        GL11.glRotatef(((EntityRocket) entity).getRCSRotateProgress() * 0.9f, 1f, 0f, 0f);
-        GL11.glRotatef(entity.rotationYaw, 0f, 0f, 1f);
+        EntityRocket rocket = (EntityRocket) entity;
+        if (rocket.isFreeFlight() && rocket.isInFlight()) {
+            // Free Flight: orient the model to the craft body frame so the
+            // rendered attitude matches FreeFlightPhysics.bodyBasis — the nose
+            // (model +Y) points along the forward/look vector. Yaw about world
+            // up (Y), then pitch about the lateral axis (X); the +90 maps the
+            // vertically-built model's +Y nose onto the horizontal forward axis
+            // at pitch 0, exactly as bodyBasis defines forward. Interpolate by
+            // partialTicks (f2) — prevRotation* are advanced per tick in the FF
+            // branch of EntityRocket, so this sweeps smoothly instead of stepping.
+            // Interpolate the ATTITUDE QUATERNION (slerp) between last tick and
+            // this one, then derive Euler for the glRotate calls. Slerping the
+            // quaternion (not lerping Euler angles) is what stays glitch-free
+            // through a loop apex — the extracted yaw/roll may jump at ±90° pitch
+            // but bodyBasis(euler) reproduces the same continuous orientation.
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat rq =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                            rocket.getPrevFfQuat(), rocket.getFfQuat(), f2);
+            float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(rq);
+            float renderYaw = e[0], renderPitch = e[1], renderRoll = e[2];
+            GL11.glRotatef(-renderYaw, 0f, 1f, 0f);
+            GL11.glRotatef(renderPitch + 90f, 1f, 0f, 0f);
+            // Bank about the nose (model +Y, the long axis) — innermost so it
+            // spins the cross-section, matching FreeFlightPhysics.bodyBasis roll.
+            GL11.glRotatef(renderRoll, 0f, 1f, 0f);
+        } else {
+            // Classic launch / RCS animation — unchanged legacy behaviour.
+            GL11.glRotatef(rocket.getRCSRotateProgress() * 0.9f, 1f, 0f, 0f);
+            GL11.glRotatef(rocket.rotationYaw, 0f, 0f, 1f);
+        }
         GL11.glTranslatef(-halfx, (float) 0 - halfy, -halfz);
         Minecraft.getMinecraft().getTextureManager().bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
         GL11.glCallList(storage.world.displayListIndex);

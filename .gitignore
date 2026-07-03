@@ -29,7 +29,7 @@ lasthash.txt
 *.bak
 
 # Runtime gen dirs from in-tree gradle test/run (not source)
-/logs/
+logs/
 /config/
 /run/
 
