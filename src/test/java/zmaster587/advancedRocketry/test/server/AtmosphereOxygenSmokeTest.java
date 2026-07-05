@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.13 — atmosphere / oxygen gameplay.
+ * atmosphere / oxygen gameplay.
  *
  * <p>Earth breathable by default → set density 0 → vacuum → restore. Plus
  * depth coverage for the atmosphere detector, CO2 scrubber, gas charge pad,
@@ -255,7 +255,7 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
     }
 
     /**
-     * SMART §7.13 — config-gated torch extinguish. Drives
+     * config-gated torch extinguish. Drives
      * {@link zmaster587.advancedRocketry.util.AtmosphereBlob}'s per-block
      * effect loop on a single coordinate via probe; verifies both branches:
      * <ol>

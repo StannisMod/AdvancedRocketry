@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-32 3a — {@link ItemPackedStructure} unit-tier contract pins.
+ * {@link ItemPackedStructure} unit-tier contract pins.
  *
  * <p>{@code ItemPackedStructure} is the storage shell for assembler-built
  * structures (the {@code itemSpaceStation} item is an instance of this

@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-07 Phase 3 — rocket dimension-transition path.
+ * rocket dimension-transition path.
  *
  * <p>Covers the synchronous {@code EntityRocket.changeDimension(int, double,
  * double, double)} chain invoked by {@code reachSpaceManned} /

@@ -22,7 +22,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 2 — space-dim "outside-any-station" teleport guard.
+ * space-dim "outside-any-station" teleport guard.
  *
  * <p>Production:
  * {@link zmaster587.advancedRocketry.event.PlanetEventHandler#playerTick}

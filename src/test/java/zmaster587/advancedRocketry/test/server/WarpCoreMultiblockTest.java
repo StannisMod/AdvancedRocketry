@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Warp Core multiblock validation.
+ * Warp Core multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileWarpCore} —
  * 3×3×3 structure: top rim cap with item-input hatch, middle cross of

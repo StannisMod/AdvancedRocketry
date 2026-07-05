@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Issue #61 ("[BUG] Railgun does not work") — source-side firing contract,
- * now pinning the FIXED behaviour (TASK-49).
+ * now pinning the FIXED behaviour.
  *
  * <p>The railgun is a paired item TELEPORT: a source railgun pulls a stack
  * from its input port and dispatches it to a linked destination railgun,

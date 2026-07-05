@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.9 — rocket launch through the classic scripted path (P1).
+ * rocket launch through the classic scripted path (P1).
  *
  * Builds + assembles a rocket via the same fixture as
  * {@link RocketAssemblySmokeTest}, then calls {@code /artest rocket launch} to

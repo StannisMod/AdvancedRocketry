@@ -13,7 +13,7 @@ import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
  * 24000, but AR planets render day/night from {@code rotationalPeriod}
  * (≈ {@code (1/gravity)^3 * 24000}, ≠ 24000 for almost every planet), so the
  * vanilla rounding lands at an arbitrary phase — usually still night
- * (issue #66 / TASK-47).
+ * (issue #66).
  *
  * <p>We {@code @Redirect} the FIRST {@code setWorldTime} call in {@code tick()}
  * (ordinal 0 = the sleep-skip block; ordinal 1 is the per-tick +1 increment)

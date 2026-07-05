@@ -9,8 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 2 #6) — TileFluidTank's
- * "stacked fill" delegation.
+ * TileFluidTank's "stacked fill" delegation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.TileFluidTank}'s
  * {@code fill(FluidStack, boolean)} (line 53-65) walks UP until it

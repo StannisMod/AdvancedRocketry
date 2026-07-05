@@ -28,7 +28,7 @@ package zmaster587.advancedRocketry.api;
  * tick; the caller drains fuel when it was. Whether thrust is permitted at all
  * is passed in as {@code canThrust} (fuel present, or fuel not required).
  *
- * <p><b>Two control laws</b> (TASK-46 D4):
+ * <p><b>Two control laws</b>:
  * <ul>
  *   <li>{@link #faStep} — Flight Assist ON (default): the pilot edits a
  *       body-frame <em>velocity setpoint</em> (see {@link #rampSetpoint});
@@ -74,7 +74,7 @@ public final class FreeFlightPhysics {
     /** Speed below which assisted damping snaps motion to exactly zero. */
     private static final double STOP_SNAP = 0.01;
 
-    // -- Engine-start liftoff (TASK-46 D3) --------------------------------
+    // -- Engine-start liftoff --------------------------------
 
     /** Max climb rate (blocks/tick) of the liftoff/hover assist. Gentle by
      *  design — the engine-start ritual lifts the craft ~1 block, it is not
@@ -85,7 +85,7 @@ public final class FreeFlightPhysics {
      *  instead of overshooting. */
     public static final double LIFTOFF_GAIN = 0.25;
 
-    // -- Flight Assist setpoint (TASK-46 D4) -------------------------------
+    // -- Flight Assist setpoint -------------------------------
 
     /**
      * Per-held-tick change of the velocity setpoint (blocks/tick per tick) at
@@ -198,7 +198,7 @@ public final class FreeFlightPhysics {
      * is X = right, Y = up, Z = forward (nose); at {@link #IDENTITY} those map to
      * world +X/+Y/+Z, matching {@link #bodyBasis} at (0,0,0).
      *
-     * <p>This is the FF attitude SOURCE OF TRUTH (TASK-53 Phase 7). Integrating
+     * <p>This is the FF attitude SOURCE OF TRUTH. Integrating
      * orientation as a quaternion by BODY rates — pitch about the craft's right
      * axis, yaw about its up axis, roll about its nose — has no gimbal lock, so
      * loops work and the controls never invert relative to the pilot the way a
@@ -380,7 +380,7 @@ public final class FreeFlightPhysics {
         return a;
     }
 
-    // -- Quaternion translation (TASK-53 Phase 7) --------------------------
+    // -- Quaternion translation --------------------------
     // Same control laws as the Euler faStep/step below, but the body→world basis
     // comes from the attitude quaternion so they are loop/pole-safe. Rotation is
     // NOT integrated here — the caller advances the quaternion by body rates
@@ -466,7 +466,7 @@ public final class FreeFlightPhysics {
 
     /**
      * Advance the body-frame velocity setpoint by one tick of pilot input
-     * (TASK-46 D4). Holding a translation key RAMPS the matching axis by
+     *. Holding a translation key RAMPS the matching axis by
      * {@link #SETPOINT_RAMP} per tick; releasing leaves the setpoint where it
      * is; {@code input.cutActive} (X) zeroes the whole vector instantly. The
      * result is clamped to {@link #MAX_SPEED} in magnitude.
@@ -491,7 +491,7 @@ public final class FreeFlightPhysics {
     }
 
     /**
-     * One tick of Flight Assist velocity-setpoint control (TASK-46 D4).
+     * One tick of Flight Assist velocity-setpoint control.
      *
      * The pilot's setpoint lives in the BODY frame, so rotating the craft
      * rotates the actual world velocity. Each tick FA computes the world-space
@@ -559,7 +559,7 @@ public final class FreeFlightPhysics {
 
     /**
      * Compute one tick of raw Newtonian free-flight physics (Flight Assist
-     * OFF — TASK-46 D4). Translation channels are DIRECT thrust while held;
+     * OFF). Translation channels are DIRECT thrust while held;
      * releasing them means coasting under gravity. {@code input.cutActive}
      * neutralises translation for the tick; the manual brake (Shift)
      * attenuates motion. Orientation (yaw/pitch rates) always integrates —
@@ -652,7 +652,7 @@ public final class FreeFlightPhysics {
     // -- Engine-start liftoff ------------------------------------------------
 
     /**
-     * One tick of the engine-start liftoff / hover assist (TASK-46 D3).
+     * One tick of the engine-start liftoff / hover assist.
      *
      * Active right after the engines start, while the pilot gives no
      * translation input: eases the craft from the pad to {@code targetY}
@@ -701,7 +701,7 @@ public final class FreeFlightPhysics {
     }
 
     /**
-     * Mouse-as-rate steering (TASK-46 D1): convert the look delta the mouse
+     * Mouse-as-rate steering: convert the look delta the mouse
      * accumulated over one tick into a normalised rate command in [-1, 1].
      *
      * <p>Below the craft's turn rate the response is 1:1 — a {@code deltaDeg}

@@ -9,13 +9,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-09 Phase 5 — coverage-gap closure for per-satellite behaviour.
+ * coverage-gap closure for per-satellite behaviour.
  *
- * <p>Adds contract-level pins for behaviour the first two TASK-09
+ * <p>Adds contract-level pins for behaviour the first two satellite
  * suites didn't reach. All assertions target observable outcomes
  * (block state, biome state, satellite-query result) rather than
- * internal counters or specific impl constants — see
- * {@code .agent/sops/development/testing-principles.md}.</p>
+ * internal counters or specific impl constants.</p>
  *
  * <ul>
  *   <li>WeatherController mode 1 (water → air) and mode 2 (air →
@@ -221,7 +220,7 @@ public class SatelliteCoverageGapsTest extends AbstractSharedServerTest {
                 preBiome, postBiome);
     }
 
-    /** Structural pin (NOT a pure user-visible contract — see SOP):
+    /** Structural pin:
      *  a satellite with {@code canTick()=false} (SpyTelescope) is
      *  registered in the dim's satellite list but excluded from the
      *  production tick loop's data structure ({@code tickingSatellites}).

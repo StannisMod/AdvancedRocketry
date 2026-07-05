@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Microwave Receiver multiblock validation.
+ * Microwave Receiver multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.energy.TileMicrowaveReciever}
  * — single layer 5×5 with {@code blockSolarPanel} ring (and wildcards that

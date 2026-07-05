@@ -57,7 +57,7 @@ public class RocketEventHandler extends Gui {
     /** Last rendered Free Flight HUD text (joined with " | "), for client e2e
      *  assertions. Empty when not riding a FF rocket. Updated each HUD frame. */
     public static volatile String lastFreeFlightHud = "";
-    /** Frame-time camera-lock telemetry (TASK-46 D1): worst divergence (deg)
+    /** Frame-time camera-lock telemetry: worst divergence (deg)
      *  between the player camera and the craft axes seen on any rendered HUD
      *  frame of the current FF flight — i.e. what the pilot literally saw,
      *  sampled atomically on the render thread. Bounded small while flying
@@ -69,7 +69,7 @@ public class RocketEventHandler extends Gui {
      *  atomic reflective call (a bot reading camera and craft separately can
      *  straddle a tracker-quantisation bleed tick and see a phantom gap). */
     public static volatile double lastCameraLockErrorDeg = 0.0;
-    /** Client-rendered FF attitude readback (TASK-53 Phase 7), sampled on the
+    /** Client-rendered FF attitude readback, sampled on the
      *  render thread from the interpolated attitude quaternion the camera used —
      *  the pilot's actual view. For perception-contract client e2e:
      *  {@link #ffClientCamRoll} pins mouse-horizontal → bank; {@link #ffClientMinForwardZ}
@@ -260,8 +260,8 @@ public class RocketEventHandler extends Gui {
                         fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
                     }
 
-                    // Graphic thrust/velocity bars + turn-rate dot (TASK-46
-                    // Phase 4), to the right of the text block. Per body axis:
+                    // Graphic thrust/velocity bars + turn-rate dot,
+                    // to the right of the text block. Per body axis:
                     // a bipolar ±MAX_SPEED bar — cyan fill = actual velocity,
                     // bright notch = FA setpoint marker (FA on only).
                     if (rocket.isInFlight()) {
@@ -318,7 +318,7 @@ public class RocketEventHandler extends Gui {
                     }
                 }
 
-                // Camera-nose lock telemetry (TASK-46 D1): on every rendered
+                // Camera-nose lock telemetry: on every rendered
                 // frame of an FF flight, record the worst player-camera vs
                 // craft-axes divergence. Small values = intra-tick mouse
                 // deflection (by design); a runaway means the lock broke.

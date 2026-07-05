@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-29 — per-type tick-emits-data contracts for the four scanning
+ * per-type tick-emits-data contracts for the four scanning
  * satellites that extend {@link zmaster587.advancedRocketry.satellite.SatelliteData}
  * (optical / density / mass / composition), plus the non-{@code SatelliteData}
  * oreScanner (player-driven, tick is battery-accrual only) and the

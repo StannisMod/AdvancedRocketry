@@ -13,10 +13,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.8 SealableBlockHandler — pure list-management logic.
+ * SealableBlockHandler — pure list-management logic.
  *
  * The world-level seal check ({@code isBlockSealed}) needs a real World and is
- * exercised in scenario tests under §7.13. Here we only cover allow/ban list
+ * exercised in scenario tests. Here we only cover allow/ban list
  * mutation and {@code loadDefaultData}.
  *
  * <p>NOTE: SealableBlockHandler.INSTANCE is process-wide singleton state shared

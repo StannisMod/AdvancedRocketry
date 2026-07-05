@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.20 — client-side propagation of AR's vacuum / oxygen subsystem.
+ * client-side propagation of AR's vacuum / oxygen subsystem.
  *
  * <p>Flips Earth (dim 0) to a vacuum via {@code /artest atmosphere set-density
  * 0 0}, disables natural regeneration so health is monotonic, drops the harness

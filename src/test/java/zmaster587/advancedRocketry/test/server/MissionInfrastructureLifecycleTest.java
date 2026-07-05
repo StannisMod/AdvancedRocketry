@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-06 Phase 5 — mission ↔ infrastructure lifecycle contract.
+ * mission ↔ infrastructure lifecycle contract.
  *
  * <p>Pins the player-visible cause-effect of starting and completing
  * a mission that has linked-infrastructure tiles (e.g. a Rocket

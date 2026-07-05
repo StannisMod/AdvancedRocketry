@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40c / TASK-44 (audit Gap F.4) — TilePump drains an adjacent
+ * TilePump drains an adjacent
  * Forge-fluid source block into its internal tank.
  *
  * <p>Production:
@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
  * {@code BlockFluidClassic} → ARE {@code IFluidBlock}, and a meta-0
  * placement is a drainable source ({@code BlockFluidClassic.canDrain}
  * returns true for LEVEL==0). Logged as ledger observation: pump does
- * not drain vanilla water — see .agent/tasks/README.md.</p>
+ * not drain vanilla water — see </p>
  *
  * <p>Pinned: a powered pump with an AR Forge-fluid source block below
  * it has &gt;0 mB in its tank after a tick budget. Player-visible:

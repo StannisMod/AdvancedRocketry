@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-06 Phase 3 — MissionGasCollection.onMissionComplete contract.
+ * MissionGasCollection.onMissionComplete contract.
  *
  * <p>Pins the player-visible cause-effect of completing a gas-collection
  * mission:</p>
@@ -83,7 +83,7 @@ public class MissionGasCompletionTest extends AbstractSharedServerTest {
      *  TileEntity → not added to StorageChunk.liquidTiles → the fill
      *  loop iterates zero times). The strong "64000 mB of oxygen
      *  appears in cargo" assertion needs a fluid-cargo rocket fixture
-     *  variant that doesn't exist yet — tracked as a TASK-06 follow-up.
+     *  variant that doesn't exist yet.
      *  This test pins the no-crash safety contract on the intake>0
      *  branch as a regression net against e.g. a future NPE on
      *  null-fluid or empty-tile-list. */

@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Orbital Laser Drill multiblock validation.
+ * Orbital Laser Drill multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.orbitallaserdrill.TileOrbitalLaserDrill}
  * — a 3-layer 11×9 sparse structure mixing {@code blockAdvStructureBlock},

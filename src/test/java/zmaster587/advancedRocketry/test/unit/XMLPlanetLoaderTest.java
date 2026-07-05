@@ -13,12 +13,12 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.1 XML planet definitions — entry-point parsing.
+ * XML planet definitions — entry-point parsing.
  *
  * The full planet/biome/oregen hierarchy parsing path inside
  * {@link XMLPlanetLoader} is tightly coupled to {@code DimensionManager},
  * {@code AdvancedRocketryBiomes}, {@code Block.REGISTRY} and the AR mod-init
- * lifecycle. Round-tripping a real planet XML belongs in the §7.4
+ * lifecycle. Round-tripping a real planet XML belongs in the
  * {@code PlanetXmlConfigIntegrationTest} scenario.
  *
  * Here we cover:
@@ -145,7 +145,7 @@ public class XMLPlanetLoaderTest {
     }
 
     // Full planet/biome/oregen parsing requires DimensionManager + biome registry
-    // and is covered by §7.4 PlanetXmlConfigIntegrationTest (write fixture XML →
+    // and is covered by PlanetXmlConfigIntegrationTest (write fixture XML →
     // boot server → /artest planet info round-trip). No point keeping @Ignore
     // stubs here that duplicate that coverage at a worse layer.
 }

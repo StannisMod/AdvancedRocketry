@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Space Elevator multiblock validation.
+ * Space Elevator multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileSpaceElevator}
  * — single-layer 10×9 disc with slab outer ring, advStructure inner ring,

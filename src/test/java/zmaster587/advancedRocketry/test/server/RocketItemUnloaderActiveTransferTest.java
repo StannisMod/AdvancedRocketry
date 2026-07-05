@@ -8,14 +8,14 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40 (Gap E) — rocket item unloader active transfer contract.
+ * rocket item unloader active transfer contract.
  *
  * <p>The pre-existing {@link RocketInfrastructureSmokeTest#rocketUnloaderRemovesItemsAfterLanding}
  * pins only tile lifecycle (placement → link → 5 ticks survive); it
  * documents why the transfer was deferred ("once a chest-pre-populate
- * probe lands"). TASK-40 introduces
- * {@code rocket storage-item-fill} (mirror of TASK-34's
- * {@code storage-fluid-fill}), unblocking the active-transfer pin.</p>
+ * probe lands"). The
+ * {@code rocket storage-item-fill} probe (mirror of
+ * {@code storage-fluid-fill}) unblocks the active-transfer pin.</p>
  *
  * <p>Contract pinned: {@link
  * zmaster587.advancedRocketry.tile.infrastructure.TileRocketUnloader#update}
@@ -43,7 +43,7 @@ public class RocketItemUnloaderActiveTransferTest extends AbstractSharedServerTe
             Pattern.compile("\"tilesWithCapability\":(\\d+)");
 
     /**
-     * TASK-40 Gap E — unloader pre-linked to a rocket actively drains the
+     * unloader pre-linked to a rocket actively drains the
      * rocket's storage inventory tiles into its own inventory across 10
      * ticks. Inverse direction of
      * {@link RocketInfrastructureSmokeTest#rocketLoaderTransfersItemsAfterLanding}.

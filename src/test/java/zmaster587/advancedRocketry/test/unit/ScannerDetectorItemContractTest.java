@@ -15,15 +15,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 3 — scanner / detector item contracts (unit tier).
+ * scanner / detector item contracts (unit tier).
  *
  * <p>Pins the pure-NBT and pure-function surface of the scanner /
  * detector items. The EntityPlayer-driven {@code onItemRightClick} /
  * {@code onItemUse} paths (which call into a real
  * {@link zmaster587.advancedRocketry.atmosphere.AtmosphereHandler},
  * {@link zmaster587.advancedRocketry.util.SealableBlockHandler}, or
- * GUI subsystem) are defer-allocated to the testClient e2e harness
- * (TASK-10b) per the TASK-05 plan §"Technical Decisions". Do NOT
+ * GUI subsystem) are deferred to the testClient e2e harness. Do NOT
  * introduce a FakePlayer here.</p>
  *
  * <p>Scope:</p>

@@ -15,8 +15,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (Tier 2 #8) — scanning satellites' unit-tier
- * contracts.
+ * Scanning satellites' unit-tier contracts.
  *
  * <p>Six scanning satellite types (Optical, Density, Composition,
  * MassScanner, OreMapping, SpyTelescope) had ZERO unit/integration

@@ -14,7 +14,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
- * TASK-06 Phase 3 (NBT slice) — unit-tier save-format pins for
+ * unit-tier save-format pins for
  * MissionGasCollection / MissionResourceCollection.
  *
  * <p>Pure-reflection unit test: constructs missions via the no-arg

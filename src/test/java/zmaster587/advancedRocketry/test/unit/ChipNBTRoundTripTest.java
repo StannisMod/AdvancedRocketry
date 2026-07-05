@@ -18,7 +18,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 1 — chip-item NBT round-trip pins.
+ * chip-item NBT round-trip pins.
  *
  * <p>Production launch and landing paths read these chip items' NBT directly;
  * a silent change in NBT-key names or read/write asymmetry would break
@@ -33,8 +33,8 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Several production setters contain known asymmetries (set-then-get drops
  * the NBT in some branches). Those are pinned via {@code _documentsKnownBug}
- * tests rather than fixed — the "no production logic changes" rule from
- * TASK-01 §15 still applies.</p>
+ * tests rather than fixed — the "no production logic changes" rule
+ * still applies.</p>
  */
 public class ChipNBTRoundTripTest {
 
@@ -80,7 +80,7 @@ public class ChipNBTRoundTripTest {
         assertEquals(7, chip.getDimensionId(s));
     }
 
-    /** Fixed in TASK-12 (bug #8). The INVALID_PLANET branch of
+    /** The INVALID_PLANET branch of
      *  {@code setDimensionId} previously built a fresh NBT but never
      *  called {@code stack.setTagCompound(nbt)} before returning — so
      *  the sentinel was silently dropped. Now it attaches the NBT so
@@ -226,7 +226,7 @@ public class ChipNBTRoundTripTest {
         assertEquals("test-comsat", s.getTagCompound().getString("satelliteName"));
     }
 
-    /** TASK-12 (bug #6) — {@code setSatellite(SatelliteBase)} must
+    /** {@code setSatellite(SatelliteBase)} must
      *  attach the freshly built NBT to the stack. Previously the
      *  else-branch (no pre-existing tag compound) silently dropped
      *  the NBT because {@code stack.setTagCompound(nbt)} was missing

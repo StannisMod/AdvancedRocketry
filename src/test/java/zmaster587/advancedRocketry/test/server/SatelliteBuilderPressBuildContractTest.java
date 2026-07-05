@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-33 — TileSatelliteBuilder real-construction path.
+ * TileSatelliteBuilder real-construction path.
  *
  * <p>The pre-existing {@code /artest satellite-builder build <dim> <typeId>}
  * probe constructs and registers a satellite via reflection, bypassing

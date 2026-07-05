@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Disableability contract for the parts-wear system (TASK-46 fix 2).
+ * Disableability contract for the parts-wear system.
  *
  * <p>Wear ACCRUAL goes through {@code StorageChunk.damageParts()}. With
  * {@code partsWearSystem} off, no part may advance a wear stage, so a rocket

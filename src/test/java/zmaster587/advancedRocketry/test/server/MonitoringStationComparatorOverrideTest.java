@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-32 3c — {@link
+ * {@link
  * zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation#getComparatorOverride}
  * player-visible redstone contract.
  *

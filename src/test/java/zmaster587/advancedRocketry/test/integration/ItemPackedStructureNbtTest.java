@@ -9,8 +9,7 @@ import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import static org.junit.Assert.assertNull;
 
 /**
- * Coverage-audit gap (Tier 3 #15) — {@code ItemPackedStructure} null-state
- * contract.
+ * {@code ItemPackedStructure} null-state contract.
  *
  * <p>The audit framed this gap as "deploy contract" but the class is
  * actually a serialization wrapper for {@link

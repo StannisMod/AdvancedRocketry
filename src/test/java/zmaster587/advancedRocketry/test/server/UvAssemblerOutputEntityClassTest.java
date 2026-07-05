@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-22 Phase 2 — output entity-class delta between the two assemblers.
+ * output entity-class delta between the two assemblers.
  *
  * <p>The two assemblers spawn different entity types from
  * {@code assembleRocket()}:</p>

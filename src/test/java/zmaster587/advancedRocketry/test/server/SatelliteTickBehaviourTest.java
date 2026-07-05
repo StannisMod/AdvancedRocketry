@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-09 Phase 2/3 — per-satellite tick behaviour pins.
+ * per-satellite tick behaviour pins.
  *
  * <p>Drives {@link zmaster587.advancedRocketry.api.satellite.SatelliteBase#tickEntity}
  * synchronously via {@code /artest satellite tick} and pins three

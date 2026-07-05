@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40d (audit Gap L) — TileForceFieldProjector projects + retracts
+ * TileForceFieldProjector projects + retracts
  * blockForceField blocks along its facing direction.
  *
  * <p>Production:
@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  *       {@code minecraft:air}.</li>
  * </ul>
  *
- * <p>NOT pinned (impl per SOP): the exact range constant
+ * <p>NOT pinned: the exact range constant
  * ({@code MAX_RANGE = 32}); the {@code worldTime % 5 == 0} natural-tick
  * gate (probe bypasses it via direct call to the public
  * {@code onIntermittentUpdate}).</p>

@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -13,7 +13,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.3 — planet/dimension lifecycle smoke.
+ * planet/dimension lifecycle smoke.
  *
  * Walks {@code /artest dim list} to verify AR has registered at least one
  * planet, then drills into a representative AR dim to confirm the provider
@@ -50,7 +50,7 @@ public class PlanetDimensionLoadTest extends AbstractSharedServerTest {
 
     @Test
     public void dimLoadOnOverworldReportsLoaded() throws Exception {
-        // SMART §5.2: /artest dim load <id> must force-load the world and
+        // /artest dim load <id> must force-load the world and
         // report `loaded:true` afterwards. Overworld (dim 0) is always loaded
         // on a fresh dedicated server, so this smoke pins the probe wiring
         // without depending on any AR-specific dim id. Deeper load behavior

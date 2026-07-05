@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -10,15 +10,14 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 1 round 2 — player-event handler wiring &
+ * Player-event handler wiring &
  * pre-join side-effects.
  *
  * The headless dedicated-server harness in this repo has NO connected
  * player. "Player joins AR planet → sky/gravity/weather wrapper applied"
  * is a behaviour that belongs in the {@code testClient} e2e harness
- * (§2.4 — real GL client + dedicated server), not here. What this layer
- * CAN — and what the long-running marker
- * {@code 2026-05-19-0600_task02-round2-tile-rocket-eod.md} deferred — is
+ * (real GL client + dedicated server), not here. What this layer
+ * CAN do is
  * pin the SERVER-SIDE state that {@code PlanetEventHandler} maintains:
  *
  * <ol>

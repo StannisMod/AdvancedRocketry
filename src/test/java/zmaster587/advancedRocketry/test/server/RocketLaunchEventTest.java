@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 1 (deep paths) — rocket launch event chain.
+ * rocket launch event chain.
  *
  * The shallow Phase 1 ({@link EventHandlerWiringTest}) covers the
  * weather-wrap WorldEvent.Load hook. This file extends Phase 1 onto

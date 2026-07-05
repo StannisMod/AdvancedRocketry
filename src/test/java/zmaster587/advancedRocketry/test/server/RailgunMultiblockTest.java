@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Railgun multiblock validation.
+ * Railgun multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileRailgun} is the
  * tallest (and sparsest) AR multiblock — 11 layers × 9×9. Layers 0–8 are

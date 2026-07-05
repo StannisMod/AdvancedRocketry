@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.openGuiByRightClick;
 
 /**
- * SMART §7.20 — deep client E2E for the rocket assembling machine.
+ * deep client E2E for the rocket assembling machine.
  *
  * <p>Builds the full rocket structure with {@code /artest fixture rocket},
  * opens the assembler's libVulpes modular GUI by right-clicking the builder

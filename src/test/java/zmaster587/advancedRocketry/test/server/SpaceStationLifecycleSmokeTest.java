@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.11 — space station lifecycle.
+ * space station lifecycle.
  *
  * Empty list → create real {@link zmaster587.advancedRocketry.stations.SpaceStationObject}
  * via probe → assert list/info reflect it.

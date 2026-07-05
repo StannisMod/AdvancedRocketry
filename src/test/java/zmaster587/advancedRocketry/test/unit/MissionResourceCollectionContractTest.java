@@ -16,7 +16,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 6.
  *
  * Targets the parts of {@link MissionResourceCollection} (and its two
  * concrete subclasses) that are unit-testable without bootstrapping a

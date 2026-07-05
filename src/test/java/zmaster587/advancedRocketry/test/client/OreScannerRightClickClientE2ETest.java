@@ -7,7 +7,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (Tier 3 #12, client slice) — {@code ItemOreScanner}
+ * {@code ItemOreScanner}
  * right-click, driven through the REAL client item-use path
  * ({@code ClientBot.useItem} → {@code CPacketPlayerTryUseItem}) with the
  * outcome read from the CLIENT screen state.

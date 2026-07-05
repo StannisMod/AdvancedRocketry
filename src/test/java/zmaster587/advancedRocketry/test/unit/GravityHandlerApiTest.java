@@ -22,8 +22,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 2 #7) — {@link IGravityManager}
- * public API on {@link GravityHandler}.
+ * {@link IGravityManager} public API on {@link GravityHandler}.
  *
  * <p>{@code GravityHandler} implements {@link IGravityManager} and
  * registers itself as the singleton on

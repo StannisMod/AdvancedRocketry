@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-06 Phase 4 — MissionOreMining.onMissionComplete contract.
+ * MissionOreMining.onMissionComplete contract.
  *
  * <p>Pins the player-visible cause-effect of completing an ore-mining
  * mission. Two production code paths run on completion:
@@ -18,7 +18,7 @@ import static org.junit.Assert.assertTrue;
  *       asteroid harvest with three Math.random() rolls (distance /
  *       composition / mass) populating rocket inventory tiles. Pins are
  *       loose-bound here (≥0 stacks) because exact roll outcomes are
- *       impl per testing-principles SOP, and an unregistered asteroid
+ * impl, and an unregistered asteroid
  *       type short-circuits the inner harvest loop anyway.</li>
  *   <li>Unconditional (always runs): asteroid-chip slot 0 cleared and
  *       refilled with a fresh empty ItemAsteroidChip. This is a

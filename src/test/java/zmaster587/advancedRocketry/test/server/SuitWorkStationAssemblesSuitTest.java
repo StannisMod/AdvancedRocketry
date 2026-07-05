@@ -6,7 +6,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 1 (A2 remainder) — suit-workstation component-assembly pin.
+ * suit-workstation component-assembly pin.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.TileSuitWorkStation} is a 5-slot
  * passive container — slot 0 holds the armor piece (any {@code IModularArmor}),

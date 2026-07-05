@@ -28,7 +28,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 5.
  *
  * Each {@code Recipe*} class is a thin {@code RecipeMachineFactory} subclass
  * whose only job is to bind the parsed recipe JSON to a specific tile

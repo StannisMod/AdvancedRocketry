@@ -15,7 +15,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-21 — {@code /ar} player-equipped verbs positive paths, driven the way
+ * {@code /ar} player-equipped verbs positive paths, driven the way
  * a player drives them: typed into the REAL client chat
  * ({@code ClientBot.sendChat} → {@code CPacketChatMessage}), with the outcome
  * observed from the CLIENT side (dim via {@code reportWeather}, inventory via
@@ -73,7 +73,7 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
     @Test
     public void arGotoTransfersPlayerToTargetDim() throws Exception {
         // Generate an AR planet to provide a known destination dim distinct
-        // from overworld (same probe pattern as TASK-19 Phase 1a) — arrange.
+        // from overworld — arrange.
         String before = exec("ar planet list");
         exec("ar planet generate 0 GotoTarget 10 10 10");
         String after = exec("ar planet list");

@@ -19,11 +19,11 @@ public class FreeFlightHudLangTest {
             "msg.ff.hud.fa.on", "msg.ff.hud.fa.off", "msg.ff.hud.move",
             "msg.ff.hud.yaw", "msg.ff.hud.vert",
             "msg.ff.hud.brake", "msg.ff.hud.assist",
-            // Engine start (TASK-46 D3)
+            // Engine start
             "msg.ff.hud.engines.off", "msg.ff.hud.engines.starting",
             "msg.ff.hud.engines.on", "msg.ff.engines.started",
             "msg.ff.engines.stopped",
-            // HUD indication (TASK-46 Phase 4)
+            // HUD indication
             "msg.ff.hud.vector", "msg.ff.hud.speed",
     };
 

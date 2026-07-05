@@ -10,7 +10,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-30 Gap 3 Phase 2 + 3 — EntityElevatorCapsule motion-state and
+ * EntityElevatorCapsule motion-state and
  * NBT save/load contracts.
  *
  * <p>Two contract families are pinned here at the testServer tier

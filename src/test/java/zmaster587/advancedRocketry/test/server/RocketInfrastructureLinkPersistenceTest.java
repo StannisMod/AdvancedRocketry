@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.10 #8 — rocket-infrastructure link survives a clean server
+ * rocket-infrastructure link survives a clean server
  * restart against the same world dir.
  *
  * <p>Mirrors {@link WeatherPersistenceTest} / {@link

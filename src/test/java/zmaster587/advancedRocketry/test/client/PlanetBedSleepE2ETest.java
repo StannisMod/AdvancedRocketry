@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * The live bot-sleep e2e for per-dimension time + planetary dawn rounding
- * (dercodeKoenig/AdvancedRocketry#66 / TASK-47) — the player-truth layer the
+ * (dercodeKoenig/AdvancedRocketry#66) — the player-truth layer the
  * unit ({@code SleepWakeTimeTest}) and integration
  * ({@code ARDimensionWorldInfoTest}) pins could not reach before the
  * framework grew {@code interact_block}.

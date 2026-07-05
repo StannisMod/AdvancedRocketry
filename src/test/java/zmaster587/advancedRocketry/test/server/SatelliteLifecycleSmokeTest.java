@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.12 — satellite lifecycle.
+ * satellite lifecycle.
  *
  * <p>Registry sanity + per-type round-trip coverage for all 10 production
  * satellite types: optical, density, composition, mass, asteroidMiner,

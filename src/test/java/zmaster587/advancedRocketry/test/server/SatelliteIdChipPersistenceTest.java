@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.12 — satellite-ID-chip persistence across server restart.
+ * satellite-ID-chip persistence across server restart.
  *
  * <p>Standalone harness lifecycle (mirrors {@link WeatherPersistenceTest})
  * because {@link AbstractHeadlessServerTest} auto-manages a single fresh-dir

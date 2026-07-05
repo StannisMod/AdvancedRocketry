@@ -208,7 +208,7 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
     @Test
     public void freeFlightTickLoopRunsAndMutatesMotion() throws Exception {
         // Contract: tickFreeFlight is invoked when the rocket is in FF +
-        // isInFlight, and pilot input mutates motion. With the TASK-46 D3
+        // isInFlight, and pilot input mutates motion. With the
         // engine start there is no takeoff kick: the craft rests in the
         // liftoff hover until input arrives, so 10 ticks of full vertical
         // throttle must produce a clearly positive climb rate.
@@ -226,7 +226,7 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
 
     @Test
     public void engineStartHoversOneBlockAboveThePad() throws Exception {
-        // TASK-46 D3: starting the engines is NOT a launch — the craft eases
+        // starting the engines is NOT a launch — the craft eases
         // ~1 block off the pad and HOVERS there (near-zero motion), without
         // any takeoff kick and without auto-landing.
         int id = buildAndAssemble(2900, 64, 500);
@@ -249,7 +249,7 @@ public class FreeFlightCycleTest extends AbstractSharedServerTest {
 
     @Test
     public void descendingToTheGroundShutsTheEnginesOff() throws Exception {
-        // TASK-46 D3: touchdown auto-shutdown. From the engine-start hover,
+        // touchdown auto-shutdown. From the engine-start hover,
         // pilot descent input drives the craft into ground contact, which
         // exits flight (engines off) and zeroes motion.
         int id = buildAndAssemble(2950, 64, 500);

@@ -17,7 +17,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-13 — wireless transceiver NBT + onLoad-role persistence.
+ * wireless transceiver NBT + onLoad-role persistence.
  *
  * <p>Boot 1 places + configures a transceiver in a non-default state
  * (extract mode, enabled, paired into a fresh network). Boot 2 — same

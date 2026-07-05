@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Rolling Machine end-to-end recipe contract.
+ * Rolling Machine end-to-end recipe contract.
  *
  * <p>Three contract pins via the shared {@link MachineRecipeEndToEndKit}
  * protocol — see kit Javadoc for shape.</p>

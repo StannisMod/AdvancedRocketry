@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-18 — shared protocol for industrial-machine recipe end-to-end tests.
+ * shared protocol for industrial-machine recipe end-to-end tests.
  *
  * <p>All 9 AR multiblock industrial machines share the broad recipe
  * pipeline shape, but specific machines vary on:</p>
@@ -38,7 +38,7 @@ import static org.junit.Assert.assertTrue;
  * <p>Out of scope: wildcard-based machines (ArcFurnace, PrecisionAssembler)
  * place hatches via {@code '*'} wildcards rather than explicit
  * 'I' / 'O' / 'P' chars. The kit's generic fixture handler can't compute
- * hatch positions for them. Tracked separately in TASK-26.</p>
+ * hatch positions for them.</p>
  */
 final class MachineRecipeEndToEndKit {
 
@@ -127,7 +127,7 @@ final class MachineRecipeEndToEndKit {
     }
 
     /**
-     * Drives {@code /artest machine try-complete} with a TASK-16-shape-#3 retry
+     * Drives {@code /artest machine try-complete} with a retry
      * shim. Returns the response from the last attempt that produced
      * {@code attempted:true}, or the response from the final retry on
      * timeout. Callers must assert their own {@code isComplete} expectation
@@ -140,7 +140,7 @@ final class MachineRecipeEndToEndKit {
      * Budget: 8 attempts × 500 ms gap (~4 s ceiling on the non-happy path;
      * ~0 ms cost when the first call succeeds — which is the common case).
      * Earlier 5×200ms budget proved insufficient under parallel-3-fork
-     * pressure during the TASK-27 10× rerun on multiple multiblocks
+     * pressure on multiple multiblocks
      * (ArcFurnace, PrecisionLaserEtcher, Beacon).</p>
      */
     static String tryCompleteWithRetry(TestClient c, int dim, int cx, int cy, int cz) throws Exception {
@@ -156,7 +156,7 @@ final class MachineRecipeEndToEndKit {
 
     static void assertFixtureValidates(TestClient c, int cx, int cy, int cz,
                                        String tag, String fixtureResp) throws Exception {
-        // TASK-16 shape #3 mitigation — see tryCompleteWithRetry above.
+        // Retry mitigation — see tryCompleteWithRetry above.
         StringBuilder attempts = new StringBuilder();
         String resp = null;
         for (int attempt = 0; attempt < 8; attempt++) {
@@ -235,7 +235,7 @@ final class MachineRecipeEndToEndKit {
     // ---- Sub-test #2: machine runs first recipe end-to-end -----------------
 
     /**
-     * TASK-28 F3 — same as {@link #runFirstRecipeEndToEnd} except output
+     * same as {@link #runFirstRecipeEndToEnd} except output
      * identity is NOT asserted. Returns the final output-hatch read so the
      * caller can apply a permissive assertion (e.g. "any item present").
      * Use for machines whose recipe set shares input keys and whose
@@ -289,8 +289,8 @@ final class MachineRecipeEndToEndKit {
 
         // Force-tick budget adapts to the recipe's declared completion time.
         // Most AR machine recipes are <500 ticks; the wildcard-structure
-        // machines from TASK-26 push higher (ArcFurnace=6000, PrecisionAssembler=4000).
-        // Floor of 2000 keeps the 7 TASK-18 machines on their original budget;
+        // machines push higher (ArcFurnace=6000, PrecisionAssembler=4000).
+        // Floor of 2000 keeps the 7 machines on their original budget;
         // ceiling extends to `time + 1000` for the long ones.
         int tickBudget = Math.max(2000, r.time + 1000);
         String tick = String.join("\n", c.execute(

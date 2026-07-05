@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-38 (Gap Q) — IMiningDrill stat aggregation during rocket assembly.
+ * IMiningDrill stat aggregation during rocket assembly.
  *
  * <p>{@link zmaster587.advancedRocketry.block.BlockMiningDrill} is a
  * cargo-component block (no TileEntity, no tick) consumed by the rocket

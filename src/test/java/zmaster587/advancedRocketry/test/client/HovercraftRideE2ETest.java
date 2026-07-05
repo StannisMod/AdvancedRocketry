@@ -11,7 +11,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-20 — Hovercraft mount / dismount / throttle / motion
+ * Hovercraft mount / dismount / throttle / motion
  * contracts.
  *
  * <p>Pre-this-test the hovercraft had:</p>
@@ -31,7 +31,7 @@ import static org.junit.Assert.assertTrue;
  *   <li>No input → hovercraft hovers (lateral position stable).</li>
  * </ol>
  *
- * <p><b>Honest-e2e shape</b> (per honest-client-e2e.md): mounting stays a
+ * <p><b>Honest-e2e shape</b>: mounting stays a
  * server probe — the SOP explicitly allows "mount" as arrange. The RIDE
  * contracts are then driven through the real client input surface: the
  * forward key (W) feeds {@code MovementInput} → {@code CPacketInput} →

@@ -12,7 +12,7 @@ import org.valkyrienskies.mod.common.util.ValkyrienUtils;
  *
  * <p>Phase 1 scaffold: this currently only anchors the VS compile dependency and
  * confirms, at runtime, that the VS classpath resolved. Real ship assembly,
- * thrust, and gravity bridging land in later phases — see TASK-47. The chosen
+ * thrust, and gravity bridging land in later phases. The chosen
  * entry points (for later): {@code ValkyrienUtils.assembleShipAsOrderedByPlayer}
  * / {@code createNewShip} for assembly, {@code IPhysicsBlockController} +
  * {@code PhysicsCalculations.addForceAtPointNew} for thrust.</p>

@@ -15,7 +15,7 @@ import io.netty.buffer.ByteBuf;
  * yaw+pitch+roll in {@link FreeFlightPhysics}). Yaw/pitch/roll are
  * orientation-rate channels.
  *
- * <p>With Flight Assist on (TASK-46 D4) the translation channels RAMP the
+ * <p>With Flight Assist on the translation channels RAMP the
  * server-held velocity setpoint instead of thrusting directly, and
  * {@link #cutActive} zeroes that setpoint (brake-to-hover). With FA off the
  * channels are direct thrust and the cut neutralises them for the tick.

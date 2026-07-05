@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-03 A5 — REAL rocket→station cause-effect for pad state.
+ * REAL rocket→station cause-effect for pad state.
  *
  * <p>{@link SpaceStationDockUndockTest} exercises the production
  * state-machine methods directly via thin probes (addLandingPad,

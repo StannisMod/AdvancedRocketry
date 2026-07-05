@@ -9,7 +9,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.plane
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.planetIntField;
 
 /**
- * TASK-11 Phase 1 — {@code /ar planet set | get | list} contract pins.
+ * {@code /ar planet set | get | list} contract pins.
  *
  * <p>Each test mutates one DimensionProperties field on the overworld
  * via {@code /ar planet set 0 <field> <val>}, asserts the change is

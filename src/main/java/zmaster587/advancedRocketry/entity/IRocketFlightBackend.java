@@ -4,7 +4,7 @@ package zmaster587.advancedRocketry.entity;
  * Pluggable backend that realizes a rocket's per-tick FREE-FLIGHT movement — the
  * seam for integrating Free Flight (branch {@code feature/true_rcs}) with
  * Valkyrien Skies rigid-body ship physics (branch
- * {@code feature/true_spaceships}). See {@code .agent/tasks/TASK-48-*}.
+ * {@code feature/true_spaceships}). See .
  *
  * <h2>Why this exists</h2>
  * Free Flight computes a desired kinematic state from pilot input in its pure,
@@ -32,7 +32,7 @@ package zmaster587.advancedRocketry.entity;
  *       merged. When FF is present it adapts its {@code Step} to this call.</li>
  *   <li>This is a <b>PROPOSED</b> contract — the exact shape (setpoint vs force,
  *       rotation ownership, client-sync handoff) is to be finalized during the
- *       integration work; see TASK-48 for the open questions.</li>
+ *       integration work.</li>
  * </ul>
  */
 public interface IRocketFlightBackend {

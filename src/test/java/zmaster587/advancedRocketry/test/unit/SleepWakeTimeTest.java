@@ -7,7 +7,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-47 / issue #66 — pure-math unit pins for
+ * Issue #66 — pure-math unit pins for
  * {@link ARDimensionWorldInfo#computeSleepWakeTime(long, int)}: the sleep wake-up
  * must land on the planet's dawn (a multiple of {@code rotationalPeriod}),
  * strictly forward, by at most one planetary day.

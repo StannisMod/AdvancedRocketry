@@ -14,7 +14,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §6.10 (3) — {@link PlanetWeatherSavedData} stores state by dimension id
+ * {@link PlanetWeatherSavedData} stores state by dimension id
  * and round-trips its full map through NBT. Pure-NBT test; no MC bootstrap.
  *
  * Also pins the storage key — changing it would silently lose all existing

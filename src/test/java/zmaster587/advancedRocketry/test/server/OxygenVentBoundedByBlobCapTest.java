@@ -12,8 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit Gap S (2026-05-27 audit, deferred by TASK-40c, closed
- * by the 2026-05-31 final audit) — the {@code TileOxygenVent} blob is
+ * The {@code TileOxygenVent} blob is
  * <b>bounded</b>: a vent cannot pressurise an arbitrarily large sealed
  * space.
  *

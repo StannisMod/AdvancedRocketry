@@ -15,8 +15,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 1 #1) — TileRocketLoader's
- * redstone-output polarity logic.
+ * TileRocketLoader's redstone-output polarity logic.
  *
  * <p>The loader emits a redstone signal indicating "rocket fully
  * loaded". The signal polarity is configurable via the

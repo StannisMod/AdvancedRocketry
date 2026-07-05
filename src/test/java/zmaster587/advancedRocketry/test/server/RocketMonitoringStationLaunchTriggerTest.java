@@ -12,8 +12,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 1 #2) — TileRocketMonitoringStation
- * redstone-triggered launch.
+ * TileRocketMonitoringStation redstone-triggered launch.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.infrastructure.TileRocketMonitoringStation}'s
  * {@code update()} method (production lines 96-115) implements a

@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 3 (server tier) — {@code ItemSealDetector} dispatch
+ * {@code ItemSealDetector} dispatch
  * matrix pin via the {@code /artest seal-detector check} probe.
  *
  * <p>The probe re-uses production {@link
@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
  * {@code msg.sealdetector.&lt;branch&gt;} suffix the production code
  * emits to the player.</p>
  *
- * <p>TASK-23 (2026-05-25) added the remaining reachable branches:
+ * <p>The remaining reachable branches:
  * {@code "notsealblock"} via probe-driven {@code blockBanList} mutation
  * (restored in {@code @After}) and {@code "fluid"} via AR's
  * {@code advancedrocketry:oxygenFluid} ({@code IFluidBlock} of
@@ -131,7 +131,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
                 "other", probe(x, y, z));
     }
 
-    // ───────────────────── notsealblock branch (TASK-23) ─────────────────
+    // ───────────────────── notsealblock branch ─────────────────
 
     /** Pins the {@code blockBanList} dispatch path. The default
      *  {@code blockBanList} is empty (per {@link SealableBlockHandler}'s
@@ -177,7 +177,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
                 "artest seal-detector remove-block-ban minecraft:gold_block");
     }
 
-    // ───────────────────── fluid branch (TASK-23) ─────────────────────────
+    // ───────────────────── fluid branch ─────────────────────────
 
     /** Pins the {@code IFluidBlock} dispatch. AR's
      *  {@code advancedrocketry:oxygenFluid} extends {@code BlockFluidClassic}

@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Area Gravity Controller multiblock validation.
+ * Area Gravity Controller multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileAreaGravityController}
  * — smallest AR multiblock: 2×3×3 with only 6 non-null cells (controller +

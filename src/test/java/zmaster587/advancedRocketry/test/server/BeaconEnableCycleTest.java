@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-19 Phase 3 — Beacon multiblock enable cycle on an AR-native
+ * Beacon multiblock enable cycle on an AR-native
  * planet.
  *
  * <p>Production contract ({@code TileBeacon.setMachineEnabled(boolean)}):</p>

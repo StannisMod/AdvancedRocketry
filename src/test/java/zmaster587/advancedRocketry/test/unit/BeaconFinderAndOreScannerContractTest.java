@@ -12,8 +12,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (Tier 3 #12, unit slice) — scanner-item
- * contracts pinnable without a Minecraft world.
+ * Scanner-item contracts pinnable without a Minecraft world.
  *
  * <p>The audit framed this gap as "player-use" but the actual contract
  * surfaces split into two layers:</p>
@@ -24,7 +23,7 @@ import static org.junit.Assert.assertTrue;
  *       slot-eligibility (HEAD only) + component-add ok. {@code
  *       renderScreen} reads {@code DimensionProperties.getBeacons()}
  *       and draws indicators; the data-source side is already pinned
- *       by {@code BeaconEnableCycleTest} (TASK-19 Phase 3).</li>
+ * by {@code BeaconEnableCycleTest}.</li>
  *   <li><b>ItemOreScanner</b> — has {@code onItemRightClick} +
  *       {@code onItemUse} which open the OreMapping GUI WHEN the
  *       stored satellite-ID resolves to a SatelliteOreMapping on the

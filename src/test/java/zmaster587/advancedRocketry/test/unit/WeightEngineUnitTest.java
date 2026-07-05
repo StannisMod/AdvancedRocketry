@@ -32,7 +32,7 @@ public class WeightEngineUnitTest {
             ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
             // An unknown fluid still weighs something (the fallback per-mB rate)
             // and the weight is linear in the amount. The exact kN/mB constant is
-            // an implementation default (see testing-principles SOP).
+            // an implementation default.
             float base = we.getWeight(testFluid(), 1000f);
             assertTrue("fallback fluid weight must be positive: " + base, base > 0);
             assertEquals("fluid weight must be linear in the amount",

@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.14 — terraforming smoke.
+ * terraforming smoke.
  *
  * Drives {@link
  * zmaster587.advancedRocketry.dimension.DimensionProperties#setAtmosphereDensity(int)}

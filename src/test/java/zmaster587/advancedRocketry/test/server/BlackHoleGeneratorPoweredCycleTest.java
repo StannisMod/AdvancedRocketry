@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-19 Phase 2 — Black-Hole-Generator powered cycle on a station
+ * Black-Hole-Generator powered cycle on a station
  * orbiting a black-hole star.
  *
  * <p>Production contract ({@code TileBlackHoleGenerator.isAroundBlackHole()}):
@@ -38,7 +38,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * for {@code defaultItemTimeBlackHole} (default 500) ticks per consumed
  * item — so a single dirt block in the input hatch + ~600 force-ticks
  * is enough to assert "energy buffer grew" without pinning an exact RF
- * amount (impl detail per testing-principles SOP).</p>
+ * amount.</p>
  */
 public class BlackHoleGeneratorPoweredCycleTest extends AbstractSharedServerTest {
 

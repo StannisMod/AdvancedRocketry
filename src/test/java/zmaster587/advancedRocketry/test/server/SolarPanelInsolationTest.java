@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-03 A2 — REAL solar-panel behavioural depth (vs the
+ * REAL solar-panel behavioural depth (vs the
  * round-2 placement smoke).
  *
  * <p>{@link EnergySystemsSmokeTest#solarPanelAccumulatesEnergyOverTicks}

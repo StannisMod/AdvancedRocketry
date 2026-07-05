@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@code PlanetEventHandler.fallEvent} fall-distance scaling — server tier.
  * Relabeled down the pyramid from the old client-harness
- * {@code LowGravFallDamageE2ETest} per honest-client-e2e.md: the contract
+ * {@code LowGravFallDamageE2ETest} the contract
  * (LivingFallEvent.distance × gravity multiplier on IPlanetaryProvider dims,
  * untouched elsewhere) is server-authoritative event-handler logic, and the
  * old client test drove it exclusively through the {@code try-fall} probe

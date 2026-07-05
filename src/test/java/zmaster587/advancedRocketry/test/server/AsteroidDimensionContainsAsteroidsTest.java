@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-44 (audit Gap N) — the Asteroid worldprovider dimension actually
+ * the Asteroid worldprovider dimension actually
  * generates asteroids (floating fill-block islands), not empty void.
  *
  * <p>Production:

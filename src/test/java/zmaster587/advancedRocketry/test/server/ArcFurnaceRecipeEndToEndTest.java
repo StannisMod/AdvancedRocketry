@@ -3,16 +3,16 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-26 — Electric Arc Furnace end-to-end recipe contract.
+ * Electric Arc Furnace end-to-end recipe contract.
  *
  * <p>Wildcard-structure machine: structure declares hatch slots via
  * {@code '*'} wildcards, so the test relies on
- * {@code lookupWildcardMachineOverrides} (TASK-26 probe extension) to
+ * {@code lookupWildcardMachineOverrides} to
  * overlay concrete libVulpes I/O hatches at the chosen wildcard cells.
  * 'P' is already present as an explicit char in the structure top layer
  * and is picked up by the generic structure scan.</p>
  *
- * <p>Shape mirrors the 7 TASK-18 machines via {@link MachineRecipeEndToEndKit}.</p>
+ * <p>Shape mirrors the 7 machines via {@link MachineRecipeEndToEndKit}.</p>
  */
 public class ArcFurnaceRecipeEndToEndTest extends AbstractSharedServerTest {
 

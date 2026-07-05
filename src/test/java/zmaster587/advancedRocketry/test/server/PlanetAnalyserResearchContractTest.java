@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40 (Gap D) — Planet Analyser (TileAstrobodyDataProcessor) research
+ * Planet Analyser (TileAstrobodyDataProcessor) research
  * increment contract.
  *
  * <p>Phase-0 reshape: the audit framed this as "planet-id chip → SatelliteData
@@ -46,7 +46,7 @@ public class PlanetAnalyserResearchContractTest extends AbstractSharedServerTest
             Pattern.compile("\"composition\":(\\d+)");
 
     /**
-     * TASK-40 Gap D — assembled analyser increments the chip's COMPOSITION
+     * assembled analyser increments the chip's COMPOSITION
      * counter when (1) powered, (2) chip with UUID in slot 0, (3) DataBus
      * pre-loaded with COMPOSITION, (4) researchingAtmosphere flag set.
      */

@@ -16,7 +16,6 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 3.
  *
  * Pins the atmosphere-protection contract of {@link ItemSpaceArmor} —
  * what it protects against, what it does NOT protect against, and the

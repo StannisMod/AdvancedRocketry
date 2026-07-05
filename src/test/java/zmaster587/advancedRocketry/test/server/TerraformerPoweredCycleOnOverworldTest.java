@@ -13,7 +13,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-19 Phase 1b — terraformer powered cycle on overworld with
+ * terraformer powered cycle on overworld with
  * {@code allowTerraformNonAR=true} config flip.
  *
  * <p>Pins the <b>{@code allowTerraformNonAR} branch</b> of

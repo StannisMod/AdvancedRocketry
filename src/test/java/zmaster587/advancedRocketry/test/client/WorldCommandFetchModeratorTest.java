@@ -17,7 +17,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-35 follow-up — true moderator-fetch coverage using two connected
+ * True moderator-fetch coverage using two connected
  * Minecraft client bots.
  *
  * <p>{@link WorldCommandFetchTest} closed the resolvable contract surface

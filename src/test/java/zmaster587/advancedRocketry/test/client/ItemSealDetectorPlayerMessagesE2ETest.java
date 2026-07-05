@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 7 — player-visible side of
+ * player-visible side of
  * {@link zmaster587.advancedRocketry.item.ItemSealDetector#onItemUse}.
  *
  * <p>The server-tier

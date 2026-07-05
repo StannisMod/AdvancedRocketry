@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-36a — TileTerraformingTerminal chip-recognition + redstone gate.
+ * TileTerraformingTerminal chip-recognition + redstone gate.
  *
  * <p>The terraforming terminal is the player-facing tile that wires a
  * programmed BiomeChanger chip to its satellite for the planet-wide

@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.18 — Force Field Projector real projection cycle.
+ * Force Field Projector real projection cycle.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.TileForceFieldProjector} runs an
  * extension cycle every 5 world ticks: while powered AND
@@ -40,7 +40,7 @@ public class ForceFieldProjectionSmokeTest extends AbstractHeadlessServerTest {
 
     @Test
     public void poweredProjectorProjectsAndUnpoweredCollapses() throws Exception {
-        // Isolated patch — no collision with §7.13 (1500) / Microwave (1700) /
+        // Isolated patch — no collision with SealedRoom (1500) / Microwave (1700) /
         // BHG (1800) / Pipe (1110) / Terraformer (2000) / MachineController (2100).
         int px = 2200, py = 64, pz = 2200;
 
@@ -93,7 +93,7 @@ public class ForceFieldProjectionSmokeTest extends AbstractHeadlessServerTest {
         // Drive the projector's extension cycle directly via the test-only
         // `field tick` probe — bypasses the production %5 natural-tick gate
         // so we don't depend on natural-tick rate (which stretches under
-        // parallel-fork load and flakes the 12 s wait budget; TASK-28 F2).
+        // parallel-fork load and flakes the 12 s wait budget).
         // Five calls = five extensions; happy-path each call advances range
         // by 1 (or stays put if next block isn't replaceable).
         String tickResp = String.join("\n", client().execute(

@@ -15,7 +15,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.5 + §12 (per_dimension definition of done) — direct cross-dim
+ * direct cross-dim
  * isolation: rain set on planet A must NOT leak to planet B or the overworld,
  * and vice versa.
  *

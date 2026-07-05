@@ -257,7 +257,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // harness the bot round-trips can outlast it and the rocket re-lands
         // before the test's input arrives, failing on "never moved" instead of
         // the contract under test. Confirm we're airborne, retrying the start —
-        // same pattern as the assemble retry above. (The TASK-46 Phase 2
+        // same pattern as the assemble retry above. (The
         // engine-start hover removes the kick and this crutch with it.)
         for (int attempt = 0; attempt < 3; attempt++) {
             if (exec("artest rocket info " + rocketId).contains("\"isInFlight\":true")) {
@@ -657,7 +657,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void cutKeyBrakesToAGravityCancelledHover() throws Exception {
-        // X with Flight Assist on (TASK-46 D4): zero the velocity setpoint —
+        // X with Flight Assist on: zero the velocity setpoint —
         // the craft eases to a stop AND holds altitude. Build a climb via the
         // real R key first, then hold the real X.
         int rocketId = mountFreshFreeFlightRocket(4700, 64, 500);
@@ -693,7 +693,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
-    // ===== Engine start (TASK-46 D3) =====================================
+    // ===== Engine start =====================================
     //
     // The REAL path: hold the actual jump key (Space) on the client for 3 s;
     // KeyBindings.onClientTick accumulates the hold and sends ENGINE_START;
@@ -805,7 +805,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
-    // ===== HUD indication (TASK-46 Phase 4) ===============================
+    // ===== HUD indication ===============================
 
     private static final Pattern HUD_VRT =
             Pattern.compile("VRT ([+-][0-9.]+)/([+-][0-9.]+)");
@@ -874,7 +874,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         exec("artest player dismount");
     }
 
-    // ===== Camera-nose lock + mouse-as-rate (TASK-46 D1) =================
+    // ===== Camera-nose lock + mouse-as-rate =================
     //
     // THE perception contract that v1 missed: the view and the nose must
     // never diverge. These tests read BOTH sides from the real client
@@ -999,7 +999,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void mouseHorizontalBanksTheCraftNotItsHeading() throws Exception {
-        // Deflection scheme (TASK-53 Phase 6/7): the mouse is a virtual cursor —
+        // Deflection scheme: the mouse is a virtual cursor —
         // HORIZONTAL drives ROLL (bank), not yaw (yaw is A/D only). A real
         // rightward mouse drag must bank the craft (client camera roll grows) while
         // the heading (client yaw) stays put. Supersedes the pre-deflection

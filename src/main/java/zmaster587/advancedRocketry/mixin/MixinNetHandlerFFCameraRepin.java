@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import zmaster587.advancedRocketry.client.KeyBindings;
 
 /**
- * Free Flight camera lock vs the vanilla riding echo (TASK-46 D1).
+ * Free Flight camera lock vs the vanilla riding echo.
  *
  * While a player rides an entity, the server answers every client position
  * report with an SPacketPlayerPosLook carrying the rotation the client sent

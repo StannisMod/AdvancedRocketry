@@ -1,12 +1,12 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.19 — commands smoke.
+ * commands smoke.
  *
  * Asserts that both {@code /artest} (test-only) and AR's primary command
  * ({@code advancedrocketry}/{@code advrocketry}/{@code ar}) are registered on a
@@ -28,7 +28,7 @@ public class CommandsSmokeTest extends AbstractSharedServerTest {
 
     @Test
     public void arHelpCommandPrintsUsageWithoutCrash() throws Exception {
-        // §7.19: AR's primary command must surface usage text without crashing
+        // AR's primary command must surface usage text without crashing
         // the server. The ARCommandRoot tree prints its usage line
         // "/advancedrocketry [subcommand]" rather than the old WorldCommand
         // "Subcommands:" header.
@@ -44,7 +44,7 @@ public class CommandsSmokeTest extends AbstractSharedServerTest {
 
     @Test
     public void arCommandWithInvalidArgsReturnsErrorNotCrash() throws Exception {
-        // §7.19: malformed input must not crash the server. WorldCommand.execute
+        // Malformed input must not crash the server. WorldCommand.execute
         // currently has no `default` branch — unknown subcommands silently
         // no-op. That is lenient but not a crash, which is what this test
         // pins. If AR ever tightens parsing to surface an explicit error
@@ -58,7 +58,7 @@ public class CommandsSmokeTest extends AbstractSharedServerTest {
 
     @Test
     public void artestRegistryWithBadSubcommandReturnsError() throws Exception {
-        // §7.19: /artest itself MUST surface unknown subcommands as a
+        // /artest itself MUST surface unknown subcommands as a
         // structured JSON error reply, not crash or no-op. Pinned against
         // TestProbeCommand.handleRegistry's "unknown registry subcommand"
         // fallback branch.

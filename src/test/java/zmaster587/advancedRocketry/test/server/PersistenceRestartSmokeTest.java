@@ -16,7 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.6 — full persistence/restart smoke.
+ * full persistence/restart smoke.
  *
  * Boot 1 creates a station + satellite + mutates Earth atmosphere density.
  * Boot 2 (same workDir) verifies every mutation survived save/load + registry

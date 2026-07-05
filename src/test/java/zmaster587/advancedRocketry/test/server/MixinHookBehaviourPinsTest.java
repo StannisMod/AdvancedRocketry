@@ -13,7 +13,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-08-mixin Phase 3 — behavioural pins for the surviving hooks after the
+ * behavioural pins for the surviving hooks after the
  * ASM-coremod → Mixin rewrite.
  *
  * <h2>Coverage matrix</h2>
@@ -60,9 +60,9 @@ import static org.junit.Assert.assertTrue;
  *         {@code RocketInventoryHelperRedirectTest}; mixin bodies are
  *         one-line delegations to
  *         {@code RocketInventoryHelper.shouldAllowContainerInteract}.
- *         End-to-end pin (real-player GUI session) deferred to TASK-10b /
- *         testClient e2e per
- *         {@code feedback_no_fakeplayer_for_player_tests}.</td>
+ *         End-to-end pin (real-player GUI session) deferred to the
+ *         testClient e2e harness (fake players cannot exercise the
+ *         player-inventory path).</td>
  *   </tr>
  * </table>
  *

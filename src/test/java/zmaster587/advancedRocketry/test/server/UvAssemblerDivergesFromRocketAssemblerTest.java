@@ -7,7 +7,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 1 (A2 remainder) — UV assembler diverges from the rocket
+ * UV assembler diverges from the rocket
  * assembler.
  *
  * <p>{@code TileUnmannedVehicleAssembler} extends
@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Deeper UV-vs-rocket behavioural pinning (pad bounds, fuel requirement,
  * spawned entity type) is left as a follow-up that adds an
- * {@code /artest assembler bounds} verb — see TASK-10 doc.</p>
+ * {@code /artest assembler bounds} verb.</p>
  */
 public class UvAssemblerDivergesFromRocketAssemblerTest extends AbstractHeadlessServerTest {
 

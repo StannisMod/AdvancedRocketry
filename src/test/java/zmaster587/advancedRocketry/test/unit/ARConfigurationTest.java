@@ -8,7 +8,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.3 Configuration default-value stability.
+ * Configuration default-value stability.
  *
  * Pure construction tests — not exercising loadPreInit (that depends on Forge
  * Configuration files and the mod loader). Verifies invariants of a freshly
@@ -88,7 +88,7 @@ public class ARConfigurationTest {
     }
 
     /**
-     * §6.3 — performance section default-stability check.
+     * Performance section default-stability check.
      *
      * The PERFORMANCE config section in {@link ARConfiguration#loadPreInit} sets
      * {@code atmosphereHandleBitMask} and {@code oxygenVentSize}. They don't have
@@ -118,7 +118,7 @@ public class ARConfigurationTest {
     }
 
     /**
-     * §6.3 — robustness: constructing a config, mutating arbitrary fields,
+     * Robustness: constructing a config, mutating arbitrary fields,
      * accessing every collection, then cloning must NOT throw on any path. This
      * is the "unknown config (= partially-populated) does not crash" contract —
      * production loadPreInit may leave some fields at JVM defaults if the user's

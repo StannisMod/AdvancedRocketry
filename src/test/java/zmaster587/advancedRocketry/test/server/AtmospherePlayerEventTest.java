@@ -20,7 +20,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@code AtmosphereHandler} per-player cache bookkeeping — server tier.
  * Relabeled down the pyramid from the old client-harness
- * {@code AtmospherePlayerEventE2ETest} per honest-client-e2e.md: the
+ * {@code AtmospherePlayerEventE2ETest} the
  * contract (onTick populates {@code prevAtmosphere} for players in AR dims;
  * {@code onPlayerChangeDim} clears the entry so the next dim repopulates)
  * is server-side handler state the old test read through server probes

@@ -12,7 +12,7 @@ import java.util.Map;
  * {@code mapStorage} holding weather state for every AR planet dimension.
  *
  * <p>The decision to centralise (one saved-data, keyed by dimension id) rather
- * than per-world saved-data is from SMART §2.2: avoids being entangled with
+ * than per-world saved-data avoids being entangled with
  * {@code WorldServerMulti}'s per-world storage layout, and avoids depending on
  * any wrapping of the secondary world's {@link net.minecraft.world.storage.WorldInfo}.
  * Overworld is loaded for the entire server lifetime, so this storage is always

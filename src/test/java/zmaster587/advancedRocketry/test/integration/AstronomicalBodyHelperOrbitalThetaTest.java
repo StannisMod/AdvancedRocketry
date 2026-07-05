@@ -15,13 +15,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.7 #4 — {@code orbitalAngleWrapsCorrectly}.
+ * {@code orbitalAngleWrapsCorrectly}.
  *
  * <p>Lives in the integration layer because {@link AstronomicalBodyHelper#getOrbitalTheta}
  * dereferences {@code AdvancedRocketry.proxy}, and merely loading
  * {@code AdvancedRocketry.class} triggers {@code FluidRegistry.enableUniversalBucket()}
  * which only succeeds after Forge bootstrap. {@link MinecraftBootstrap#ensure()}
- * sets that up. The rest of the §6.7 pure-math tests (no proxy dereference)
+ * sets that up. The rest of the pure-math tests (no proxy dereference)
  * live in {@code unit/AstronomicalBodyHelperTest}.</p>
  *
  * <p>The production formula is</p>

@@ -6,10 +6,10 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-25 — Small PlatePress end-to-end recipe contract.
+ * Small PlatePress end-to-end recipe contract.
  *
  * <p>Single-block, redstone-triggered, item-output-as-EntityItem.
- * Distinct from the TASK-18 / TASK-26 multiblock industrial machines —
+ * Distinct from the multiblock industrial machines —
  * no hatches, no RF, no force-tick. The contract this class pins:</p>
  *
  * <ol>
@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
  *       output item. Player-visible behaviour — both effects asserted.</li>
  * </ol>
  *
- * <p>Per {@code testing-principles.md} the kit pins observable outcomes
+ * <p>Per {@code} the kit pins observable outcomes
  * (block-state change + entity spawn) rather than internal machinery
  * (piston EXTENDED state, exact tick where the spawn fires).</p>
  */

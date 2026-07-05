@@ -9,12 +9,12 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.18 — Hovercraft entity smoke (lifecycle only).
+ * Hovercraft entity smoke (lifecycle only).
  *
  * <p>{@code EntityHoverCraft} is registered via
  * {@code EntityRegistry.registerModEntity(new ResourceLocation(modId, "ARHoverCraft"), ...)}
- * with the runtime registry name {@code advancedrocketry:ARHoverCraft}. SMART
- * §7.18 lists it as "hovercraft if feasible" — we cover the server-side
+ * with the runtime registry name {@code advancedrocketry:ARHoverCraft}.
+ * We cover the server-side
  * lifecycle: spawn → entity alive → tick → still alive (no NPE during the
  * physics update path).</p>
  *

@@ -8,7 +8,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.20 — basic client-bridge handshake. Asserts the client connects,
+ * basic client-bridge handshake. Asserts the client connects,
  * world becomes available, and {@code reportState} round-trips a player view.
  */
 public class ClientConnectSmokeTest extends AbstractClientE2ETest {

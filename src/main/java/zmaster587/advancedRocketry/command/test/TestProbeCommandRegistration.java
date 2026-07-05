@@ -5,7 +5,7 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 
 /**
  * Conditional registration entry-point for the test-only {@code /artest} command
- * tree (SMART §5).
+ * tree.
  *
  * <p>Call from {@code AdvancedRocketry.serverStarting} (or any FMLServerStartingEvent
  * handler):</p>
@@ -40,7 +40,7 @@ public final class TestProbeCommandRegistration {
             return;
         }
         event.registerServerCommand(new TestProbeCommand());
-        // TASK-07: register the rocket-event recorder at server start so
+        // register the rocket-event recorder at server start so
         // counters are accurate from the first rocket lifecycle event.
         TestProbeCommand.RocketEventRecorder.ensureRegistered();
         AdvancedRocketry.logger.info("Registered /artest test-only probe commands (-D" + FLAG + "=true)");

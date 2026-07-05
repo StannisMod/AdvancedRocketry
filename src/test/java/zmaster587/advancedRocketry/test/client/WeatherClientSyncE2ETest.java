@@ -19,7 +19,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.20 — multi-planet weather isolation as exercised through a real
+ * multi-planet weather isolation as exercised through a real
  * Minecraft client.
  *
  * <p><b>What this validates end-to-end.</b> Two AR planets are pre-staged via

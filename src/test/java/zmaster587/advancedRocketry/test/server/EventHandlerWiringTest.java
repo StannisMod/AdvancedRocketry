@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -10,12 +10,12 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 1 (subset) — event-handler wiring smokes.
+ * event-handler wiring smokes.
  *
  * The full Phase 1 plan asks for deep PlanetEventHandler / RocketEventHandler
  * tests (player dim-change side effects, launch/land counters, etc.) which
  * need either a player entity injected via the harness or new probe verbs.
- * Those are deferred — see TASK-02 §"Phase 1" for the longer plan.
+ * Those are deferred.
  *
  * This file covers the two cheapest wiring assertions:
  *

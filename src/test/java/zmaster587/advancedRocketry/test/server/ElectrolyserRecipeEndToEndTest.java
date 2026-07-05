@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Electrolyser end-to-end recipe contract.
+ * Electrolyser end-to-end recipe contract.
  */
 public class ElectrolyserRecipeEndToEndTest extends AbstractSharedServerTest {
 

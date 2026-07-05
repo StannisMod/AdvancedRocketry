@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.15 — worldgen + ore generation.
+ * worldgen + ore generation.
  *
  * <ol>
  *   <li>Earth chunk (0,0) must have a non-air top block.</li>

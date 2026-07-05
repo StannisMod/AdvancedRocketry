@@ -11,7 +11,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 7 — SpaceArmor "use fluid" / air-drain behavioural pin.
+ * SpaceArmor "use fluid" / air-drain behavioural pin.
  *
  * <p>Closes the deferred suite from {@link OxygenSuitClientStateE2ETest}'s
  * docstring: that test pins the vacuum-damage path on a bare-skinned

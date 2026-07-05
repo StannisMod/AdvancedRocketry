@@ -6,8 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (Tier 2 #10) — {@code TileTerraformingTerminal}
- * smoke contracts.
+ * {@code TileTerraformingTerminal} smoke contracts.
  *
  * <p>The terraforming terminal is the player-facing block that takes
  * a BiomeChanger satellite chip in its inventory slot 0 and (under

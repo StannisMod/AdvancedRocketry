@@ -15,7 +15,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 3 (continuation, unit slice).
  *
  * {@link ItemAirUtils} stores the suit's remaining air as an NBT integer
  * on the stack. Pin the read/write/decrement/increment math:

@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40c (audit Gap J) — {@link
+ * {@link
  * zmaster587.advancedRocketry.item.components.ItemUpgrade} slot
  * eligibility dispatch by meta.
  *
@@ -25,7 +25,7 @@ import static org.junit.Assert.assertTrue;
  * regression that mixes the slot dispatch (e.g. a bootsUpgrade
  * landing in LEGS).</p>
  *
- * <p>NOT pinned (impl per SOP): the specific magic numbers (2, 3, 1)
+ * <p>NOT pinned: the specific magic numbers (2, 3, 1)
  * — only the slot-dispatch outcome matters. If a future refactor
  * renames metas, this test continues to check the outcome.</p>
  */

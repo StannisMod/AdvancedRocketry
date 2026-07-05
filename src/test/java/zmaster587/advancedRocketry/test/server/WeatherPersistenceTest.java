@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.6 + §12 (DoD #9) — weather state persists across a server restart
+ * weather state persists across a server restart
  * for AR planets (saved-data on the overworld MapStorage, keyed by dim id).
  *
  * Previously this test exercised the overworld (dim 0), which is intentionally

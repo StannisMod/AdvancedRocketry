@@ -53,7 +53,7 @@ public class KeyBindings {
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
     /** Tracks FF-gate transitions for [FF-TRACE] logging. */
     private boolean wasFreeFlightActive = false;
-    /** Camera-pin state for mouse-as-rate steering (TASK-46 D1): the player
+    /** Camera-pin state for mouse-as-rate steering: the player
      *  rotation we pinned at the end of the previous tick. Whatever the mouse
      *  added on top of it since is this tick's turn command. Static so the
      *  PosLook re-pin (see {@link #repinCameraAfterTeleport()}) can keep the
@@ -95,7 +95,7 @@ public class KeyBindings {
         return cameraPinValid;
     }
 
-    // ---- Engine-start ritual (TASK-46 D3) -------------------------------
+    // ---- Engine-start ritual -------------------------------
     /** Ticks the jump key must be held (pre-flight, FF mode) to start the engines. */
     public static final int ENGINE_START_HOLD_TICKS = 60;
     /** Client-side hold progress, 0..ENGINE_START_HOLD_TICKS. Published for the
@@ -260,7 +260,7 @@ public class KeyBindings {
         java.util.List<String> lines = new java.util.ArrayList<>();
         if (!inFlight) {
             lines.add(I18n.format("msg.ff.hud.title"));
-            // Engine state (TASK-46 D3): off → how to start; mid-hold → progress.
+            // Engine state: off → how to start; mid-hold → progress.
             if (engineStartHoldTicks > 0) {
                 lines.add(I18n.format("msg.ff.hud.engines.starting",
                         engineStartHoldTicks * 100 / ENGINE_START_HOLD_TICKS));
@@ -286,7 +286,7 @@ public class KeyBindings {
         lines.add(I18n.format("msg.ff.hud.brake",  key(gs.keyBindSneak)));
         lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle)));
 
-        // Per-axis vector readout (TASK-46 Phase 4): body-frame setpoint vs
+        // Per-axis vector readout: body-frame setpoint vs
         // actual velocity, blocks/tick — the textual twin of the graphic bars
         // (and what the client e2e reads). FA off shows the actual only.
         double[] act = FreeFlightPhysics.worldToBody(
@@ -338,7 +338,7 @@ public class KeyBindings {
         if (active != wasFreeFlightActive) {
             kbTrace("FF gate active=" + active + " (isFreeFlight=" + rocket.isFreeFlight()
                     + " isInFlight=" + rocket.isInFlight() + ")");
-            // Engine-state flash (TASK-46 D3): in FF, "in flight" IS "engines
+            // Engine-state flash: in FF, "in flight" IS "engines
             // on" — entering shows "Engines started", leaving (touchdown)
             // shows "Engines stopped".
             if (rocket.isFreeFlight()) {
@@ -357,7 +357,7 @@ public class KeyBindings {
             prevFlightCursorX = 0f;
             prevFlightCursorY = 0f;
 
-            // Engine-start ritual (TASK-46 D3): pre-flight in FF mode, hold
+            // Engine-start ritual: pre-flight in FF mode, hold
             // the jump key for ENGINE_START_HOLD_TICKS; releasing early
             // cancels. One ENGINE_START packet per completed hold — the
             // server validates (mode, fuel, climb authority) and starts.
@@ -402,7 +402,7 @@ public class KeyBindings {
         float vert = (flightVerticalUp.isKeyDown()   ?  1f : 0f)
                 + (flightVerticalDown.isKeyDown() ? -1f : 0f);
 
-        // ---- Mouse-as-rate steering + camera-nose lock (TASK-46 D1) --------
+        // ---- Mouse-as-rate steering + camera-nose lock --------
         // The look delta the mouse accumulated since the last camera pin IS
         // this tick's turn command: clamped to the craft turn rate (1:1 below
         // it, excess discarded — Elite-style rate limit), then the camera is
@@ -497,7 +497,7 @@ public class KeyBindings {
             if (Minecraft.getMinecraft().inGameHasFocus && player.equals(Minecraft.getMinecraft().player)) {
                 // Classic mode keeps the instant Space launch. Free Flight
                 // replaces it with the 3 s engine-start hold sampled per tick
-                // in onClientTick (TASK-46 D3) — no instant path there.
+                // in onClientTick — no instant path there.
                 if (!rocket.isInFlight()
                         && !rocket.isFreeFlight()
                         && Keyboard.getEventKey() == Keyboard.KEY_SPACE

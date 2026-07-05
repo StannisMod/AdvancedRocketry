@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.17 — pipe / network smoke for inter-tile energy transport.
+ * pipe / network smoke for inter-tile energy transport.
  *
  * <p>{@link PipeNetworkSmokeTest} pins down the single-block {@code
  * IEnergyStorage} contract on {@code libvulpes:forgepowerinput}. This scenario

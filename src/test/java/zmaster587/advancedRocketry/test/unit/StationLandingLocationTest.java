@@ -10,7 +10,6 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 8 (continuation, unit slice).
  *
  * {@link StationLandingLocation} is a value-ish data carrier used as the
  * key for station docking pads. Its {@code equals} is asymmetric on

@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * SMART §7.5 — weather baseline / B1 regression.
+ * weather baseline / B1 regression.
  *
  * Pre-writes a 2-planet fixture XML, sets rain on the overworld, observes both
  * AR planets. After the B1 Mixin weather wrapper landed, per-dimension weather

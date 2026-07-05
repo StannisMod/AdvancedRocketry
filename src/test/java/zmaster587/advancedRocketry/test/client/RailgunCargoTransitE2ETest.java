@@ -10,9 +10,8 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Issue #61 ("[BUG] Railgun does not work") — client e2e for the railgun
- * cargo-transit mechanic, the mandatory player-truth guard required by
- * {@code sops/development/bug-report-workflow.md}. Pins the FIXED behaviour
- * (TASK-49) with a REAL client connected.
+ * cargo-transit mechanic, the mandatory player-truth guard. Pins the FIXED
+ * behaviour with a REAL client connected.
  *
  * <p>The railgun is a paired item TELEPORT: a source railgun pulls a stack
  * from its input port and dispatches it to a linked destination railgun

@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-39 (Gap R) — TileSatelliteTerminal chip recognition + power gate +
+ * TileSatelliteTerminal chip recognition + power gate +
  * destructive erase button.
  *
  * <p>The Satellite Control Center (registry name
@@ -40,7 +40,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * {@code DimensionProperties} AND erases the chip's NBT (chip stays in
  * slot 0, but is now blank — {@code getSatelliteFromSlot(0) == null}).
  *
- * <p>Contracts pinned (player-/API-visible per SOP):
+ * <p>Contracts pinned:
  * <ul>
  *   <li><b>Chip + power → status 3.</b> A SatelliteOptical (a SatelliteData
  *       subclass) chip in slot 0 of a powered terminal on its dim reaches

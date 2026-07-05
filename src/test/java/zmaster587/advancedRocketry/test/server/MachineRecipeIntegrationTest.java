@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.7 — machine + recipe integration: full end-to-end recipe run.
+ * machine + recipe integration: full end-to-end recipe run.
  *
  * <ol>
  *   <li>{@code /artest fixture machine cutting} builds the multiblock fixture.</li>
@@ -94,7 +94,7 @@ public class MachineRecipeIntegrationTest extends AbstractHeadlessServerTest {
         // 2. Validate multiblock. Use the kit's retry helper — under
         //    parallel-fork pressure `attemptCompleteStructure` rarely loses
         //    the chunk-load + finalization race on the immediate first call
-        //    (TASK-16 shape #3).
+        //.
         String complete = MachineRecipeEndToEndKit.tryCompleteWithRetry(
                 client(), 0, cx, cy, cz);
         assertTrue("multiblock not complete: " + complete,

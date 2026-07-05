@@ -4,15 +4,14 @@ package zmaster587.advancedRocketry.test;
  * Shared constants for AR test fixtures. Keep values stable across runs so
  * snapshot/round-trip assertions stay deterministic.
  *
- * Naming follows §4 of the SMART test plan
- * ({@code advanced_rocketry_full_test_suite_smart.md}).
+ * Naming follows the project's test-naming convention.
  */
 public final class AdvancedRocketryTestConstants {
 
     /** Test-only system property gating /artest probe commands and other test hooks. */
     public static final String TEST_MODE_PROPERTY = "advancedrocketry.tests";
 
-    /** Deterministic world seed for any worldgen scenario (§9.3). */
+    /** Deterministic world seed for any worldgen scenario. */
     public static final long DETERMINISTIC_WORLD_SEED = 0x4151544553544CL; // "AQTESTL"
 
     /** Stable dimension ids the test fixtures assume. */

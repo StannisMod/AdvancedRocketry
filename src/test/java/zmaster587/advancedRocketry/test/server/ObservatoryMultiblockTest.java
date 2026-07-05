@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Observatory multiblock validation.
+ * Observatory multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileObservatory} is a
  * 5×5×5 sparse structure: 3×3 {@code blockStructureBlock} cap with glass-lens

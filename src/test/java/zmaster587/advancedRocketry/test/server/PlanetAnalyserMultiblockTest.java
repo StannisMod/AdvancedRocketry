@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Planet Analyser (TileAstrobodyDataProcessor) multiblock validation.
+ * Planet Analyser (TileAstrobodyDataProcessor) multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileAstrobodyDataProcessor}
  * — 2×2×3 small structure: top row of slabs with controller, bottom row with

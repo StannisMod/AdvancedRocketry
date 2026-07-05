@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Precision Laser Etcher end-to-end recipe contract.
+ * Precision Laser Etcher end-to-end recipe contract.
  */
 public class PrecisionLaserEtcherRecipeEndToEndTest extends AbstractSharedServerTest {
 

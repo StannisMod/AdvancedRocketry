@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-30 Gap 3 Phase 1 — EntityElevatorCapsule mount / dismount
+ * EntityElevatorCapsule mount / dismount
  * contracts.
  *
  * <p>Mirrors the methodological pattern from
@@ -32,7 +32,7 @@ import static org.junit.Assert.assertTrue;
  *   <li>{@code dismountRidingEntity()} clears the riding relationship.</li>
  * </ol>
  *
- * <p>Deferred (heavy fixture cost — see TASK-30 Phase deferrals):
+ * <p>Deferred (heavy fixture cost):
  * the full ascent/descent loop with stand-time accrual requires a
  * built and powered TileSpaceElevator multiblock tethered to a
  * peer in a different dimension on a station in geostationary

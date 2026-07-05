@@ -22,7 +22,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Two observable contracts, both pinned by lazily loading a planet under a
  * specific config and reading the probe's named {@code worldInfoClass} field
- * (per the artest-probe-authoring SOP). The flag is flipped at runtime BEFORE
+ *. The flag is flipped at runtime BEFORE
  * the fixture dim is ever loaded — wrapping is decided at dim load and is sticky
  * for the dim's lifetime, so the load order is what makes each case
  * deterministic.</p>

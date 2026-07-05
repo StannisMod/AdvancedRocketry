@@ -14,7 +14,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 4 — ItemJackHammer pure-function contracts.
+ * ItemJackHammer pure-function contracts.
  *
  * <p>The jackhammer is the player's pickaxe-tier mining tool for rock,
  * iron and ore materials. Pins:</p>
@@ -33,8 +33,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>The {@code onBlockStartBreak} / break-event path requires an
  * {@link net.minecraft.entity.player.EntityPlayer}; that surface is
- * deferred to the testClient e2e harness (TASK-10b) per the TASK-05
- * plan §"Technical Decisions".</p>
+ * deferred to the testClient e2e harness.</p>
  */
 public class JackHammerContractTest {
 

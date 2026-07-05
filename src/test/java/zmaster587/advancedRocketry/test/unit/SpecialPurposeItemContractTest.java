@@ -15,13 +15,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 5 — special-purpose item contracts (unit tier).
+ * special-purpose item contracts (unit tier).
  *
  * <p>Pins the surface that doesn't require a real EntityPlayer / world /
  * satellite. {@code onItemRightClick} and {@code useNetworkData} (which
  * call into a real satellite's {@code performAction}) live in the
- * testClient e2e harness (TASK-10b) per the TASK-05 plan §"Technical
- * Decisions".</p>
+ * testClient e2e harness.</p>
  *
  * <p>Scope:</p>
  * <ul>

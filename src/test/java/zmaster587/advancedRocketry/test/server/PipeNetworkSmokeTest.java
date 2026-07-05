@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.17 — energy / data / fluid network transport.
+ * energy / data / fluid network transport.
  *
  * Validates the Forge {@code IEnergyStorage} contract on
  * {@code libvulpes:forgepowerinput} — the foundation every pipe network proxies
@@ -67,7 +67,7 @@ public class PipeNetworkSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.17 — wireless transceiver pairing. Place two transceivers
+     * wireless transceiver pairing. Place two transceivers
      * 50 blocks apart, pair them via the probe (mirrors the player-side
      * linker-item flow), and confirm both end up on the same
      * {@code networkID}.
@@ -112,7 +112,7 @@ public class PipeNetworkSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.17 — inventory hatch accepts items and surfaces them via the
+     * inventory hatch accepts items and surfaces them via the
      * standard hatch read probe (same code path libVulpes machines use to
      * iterate input hatches). Round-trips the item through the hatch's
      * IInventory.
@@ -148,7 +148,7 @@ public class PipeNetworkSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.17 — fluid hatch accepts fluid via the standard fluid inject
+     * fluid hatch accepts fluid via the standard fluid inject
      * probe and surfaces it via fluid stored. AR registers a pressurised
      * tank (advancedrocketry:liquidTank) that exposes the fluid-handler
      * capability the same way libVulpes' fluid hatch does.

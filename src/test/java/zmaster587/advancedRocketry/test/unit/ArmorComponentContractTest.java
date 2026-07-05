@@ -14,7 +14,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (Tier 3 #11) — unit-tier contract for the
+ * Unit-tier contract for the
  * {@code IArmorComponent} surface that ItemJetpack and ItemPressureTank
  * implement.
  *

@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 Phase 4 — Black Hole Generator multiblock validation.
+ * Black Hole Generator multiblock validation.
  *
  * <p>Pins the production {@code TileBlackHoleGenerator.completeStructure}
  * path: with all blocks in place per the 5×3×3 structure

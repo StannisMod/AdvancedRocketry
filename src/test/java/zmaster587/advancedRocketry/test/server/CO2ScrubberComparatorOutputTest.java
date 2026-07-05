@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40c (audit Gap F.1) — TileCO2Scrubber's comparator output
+ * TileCO2Scrubber's comparator output
  * reflects the cartridge's remaining charge.
  *
  * <p>Production:
@@ -25,7 +25,7 @@ import static org.junit.Assert.assertTrue;
  *       (the player-visible "scrubber has fuel" signal).</li>
  * </ul>
  *
- * <p>NOT pinned (impl per SOP): the exact 32766 / 2184 / 2185 formula.
+ * <p>NOT pinned: the exact 32766 / 2184 / 2185 formula.
  * The constants are tuning, not contract.</p>
  */
 public class CO2ScrubberComparatorOutputTest extends AbstractSharedServerTest {

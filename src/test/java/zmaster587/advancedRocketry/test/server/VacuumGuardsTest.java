@@ -18,9 +18,9 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 4 — sleep and flint-and-steel guards in vacuum dims —
+ * sleep and flint-and-steel guards in vacuum dims —
  * server tier. Relabeled down the pyramid from the old client-harness
- * {@code VacuumGuardsE2ETest} per honest-client-e2e.md: the old test's own
+ * {@code VacuumGuardsE2ETest} the old test's own
  * javadoc said its probes were "synthetic event posts … sidestepping the
  * vanilla bed-right-click pre-checks" — that's a server-side handler
  * contract, and synthetic event posts ARE the honest stimulus at this tier.

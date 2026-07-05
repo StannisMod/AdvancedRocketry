@@ -16,7 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 8 — multi-boot harness for station landing-pad
+ * multi-boot harness for station landing-pad
  * persistence.
  *
  * Companion to {@link PersistenceRestartSmokeTest} (which covers station
@@ -199,7 +199,7 @@ public class SpaceStationPadPersistenceTest {
      *     !tag.hasKey("occupied") || tag.getBoolean("occupied"));  // read
      * </pre>
      *
-     * Fixed in TASK-12 (bug #4): the read now uses the "autoLand" key
+     * the read now uses the "autoLand" key
      * that the write side writes. allowAutoLand survives restart even
      * for pads that weren't docked at save time.
      */

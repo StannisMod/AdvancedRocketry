@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Contract pinning for the FF body-frame attitude quaternion (TASK-53 Phase 7)
+ * Contract pinning for the FF body-frame attitude quaternion
  * — the substrate that replaces the world-frame Euler triple so loops work and
  * the controls never invert relative to the pilot. NO Minecraft types here.
  *

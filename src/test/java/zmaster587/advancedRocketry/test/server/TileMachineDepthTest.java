@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 4 — tile-machine isolated coverage.
+ * tile-machine isolated coverage.
  *
  * Production previously had ZERO per-tile-class regression nets;
  * {@code MultiMachineControllerSmokeTest} touches assembler-style

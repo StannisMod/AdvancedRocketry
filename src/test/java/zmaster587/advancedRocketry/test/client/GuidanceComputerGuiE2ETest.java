@@ -9,7 +9,7 @@ import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.findS
 import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.openGuiByRightClick;
 
 /**
- * SMART §7.20 — deep client E2E for the guidance computer block.
+ * deep client E2E for the guidance computer block.
  *
  * <p>Right-clicks {@code advancedrocketry:guidanceComputer} to open its
  * libVulpes modular GUI, then drives a real inventory interaction through the

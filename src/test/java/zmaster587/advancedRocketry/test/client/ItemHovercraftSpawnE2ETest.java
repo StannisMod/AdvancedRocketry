@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10b Phase 7 — player-visible side of
+ * player-visible side of
  * {@link zmaster587.advancedRocketry.item.ItemHovercraft#onItemRightClick},
  * driven the way the player drives it: a REAL item right-click
  * ({@code ClientBot.useItem} → {@code CPacketPlayerTryUseItem}) with the look

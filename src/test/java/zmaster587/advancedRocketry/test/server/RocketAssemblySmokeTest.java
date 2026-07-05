@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.9 — rocket assembly smoke (P1).
+ * rocket assembly smoke (P1).
  *
  * <p>Builds the BuildRocketTest fixture geometry via {@code /artest fixture rocket},
  * calls {@code /artest rocket assemble} which synchronously runs scan +
@@ -39,7 +39,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #3 — storage chunk volume must match the bounding box the scan
+     * Storage chunk volume must match the bounding box the scan
      * computed from the launchpad + structure tower. The simple fixture's
      * rocket structure is 3 wide × 5 tall × 1 deep relative to the pad
      * centre, so the storage chunk size must be ≥ that volume (the bbCache
@@ -63,7 +63,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #2 — thrust from StatsRocket equals engineCount × per-engine thrust
+     * Thrust from StatsRocket equals engineCount × per-engine thrust
      * for the simple fixture (2 advRocketmotors). We don't pin the absolute
      * thrust value (it depends on AR's engine-tier config) but we assert the
      * post-assembly thrust is positive, weight is positive, and per-fuel-type
@@ -92,7 +92,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #4 — seat count must mirror the fixture's seat placement. Simple
+     * Seat count must mirror the fixture's seat placement. Simple
      * fixture has exactly one seat at (rocketX, rocketY+4, rocketZ).
      */
     @Test
@@ -104,7 +104,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #5 — engine count must reflect the 2 advRocketmotors placed by the
+     * Engine count must reflect the 2 advRocketmotors placed by the
      * simple fixture.
      */
     @Test
@@ -116,7 +116,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #6 — fuel tank count from the post-scan storage chunk must equal
+     * Fuel tank count from the post-scan storage chunk must equal
      * the 6 fuelTank blocks the fixture places (3 wide × 2 tall column).
      */
     @Test
@@ -128,7 +128,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #7 — guidance-computer slot acceptance. Simple fixture places the
+     * Guidance-computer slot acceptance. Simple fixture places the
      * guidance computer but does NOT insert a chip — slot is empty. (Inserting
      * a chip would route through item registry + hatch fill, but the
      * baseline behaviour we lock down here is that the slot is wired up and
@@ -147,7 +147,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #8 — invalid rocket: no engines. scanRocket must surface
+     * Invalid rocket: no engines. scanRocket must surface
      * {@code NOENGINES} (or any non-SUCCESS status) instead of spawning a
      * rocket entity.
      */
@@ -179,13 +179,13 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * §7.9 #9 — invalid rocket: no seat. Production scanRocket does NOT
+     * Invalid rocket: no seat. Production scanRocket does NOT
      * enforce seat presence — the ErrorCodes enum declares NOSEAT but the
      * scan logic at TileRocketAssemblingMachine#scanRocket only checks
      * guidance, thrust, and fuel. We document that observable behaviour
      * here: a seatless fixture assembles successfully and reports
-     * {@code seatCount=0}. Renamed from the SMART
-     * {@code _FailsAssemblyWithReason} bullet to match real behaviour;
+     * {@code seatCount=0}. Named to match real behaviour rather than the
+     * expected-failure case;
      * if the production code later starts enforcing seat presence, this
      * test will start failing and force a re-evaluation of the contract.
      */

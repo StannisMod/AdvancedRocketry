@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-18 — Centrifuge end-to-end recipe contract.
+ * Centrifuge end-to-end recipe contract.
  *
  * <p>Centrifuge differs from other industrial machines because its
  * registered recipes can SHARE fluid inputs (multiple recipes consume
@@ -13,7 +13,7 @@ import static org.junit.Assert.assertTrue;
  * {@code runFirstRecipeEndToEnd} pins the expected output to
  * {@code recipe-info 0} (registration index), but production picks at
  * runtime via its own iteration order which is observed to differ from
- * the probe across runs (TASK-28 F3). Pinning identity flakes 10-30 % of
+ * the probe across runs. Pinning identity flakes 10-30 % of
  * runs while the actual contract — "fluid input gets consumed and an
  * output item appears" — is preserved on every run.
  *

@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.5 FuelRegistry.
+ * FuelRegistry.
  *
  * Pure logic — uses raw {@link Fluid} instances (no FluidRegistry / item registry
  * required). The registry holds entries inside enum constants, so each test must

@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Chemical Reactor end-to-end recipe contract.
+ * Chemical Reactor end-to-end recipe contract.
  */
 public class ChemicalReactorRecipeEndToEndTest extends AbstractSharedServerTest {
 

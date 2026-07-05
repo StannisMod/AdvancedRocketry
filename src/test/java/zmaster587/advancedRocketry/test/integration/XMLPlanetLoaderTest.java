@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * §6.1 XML planet definitions — deep parsing path that needs
+ * XML planet definitions — deep parsing path that needs
  * {@link MinecraftBootstrap#ensure()}.
  *
  * <p>The simple {@code loadFile}/{@code isValid} sanity checks live in
@@ -233,7 +233,7 @@ public class XMLPlanetLoaderTest {
     // ---- Write → read full round-trip ---------------------------------------
 
     /**
-     * §6.1 #10 — writeXML produces XML that readAllPlanets parses back into a
+     * writeXML produces XML that readAllPlanets parses back into a
      * DimensionProperties carrying every field we wrote.
      *
      * Production save path: AR writes planet definitions to

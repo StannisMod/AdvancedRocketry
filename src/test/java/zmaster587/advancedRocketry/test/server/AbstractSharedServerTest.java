@@ -8,7 +8,7 @@ import org.junit.Assume;
 import org.junit.BeforeClass;
 
 /**
- * SMART §7 — TASK-03 B1 — class-scoped harness lifecycle base class.
+ * class-scoped harness lifecycle base class.
  *
  * <p>{@link AbstractHeadlessServerTest} starts a fresh dedicated-server JVM
  * per {@code @Test} method (its {@code @Before}/{@code @After} lifecycle).

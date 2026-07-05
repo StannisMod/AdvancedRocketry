@@ -129,14 +129,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Boolean> INSPACEFLIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.BOOLEAN);
     private static final DataParameter<Boolean> RCS_MODE = EntityDataManager.createKey(EntityRocket.class, DataSerializers.BOOLEAN);
     private static final DataParameter<Integer> LAUNCH_COUNTER = EntityDataManager.createKey(EntityRocket.class, DataSerializers.VARINT);
-    // Flight Assist velocity setpoint (TASK-46 D4), body frame (fwd/right/up),
+    // Flight Assist velocity setpoint, body frame (fwd/right/up),
     // blocks/tick. Server-authoritative; replicated so the HUD can render
     // setpoint-vs-actual bars.
     private static final DataParameter<Float> FA_SP_FWD   = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_RIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_UP    = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
-    /** FF body-frame attitude quaternion (w, x, y, z), body→world (TASK-53
-     *  Phase 7). Replicated as four full-precision floats — NOT the byte-quantised
+    /** FF body-frame attitude quaternion (w, x, y, z), body→world.
+     *  Replicated as four full-precision floats — NOT the byte-quantised
      *  yaw/pitch tracker or a single roll float — so the client has the complete,
      *  pole-free orientation. This is the FF attitude source of truth: loops and
      *  inversions have no gimbal lock, and the camera/render/seat derive from it. */
@@ -183,7 +183,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     //       below is opt-in and bypassed entirely when classic) -----
     private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
     private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
-    /** FF attitude source of truth (body→world quaternion, TASK-53 Phase 7).
+    /** FF attitude source of truth (body→world quaternion).
      *  Integrated by BODY rates on the server; on the client it is the smoothed
      *  local estimate (predict from input + slerp toward the replicated
      *  {@link #FF_QW}/QX/QY/QZ). prev tracks the last tick for render slerp. */
@@ -200,7 +200,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private transient boolean freeFlightLandedLatched = false;
     /** Ticks elapsed since the last startFreeFlight() — harness-only debug telemetry. */
     private transient int freeFlightTicksSinceStart = 0;
-    /** Engine-start liftoff target (TASK-46 D3): hover altitude the craft eases
+    /** Engine-start liftoff target: hover altitude the craft eases
      *  onto after the engines start; NaN once the pilot takes over translation. */
     private double ffLiftoffTargetY = Double.NaN;
     /** Arms the landing detector: false from engine start until the craft first
@@ -927,7 +927,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     /** Persistent flight-assist toggle. Server-side authority only.
      *  Re-enabling FA mid-flight captures the CURRENT velocity (projected into
      *  the body frame) as the setpoint, so the toggle never jerks the craft
-     *  (TASK-46 D4 — Elite behaviour); disabling zeroes the setpoint. */
+     *; disabling zeroes the setpoint. */
     public void setFlightAssistOn(boolean on) {
         if (!world.isRemote && on != this.flightAssistOn && isFreeFlight()) {
             if (on && isInFlight()) {
@@ -944,7 +944,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     }
 
     /**
-     * Start the Free Flight engines (TASK-46 D3). Sets isInFlight, resets the
+     * Start the Free Flight engines. Sets isInFlight, resets the
      * latched-landed flag, zeros input so the rocket doesn't inherit stale
      * intent, and arms the liftoff assist: the craft eases ~1 block off the
      * pad and hovers there until the pilot takes over (no decaying takeoff
@@ -1044,7 +1044,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // the classic thrust-to-weight gate (TWR > 1). No invented /10000 scale.
         double thrustMag = stats.getAcceleration(gravMult) + gravity;
 
-        // Engine-start liftoff (TASK-46 D3): until the pilot first gives any
+        // Engine-start liftoff: until the pilot first gives any
         // translation input, ease onto the hover point ~1 block above the pad
         // (orientation channels stay live through the regular step below it).
         FreeFlightInput in = this.currentFreeFlightInput == null
@@ -1078,7 +1078,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     this.motionX, this.motionY, this.motionZ,
                     0f, 0f, thrustMag);
         } else if (this.flightAssistOn) {
-            // Flight Assist (TASK-46 D4): translation keys edit the body-frame
+            // Flight Assist: translation keys edit the body-frame
             // velocity SETPOINT (release keeps it; X zeroes it); FA computes the
             // thrust that tracks it in the freshly-integrated attitude frame.
             double[] sp = FreeFlightPhysics.rampSetpoint(
@@ -1153,8 +1153,8 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Apply motion to the world.
         this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
 
-        // Landing: ground contact + slow vertical motion → engines off (TASK-46
-        // D3: touchdown auto-shutdown). The detector arms only once the craft
+        // Landing: ground contact + slow vertical motion → engines off
+        // (touchdown auto-shutdown). The detector arms only once the craft
         // has actually left the ground, so the engine-start hover can never
         // read as a touchdown — no timed grace window needed.
         if (!freeFlightHasLeftGround && !this.onGround) {
@@ -1175,7 +1175,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             this.motionX = 0;
             this.motionY = 0;
             this.motionZ = 0;
-            this.setInFlight(false); // touchdown = engines off (TASK-46 D3)
+            this.setInFlight(false); // touchdown = engines off
             this.setInOrbit(false);
             this.currentFreeFlightInput = FreeFlightInput.zero();
             this.freeFlightLandedLatched = true;
@@ -1268,7 +1268,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.register(FF_ENGINE_POWER, 0f);
     }
 
-    // ---- Flight Assist setpoint accessors (TASK-46 D4) -------------------
+    // ---- Flight Assist setpoint accessors -------------------
 
     public float getFaSetpointForward() { return this.dataManager.get(FA_SP_FWD); }
     public float getFaSetpointRight()   { return this.dataManager.get(FA_SP_RIGHT); }
@@ -3017,7 +3017,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
         flightMode = RocketFlightMode.readFromNBT(nbt);
-        // FF attitude quaternion (TASK-53 Phase 7). Missing key (older save /
+        // FF attitude quaternion. Missing key (older save /
         // never-flown rocket) → upright identity; the pilot re-orients in flight.
         if (nbt.hasKey("ffQuatW")) {
             ffQuat = new FreeFlightPhysics.Quat(nbt.getFloat("ffQuatW"), nbt.getFloat("ffQuatX"),
@@ -3036,12 +3036,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
         // Flight Assist default ON for missing-key (legacy) saves.
         flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
-        // Engine-start liftoff state (TASK-46 D3); missing keys (legacy saves)
+        // Engine-start liftoff state; missing keys (legacy saves)
         // → assist inactive + landing detector armed, i.e. plain in-flight.
         ffLiftoffTargetY = nbt.hasKey("ffLiftoffTargetY")
                 ? nbt.getDouble("ffLiftoffTargetY") : Double.NaN;
         freeFlightHasLeftGround = !nbt.hasKey("ffHasLeftGround") || nbt.getBoolean("ffHasLeftGround");
-        // FA velocity setpoint (TASK-46 D4); missing keys → zero (hover intent).
+        // FA velocity setpoint; missing keys → zero (hover intent).
         setFaSetpoint(nbt.getFloat("faSetpointFwd"),
                 nbt.getFloat("faSetpointRight"),
                 nbt.getFloat("faSetpointUp"));
@@ -3092,7 +3092,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Free Flight Mode — written unconditionally so the field round-trips
         // even when toggled to CLASSIC_LAUNCH (avoids "is missing key == default" ambiguity).
         RocketFlightMode.writeToNBT(nbt, flightMode);
-        // FF attitude quaternion (TASK-53 Phase 7) — the source of truth; the
+        // FF attitude quaternion — the source of truth; the
         // Euler freeFlightPitch/Roll are derived and no longer persisted.
         FreeFlightPhysics.Quat wq = ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
         nbt.setFloat("ffQuatW", (float) wq.w);
@@ -3389,7 +3389,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal() && world.isRemote) {
             this.flightAssistOn = nbt.getBoolean("flightAssistOn");
         } else if (id == PacketType.ENGINE_START.ordinal() && !world.isRemote) {
-            // Engine-start ritual (TASK-46 D3). Authority: a passenger of THIS
+            // Engine-start ritual. Authority: a passenger of THIS
             // rocket, FF mode, not already flying. Gate mirrors the classic
             // launch (fuel available AND positive climb authority, TWR > 1) via
             // the shared canStartFreeFlight() check — a craft that can't lift
@@ -3849,7 +3849,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         SET_FLIGHT_MODE,
         FREE_FLIGHT_INPUT,
         SET_FLIGHT_ASSIST,
-        /** Client→server: the pilot completed the 3 s engine-start hold (TASK-46 D3). No payload. */
+        /** Client→server: the pilot completed the 3 s engine-start hold. No payload. */
         ENGINE_START
     }
 }

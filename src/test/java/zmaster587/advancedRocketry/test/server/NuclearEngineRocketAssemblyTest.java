@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-37 (Gap P) — nuclear-engine rocket assembly thrust aggregation.
+ * nuclear-engine rocket assembly thrust aggregation.
  *
  * <p>The nuclear engine family — {@link
  * zmaster587.advancedRocketry.block.BlockNuclearRocketMotor},

@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-19 Phase 1a — terraformer powered cycle on an AR-native planet.
+ * terraformer powered cycle on an AR-native planet.
  *
  * <p>Pins the <b>native-dim branch</b> of {@code TileAtmosphereTerraformer
  * .processComplete()}'s gate:</p>

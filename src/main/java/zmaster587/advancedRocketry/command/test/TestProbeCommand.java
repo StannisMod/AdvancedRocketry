@@ -39,7 +39,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Test-only {@code /artest} command tree (SMART §5).
+ * Test-only {@code /artest} command tree.
  *
  * <p>Registered ONLY when system property {@code advancedrocketry.tests=true}
  * is present (see {@code AdvancedRocketry#serverStarting} dispatch). Commands
@@ -228,7 +228,7 @@ public class TestProbeCommand extends CommandBase {
         }
     }
 
-    // §5.1 Registry probes -----------------------------------------------------
+    // Registry probes -----------------------------------------------------
 
     private void handleRegistry(ICommandSender sender, String[] args) {
         if (args.length == 0 || "summary".equalsIgnoreCase(args[0])) {
@@ -250,7 +250,7 @@ public class TestProbeCommand extends CommandBase {
         return registry == null ? -1L : registry.getKeys().size();
     }
 
-    // §5.2 Dimension probes ----------------------------------------------------
+    // Dimension probes ----------------------------------------------------
 
     private void handleDim(ICommandSender sender, String[] args) {
         if (args.length == 0 || "list".equalsIgnoreCase(args[0])) {
@@ -274,7 +274,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if ("time".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // Per-dimension clock readout — worldTime is per-dim on AR planets
-            // (ARDimensionWorldInfo, TASK-47), so this is the probe that can
+            // (ARDimensionWorldInfo), so this is the probe that can
             // tell a planet's clock apart from the overworld's. Lazily loads +
             // pins the dim like the weather probes, so a fresh dim can be read.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -387,7 +387,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown dim subcommand\"}");
     }
 
-    // §5.3 Planet/weather probes ----------------------------------------------
+    // Planet/weather probes ----------------------------------------------
 
     private void handlePlanet(ICommandSender sender, String[] args) {
         if (args.length >= 2 && "info".equalsIgnoreCase(args[0])) {
@@ -558,7 +558,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown weather subcommand\"}");
     }
 
-    // §5.5 Rocket probes ------------------------------------------------------
+    // Rocket probes ------------------------------------------------------
 
     private void handleRocket(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0 || "list".equalsIgnoreCase(args[0])) {
@@ -657,7 +657,7 @@ public class TestProbeCommand extends CommandBase {
             // /artest rocket set-destination <entityId> <dimId> — programs
             // the rocket's guidance computer chip so production launch()
             // can route to the destination. Needed for the rocket-launch
-            // depth tests (TASK-03 A1): without a programmed destination,
+            // depth tests: without a programmed destination,
             // rocket.launch() bails with "error.rocket.cannotGetThere"
             // and isInFlight stays false.
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -691,7 +691,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if ("force-orbit-reached".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // /artest rocket force-orbit-reached <entityId> — invokes the
-            // production EntityRocketBase.onOrbitReached. TASK-07 A2 cause-
+            // production EntityRocketBase.onOrbitReached. Cause-
             // effect: this fires RocketReachesOrbitEvent and (if rocket is
             // in spaceDim on a station pad) calls station.setPadStatus(false).
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -805,7 +805,7 @@ public class TestProbeCommand extends CommandBase {
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("entityId", rocket.getEntityId());
             info.put("uuid", rocket.getPersistentID().toString());
-            // TASK-22 — exact entity class FQN, used to distinguish
+            // exact entity class FQN, used to distinguish
             // EntityRocket (rocket-assembler output) from
             // EntityStationDeployedRocket (UV-assembler output). Both
             // are valid types in this probe surface because the latter
@@ -858,7 +858,7 @@ public class TestProbeCommand extends CommandBase {
             // Engine power [0,1] driving the client engine sound — thrust-magnitude
             // based in FF (sounds for thrust in ANY direction, incl. hover).
             info.put("enginePower", rocket.getEnginePower());
-            // FA velocity setpoint (TASK-46 D4), body frame, blocks/tick.
+            // FA velocity setpoint, body frame, blocks/tick.
             info.put("faSetpointFwd",   rocket.getFaSetpointForward());
             info.put("faSetpointRight", rocket.getFaSetpointRight());
             info.put("faSetpointUp",    rocket.getFaSetpointUp());
@@ -969,7 +969,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("thrust", rocket.stats.getThrust());
             info.put("weight_no_fuel", rocket.stats.getWeight_NoFuel());
             info.put("breakingProb", rocket.storage.getBreakingProbability());
-            // TASK-37/TASK-38 — expose stats fields that aggregate per-block
+            // expose stats fields that aggregate per-block
             // contributions during scanRocket. drillingPower sums every
             // IMiningDrill.getMiningSpeed(); thrust above already reflects
             // nuclear-engine cohesion (thrust > 0 iff at least one nuclear
@@ -981,7 +981,7 @@ public class TestProbeCommand extends CommandBase {
         if ("storage-inventory".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // rocket storage-inventory <entityId> — flat dump of every item
             // stack across every IInventory tile inside the rocket's storage
-            // chunk. Used by §7.10 loader/unloader tests to verify the
+            // chunk. Used by loader/unloader tests to verify the
             // transfer ended up in the rocket's cargo hatches.
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
             EntityRocket rocket = findRocket(server, entityId);
@@ -1019,7 +1019,7 @@ public class TestProbeCommand extends CommandBase {
         if ("storage-fluid".equalsIgnoreCase(args[0]) && args.length >= 2) {
             // rocket storage-fluid <entityId> — flat dump of every fluid
             // stack across every fluid-handler tile inside storage. Used by
-            // §7.10 fluid loader/unloader tests.
+            // fluid loader/unloader tests.
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
             EntityRocket rocket = findRocket(server, entityId);
             if (rocket == null) {
@@ -1060,7 +1060,7 @@ public class TestProbeCommand extends CommandBase {
         if ("storage-fluid-fill".equalsIgnoreCase(args[0]) && args.length >= 4) {
             // /artest rocket storage-fluid-fill <entityId> <fluidName> <amount>
             //
-            // TASK-34 — iterate the rocket's StorageChunk.getFluidTiles()
+            // iterate the rocket's StorageChunk.getFluidTiles
             // and fill each one with up to <amount> mB of <fluidName> via
             // the FLUID_HANDLER_CAPABILITY. Returns the total amount
             // actually filled across all tiles + per-tile count.
@@ -1104,7 +1104,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("storage-item-fill".equalsIgnoreCase(args[0]) && args.length >= 4) {
-            // TASK-40 Gap E — mirror of `storage-fluid-fill` for items.
+            // mirror of `storage-fluid-fill` for items.
             // Iterates rocket.storage.getInventoryTiles() and inserts up to
             // <count> items of <itemRegistryName> into the first slot that
             // accepts them, via ITEM_HANDLER_CAPABILITY (UP facing, matching
@@ -1191,7 +1191,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("find-by-uuid".equalsIgnoreCase(args[0]) && args.length >= 2) {
-            // TASK-07 Phase 3: find a rocket by its persistent UUID across all
+            // find a rocket by its persistent UUID across all
             // loaded dimensions. Needed after EntityRocket.changeDimension()
             // because that respawns the entity in the destination world with
             // a NEW entityId, but UUID is preserved (Forge Entity contract).
@@ -1253,7 +1253,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("force-dest-dim".equalsIgnoreCase(args[0]) && args.length >= 3) {
-            // TASK-07 Phase 3: directly mutate EntityRocket.destinationDimId
+            // directly mutate EntityRocket.destinationDimId
             // via reflection, bypassing launch()'s canTravelTo validation.
             // Required for the invalid-dim test — we need a rocket with a
             // bogus destination so onOrbitReached -> reachSpaceManned ->
@@ -1278,7 +1278,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("tick".equalsIgnoreCase(args[0]) && args.length >= 2) {
-            // TASK-07 Phase 4: directly call EntityRocket.onUpdate() N times.
+            // directly call EntityRocket.onUpdate N times.
             // The headless test server only ticks chunks that hold a player;
             // without a chunk anchor the rocket entity sits frozen. Calling
             // onUpdate() explicitly drives the descent-timer gate, motion
@@ -1310,7 +1310,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("set-state".equalsIgnoreCase(args[0]) && args.length >= 2) {
-            // TASK-07 Phase 4: direct state mutation. Accepts key=value pairs:
+            // direct state mutation. Accepts key=value pairs:
             //   orbit=true|false   -> setInOrbit
             //   flight=true|false  -> setInFlight
             //   ticksExisted=<n>   -> set rocket.ticksExisted directly
@@ -1396,7 +1396,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("explode".equalsIgnoreCase(args[0]) && args.length >= 2) {
-            // TASK-07 Phase 5: invoke production EntityRocket.explode().
+            // invoke production EntityRocket.explode.
             // The current production code calls explode() from launch() iff
             // partsWearSystem && storage.shouldBreak(). Tests pin: the
             // method sets the entity dead.
@@ -1417,7 +1417,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("drain-fuel".equalsIgnoreCase(args[0]) && args.length >= 2) {
-            // TASK-07 Phase 5: zero out every fuel type on the rocket.
+            // zero out every fuel type on the rocket.
             // Companion to the (already existing) rocket fuel probe which
             // reads amounts; this is the write side.
             int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -1434,7 +1434,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("event-counts-full".equalsIgnoreCase(args[0])) {
-            // TASK-07 Phase 4: extended counter dump including landed + deOrbiting.
+            // extended counter dump including landed + deOrbiting.
             RocketEventRecorder.ensureRegistered();
             send(sender, "{\"launch\":" + RocketEventRecorder.launchCount
                     + ",\"preLaunch\":" + RocketEventRecorder.preLaunchCount
@@ -1642,7 +1642,7 @@ public class TestProbeCommand extends CommandBase {
      * pinning their relative magnitude (rocket > UV) catches a regression
      * that swaps or unifies the caps.</p>
      *
-     * <p>Used by TASK-22 to observe the {@code MAX_SIZE_Y} delta:
+     * <p>Observes the {@code MAX_SIZE_Y} delta:
      * rocket assembler caps at 128, UV caps at 17.</p>
      */
     /**
@@ -1694,7 +1694,7 @@ public class TestProbeCommand extends CommandBase {
             int asmCount = (asmList instanceof java.util.Collection<?>)
                     ? ((java.util.Collection<?>) asmList).size() : -1;
             info.put("assemblersCount", asmCount);
-            // TASK-36b deep — count non-null partsProcessing slots so the
+            // count non-null partsProcessing slots so the
             // full-repair-cycle test can pin the consumePartToRepair side-
             // effect (part moves from partsToRepair to partsProcessing[i]).
             java.lang.reflect.Field procF = tile.getClass().getDeclaredField("partsProcessing");
@@ -1932,7 +1932,7 @@ public class TestProbeCommand extends CommandBase {
         return null;
     }
 
-    // §5.6 Station probes -----------------------------------------------------
+    // Station probes -----------------------------------------------------
 
     private void handleStation(ICommandSender sender, String[] args) {
         if (args.length >= 2 && "create".equalsIgnoreCase(args[0])) {
@@ -2040,7 +2040,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("hasFreePad", sso.hasFreeLandingPad());
                 info.put("hasWarpCores", sso.hasWarpCores);
                 info.put("hasUsableWarpCore", sso.hasUsableWarpCore());
-                // TASK-30 — surface the live state that the station
+                // surface the live state that the station
                 // controllers' update() loops walk toward their target.
                 info.put("targetOrbitalDistance", sso.targetOrbitalDistance);
                 info.put("gravity", station.getProperties().getGravitationalMultiplier());
@@ -2258,7 +2258,7 @@ public class TestProbeCommand extends CommandBase {
         if ("controller-set-target".equalsIgnoreCase(args[0]) && args.length >= 7) {
             // /artest station controller-set-target <dim> <x> <y> <z> <id> <value>
             //
-            // TASK-30 — drive the production setter pathway on one of the
+            // drive the production setter pathway on one of the
             // three station controllers (TileStationAltitudeController /
             // GravityController / OrientationController). The tile
             // implements ISliderBar.setProgress(id, value) which writes
@@ -2306,7 +2306,7 @@ public class TestProbeCommand extends CommandBase {
                 + "controller-set-target <dim> <x> <y> <z> <id> <value>\"}");
     }
 
-    // §5.6 Satellite probes ---------------------------------------------------
+    // Satellite probes ---------------------------------------------------
 
     private void handleSatellite(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 3 && "create".equalsIgnoreCase(args[0])) {
@@ -3116,7 +3116,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * §7.12 — satellite-builder synthesis.
+     * Satellite-builder synthesis.
      *
      * <p>{@code /artest satellite-builder build <dim> <typeId>} — mirrors
      * {@link zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder#assembleSatellite}'s
@@ -3130,7 +3130,7 @@ public class TestProbeCommand extends CommandBase {
      */
     private void handleSatelliteBuilder(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 6 && "press-build".equalsIgnoreCase(args[0])) {
-            // TASK-33 — exercise the REAL TileSatelliteBuilder GUI path:
+            // exercise the REAL TileSatelliteBuilder GUI path:
             // place required items in the four critical slots, then invoke
             // onInventoryButtonPressed(0) (the "Build" button at modules
             // ModuleButton(0) in getModules). This is the path a player
@@ -3345,7 +3345,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * TASK-39 (Gap R) — TileSatelliteTerminal probe.
+     * TileSatelliteTerminal probe.
      *
      * <p>The Satellite Control Center reads the chip in slot 0 + the local
      * energy buffer and surfaces a 4-tier status to the GUI on the client
@@ -3614,7 +3614,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * §7.17 — wireless transceiver probes.
+     * Wireless transceiver probes.
      *
      * <p>{@code /artest pipe wireless-pair <dim> <x1> <y1> <z1> <x2> <y2> <z2>}
      * — drives the same network-merge logic
@@ -3890,7 +3890,7 @@ public class TestProbeCommand extends CommandBase {
         return false;
     }
 
-    // §5.7 Atmosphere probe ---------------------------------------------------
+    // Atmosphere probe ---------------------------------------------------
 
     private void handleAtmosphere(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 5 && "get".equalsIgnoreCase(args[0])) {
@@ -3975,7 +3975,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("cached-for-player".equalsIgnoreCase(args[0])) {
-            // TASK-10b — read AtmosphereHandler.prevAtmosphere via reflection
+            // read AtmosphereHandler.prevAtmosphere via reflection
             // so tests can assert dim-change cache invalidation. The map
             // is private static HashMap<EntityPlayer, IAtmosphere>, keyed
             // by reference; we report the current cached IAtmosphere
@@ -4181,7 +4181,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown atmosphere subcommand — try get <dim> <x> <y> <z> | set-density <dim> <value> | detector-output <dim> <x> <y> <z> | detector-set-mode <dim> <x> <y> <z> <atmName> | extinguish-at <dim> <x> <y> <z> | torch-block-add <blockId> | torch-block-clear\"}");
     }
 
-    // §5.7 Oxygen probe -------------------------------------------------------
+    // Oxygen probe -------------------------------------------------------
 
     private void handleOxygen(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 2 && "player".equalsIgnoreCase(args[0])) {
@@ -4212,7 +4212,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown oxygen subcommand — try player <name>\"}");
     }
 
-    // §5.4 Machine probes -----------------------------------------------------
+    // Machine probes -----------------------------------------------------
 
     private void handleMachine(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 6 && "tick-until".equalsIgnoreCase(args[0])) {
@@ -4294,7 +4294,7 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 5 && "controller-state".equalsIgnoreCase(args[0])) {
             // controller-state <dim> <x> <y> <z> — reflective dump of libVulpes
             // multiblock controller internals: aggregated battery energy and
-            // fluidInPorts count. Used by TASK-19 powered-cycle tests to
+            // fluidInPorts count. Used by powered-cycle tests to
             // verify that integrateTile() actually wired up the structure's
             // P/L hatches (separate from whether `artest energy inject` /
             // `artest fluid inject` lands on the individual hatch tiles).
@@ -4366,7 +4366,7 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 5 && "clear-batteries".equalsIgnoreCase(args[0])) {
             // clear-batteries <dim> <x> <y> <z> — empties the libVulpes
             // MultiBattery aggregator on the controller via reflection.
-            // Used by TASK-19 counter-tests to disable the "infinite power"
+            // Used by counter-tests to disable the "infinite power"
             // that creative input plugs (default mapping for 'P') provide.
             // Plugs stay placed; only the controller-side aggregator is
             // cleared, so hasEnergy() returns false on subsequent ticks.
@@ -4575,7 +4575,7 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        // TASK-25 — same shape as `recipe-info` above but takes an arbitrary
+        // same shape as `recipe-info` above but takes an arbitrary
         // class FQN. Used by classes outside `tile.multiblock.machine.*`
         // (notably `BlockSmallPlatePress`, whose recipes are registered
         // against its block class).
@@ -4644,7 +4644,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 1 && "recipes-summary".equalsIgnoreCase(args[0])) {
             // Report recipe counts for every canonical AR multiblock recipe machine
-            // (SMART §7.7). Uses libVulpes' RecipesMachine singleton.
+            // Uses libVulpes' RecipesMachine singleton.
             String[] machines = {
                     "zmaster587.advancedRocketry.tile.multiblock.machine.TileCuttingMachine",
                     "zmaster587.advancedRocketry.tile.multiblock.machine.TilePrecisionAssembler",
@@ -4813,7 +4813,7 @@ public class TestProbeCommand extends CommandBase {
                 + escapeJson(String.valueOf(lastSeen)) + "\"}");
     }
 
-    // §5.7b ARConfiguration set/get probe (TASK-19 Phase 1b) ----------------
+    // ARConfiguration set/get probe ----------------
 
     /**
      * Whitelist of mutable {@link zmaster587.advancedRocketry.api.ARConfiguration}
@@ -4823,17 +4823,17 @@ public class TestProbeCommand extends CommandBase {
      * tests currently need to flip:
      *
      * <ul>
-     *   <li>{@code allowTerraformNonAR} — TASK-19 Phase 1b, exercise the
+     *   <li>{@code allowTerraformNonAR} — exercise the
      *       non-AR-planet branch of
      *       {@code TileAtmosphereTerraformer.processComplete}.</li>
      *   <li>{@code terraformRequiresFluid} — reserved for future
      *       fluid-bypass tests; not currently used.</li>
-     *   <li>{@code oxygenVentSize} — Gap S, shrink the O2-vent blob cap
+     *   <li>{@code oxygenVentSize} — shrink the O2-vent blob cap
      *       so a sealed space larger than the cap can be built cheaply,
      *       exercising the max-radius/volume enforcement in
      *       {@code AtmosphereBlob.fillAtmosphere} ({@code getBlobMaxRadius()}
      *       is read live, so a runtime flip takes effect on the next seal).</li>
-     *   <li>{@code atmosphereHandleBitMask} — Gap S, pin the fill algorithm
+     *   <li>{@code atmosphereHandleBitMask} — pin the fill algorithm
      *       to a deterministic mode (e.g. {@code 0} = synchronous,
      *       radius-based) so the cap-enforcement assertion isn't subject to
      *       the default threaded-volume fill's timing.</li>
@@ -4848,7 +4848,7 @@ public class TestProbeCommand extends CommandBase {
                     "terraformRequiresFluid",
                     "oxygenVentSize",
                     "atmosphereHandleBitMask",
-                    // Disableability-contract tests (TASK-46): toggle each opt-in
+                    // Disableability-contract tests: toggle each opt-in
                     // mechanic and its tuning knobs from the test JVM.
                     "advancedWeightSystem",
                     "minLaunchTWR",
@@ -4955,12 +4955,12 @@ public class TestProbeCommand extends CommandBase {
         return sb.toString();
     }
 
-    // §5.7c Star (StellarBody) probe (TASK-19 Phase 2) ----------------------
+    // Star (StellarBody) probe ----------------------
 
     /**
      * {@code /artest star <get|set-blackhole> <starId> [value]} — reads or
      * mutates a {@link zmaster587.advancedRocketry.api.dimension.solar.StellarBody}'s
-     * black-hole flag via reflection. Used by TASK-19 Phase 2 to flip the
+     * black-hole flag via reflection. Used to flip the
      * default Sol star (id 0) into a black hole so a station orbiting it
      * satisfies {@code TileBlackHoleGenerator.isAroundBlackHole()}.
      *
@@ -5004,7 +5004,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown subcommand — try get <starId> | set-blackhole <starId> <true|false>\"}");
     }
 
-    // §5.8 Terraforming probe -------------------------------------------------
+    // Terraforming probe -------------------------------------------------
 
     private void handleTerraforming(ICommandSender sender, String[] args) {
         if (args.length >= 2 && "info".equalsIgnoreCase(args[0])) {
@@ -5056,7 +5056,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "terminal-info".equalsIgnoreCase(args[0])) {
-            // TASK-36a — surface TileTerraformingTerminal state for tests.
+            // surface TileTerraformingTerminal state for tests.
             // Reads: was_enabled_last_tick (per-tick redstone+chip gate),
             // BlockTileTerraformer STATE property (player-visible
             // "is terraforming" block-model variant), hasValidBiomeChanger()
@@ -5097,7 +5097,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 6 && "terminal-load-chip".equalsIgnoreCase(args[0])) {
-            // TASK-36a — load a programmed ItemBiomeChanger into a placed
+            // load a programmed ItemBiomeChanger into a placed
             // TileTerraformingTerminal's slot 0. Mirrors the player flow:
             // a biomechanger chip whose NBT points to a registered
             // SatelliteBiomeChanger on the same dim as the terminal. The
@@ -5158,12 +5158,12 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown terraforming subcommand — try info <dim> | set-density <dim> <value> | terminal-info <dim> <x> <y> <z> | terminal-load-chip <dim> <x> <y> <z> <satId>\"}");
     }
 
-    // §5.8 Worldgen probe -----------------------------------------------------
+    // Worldgen probe -----------------------------------------------------
 
     private void handleWorldgen(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 3 && "create-asteroid-dim".equalsIgnoreCase(args[0])) {
             // worldgen create-asteroid-dim <newDimId> <templateDimId>
-            // TASK-44 Gap N — register a brand-new ASTEROID dimension by
+            // register a brand-new ASTEROID dimension by
             // cloning an existing AR planet's DimensionProperties (so star /
             // atmosphere / gravity linkage is inherited, avoiding headless
             // worldprovider-init NPEs), re-id'ing it, and flipping its
@@ -5227,8 +5227,7 @@ public class TestProbeCommand extends CommandBase {
             // parallel-fork pressure the populate step occasionally lags so
             // adjacent-chunk decorations (trees, ores) haven't run yet,
             // collapsing the (topY, biome) signature of spaced chunks —
-            // TASK-28 F7 (worldgen sampling race, promoted from TASK-16
-            // shape #4 after 3 sightings). Poll up to 1 s for
+            // a worldgen sampling race. Poll up to 1 s for
             // {@code isTerrainPopulated()} before sampling, also pre-load
             // neighbour chunks so cross-chunk decorations finalize on this
             // chunk's column.
@@ -5433,7 +5432,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown hatch subcommand — try fill <dim> <x> <y> <z> <slot> <itemId> [count] [meta] | read <dim> <x> <y> <z> [nbt]\"}");
     }
 
-    // §5 Planet selector probe --------------------------------------------------
+    // Planet selector probe --------------------------------------------------
 
     /**
      * <ul>
@@ -5655,7 +5654,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 5 && "warp-state".equalsIgnoreCase(args[0])) {
             // /artest tile warp-state <dim> <x> <y> <z> — dumps TileWarpController
-            // state for TASK-04 Phase 1 tests. Returns:
+            // state for tests. Returns:
             //   tileClass, hasSpaceObject, stationId, stationOrbitingDim,
             //   stationFuel, stationDest, travelCost (computed from station state).
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -5715,7 +5714,7 @@ public class TestProbeCommand extends CommandBase {
             // /artest tile multiblock-state <dim> <x> <y> <z> — dumps
             // libVulpes TileMultiBlock state via reflection on the
             // canonical `isComplete()` / `canRender` / `completeStructure`
-            // methods. Used by TASK-04 Phase 2-5 multiblock controller
+            // methods. Used by multiblock controller
             // pre-assembly contract tests.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
@@ -5868,7 +5867,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown tile subcommand — try force-tick | force-tick-clock | warp-state | warp-trigger | warp-trigger-debug | multiblock-state\"}");
     }
 
-    // §5 Commands probe -------------------------------------------------------
+    // Commands probe -------------------------------------------------------
 
     private void handleCommands(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0 || "list".equalsIgnoreCase(args[0])) {
@@ -5891,7 +5890,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown commands subcommand — try list\"}");
     }
 
-    // §5.16 Energy probe -------------------------------------------------------
+    // Energy probe -------------------------------------------------------
 
     private void handleEnergy(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 4 && "stored".equalsIgnoreCase(args[0])) {
@@ -5987,7 +5986,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown energy subcommand — try stored <dim> <x> <y> <z> | inject <dim> <x> <y> <z> <amount>\"}");
     }
 
-    // §5.10 Rocket infrastructure probe ---------------------------------------
+    // Rocket infrastructure probe ---------------------------------------
 
     private void handleInfra(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length >= 5 && "service-state".equalsIgnoreCase(args[0])) {
@@ -6000,7 +5999,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 6 && "laserdrill-mine".equalsIgnoreCase(args[0])) {
             // infra laserdrill-mine <dim> <x> <y> <z> <blockId>
-            // TASK-44 Gap B — deterministically exercises the MINING-mode
+            // deterministically exercises the MINING-mode
             // dispatch path (MiningDrill.performOperation). Clears the 3x3 at
             // y to air, places <blockId> at the centre, spawns an
             // EntityLaserNode at the block's exact position, injects it into a
@@ -6243,7 +6242,7 @@ public class TestProbeCommand extends CommandBase {
             } catch (ReflectiveOperationException ignored) {
                 // Field renamed — surfaces as -1 / "null"; safer than failing.
             }
-            // TASK-32 3c — expose getComparatorOverride() so tests can pin
+            // expose getComparatorOverride so tests can pin
             // the 0..15 height-derived comparator output without sniffing
             // the world's redstone state directly. The override is what
             // production exposes to vanilla's getComparatorInputOverride
@@ -6259,7 +6258,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 3 && "inject-broken-part".equalsIgnoreCase(args[0])) {
-            // TASK-36b — mark a TileBrokenPart inside a rocket's StorageChunk
+            // mark a TileBrokenPart inside a rocket's StorageChunk
             // as worn (stage > 0). Production grows TileBrokenPart#stage via
             // wear-on-use (StorageChunk.shouldBreak → block-specific wear
             // path); this probe is the test-only fast-path equivalent.
@@ -6323,7 +6322,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "service-relink".equalsIgnoreCase(args[0])) {
-            // TASK-36b — force a {@code TileRocketServiceStation} to re-scan
+            // force a {@code TileRocketServiceStation} to re-scan
             // its linkedRocket's broken parts without unlinking first.
             // {@code linkRocket()} calls {@code updateRepairList()}; we
             // expose the same effect for tests that mutate the rocket's
@@ -6360,7 +6359,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "service-perform-function".equalsIgnoreCase(args[0])) {
-            // TASK-36b deep — invoke TileRocketServiceStation.performFunction()
+            // invoke TileRocketServiceStation.performFunction
             // directly, bypassing the canPerformFunction (worldTime % 20 == 0)
             // gate that production uses to schedule work. performFunction
             // itself still requires redstone power (getEquivalentPower) and
@@ -6396,7 +6395,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "service-scan-assemblers".equalsIgnoreCase(args[0])) {
-            // TASK-36b extension — force a TileRocketServiceStation to
+            // force a TileRocketServiceStation to
             // invoke its private scanForAssemblers() right now, bypassing
             // the canPerformFunction (worldTime % 20 == 0) + power-rising-
             // edge gates that production uses to schedule the scan. Tests
@@ -6470,7 +6469,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "comparator-override".equalsIgnoreCase(args[0])) {
-            // TASK-40c Gap F.1 — read IComparatorOverride.getComparatorOverride()
+            // read IComparatorOverride.getComparatorOverride
             // on a placed tile (libVulpes interface). Used for tiles whose
             // comparator output mirrors an inventory state (e.g. CO2Scrubber
             // damage → 0..15 bands), without depending on a vanilla
@@ -6496,7 +6495,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 4 && "item-armor-slot".equalsIgnoreCase(args[0])) {
-            // TASK-40c Gap J — for an IArmorComponent item, return the four
+            // for an IArmorComponent item, return the four
             // EntityEquipmentSlot eligibilities for a given (itemId, meta).
             // Mirrors the data-only-component contract from
             // ArmorComponentContractTest.
@@ -6536,7 +6535,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "unloader-debug".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap E debug — dumps state inside TileRocketUnloader's
+            // dumps state inside TileRocketUnloader's
             // `if (!world.isRemote && rocket != null)` body so the test can
             // pinpoint which gate of update() blocks the transfer.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -6626,7 +6625,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 6 && "railgun-receive-cargo".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap A — pin the receiver-side cargo contract on
+            // pin the receiver-side cargo contract on
             // TileRailgun. The full firing path (attemptCargoTransfer)
             // requires TWO paired railguns across linked positions — out of
             // reach for a single-multiblock fixture. The receiver-side
@@ -6872,7 +6871,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "astrobody-set-research".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap D — reshape note: the audit's "PlanetAnalyser /
+            // reshape note: the audit's "PlanetAnalyser /
             // SatelliteData scan output" framing was wrong. The actual class
             // (TileAstrobodyDataProcessor) increments per-DataType counters
             // on an ItemAsteroidChip when (1) chip is in slot 0 with non-null
@@ -6926,7 +6925,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "astrobody-load-chip".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap D — place an ItemAsteroidChip with UUID=1L
+            // place an ItemAsteroidChip with UUID=1L
             // directly into slot 0 of the analyser controller. Bypasses the
             // input-hatch transfer (which has its own GUI-driven onInventoryUpdated
             // flow) to keep the test focused on the research increment contract.
@@ -6962,7 +6961,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 5 && "astrobody-chip-data".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap D — read the chip in slot 0 of the analyser,
+            // read the chip in slot 0 of the analyser,
             // return per-DataType current values + max. Used by the test to
             // assert "composition rose by 1 after a research cycle".
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
@@ -7006,7 +7005,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 7 && "databus-set-data".equalsIgnoreCase(args[0])) {
-            // TASK-40 Gap D — directly call TileDataBus.setData on a placed
+            // directly call TileDataBus.setData on a placed
             // data hatch (block at <dim>:<x>:<y>:<z>, meta 0 of
             // advancedrocketry:loader). Used to seed COMPOSITION / DISTANCE /
             // MASS data for the analyser's research loop without having to
@@ -7046,10 +7045,10 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown infra subcommand — try info <dim> <x> <y> <z> | link <dim> <x> <y> <z> <entityId> | unlink <dim> <x> <y> <z> <entityId> | monitor-info <dim> <x> <y> <z> | inject-broken-part <entityId> <stage> | service-relink <dim> <x> <y> <z> | service-scan-assemblers <dim> <x> <y> <z> | railgun-receive-cargo <dim> <x> <y> <z> <itemId> [count] | railgun-fire <srcDim> <sx> <sy> <sz> <destDim> <dx> <dy> <dz> <itemId> [count] | astrobody-set-research <dim> <x> <y> <z> <bits> | astrobody-load-chip <dim> <x> <y> <z> | astrobody-chip-data <dim> <x> <y> <z> | databus-set-data <dim> <x> <y> <z> <type> <amount>\"}");
     }
 
-    // §9.2 Fixture-building primitives -----------------------------------------
+    // Fixture-building primitives -----------------------------------------
 
     /**
-     * TASK-28 F1/F6/F7 — force chunk load before block-state mutation or
+     * force chunk load before block-state mutation or
      * sampling. Under parallel-fork load the chunk containing the test
      * position can be unloaded between probe round-trips; subsequent
      * {@code setBlockState} / {@code attemptCompleteStructure} /
@@ -7063,7 +7062,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * TASK-28 F1 — force chunk load for a square area centred at the
+     * force chunk load for a square area centred at the
      * given block position. {@code radiusChunks=2} covers a 5×5 chunk
      * (80×80 block) area, sufficient for every existing fixture footprint.
      */
@@ -7106,8 +7105,8 @@ public class TestProbeCommand extends CommandBase {
 
         @SuppressWarnings("deprecation")
         IBlockState state = block.getStateFromMeta(meta);
-        // Force chunk load before setBlockState — mitigates TASK-28 F6
-        // (Wireless tile=null race after place).
+        // Force chunk load before setBlockState — mitigates a
+        // Wireless tile=null race after place.
         ensureChunkLoaded(world, x, z);
         boolean placed = world.setBlockState(new BlockPos(x, y, z), state);
         send(sender, "{\"ok\":true,\"placed\":" + placed + ",\"block\":\"" + escapeJson(blockId)
@@ -7149,8 +7148,8 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
 
-        // Force every chunk in the fill rectangle to be loaded — mitigates
-        // TASK-28 F1 chunk-load race for fill operations that cross chunk
+        // Force every chunk in the fill rectangle to be loaded — mitigates a
+        // chunk-load race for fill operations that cross chunk
         // boundaries (e.g. clearing airspace around a fixture).
         int cxMin = minX >> 4, cxMax = maxX >> 4;
         int czMin = minZ >> 4, czMax = maxZ >> 4;
@@ -7190,13 +7189,13 @@ public class TestProbeCommand extends CommandBase {
      * {@code /artest rocket assemble}.
      */
     private void handleFixture(MinecraftServer server, ICommandSender sender, String[] args) {
-        // TASK-28 F1 — pre-load a 3×3 chunk area around the fixture origin
+        // pre-load a 3×3 chunk area around the fixture origin
         // so per-variant setBlockState below hits loaded chunks. ROCKET
         // FIXTURE IS DEDUCTED FROM THIS PATH: aggressive pre-load there
         // triggered a 2 s server-thread block on cold-start, and the
         // subsequent natural-tick burst race-cleared {@code isInFlight}
         // on rockets force-launched right after, breaking 3 launch tests
-        // 100 % in the TASK-28 v6 10× rerun. Other fixture variants
+        // 100 % under load. Other fixture variants
         // (multiblock / machine) don't race the natural-tick burst —
         // their assertion windows are larger.
         if (args.length >= 6 && !"rocket".equalsIgnoreCase(args[0])) {
@@ -7234,7 +7233,7 @@ public class TestProbeCommand extends CommandBase {
             // MissionGasCollection.onMissionComplete can fill them.
             // Production NOFUEL gate needs >=1 fuel tank; 4 remain.
             boolean includeFluidCargo = "with-fluid-cargo".equals(variant);
-            // TASK-37 (nuclear engine family — Gap P) — two paired variants
+            // two paired variants
             // share the same nuclear motor stack (replacing the simple advRocketmotor
             // engines) and differ only in the core placement, so the resulting
             // stats.thrust delta isolates the IRocketNuclearCore cohesion check
@@ -7251,7 +7250,7 @@ public class TestProbeCommand extends CommandBase {
             //                           min(nozzle, 0) = 0, stats.thrust = 0.
             boolean includeNuclearStack = "with-nuclear-stack".equals(variant);
             boolean includeNuclearMisplaced = "with-nuclear-misplaced".equals(variant);
-            // TASK-38 (Gap Q — IMiningDrill aggregation) — additive variant
+            // additive variant
             // dropping a single BlockMiningDrill at (rocketX+1, rocketY+3, z)
             // where columns above stay air, so getMiningSpeed returns 0.02f
             // (sky-exposed branch). stats.setDrillingPower(sum) flips to > 0.
@@ -7553,7 +7552,7 @@ public class TestProbeCommand extends CommandBase {
                     "structure", null);
             return;
         }
-        // TASK-25 — PlatePress fixture. Different shape from the multiblock
+        // PlatePress fixture. Different shape from the multiblock
         // industrial machines: a 3-block vertical stack (obsidian / ingredient
         // / press) with no hatches, no RF, redstone-triggered. The ingredient
         // block is resolved at fixture-build time from
@@ -7568,9 +7567,9 @@ public class TestProbeCommand extends CommandBase {
                     parseIntOr(args[5], 0));
             return;
         }
-        // TASK-18 — multiblock industrial machines via generic structure
+        // multiblock industrial machines via generic structure
         // helper. Keys are kebab-case short names; lookup table resolves to
-        // controller registry name + tile-class FQN. TASK-26 adds optional
+        // controller registry name + tile-class FQN. Adds optional
         // hatch overlays for wildcard-structure machines.
         if (args.length >= 6 && "machine".equalsIgnoreCase(args[0])
                 && !"cutting".equalsIgnoreCase(args[1])) {
@@ -9073,7 +9072,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * TASK-26 — per-machine hatch overlay for wildcard-structure machines.
+     * per-machine hatch overlay for wildcard-structure machines.
      *
      * <p>{@link TileElectricArcFurnace} and {@link TilePrecisionAssembler}
      * declare their hatch slots via {@code '*'} wildcards instead of explicit
@@ -9159,7 +9158,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * TASK-25 — builds the 3-block PlatePress stack at the requested press
+     * builds the 3-block PlatePress stack at the requested press
      * position: obsidian at y-2, the first registered recipe's ingredient
      * block at y-1, PlatePress at y (FACING=DOWN, EXTENDED=false).
      *
@@ -9336,7 +9335,7 @@ public class TestProbeCommand extends CommandBase {
      *       chosen wildcard cell with a concrete libVulpes hatch block
      *       and the resulting world position is added to the response's
      *       hatch-position lists. Used by wildcard-structure machines
-     *       (TASK-26) — see {@link #lookupWildcardMachineOverrides}.</li>
+     * — see {@link #lookupWildcardMachineOverrides}.</li>
      * </ol>
      */
     private void handleFixtureGenericFromStructure(MinecraftServer server, ICommandSender sender,
@@ -9349,7 +9348,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
             return;
         }
-        // TASK-28 F1 — pre-load the controller chunk + its 8 neighbours so
+        // pre-load the controller chunk + its 8 neighbours so
         // attemptCompleteStructure's per-cell block-match scan doesn't race
         // chunk loading on multiblocks that straddle a chunk boundary
         // (PrecisionLaserEtcher / ArcFurnace observed flaking through the
@@ -9475,7 +9474,7 @@ public class TestProbeCommand extends CommandBase {
             }
         }
 
-        // TASK-26 — for wildcard-structure machines, overlay each '*' cell
+        // for wildcard-structure machines, overlay each '*' cell
         // with either a libVulpes hatch (where the test needs one) or the
         // machine's structure-block (filler) so the validator's
         // getAllowableWildCardBlocks list matches the world state. The
@@ -9684,7 +9683,7 @@ public class TestProbeCommand extends CommandBase {
         return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
-    // §5 / §7.13 — item / enchantment registry probes -------------------------
+    // Item / enchantment registry probes -------------------------
 
     /**
      * {@code /artest item check <item-id> [capability]} —
@@ -10003,7 +10002,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown enchant subcommand — try check <id> | validates-as-airsuit <itemId> [withEnchant]\"}");
     }
 
-    // §7.13 — CO2 scrubber probe ----------------------------------------------
+    // CO2 scrubber probe ----------------------------------------------
 
     /**
      * {@code /artest scrubber consume <dim> <x> <y> <z>} — invokes
@@ -10044,7 +10043,7 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"comparatorOverride\":" + scrubber.getComparatorOverride() + "}");
     }
 
-    // §7.13 — gas charge pad probe --------------------------------------------
+    // Gas charge pad probe --------------------------------------------
 
     /**
      * {@code /artest gascharge fill-suit <dim> <x> <y> <z>} — invokes the
@@ -10149,7 +10148,7 @@ public class TestProbeCommand extends CommandBase {
         return total;
     }
 
-    // §5.7 / §7.13 — fluid handling probes (generic Forge IFluidHandler) -------
+    // Fluid handling probes (generic Forge IFluidHandler) -------
 
     /**
      * {@code /artest fluid inject <dim> <x> <y> <z> <fluidName> <amount>} —
@@ -10262,12 +10261,12 @@ public class TestProbeCommand extends CommandBase {
         return null;
     }
 
-    // §7.13 — oxygen vent state probe -----------------------------------------
+    // Oxygen vent state probe -----------------------------------------
 
     /**
      * {@code /artest vent info <dim> <x> <y> <z>} — exposes the oxygen vent's
      * internal seal state, blob size, and the atmosphere it has imposed on its
-     * blob. Used by §7.13 sealed-room scenario to verify the seal-detect cycle.
+     * blob. Used by the sealed-room scenario to verify the seal-detect cycle.
      *
      * Returns:
      * <pre>
@@ -10480,7 +10479,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, out.toString());
     }
 
-    // §7.18 — beacon location probe -------------------------------------------
+    // Beacon location probe -------------------------------------------
 
     /**
      * {@code /artest beacon list <dim>} — returns the dim's registered beacon
@@ -10521,7 +10520,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, out.toString());
     }
 
-    // §7.18 — entity spawn probe ----------------------------------------------
+    // Entity spawn probe ----------------------------------------------
 
     /**
      * {@code /artest entity spawn <dim> <x> <y> <z> <entityRegistryName>} —
@@ -10561,7 +10560,7 @@ public class TestProbeCommand extends CommandBase {
                         + "\"}");
                 return;
             }
-            // TASK-08-mixin Phase 3 pin tests: a freshly-spawned falling
+            // Pin tests: a freshly-spawned falling
             // block / TNT / minecart needs a force-loaded chunk under it,
             // otherwise the first onUpdate tick can early-out before any
             // mixin-injected gravity hook fires. We don't force-load here —
@@ -10621,7 +10620,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 4 && "set-fall-distance".equalsIgnoreCase(args[0])) {
             // entity set-fall-distance <dim> <entityId> <amount>
-            // TASK-44 Gap C — set ANY entity's fallDistance (sibling of the
+            // set ANY entity's fallDistance (sibling of the
             // player-only `player set-fall-distance`). Lets the gravity-
             // controller test seed a non-zero fallDistance on a no-gravity
             // entity so the controller's in-radius reset is observable.
@@ -10645,7 +10644,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 4 && "set-no-gravity".equalsIgnoreCase(args[0])) {
             // entity set-no-gravity <dim> <entityId> <true|false>
-            // TASK-44 Gap C — pin an entity in mid-air so neither vanilla
+            // pin an entity in mid-air so neither vanilla
             // falling physics nor an onGround landing mutates its
             // fallDistance between probe calls; the only thing that can
             // zero it is the gravity controller's update() loop.
@@ -10696,7 +10695,7 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"posY\":" + entity.posY + "}");
             return;
         }
-        // TASK-25 — scan a box around (cx,cy,cz) for EntityItem instances
+        // scan a box around (cx,cy,cz) for EntityItem instances
         // and emit each one's registry name + count + position. Used to
         // pin recipe outputs that spawn as world entities (e.g. PlatePress
         // drops its output as an EntityItem next to the press).
@@ -10735,7 +10734,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, b.toString());
             return;
         }
-        // ── TASK-30 Gap 3: EntityElevatorCapsule probes ──────────────────
+        // ── EntityElevatorCapsule probes ─────────────────────────────────
         //
         // The elevator capsule exposes four motion-state methods used by
         // RenderElevatorCapsule (client) and TileSpaceElevator (controller):
@@ -11010,7 +11009,7 @@ public class TestProbeCommand extends CommandBase {
 
     /**
      * Reflective entity spawn helper that knows about three constructor
-     * shapes seen on vanilla 1.12.2 entities used by TASK-08-mixin pin
+     * shapes seen on vanilla 1.12.2 entities used by pin
      * tests:
      *
      * <ol>
@@ -11067,7 +11066,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * Player-state probe. Used by TASK-08-mixin's testClient e2e pin for
+     * Player-state probe. Used by the testClient e2e pin for
      * the {@code MixinEntityPlayer(MP)InventoryAccess} {@code @Redirect}:
      * a real-player GUI session can only exercise the rocket-inventory
      * bypass when {@link zmaster587.advancedRocketry.util.RocketInventoryHelper}
@@ -11210,7 +11209,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if ("open-chest".equals(sub) && args.length >= 5) {
             // player open-chest <dim> <x> <y> <z>
-            // TASK-44 Gap U — open a chest's container GUI for the player
+            // open a chest's container GUI for the player
             // SERVER-SIDE (mirrors BlockChest.onBlockActivated →
             // player.displayGUIChest), bypassing the flaky bot.rightClickBlock
             // packet path that left InventoryBypassRedirectE2ETest @Ignore'd.
@@ -11290,7 +11289,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("set-fall-distance".equals(sub) && args.length >= 2) {
-            // TASK-40 Gap C — set the player's server-side fallDistance field.
+            // set the player's server-side fallDistance field.
             // Used to set up a non-zero baseline so AreaGravityController's
             // update() loop (which resets fallDistance=0 for any in-range
             // entity unconditionally on line 190) has something to reset.
@@ -11929,7 +11928,7 @@ public class TestProbeCommand extends CommandBase {
         if ("equip-space-chest".equals(sub)) {
             // /artest player equip-space-chest [pressureTankOxygenAmount]
             //
-            // TASK-24 — equip the player with the AR ItemSpaceChest carrying
+            // equip the player with the AR ItemSpaceChest carrying
             // an oxygen-filled ItemPressureTank component in slot 0. The
             // pressure tank's FluidStack is what drains in vacuum via
             // ItemSpaceChest.decrementAir (capability route), NOT the
@@ -12014,7 +12013,7 @@ public class TestProbeCommand extends CommandBase {
         if ("mount-entity".equals(sub) && args.length >= 2) {
             // /artest player mount-entity <entityId>
             //
-            // TASK-20 P1 — start the player riding the given entity.
+            // start the player riding the given entity.
             // Bridges the testClient bot's lack of "right-click on
             // entity" interaction by calling startRiding server-side.
             // Observable result identical: player.getRidingEntity()
@@ -12033,7 +12032,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if ("dismount".equals(sub)) {
             // /artest player dismount — dismount the player from any
-            // ridden entity. TASK-20 P1 — bridges the bot's lack of
+            // ridden entity. Bridges the bot's lack of
             // "sneak input" by calling dismountRidingEntity server-side.
             net.minecraft.entity.Entity wasRiding = player.getRidingEntity();
             int wasRidingId = wasRiding == null ? -1 : wasRiding.getEntityId();
@@ -12058,7 +12057,7 @@ public class TestProbeCommand extends CommandBase {
         if ("exec-as-player".equals(sub) && args.length >= 1) {
             // /artest player exec-as-player <command-and-args...>
             //
-            // TASK-21 — runs a command via the server's command manager
+            // runs a command via the server's command manager
             // with the bot's player as the sender. Used to drive /ar
             // player-equipped verbs (goto, giveStation, addTorch,
             // fillData, addSolidBlockOverride) which gate on "sender
@@ -12216,7 +12215,7 @@ public class TestProbeCommand extends CommandBase {
         if ("drive-ridden-entity".equals(sub) && args.length >= 3) {
             // /artest player drive-ridden-entity <moveForward> <ticks>
             //
-            // TASK-20 P2 — composite probe that re-applies
+            // composite probe that re-applies
             // player.moveForward immediately before each entity.onUpdate
             // call. The standalone set-move-forward probe is racy in
             // testClient because the bot client's CPacketInput stream
@@ -12248,7 +12247,7 @@ public class TestProbeCommand extends CommandBase {
         if ("set-move-forward".equals(sub) && args.length >= 2) {
             // /artest player set-move-forward <value>
             //
-            // TASK-20 P2 — set the player's moveForward input field
+            // set the player's moveForward input field
             // server-side. EntityHoverCraft.onUpdate reads
             // player.moveForward via getPassengerMovingForward; setting
             // it directly drives the throttle without needing client-
@@ -12277,7 +12276,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown player subcommand — try inv-bypass <add|remove|status> | open-container | health | set-health <hp> | held-air | give-suit-chest [air] | equip-airsuit [air] | clear-armor | advancement <id> | advancement reset <id> | last-chat | chat-clear | try-seal-detect <dim> <x> <y> <z> | try-atm-analyze <dim> | try-hovercraft <dim> <px> <py> <pz> <yaw> <pitch> | try-biomechanger-rclick <dim>\"}");
     }
 
-    // ── chat-tap (TASK-10b Phase 7) ──────────────────────────────────────
+    // ── chat-tap ──────────────────────────────────────
     //
     // Bounded deque of translation keys (or unformatted text) captured
     // from outbound SPacketChat packets sent to tapped players. Tests
@@ -12472,7 +12471,7 @@ public class TestProbeCommand extends CommandBase {
         return null;
     }
 
-    // §7.18 — generic block-state probe ---------------------------------------
+    // Generic block-state probe ---------------------------------------
 
     /**
      * {@code /artest block at <dim> <x> <y> <z>} — returns the block registry
@@ -12516,7 +12515,7 @@ public class TestProbeCommand extends CommandBase {
                 + "}");
     }
 
-    // §7.X — ItemSealDetector dispatch-matrix probe ---------------------------
+    // ItemSealDetector dispatch-matrix probe ---------------------------
 
     /**
      * {@code /artest seal-detector check <dim> <x> <y> <z>} — reports
@@ -12624,7 +12623,7 @@ public class TestProbeCommand extends CommandBase {
                 + ",\"branch\":\"" + branch + "\"}");
     }
 
-    // §7.19 — mission probe (TASK-06) ----------------------------------------
+    // Mission probe ----------------------------------------
 
     /**
      * {@code /artest mission ...} — drives MissionResourceCollection
@@ -13242,7 +13241,7 @@ public class TestProbeCommand extends CommandBase {
 
     /** Reads a private static final int field via reflection. Returns
      *  {@code Integer.MIN_VALUE} on reflective failure (caller treats
-     *  that as "field missing"). Used by TASK-22 to expose
+     *  that as "field missing"). Used to expose
      *  {@code MAX_SIZE_Y} / {@code MAX_SIZE} constants of the two
      *  assembler classes. */
     private static int readPrivateIntStatic(Class<?> cls, String name) {
@@ -13267,7 +13266,7 @@ public class TestProbeCommand extends CommandBase {
         }
     }
 
-    // §7.18 — force-field projector state probe -------------------------------
+    // Force-field projector state probe -------------------------------
 
     /**
      * {@code /artest field info <dim> <x> <y> <z>} — reads the projector's
@@ -13412,7 +13411,7 @@ public class TestProbeCommand extends CommandBase {
                 + fromDim + ",\"toDim\":" + dim + "}");
     }
 
-    // §5 Event handler probes -------------------------------------------------
+    // Event handler probes -------------------------------------------------
     //
     // No real player in headless dedicated server tests → we can't assert
     // player-dimension-change side effects directly. What we CAN assert is:
@@ -13546,9 +13545,9 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown event subcommand — try tick-counter | handlers | dim-side-effects <dim> | transitions\"}");
     }
 
-    // §5.20 Chunk-anchor probe -----------------------------------------------
+    // Chunk-anchor probe -----------------------------------------------
     //
-    // TASK-07 Phase 4: server-side tests of entity-tick paths (descent,
+    // server-side tests of entity-tick paths (descent,
     // landing) need the rocket's chunk to stay loaded so the natural
     // server tick loop drives EntityRocket.onUpdate in its production
     // context (real neighbour-chunk visibility, real collision data,
@@ -13730,9 +13729,9 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown chunk subcommand\"}");
     }
 
-    // §5.21 Server tick-wait probe -------------------------------------------
+    // Server tick-wait probe -------------------------------------------
     //
-    // TASK-07 Phase 4: companion to the chunk-anchor probe. Once the
+    // companion to the chunk-anchor probe. Once the
     // rocket's chunk is force-loaded, we need to let the server's
     // natural tick loop run N times so EntityRocket.onUpdate is invoked
     // in its production context (rather than driving it synthetically
@@ -13788,7 +13787,7 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * TASK-07 — global event-bus listener that counts RocketEvent fires.
+     * global event-bus listener that counts RocketEvent fires.
      * Registered lazily on first /artest rocket event-counts query.
      * Static counters are visible to all probe handlers and to the
      * launch/orbit-reached/dismantle probes which include

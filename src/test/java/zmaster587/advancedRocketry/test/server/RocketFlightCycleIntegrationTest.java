@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-07 Phase 3-5 (subset) — full rocket lifecycle event
+ * full rocket lifecycle event
  * sequence as an integration test.
  *
  * <p>{@link RocketFlightCycleDepthTest} pins each individual event-bus

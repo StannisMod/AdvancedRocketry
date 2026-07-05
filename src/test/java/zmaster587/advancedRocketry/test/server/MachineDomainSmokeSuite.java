@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 2 (B3) — machine-domain smoke suite.
+ * machine-domain smoke suite.
  *
  * <p>Consolidates 8 single-method smoke classes that each previously spawned
  * their own dedicated-server JVM (boot cost ~12 s × 8 ≈ 96 s wall) into a
@@ -83,7 +83,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     private static final Pattern VENT_BREATHABLE = Pattern.compile("\"breathable\":(true|false)");
     private static final Pattern PLANET_DENSITY = Pattern.compile("\"atmosphereDensity\":(-?\\d+)");
 
-    // ── Machine block-id → expected Tile* short class name (TASK-03 reused) ─
+    // ── Machine block-id → expected Tile* short class name ─
 
     /** Machine block id → expected Tile* class short name. */
     private static final Map<String, String> MACHINES = new LinkedHashMap<>();
@@ -100,7 +100,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From MultiMachineControllerSmokeTest — SMART §7.7
+    // From MultiMachineControllerSmokeTest
     // Position patch: x=2100..2140 step 5, y=64, z=2100
     // ─────────────────────────────────────────────────────────────────────
 
@@ -182,7 +182,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From MultiblockValidationSmokeTest — SMART §7.8
+    // From MultiblockValidationSmokeTest
     // Position patch: cutting fixture at (300,64,300); probe sanity at (200..212, 100..102, 200..212)
     // ─────────────────────────────────────────────────────────────────────
 
@@ -242,7 +242,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From EnergySystemsSmokeTest — SMART §7.16
+    // From EnergySystemsSmokeTest
     // Position patch: battery at (1000,64,1000), solar panel at (1100,100,1100).
     // Friendly globals: time=day, weather=clear. Not restored (no test in this
     // suite depends on natural time/weather).
@@ -292,7 +292,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From SealedRoomOxygenVentTest — SMART §7.13
+    // From SealedRoomOxygenVentTest
     // Position patch: 5×5×4 room centred at (1500,64,1500). Vent at floor.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -379,7 +379,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From SuitVacuumSubsystemSmokeTest — SMART §7.13 deepen
+    // From SuitVacuumSubsystemSmokeTest
     // No world placement. Atmosphere density mutation restored in finally.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -428,7 +428,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From SpecialInfrastructureSmokeTest — SMART §7.18
+    // From SpecialInfrastructureSmokeTest
     // Position patch: 5 devices at x=700,710,720,730,740, y=64, z=700.
     // Note: forceFieldProjector at (720,64,700) is never powered (no redstone)
     // → no field blocks projected. Powered/collapse cycle for the projector
@@ -481,7 +481,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From MicrowaveReceiverSmokeTest — SMART §7.16
+    // From MicrowaveReceiverSmokeTest
     // Position patch: 5×5 multiblock at (1700..1704, 64, 1700..1704). Controller (xC,yC,zC)=(1702,64,1702).
     // ─────────────────────────────────────────────────────────────────────
 
@@ -531,7 +531,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From BlackHoleGeneratorSmokeTest — SMART §7.16
+    // From BlackHoleGeneratorSmokeTest
     // Position patch: controller at (1800,64,1800), no multiblock structure.
     // ─────────────────────────────────────────────────────────────────────
 

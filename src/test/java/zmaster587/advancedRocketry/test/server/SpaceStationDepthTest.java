@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -11,7 +11,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 8 — extends {@code SpaceStationLifecycleSmokeTest}
+ * extends {@code SpaceStationLifecycleSmokeTest}
  * (create-list-info already covered there) with:
  *   - multiple stations coexisting in the same orbit have distinct ids
  *   - fuel set / add / use are accounted (respect max capacity for add,

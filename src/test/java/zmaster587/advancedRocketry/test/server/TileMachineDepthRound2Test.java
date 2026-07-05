@@ -1,12 +1,12 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 4 round 2 — extends {@link TileMachineDepthTest}
+ * Extends {@link TileMachineDepthTest}
  * onto the next batch of "important but not yet pinned" tile families:
  *
  *   - {@code suitWorkStation}    → {@code TileSuitWorkStation}

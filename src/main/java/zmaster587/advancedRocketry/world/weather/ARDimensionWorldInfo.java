@@ -74,7 +74,7 @@ public final class ARDimensionWorldInfo extends WorldInfo {
      *
      * <p>Used by {@code MixinWorldServer} at the sleep site so beds bring the
      * planet's morning instead of vanilla's 24000-rounded (often still-night)
-     * time. See issue #66 / TASK-47.</p>
+     * time. See issue #66.</p>
      */
     public static long computeSleepWakeTime(long current, int rotationalPeriod) {
         if (rotationalPeriod <= 0) {

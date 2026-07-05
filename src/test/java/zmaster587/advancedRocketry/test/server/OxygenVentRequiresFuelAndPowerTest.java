@@ -11,12 +11,12 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (post-TASK-26) — counter-test side of the
+ * Counter-test side of the
  * {@code TileOxygenVent} functional cycle.
  *
  * <p>{@link zmaster587.advancedRocketry.test.server.MachineDomainSmokeSuite#sealedRoomBecomesBreathableThenLeaks}
  * already pins the happy path: vent + oxygen + energy + sealed room →
- * blob populates, atmosphere becomes pressurised. The audit gap was
+ * blob populates, atmosphere becomes pressurised. This test covers
  * the <b>counter-branches</b> — what happens when one of the two
  * required inputs is missing.</p>
  *

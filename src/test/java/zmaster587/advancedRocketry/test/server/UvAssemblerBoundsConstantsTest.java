@@ -9,7 +9,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-22 Phase 1 — bounds-constants delta between
+ * bounds-constants delta between
  * {@link zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine} and
  * {@link zmaster587.advancedRocketry.tile.TileUnmannedVehicleAssembler}.
  *

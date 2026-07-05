@@ -19,13 +19,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 2 — ItemSpaceArmor / ItemSpaceChest unit-tier contracts.
+ * ItemSpaceArmor / ItemSpaceChest unit-tier contracts.
  *
  * <p>Pins pure-function behaviour that does NOT require a real
  * {@link net.minecraft.entity.player.EntityPlayer} or a registered
  * {@link zmaster587.libVulpes.api.IArmorComponent}. Component install /
  * tick paths are covered at server tier via the suit-workstation +
- * tile-init-modules probe (TASK-10 Phase 1).</p>
+ * tile-init-modules probe.</p>
  *
  * <p>Coverage scope:</p>
  * <ol>

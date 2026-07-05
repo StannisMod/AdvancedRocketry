@@ -10,8 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (post-TASK-26) — service-station observability +
- * link contract.
+ * Service-station observability + link contract.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.infrastructure.TileRocketServiceStation}
  * is the only way for a player to repair a rocket's worn parts late-game.

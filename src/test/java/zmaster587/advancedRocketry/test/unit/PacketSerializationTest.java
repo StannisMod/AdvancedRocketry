@@ -20,7 +20,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.9 Network packet round-trip — write/readClient symmetry.
+ * Network packet round-trip — write/readClient symmetry.
  *
  * Each test:
  *   1. constructs a representative packet,
@@ -33,7 +33,7 @@ import static org.junit.Assert.assertTrue;
  * client-bound path (write → readClient) here.
  *
  * Packets that pull state from {@code DimensionManager} / {@code SpaceObjectManager}
- * during executeClient are NOT exercised end-to-end here; that lives in the §7
+ * during executeClient are NOT exercised end-to-end here; that lives in the
  * scenario suite.
  */
 public class PacketSerializationTest {
@@ -221,12 +221,12 @@ public class PacketSerializationTest {
 
     // PacketDimInfo / PacketSatellite / PacketStationUpdate / PacketConfigSync
     // round-trips require live DimensionManager / SatelliteRegistry / ISpaceObject /
-    // ARConfiguration state. They're covered end-to-end through the matching §7
-    // scenario tests (§7.4 / §7.12 / §7.11 / §7.1) which exercise the same wire
+    // ARConfiguration state. They're covered end-to-end through the matching
+    // scenario tests which exercise the same wire
     // format implicitly via /artest probes on real packets between client and
     // server.
 
-    // ── §6.9 bullet 5 — "assert invalid/missing data fails safely" ────────
+    // ── "assert invalid/missing data fails safely" ────────
     // For every AR packet whose readClient lives in a pure path (no MC client
     // required), we pin failure semantics on malformed wire data. The unifying
     // safety invariant is:

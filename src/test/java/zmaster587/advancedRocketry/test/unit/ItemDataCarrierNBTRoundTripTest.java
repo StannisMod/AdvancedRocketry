@@ -21,7 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-05 Phase 1/5 — data-carrying items NBT round-trip pins.
+ * data-carrying items NBT round-trip pins.
  *
  * <p>Three items in {@code item/} are pure NBT carriers that production
  * reads/writes directly:</p>
@@ -40,7 +40,7 @@ import static org.junit.Assert.assertTrue;
  * <p>Contracts pinned: round-trip read-after-write, default-on-empty,
  * stack independence after {@link ItemStack#copy()}. One known production
  * bug in {@link ItemSpaceElevatorChip#setBlockPositions} is pinned via
- * {@code _documentsKnownBug} per the TASK-01 §15 "no production logic
+ * {@code _documentsKnownBug} per the "no production logic
  * changes" rule.</p>
  *
  * <p>All tests run at unit tier via {@link MinecraftBootstrap} — no
@@ -115,7 +115,7 @@ public class ItemDataCarrierNBTRoundTripTest {
                 out.get(0));
     }
 
-    /** Fixed in TASK-12 (bug #5). The empty-input clear branch
+    /** The empty-input clear branch
      *  previously called {@code removeTag("positions")} but the data
      *  lived under {@code "list"} per
      *  {@code NBTStorableListList.writeToNBT}, so the clear was a no-op.

@@ -15,7 +15,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.plane
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.planetIntField;
 
 /**
- * TASK-11 Phase 2 — {@code /ar planet generate | delete | reset} lifecycle.
+ * {@code /ar planet generate | delete | reset} lifecycle.
  *
  * <p>Pins the registry-mutation contract: generate produces a new
  * {@code DimensionProperties} entry; delete removes it; reset restores

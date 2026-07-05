@@ -17,12 +17,12 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §6.10 (4-7) — {@link ARDimensionWorldInfo} delegation contract.
+ * {@link ARDimensionWorldInfo} delegation contract.
  *
  * <ul>
  *   <li>(4) non-weather getters route to the delegate;</li>
  *   <li>(5) weather setters route only to the state, not the delegate;</li>
- *   <li>(6) time-of-day / world age are per-dimension (TASK-47): owned by the
+ * <li>(6) time-of-day / world age are per-dimension: owned by the
  *       state, seeded from the delegate, independent of the overworld clock;</li>
  *   <li>(7) weather + per-dim time mutations fire the dirty callback.</li>
  * </ul>
@@ -122,7 +122,7 @@ public class ARDimensionWorldInfoTest {
         PlanetWeatherState state = new PlanetWeatherState();
         ARDimensionWorldInfo wrapper = wrap(delegate, state, () -> {});
 
-        // (TASK-47) Per-dim time is seeded from the delegate on construction so
+        // Per-dim time is seeded from the delegate on construction so
         // existing saves don't jump...
         assertEquals("per-dim worldTime seeded from delegate", 17000L, wrapper.getWorldTime());
         assertEquals("per-dim worldTotalTime seeded from delegate", 17000L, wrapper.getWorldTotalTime());

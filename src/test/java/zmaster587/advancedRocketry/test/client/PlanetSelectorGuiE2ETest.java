@@ -9,7 +9,7 @@ import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.findB
 import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.openGuiByRightClick;
 
 /**
- * SMART §7.20 — deep client E2E for the planet selector tile.
+ * deep client E2E for the planet selector tile.
  *
  * <p>Right-clicks {@code advancedrocketry:planetSelector} to open the libVulpes
  * modular GUI, introspects its buttons via {@code report_buttons}, then clicks a

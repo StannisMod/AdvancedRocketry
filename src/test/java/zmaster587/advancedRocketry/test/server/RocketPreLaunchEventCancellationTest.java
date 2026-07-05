@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (post-TASK-26): contract of
+ * Contract of
  * {@link zmaster587.advancedRocketry.api.RocketEvent.RocketPreLaunchEvent}'s
  * {@code @Cancelable} annotation.
  *

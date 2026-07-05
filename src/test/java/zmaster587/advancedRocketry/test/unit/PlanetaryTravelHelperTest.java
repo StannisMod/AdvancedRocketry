@@ -17,8 +17,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 1 #3) — PlanetaryTravelHelper
- * static surface.
+ * PlanetaryTravelHelper static surface.
  *
  * <p>Four public static methods on
  * {@link PlanetaryTravelHelper} govern whether a rocket needs a

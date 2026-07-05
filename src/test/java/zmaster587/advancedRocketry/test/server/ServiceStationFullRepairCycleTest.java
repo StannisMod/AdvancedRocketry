@@ -10,14 +10,14 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-36b deep — full repair cycle with a FORMED PrecisionAssembler
+ * full repair cycle with a FORMED PrecisionAssembler
  * multiblock.
  *
  * <p>{@link ServiceStationBrokenPartScanContractTest} pinned the "scan
  * finds parts" half, {@link ServiceStationAssemblerScanTest} pinned the
  * "scan finds assembler" + "no-progress without assembler" guards. Both
  * deferred the end-to-end repair pipe because driving it requires a
- * formed PrecisionAssembler multiblock. The TASK-26 fixture probe
+ * formed PrecisionAssembler multiblock. The fixture probe
  * {@code /artest fixture machine precision-assembler} closes that gap —
  * it overlays I/O/P hatches onto the wildcard structure and runs
  * {@code attemptCompleteStructure} for us.</p>
@@ -89,7 +89,7 @@ public class ServiceStationFullRepairCycleTest extends AbstractSharedServerTest 
         int cz2 = (Math.max(ROCKET_CZ + 7, FIXTURE_CZ + 5)) >> 4;
         exec("artest chunk warmup 0 " + cx1 + " " + cz1 + " " + cx2 + " " + cz2);
 
-        // Build a precision-assembler multiblock. The TASK-26 fixture
+        // Build a precision-assembler multiblock. The fixture
         // probe overlays I/O/P hatches onto the wildcard structure and
         // runs attemptCompleteStructure.
         String asmResp = exec("artest fixture machine precision-assembler 0 "

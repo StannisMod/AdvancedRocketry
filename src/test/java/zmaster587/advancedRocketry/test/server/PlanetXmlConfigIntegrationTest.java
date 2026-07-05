@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.4 — planet XML config integration test.
+ * planet XML config integration test.
  *
  * Pre-writes a deterministic fixture {@code planetDefs.xml} into
  * {@code <workDir>/config/advRocketry/} BEFORE the harness boots, then asserts

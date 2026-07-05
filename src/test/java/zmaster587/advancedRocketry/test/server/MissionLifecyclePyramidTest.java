@@ -10,7 +10,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-06 Phase 2 — MissionResourceCollection lifecycle contract.
+ * MissionResourceCollection lifecycle contract.
  *
  * <p>Pins the cause-effect of:
  * <ul>

@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-03 A1 — REAL rocket launch path (not the wiring smoke
+ * REAL rocket launch path (not the wiring smoke
  * pinned by {@link RocketLaunchEventTest}).
  *
  * <p>{@link RocketLaunchEventTest#launchInstantRespondsOkAndEchoesMode}

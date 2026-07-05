@@ -40,7 +40,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.9 Network packet wire-format round-trip — the four packets
+ * Network packet wire-format round-trip — the four packets
  * (PacketDimInfo, PacketSatellite, PacketStationUpdate, PacketConfigSync)
  * that need {@link MinecraftBootstrap#ensure()} because their write/readClient
  * pipelines touch {@link net.minecraft.nbt.NBTTagCompound} serialization of
@@ -476,7 +476,7 @@ public class PacketSerializationTest {
      * unit JVM. We exercise the wire shape directly: write a known payload via
      * PacketBuffer (as production write does) and verify the bytes decode into
      * the expected primitive layout. The Entity.world.provider dispatch is
-     * covered by §7.9 / §7.10 scenarios.
+     * covered by scenario tests.
      */
     @Test
     public void packetStorageTileUpdateWireLayout() {
@@ -619,7 +619,7 @@ public class PacketSerializationTest {
      * We exercise the wire shape: write a known payload via the same primitives
      * the production write() uses, then mirror-decode and verify the NBT block
      * is recoverable. The DimensionManager mutation is covered end-to-end by
-     * §7.12 {@code SatelliteLifecycleSmokeTest}.
+     * {@code SatelliteLifecycleSmokeTest}.
      */
     @Test
     public void packetSatellitesUpdateWireLayout() {
@@ -659,11 +659,11 @@ public class PacketSerializationTest {
     // ---- PacketMoveRocketInSpace ---------------------------------------------
 
     /**
-     * §6.9 — {@link PacketMoveRocketInSpace} is DEAD CODE: it has no
+     * {@link PacketMoveRocketInSpace} is DEAD CODE: it has no
      * {@code addDiscriminator} registration in
      * {@code AdvancedRocketry.serverStarting}, so it is never actually sent
-     * over the wire. We still pin its current behaviour because (a) SMART
-     * §6.9 lists it, and (b) it contains TWO latent bugs that should fail
+     * over the wire. We still pin its current behaviour because it contains
+     * TWO latent bugs that should fail
      * loudly when the packet is eventually wired up:
      *
      * <ol>
@@ -714,7 +714,7 @@ public class PacketSerializationTest {
         assertNotNull("field hasStar must exist (sentinel for the bug)", hs);
     }
 
-    // ── §6.9 bullet 5 — "assert invalid/missing data fails safely" ────────
+    // ── "assert invalid/missing data fails safely" ────────
     // Negative-input coverage for every AR packet whose write/readClient pair
     // needs MC bootstrap. Pattern is uniform: feed an empty (or hostile-header)
     // ByteBuf and assert two invariants hold:

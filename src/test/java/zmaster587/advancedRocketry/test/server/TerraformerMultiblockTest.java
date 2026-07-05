@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Atmosphere Terraformer multiblock validation.
+ * Atmosphere Terraformer multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileAtmosphereTerraformer}
  * — the largest AR multiblock by footprint: a 17×17 sphere-like shape over

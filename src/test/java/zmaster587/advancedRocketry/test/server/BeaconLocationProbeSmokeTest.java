@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.18 — Beacon location list contract.
+ * Beacon location list contract.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileBeacon} adds its
  * world position to {@code DimensionProperties.beaconLocations} when its
@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
  * {@code /artest beacon list <dim>} probe: overworld must start with an
  * empty beacon set, the probe must emit a well-formed JSON envelope, and
  * the list must be queryable on every AR-managed dim (overworld, since
- * dim 0 reports {@code isARPlanet=true} per §7.7).</p>
+ * dim 0 reports {@code isARPlanet=true}).</p>
  *
  * <p>The full beacon-enable cycle (place 3×5×3 multiblock, redstone power,
  * setMachineEnabled true → list grows) needs a dedicated

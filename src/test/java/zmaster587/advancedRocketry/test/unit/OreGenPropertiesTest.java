@@ -19,7 +19,6 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 2 (continuation, unit slice).
  *
  * {@link OreGenProperties} is the per-planet ore registry feeding
  * {@code ChunkProviderPlanet}. Its static [pressure][temperature] map is

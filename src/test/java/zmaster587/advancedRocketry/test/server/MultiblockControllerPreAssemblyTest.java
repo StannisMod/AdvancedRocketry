@@ -5,8 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-04 Phases 2-5 (consolidated) — pre-assembly contract
- * for every multiblock controller in the mod.
+ * Pre-assembly contract for every multiblock controller in the mod.
  *
  * <p>Each of TileOrbitalLaserDrill, TileSpaceElevator,
  * TileBlackHoleGenerator, TileWarpCore, TileObservatory, TileRailgun,
@@ -22,12 +21,12 @@ import static org.junit.Assert.assertTrue;
  *       when the structure isn't complete — otherwise every placed but
  *       not-yet-assembled controller crashes on its first server tick.
  *       This was a real concern that produced the
- *       "terraformer round-2 force-tick safety" test in TASK-02; this
+ *       "terraformer round-2 force-tick safety" test; this
  *       test extends that pattern to the full multiblock family.</li>
  * </ul>
  *
  * <p>For the actual ASSEMBLED-multiblock depth (form structure →
- * tick → produce output), see future TASK-04 follow-up sessions. Each
+ * tick → produce output), see future follow-up sessions. Each
  * multiblock has a different shape contract; building each fixture is
  * a non-trivial probe-side investment.</p>
  *

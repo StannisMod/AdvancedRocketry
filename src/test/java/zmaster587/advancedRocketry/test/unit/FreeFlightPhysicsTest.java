@@ -261,7 +261,7 @@ public class FreeFlightPhysicsTest {
         assertEquals("strafe stays horizontal (no Y) when pitched", 0.0, pitched.motionY, DELTA);
     }
 
-    // ===== Mouse-as-rate steering (TASK-46 D1) ===========================
+    // ===== Mouse-as-rate steering ===========================
 
     @Test
     public void mouseRateIsOneToOneBelowTheTurnRate() {
@@ -289,7 +289,7 @@ public class FreeFlightPhysicsTest {
         assertEquals(0.0, FreeFlightPhysics.rateFromMouseDelta(10.0, -1.0), DELTA);
     }
 
-    // ===== Engine-start liftoff / hover assist (TASK-46 D3) ==============
+    // ===== Engine-start liftoff / hover assist ==============
 
     @Test
     public void liftoffClimbsGentlyTowardTheTarget() {

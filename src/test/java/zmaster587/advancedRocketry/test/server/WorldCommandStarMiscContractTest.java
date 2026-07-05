@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-11 Phase 3 — {@code /ar star *}, {@code /ar dumpBiomes},
+ * {@code /ar star *}, {@code /ar dumpBiomes},
  * {@code /ar reloadRecipes}.
  *
  * <p>Stars are registered in AR's
@@ -87,7 +87,7 @@ public class WorldCommandStarMiscContractTest extends AbstractSharedServerTest {
                 body.contains("minecraft:plains"));
     }
 
-    /** Fixed in TASK-12 (bug #7). The {@code createAutoGennedRecipes}
+    /** The {@code createAutoGennedRecipes}
      *  call that hit Forge's frozen recipe registry was removed from
      *  the runtime reload path; init-time registration handles it
      *  once. XML hot-reload now succeeds. */
@@ -111,7 +111,7 @@ public class WorldCommandStarMiscContractTest extends AbstractSharedServerTest {
         return Integer.parseInt(m.group(1));
     }
 
-    /** Stronger pin for bug #7: not just "chat envelope says success" but
+    /** Stronger pin: not just "chat envelope says success" but
      *  "the recipe registry actually has recipes afterwards". The reload
      *  pipeline is {@code clearAllMachineRecipes} →
      *  {@code registerAllMachineRecipes} (re-adds programmatic recipes)

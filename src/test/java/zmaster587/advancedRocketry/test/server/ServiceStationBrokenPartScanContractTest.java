@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-36b — service-station broken-part scan contract.
+ * service-station broken-part scan contract.
  *
  * <p>Follow-up to {@link RocketServiceStationLinkAndStateTest} which left
  * the full repair cycle deferred ("requires fixture infrastructure for

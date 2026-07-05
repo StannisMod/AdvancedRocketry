@@ -24,7 +24,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.8 Atmosphere — pure-logic checks on AtmosphereType subtypes.
+ * Atmosphere — pure-logic checks on AtmosphereType subtypes.
  *
  * Loading {@code AtmosphereType} runs its static initializer which registers
  * atmospheres into {@code AtmosphereRegister}. We trigger MC bootstrap defensively
@@ -108,7 +108,7 @@ public class AtmosphereLogicTest {
     }
 
     /**
-     * §6.8 — space-suit "capability" NBT round-trip.
+     * Space-suit "capability" NBT round-trip.
      *
      * The suit's worn state is persisted on the ItemStack itself: ItemSpaceChest
      * stores its modular slot inventory (which holds fluid tanks → capability
@@ -187,7 +187,7 @@ public class AtmosphereLogicTest {
     private static final int Item_REGISTRY_ID_BUCKET = 325;
 
     /**
-     * §6.8 — entity-bypass config parses ResourceLocations and FQCNs.
+     * Entity-bypass config parses ResourceLocations and FQCNs.
      *
      * Production loadPreInit walks {@code entityList} (a String[] from
      * config.getStringList("entityAtmBypass", ...)) and for each entry:

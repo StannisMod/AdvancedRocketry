@@ -8,7 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.7 Pure-math astronomy helpers.
+ * Pure-math astronomy helpers.
  *
  * Excluded from these tests: {@code getOrbitalTheta} / {@code getMoonOrbitalTheta} —
  * they call {@code AdvancedRocketry.proxy.getWorldTimeUniversal} which requires
@@ -129,7 +129,7 @@ public class AstronomicalBodyHelperTest {
 
     @Test
     public void planetaryLightMultiplierWithinExpectedBounds() {
-        // SMART §6.7 #3: for a sun-like baseline, sweep across astronomical
+        // for a sun-like baseline, sweep across astronomical
         // distances and assert the eye-perceived light multiplier stays inside
         // a narrow band around the analytic value 1.5^log2(stellarBrightness).
         // The model collapses to PLM = 1.5^(2 * log2(100/d)) = (1.5)^(2*log2(100/d)).

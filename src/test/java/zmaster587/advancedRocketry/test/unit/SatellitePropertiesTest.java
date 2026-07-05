@@ -18,7 +18,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.6 Satellite domain logic — SatelliteProperties NBT round-trip + property flags.
+ * Satellite domain logic — SatelliteProperties NBT round-trip + property flags.
  */
 public class SatellitePropertiesTest {
 
@@ -99,10 +99,10 @@ public class SatellitePropertiesTest {
         assertEquals(0f, props.getWeight(), 0f);
     }
 
-    // ---- §6.6 — SatelliteRegistry contract -----------------------------------
+    // ---- SatelliteRegistry contract -----------------------------------
 
     /**
-     * §6.6 — the satellite type registry must support register → lookup → factory
+     * The satellite type registry must support register → lookup → factory
      * and behave predictably on unknown keys.
      *
      * We use a controlled local test subclass to avoid coupling to production
@@ -123,11 +123,11 @@ public class SatellitePropertiesTest {
         // Reverse lookup is order-dependent in a multi-key registry (the
         // production registry is shared; tests may have already registered the
         // same class under other names). We don't assert getKey here — its
-        // contract is "any matching key", verified end-to-end in §7.12.
+        // contract is "any matching key", verified end-to-end in scenario tests.
     }
 
     /**
-     * §6.6 — unknown / never-registered satellite type ids must NOT throw — the
+     * Unknown / never-registered satellite type ids must NOT throw — the
      * factory returns null silently so a corrupted save can be reported by the
      * caller, not blow up the world load.
      */
@@ -153,18 +153,18 @@ public class SatellitePropertiesTest {
                     loaded);
         } catch (NullPointerException expected) {
             // Documented behaviour: production crashes on unknown satellite
-            // type during NBT load. See SMART §3 — out-of-scope to fix here.
+            // type during NBT load. Out-of-scope to fix here.
         }
     }
 
     /**
-     * §6.6 — registry contents are a runtime contract: the set of types AR
+     * Registry contents are a runtime contract: the set of types AR
      * registers in mod init must be queryable by string id. We don't run mod
      * init from a unit test; instead we register a test type AND a stand-in for
      * each canonical production category (sensor / mission / energy / weather)
      * and assert the registry round-trips them all.
      *
-     * (The actual production registration is verified by §7.12 scenario tests
+     * (The actual production registration is verified by scenario tests
      * — {@code SatelliteLifecycleSmokeTest} drives create + lookup against a
      * real running server.)
      */
@@ -192,7 +192,7 @@ public class SatellitePropertiesTest {
     }
 
     /**
-     * §6.6 — power-state fields (generation + storage) round-trip via NBT.
+     * Power-state fields (generation + storage) round-trip via NBT.
      *
      * Distinct from the catch-all {@link #satellitePropertiesNbtRoundTrip}
      * because production power packets carry ONLY the power state (no name /

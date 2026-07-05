@@ -9,8 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 2 #5) — TileDockingPort
- * persistence + network packet schema.
+ * TileDockingPort persistence + network packet schema.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.station.TileDockingPort}
  * holds two strings ({@code myIdStr}, {@code targetIdStr}) that

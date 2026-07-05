@@ -16,7 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 1 (A2 remainder) — fluid-tank NBT round-trip across restart.
+ * fluid-tank NBT round-trip across restart.
  *
  * <p>Boot 1: place an {@code advancedrocketry:liquidTank} ({@code TileFluidTank}),
  * inject 7 500 mB of oxygen, close the harness WITHOUT cleanup. Boot 2 on the

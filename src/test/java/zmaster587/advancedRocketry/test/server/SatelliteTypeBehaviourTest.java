@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-09 Phase 4 — per-satellite-type behaviour pins.
+ * per-satellite-type behaviour pins.
  *
  * <p>Each pin exercises the production tick path of one satellite type
  * end-to-end against a real {@link net.minecraft.world.WorldServer}

@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-35 — {@code /ar fetch} positive + negative coverage without a
+ * {@code /ar fetch} positive + negative coverage without a
  * second connected player.
  *
  * <p>{@code WorldCommandPlayerEquippedE2ETest} marked {@code /ar fetch}

@@ -11,7 +11,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.7 Space position and astronomy helpers.
+ * Space position and astronomy helpers.
  *
  * Covers SpacePosition NBT round-trip and pure-math helpers (distance, normal vector,
  * spherical projection). Star/world references go through DimensionManager which

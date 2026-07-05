@@ -5,7 +5,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * TASK-11 — shared command-invocation + result-readback helpers for the
+ * shared command-invocation + result-readback helpers for the
  * {@code /ar} (WorldCommand) test suites. Keeps each test class small
  * by absorbing the duplicated <em>"run a command then read state back"</em>
  * boilerplate.

@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-44 (audit Gap B) — Orbital Laser Drill MINING-mode dispatch.
+ * Orbital Laser Drill MINING-mode dispatch.
  *
  * <p>Production: {@link
  * zmaster587.advancedRocketry.tile.multiblock.orbitallaserdrill.MiningDrill#performOperation}

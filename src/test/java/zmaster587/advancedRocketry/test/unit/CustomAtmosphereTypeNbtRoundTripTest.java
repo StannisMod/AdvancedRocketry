@@ -13,7 +13,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 
 /**
- * TASK-32 3b — custom {@link AtmosphereType} NBT round-trip contract.
+ * custom {@link AtmosphereType} NBT round-trip contract.
  *
  * <p>Companion mods extend the atmosphere system by constructing a fresh
  * {@link AtmosphereType} (or subclass) and registering it via

@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-34 — fluid loader / unloader active transfer contract.
+ * fluid loader / unloader active transfer contract.
  *
  * <p>The pre-existing {@link RocketInfrastructureSmokeTest#fluidLoaderTransfersFluidAfterLanding}
  * pins only tile lifecycle (placement → link → 30 ticks survive). It
@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
  * fixture rocket's storage chunk lose {@code FLUID_HANDLER_CAPABILITY}
  * when re-instantiated in the detached storage world.</p>
  *
- * <p>TASK-34 Phase 0 (2026-05-26) found the blocker is bypassed by the
+ * <p>The blocker is bypassed by the
  * {@code with-fluid-cargo} fixture variant which replaces 2 of the 6
  * fuel-tank slots with {@code advancedrocketry:liquidTank} (TileFluidTank)
  * blocks — those TEs DO survive the storage-chunk round-trip with their
@@ -55,7 +55,7 @@ public class FluidLoaderActiveTransferTest extends AbstractSharedServerTest {
             Pattern.compile("\"fluid\":\"oxygen\",\"amount\":(\\d+)");
 
     /**
-     * TASK-34 — loader pre-loaded with oxygen actively transfers it into
+     * loader pre-loaded with oxygen actively transfers it into
      * the linked rocket's storage liquidTanks across 60 production
      * ticks. Asserts both legs of the transfer:
      *
@@ -131,7 +131,7 @@ public class FluidLoaderActiveTransferTest extends AbstractSharedServerTest {
     }
 
     /**
-     * TASK-34 — unloader pre-linked to a rocket actively drains the
+     * unloader pre-linked to a rocket actively drains the
      * rocket's storage liquidTanks into its own tank across 60 ticks.
      * Inverse direction of the loader test.
      *

@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -10,13 +10,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.10 — rocket infrastructure (loaders, unloaders, monitoring,
+ * rocket infrastructure (loaders, unloaders, monitoring,
  * linker, distance).
  *
  * <p>All tests reuse the {@code /artest fixture rocket} geometry; the
  * {@code with-cargo} variant adds a vanilla chest above the seat so the
  * item-loader / unloader probes have an IInventory tile inside the rocket
- * storage chunk to transfer against. Per CLAUDE.md and TASK-01 these tests
+ * storage chunk to transfer against. These tests
  * are pure additions (no production logic touched), and treat fixture-based
  * shortcuts (no real launch / landing) as the agreed simulation surface.</p>
  */
@@ -64,7 +64,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #6 — distance check is a PLAYER-side enforcement. The
+     * distance check is a PLAYER-side enforcement. The
      * production code path that rejects an out-of-range link lives in the
      * {@code ItemLinker} flow (player uses a linker tool in-hand), not in
      * {@link zmaster587.advancedRocketry.api.IInfrastructure#linkRocket},
@@ -102,7 +102,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #7 — unlink removes the association. Link a fueling
+     * unlink removes the association. Link a fueling
      * station to a rocket, then unlink, then verify the rocket's connected
      * infrastructure list shrank and a follow-up link can re-add (idempotency
      * isn't sticky).
@@ -137,7 +137,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #5 — monitoring station tracks the linked rocket entity.
+     * monitoring station tracks the linked rocket entity.
      * Place a monitoring station, link a rocket, and verify the station's
      * {@code linkedRocket} matches the rocket's entity id. The station has
      * a very large maxLinkDistance (300 000) so distance is not at issue
@@ -171,7 +171,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #3 — fluid loader after landing.
+     * fluid loader after landing.
      *
      * <p>The fixture rocket's six fuel tanks DO carry fluid capacity per
      * StatsRocket, but the post-assembly storage chunk's
@@ -208,7 +208,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #4 — fluid unloader drains rocket fuel into its own tank.
+     * fluid unloader drains rocket fuel into its own tank.
      * Inverse of {@link #fluidLoaderTransfersFluidAfterLanding}: pre-fill
      * the rocket's tanks via {@code fluid inject} against the fuel tank
      * blocks directly, then verify the unloader's update() drains them.
@@ -251,7 +251,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #1 — rocket loader pushes items from its inventory into
+     * rocket loader pushes items from its inventory into
      * the rocket's storage inventory tiles. Uses the {@code with-cargo}
      * fixture variant which places a vanilla chest above the seat — that
      * chest is the IInventory tile the loader's update() finds via
@@ -287,7 +287,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * SMART §7.10 #2 — rocket unloader pulls items out of rocket storage
+     * rocket unloader pulls items out of rocket storage
      * into its own inventory. We pre-load the cargo chest via the loader
      * test path (push cobblestone in) then point an unloader at the same
      * rocket and tick.

@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Lathe end-to-end recipe contract.
+ * Lathe end-to-end recipe contract.
  */
 public class LatheRecipeEndToEndTest extends AbstractSharedServerTest {
 

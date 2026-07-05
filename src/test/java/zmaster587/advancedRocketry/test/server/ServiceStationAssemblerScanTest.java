@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-36b (extension) — service-station assembler-discovery + no-progress-
+ * service-station assembler-discovery + no-progress-
  * without-assembler contracts.
  *
  * <p>Companion to {@link ServiceStationBrokenPartScanContractTest} which

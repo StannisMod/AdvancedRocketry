@@ -10,7 +10,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Server-side e2e for the Flight Assist velocity-setpoint law (TASK-46 D4)
+ * Server-side e2e for the Flight Assist velocity-setpoint law
  * through the real probe surface:
  *  - FA defaults ON and round-trips through set-flight-assist;
  *  - the cut flag (X) travels the input wire and is stored;
@@ -123,7 +123,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
 
     @Test
     public void setpointPersistsAfterReleasingTheKey() throws Exception {
-        // THE Flight Assist feature (TASK-46 D4): holding forward RAMPS the
+        // THE Flight Assist feature: holding forward RAMPS the
         // velocity setpoint; releasing the key KEEPS it — the craft cruises
         // hands-off instead of coasting down.
         int id = buildAndAssemble(4150, 64, 500);

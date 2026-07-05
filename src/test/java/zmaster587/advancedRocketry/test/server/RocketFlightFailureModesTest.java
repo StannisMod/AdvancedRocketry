@@ -11,17 +11,16 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-07 Phase 5 — rocket-flight failure modes.
+ * rocket-flight failure modes.
  *
- * <p>Pins observed production behaviour for failure paths that the
- * TASK-07 plan called out:
+ * <p>Pins observed production behaviour for failure paths:
  *
  * <ul>
  *   <li><b>{@code explode()}</b> — production method (line 1720) that
  *       spawns particles + sets the entity dead. Currently only invoked
  *       from {@code launch()} when {@code partsWearSystem &&
  *       storage.shouldBreak()}. Pin the contract via the new probe.</li>
- *   <li><b>Out-of-fuel mid-flight</b> — the TASK-07 plan wished for an
+ *   <li><b>Out-of-fuel mid-flight</b> — one might expect an
  *       "out of fuel → rocket explodes" path but production has no such
  *       branch. The {@code isInFlight()} branch (line 1226 onwards) just
  *       sets fuelFluid="null" and lets motionY accumulate downwards. Pin
@@ -112,7 +111,7 @@ public class RocketFlightFailureModesTest extends AbstractSharedServerTest {
 
     @Test
     public void outOfFuelMidFlightDoesNotAutoExplode_documentsCurrentBehavior() throws Exception {
-        // The TASK-07 plan wished for "out of fuel → explode" but
+        // One might expect "out of fuel → explode" but
         // production has no such code path. The fuel-decrement loop at
         // line 1235 just sets fuelFluid="null" when amount hits 0. The
         // rocket continues to drift (falling under gravity once burning

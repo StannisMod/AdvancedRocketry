@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Foundation coverage for the TASK-45 parts-wear rework (phases 0–0c):
+ * Foundation coverage for the parts-wear rework:
  *
  * <ul>
  *   <li>motors, fuel tanks and seats host the wear capability in the world;</li>

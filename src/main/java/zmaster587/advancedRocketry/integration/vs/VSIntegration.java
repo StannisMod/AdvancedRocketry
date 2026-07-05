@@ -5,7 +5,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * Soft-dependency gate for Valkyrien Skies (TASK-47, "true spaceships").
+ * Soft-dependency gate for Valkyrien Skies.
  *
  * <p>AR depends on VS <em>optionally</em>: we compile against the VS API
  * ({@code compileOnly}) but never bundle or require it. The whole true-spaceship
@@ -18,7 +18,7 @@ import org.apache.logging.log4j.Logger;
  * only behind {@link #isAvailable()} — so a VS-importing class is never loaded on
  * an AR install without VS, and there is no {@code NoClassDefFoundError}. The
  * unit test {@code VSIntegrationTest} pins this contract. Rationale and the
- * dependency-mode decision live in {@code .agent/tasks/TASK-47-*}.</p>
+ * dependency-mode decision live in .</p>
  */
 public final class VSIntegration {
 

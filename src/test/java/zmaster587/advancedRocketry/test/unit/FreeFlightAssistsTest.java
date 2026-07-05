@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Contract pinning for the Flight Assist velocity-setpoint control law
- * (TASK-46 D4): {@link FreeFlightPhysics#rampSetpoint} +
+ *: {@link FreeFlightPhysics#rampSetpoint} +
  * {@link FreeFlightPhysics#faStep} + the body-frame transforms they rely on.
  * Pure math — no Minecraft types.
  *

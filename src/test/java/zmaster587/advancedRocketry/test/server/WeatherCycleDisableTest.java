@@ -16,7 +16,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Disableability contract for the custom planet weather CYCLE (TASK-46 fix 3).
+ * Disableability contract for the custom planet weather CYCLE.
  *
  * <p>{@code WorldProviderPlanet.updateWeather()} overrides the vanilla weather
  * cycle for planets whose XML carries non-default rain/thunder markers. The bug:
@@ -103,7 +103,7 @@ public class WeatherCycleDisableTest {
         assertTrue(cmd("artest config set enableCustomPlanetWeather true").contains("\"ok\":true"));
         String wrapped = cmd("artest weather get " + FIXTURE_DIM);
         // Anchor on the probe's named worldInfoClass field, not a bare substring
-        // of the whole response (see artest-probe-authoring SOP).
+        // of the whole response.
         assertTrue("planet must be wrapped while custom weather is on: " + wrapped,
                 Pattern.compile("\"worldInfoClass\":\"[^\"]*ARDimensionWorldInfo\"")
                         .matcher(wrapped).find());

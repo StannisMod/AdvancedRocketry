@@ -6,7 +6,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.20 (server-side companion to the client GUI test) — covers the
+ * Server-side companion to the client GUI test — covers the
  * server state machine for {@link
  * zmaster587.advancedRocketry.tile.multiblock.TilePlanetSelector} without
  * needing an OpenGL display.

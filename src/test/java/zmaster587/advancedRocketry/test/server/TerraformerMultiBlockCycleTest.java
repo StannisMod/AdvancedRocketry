@@ -7,7 +7,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.14 deepen — terraformer multiblock controller smoke.
+ * terraformer multiblock controller smoke.
  *
  * <p>The full atmosphere terraformer is a 17×17×3+ multiblock made almost
  * entirely of libVulpes' {@code blockAdvStructureBlock} (whose registry name

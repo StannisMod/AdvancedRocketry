@@ -9,10 +9,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-07 Phases 2 + 3 + 5 (subset) — rocket flight cycle
- * BEYOND the launch path.
+ * Rocket flight cycle BEYOND the launch path.
  *
- * <p>TASK-03 A1 ({@link RocketLaunchDepthTest}) covered the production
+ * <p>{@link RocketLaunchDepthTest} covered the production
  * {@code rocket.launch()} path up to {@code isInFlight=true}. Everything
  * after — {@code onOrbitReached}, descent, dismantle — was uncovered.
  * This file pins the post-launch chain via the new probes:
@@ -34,9 +33,9 @@ import static org.junit.Assert.assertTrue;
  *   <li>RocketDismantleEvent fires on dismantle.</li>
  *   <li>onOrbitReached over non-station overworld dim does NOT call
  *       {@code SpaceObjectManager.setPadStatus} (counter-test for the
- *       inverse of TASK-03 A5).</li>
- *   <li>Launch path fires RocketLaunchEvent (verifies the TASK-03 A1
- *       observation in event-counter form).</li>
+ *       inverse of the launch-path pad-status behaviour).</li>
+ *   <li>Launch path fires RocketLaunchEvent (verifies the
+ *       launch observation in event-counter form).</li>
  *   <li>Errored-out launches do NOT fire RocketLaunchEvent.</li>
  *   <li>Out-of-flight (initial) rocket has ticksExisted advancing under
  *       normal server ticks — defensive baseline for the descent-timer
@@ -157,7 +156,7 @@ public class RocketFlightCycleDepthTest extends AbstractSharedServerTest {
     @Test
     public void launchFiresRocketLaunchEventInRealLaunchPath() throws Exception {
         // Verify the real production launch path emits RocketLaunchEvent.
-        // TASK-03 A1 demonstrated isInFlight=true via the same path; this
+        // Prior coverage demonstrated isInFlight=true via the same path; this
         // test pins the event-bus emission too — a regression that moves
         // the post() out of the launch-allowed branch is silently visible
         // in isInFlight but would skip mission/advancement subscribers.
@@ -208,7 +207,7 @@ public class RocketFlightCycleDepthTest extends AbstractSharedServerTest {
 
     @Test
     public void rocketInfoExposesTicksExistedField() throws Exception {
-        // Pin the probe-surface contract for ticksExisted — TASK-07
+        // Pin the probe-surface contract for ticksExisted — the
         // descent-timer test relies on the field being readable. The
         // observation that the field actually ADVANCES under server
         // ticks is harder to assert reliably in headless: the chunk

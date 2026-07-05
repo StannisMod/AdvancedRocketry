@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@code PlanetEventHandler.playerTick} WENT_TO_THE_MOON trigger — server
  * tier. Relabeled down the pyramid from the old client-harness
- * {@code AdvancementsE2ETest} per honest-client-e2e.md: the contract
+ * {@code AdvancementsE2ETest} the contract
  * (name gate "Luna", distanceSq &lt; 512 of (2347,80,67), %20-tick window,
  * advancement grant) is entirely server-side; the old client test drove it
  * exclusively through server probes anyway.

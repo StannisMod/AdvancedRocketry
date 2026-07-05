@@ -13,8 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
 /**
- * Coverage-audit gap (2026-05-26 Tier 2 #4 + Tier 3 #8) —
- * persistent state on two satellite subtypes.
+ * Persistent state on two satellite subtypes.
  *
  * <p>The two classes pinned here serialize state that drives
  * player-visible behaviour but had no round-trip coverage:</p>

@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40 (Gap A) — Railgun cargo-receive contract.
+ * Railgun cargo-receive contract.
  *
  * <p>Phase-0 reshape: the audit framed this as "Railgun firing — orbital
  * projectile + RF debit". Production
@@ -48,7 +48,7 @@ public class RailgunCargoReceiveContractTest extends AbstractSharedServerTest {
             Pattern.compile("\"outPortCount\":(\\d+)");
 
     /**
-     * TASK-40 Gap A — assembled railgun's {@code onReceiveCargo} deposits
+     * assembled railgun's {@code onReceiveCargo} deposits
      * a 16-cobblestone stack into its output port. Asserts both:
      *
      * <ol>

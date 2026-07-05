@@ -11,14 +11,14 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-13 — wireless transceiver contracts (server-tier).
+ * wireless transceiver contracts (server-tier).
  *
  * <p>Pins the player-visible contracts of {@code TileWirelessTransciever} —
  * the live replacement for the upstream-deprecated pipe blocks
  * (commit {@code 48610953}). The transceiver is the only data-network
  * endpoint a player can place today.</p>
  *
- * <p>Covered contracts (see TASK-13 doc table):</p>
+ * <p>Covered contracts:</p>
  * <ol>
  *   <li>Pairing branch — both unpaired: fresh id assigned + network exists.</li>
  *   <li>Pairing branch — only A paired: B inherits A's id.</li>
@@ -31,11 +31,11 @@ import static org.junit.Assert.assertTrue;
  *   <li>Mode flip swaps source ↔ sink registration on the live network.</li>
  * </ol>
  *
- * <p>Out of scope here (see TASK-13 doc): NBT round-trip across server
+ * <p>Out of scope here: NBT round-trip across server
  * restart + onLoad role re-registration — those live in
  * {@code WirelessTransceiverRestartTest} which manages its own
  * harness lifecycle. Adjacent-tile {@code IDataHandler} data flow is
- * deferred to a future TASK-13b.</p>
+ * deferred to a future follow-up.</p>
  */
 public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
 
@@ -263,7 +263,7 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
             // (response carries `"ok":true`; tile-missing responses carry
             // `"error":...`). Budget 20 × 500 ms — happy path costs one
             // round-trip; non-happy 10 s ceiling absorbs the worst case
-            // observed across TASK-27 v5 + TASK-28 v6/v7 reruns.
+            // observed under load.
             String last = "n/a";
             boolean ready = false;
             for (int attempt = 0; attempt < 20; attempt++) {

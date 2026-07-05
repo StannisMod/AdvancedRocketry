@@ -8,7 +8,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §8 P0.7 — vanilla / non-AR dimension isolation.
+ * vanilla / non-AR dimension isolation.
  *
  * Asserts that:
  * <ul>
@@ -16,8 +16,8 @@ import static org.junit.Assert.assertTrue;
  *   <li>the B1 weather wrapper is NOT installed on them — they must keep
  *       their vanilla {@code DerivedWorldInfo} so unrelated mods that read
  *       weather state see exactly what they would in vanilla;</li>
- *   <li>the overworld (dim=0) is also NOT wrapped — SMART §4 explicitly
- *       excludes dim 0 from the wrap policy.</li>
+ *   <li>the overworld (dim=0) is also NOT wrapped — the wrap policy
+ *       explicitly excludes dim 0.</li>
  * </ul>
  *
  * The wrapper-class assertion is the new (post-B1) guard: without it, a future
@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class NonARDimensionIsolationTest extends AbstractHeadlessServerTest {
 
-    @Ignore("TASK-52: hangs at suite scale (~44th testServer class) — the `dim info "
+    @Ignore("hangs at suite scale (~44th testServer class) — the `dim info "
             + "-1/1` probes force a Nether/End load on the long-lived shared "
             + "AbstractHeadlessServerTest server, which deadlocks after ~43 prior "
             + "classes; passes 2/2 in isolation. Not a wrap-policy regression: the "

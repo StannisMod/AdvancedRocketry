@@ -20,7 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-08-mixin Phase 3 — unit pin for the inventory-bypass redirect
+ * unit pin for the inventory-bypass redirect
  * logic that the mixins
  * ({@code MixinEntityPlayer(MP)InventoryAccess}) delegate to.
  *
@@ -28,8 +28,8 @@ import static org.junit.Assert.assertTrue;
  * {@link RocketInventoryHelper#shouldAllowContainerInteract}, so a unit
  * test of that helper is the actual behavioural pin for both redirects.
  * This avoids needing a real {@code EntityPlayer} GUI session (which is
- * the constraint that pushed an end-to-end pin into TASK-10b /
- * testClient e2e).</p>
+ * the constraint that pushed an end-to-end pin into the
+ * testClient e2e harness).</p>
  *
  * <h2>What's pinned</h2>
  * <ol>

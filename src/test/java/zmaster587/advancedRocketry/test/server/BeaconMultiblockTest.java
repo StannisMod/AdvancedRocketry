@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Beacon multiblock validation.
+ * Beacon multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.TileBeacon} has the
  * smallest libVulpes-based structure in AR: a 5×3×3 pillar with a

@@ -13,7 +13,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.4 StatsRocket NBT round-trip and fuel arithmetic.
+ * StatsRocket NBT round-trip and fuel arithmetic.
  *
  * Tests intentionally manipulate per-field state directly (not via getThrust /
  * getFuelRate which apply ARConfiguration multipliers — those would mask field
@@ -204,7 +204,7 @@ public class StatsRocketTest {
     }
 
     /**
-     * Documents an existing latent bug (do NOT fix in this PR — see SMART §3).
+     * Documents an existing latent bug (do NOT fix in this PR).
      *
      * {@code createFromNBT(outer)} extracts the inner {@code rocketStats} compound
      * and passes it to {@code readFromNBT(inner)}, but {@code readFromNBT} also
@@ -255,7 +255,7 @@ public class StatsRocketTest {
     }
 
     /**
-     * SMART §6.4 — {@code rocketStatsBackwardCompatibleWithOldNbt}.
+     * {@code rocketStatsBackwardCompatibleWithOldNbt}.
      *
      * Synthesizes a minimal NBT shaped like an older save (only `thrust`/`weight`
      * + a few fuel keys, no per-type rate/capacity). Asserts {@code readFromNBT}
@@ -293,7 +293,7 @@ public class StatsRocketTest {
             assertEquals("missing capacity key for " + type + " must default to 0",
                     0, restored.getFuelCapacity(type));
         }
-        // KNOWN ISSUE (do NOT fix per SMART §3, just document):
+        // KNOWN ISSUE (do NOT fix, just document):
         // readFromNBT does `pilotSeatPos.x = stats.getInteger("playerXPos")`, which
         // returns 0 when the key is absent rather than the INVALID_SEAT sentinel
         // (Integer.MIN_VALUE) initialized by reset(). Result: legacy saves without
@@ -416,7 +416,7 @@ public class StatsRocketTest {
 
             // Contract: the sign follows the net force (thrust vs dry weight),
             // and more thrust accelerates harder. The exact scaling constant is
-            // an implementation detail (see testing-principles SOP).
+            // an implementation detail.
             stats.setThrust(100); // thrust == counter-gravity weight → no net force
             assertEquals(0f, stats.getDryAcceleration(1f), 1e-6);
 

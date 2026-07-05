@@ -10,7 +10,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-04 Phase 1 — REAL warp-controller behavioural depth.
+ * REAL warp-controller behavioural depth.
  *
  * <p>{@link SpecialInfrastructureSmokeTest} places a warp monitor and
  * force-ticks it; that's smoke-only. This file exercises the

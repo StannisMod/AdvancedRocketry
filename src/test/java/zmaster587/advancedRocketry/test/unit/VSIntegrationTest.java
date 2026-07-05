@@ -7,7 +7,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
- * Soft-dependency contract for the Valkyrien Skies integration (TASK-47).
+ * Soft-dependency contract for the Valkyrien Skies integration.
  *
  * <p>The player/packager-facing promise: <b>AR loads and runs without Valkyrien
  * Skies installed.</b> VS is a {@code compileOnly} dependency, so it is NOT on

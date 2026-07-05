@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-40 (audit Gap F.2) — TileGasChargePad refills player's chest
+ * TileGasChargePad refills player's chest
  * pressure tank.
  *
  * <p>Production:
@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Why testClient and not testServer: the pad's AABB scan requires a
  * real {@code EntityPlayer} in the world. {@code FakePlayer} server-side
- * is explicitly forbidden by project policy (TASK-10 marker). The
+ * is explicitly forbidden by project policy. The
  * real-client bot IS a real {@code EntityPlayerMP} on the server side
  * of the harness, which satisfies the scan.</p>
  */
@@ -64,7 +64,7 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
     }
 
     /**
-     * TASK-40 Gap F.2 — pad fills the suit's pressure-tank component
+     * pad fills the suit's pressure-tank component
      * over time when the player stands on it.
      *
      * <p>The contract is the player-visible "stand on charger → suit
@@ -90,7 +90,7 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
 
         // Equip the bot with a space suit whose pressure-tank component
         // starts mid-fill so there's room for the pad to fill more.
-        // initialOxygen=1000 matches the TASK-24 pattern; 0 starting
+        // initialOxygen=1000 is the standard pattern; 0 starting
         // values led readChestAir to return 0 here for a reason we
         // haven't traced (probe success != non-zero air on a fresh
         // ItemSpaceChest). Pin direction-of-change, not exact mB.

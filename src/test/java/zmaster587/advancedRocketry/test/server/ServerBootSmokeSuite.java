@@ -7,7 +7,7 @@ import java.util.List;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 2 (B3) — server-boot smoke suite.
+ * server-boot smoke suite.
  *
  * <p>Consolidates 2 single-method smoke classes that previously each spawned
  * their own dedicated-server JVM into a single {@link AbstractSharedServerTest}
@@ -22,7 +22,7 @@ import static org.junit.Assert.assertTrue;
  * <h2>Not folded in</h2>
  * <ul>
  *   <li>{@code CommandsSmokeTest} — 4 methods, already extends
- *       {@link AbstractSharedServerTest} since TASK-03 B2.</li>
+ *       {@link AbstractSharedServerTest}.</li>
  *   <li>{@code HarnessDiagnosticTest} — 2 methods, standalone harness
  *       lifecycle. Diagnostic-purposed; keep separate.</li>
  *   <li>{@code NonARDimensionIsolationTest} — 2 methods that explicitly need
@@ -38,7 +38,7 @@ import static org.junit.Assert.assertTrue;
 public class ServerBootSmokeSuite extends AbstractSharedServerTest {
 
     // ─────────────────────────────────────────────────────────────────────
-    // From ServerStartupSmokeTest — SMART §7.1
+    // From ServerStartupSmokeTest
     // ─────────────────────────────────────────────────────────────────────
 
     @Test
@@ -53,7 +53,7 @@ public class ServerBootSmokeSuite extends AbstractSharedServerTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // From RegistrySmokeTest — SMART §7.2
+    // From RegistrySmokeTest
     // ─────────────────────────────────────────────────────────────────────
 
     @Test

@@ -6,7 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (Tier 3 #14) — station-controller tile smoke.
+ * Station-controller tile smoke.
  *
  * <p>Three station-internal tiles managed station orbital mechanics in
  * production:</p>

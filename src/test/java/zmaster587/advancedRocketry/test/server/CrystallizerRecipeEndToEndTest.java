@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.server;
 import org.junit.Test;
 
 /**
- * TASK-18 — Crystallizer end-to-end recipe contract.
+ * Crystallizer end-to-end recipe contract.
  */
 public class CrystallizerRecipeEndToEndTest extends AbstractSharedServerTest {
 

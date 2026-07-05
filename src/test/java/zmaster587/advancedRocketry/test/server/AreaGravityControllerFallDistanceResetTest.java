@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-44 (audit Gap C) — TileAreaGravityController resets the fallDistance
+ * TileAreaGravityController resets the fallDistance
  * of entities inside its projection radius, and ONLY inside it.
  *
  * <p>Production:

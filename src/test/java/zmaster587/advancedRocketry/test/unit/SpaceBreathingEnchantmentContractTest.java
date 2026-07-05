@@ -16,7 +16,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 3.
  *
  * Contract for {@link EnchantmentSpaceBreathing}: cannot be reached via
  * the vanilla enchanting table (treasure-tier), only applies to armor,

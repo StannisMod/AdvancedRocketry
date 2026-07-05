@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 /**
- * Coverage-audit gap (post-TASK-26): save-compatibility fallback for an
+ * Save-compatibility fallback for an
  * unregistered satellite type.
  *
  * <p>{@link SatelliteRegistry#getNewSatellite(String)} is the dispatch
@@ -39,7 +39,7 @@ import static org.junit.Assert.assertNull;
  * (return {@code SatelliteDefunct} from {@code getNewSatellite}, or add
  * a null-guard in {@code createFromNBT}) flips the assertion and forces
  * a re-evaluation. Ledgered as a known bug — see
- * {@code .agent/history/known-bugs-ledger.md} Batch #2.</p>
+ * Batch #2.</p>
  *
  * <p><b>Why log this bug</b>: the player-visible scenario is "join a
  * server using a different mod set than the save was created with" →
@@ -51,7 +51,7 @@ public class SatelliteRegistryFallbackTest {
     /** Minimal SatelliteBase stand-in for the positive control. The real
      *  satellite classes (SatelliteBiomeChanger, etc.) hit
      *  {@code Biome.getBiome(0)} in their no-arg ctor which requires the
-     *  Minecraft Bootstrap to have run — fine in TASK-09's mod-init
+     *  Minecraft Bootstrap to have run — fine in the mod-init
      *  context, not fine in pure unit-tier. Mirrors the
      *  {@code TestSatellite} class in SatellitePropertiesTest. */
     public static class TestStandInSatellite extends SatelliteBase {

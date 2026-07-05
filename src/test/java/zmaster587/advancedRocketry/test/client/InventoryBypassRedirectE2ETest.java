@@ -14,7 +14,7 @@ import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.scree
 import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.waitForNoScreen;
 
 /**
- * TASK-08-mixin Phase 3 (e2e closure) — live end-to-end pin for the
+ * live end-to-end pin for the
  * {@code MixinEntityPlayer(MP)InventoryAccess} {@code @Redirect}.
  *
  * <p>The unit-level pin

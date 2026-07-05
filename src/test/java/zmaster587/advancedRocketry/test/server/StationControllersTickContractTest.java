@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * TASK-30 — station-controller tick behaviour contracts.
+ * station-controller tick behaviour contracts.
  *
  * <p>{@link StationControllersSmokeTest} already pins "block places, tile
  * ticks without crashing" for the three station controllers. This suite
@@ -35,7 +35,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * </ol>
  *
  * <p>Loose-bound pins — production walks the value at a fixed
- * accel/tick rate (impl detail per testing-principles SOP). Contract
+ * accel/tick rate. Contract
  * is "moves at all in the right direction", not "moves by exactly
  * 0.02 units/tick".</p>
  */

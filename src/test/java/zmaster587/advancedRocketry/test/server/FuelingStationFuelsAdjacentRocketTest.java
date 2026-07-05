@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-10 Phase 1 (A2 remainder) — fueling-station ⇒ rocket fuel transfer.
+ * fueling-station ⇒ rocket fuel transfer.
  *
  * <p>Pins the {@link zmaster587.advancedRocketry.tile.infrastructure.TileFuelingStation}
  * {@code performFunction} cause-effect: with a fueling station linked to an

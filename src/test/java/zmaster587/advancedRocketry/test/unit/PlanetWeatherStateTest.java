@@ -8,7 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
- * SMART §6.10 (1, 2) — pure-Java unit tests for the per-dimension weather state
+ * Pure-Java unit tests for the per-dimension weather state
  * model. Deliberately stays in the {@code unit} layer: no Minecraft bootstrap,
  * no registries — only {@link NBTTagCompound} which is a plain in-memory data
  * carrier.
@@ -71,7 +71,7 @@ public class PlanetWeatherStateTest {
 
     @Test
     public void perDimTimeNbtRoundTrip() {
-        // TASK-47: per-dim worldTime/worldTotalTime persist independently.
+        // per-dim worldTime/worldTotalTime persist independently.
         PlanetWeatherState source = new PlanetWeatherState();
         source.setWorldTime(123_456L);
         source.setWorldTotalTime(789_012L);

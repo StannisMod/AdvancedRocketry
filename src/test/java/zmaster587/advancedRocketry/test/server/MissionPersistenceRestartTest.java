@@ -17,7 +17,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-06 Phase 3 + 4 deferred — multi-boot persistence smoke for
+ * Multi-boot persistence smoke for
  * MissionGasCollection and MissionOreMining.
  *
  * <p>A mission, once started, is registered on its target

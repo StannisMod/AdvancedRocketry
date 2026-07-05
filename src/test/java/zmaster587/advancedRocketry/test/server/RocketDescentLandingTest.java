@@ -10,7 +10,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-07 Phase 4 — descent + landing under the REAL server
+ * descent + landing under the REAL server
  * tick loop.
  *
  * <p>Earlier drafts of this suite drove {@code rocket.onUpdate()} via a

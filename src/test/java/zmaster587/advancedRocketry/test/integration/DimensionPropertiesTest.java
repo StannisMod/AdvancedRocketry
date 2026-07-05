@@ -19,11 +19,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * §6.2 DimensionProperties domain logic — defaults, NBT round-trip, hierarchy.
+ * DimensionProperties domain logic — defaults, NBT round-trip, hierarchy.
  *
  * Tests stay clear of biome / ocean-block / filler-block round-trip because those
  * pull from {@code Block.REGISTRY} / {@code AdvancedRocketryBiomes.instance} which
- * require the AR registry pipeline. Those branches are exercised in §7.4.
+ * require the AR registry pipeline. Those branches are exercised in scenario tests.
  */
 public class DimensionPropertiesTest {
 
@@ -242,7 +242,7 @@ public class DimensionPropertiesTest {
     }
 
     /**
-     * §6.2 — derive AtmosphereTypes from density value (boundary-checked).
+     * Derive AtmosphereTypes from density value (boundary-checked).
      *
      * Production callers (oxygen handler, sealable-block detection, oregen) read
      * the type via {@link AtmosphereTypes#getAtmosphereTypeFromValue(int)} — the
@@ -294,7 +294,7 @@ public class DimensionPropertiesTest {
     }
 
     /**
-     * §6.2 — setParentPlanet must establish the bidirectional link: child's
+     * setParentPlanet must establish the bidirectional link: child's
      * parentPlanet field points at parent, and parent's childPlanets contains
      * the child's id.
      */
@@ -342,7 +342,7 @@ public class DimensionPropertiesTest {
     }
 
     /**
-     * §6.2 — a moon must inherit its parent's solar orbital distance, not use its
+     * A moon must inherit its parent's solar orbital distance, not use its
      * own (the moon's {@code orbitalDist} is its distance from the parent, not
      * from the star).
      */
@@ -377,7 +377,7 @@ public class DimensionPropertiesTest {
     }
 
     /**
-     * §6.2 — requiredArtifacts list must survive NBT round-trip with item
+     * requiredArtifacts list must survive NBT round-trip with item
      * identity + count preserved (used by planet-unlock gameplay).
      */
     @Test

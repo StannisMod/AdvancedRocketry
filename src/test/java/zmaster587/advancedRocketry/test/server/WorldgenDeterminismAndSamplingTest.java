@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
-// migrated to AbstractSharedServerTest (TASK-03 B2)
+// migrated to AbstractSharedServerTest
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -12,7 +12,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7 — TASK-02 Phase 2 — worldgen smoke + determinism.
+ * worldgen smoke + determinism.
  *
  * Until this point we had zero coverage of the actual chunk-generation path.
  * Here we exercise the public probe surface ({@code /artest worldgen sample}
@@ -124,7 +124,7 @@ public class WorldgenDeterminismAndSamplingTest extends AbstractSharedServerTest
         // are crossed even on AR's flat moon-style planets. With (0,4,8)
         // every sample landed in the same 16×16 biome cell on `moondark`,
         // legitimately collapsing topY+biome to identical and flaking the
-        // assertion (TASK-28 F7).
+        // assertion.
         String a = String.join("\n",
                 client().execute("artest worldgen sample " + dim + " 0 0"));
         String b = String.join("\n",

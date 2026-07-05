@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SMART §7.5 — planet weather compatibility gates (feature/better_weather).
+ * planet weather compatibility gates (feature/better_weather).
  *
  * <p>Pins two player-visible contracts of {@code WorldProviderPlanet.updateWeather}:</p>
  * <ol>

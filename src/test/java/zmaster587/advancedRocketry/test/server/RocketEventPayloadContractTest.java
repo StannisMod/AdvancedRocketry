@@ -10,8 +10,7 @@ import static org.junit.Assert.assertTrue;
 import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
 
 /**
- * Coverage-audit gap (Tier 2 #6) + TASK-31 — RocketEvent payload contract
- * for external subscribers.
+ * RocketEvent payload contract for external subscribers.
  *
  * <p>The pre-existing event-counts probe + {@code RocketEventRecorder}
  * proves an event was POSTED, but doesn't prove what payload the
@@ -24,12 +23,12 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * <ul>
  *   <li>{@code RocketDismantleEvent} — via {@code rocket dismantle} probe.</li>
  *   <li>{@code RocketPreLaunchEvent} — via {@code rocket launch ... prepare}.</li>
- *   <li>{@code RocketLaunchEvent} — implicitly via TASK-07 launch tests.</li>
- *   <li>{@code RocketLandedEvent} (TASK-31) — via real-tick ground
+ *   <li>{@code RocketLaunchEvent} — implicitly via launch tests.</li>
+ * <li>{@code RocketLandedEvent} — via real-tick ground
  *       collision under a force-loaded chunk + stone floor.</li>
- *   <li>{@code RocketDeOrbitingEvent} (TASK-31) — via the in-flight
+ * <li>{@code RocketDeOrbitingEvent} — via the in-flight
  *       {@code ticksExisted == 20} branch in {@code EntityRocket.onUpdate}.</li>
- *   <li>{@code RocketReachesOrbitEvent} (TASK-31) — via the
+ * <li>{@code RocketReachesOrbitEvent} — via the
  *       {@code force-orbit-reached} probe.</li>
  * </ul>
  *
@@ -63,7 +62,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
     private static final int CZ = 8000;
     private static final int CX_DISMANTLE = 8000;
     private static final int CX_PRELAUNCH = 8400;
-    // TASK-31 — disjoint x offsets to avoid colliding with the existing
+    // disjoint x offsets to avoid colliding with the existing
     // dismantle / prelaunch fixtures in the shared-harness world.
     private static final int CX_LANDED = 8800;
     private static final int CX_DEORBIT = 9200;
@@ -109,7 +108,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
     }
 
     /**
-     * TASK-31 — pin: {@code RocketLandedEvent.getEntity()} returns the
+     * pin: {@code RocketLandedEvent.getEntity} returns the
      * landing rocket and {@code event.world.provider.getDimension()}
      * reports the rocket's current dim.
      *
@@ -164,7 +163,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
     }
 
     /**
-     * TASK-31 — pin: {@code RocketDeOrbitingEvent.getEntity()} returns
+     * pin: {@code RocketDeOrbitingEvent.getEntity} returns
      * the rocket and {@code event.world.provider.getDimension()} reports
      * its dim.
      *
@@ -214,7 +213,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
     }
 
     /**
-     * TASK-31 — pin: {@code RocketReachesOrbitEvent.getEntity()} returns
+     * pin: {@code RocketReachesOrbitEvent.getEntity} returns
      * the rocket and {@code event.world.provider.getDimension()} reports
      * its dim.
      *
@@ -226,7 +225,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
      *
      * <p>Rounds out payload coverage to all six {@link
      * zmaster587.advancedRocketry.api.RocketEvent} subtypes — the
-     * remaining gap after TASK-31's primary Landed+DeOrbit pins.</p>
+     * remaining gap after the primary Landed+DeOrbit pins.</p>
      */
     @Test
     public void rocketReachesOrbitEventCarriesRocketEntityAndWorld() throws Exception {

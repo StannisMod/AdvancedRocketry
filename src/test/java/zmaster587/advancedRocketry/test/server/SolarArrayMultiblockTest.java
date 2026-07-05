@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-04 — Solar Array multiblock validation.
+ * Solar Array multiblock validation.
  *
  * <p>{@link zmaster587.advancedRocketry.tile.multiblock.energy.TileSolarArray}
  * — 22-row × 3-wide single-layer structure. The wildcard '*' accepts the

@@ -11,7 +11,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * TASK-24 Phase 1 — {@code ItemSpaceChest} (suit-family chest) chest
+ * {@code ItemSpaceChest} (suit-family chest) chest
  * sub-inventory drain in vacuum.
  *
  * <p>Closes the deferred {@code ItemSpaceChest} branch from
