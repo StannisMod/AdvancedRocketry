@@ -82,6 +82,9 @@ public class TestProbeCommand extends CommandBase {
                 case "registry":
                     handleRegistry(sender, tail(args));
                     break;
+                case "vs":
+                    handleVs(sender, tail(args));
+                    break;
                 case "dim":
                     handleDim(sender, tail(args));
                     break;
@@ -226,6 +229,23 @@ public class TestProbeCommand extends CommandBase {
         } catch (RuntimeException e) {
             send(sender, "{\"error\":\"" + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
         }
+    }
+
+    // Valkyrien Skies integration probes ----------------------------------
+
+    /**
+     * {@code vs available} — reports whether the SERVER sees Valkyrien Skies
+     * installed (the same gate the tier-2 assembly fork consults). Lets a test
+     * decide, from the server's point of view, whether to exercise the VS ship
+     * path or the no-VS fallback. Uses only the AR-side gate class, no VS types.
+     */
+    private void handleVs(ICommandSender sender, String[] args) {
+        if (args.length >= 1 && "available".equalsIgnoreCase(args[0])) {
+            send(sender, "{\"available\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.isAvailable() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"usage: vs available\"}");
     }
 
     // Registry probes -----------------------------------------------------
@@ -927,6 +947,7 @@ public class TestProbeCommand extends CommandBase {
                 // TileEntity), so we walk the storage chunk's IBlockState
                 // grid rather than its tile-entity list.
                 int fuelTankCount = 0;
+                boolean advancedFlightComputerPresent = false;
                 for (int sxi = 0; sxi < sx; sxi++) {
                     for (int syi = 0; syi < sy; syi++) {
                         for (int szi = 0; szi < sz; szi++) {
@@ -935,10 +956,18 @@ public class TestProbeCommand extends CommandBase {
                             if (bs.getBlock() instanceof zmaster587.advancedRocketry.api.IFuelTank) {
                                 fuelTankCount++;
                             }
+                            if (bs.getBlock()
+                                    == zmaster587.advancedRocketry.api.AdvancedRocketryBlocks.blockAdvancedFlightComputer) {
+                                advancedFlightComputerPresent = true;
+                            }
                         }
                     }
                 }
                 info.put("fuelTankCount", fuelTankCount);
+                // Whether an Advanced Flight Computer rode along in the built rocket
+                // — proves the tier-2 block was captured into the tier-1 fallback
+                // build (Valkyrien Skies absent), i.e. the block is inert, not a gate.
+                info.put("advancedFlightComputerPresent", advancedFlightComputerPresent);
                 // Guidance-computer slot: present iff the storage chunk has a
                 // TileGuidanceComputer AND its slot 0 (the chip slot) is non-empty.
                 zmaster587.advancedRocketry.tile.TileGuidanceComputer gc =
@@ -950,6 +979,7 @@ public class TestProbeCommand extends CommandBase {
             } else {
                 info.put("storageChunkSize", -1);
                 info.put("fuelTankCount", -1);
+                info.put("advancedFlightComputerPresent", false);
                 info.put("guidanceComputerPresent", false);
                 info.put("guidanceComputerSlotOccupied", false);
             }
@@ -7220,6 +7250,8 @@ public class TestProbeCommand extends CommandBase {
             //   invalid-no-seat     — same minus seat          → assembles (seat not enforced;
             //                                                    documents production behaviour)
             //   invalid-no-guidance — same minus guidance comp → expects NOGUIDANCE on scan
+            //   with-advanced-flight-computer — simple + 1 advancedFlightComputer block
+            //                                   (tier-2 gate; inert without Valkyrien Skies)
             String variant = args.length >= 6 ? args[5].toLowerCase(java.util.Locale.ROOT) : "simple";
             boolean includeEngines = !"invalid-no-engine".equals(variant);
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
@@ -7255,6 +7287,12 @@ public class TestProbeCommand extends CommandBase {
             // where columns above stay air, so getMiningSpeed returns 0.02f
             // (sky-exposed branch). stats.setDrillingPower(sum) flips to > 0.
             boolean includeMiningDrill = "with-mining-drill".equals(variant);
+            // additive variant: simple rocket + one advancedFlightComputer block at
+            // (rocketX-1, rocketY+3, z) — a free cell mirroring the drill slot on the
+            // far side of the guidance column. Its presence is the tier-2 gate: with
+            // Valkyrien Skies installed the build becomes a VS ship; without VS it
+            // rides along inertly and the normal rocket is built.
+            boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant);
             boolean replaceEnginesWithNuclear = includeNuclearStack || includeNuclearMisplaced;
 
             net.minecraft.world.WorldServer world = server.getWorld(dim);
@@ -7289,6 +7327,8 @@ public class TestProbeCommand extends CommandBase {
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "nuclearfueltank"));
             net.minecraft.block.Block miningDrill =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "drill"));
+            net.minecraft.block.Block advancedFlightComputer =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "advancedFlightComputer"));
 
             if (launchpad == null || rocketBuilder == null || advEngine == null
                     || fuelTank == null || guidanceComputer == null || seat == null) {
@@ -7306,6 +7346,10 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includeMiningDrill && miningDrill == null) {
                 send(sender, "{\"error\":\"missing drill block (advancedrocketry:drill)\"}");
+                return;
+            }
+            if (includeAdvancedFlightComputer && advancedFlightComputer == null) {
+                send(sender, "{\"error\":\"missing advancedFlightComputer block (advancedrocketry:advancedFlightComputer)\"}");
                 return;
             }
 
@@ -7391,6 +7435,13 @@ public class TestProbeCommand extends CommandBase {
                 // returns 0.02f. stats.drillingPower flips from 0 → 0.02.
                 world.setBlockState(new BlockPos(rocketX + 1, rocketY + 3, rocketZ),
                         miningDrill.getDefaultState());
+            }
+            if (includeAdvancedFlightComputer) {
+                // Free cell on the far side of the guidance column (rocketX-1,
+                // rocketY+3). Above it stays air (seat is the centre column only),
+                // so the seat's "passable above" scan check is unaffected.
+                world.setBlockState(new BlockPos(rocketX - 1, rocketY + 3, rocketZ),
+                        advancedFlightComputer.getDefaultState());
             }
             if (includeFluidCargo) {
                 // Swap 2 of the 6 fuel-tank slots for liquidTank (TileFluidTank).
