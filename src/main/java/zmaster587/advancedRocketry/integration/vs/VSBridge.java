@@ -165,6 +165,7 @@ final class VSBridge {
         }
         physo.getShipData().setPhysicsEnabled(true);
         TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{vx, vy, vz};
+        TileAdvancedFlightComputer.debugCommandedAngVel = new double[]{wx, wy, wz};
         return true;
     }
 

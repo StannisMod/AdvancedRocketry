@@ -45,6 +45,14 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      */
     public static volatile double[] debugCommandedVelocity = null;
 
+    /**
+     * Bring-up command for the force controller's ANGULAR channel: the desired world-frame
+     * angular velocity {@code {x,y,z}} (rad/s), or {@code null} when none. Same game→physics
+     * thread hand-off + AR-core-only contract as {@link #debugCommandedVelocity}; the mixin
+     * turns it into torque. TODO: fold into per-tile pilot state with the linear channel.
+     */
+    public static volatile double[] debugCommandedAngVel = null;
+
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
      *  Defaults ON, matching Free Flight's default. */
     private boolean flightAssistEnabled = true;

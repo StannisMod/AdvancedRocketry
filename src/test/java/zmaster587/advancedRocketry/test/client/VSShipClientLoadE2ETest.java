@@ -42,6 +42,10 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
+    private static final Pattern QW = Pattern.compile("\"qw\":(-?[0-9.E\\-]+)");
+    private static final Pattern QX = Pattern.compile("\"qx\":(-?[0-9.E\\-]+)");
+    private static final Pattern QY = Pattern.compile("\"qy\":(-?[0-9.E\\-]+)");
+    private static final Pattern QZ = Pattern.compile("\"qz\":(-?[0-9.E\\-]+)");
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
 
     private static final String VARIANT = "with-advanced-flight-computer";
@@ -52,7 +56,7 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void assembledShipLoadsWithClientPresentAndFliesUnderForce() throws Exception {
+    public void assembledShipLoadsWithClientPresentAndFliesAndRotatesUnderForce() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)",
                 serverHasVs());
 
@@ -109,22 +113,44 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
         // as FORCE (the working path — a raw setpoint does nothing). Up isolates the result
         // from ground friction: the only thing to overcome is gravity, and the controller's
         // deadbeat force (F = mass·accel, clamped to thrust authority) exceeds it. Re-command
-        // each tick to mirror how the flight computer will drive it.
+        // each tick and POLL for the climb — VS's physics-thread activation after a load can
+        // lag a few ticks, so drive until it rises (bounded) rather than a fixed window.
         double yBefore = shipPosY(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
-        for (int i = 0; i < 30; i++) {
+        double yAfter = yBefore;
+        double velY = 0.0;
+        for (int i = 0; i < 80 && yAfter - yBefore <= 1.5; i++) {
             String cmd = exec("artest vs force-vel 0 " + BX + " " + BY + " " + BZ + " 0 8 0");
             assertTrue("force-vel must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
+            String info = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
+            yAfter = shipPosY(info);
+            velY = readDouble(info, VEL_Y, "velY");
         }
-        String lastInfo = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
-        double yAfter = shipPosY(lastInfo);
-        double velY = readDouble(lastInfo, VEL_Y, "velY");
 
         // Force actually integrates into motion: the ship must climb. (Model A's setLinearVelocity
         // left this flat with velY≈1.8; a force controller lifts it.)
         assertTrue("commanded +Y velocity (via force) must lift the loaded ship "
                         + "(yBefore=" + yBefore + " yAfter=" + yAfter + " velY=" + velY + ")",
                 yAfter - yBefore > 1.0);
+
+        // The same controller must also ROTATE the ship: command a yaw angular velocity,
+        // realized as TORQUE (linear zeroed → the ship hovers while it turns). The ship's
+        // body→world attitude quaternion must move meaningfully off where it started. Poll
+        // for the turn (bounded) for the same activation-lag robustness.
+        double[] qBefore = readQuat(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+        double dot = 1.0;
+        for (int i = 0; i < 80 && dot >= 0.97; i++) {
+            String cmd = exec("artest vs force-rot 0 " + BX + " " + BY + " " + BZ + " 0 1.0 0");
+            assertTrue("force-rot must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
+            bot().waitTicks(1);
+            double[] qNow = readQuat(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+            // |dot| of two unit quaternions is cos(halfAngle); < 0.98 ⇒ rotated by more than ~23°.
+            dot = Math.abs(qBefore[0] * qNow[0] + qBefore[1] * qNow[1]
+                    + qBefore[2] * qNow[2] + qBefore[3] * qNow[3]);
+        }
+        assertTrue("commanded yaw (via torque) must rotate the loaded ship "
+                        + "(|quat dot|=" + dot + ", 1.0 = unmoved)",
+                dot < 0.98);
     }
 
     private int count(String sub) throws Exception {
@@ -138,6 +164,14 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
 
     private double shipPosY(String shipInfoJson) {
         return readDouble(shipInfoJson, POS_Y, "posY");
+    }
+
+    private double[] readQuat(String shipInfoJson) {
+        return new double[]{
+                readDouble(shipInfoJson, QW, "qw"),
+                readDouble(shipInfoJson, QX, "qx"),
+                readDouble(shipInfoJson, QY, "qy"),
+                readDouble(shipInfoJson, QZ, "qz")};
     }
 
     private double readDouble(String json, Pattern p, String label) {
