@@ -358,6 +358,23 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"commanded\":" + commanded + "}");
             return;
         }
+        // point <dim> <x> <y> <z> <qw> <qx> <qy> <qz> — hold a target attitude (quaternion) on
+        // the ship nearest to (x,y,z) via torque, hovering. This is the attitude-hold interface
+        // Free Flight drives.
+        if (args.length >= 9 && "point".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            boolean commanded = zmaster587.advancedRocketry.integration.vs.VSIntegration.commandNearestShipAttitude(
+                    world,
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                    parseDoubleOr(args[7], 0), parseDoubleOr(args[8], 0));
+            send(sender, "{\"commanded\":" + commanded + "}");
+            return;
+        }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>\"}");
     }

@@ -53,6 +53,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      */
     public static volatile double[] debugCommandedAngVel = null;
 
+    /**
+     * Bring-up command for ATTITUDE HOLD: the target body→world orientation as a quaternion
+     * {@code {w,x,y,z}}, or {@code null} when not holding an attitude. When set it supersedes
+     * {@link #debugCommandedAngVel} — the controller reads the ship's current orientation on
+     * the physics thread and turns the error into the angular velocity it drives toward. This
+     * is the interface Free Flight feeds: its per-tick target quaternion (from
+     * {@code integrateBodyRates} over the held pilot rates) is published here. Same game→physics
+     * hand-off + AR-core-only contract as the other channels.
+     */
+    public static volatile double[] debugTargetAttitude = null;
+
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
      *  Defaults ON, matching Free Flight's default. */
     private boolean flightAssistEnabled = true;

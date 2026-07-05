@@ -175,4 +175,17 @@ public final class VSIntegration {
         }
         return VSBridge.commandNearestShipVelocity(world, x, y, z, vx, vy, vz, wx, wy, wz);
     }
+
+    /**
+     * Command the loaded ship nearest to {@code (x,y,z)} to hold a target attitude (quaternion
+     * {@code w,x,y,z}) via torque while hovering; a safe no-op returning false when VS is absent
+     * or no ship is loaded.
+     */
+    public static boolean commandNearestShipAttitude(World world, double x, double y, double z,
+                                                     double qw, double qx, double qy, double qz) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.commandNearestShipAttitude(world, x, y, z, qw, qx, qy, qz);
+    }
 }

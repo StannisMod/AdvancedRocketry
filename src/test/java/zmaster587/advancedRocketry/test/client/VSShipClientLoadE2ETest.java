@@ -151,6 +151,23 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
         assertTrue("commanded yaw (via torque) must rotate the loaded ship "
                         + "(|quat dot|=" + dot + ", 1.0 = unmoved)",
                 dot < 0.98);
+
+        // ATTITUDE HOLD: command an absolute target orientation (90° yaw about world Y) and the
+        // controller must drive the ship's attitude TO it and converge — the interface Free
+        // Flight feeds (its per-tick target quaternion). Poll for convergence (bounded).
+        final double[] target = {0.70710678, 0.0, 0.70710678, 0.0}; // {w,x,y,z}
+        double convDot = 0.0;
+        for (int i = 0; i < 120 && convDot < 0.98; i++) {
+            String cmd = exec("artest vs point 0 " + BX + " " + BY + " " + BZ
+                    + " " + target[0] + " " + target[1] + " " + target[2] + " " + target[3]);
+            assertTrue("point must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
+            bot().waitTicks(1);
+            double[] q = readQuat(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+            convDot = Math.abs(q[0] * target[0] + q[1] * target[1] + q[2] * target[2] + q[3] * target[3]);
+        }
+        assertTrue("attitude-hold must converge the ship to the commanded orientation "
+                        + "(|dot to target|=" + convDot + ", 1.0 = exact)",
+                convDot > 0.98);
     }
 
     private int count(String sub) throws Exception {

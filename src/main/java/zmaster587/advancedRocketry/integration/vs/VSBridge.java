@@ -169,6 +169,24 @@ final class VSBridge {
         return true;
     }
 
+    /**
+     * Command the loaded ship nearest to {@code (x,y,z)} to HOLD a target body→world attitude
+     * (quaternion {@code w,x,y,z}) — the controller turns the orientation error into torque —
+     * while hovering (linear velocity commanded to zero). Returns false if no ship is loaded.
+     */
+    static boolean commandNearestShipAttitude(World world, double x, double y, double z,
+                                              double qw, double qx, double qy, double qz) {
+        PhysicsObject physo = nearestShip(world, x, y, z);
+        if (physo == null) {
+            return false;
+        }
+        physo.getShipData().setPhysicsEnabled(true);
+        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{0.0, 0.0, 0.0};
+        TileAdvancedFlightComputer.debugCommandedAngVel = null;
+        TileAdvancedFlightComputer.debugTargetAttitude = new double[]{qw, qx, qy, qz};
+        return true;
+    }
+
     private static PhysicsObject nearestShip(World world, double x, double y, double z) {
         PhysicsObject best = null;
         double bestDistSq = Double.MAX_VALUE;
