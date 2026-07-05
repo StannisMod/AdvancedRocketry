@@ -245,7 +245,96 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.isAvailable() + "}");
             return;
         }
-        send(sender, "{\"error\":\"usage: vs available\"}");
+        // ship-count <dim> — number of loaded VS ships (poll for async assembly).
+        if (args.length >= 2 && "ship-count".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            send(sender, "{\"count\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadedShipCount(world) + "}");
+            return;
+        }
+        // ship-count-all <dim> — total ships loaded OR not (distinguishes created-but-
+        // unloaded from never-created).
+        if (args.length >= 2 && "ship-count-all".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            send(sender, "{\"count\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(world) + "}");
+            return;
+        }
+        // load-ships <dim> — force all known ships loaded + physics-enabled (a headless
+        // server has no player near a ship to auto-load it).
+        if (args.length >= 2 && "load-ships".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            send(sender, "{\"requested\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadAllShips(world) + "}");
+            return;
+        }
+        // ship-info <dim> <x> <y> <z> — state of the loaded ship nearest to (x,y,z).
+        if (args.length >= 5 && "ship-info".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double[] s = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipState(
+                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            if (s == null) {
+                send(sender, "{\"managed\":false}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("managed", true);
+            m.put("posX", s[0]);
+            m.put("posY", s[1]);
+            m.put("posZ", s[2]);
+            m.put("qw", s[3]);
+            m.put("qx", s[4]);
+            m.put("qy", s[5]);
+            m.put("qz", s[6]);
+            m.put("velX", s[7]);
+            m.put("velY", s[8]);
+            m.put("velZ", s[9]);
+            send(sender, jsonMap(m));
+            return;
+        }
+        // push-ship <dim> <x> <y> <z> <vx> <vy> <vz> — set the linear-velocity setpoint
+        // (blocks/second) of the loaded ship nearest to (x,y,z).
+        if (args.length >= 8 && "push-ship".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            boolean pushed = zmaster587.advancedRocketry.integration.vs.VSIntegration.pushNearestShip(
+                    world,
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            send(sender, "{\"pushed\":" + pushed + ",\"count\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadedShipCount(world) + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
+                + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>\"}");
+    }
+
+    /** Resolve (loading if needed) a {@link net.minecraft.world.WorldServer} for VS ship probes. */
+    private static net.minecraft.world.WorldServer vsWorld(ICommandSender sender, int dim) {
+        if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+            net.minecraftforge.common.DimensionManager.initDimension(dim);
+        }
+        net.minecraft.server.MinecraftServer server = sender.getServer();
+        return server == null ? null : server.getWorld(dim);
     }
 
     // Registry probes -----------------------------------------------------

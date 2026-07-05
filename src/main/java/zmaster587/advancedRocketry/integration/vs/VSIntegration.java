@@ -108,4 +108,57 @@ public final class VSIntegration {
         }
         return VSBridge.getShipAttitude(world, pos);
     }
+
+    /** Number of Valkyrien Skies ships loaded in {@code world}, or -1 when VS is absent. */
+    public static int loadedShipCount(World world) {
+        if (!isAvailable()) {
+            return -1;
+        }
+        return VSBridge.loadedShipCount(world);
+    }
+
+    /** Total ships in {@code world} loaded or not (queryable registry), or -1 when VS absent. */
+    public static int queryableShipCount(World world) {
+        if (!isAvailable()) {
+            return -1;
+        }
+        return VSBridge.queryableShipCount(world);
+    }
+
+    /**
+     * Force every known ship in {@code world} loaded and physics-enabled (headless/no-observer
+     * equivalent of a nearby player loading it); returns the number requested, or -1 when VS
+     * is absent.
+     */
+    public static int loadAllShips(World world) {
+        if (!isAvailable()) {
+            return -1;
+        }
+        return VSBridge.loadAllShips(world);
+    }
+
+    /**
+     * State of the loaded ship nearest to {@code (x,y,z)} as
+     * {@code [posX,posY,posZ, qw,qx,qy,qz, velX,velY,velZ]}, or {@code null} when VS is
+     * absent or no ship is loaded. Only AR-core/MC types cross the gate.
+     */
+    public static double[] nearestShipState(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.nearestShipState(world, x, y, z);
+    }
+
+    /**
+     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
+     * nearest to {@code (x,y,z)}; a safe no-op returning false when VS is absent or no
+     * ship is loaded.
+     */
+    public static boolean pushNearestShip(World world, double x, double y, double z,
+                                          double vx, double vy, double vz) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.pushNearestShip(world, x, y, z, vx, vy, vz);
+    }
 }

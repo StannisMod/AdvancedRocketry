@@ -661,11 +661,29 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         // Tier-2 fork: an Advanced Flight Computer routes the build to a movable
         // ship (real blocks relocated into a physics-driven ship) rather than an
         // EntityRocket. Only when the optional integration is installed; otherwise
-        // the computer is inert and the ordinary rocket is built below. The blocks
-        // are left in the world for the integration to relocate, so we do NOT cut a
-        // StorageChunk or spawn an entity on this path.
+        // the computer is inert and the ordinary rocket is built below.
+        //
+        // The structure MUST be detached from the pad before the physics mod
+        // assembles it: that mod grows a ship by flood-filling every block connected
+        // to the anchor, so a craft still resting on the pad drags the whole terrain
+        // into the fill and the mod rejects the over-size/bedrock-touching result —
+        // no ship is ever created. So cut the scanned structure out (leaving the pad
+        // and terrain intact, exactly like the rocket path) and paste it back one
+        // block higher: the air gap under it bounds the flood-fill to the craft.
         if (scannedFlightComputerPos != null && VSIntegration.isAvailable()) {
-            VSIntegration.assembleTier2Ship(world, scannedFlightComputerPos);
+            removeReplaceableBlocks(rocketBB);
+            final StorageChunk shipStructure;
+            try {
+                shipStructure = StorageChunk.cutWorldBB(world, rocketBB);
+            } catch (Throwable t) { // cover NegativeArraySizeException & other edge errors
+                status = ErrorCodes.FAIL_CUT;
+                return;
+            }
+            final int liftGap = 1; // one block of air below the craft severs it from the pad
+            shipStructure.pasteInWorld(world, (int) rocketBB.minX,
+                    (int) rocketBB.minY + liftGap, (int) rocketBB.minZ);
+            BlockPos shipAnchor = scannedFlightComputerPos.add(0, liftGap, 0);
+            VSIntegration.assembleTier2Ship(world, shipAnchor);
             stats.reset();
             this.status = ErrorCodes.FINISHED;
             this.markDirty();

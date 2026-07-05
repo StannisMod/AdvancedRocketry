@@ -2,13 +2,18 @@ package zmaster587.advancedRocketry.integration.vs;
 
 import java.util.Optional;
 
+import com.google.common.collect.ImmutableList;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 import org.apache.logging.log4j.Logger;
 import org.joml.Quaterniond;
+import org.joml.Vector3d;
+import org.joml.Vector3dc;
 import org.valkyrienskies.mod.common.ships.ShipData;
 import org.valkyrienskies.mod.common.ships.block_relocation.BlockFinder;
+import org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import org.valkyrienskies.mod.common.ships.ship_world.WorldServerShipManager;
 import org.valkyrienskies.mod.common.util.ValkyrienUtils;
@@ -68,5 +73,92 @@ final class VSBridge {
         Quaterniond q = managing.get().getShipData().getShipTransform()
                 .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
         return new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z);
+    }
+
+    /** Number of Valkyrien Skies ships currently loaded in {@code world}. */
+    static int loadedShipCount(World world) {
+        return ValkyrienUtils.getServerShipManager(world).getAllLoadedThreadSafe().size();
+    }
+
+    /**
+     * Total Valkyrien Skies ships known in {@code world}, loaded or not — the queryable
+     * ship registry, which includes a freshly-spawned ship whose shipyard chunks are
+     * not yet loaded. Distinguishes "ship created but not loaded" from "never created".
+     */
+    static int queryableShipCount(World world) {
+        return ValkyrienUtils.getQueryableData(world).getShips().size();
+    }
+
+    /**
+     * Force every known ship in {@code world} loaded and physics-enabled. VS only loads a
+     * ship when a player is near its wrapper; a ship freshly assembled with no player
+     * nearby (e.g. an automated server) stays in the registry but unloaded — it never
+     * ticks, drives, or appears in the loaded set. This queues a load and enables physics
+     * for each. Returns how many ships it requested. (In real play a nearby client loads
+     * the ship itself; this is the headless/no-observer equivalent.)
+     */
+    static int loadAllShips(World world) {
+        WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
+        int requested = 0;
+        for (ShipData ship : ValkyrienUtils.getQueryableData(world).getShips()) {
+            ship.setPhysicsEnabled(true);
+            manager.queueShipLoad(ship.getUuid());
+            requested++;
+        }
+        return requested;
+    }
+
+    /**
+     * State of the loaded ship whose world position is nearest to {@code (x,y,z)}, as a
+     * flat array {@code [posX, posY, posZ, qw, qx, qy, qz, velX, velY, velZ]} (world-frame
+     * position + body&rarr;world attitude + linear velocity), or {@code null} if no ship is
+     * loaded. Nearest-to-a-point (not "first") so a shared server carrying several ships
+     * disambiguates by build site. Only primitive/MC types cross back to AR core.
+     */
+    static double[] nearestShipState(World world, double x, double y, double z) {
+        PhysicsObject physo = nearestShip(world, x, y, z);
+        if (physo == null) {
+            return null;
+        }
+        ShipTransform transform = physo.getShipData().getShipTransform();
+        Vec3d pos = transform.getShipPositionVec3d();
+        Quaterniond q = transform.rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+        Vector3dc vel = physo.getPhysicsData().getLinearVelocity();
+        return new double[]{pos.x, pos.y, pos.z, q.w, q.x, q.y, q.z, vel.x(), vel.y(), vel.z()};
+    }
+
+    /**
+     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
+     * nearest to {@code (x,y,z)}; returns false if no ship is loaded. Used by the test
+     * probe to prove VS physics moves a bare AR-assembled ship (flight-control model A).
+     */
+    static boolean pushNearestShip(World world, double x, double y, double z,
+                                   double vx, double vy, double vz) {
+        PhysicsObject physo = nearestShip(world, x, y, z);
+        if (physo == null) {
+            return false;
+        }
+        // A bare assembled ship is loaded but has physics disabled by default, so a
+        // velocity setpoint is ignored. Enable physics (a flag, not a load — it does not
+        // trip the spawn/proximity double-load) before applying the setpoint.
+        physo.getShipData().setPhysicsEnabled(true);
+        physo.getPhysicsData().setLinearVelocity(new Vector3d(vx, vy, vz));
+        return true;
+    }
+
+    private static PhysicsObject nearestShip(World world, double x, double y, double z) {
+        PhysicsObject best = null;
+        double bestDistSq = Double.MAX_VALUE;
+        ImmutableList<PhysicsObject> ships =
+                ValkyrienUtils.getServerShipManager(world).getAllLoadedThreadSafe();
+        for (PhysicsObject physo : ships) {
+            Vec3d pos = physo.getShipData().getShipTransform().getShipPositionVec3d();
+            double distSq = pos.squareDistanceTo(x, y, z);
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = physo;
+            }
+        }
+        return best;
     }
 }
