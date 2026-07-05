@@ -6,6 +6,8 @@ import net.minecraftforge.fml.common.Loader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import zmaster587.advancedRocketry.entity.IFlightBackend;
+
 /**
  * Soft-dependency gate for Valkyrien Skies.
  *
@@ -77,5 +79,19 @@ public final class VSIntegration {
             return;
         }
         VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
+    }
+
+    /**
+     * Create a flight backend that drives the Valkyrien Skies ship anchored at
+     * {@code anchorPos} as a velocity setpoint (model A), or {@code null} when VS is
+     * absent. The return type is the AR-core {@link IFlightBackend}, so a caller in
+     * AR core (e.g. the Advanced Flight Computer tile) never references a VS type —
+     * the VS-importing {@code VSFlightBackend} is loaded only past this gate.
+     */
+    public static IFlightBackend createShipFlightBackend(World world, BlockPos anchorPos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return new VSFlightBackend(world, anchorPos);
     }
 }
