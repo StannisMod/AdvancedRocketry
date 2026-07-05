@@ -5,8 +5,12 @@ def run_hwyla = false
 // Pull Valkyrien Skies into the DEV runtime for hands-on testing of the
 // true-spaceship feature. compileOnly is always on (AR compiles against the VS
 // Core API); this toggle only adds the runtime jars (Core + World + Control) so a
-// dev boot actually has a functional VS able to assemble and move ships.
-def run_valkyrien_skies = false
+// dev boot — AND the testServer harness, whose child JVM inherits runServer's
+// classpath — actually has a functional VS able to assemble and move ships.
+// Enabled by `-PwithVS` so the VS-gated tests (and a hands-on runServer/runClient)
+// can opt in without editing this file; default OFF keeps the normal build/suite
+// VS-free.
+def run_valkyrien_skies = project.hasProperty('withVS')
 
 repositories {
     maven {

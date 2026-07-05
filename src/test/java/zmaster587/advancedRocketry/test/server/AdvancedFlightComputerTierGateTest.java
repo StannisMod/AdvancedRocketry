@@ -9,38 +9,47 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Tier-2 gate — the no-Valkyrien-Skies fallback contract.
+ * Tier-2 gate — an Advanced Flight Computer in an assembled structure decides
+ * whether the launch pad builds an ordinary rocket or a movable Valkyrien Skies
+ * ship. The two @Test methods pin the two halves of that gate, each gated on the
+ * server's real VS presence so exactly one runs per suite configuration:
  *
- * <p>An Advanced Flight Computer in an assembled structure routes the build to a
- * movable ship ONLY when Valkyrien Skies is installed. On a plain AR install the
- * block is inert: the assembler must still produce an ordinary {@code EntityRocket},
- * with the computer captured into the rocket like any other block. This pins that
- * soft-dependency safety contract — AR without VS behaves exactly as before, and
- * the tier-2 block never breaks or reroutes a normal build.</p>
+ * <ul>
+ *   <li><b>no VS</b> (default suite) — the computer is inert; an AFC-bearing build
+ *       still assembles a normal {@code EntityRocket}, with the computer captured
+ *       inside it. This is the soft-dependency safety contract.</li>
+ *   <li><b>with VS</b> (suite run with {@code -PwithVS}) — the fork routes to VS
+ *       ship assembly, so NO rocket is spawned.</li>
+ * </ul>
  *
- * <p>The VS-present path (a ship is assembled <em>instead</em> of a rocket) is only
- * exercisable when VS is on the server classpath; it is not verifiable in the
- * default headless suite (VS is a heavy, threaded coremod the default testServer
- * does not load). A sibling test gated on {@code vs available == true} covers it
- * when the suite is run with VS wired in.</p>
+ * <p>What the harness deliberately does NOT assert: that the VS ship then fully
+ * materialises, is pilotable, or simulates physics. VS assembly is async on a
+ * physics thread and largely not headless-verifiable; the observable contract here
+ * is the routing decision (rocket vs no-rocket), which is deterministic.</p>
  */
 public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
-    private static final Pattern ROCKET_LIST_ID = Pattern.compile("\"id\":(-?\\d+)");
+
+    private static final String VARIANT = "with-advanced-flight-computer";
 
     @Test
     public void flightComputerWithoutVsBuildsInertRocket() throws Exception {
-        // The contract under test is the no-VS branch. If the server actually has
-        // VS, the tier-2 ship path runs instead — skip rather than assert wrongly.
+        // Contract is the no-VS branch; if the server actually has VS the ship path
+        // runs instead, so skip rather than assert the wrong thing.
         Assume.assumeFalse("server has Valkyrien Skies — that is the VS ship path, not the fallback",
                 serverHasVs());
 
-        int entityId = buildAndAssemble(1200, 64, 1200, "with-advanced-flight-computer");
-        String info = String.join("\n", client().execute("artest rocket info " + entityId));
+        String assemble = assembleFixture(1200, 64, 1200, VARIANT);
+        // A rocket WAS built (fallback taken) ...
+        assertTrue("expected exactly one rocket from the fallback path: " + assemble,
+                assemble.contains("\"rocketCount\":1"));
+        int entityId = extractInt(assemble, "\"entityId\":(-?\\d+)");
+        assertTrue("assemble did not report a rocket entity id: " + assemble, entityId >= 0);
 
-        // A real rocket was built (fallback taken, StorageChunk cut) ...
+        String info = String.join("\n", client().execute("artest rocket info " + entityId));
+        // ... it has a storage chunk (real EntityRocket) ...
         assertTrue("expected a normal rocket with a storage chunk: " + info,
                 info.contains("\"hasStorage\":true"));
         // ... and the Advanced Flight Computer rode along inside it, proving the
@@ -49,18 +58,32 @@ public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest
                 info.contains("\"advancedFlightComputerPresent\":true"));
     }
 
+    @Test
+    public void flightComputerWithVsAssemblesShipNotRocket() throws Exception {
+        // Needs Valkyrien Skies on the server classpath (suite run with -PwithVS);
+        // skips cleanly otherwise.
+        Assume.assumeTrue("needs Valkyrien Skies on the server classpath (run with -PwithVS)",
+                serverHasVs());
+
+        String assemble = assembleFixture(1600, 64, 1600, VARIANT);
+        // The defining contract of the fork WITH VS: the AFC diverts the build to a
+        // ship, so no EntityRocket is spawned on the pad.
+        assertTrue("with VS, an AFC-bearing build must not spawn a rocket: " + assemble,
+                assemble.contains("\"rocketCount\":0"));
+    }
+
     private boolean serverHasVs() throws Exception {
         String out = String.join("\n", client().execute("artest vs available"));
         return out.contains("\"available\":true");
     }
 
     /**
-     * Build the given fixture on a pad and run scan+assemble, returning the id of
-     * the resulting rocket. Mirrors {@code RocketAssemblySmokeTest#buildAndAssemble}
-     * (kept local to avoid coupling the two test classes); see that class for the
+     * Place the fixture on a pad and run scan+assemble; returns the raw
+     * {@code /artest rocket assemble} JSON (carries {@code status}, {@code entityId}
+     * and {@code rocketCount}). See {@code RocketAssemblySmokeTest} for the
      * chunk-warmup / pre-clear rationale.
      */
-    private int buildAndAssemble(int baseX, int baseY, int baseZ, String variant) throws Exception {
+    private String assembleFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
         int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;
         int cx2 = (baseX + 7) >> 4, cz2 = (baseZ + 7) >> 4;
         String warmup = String.join("\n", client().execute(
@@ -84,16 +107,12 @@ public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest
 
         String assemble = String.join("\n", client().execute(
                 "artest rocket assemble 0 " + bx + " " + by + " " + bz));
-        assertTrue("assemble (" + variant + ") failed: " + assemble,
-                assemble.contains("\"ok\":true"));
+        assertTrue("assemble (" + variant + ") failed: " + assemble, assemble.contains("\"ok\":true"));
+        return assemble;
+    }
 
-        String rocketList = String.join("\n", client().execute("artest rocket list 0"));
-        Matcher rim = ROCKET_LIST_ID.matcher(rocketList);
-        int lastId = -1;
-        while (rim.find()) {
-            lastId = Integer.parseInt(rim.group(1));
-        }
-        assertTrue("rocket list yielded no ids after assemble: " + rocketList, lastId >= 0);
-        return lastId;
+    private static int extractInt(String haystack, String regex) {
+        Matcher m = Pattern.compile(regex).matcher(haystack);
+        return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 }
