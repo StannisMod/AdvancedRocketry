@@ -27,6 +27,7 @@ import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
 import zmaster587.advancedRocketry.network.PacketInvalidLocationNotify;
 import zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine.ErrorCodes;
@@ -75,6 +76,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     protected ModuleText errorText;
     protected StatsRocket stats;
     protected AxisAlignedBB bbCache;
+    /**
+     * World position of an Advanced Flight Computer found in the last scan, or
+     * {@code null} if none. Transient build-routing state (scan → assemble within
+     * one tick): its presence makes the build a tier-2 ship instead of a rocket.
+     */
+    private BlockPos scannedFlightComputerPos;
     protected ErrorCodes status;
     private ModuleText thrustText, weightText, fuelText, accelerationText;
     private int totalProgress;
@@ -338,6 +345,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
 
         stats = new StatsRocket(); // reset stats
+        scannedFlightComputerPos = null; // reset tier-2 routing state each scan
 
         //if already a rocket exists, output their stats
 
@@ -496,6 +504,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 }
                             } else if (tile instanceof TileGuidanceComputer) {
                                 hasGuidance = true;
+                            } else if (tile instanceof TileAdvancedFlightComputer) {
+                                scannedFlightComputerPos = currBlockPos;
                             }
                         }
                     }
@@ -645,6 +655,21 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         final AxisAlignedBB rocketBB = normalize(scanBB);
         if (isEmptyAABB(rocketBB)) {
             status = ErrorCodes.FAIL_CUT;
+            return;
+        }
+
+        // Tier-2 fork: an Advanced Flight Computer routes the build to a movable
+        // ship (real blocks relocated into a physics-driven ship) rather than an
+        // EntityRocket. Only when the optional integration is installed; otherwise
+        // the computer is inert and the ordinary rocket is built below. The blocks
+        // are left in the world for the integration to relocate, so we do NOT cut a
+        // StorageChunk or spawn an entity on this path.
+        if (scannedFlightComputerPos != null && VSIntegration.isAvailable()) {
+            VSIntegration.assembleTier2Ship(world, scannedFlightComputerPos);
+            stats.reset();
+            this.status = ErrorCodes.FINISHED;
+            this.markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
             return;
         }
 

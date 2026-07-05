@@ -1,5 +1,7 @@
 package zmaster587.advancedRocketry.integration.vs;
 
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraftforge.fml.common.Loader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -17,8 +19,8 @@ import org.apache.logging.log4j.Logger;
  * load. Every VS-touching call goes through {@link VSBridge}, which is reached
  * only behind {@link #isAvailable()} — so a VS-importing class is never loaded on
  * an AR install without VS, and there is no {@code NoClassDefFoundError}. The
- * unit test {@code VSIntegrationTest} pins this contract. Rationale and the
- * dependency-mode decision live in .</p>
+ * unit test {@code VSIntegrationTest} pins this contract. AR compiles against VS
+ * but never requires it (a soft, optional dependency).</p>
  */
 public final class VSIntegration {
 
@@ -61,5 +63,19 @@ public final class VSIntegration {
         }
         // Only here, behind the gate, do we touch a VS-importing class.
         VSBridge.onValkyrienSkiesPresent(LOGGER);
+    }
+
+    /**
+     * Assemble the structure anchored at {@code anchorPos} into a movable ship.
+     * A safe no-op when Valkyrien Skies is absent. Only vanilla/AR types appear in
+     * this signature — every VS-importing call stays inside {@link VSBridge}, which
+     * is reached only past the {@link #isAvailable()} gate, so no VS class is
+     * loaded on an AR install without VS.
+     */
+    public static void assembleTier2Ship(World world, BlockPos anchorPos) {
+        if (!isAvailable()) {
+            return;
+        }
+        VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
     }
 }
