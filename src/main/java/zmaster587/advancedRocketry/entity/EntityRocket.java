@@ -184,9 +184,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
     private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
     /** Backend that realizes each FF tick's desired state (see
-     *  {@link IRocketFlightBackend}). Legacy backend owns the entity transform
+     *  {@link IFlightBackend}). Legacy backend owns the entity transform
      *  exactly as before; a ship-physics backend would own displacement instead. */
-    private final IRocketFlightBackend flightBackend = new LegacyFlightBackend();
+    private final IFlightBackend flightBackend = new LegacyFlightBackend();
     /** FF attitude source of truth (body→world quaternion).
      *  Integrated by BODY rates on the server; on the client it is the smoothed
      *  local estimate (predict from input + slerp toward the replicated
@@ -1137,7 +1137,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // write motion* and displace the entity. The legacy backend owns the
         // transform exactly as before; a ship-physics backend would instead hand
         // the state to the ship and own displacement itself.
-        flightBackend.applyFlightState(this, newQuat, result, enginePow);
+        flightBackend.applyFlightState(newQuat, result, enginePow);
 
         // Landing: ground contact + slow vertical motion → engines off
         // (touchdown auto-shutdown). The detector arms only once the craft
@@ -3841,17 +3841,20 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     /**
      * Legacy Free-Flight backend: owns the entity transform exactly as the inline
-     * FF v2 code did before {@link IRocketFlightBackend} was introduced — commit
+     * FF v2 code did before {@link IFlightBackend} was introduced — commit
      * the attitude, derive the legacy Euler view, replicate the FF_Q and
      * engine-power data, write {@code motion*} and displace via {@code Entity.move()}. Used when no
      * ship-physics backend is present; {@link #ownsTransform()} is {@code false},
      * so Free Flight keeps running its own transform, replication and client
      * dead-reckoning.
+     *
+     * <p>Bound to its enclosing {@link EntityRocket} (a non-static inner class), so
+     * it applies to {@code EntityRocket.this} directly — the interface no longer
+     * passes the craft, so a ship-physics backend can bind to a ship handle instead.</p>
      */
-    private static final class LegacyFlightBackend implements IRocketFlightBackend {
+    private final class LegacyFlightBackend implements IFlightBackend {
         @Override
-        public void applyFlightState(EntityRocket rocket,
-                                     FreeFlightPhysics.Quat attitude,
+        public void applyFlightState(FreeFlightPhysics.Quat attitude,
                                      FreeFlightPhysics.Step step,
                                      float enginePower) {
             // Commit the attitude; snapshot prev for render/camera slerp. Derive the
@@ -3859,28 +3862,28 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // rotationYaw/Pitch readers), and replicate the quaternion. The client
             // reads FF_Q* directly, so the old yaw/pitch tracker drift-resync
             // teleport is gone — the full attitude is authoritative every tick.
-            rocket.prevFfQuat = rocket.ffQuat;
-            rocket.ffQuat = attitude;
+            prevFfQuat = ffQuat;
+            ffQuat = attitude;
             float[] e = FreeFlightPhysics.eulerFromQuat(attitude);
-            rocket.prevRotationYaw = rocket.rotationYaw;
-            rocket.prevRotationPitch = rocket.rotationPitch;
-            rocket.prevFreeFlightRoll = rocket.freeFlightRoll;
-            rocket.rotationYaw     = e[0];
-            rocket.rotationPitch   = e[1];
-            rocket.freeFlightPitch = e[1];
-            rocket.freeFlightRoll  = e[2];
-            rocket.dataManager.set(FF_QW, (float) attitude.w);
-            rocket.dataManager.set(FF_QX, (float) attitude.x);
-            rocket.dataManager.set(FF_QY, (float) attitude.y);
-            rocket.dataManager.set(FF_QZ, (float) attitude.z);
-            rocket.dataManager.set(FF_ENGINE_POWER, enginePower);
+            prevRotationYaw = rotationYaw;
+            prevRotationPitch = rotationPitch;
+            prevFreeFlightRoll = freeFlightRoll;
+            rotationYaw     = e[0];
+            rotationPitch   = e[1];
+            freeFlightPitch = e[1];
+            freeFlightRoll  = e[2];
+            dataManager.set(FF_QW, (float) attitude.w);
+            dataManager.set(FF_QX, (float) attitude.x);
+            dataManager.set(FF_QY, (float) attitude.y);
+            dataManager.set(FF_QZ, (float) attitude.z);
+            dataManager.set(FF_ENGINE_POWER, enginePower);
 
-            rocket.motionX = step.motionX;
-            rocket.motionY = step.motionY;
-            rocket.motionZ = step.motionZ;
+            motionX = step.motionX;
+            motionY = step.motionY;
+            motionZ = step.motionZ;
 
             // Apply motion to the world.
-            rocket.move(MoverType.SELF, rocket.motionX, rocket.motionY, rocket.motionZ);
+            move(MoverType.SELF, motionX, motionY, motionZ);
         }
 
         @Override

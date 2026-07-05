@@ -3,8 +3,8 @@ package zmaster587.advancedRocketry.entity;
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 
 /**
- * Pluggable backend that realizes a rocket's per-tick FREE-FLIGHT movement — the
- * seam that lets the same pilot intent drive either the rocket's own entity
+ * Pluggable backend that realizes a piloted craft's per-tick FREE-FLIGHT movement
+ * — the seam that lets the same pilot intent drive either the craft's own entity
  * transform or a rigid-body ship physics engine.
  *
  * <h2>Why this exists</h2>
@@ -13,16 +13,18 @@ import zmaster587.advancedRocketry.api.FreeFlightPhysics;
  * {@link FreeFlightPhysics.Quat} plus a translation {@link FreeFlightPhysics.Step}
  * (resulting linear velocity in blocks/tick) — then <em>applies</em> it. The
  * application step is exactly what fights an external physics engine that wants to
- * own the craft's transform: the attitude commit, the {@code FF_Q*}/engine-power
- * replication, the {@code motion*} write and the {@code Entity.move()} displacement.
+ * own the craft's transform: the attitude commit, any replication, the
+ * {@code motion*} write and the {@code Entity.move()} displacement.
  *
- * <p>This interface abstracts that application step so the same desired state can
- * drive either:</p>
+ * <p>A backend is bound to the specific craft it drives (the enclosing entity, or a
+ * physics ship handle), so this contract carries only the desired state — not the
+ * craft. It abstracts the application step so the same desired state can drive
+ * either:</p>
  * <ul>
  *   <li>the <b>legacy</b> backend — commit the attitude, replicate it, write entity
- *       {@code motion*} and call {@code Entity.move()} (today's behaviour); or</li>
+ *       {@code motion*} and call {@code Entity.move()} (today's rocket behaviour); or</li>
  *   <li>a <b>ship-physics</b> backend — feed the desired linear velocity (the
- *       {@code Step}) and orientation (the {@code Quat}) into the rocket's ship as a
+ *       {@code Step}) and orientation (the {@code Quat}) into the craft's ship as a
  *       setpoint and let the physics engine own the displacement.</li>
  * </ul>
  *
@@ -30,12 +32,12 @@ import zmaster587.advancedRocketry.api.FreeFlightPhysics;
  * lock, so loops and inversions work) and the resulting {@code Step}, not a scalar
  * yaw/pitch, because that is what Free Flight actually produces each tick.</p>
  */
-public interface IRocketFlightBackend {
+public interface IFlightBackend {
 
     /**
-     * Realize one tick of desired free-flight state on {@code rocket}.
+     * Realize one tick of desired free-flight state on the craft this backend is
+     * bound to.
      *
-     * @param rocket       the rocket being flown
      * @param attitude     desired body&rarr;world attitude for this tick
      *                     (already integrated from the pilot's body rates)
      * @param step         resulting translation for this tick — its
@@ -44,8 +46,7 @@ public interface IRocketFlightBackend {
      * @param enginePower  engine power level [0,1] for this tick (replicated so the
      *                     client engine sound tracks actual thrust)
      */
-    void applyFlightState(EntityRocket rocket,
-                          FreeFlightPhysics.Quat attitude,
+    void applyFlightState(FreeFlightPhysics.Quat attitude,
                           FreeFlightPhysics.Step step,
                           float enginePower);
 
