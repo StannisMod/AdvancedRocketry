@@ -375,6 +375,19 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"commanded\":" + commanded + "}");
             return;
         }
+        // ff-input <fwd> <vert> <strafe> <yaw> <pitch> <roll> — set the held Free Flight input
+        // that the Advanced Flight Computer tile's tick runs through the FF decision layer and
+        // publishes to the controller. Drives the FULL flight path (FF → force), no seat yet.
+        if (args.length >= 7 && "ff-input".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput =
+                    new zmaster587.advancedRocketry.api.FreeFlightInput(
+                            (float) parseDoubleOr(args[1], 0), (float) parseDoubleOr(args[2], 0),
+                            (float) parseDoubleOr(args[3], 0), (float) parseDoubleOr(args[4], 0),
+                            (float) parseDoubleOr(args[5], 0), (float) parseDoubleOr(args[6], 0),
+                            0f, false);
+            send(sender, "{\"ok\":true}");
+            return;
+        }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>\"}");
     }

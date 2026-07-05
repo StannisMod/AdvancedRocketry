@@ -109,6 +109,17 @@ public final class VSIntegration {
         return VSBridge.getShipAttitude(world, pos);
     }
 
+    /**
+     * Enable physics on the ship managing the block at {@code pos} (a safe no-op when VS is
+     * absent or no ship manages it). Only AR-core/MC types cross the gate.
+     */
+    public static void ensureShipPhysicsEnabled(World world, BlockPos pos) {
+        if (!isAvailable()) {
+            return;
+        }
+        VSBridge.ensureShipPhysicsEnabled(world, pos);
+    }
+
     /** Number of Valkyrien Skies ships loaded in {@code world}, or -1 when VS is absent. */
     public static int loadedShipCount(World world) {
         if (!isAvailable()) {

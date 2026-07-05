@@ -39,6 +39,7 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
@@ -168,6 +169,26 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
         assertTrue("attitude-hold must converge the ship to the commanded orientation "
                         + "(|dot to target|=" + convDot + ", 1.0 = exact)",
                 convDot > 0.98);
+
+        // FULL FREE FLIGHT PATH: hand the flight computer a held pilot input. Its server tick
+        // reads the ship's attitude, runs FreeFlightPhysics, and publishes to the controller —
+        // no probe touches the ship command directly here. A throttle input must MOVE the ship
+        // through that path (throttle → body axis → world velocity → controller force). We assert
+        // total displacement (not just altitude): the ship is left tilted by the earlier rotate
+        // and attitude phases, so "body up" is not world up — moving at all is the contract here.
+        double[] pBefore = readVec(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+        double disp = 0.0;
+        for (int i = 0; i < 80 && disp <= 1.5; i++) {
+            String cmd = exec("artest vs ff-input 0 1 0 0 0 0"); // throttleVertical = full up
+            assertTrue("ff-input must be accepted: " + cmd, cmd.contains("\"ok\":true"));
+            bot().waitTicks(1);
+            double[] p = readVec(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+            double dx = p[0] - pBefore[0], dy = p[1] - pBefore[1], dz = p[2] - pBefore[2];
+            disp = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        assertTrue("a Free Flight throttle input must move the ship through the AFC's FF path "
+                        + "(displacement=" + disp + ")",
+                disp > 1.0);
     }
 
     private int count(String sub) throws Exception {
@@ -181,6 +202,13 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
 
     private double shipPosY(String shipInfoJson) {
         return readDouble(shipInfoJson, POS_Y, "posY");
+    }
+
+    private double[] readVec(String shipInfoJson) {
+        return new double[]{
+                readDouble(shipInfoJson, POS_X, "posX"),
+                readDouble(shipInfoJson, POS_Y, "posY"),
+                readDouble(shipInfoJson, POS_Z, "posZ")};
     }
 
     private double[] readQuat(String shipInfoJson) {

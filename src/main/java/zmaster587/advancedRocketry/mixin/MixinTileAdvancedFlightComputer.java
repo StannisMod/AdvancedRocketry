@@ -48,6 +48,10 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
     /** Cap on the attitude-hold desired angular speed (rad/s) — gentle, to stay under VS's
      *  "too fast" freeze while a large orientation error is being nulled. */
     private static final double AR_MAX_ANGULAR_SPEED = 1.5;
+    /** Attitude-hold dead-band (rad, ~1.7°): once within it the angular channel disengages and
+     *  the ship coasts. Actively braking residual spin at the target tripped VS's "too fast"
+     *  freeze — so "already pointed" must mean "no torque", like "no input" does. */
+    private static final double AR_ATTITUDE_DEADBAND = 0.03;
 
     private int arFlightControllerPriority;
 
@@ -94,11 +98,15 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
             Quaterniond err = new Quaterniond(target).mul(new Quaterniond(current).conjugate()).normalize();
             AxisAngle4d aa = new AxisAngle4d().set(err);
             double angle = aa.angle > Math.PI ? aa.angle - 2.0 * Math.PI : aa.angle; // shortest arc
-            double speed = angle * AR_ATTITUDE_GAIN;
-            if (speed > AR_MAX_ANGULAR_SPEED) speed = AR_MAX_ANGULAR_SPEED;
-            if (speed < -AR_MAX_ANGULAR_SPEED) speed = -AR_MAX_ANGULAR_SPEED;
-            wDesX = aa.x * speed; wDesY = aa.y * speed; wDesZ = aa.z * speed;
-            haveAngular = true;
+            // Within the dead-band the ship is "pointed": disengage so we don't brake residual
+            // spin into the "too fast" freeze. Outside it, drive the error out at a capped rate.
+            if (Math.abs(angle) >= AR_ATTITUDE_DEADBAND) {
+                double speed = angle * AR_ATTITUDE_GAIN;
+                if (speed > AR_MAX_ANGULAR_SPEED) speed = AR_MAX_ANGULAR_SPEED;
+                if (speed < -AR_MAX_ANGULAR_SPEED) speed = -AR_MAX_ANGULAR_SPEED;
+                wDesX = aa.x * speed; wDesY = aa.y * speed; wDesZ = aa.z * speed;
+                haveAngular = true;
+            }
         } else if (wCmd != null && wCmd.length >= 3
                 && (wCmd[0] * wCmd[0] + wCmd[1] * wCmd[1] + wCmd[2] * wCmd[2])
                         > AR_ANGULAR_CMD_EPSILON * AR_ANGULAR_CMD_EPSILON) {

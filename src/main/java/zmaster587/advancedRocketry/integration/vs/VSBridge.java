@@ -76,6 +76,15 @@ final class VSBridge {
         return new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z);
     }
 
+    /** Enable physics on the ship managing the block at {@code pos}, if any (a safe no-op
+     *  otherwise). Lets the Advanced Flight Computer tile activate its own ship's physics. */
+    static void ensureShipPhysicsEnabled(World world, BlockPos pos) {
+        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+        if (managing.isPresent()) {
+            managing.get().getShipData().setPhysicsEnabled(true);
+        }
+    }
+
     /** Number of Valkyrien Skies ships currently loaded in {@code world}. */
     static int loadedShipCount(World world) {
         return ValkyrienUtils.getServerShipManager(world).getAllLoadedThreadSafe().size();

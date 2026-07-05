@@ -6,8 +6,12 @@ import java.util.List;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ITickable;
 
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
+import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.libVulpes.inventory.modules.IModularInventory;
 import zmaster587.libVulpes.inventory.modules.ModuleBase;
 
@@ -29,7 +33,7 @@ import zmaster587.libVulpes.inventory.modules.ModuleBase;
  * on enable, and the engine-start ritual is not persisted). All physics-mod calls
  * stay behind the optional integration gate, so this class never hard-depends on it.</p>
  */
-public class TileAdvancedFlightComputer extends TileEntity implements IModularInventory {
+public class TileAdvancedFlightComputer extends TileEntity implements IModularInventory, ITickable {
 
     private static final String NBT_FLIGHT_ASSIST = "faEnabled";
 
@@ -63,6 +67,60 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      * hand-off + AR-core-only contract as the other channels.
      */
     public static volatile double[] debugTargetAttitude = null;
+
+    /**
+     * Bring-up channel for the pilot's held {@link FreeFlightInput}. When set, this tile's
+     * server tick runs the Free Flight decision layer over the ship's current attitude and
+     * publishes the resulting desired velocity + target attitude to the controller channels
+     * above. AR-core only. TODO: replace this static bring-up input with per-seat pilot state.
+     */
+    public static volatile FreeFlightInput debugFlightInput = null;
+
+    /** Ship cruise speed cap (blocks/second) mapped from full throttle. Kept modest so a
+     *  commanded velocity stays under the physics mod's "moving too fast" freeze. */
+    private static final double SHIP_MAX_SPEED = 8.0;
+
+    /**
+     * Server tick: when a Free Flight input is held and this tile's block is part of a physics
+     * ship, run the FF decision layer and publish the command the controller realizes. Reads
+     * the ship's current attitude from the physics mod (through the AR-core gate — no physics
+     * type here), advances it by the pilot's body rates for the target attitude, and maps the
+     * throttles into a world-frame desired velocity. A safe no-op without the physics mod, off
+     * a ship, or with no input.
+     */
+    @Override
+    public void update() {
+        if (world == null || world.isRemote) {
+            return;
+        }
+        FreeFlightInput in = debugFlightInput;
+        if (in == null) {
+            return;
+        }
+        FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
+        if (attitude == null) {
+            return; // not on a physics ship (or physics mod absent)
+        }
+        VSIntegration.ensureShipPhysicsEnabled(world, getPos());
+
+        // Target attitude: advance the ship's current orientation by the pilot's body rates.
+        FreeFlightPhysics.Quat target = FreeFlightPhysics.integrateBodyRates(attitude,
+                in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE,
+                in.yawInput * FreeFlightPhysics.MAX_YAW_RATE,
+                in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
+
+        // Desired world velocity: throttles map to body forward/right/up, rotated to world by
+        // the target attitude. The controller's deadbeat force realizes it (Flight Assist).
+        double[] vWorld = FreeFlightPhysics.bodyToWorldQ(
+                in.throttleForward * SHIP_MAX_SPEED,
+                in.strafeInput * SHIP_MAX_SPEED,
+                in.throttleVertical * SHIP_MAX_SPEED,
+                target);
+
+        debugCommandedVelocity = new double[]{vWorld[0], vWorld[1], vWorld[2]};
+        debugCommandedAngVel = null; // attitude target drives the angular channel
+        debugTargetAttitude = new double[]{target.w, target.x, target.y, target.z};
+    }
 
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
      *  Defaults ON, matching Free Flight's default. */
