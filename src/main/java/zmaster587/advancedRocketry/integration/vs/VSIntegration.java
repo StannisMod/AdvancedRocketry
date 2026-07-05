@@ -6,6 +6,7 @@ import net.minecraftforge.fml.common.Loader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 import zmaster587.advancedRocketry.entity.IFlightBackend;
 
 /**
@@ -93,5 +94,18 @@ public final class VSIntegration {
             return null;
         }
         return new VSFlightBackend(world, anchorPos);
+    }
+
+    /**
+     * The body&rarr;world attitude of the Valkyrien Skies ship managing the block at
+     * {@code pos}, or {@code null} when VS is absent or no ship manages it. Returns
+     * the AR-core {@link FreeFlightPhysics.Quat} so a caller in AR core never sees a
+     * VS type. Free Flight integrates the pilot's body rates over this each tick.
+     */
+    public static FreeFlightPhysics.Quat getShipAttitude(World world, BlockPos pos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.getShipAttitude(world, pos);
     }
 }

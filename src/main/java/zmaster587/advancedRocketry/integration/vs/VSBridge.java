@@ -1,13 +1,20 @@
 package zmaster587.advancedRocketry.integration.vs;
 
+import java.util.Optional;
+
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import org.apache.logging.log4j.Logger;
+import org.joml.Quaterniond;
 import org.valkyrienskies.mod.common.ships.ShipData;
 import org.valkyrienskies.mod.common.ships.block_relocation.BlockFinder;
+import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import org.valkyrienskies.mod.common.ships.ship_world.WorldServerShipManager;
 import org.valkyrienskies.mod.common.util.ValkyrienUtils;
+import valkyrienwarfare.api.TransformType;
+
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 
 /**
  * The Valkyrien Skies-facing side of the integration. Every reference to an
@@ -45,5 +52,21 @@ final class VSBridge {
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
         manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
         logger.info("Queued tier-2 ship assembly at {} (ship '{}').", anchorPos, ship.getName());
+    }
+
+    /**
+     * The body&rarr;world attitude of the ship managing the block at {@code pos}, as
+     * an AR-core {@link FreeFlightPhysics.Quat}, or {@code null} if no ship manages
+     * it yet. This is the ship's own transform (VS is the source of truth); Free
+     * Flight integrates the pilot's body rates over it each tick.
+     */
+    static FreeFlightPhysics.Quat getShipAttitude(World world, BlockPos pos) {
+        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+        if (!managing.isPresent()) {
+            return null;
+        }
+        Quaterniond q = managing.get().getShipData().getShipTransform()
+                .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+        return new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z);
     }
 }
