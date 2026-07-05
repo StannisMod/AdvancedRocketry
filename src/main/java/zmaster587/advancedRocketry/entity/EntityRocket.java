@@ -183,6 +183,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     //       below is opt-in and bypassed entirely when classic) -----
     private RocketFlightMode flightMode = RocketFlightMode.DEFAULT;
     private FreeFlightInput  currentFreeFlightInput = FreeFlightInput.zero();
+    /** Backend that realizes each FF tick's desired state (see
+     *  {@link IRocketFlightBackend}). Legacy backend owns the entity transform
+     *  exactly as before; a ship-physics backend would own displacement instead. */
+    private final IRocketFlightBackend flightBackend = new LegacyFlightBackend();
     /** FF attitude source of truth (body→world quaternion).
      *  Integrated by BODY rates on the server; on the client it is the smoothed
      *  local estimate (predict from input + slerp toward the replicated
@@ -1094,47 +1098,25 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                     in, thrustMag, gravity, canThrust);
         }
 
-        // Commit the attitude; snapshot prev for render/camera slerp. Derive the
-        // Euler view for legacy consumers (seat, HUD bars, probes, vanilla
-        // rotationYaw/Pitch readers), and replicate the quaternion. The client
-        // reads FF_Q* directly, so the old yaw/pitch tracker drift-resync teleport
-        // is gone — the full attitude is authoritative every tick.
-        this.prevFfQuat = this.ffQuat;
-        this.ffQuat = newQuat;
-        float[] e = FreeFlightPhysics.eulerFromQuat(newQuat);
-        this.prevRotationYaw = this.rotationYaw;
-        this.prevRotationPitch = this.rotationPitch;
-        this.prevFreeFlightRoll = this.freeFlightRoll;
-        this.rotationYaw     = e[0];
-        this.rotationPitch   = e[1];
-        this.freeFlightPitch = e[1];
-        this.freeFlightRoll  = e[2];
-        this.dataManager.set(FF_QW, (float) newQuat.w);
-        this.dataManager.set(FF_QX, (float) newQuat.x);
-        this.dataManager.set(FF_QY, (float) newQuat.y);
-        this.dataManager.set(FF_QZ, (float) newQuat.z);
-
         // Engine power = magnitude of the thrust the engines applied this tick,
         // i.e. the world-frame Δv MINUS gravity (gravity is not thrust): the
         // difference between the resulting motion and where the craft would have
         // coasted. Non-zero for thrust in ANY direction — climb, cruise, strafe,
         // or just holding a hover against gravity — so the client sound plays
         // whenever the engines actually fire, at a volume proportional to |thrust|.
+        // Computed from the CURRENT (pre-application) motion, before the backend
+        // overwrites it with result.motion*.
         double tdx = result.motionX - this.motionX;
         double tdy = result.motionY - (this.motionY - gravity);
         double tdz = result.motionZ - this.motionZ;
         float enginePow = (float) Math.min(1.0,
                 Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz) / FreeFlightPhysics.MAX_THRUST_ACCEL);
-        this.dataManager.set(FF_ENGINE_POWER, enginePow);
-
-        this.motionX = result.motionX;
-        this.motionY = result.motionY;
-        this.motionZ = result.motionZ;
 
         // Fuel burn — classic semantics: while thrust is applied AND fuel is
         // required, drain getFuelConsumptionRate per tick (oxidizer too for
         // bipropellant), and null out the fluid when a tank empties — exactly
-        // like the classic ascent burn in onUpdate().
+        // like the classic ascent burn in onUpdate(). A gameplay side-effect, not
+        // part of the transform, so it stays here regardless of backend.
         if (requireFuel && result.thrustApplied && ft != null) {
             setFuelAmount(ft, getFuelAmount(ft) - getFuelConsumptionRate(ft));
             if (ft == FuelType.LIQUID_BIPROPELLANT)
@@ -1150,8 +1132,12 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             }
         }
 
-        // Apply motion to the world.
-        this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
+        // Realize the desired flight state through the pluggable backend: commit
+        // the attitude, derive the legacy Euler view, replicate FF_Q*/engine-power,
+        // write motion* and displace the entity. The legacy backend owns the
+        // transform exactly as before; a ship-physics backend would instead hand
+        // the state to the ship and own displacement itself.
+        flightBackend.applyFlightState(this, newQuat, result, enginePow);
 
         // Landing: ground contact + slow vertical motion → engines off
         // (touchdown auto-shutdown). The detector arms only once the craft
@@ -3851,5 +3837,55 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         SET_FLIGHT_ASSIST,
         /** Client→server: the pilot completed the 3 s engine-start hold. No payload. */
         ENGINE_START
+    }
+
+    /**
+     * Legacy Free-Flight backend: owns the entity transform exactly as the inline
+     * FF v2 code did before {@link IRocketFlightBackend} was introduced — commit
+     * the attitude, derive the legacy Euler view, replicate the FF_Q and
+     * engine-power data, write {@code motion*} and displace via {@code Entity.move()}. Used when no
+     * ship-physics backend is present; {@link #ownsTransform()} is {@code false},
+     * so Free Flight keeps running its own transform, replication and client
+     * dead-reckoning.
+     */
+    private static final class LegacyFlightBackend implements IRocketFlightBackend {
+        @Override
+        public void applyFlightState(EntityRocket rocket,
+                                     FreeFlightPhysics.Quat attitude,
+                                     FreeFlightPhysics.Step step,
+                                     float enginePower) {
+            // Commit the attitude; snapshot prev for render/camera slerp. Derive the
+            // Euler view for legacy consumers (seat, HUD bars, probes, vanilla
+            // rotationYaw/Pitch readers), and replicate the quaternion. The client
+            // reads FF_Q* directly, so the old yaw/pitch tracker drift-resync
+            // teleport is gone — the full attitude is authoritative every tick.
+            rocket.prevFfQuat = rocket.ffQuat;
+            rocket.ffQuat = attitude;
+            float[] e = FreeFlightPhysics.eulerFromQuat(attitude);
+            rocket.prevRotationYaw = rocket.rotationYaw;
+            rocket.prevRotationPitch = rocket.rotationPitch;
+            rocket.prevFreeFlightRoll = rocket.freeFlightRoll;
+            rocket.rotationYaw     = e[0];
+            rocket.rotationPitch   = e[1];
+            rocket.freeFlightPitch = e[1];
+            rocket.freeFlightRoll  = e[2];
+            rocket.dataManager.set(FF_QW, (float) attitude.w);
+            rocket.dataManager.set(FF_QX, (float) attitude.x);
+            rocket.dataManager.set(FF_QY, (float) attitude.y);
+            rocket.dataManager.set(FF_QZ, (float) attitude.z);
+            rocket.dataManager.set(FF_ENGINE_POWER, enginePower);
+
+            rocket.motionX = step.motionX;
+            rocket.motionY = step.motionY;
+            rocket.motionZ = step.motionZ;
+
+            // Apply motion to the world.
+            rocket.move(MoverType.SELF, rocket.motionX, rocket.motionY, rocket.motionZ);
+        }
+
+        @Override
+        public boolean ownsTransform() {
+            return false;
+        }
     }
 }
