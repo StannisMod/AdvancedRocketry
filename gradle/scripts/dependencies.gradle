@@ -2,9 +2,10 @@ apply from: 'gradle/scripts/helpers.gradle'
 
 def run_the_one_probe = true
 def run_hwyla = false
-// TASK-47: pull Valkyrien Skies into the DEV runtime for hands-on testing of the
+// Pull Valkyrien Skies into the DEV runtime for hands-on testing of the
 // true-spaceship feature. compileOnly is always on (AR compiles against the VS
-// API); this toggle only adds the runtime jar so a dev boot actually has VS.
+// Core API); this toggle only adds the runtime jars (Core + World + Control) so a
+// dev boot actually has a functional VS able to assemble and move ships.
 def run_valkyrien_skies = false
 
 repositories {
@@ -102,14 +103,21 @@ dependencies {
     compileOnly rfg.deobf('curse.maven:galacticraft-legacy-564236:4671122')
     compileOnly rfg.deobf('curse.maven:matter-overdrive-557428:6439254')
 
-    // Valkyrien Skies — optional/soft integration for TASK-47 "true spaceships".
-    // compileOnly: AR compiles against the VS API but never bundles or requires
-    // it; the feature lights up only when VS is also installed (gated in
-    // integration/vs/VSIntegration). Flip run_valkyrien_skies (top of this file)
-    // to add VS to the dev runtime for hands-on testing. VS Core 1.12.2-1.1.7.
+    // Valkyrien Skies — optional/soft integration for the "true spaceships"
+    // feature. compileOnly: AR compiles against the VS Core API but never bundles
+    // or requires it; the feature lights up only when VS is also installed (gated
+    // in integration/vs/VSIntegration). Flip run_valkyrien_skies (top of this
+    // file) to add VS to the dev runtime for hands-on testing.
+    //   Core    (258371, file 3286262) 1.12.2-1.1.7 — the API AR compiles against
+    //   World   (404464, file 3061764) 1.0.0        — ship world manager (runtime)
+    //   Control (404463, file 3160203) 1.1.1        — helm/control blocks (runtime)
+    // World + Control are runtime-only: AR never compiles against them, but a live
+    // VS needs them to assemble and steer a ship.
     compileOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
     if (run_valkyrien_skies) {
         runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
+        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-world-404464:3061764')
+        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-control-404463:3160203')
     }
     // Optional Mouse Tweaks API annotations, e.g. @MouseTweaksIgnore
     compileOnly(rfg.deobf("curse.maven:mouse-tweaks-unofficial-461660:5876158")) {
