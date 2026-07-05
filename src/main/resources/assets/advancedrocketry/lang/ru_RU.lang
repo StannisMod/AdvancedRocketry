@@ -44,6 +44,7 @@ tile.chipStorage.name=Хранилище адресов спутников
 tile.planetanalyser.name=Планетный анализатор
 tile.lunaranalyser.name=Лунный анализатор
 tile.guidanceComputer.name=Навигационный компьютер
+tile.advancedFlightComputer.name=Продвинутый полётный компьютер
 tile.electricArcFurnace.name=Электродуговая печь
 tile.hotDryturf.name=Окисленный железный песок
 tile.concrete.name=Бетон

@@ -411,6 +411,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileTerraformingTerminal.class, "ARTileEntityTerraformingTerminal");
         GameRegistry.registerTileEntity(TileAstrobodyDataProcessor.class, "ARplanetAnalyser");
         GameRegistry.registerTileEntity(TileGuidanceComputer.class, "ARguidanceComputer");
+        GameRegistry.registerTileEntity(TileAdvancedFlightComputer.class, "ARadvancedFlightComputer");
         GameRegistry.registerTileEntity(TileElectricArcFurnace.class, "ARelectricArcFurnace");
         GameRegistry.registerTileEntity(TilePlanetSelector.class, "ARTilePlanetSelector");
         //GameRegistry.registerTileEntity(TileModelRenderRotatable.class, "ARTileModelRenderRotatable");
@@ -718,6 +719,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockNuclearFuelTank = new BlockNuclearFuelTank(Material.IRON).setUnlocalizedName("nuclearfueltank").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockNuclearCore = new BlockNuclearCore(Material.IRON).setUnlocalizedName("nuclearcore").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockAdvancedFlightComputer = new BlockTile(TileAdvancedFlightComputer.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockIntake = new BlockIntake(Material.IRON).setUnlocalizedName("gasIntake").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockDrill = new BlockMiningDrill().setUnlocalizedName("drill").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockLandingFloat = new Block(Material.IRON).setUnlocalizedName("landingfloat").setCreativeTab(tabAdvRocketry).setHardness(1).setResistance(1f);
@@ -887,6 +889,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearFuelTank.setRegistryName("nuclearfueltank"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearCore.setRegistryName("nuclearcore"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGuidanceComputer.setRegistryName("guidanceComputer"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAdvancedFlightComputer.setRegistryName("advancedFlightComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockIntake.setRegistryName("intake"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDrill.setRegistryName("drill"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLandingFloat.setRegistryName("landingfloat"));
