@@ -20,6 +20,7 @@ import org.valkyrienskies.mod.common.util.ValkyrienUtils;
 import valkyrienwarfare.api.TransformType;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 
 /**
  * The Valkyrien Skies-facing side of the integration. Every reference to an
@@ -143,6 +144,27 @@ final class VSBridge {
         // trip the spawn/proximity double-load) before applying the setpoint.
         physo.getShipData().setPhysicsEnabled(true);
         physo.getPhysicsData().setLinearVelocity(new Vector3d(vx, vy, vz));
+        return true;
+    }
+
+    /**
+     * Command the loaded ship nearest to {@code (x,y,z)} toward a world-frame velocity. The
+     * force that realizes it is applied on the PHYSICS thread by the flight-controller mixin
+     * on the Advanced Flight Computer tile ({@code MixinTileAdvancedFlightComputer}) — VS
+     * ignores a velocity setpoint AND a game-thread force, so the only working path is a
+     * per-physics-tick force from a ship-tile controller. Here we just enable physics and
+     * publish the command that controller reads. Angular args are accepted for signature
+     * stability but not yet used. Returns false if no ship is loaded.
+     */
+    static boolean commandNearestShipVelocity(World world, double x, double y, double z,
+                                              double vx, double vy, double vz,
+                                              double wx, double wy, double wz) {
+        PhysicsObject physo = nearestShip(world, x, y, z);
+        if (physo == null) {
+            return false;
+        }
+        physo.getShipData().setPhysicsEnabled(true);
+        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{vx, vy, vz};
         return true;
     }
 

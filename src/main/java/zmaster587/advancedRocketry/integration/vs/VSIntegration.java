@@ -161,4 +161,18 @@ public final class VSIntegration {
         }
         return VSBridge.pushNearestShip(world, x, y, z, vx, vy, vz);
     }
+
+    /**
+     * Command the loaded ship nearest to {@code (x,y,z)} toward a world-frame linear +
+     * angular velocity, realized as FORCE through a per-physics-tick controller (the working
+     * flight path); a safe no-op returning false when VS is absent or no ship is loaded.
+     */
+    public static boolean commandNearestShipVelocity(World world, double x, double y, double z,
+                                                     double vx, double vy, double vz,
+                                                     double wx, double wy, double wz) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.commandNearestShipVelocity(world, x, y, z, vx, vy, vz, wx, wy, wz);
+    }
 }

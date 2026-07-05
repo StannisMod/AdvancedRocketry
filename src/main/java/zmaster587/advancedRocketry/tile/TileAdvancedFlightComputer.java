@@ -33,6 +33,18 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
 
     private static final String NBT_FLIGHT_ASSIST = "faEnabled";
 
+    /**
+     * Bring-up command for the force-mode flight controller: the desired world-frame
+     * velocity {@code {x,y,z}} (blocks/s), or {@code null} when nothing is commanded.
+     * Written from the GAME thread (a test probe today; the seated pilot's input later);
+     * read on the Valkyrien Skies PHYSICS thread by the flight-controller mixin, which turns
+     * it into force. {@code volatile} for cross-thread visibility. AR-core only — carries no
+     * physics-mod type, so this class still loads fine without the physics mod installed.
+     * TODO: replace this static bring-up channel with per-tile pilot state once the pilot
+     * seat + input retarget land.
+     */
+    public static volatile double[] debugCommandedVelocity = null;
+
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
      *  Defaults ON, matching Free Flight's default. */
     private boolean flightAssistEnabled = true;

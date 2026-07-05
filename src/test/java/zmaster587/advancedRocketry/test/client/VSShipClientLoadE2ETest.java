@@ -2,7 +2,6 @@ package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import org.junit.Assume;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -27,14 +26,15 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Gated on real VS presence — run with {@code -PwithVS}; skips otherwise.
  */
-@Ignore("Runtime finding, kept as executable documentation: with a real client present the "
-        + "tier-2 ship assembles and LOADS (the client pulls its chunks in — a headless server "
-        + "cannot), but a direct linear-velocity setpoint does NOT move it — VS's force-based "
-        + "solver overwrites setLinearVelocity every physics tick (commanded vy=20, observed "
-        + "vy≈1.8, ship fell under gravity). A pilotable ship must therefore drive FORCE/torque "
-        + "on the physics thread, not a velocity setpoint. Also pins the assembly + spawn-window "
-        + "workaround (keep the observer far during spawn or VS crashes on a double ship-load). "
-        + "Re-enable once a force-based flight backend exists.")
+/**
+ * End-to-end for the tier-2 Valkyrien Skies ship at the client tier: assemble → load (a
+ * real client pulls its chunks in — a headless server cannot) → FLY IT WITH FORCE. This is
+ * the honest path after the runtime finding that a velocity setpoint does nothing (VS's
+ * solver overwrites setLinearVelocity); the ship is driven by a per-physics-tick force
+ * controller ({@code vs force-vel} → {@code VSShipController}) instead. Also exercises the
+ * spawn-window workaround (keep the observer far during spawn, or VS crashes on a double
+ * ship-load). Gated on real VS presence — run with {@code -PwithVS}.
+ */
 public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern BUILDER_POS =
@@ -52,7 +52,7 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void assembledShipLoadsWithClientPresentAndMovesUnderSetpoint() throws Exception {
+    public void assembledShipLoadsWithClientPresentAndFliesUnderForce() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)",
                 serverHasVs());
 
@@ -105,25 +105,24 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
                         + loadTrace.toString().trim() + "], all=" + all,
                 !Double.isNaN(zBefore));
 
-        // Now that it is loaded + physics-enabled, a direct velocity setpoint (model A)
-        // must translate it. Push straight UP so ground friction/collision cannot be the
-        // reason it stays put (the only thing to overcome is gravity, and vy=20 ≫ that) —
-        // this isolates "does VS honour setLinearVelocity" from "the ship is resting on
-        // the ground". Re-apply each tick to mirror the AFC's per-tick setpoint.
+        // Now that it is loaded + physics-enabled, command a straight-UP velocity realized
+        // as FORCE (the working path — a raw setpoint does nothing). Up isolates the result
+        // from ground friction: the only thing to overcome is gravity, and the controller's
+        // deadbeat force (F = mass·accel, clamped to thrust authority) exceeds it. Re-command
+        // each tick to mirror how the flight computer will drive it.
         double yBefore = shipPosY(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
-        for (int i = 0; i < 25; i++) {
-            String push = exec("artest vs push-ship 0 " + BX + " " + BY + " " + BZ + " 0 20 0");
-            assertTrue("push-ship must find the loaded ship: " + push, push.contains("\"pushed\":true"));
+        for (int i = 0; i < 30; i++) {
+            String cmd = exec("artest vs force-vel 0 " + BX + " " + BY + " " + BZ + " 0 8 0");
+            assertTrue("force-vel must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
         }
         String lastInfo = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
         double yAfter = shipPosY(lastInfo);
         double velY = readDouble(lastInfo, VEL_Y, "velY");
 
-        // velY tells the mechanism apart: velY≈20 here means VS accepted the setpoint but
-        // never integrated it into position (clobbered by the force solver → model A dead);
-        // velY≈0 means the setpoint never registered at all.
-        assertTrue("commanded +Y velocity must lift the loaded ship through VS physics "
+        // Force actually integrates into motion: the ship must climb. (Model A's setLinearVelocity
+        // left this flat with velY≈1.8; a force controller lifts it.)
+        assertTrue("commanded +Y velocity (via force) must lift the loaded ship "
                         + "(yBefore=" + yBefore + " yAfter=" + yAfter + " velY=" + velY + ")",
                 yAfter - yBefore > 1.0);
     }
