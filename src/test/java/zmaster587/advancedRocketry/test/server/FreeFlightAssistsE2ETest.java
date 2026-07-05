@@ -208,11 +208,15 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
         ok(client().execute("artest rocket start-free-flight " + id));
 
-        // Climb away from the ground first: the Newtonian phase sheds altitude
-        // under gravity, and starting from the 1-block engine hover it would
-        // touch down (engines off) before the capture could be observed.
+        // Climb well away from the ground first: the Newtonian coast sheds
+        // altitude under gravity, and — because re-enabling FA captures the
+        // CURRENT velocity (including any downward component) — the craft keeps
+        // descending through the 20-tick observation window. Starting from the
+        // 1-block engine hover it would touch down (engines off, motion zeroed)
+        // before the cruise capture could be observed. The climb budget is sized
+        // for the worst case (a full held descent), not just the coast.
         ok(client().execute("artest rocket free-flight-input " + id + " 0 1 0 0 0"));
-        ok(client().execute("artest rocket free-flight-tick " + id + " 25"));
+        ok(client().execute("artest rocket free-flight-tick " + id + " 60"));
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1")); // cut -> hover
         ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
 
