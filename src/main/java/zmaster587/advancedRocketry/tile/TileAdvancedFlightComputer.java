@@ -4,6 +4,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
@@ -20,13 +21,44 @@ import zmaster587.libVulpes.inventory.modules.ModuleBase;
  * distinct from the Guidance Computer and other on-board computers so the two are
  * never confused in code or GUI.</p>
  *
- * <p>This is the pure skeleton: it registers, renders and opens an (empty) modular
- * GUI, but carries no flight logic yet. Pilot-input reading and the flight-control
- * wiring land in a later phase; the ship-assembly bridge to a rigid-body physics
- * mod lives entirely in the optional integration module and is reached only when
- * that mod is installed, so this class never depends on it.</p>
+ * <p>On a tier-2 ship this tile is the flight computer: a seated pilot's Free Flight
+ * input, plus the ship's own attitude read back from the physics mod, drive a
+ * velocity setpoint on the ship. That control loop lands in a later phase; the only
+ * state persisted here is the pilot's Flight-Assist on/off choice (per the design,
+ * the ship remembers only its FA setting — the velocity setpoint is captured live
+ * on enable, and the engine-start ritual is not persisted). All physics-mod calls
+ * stay behind the optional integration gate, so this class never hard-depends on it.</p>
  */
 public class TileAdvancedFlightComputer extends TileEntity implements IModularInventory {
+
+    private static final String NBT_FLIGHT_ASSIST = "faEnabled";
+
+    /** Flight Assist on/off — the one piece of flight state the ship remembers.
+     *  Defaults ON, matching Free Flight's default. */
+    private boolean flightAssistEnabled = true;
+
+    public boolean isFlightAssistEnabled() {
+        return flightAssistEnabled;
+    }
+
+    public void setFlightAssistEnabled(boolean enabled) {
+        this.flightAssistEnabled = enabled;
+        markDirty();
+    }
+
+    @Override
+    public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
+        super.writeToNBT(nbt);
+        nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
+        return nbt;
+    }
+
+    @Override
+    public void readFromNBT(NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        // Absent key → default ON (a freshly-placed computer, or a pre-FA save).
+        flightAssistEnabled = !nbt.hasKey(NBT_FLIGHT_ASSIST) || nbt.getBoolean(NBT_FLIGHT_ASSIST);
+    }
 
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
