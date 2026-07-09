@@ -99,6 +99,9 @@ public final class SpaceSlotPool {
      * the new cell. Server thread only; the slot must have no occupants.
      */
     public static void unload(int dimId) {
+        // Clear any "keep loaded" hold (e.g. left by a cross-dim teleport into the slot) so the
+        // synchronous removal below is not blocked.
+        DimensionManager.keepDimensionLoaded(dimId, false);
         WorldServer world = DimensionManager.getWorld(dimId);
         if (world == null) {
             return;
