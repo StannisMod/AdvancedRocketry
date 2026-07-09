@@ -96,6 +96,16 @@ final class VSBridge {
         return new double[]{worldSeat.x, worldSeat.y, worldSeat.z};
     }
 
+    /** Whether VS's per-world ship manager is attached to {@code world} (i.e. VS ships can live
+     *  there). Defensive: any failure to consult VS is treated as "no support". */
+    static boolean hasShipSupport(World world) {
+        try {
+            return ValkyrienUtils.getServerShipManager(world) != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** Enable physics on the ship managing the block at {@code pos}, if any (a safe no-op
      *  otherwise). Lets the Advanced Flight Computer tile activate its own ship's physics. */
     static void ensureShipPhysicsEnabled(World world, BlockPos pos) {

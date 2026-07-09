@@ -123,6 +123,19 @@ public final class VSIntegration {
     }
 
     /**
+     * Whether Valkyrien Skies ship support (its per-world ship manager) is attached to
+     * {@code world}. Used by the space slot-pool spike to confirm VS lights up on a
+     * dynamically-created pool world, not just the vanilla/AR dimensions. {@code false} when VS
+     * is absent or its manager is not present. Only AR-core/MC types cross the gate.
+     */
+    public static boolean hasShipSupport(World world) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.hasShipSupport(world);
+    }
+
+    /**
      * Enable physics on the ship managing the block at {@code pos} (a safe no-op when VS is
      * absent or no ship manages it). Only AR-core/MC types cross the gate.
      */

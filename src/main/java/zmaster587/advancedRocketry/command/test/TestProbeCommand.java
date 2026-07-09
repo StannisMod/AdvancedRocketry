@@ -85,6 +85,9 @@ public class TestProbeCommand extends CommandBase {
                 case "vs":
                     handleVs(sender, tail(args));
                     break;
+                case "space":
+                    handleSpace(server, sender, tail(args));
+                    break;
                 case "dim":
                     handleDim(sender, tail(args));
                     break;
@@ -478,6 +481,153 @@ public class TestProbeCommand extends CommandBase {
     }
 
     // Registry probes -----------------------------------------------------
+
+    /**
+     * Drive the space slot pool: register slots, bind/(re)load a slot to a cell,
+     * unload it, and set/read a marker block. Lets a server test prove that one pre-registered
+     * dimension can be rebound to different on-disk cells at runtime (retargetable SaveHandler via
+     * {@link zmaster587.advancedRocketry.space.WorldProviderSpaceSlot#getSaveFolder()}).
+     */
+    private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 1 && "roundtrip".equalsIgnoreCase(args[0])) {
+            // Whole rebind round-trip in ONE synchronous probe call (no ticks between steps, so no
+            // auto-unload and no lag-corrupted response capture): place a marker in cell A, rebind
+            // through cell B (which must not see A's marker), place a marker in B, rebind back to A.
+            // Pass iff A's marker persisted and B's marker did not bleed into A (folder isolation).
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            net.minecraft.util.math.BlockPos p1 = new net.minecraft.util.math.BlockPos(0, 64, 0);
+            net.minecraft.util.math.BlockPos p2 = new net.minecraft.util.math.BlockPos(1, 64, 1);
+            net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+
+            net.minecraft.world.WorldServer w = zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, "A");
+            w.setBlockState(p1, stone);
+            boolean r1 = w.getBlockState(p1).getBlock() == net.minecraft.init.Blocks.STONE;
+
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot);
+            w = zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, "B");
+            boolean r2 = w.getBlockState(p1).getBlock() == net.minecraft.init.Blocks.STONE;
+            w.setBlockState(p2, stone);
+
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot);
+            w = zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, "A");
+            boolean r3 = w.getBlockState(p1).getBlock() == net.minecraft.init.Blocks.STONE;
+            boolean r4 = w.getBlockState(p2).getBlock() == net.minecraft.init.Blocks.STONE;
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot);
+
+            boolean pass = r1 && !r2 && r3 && !r4;
+            send(sender, "{\"ok\":true,\"slot\":" + slot + ",\"aMarkerSet\":" + r1
+                    + ",\"bSeesAMarker\":" + r2 + ",\"aMarkerAfterRoundtrip\":" + r3
+                    + ",\"bMarkerBledIntoA\":" + r4 + ",\"pass\":" + pass + "}");
+            return;
+        }
+        if (args.length >= 1 && "vs-assemble".equalsIgnoreCase(args[0])) {
+            // Assemble a small VS ship in a fresh pool slot (a 3x3x3 stone cube floating in void).
+            String cell = args.length >= 2 ? args[1] : "deep";
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            net.minecraft.world.WorldServer w =
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, cell);
+            net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+            for (int dx = 0; dx < 3; dx++) {
+                for (int dy = 0; dy < 3; dy++) {
+                    for (int dz = 0; dz < 3; dz++) {
+                        w.setBlockState(new net.minecraft.util.math.BlockPos(dx, 64 + dy, dz), stone);
+                    }
+                }
+            }
+            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(
+                    w, new net.minecraft.util.math.BlockPos(1, 65, 1));
+            send(sender, "{\"ok\":true,\"slot\":" + slot + "}");
+            return;
+        }
+        if (args.length >= 2 && "vs-count".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer w = net.minecraftforge.common.DimensionManager.getWorld(
+                    parseIntOr(args[1], Integer.MIN_VALUE));
+            int c = w == null ? -1
+                    : zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(w);
+            send(sender, "{\"ok\":true,\"count\":" + c + "}");
+            return;
+        }
+        if (args.length >= 3 && "reload".equalsIgnoreCase(args[0])) {
+            // Synchronous unload (saves VS ship data via VS's per-world save) + reload of the SAME
+            // slot, bound to a cell. This is the risky path: setWorld(null) on a world with a VS ship
+            // and a live physics thread. Reports rather than crashing where it can.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(dim);
+            net.minecraft.world.WorldServer w =
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.load(dim, args[2]);
+            // Read the queryable ship count SYNCHRONOUSLY here (same server-thread call as the reload,
+            // before any tick can auto-unload the world): VS loads its per-world ship registry from
+            // the world capability at construction, so a surviving ship shows up immediately.
+            int count = w == null ? -1
+                    : zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(w);
+            send(sender, "{\"ok\":true,\"present\":" + (w != null) + ",\"countAfterReload\":" + count + "}");
+            return;
+        }
+        if (args.length >= 1 && "vs-cap".equalsIgnoreCase(args[0])) {
+            // Does Valkyrien Skies' per-world ship manager attach to a dynamically-created pool
+            // world? (Layer-1 gate: VS ships can only live in a slot if VS lights up there.)
+            String cell = args.length >= 2 ? args[1] : "vscap";
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            net.minecraft.world.WorldServer w =
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, cell);
+            boolean support = zmaster587.advancedRocketry.integration.vs.VSIntegration.hasShipSupport(w);
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot);
+            send(sender, "{\"ok\":true,\"slot\":" + slot + ",\"vsShipSupport\":" + support + "}");
+            return;
+        }
+        if (args.length >= 1 && "pool-register".equalsIgnoreCase(args[0])) {
+            int n = args.length >= 2 ? parseIntOr(args[1], 1) : 1;
+            int[] ids = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(n);
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"dims\":[");
+            for (int i = 0; i < ids.length; i++) {
+                if (i > 0) sb.append(',');
+                sb.append(ids[i]);
+            }
+            send(sender, sb.append("]}").toString());
+            return;
+        }
+        if (args.length >= 3 && "load".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer w =
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.load(dim, args[2]);
+            send(sender, "{\"ok\":true,\"present\":" + (w != null) + ",\"folder\":\""
+                    + (w != null ? w.provider.getSaveFolder() : "") + "\"}");
+            return;
+        }
+        if (args.length >= 2 && "unload".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(parseIntOr(args[1], Integer.MIN_VALUE));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if (args.length >= 5 && "set-block".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer w =
+                    net.minecraftforge.common.DimensionManager.getWorld(parseIntOr(args[1], Integer.MIN_VALUE));
+            if (w == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 64), parseIntOr(args[4], 0));
+            w.setBlockState(pos, net.minecraft.init.Blocks.STONE.getDefaultState());
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if (args.length >= 5 && "get-block".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer w =
+                    net.minecraftforge.common.DimensionManager.getWorld(parseIntOr(args[1], Integer.MIN_VALUE));
+            if (w == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 64), parseIntOr(args[4], 0));
+            send(sender, "{\"ok\":true,\"block\":\""
+                    + w.getBlockState(pos).getBlock().getRegistryName() + "\"}");
+            return;
+        }
+        send(sender, "{\"error\":\"usage: space pool-register <n>|load <dim> <cell>|unload <dim>"
+                + "|set-block <dim> x y z|get-block <dim> x y z\"}");
+    }
 
     private void handleRegistry(ICommandSender sender, String[] args) {
         if (args.length == 0 || "summary".equalsIgnoreCase(args[0])) {
