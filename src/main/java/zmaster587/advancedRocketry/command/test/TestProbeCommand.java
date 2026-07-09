@@ -7405,11 +7405,15 @@ public class TestProbeCommand extends CommandBase {
             //   invalid-no-guidance — same minus guidance comp → expects NOGUIDANCE on scan
             //   with-advanced-flight-computer — simple + 1 advancedFlightComputer block
             //                                   (tier-2 gate; inert without Valkyrien Skies)
+            //   advanced-flight-computer-only — simple minus guidance + 1 advancedFlightComputer
+            //                                   (AFC is the tier-2 brain; with VS → ship, without
+            //                                    VS → NOGUIDANCE, the fallback still needs guidance)
             String variant = args.length >= 6 ? args[5].toLowerCase(java.util.Locale.ROOT) : "simple";
             boolean includeEngines = !"invalid-no-engine".equals(variant);
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
             boolean includeSeat = !"invalid-no-seat".equals(variant);
-            boolean includeGuidance = !"invalid-no-guidance".equals(variant);
+            boolean includeGuidance = !"invalid-no-guidance".equals(variant)
+                    && !"advanced-flight-computer-only".equals(variant);
             boolean includeCargo = "with-cargo".equals(variant);
             // with-fluid-cargo: same as simple but replaces 2 of the 6 BlockFuelTank
             // positions with BlockPressurizedFluidTank (registry "liquidTank") which
@@ -7445,7 +7449,12 @@ public class TestProbeCommand extends CommandBase {
             // far side of the guidance column. Its presence is the tier-2 gate: with
             // Valkyrien Skies installed the build becomes a VS ship; without VS it
             // rides along inertly and the normal rocket is built.
-            boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant);
+            // "advanced-flight-computer-only" — an AFC but NO guidance computer: the tier-2
+            // build a player actually makes (the flight computer IS the ship's brain). With VS
+            // it must assemble to a ship; without VS it must still fail NOGUIDANCE (fallback
+            // rocket needs a real guidance computer).
+            boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
+                    || "advanced-flight-computer-only".equals(variant);
             boolean replaceEnginesWithNuclear = includeNuclearStack || includeNuclearMisplaced;
 
             net.minecraft.world.WorldServer world = server.getWorld(dim);

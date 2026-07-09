@@ -72,6 +72,36 @@ public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest
                 assemble.contains("\"rocketCount\":0"));
     }
 
+    @Test
+    public void flightComputerAloneSatisfiesGuidanceAndAssemblesShipWithVs() throws Exception {
+        // The build a player actually makes: an Advanced Flight Computer and NO guidance
+        // computer. The AFC IS the tier-2 ship's flight computer, so it must satisfy the
+        // "computer with instructions" requirement — the scan must not reject it as NOGUIDANCE,
+        // and with VS the build routes to a ship (no rocket).
+        Assume.assumeTrue("needs Valkyrien Skies on the server classpath (run with -PwithVS)",
+                serverHasVs());
+
+        String assemble = assembleFixture(2000, 64, 2000, "advanced-flight-computer-only");
+        assertTrue("an AFC alone must satisfy the guidance requirement and route to a ship "
+                        + "(no rocket): " + assemble,
+                assemble.contains("\"rocketCount\":0"));
+    }
+
+    @Test
+    public void flightComputerAloneWithoutVsStillRequiresGuidance() throws Exception {
+        // The mirror gate: without VS the AFC is inert, the build falls back to a real rocket,
+        // and a rocket still needs a guidance computer to navigate. So an AFC-only build must
+        // NOT bypass the guidance requirement here — the scan must report NOGUIDANCE.
+        Assume.assumeFalse("server has Valkyrien Skies — the AFC satisfies guidance there",
+                serverHasVs());
+
+        String coords = placeFixture(2000, 64, 2000, "advanced-flight-computer-only");
+        String assemble = String.join("\n", client().execute("artest rocket assemble 0 " + coords));
+        assertTrue("without VS, an AFC alone must not satisfy guidance — scan must be NOGUIDANCE: "
+                        + assemble,
+                assemble.contains("\"status\":\"NOGUIDANCE\""));
+    }
+
     private boolean serverHasVs() throws Exception {
         String out = String.join("\n", client().execute("artest vs available"));
         return out.contains("\"available\":true");
@@ -84,6 +114,19 @@ public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest
      * chunk-warmup / pre-clear rationale.
      */
     private String assembleFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
+        String coords = placeFixture(baseX, baseY, baseZ, variant);
+        String assemble = String.join("\n", client().execute("artest rocket assemble 0 " + coords));
+        assertTrue("assemble (" + variant + ") failed: " + assemble, assemble.contains("\"ok\":true"));
+        return assemble;
+    }
+
+    /**
+     * Place the fixture on a pad (warmup + pre-clear + spawn) WITHOUT assembling; returns the
+     * builder position as a {@code "bx by bz"} string. Split from {@link #assembleFixture} so a
+     * test that expects the scan to FAIL (e.g. NOGUIDANCE) can drive {@code rocket assemble}
+     * directly, since that probe returns an error (not {@code ok:true}) on a non-SUCCESS scan.
+     */
+    private String placeFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
         int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;
         int cx2 = (baseX + 7) >> 4, cz2 = (baseZ + 7) >> 4;
         String warmup = String.join("\n", client().execute(
@@ -101,14 +144,7 @@ public class AdvancedFlightComputerTierGateTest extends AbstractSharedServerTest
         assertTrue("fixture (" + variant + ") failed: " + fixture, fixture.contains("\"ok\":true"));
         Matcher bp = BUILDER_POS.matcher(fixture);
         assertTrue("fixture (" + variant + ") missing builderPos: " + fixture, bp.find());
-        int bx = Integer.parseInt(bp.group(1)),
-                by = Integer.parseInt(bp.group(2)),
-                bz = Integer.parseInt(bp.group(3));
-
-        String assemble = String.join("\n", client().execute(
-                "artest rocket assemble 0 " + bx + " " + by + " " + bz));
-        assertTrue("assemble (" + variant + ") failed: " + assemble, assemble.contains("\"ok\":true"));
-        return assemble;
+        return bp.group(1) + " " + bp.group(2) + " " + bp.group(3);
     }
 
     private static int extractInt(String haystack, String regex) {

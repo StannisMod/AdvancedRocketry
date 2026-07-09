@@ -580,7 +580,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                     || (thrustNuclearTotalLimit > 0 && totalFuelUse > nuclearWorkingFluidUse))) {
                 status = ErrorCodes.COMBINEDTHRUST;
 
-            } else if (!hasGuidance && !hasSatellite) {
+            } else if (!hasGuidance && !hasSatellite
+                    && !(scannedFlightComputerPos != null && VSIntegration.isAvailable())) {
+                // An Advanced Flight Computer is the tier-2 ship's own flight computer, so it
+                // satisfies the "computer with instructions" requirement — but only when the
+                // build will actually become a ship (VS present). Without VS the computer is
+                // inert and a real guidance computer is still needed for the fallback rocket.
                 status = ErrorCodes.NOGUIDANCE;
 
             } else if (getThrust() <= getNeededThrust()) {
