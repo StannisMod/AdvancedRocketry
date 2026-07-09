@@ -18,6 +18,7 @@ entity.ARStarUIButton.name=Holographic Star
 
 tile.landingPad.name=Landing Pad
 tile.seat.name=Seat
+tile.pilotSeat.name=Pilot Seat
 tile.pad.name=Launch Pad
 tile.servicestation.name=Service Station
 tile.servicemonitor.name=Service monitor
@@ -939,6 +940,8 @@ tooltip.advancedrocketry.intake.alt.2=Launched from Space Station orbiting a Gas
 # Seat
 tooltip.advancedrocketry.seat=§cPart of rocket
 tooltip.advancedrocketry.seat.shift.1=Adds a passenger slot to the rocket
+tooltip.advancedrocketry.pilotseat=§bTier-2 ship control station
+tooltip.advancedrocketry.pilotseat.shift.1=Sit to pilot a ship built with an Advanced Flight Computer (requires Valkyrien Skies)
 
 # Guidance Computer
 tooltip.advancedrocketry.guidancecomputer=§cPart of Rocket

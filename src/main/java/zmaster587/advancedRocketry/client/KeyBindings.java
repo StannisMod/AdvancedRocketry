@@ -20,13 +20,18 @@ import zmaster587.advancedRocketry.api.FreeFlightInput;
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 import zmaster587.advancedRocketry.api.RocketFlightMode;
 import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.math.BlockPos;
+import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.advancedRocketry.entity.EntityHoverCraft;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.tile.TilePilotSeat;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.interfaces.INetworkEntity;
 import zmaster587.libVulpes.network.PacketChangeKeyState;
 import zmaster587.libVulpes.network.PacketEntity;
 import zmaster587.libVulpes.network.PacketHandler;
+import zmaster587.libVulpes.network.PacketMachine;
 import zmaster587.libVulpes.util.InputSyncHandler;
 
 @SideOnly(Side.CLIENT)
@@ -53,6 +58,16 @@ public class KeyBindings {
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
     /** Tracks FF-gate transitions for [FF-TRACE] logging. */
     private boolean wasFreeFlightActive = false;
+    /** Last FF input dispatched to a tier-2 ship's pilot seat; resend only on change. */
+    private FreeFlightInput lastSentShipInput = FreeFlightInput.zero();
+    /** Whether the ship-pilot mouse baseline is valid; false forces this tick's look-delta to
+     *  zero (so an arbitrary pre-seat look doesn't read as one huge cursor jump on sit). */
+    private boolean shipPilotPinValid = false;
+    /** Ship-pilot flight-cursor deflection in [-1,1] (X = roll, Y = pitch), independent of the
+     *  rocket cursor. Absolute: stays where the mouse leaves it. */
+    private float shipCursorX, shipCursorY;
+    /** Player rotation baseline for the ship-pilot cursor (last tick's yaw/pitch). */
+    private float shipLastYaw, shipLastPitch;
     /** Camera-pin state for mouse-as-rate steering: the player
      *  rotation we pinned at the end of the previous tick. Whatever the mouse
      *  added on top of it since is this tick's turn command. Static so the
@@ -326,6 +341,9 @@ public class KeyBindings {
         // and the headless test bot never reports focus.)
         if (player == null || mc.currentScreen != null) return;
         if (engineFlashTicks > 0) engineFlashTicks--;
+        // Tier-2 ship path: if the player is seated in a linked pilot seat, steer the ship and
+        // stop — the rocket steering below is only for a ridden EntityRocket.
+        if (handleShipPilotInput(mc, player)) return;
         if (!(player.getRidingEntity() instanceof EntityRocket)) {
             if (wasFreeFlightActive) { kbTrace("FF gate -> inactive (no longer riding a rocket)"); wasFreeFlightActive = false; }
             engineStartHoldTicks = 0;
@@ -465,6 +483,73 @@ public class KeyBindings {
         player.prevRotationPitch = rocket.prevRotationPitch;
         lastPinnedYaw   = rocket.rotationYaw;
         lastPinnedPitch = rocket.rotationPitch;
+    }
+
+    /**
+     * Steer a tier-2 (Valkyrien Skies) ship when the player is seated in a linked pilot seat.
+     *
+     * <p>Sampled every client tick (like the rocket path): translation and yaw come from the
+     * Free Flight keys; pitch/roll from an absolute mouse-driven flight cursor with its own
+     * baseline (the camera is NOT locked to the ship — the pilot is a physics-mod passenger and
+     * looks around freely). The current intent is pushed to the seat's tile as a
+     * {@code PacketMachine} only when it changes; the seat forwards it to the ship's flight
+     * computer server-side. Returns {@code true} iff the player is piloting a ship this tick,
+     * so the caller skips the rocket steering path.</p>
+     */
+    private boolean handleShipPilotInput(Minecraft mc, EntityPlayerSP player) {
+        if (!(player.getRidingEntity() instanceof EntityDummy)) {
+            shipPilotPinValid = false;
+            lastSentShipInput = FreeFlightInput.zero();
+            return false;
+        }
+        // The dummy sits at its seat block; recover the seat tile from the dummy's position.
+        BlockPos seatPos = new BlockPos(player.getRidingEntity());
+        TileEntity te = mc.world.getTileEntity(seatPos);
+        if (!(te instanceof TilePilotSeat) || !((TilePilotSeat) te).isLinked()) {
+            shipPilotPinValid = false;
+            return false; // an ordinary (non-pilot) seat — not a ship pilot
+        }
+        TilePilotSeat seat = (TilePilotSeat) te;
+
+        boolean cut = turnRocketDown.isKeyDown();
+        float fwd = (mc.gameSettings.keyBindForward.isKeyDown() ? 1f : 0f)
+                + (mc.gameSettings.keyBindBack.isKeyDown() ? -1f : 0f);
+        // Same strafe-sign convention as the rocket path (E = move craft the way the pilot sees).
+        float strafe = (strafeRight.isKeyDown() ? -1f : 0f)
+                + (strafeLeft.isKeyDown() ? 1f : 0f);
+        float vert = (flightVerticalUp.isKeyDown() ? 1f : 0f)
+                + (flightVerticalDown.isKeyDown() ? -1f : 0f);
+        float yawKeys = (turnRocketRight.isKeyDown() ? 1f : 0f)
+                + (turnRocketLeft.isKeyDown() ? -1f : 0f);
+
+        // Mouse → absolute flight cursor (pitch on Y, roll on X). No camera lock: accumulate the
+        // per-tick look delta directly. First tick after sitting discards the stale look offset.
+        float yawDelta, pitchDelta;
+        if (!shipPilotPinValid) {
+            yawDelta = 0f;
+            pitchDelta = 0f;
+            shipPilotPinValid = true;
+        } else {
+            yawDelta = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - shipLastYaw);
+            pitchDelta = player.rotationPitch - shipLastPitch;
+        }
+        shipCursorX = FreeFlightInput.clamp(shipCursorX + yawDelta * FF_CURSOR_SENS);
+        shipCursorY = FreeFlightInput.clamp(shipCursorY + pitchDelta * FF_CURSOR_SENS);
+        shipLastYaw = player.rotationYaw;
+        shipLastPitch = player.rotationPitch;
+
+        float yaw = FreeFlightInput.clamp(yawKeys);
+        float pitch = deadzone(shipCursorY);
+        float roll = deadzone(shipCursorX);
+        float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
+
+        FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
+        if (!input.equals(lastSentShipInput)) {
+            seat.pendingInput = input;
+            PacketHandler.sendToServer(new PacketMachine(seat, TilePilotSeat.PACKET_PILOT_INPUT));
+            lastSentShipInput = input;
+        }
+        return true;
     }
 
     @SubscribeEvent

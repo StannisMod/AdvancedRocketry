@@ -53,6 +53,11 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
     private static final String MIXIN_FLIGHT_CONTROLLER =
             "zmaster587.advancedRocketry.mixin.MixinTileAdvancedFlightComputer";
 
+    /** The ship-load double-load guard mixin targets a Valkyrien Skies class and MUST be
+     *  skipped when that mod is absent, or weaving it aborts the whole (required) config. */
+    private static final String MIXIN_SHIP_MANAGER =
+            "zmaster587.advancedRocketry.mixin.MixinWorldServerShipManager";
+
     /** A stable physics-mod class the flight-controller mixin needs at weave time. */
     private static final String VS_CONTROLLER_INTERFACE =
             "org.valkyrienskies.mod.common.physics.IPhysicsBlockController";
@@ -93,7 +98,8 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
                 || MIXIN_WORLD_SERVER.equals(mixinClassName)) {
             return perDimWorldInfoEnabled;
         }
-        if (MIXIN_FLIGHT_CONTROLLER.equals(mixinClassName)) {
+        if (MIXIN_FLIGHT_CONTROLLER.equals(mixinClassName)
+                || MIXIN_SHIP_MANAGER.equals(mixinClassName)) {
             return isValkyrienSkiesOnClasspath();
         }
         return true;

@@ -76,9 +76,45 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      */
     public static volatile FreeFlightInput debugFlightInput = null;
 
+    /**
+     * The seated pilot's live {@link FreeFlightInput} for THIS computer, or {@code null} when
+     * nobody is piloting. Written from the server game thread when a pilot-seat packet arrives
+     * (see {@code TilePilotSeat}); read by {@link #update()}. Takes precedence over the static
+     * {@link #debugFlightInput} bring-up channel — that static one stays only as a test-probe
+     * fallback. {@code volatile} for visibility across the seat-packet and tick call sites.
+     */
+    public volatile FreeFlightInput pilotInput = null;
+
+    /**
+     * Per-tile commanded world-frame velocity (blocks/s) that the force controller realizes,
+     * or {@code null} when this computer commands nothing. Written by {@link #update()} from the
+     * pilot's input; read on the physics thread by the flight-controller mixin, which prefers it
+     * over the static {@link #debugCommandedVelocity} probe channel. {@code volatile} for the
+     * game&rarr;physics thread hand-off; carries no physics-mod type (AR-core safe).
+     */
+    public volatile double[] commandedVelocity = null;
+
+    /** Per-tile angular-velocity command (rad/s), mixin-preferred over {@link #debugCommandedAngVel}. */
+    public volatile double[] commandedAngVel = null;
+
+    /** Per-tile attitude-hold target quaternion {@code {w,x,y,z}}, mixin-preferred over
+     *  {@link #debugTargetAttitude}. Supersedes {@link #commandedAngVel} when set. */
+    public volatile double[] targetAttitude = null;
+
     /** Ship cruise speed cap (blocks/second) mapped from full throttle. Kept modest so a
      *  commanded velocity stays under the physics mod's "moving too fast" freeze. */
     private static final double SHIP_MAX_SPEED = 8.0;
+
+    /**
+     * Set (or clear) the seated pilot's Free Flight input for this computer. Server-side; called
+     * by the pilot seat when a control packet arrives, and with {@code null} when the pilot
+     * leaves. A {@code null} pilotInput lets {@link #update()} fall back to the static bring-up
+     * channel and, absent that, leaves the last command in place (the ship coasts). A pilot
+     * wanting to stop sends an idle input, which {@link #update()} turns into a hover.
+     */
+    public void setPilotInput(FreeFlightInput input) {
+        this.pilotInput = input;
+    }
 
     /**
      * Server tick: when a Free Flight input is held and this tile's block is part of a physics
@@ -93,7 +129,8 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (world == null || world.isRemote) {
             return;
         }
-        FreeFlightInput in = debugFlightInput;
+        // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
+        FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
         if (in == null) {
             return;
         }
@@ -117,9 +154,12 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                 in.throttleVertical * SHIP_MAX_SPEED,
                 target);
 
-        debugCommandedVelocity = new double[]{vWorld[0], vWorld[1], vWorld[2]};
-        debugCommandedAngVel = null; // attitude target drives the angular channel
-        debugTargetAttitude = new double[]{target.w, target.x, target.y, target.z};
+        // Publish to the PER-TILE channels the controller mixin prefers (falls back to the
+        // static probe channels only when these are null). Writing them here means each ship's
+        // own computer drives its own ship, independent of any other computer or the probe.
+        commandedVelocity = new double[]{vWorld[0], vWorld[1], vWorld[2]};
+        commandedAngVel = null; // attitude target drives the angular channel
+        targetAttitude = new double[]{target.w, target.x, target.y, target.z};
     }
 
     /** Flight Assist on/off — the one piece of flight state the ship remembers.

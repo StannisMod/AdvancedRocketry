@@ -412,6 +412,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileAstrobodyDataProcessor.class, "ARplanetAnalyser");
         GameRegistry.registerTileEntity(TileGuidanceComputer.class, "ARguidanceComputer");
         GameRegistry.registerTileEntity(TileAdvancedFlightComputer.class, "ARadvancedFlightComputer");
+        GameRegistry.registerTileEntity(TilePilotSeat.class, "ARpilotSeat");
         GameRegistry.registerTileEntity(TileElectricArcFurnace.class, "ARelectricArcFurnace");
         GameRegistry.registerTileEntity(TilePlanetSelector.class, "ARTilePlanetSelector");
         //GameRegistry.registerTileEntity(TileModelRenderRotatable.class, "ARTileModelRenderRotatable");
@@ -708,6 +709,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockDockingPort = new BlockStationModuleDockingPort(Material.IRON).setUnlocalizedName("stationMarker").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Rocket blocks
         AdvancedRocketryBlocks.blockGenericSeat = new BlockSeat(Material.CLOTH).setUnlocalizedName("seat").setCreativeTab(tabAdvRocketry).setHardness(0.5f);
+        AdvancedRocketryBlocks.blockPilotSeat = new BlockPilotSeat(Material.CLOTH).setUnlocalizedName("pilotSeat").setCreativeTab(tabAdvRocketry).setHardness(0.5f);
         AdvancedRocketryBlocks.blockEngine = new BlockRocketMotor(Material.IRON).setUnlocalizedName("rocket").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockBipropellantEngine = new BlockBipropellantRocketMotor(Material.IRON).setUnlocalizedName("bipropellantrocket").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockAdvEngine = new BlockAdvancedRocketMotor(Material.IRON).setUnlocalizedName("advRocket").setCreativeTab(tabAdvRocketry).setHardness(2f);
@@ -878,6 +880,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDockingPort.setRegistryName("stationMarker"));
         //Rocket blocks
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGenericSeat.setRegistryName("seat"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPilotSeat.setRegistryName("pilotSeat"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockEngine.setRegistryName("rocketmotor"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBipropellantEngine.setRegistryName("bipropellantrocketmotor"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAdvEngine.setRegistryName("advRocketmotor"));

@@ -22,6 +22,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockStructureTower;
     public static Block blockRocketBuilder;
     public static Block blockGenericSeat;
+    public static Block blockPilotSeat;
     public static Block blockEngine;
     public static Block blockBipropellantEngine;
     public static Block blockFuelTank;

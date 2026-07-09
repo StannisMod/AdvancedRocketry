@@ -1,0 +1,11 @@
+{
+    "type": "minecraft:crafting_shapeless",
+    "ingredients": [
+        { "item": "advancedrocketry:seat" },
+        { "item": "advancedrocketry:ic" }
+    ],
+    "result": {
+        "item": "advancedrocketry:pilotseat",
+        "count": 1
+    }
+}

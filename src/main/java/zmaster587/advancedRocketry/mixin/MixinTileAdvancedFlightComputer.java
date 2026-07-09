@@ -60,9 +60,15 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
         if (dt <= 0.0) {
             return;
         }
-        double[] vCmd = TileAdvancedFlightComputer.debugCommandedVelocity;
-        double[] wCmd = TileAdvancedFlightComputer.debugCommandedAngVel;
-        double[] attCmd = TileAdvancedFlightComputer.debugTargetAttitude;
+        // Prefer this computer's PER-TILE command (the seated pilot's, published by its own
+        // server tick); fall back to the static bring-up channels only for the test probes.
+        TileAdvancedFlightComputer self = (TileAdvancedFlightComputer) (Object) this;
+        double[] vCmd = self.commandedVelocity != null
+                ? self.commandedVelocity : TileAdvancedFlightComputer.debugCommandedVelocity;
+        double[] wCmd = self.commandedAngVel != null
+                ? self.commandedAngVel : TileAdvancedFlightComputer.debugCommandedAngVel;
+        double[] attCmd = self.targetAttitude != null
+                ? self.targetAttitude : TileAdvancedFlightComputer.debugTargetAttitude;
         if ((vCmd == null || vCmd.length < 3) && (wCmd == null || wCmd.length < 3)
                 && (attCmd == null || attCmd.length < 4)) {
             return;

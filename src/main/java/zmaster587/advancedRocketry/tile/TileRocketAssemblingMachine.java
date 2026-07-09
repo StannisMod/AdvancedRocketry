@@ -82,6 +82,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
      * one tick): its presence makes the build a tier-2 ship instead of a rocket.
      */
     private BlockPos scannedFlightComputerPos;
+    /**
+     * World position of a pilot seat found in the most recent scan, or {@code null} if none.
+     * On a tier-2 build it is linked to {@link #scannedFlightComputerPos} at assembly so the
+     * seat can route pilot input to the flight computer once the craft becomes a ship.
+     */
+    private BlockPos scannedPilotSeatPos;
     protected ErrorCodes status;
     private ModuleText thrustText, weightText, fuelText, accelerationText;
     private int totalProgress;
@@ -346,6 +352,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
         stats = new StatsRocket(); // reset stats
         scannedFlightComputerPos = null; // reset tier-2 routing state each scan
+        scannedPilotSeatPos = null;
 
         //if already a rocket exists, output their stats
 
@@ -506,6 +513,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 hasGuidance = true;
                             } else if (tile instanceof TileAdvancedFlightComputer) {
                                 scannedFlightComputerPos = currBlockPos;
+                            } else if (tile instanceof TilePilotSeat) {
+                                scannedPilotSeatPos = currBlockPos;
                             }
                         }
                     }
@@ -683,6 +692,15 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             shipStructure.pasteInWorld(world, (int) rocketBB.minX,
                     (int) rocketBB.minY + liftGap, (int) rocketBB.minZ);
             BlockPos shipAnchor = scannedFlightComputerPos.add(0, liftGap, 0);
+            // Link a pilot seat (if the build has one) to the flight computer, before the
+            // physics mod relocates the craft: the seat stores the computer's offset, which the
+            // rigid relocation preserves, so the seated pilot's input reaches the computer.
+            if (scannedPilotSeatPos != null) {
+                TileEntity seatTe = world.getTileEntity(scannedPilotSeatPos.add(0, liftGap, 0));
+                if (seatTe instanceof TilePilotSeat) {
+                    ((TilePilotSeat) seatTe).linkToFlightComputer(shipAnchor);
+                }
+            }
             VSIntegration.assembleTier2Ship(world, shipAnchor);
             stats.reset();
             this.status = ErrorCodes.FINISHED;

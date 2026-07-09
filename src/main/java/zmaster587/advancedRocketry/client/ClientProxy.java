@@ -18,6 +18,8 @@ import net.minecraft.profiler.Profiler;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.SoundCategory;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
@@ -294,6 +296,48 @@ public class ClientProxy extends CommonProxy {
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException("Failed to bootstrap forge test client bridge", e);
         }
+    }
+
+    /** Latches once the test client has been muted (or once we've confirmed this is not a test
+     *  client), so the per-tick check stops doing any work after the first successful pass. */
+    private static boolean testClientSoundHandled = false;
+
+    /**
+     * The REAL master sound level read back from {@code GameSettings} right after the test
+     * client is muted, or {@code NaN} until then. Published for the client e2e to observe
+     * (via the harness's static-field readback) that the master volume genuinely reached 0 —
+     * not merely that the mute code ran. Only ever written on a harness-spawned test client.
+     */
+    public static volatile float testClientMasterVolume = Float.NaN;
+
+    /**
+     * Silence a harness-spawned test client. Automated client e2e ({@code RealClientHarness})
+     * boots a REAL client with REAL audio on the dev box, marked by {@code -Dforge.test.client=true}
+     * (the same flag {@link #bootstrapTestClientBridge()} keys on); this mutes the master sound
+     * level so those runs are quiet. Runs on the first client tick where the sound handler is up —
+     * done on a tick rather than in {@code preinit} because {@code GameSettings.setSoundLevel}
+     * pushes to the sound handler, which is not yet constructed that early. Inert in normal
+     * gameplay and in a manual {@code runClient} playtest (flag absent → latches without muting),
+     * so a human playtester still hears sound.
+     */
+    @SubscribeEvent
+    public static void muteTestClientSound(TickEvent.ClientTickEvent event) {
+        if (testClientSoundHandled || event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        if (!Boolean.getBoolean("forge.test.client")) {
+            testClientSoundHandled = true; // not a harness client — never mute, stop checking
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.getSoundHandler() == null) {
+            return; // sound not initialised yet — try again next tick
+        }
+        mc.gameSettings.setSoundLevel(SoundCategory.MASTER, 0.0F);
+        // Publish the value actually in effect (read back from GameSettings), so a client e2e
+        // can confirm the master volume really reached 0 rather than that this code merely ran.
+        testClientMasterVolume = mc.gameSettings.getSoundLevel(SoundCategory.MASTER);
+        testClientSoundHandled = true;
     }
 
     private void registerFluidModel(IFluidBlock fluidBlock) {
