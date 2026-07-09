@@ -13,6 +13,8 @@ import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+
 public class EntityDummy extends Entity {
 
     /**
@@ -79,6 +81,31 @@ public class EntityDummy extends Entity {
     @Override
     public boolean shouldRiderSit() {
         return true;
+    }
+
+    /**
+     * Glue this dummy — and thus its seated rider — to its ship every tick.
+     *
+     * <p>A pilot-seat dummy is bound to its seat block ({@link #getSeatPos()}), which on a
+     * Valkyrien Skies ship lives in a stationary shipyard subspace while the ship itself flies
+     * around the world. A plain world entity is not part of the ship's rigid body, so without
+     * this it would sit at its spawn point while the ship departs. We ask the integration for the
+     * seat's live world position (the seat's subspace centre mapped through the ship transform)
+     * and snap there. Runs on BOTH sides — each reads its own synced ship transform, so client and
+     * server agree and the rider tracks the ship with no rubber-banding. A safe no-op for an
+     * unbound (ordinary) seat or when the physics mod is absent, leaving vanilla behaviour intact.</p>
+     */
+    @Override
+    public void onUpdate() {
+        super.onUpdate();
+        BlockPos seat = getSeatPos();
+        if (seat == null) {
+            return;
+        }
+        double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seat);
+        if (worldSeat != null) {
+            setPosition(worldSeat[0], worldSeat[1], worldSeat[2]);
+        }
     }
 
     @Override

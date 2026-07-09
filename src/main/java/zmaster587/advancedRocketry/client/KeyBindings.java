@@ -25,6 +25,7 @@ import net.minecraft.util.math.BlockPos;
 import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.advancedRocketry.entity.EntityHoverCraft;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.tile.TilePilotSeat;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.libVulpes.interfaces.INetworkEntity;
@@ -492,12 +493,13 @@ public class KeyBindings {
      * Steer a tier-2 (Valkyrien Skies) ship when the player is seated in a linked pilot seat.
      *
      * <p>Sampled every client tick (like the rocket path): translation and yaw come from the
-     * Free Flight keys; pitch/roll from an absolute mouse-driven flight cursor with its own
-     * baseline (the camera is NOT locked to the ship — the pilot is a physics-mod passenger and
-     * looks around freely). The current intent is pushed to the seat's tile as a
-     * {@code PacketMachine} only when it changes; the seat forwards it to the ship's flight
-     * computer server-side. Returns {@code true} iff the player is piloting a ship this tick,
-     * so the caller skips the rocket steering path.</p>
+     * Free Flight keys; pitch/roll from an absolute mouse-driven flight cursor. The camera is
+     * hard-locked to the ship's nose exactly as in the rocket Free Flight path — the mouse only
+     * STEERS (drives the flight cursor) and never free-looks, and the view sweeps with the ship as
+     * it turns. The current intent is pushed to the seat's tile as a {@code PacketMachine} only
+     * when it changes; the seat forwards it to the ship's flight computer server-side. Returns
+     * {@code true} iff the player is piloting a ship this tick, so the caller skips the rocket
+     * steering path.</p>
      */
     private boolean handleShipPilotInput(Minecraft mc, EntityPlayerSP player) {
         // Resolve the pilot seat via the dummy's BOUND seat position (its own world position does
@@ -521,10 +523,12 @@ public class KeyBindings {
         float yawKeys = (turnRocketRight.isKeyDown() ? 1f : 0f)
                 + (turnRocketLeft.isKeyDown() ? -1f : 0f);
 
-        // Mouse → absolute flight cursor (pitch on Y, roll on X). No camera lock: accumulate the
-        // per-tick look delta directly. Writes the SHARED cursor / turn-rate fields the FF HUD
-        // reads, so the ship gets the same on-screen flight cursor as the rocket. First tick after
-        // sitting centres the cursor and discards the stale look offset.
+        // Mouse → absolute flight cursor (pitch on Y, roll on X). The look delta the mouse
+        // accumulated since the last camera pin IS this tick's steer command; the view is then
+        // re-pinned to the ship nose below, so mouse motion can never leak into free-look. Writes
+        // the SHARED cursor / turn-rate fields the FF HUD reads, so the ship gets the same on-screen
+        // flight cursor as the rocket. First tick after sitting centres the cursor and discards the
+        // stale look offset.
         float yawDelta, pitchDelta;
         if (!shipPilotPinValid) {
             yawDelta = 0f;
@@ -540,8 +544,25 @@ public class KeyBindings {
         prevFlightCursorY = flightCursorY;
         flightCursorX = FreeFlightInput.clamp(flightCursorX + yawDelta * FF_CURSOR_SENS);
         flightCursorY = FreeFlightInput.clamp(flightCursorY + pitchDelta * FF_CURSOR_SENS);
-        shipLastYaw = player.rotationYaw;
-        shipLastPitch = player.rotationPitch;
+
+        // Camera-nose lock (matches the rocket FF path): pin the player's view to the ship's
+        // forward axis so the mouse only steers and the camera sweeps with the ship as it turns.
+        // The ship's world-forward comes from its physics attitude; eulerFromQuat maps it to the
+        // MC yaw/pitch the camera uses (same conversion the rocket renderer uses — camera stays
+        // upright, no roll). Keep the delta baseline AT the pin so next tick reads pure mouse
+        // motion. When no attitude is available this tick (VS transform not ready) don't fight the
+        // view — just re-baseline so the gap isn't read as one huge cursor jump next tick.
+        FreeFlightPhysics.Quat shipAttitude = VSIntegration.getShipAttitude(mc.world, seatPos);
+        if (shipAttitude != null) {
+            float[] euler = FreeFlightPhysics.eulerFromQuat(shipAttitude);
+            player.rotationYaw = player.prevRotationYaw = euler[0];
+            player.rotationPitch = player.prevRotationPitch = euler[1];
+            shipLastYaw = euler[0];
+            shipLastPitch = euler[1];
+        } else {
+            shipLastYaw = player.rotationYaw;
+            shipLastPitch = player.rotationPitch;
+        }
 
         float yaw = FreeFlightInput.clamp(yawKeys);
         float pitch = deadzone(flightCursorY);

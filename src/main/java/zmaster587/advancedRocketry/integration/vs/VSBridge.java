@@ -76,6 +76,26 @@ final class VSBridge {
         return new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z);
     }
 
+    /**
+     * The WORLD position of the seat block at ship-subspace {@code seatPos}, as
+     * {@code [x, y, z]}, or {@code null} if no ship manages it. The seat block lives in the
+     * ship's subspace (a fixed shipyard region) but is rendered — and must be occupied by its
+     * seated pilot — at the ship's live world location; this maps its subspace centre through the
+     * ship transform ({@code SUBSPACE_TO_GLOBAL}) so a rider can be glued to the moving ship.
+     * The {@code +0.2} vertical offset mirrors the mount point {@code BlockPilotSeat} spawns at.
+     * Only primitive/MC types cross back to AR core.
+     */
+    static double[] seatWorldPosition(World world, BlockPos seatPos) {
+        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, seatPos);
+        if (!managing.isPresent()) {
+            return null;
+        }
+        ShipTransform transform = managing.get().getShipData().getShipTransform();
+        Vec3d subspaceSeat = new Vec3d(seatPos.getX() + 0.5, seatPos.getY() + 0.2, seatPos.getZ() + 0.5);
+        Vec3d worldSeat = transform.transform(subspaceSeat, TransformType.SUBSPACE_TO_GLOBAL);
+        return new double[]{worldSeat.x, worldSeat.y, worldSeat.z};
+    }
+
     /** Enable physics on the ship managing the block at {@code pos}, if any (a safe no-op
      *  otherwise). Lets the Advanced Flight Computer tile activate its own ship's physics. */
     static void ensureShipPhysicsEnabled(World world, BlockPos pos) {

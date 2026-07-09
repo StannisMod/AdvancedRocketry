@@ -110,6 +110,19 @@ public final class VSIntegration {
     }
 
     /**
+     * The world position {@code [x, y, z]} of the pilot seat at ship-subspace {@code seatPos},
+     * or {@code null} when VS is absent or no ship manages the seat. Lets a seated rider be glued
+     * to its ship's live world location every tick (the seat block itself lives in a distant,
+     * stationary shipyard subspace). Only AR-core/MC types cross the gate.
+     */
+    public static double[] getSeatWorldPosition(World world, BlockPos seatPos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.seatWorldPosition(world, seatPos);
+    }
+
+    /**
      * Enable physics on the ship managing the block at {@code pos} (a safe no-op when VS is
      * absent or no ship manages it). Only AR-core/MC types cross the gate.
      */

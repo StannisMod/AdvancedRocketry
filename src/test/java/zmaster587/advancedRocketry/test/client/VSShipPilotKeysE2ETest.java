@@ -1,12 +1,15 @@
 package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
+import com.google.gson.JsonObject;
 import org.junit.Assume;
 import org.junit.Test;
 import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 
 import static org.junit.Assert.assertTrue;
 
@@ -22,6 +25,19 @@ import static org.junit.Assert.assertTrue;
  * <p>The bot cannot right-click a ship block to sit, so {@code vs seat-mount} spawns the seat's
  * dummy and {@code player mount-entity} rides it — identical observable state to a real sit. Gated
  * on real VS — run with {@code -PwithVS}.</p>
+ *
+ * <p>Beyond the ship's own motion, this pins the full <em>pilot</em> path from the real client's
+ * point of view — the same two properties the rocket Free Flight e2e pins for its craft:
+ * <ul>
+ *   <li><b>The rider travels with the ship.</b> The CLIENT-rendered mount position
+ *       ({@code reportRidingEntity}) and the player camera ({@code reportState.playerY}) climb with
+ *       the ship, and their climb tracks the server ship's — so the seated pilot is glued to the
+ *       moving craft, not left at the spawn point.</li>
+ *   <li><b>The mouse steers, it never free-looks.</b> A hard sideways mouse look injected through
+ *       the real client ({@code setLook}) does NOT swing the camera; the view stays locked to the
+ *       ship's nose heading (derived from the server ship attitude with the same quat→Euler the
+ *       production camera lock uses), exactly like the rocket cockpit.</li>
+ * </ul>
  */
 public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
 
@@ -30,6 +46,10 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+    private static final Pattern QW = Pattern.compile("\"qw\":(-?[0-9.E\\-]+)");
+    private static final Pattern QX = Pattern.compile("\"qx\":(-?[0-9.E\\-]+)");
+    private static final Pattern QY = Pattern.compile("\"qy\":(-?[0-9.E\\-]+)");
+    private static final Pattern QZ = Pattern.compile("\"qz\":(-?[0-9.E\\-]+)");
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 2800, BY = 64, BZ = 2800;
@@ -39,7 +59,7 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void seatedBotFliesTheShipWithRealKeys() throws Exception {
+    public void seatedPilotFliesShipTravelsWithItAndCameraLocksToNose() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)",
                 serverHasVs());
 
@@ -85,6 +105,11 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
                 mount.contains("\"mounted\":true"));
         bot().waitTicks(10); // let the mount replicate and the client recognise the pilot seat
 
+        // Baseline the CLIENT pilot position BEFORE the climb: the mount the bot rides (its dummy)
+        // and the player camera. A pilot glued to the ship rises with it; a detached one stays here.
+        double riderYBefore = bot().reportRidingEntity().get("posY").getAsDouble();
+        double camYBefore = bot().reportState().get("playerY").getAsDouble();
+
         // Drive REAL keys: hold vertical-up. The client samples it, sends it to the seat, and the
         // AFC lifts the ship. Up isolates from ground friction; poll for the climb (bounded).
         double yAfter = yBefore;
@@ -102,6 +127,61 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
                         + "client path (key → packet → seat → AFC → force): yBefore=" + yBefore
                         + " yAfter=" + yAfter,
                 yAfter - yBefore > 1.0);
+
+        // --- The seated pilot must TRAVEL with the ship (client-observed). Read the CLIENT rider +
+        // camera again: both must have climbed, and the rider's climb must track the server ship's.
+        // Before the fix that glues the seat dummy to the moving ship, the dummy stays at spawn while
+        // the ship departs, so these client deltas would be ~0 even though the server ship moved.
+        bot().waitTicks(6); // let the client ship transform settle at the new altitude
+        double serverYAfter = readDouble(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ), POS_Y);
+        double riderYAfter = bot().reportRidingEntity().get("posY").getAsDouble();
+        double camYAfter = bot().reportState().get("playerY").getAsDouble();
+        assertTrue("the CLIENT-rendered rider must climb with the ship (it stayed behind): "
+                        + "riderYBefore=" + riderYBefore + " riderYAfter=" + riderYAfter,
+                riderYAfter - riderYBefore > 1.0);
+        assertTrue("the pilot's CLIENT camera must climb with the ship: camYBefore=" + camYBefore
+                        + " camYAfter=" + camYAfter,
+                camYAfter - camYBefore > 1.0);
+        assertTrue("the client rider climb must TRACK the server ship climb (client="
+                        + (riderYAfter - riderYBefore) + " server=" + (serverYAfter - yBefore) + ")",
+                Math.abs((riderYAfter - riderYBefore) - (serverYAfter - yBefore)) < 3.0);
+
+        // --- The mouse must STEER the ship, never free-look the camera (the FF cockpit contract).
+        // The ship is now hovering roughly upright. Inject a hard SIDEWAYS mouse look each tick
+        // (horizontal mouse → roll cursor; pure roll leaves the nose direction fixed). A camera that
+        // free-looks would accumulate tens of degrees off; a nose-locked one is re-pinned to the
+        // (unmoved) ship nose every client tick. Read BOTH the client camera and the server ship
+        // attitude, converting the latter to a heading with the SAME quat→Euler the lock uses.
+        double camYawBefore = bot().reportState().get("playerYaw").getAsDouble();
+        for (int i = 0; i < 6; i++) {
+            JsonObject st = bot().reportState();
+            bot().setLook(st.get("playerYaw").getAsFloat() + 30f, st.get("playerPitch").getAsFloat());
+            bot().waitTicks(1);
+        }
+        bot().waitTicks(4);
+        double camYawAfter = bot().reportState().get("playerYaw").getAsDouble();
+        float shipNoseYaw = shipNoseYaw(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+        assertTrue("a hard sideways mouse look must NOT free-look the camera — the view stays locked "
+                        + "(camYawBefore=" + camYawBefore + " camYawAfter=" + camYawAfter + ")",
+                angDiff(camYawAfter, camYawBefore) < 15.0);
+        assertTrue("the CLIENT camera yaw must be LOCKED to the ship nose, not where the mouse pointed "
+                        + "(camYawAfter=" + camYawAfter + " shipNose=" + shipNoseYaw + ")",
+                angDiff(camYawAfter, shipNoseYaw) < 12.0);
+
+        exec("artest player dismount");
+    }
+
+    /** The ship nose heading (MC yaw, degrees) from the attitude quaternion in {@code vs ship-info},
+     *  using the SAME quat→Euler conversion the production camera lock uses (no convention drift). */
+    private float shipNoseYaw(String shipInfoJson) {
+        return FreeFlightPhysics.eulerFromQuat(new FreeFlightPhysics.Quat(
+                readDouble(shipInfoJson, QW), readDouble(shipInfoJson, QX),
+                readDouble(shipInfoJson, QY), readDouble(shipInfoJson, QZ)))[0];
+    }
+
+    /** Wrapped angular distance on the circle, degrees in [0, 180]. */
+    private static double angDiff(double a, double b) {
+        return Math.abs(((a - b + 540) % 360) - 180);
     }
 
     private int count(String sub) throws Exception {
