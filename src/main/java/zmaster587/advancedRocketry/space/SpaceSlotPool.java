@@ -116,4 +116,53 @@ public final class SpaceSlotPool {
                 new net.minecraftforge.event.world.WorldEvent.Unload(world));
         DimensionManager.setWorld(dimId, null, world.getMinecraftServer());
     }
+
+    /**
+     * Remove slot {@code dimId}'s world WITHOUT persisting (no {@code saveAllChunks}) and delete its
+     * bound cell's on-disk folder. Used to evict a CLEAN, regenerable cell: nothing is worth keeping,
+     * and the folder is dropped so a later visit regenerates the cell from scratch. Server thread
+     * only; the slot must have no occupants.
+     */
+    public static void discard(int dimId) {
+        DimensionManager.keepDimensionLoaded(dimId, false);
+        WorldServer world = DimensionManager.getWorld(dimId);
+        String cellKey = cellKeyFor(dimId);
+        net.minecraft.server.MinecraftServer server = world != null ? world.getMinecraftServer() : null;
+        if (world != null) {
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new net.minecraftforge.event.world.WorldEvent.Unload(world));
+            DimensionManager.setWorld(dimId, null, server);
+        }
+        if (server != null && cellKey != null) {
+            deleteDir(cellDir(server, cellKey));
+        }
+    }
+
+    /**
+     * Delete {@code cellKey}'s content from the on-disk cell store (garbage collection). The cell must
+     * not be currently bound to any slot. No-op if the server or folder is absent.
+     */
+    public static void deleteStore(String cellKey) {
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server != null && cellKey != null) {
+            deleteDir(cellDir(server, cellKey));
+        }
+    }
+
+    /** The on-disk folder backing {@code cellKey}, matching {@link WorldProviderSpaceSlot#getSaveFolder()}. */
+    private static java.io.File cellDir(net.minecraft.server.MinecraftServer server, String cellKey) {
+        java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
+        return new java.io.File(worldDir, "advRocketry/spacepool/cell_" + cellKey);
+    }
+
+    private static void deleteDir(java.io.File dir) {
+        try {
+            if (dir.exists()) {
+                org.apache.commons.io.FileUtils.deleteDirectory(dir);
+            }
+        } catch (Exception e) {
+            AdvancedRocketry.logger.error("[SPACE] failed to delete cell dir " + dir, e);
+        }
+    }
 }

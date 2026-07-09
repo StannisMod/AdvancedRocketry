@@ -520,6 +520,62 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"bMarkerBledIntoA\":" + r4 + ",\"pass\":" + pass + "}");
             return;
         }
+        if (args.length >= 1 && "manager".equalsIgnoreCase(args[0])) {
+            // Drive the whole SpaceManager + PoolSlotBinder controller synchronously in one probe:
+            // dirty-cell flush + reload (store round-trip through the manager), clean-cell isolation,
+            // and GC deletion of an idle stored cell's on-disk folder. Pool of 1 forces an eviction
+            // on every fresh materialize, so a single slot cycles A -> B -> A -> B.
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1);
+            zmaster587.advancedRocketry.space.SpaceManager mgr =
+                    new zmaster587.advancedRocketry.space.SpaceManager(
+                            new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                            () -> 0L,
+                            new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                                    zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.COUNT, 0L, 0));
+            zmaster587.advancedRocketry.space.GalacticCoord a =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0);
+            zmaster587.advancedRocketry.space.GalacticCoord b =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0);
+            net.minecraft.util.math.BlockPos p1 = new net.minecraft.util.math.BlockPos(0, 64, 0);
+            net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+
+            // 1. Materialize A, diverge it with a marker block, release.
+            int slot = mgr.materialize(a);
+            net.minecraftforge.common.DimensionManager.getWorld(slot).setBlockState(p1, stone);
+            mgr.markDirty(a);
+            mgr.dematerialize(a);
+
+            // 2. Materialize B: evicts+flushes A, loads a blank B. B must not see A's marker.
+            mgr.materialize(b);
+            boolean bIsolated = net.minecraftforge.common.DimensionManager.getWorld(slot)
+                    .getBlockState(p1).getBlock() != net.minecraft.init.Blocks.STONE;
+            mgr.dematerialize(b);
+
+            // 3. Materialize A again: evicts+discards clean B, reloads A from the store with its marker.
+            mgr.materialize(a);
+            boolean aRoundTrip = net.minecraftforge.common.DimensionManager.getWorld(slot)
+                    .getBlockState(p1).getBlock() == net.minecraft.init.Blocks.STONE;
+            mgr.dematerialize(a);
+
+            // 4. Evict A back to the store (idle), then GC it and confirm its folder is deleted.
+            mgr.materialize(b); // evicts A (stored, unchanged -> kept on disk), loads blank B
+            mgr.dematerialize(b);
+            java.io.File dirA = new java.io.File(
+                    server.getEntityWorld().getSaveHandler().getWorldDirectory(),
+                    "advRocketry/spacepool/cell_" + a.cellKey());
+            boolean storedBeforeGc = dirA.exists();
+            java.util.List<String> deleted = mgr.gc();
+            boolean gcDeletedDir = !dirA.exists();
+            boolean gcReportedA = deleted.contains(a.cellKey());
+
+            zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot); // release the live slot
+
+            boolean pass = bIsolated && aRoundTrip && storedBeforeGc && gcDeletedDir && gcReportedA;
+            send(sender, "{\"ok\":true,\"bIsolated\":" + bIsolated + ",\"aRoundTrip\":" + aRoundTrip
+                    + ",\"storedBeforeGc\":" + storedBeforeGc + ",\"gcDeletedDir\":" + gcDeletedDir
+                    + ",\"gcReportedA\":" + gcReportedA + ",\"pass\":" + pass + "}");
+            return;
+        }
         if (args.length >= 1 && "vs-assemble".equalsIgnoreCase(args[0])) {
             // Assemble a small VS ship in a fresh pool slot (a 3x3x3 stone cube floating in void).
             String cell = args.length >= 2 ? args[1] : "deep";
