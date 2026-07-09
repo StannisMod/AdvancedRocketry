@@ -688,6 +688,7 @@ msg.ff.engines.stopped=Engines stopped
 msg.ff.hud.vector=FWD %s   LAT %s   VRT %s
 msg.ff.hud.speed=SPD %s m/s
 msg.ff.hud.active=FREE FLIGHT    Flight Assist: %s
+msg.ff.hud.tier=[TIER %d]
 msg.ff.hud.fa.on=ON
 msg.ff.hud.fa.off=OFF — Newtonian
 msg.ff.hud.move=%s / %s  Forward / Back

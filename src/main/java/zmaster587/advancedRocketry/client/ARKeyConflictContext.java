@@ -7,6 +7,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import zmaster587.advancedRocketry.api.EntityRocketBase;
 import zmaster587.advancedRocketry.entity.EntityHoverCraft;
+import zmaster587.advancedRocketry.tile.TilePilotSeat;
 
 /**
  * Key-conflict contexts that scope Advanced Rocketry's craft-steering keys to
@@ -76,6 +77,13 @@ public enum ARKeyConflictContext implements IKeyConflictContext {
             return false;
         }
         Entity riding = mc.player.getRidingEntity();
-        return riding instanceof EntityRocketBase || riding instanceof EntityHoverCraft;
+        if (riding instanceof EntityRocketBase || riding instanceof EntityHoverCraft) {
+            return true;
+        }
+        // Tier-2 ship: the pilot sits on a seat (a dummy mount), so recognise a linked pilot
+        // seat under the mount as "piloting" too — otherwise the shared steering keys stay
+        // scoped OFF and fall through to their vanilla actions while flying the ship.
+        TilePilotSeat seat = TilePilotSeat.forRider(riding, mc.world);
+        return seat != null && seat.isLinked();
     }
 }

@@ -1,14 +1,31 @@
 package zmaster587.advancedRocketry.entity;
 
+import com.google.common.base.Optional;
+
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.datasync.DataParameter;
+import net.minecraft.network.datasync.DataSerializers;
+import net.minecraft.network.datasync.EntityDataManager;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
 public class EntityDummy extends Entity {
 
+    /**
+     * The seat block this dummy belongs to, synced to the client. A tier-2 ship pilot must find
+     * its seat's TileEntity from the CLIENT, but on a Valkyrien Skies ship the dummy is RENDERED at
+     * world coordinates while the seat block lives at a distant ship-subspace position — so
+     * {@code new BlockPos(this)} (the dummy's world pos) does NOT locate the seat tile. The seat's
+     * BlockPos, however, is identical on client and server (the ship structure is mirrored), so we
+     * carry it here and resolve the seat with it. Absent for ordinary (non-pilot) seats, where the
+     * dummy sits at the seat block and its own position suffices.
+     */
+    private static final DataParameter<Optional<BlockPos>> SEAT_POS =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.OPTIONAL_BLOCK_POS);
 
     //Just a dummy so a player can sit on a chair
     public EntityDummy(World world) {
@@ -21,6 +38,16 @@ public class EntityDummy extends Entity {
     public EntityDummy(World world, double x, double y, double z) {
         this(world);
         setPosition(x, y, z);
+    }
+
+    /** Bind this dummy to the seat block it belongs to (see {@link #SEAT_POS}); server-side. */
+    public void setSeatPos(BlockPos pos) {
+        this.dataManager.set(SEAT_POS, Optional.fromNullable(pos));
+    }
+
+    /** The bound seat block position (client or server), or {@code null} if unbound. */
+    public BlockPos getSeatPos() {
+        return this.dataManager.get(SEAT_POS).orNull();
     }
 
     @Override
@@ -46,7 +73,7 @@ public class EntityDummy extends Entity {
 
     @Override
     protected void entityInit() {
-
+        this.dataManager.register(SEAT_POS, Optional.absent());
     }
 
     @Override
@@ -55,13 +82,21 @@ public class EntityDummy extends Entity {
     }
 
     @Override
-    protected void readEntityFromNBT(NBTTagCompound p_70037_1_) {
-
+    protected void readEntityFromNBT(NBTTagCompound compound) {
+        if (compound.hasKey("seatX")) {
+            setSeatPos(new BlockPos(compound.getInteger("seatX"),
+                    compound.getInteger("seatY"), compound.getInteger("seatZ")));
+        }
     }
 
     @Override
-    protected void writeEntityToNBT(NBTTagCompound p_70014_1_) {
-
+    protected void writeEntityToNBT(NBTTagCompound compound) {
+        BlockPos seat = getSeatPos();
+        if (seat != null) {
+            compound.setInteger("seatX", seat.getX());
+            compound.setInteger("seatY", seat.getY());
+            compound.setInteger("seatZ", seat.getZ());
+        }
     }
 
 

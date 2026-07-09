@@ -30,6 +30,7 @@ import org.lwjgl.opengl.GL11;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.armor.IFillableArmor;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
+import zmaster587.advancedRocketry.client.FreeFlightHudState;
 import zmaster587.advancedRocketry.client.KeyBindings;
 import zmaster587.advancedRocketry.client.render.ClientDynamicTexture;
 import zmaster587.advancedRocketry.entity.EntityRocket;
@@ -89,6 +90,83 @@ public class RocketEventHandler extends Gui {
     private static double clampUnit(double v) {
         if (Double.isNaN(v)) return 0;
         return Math.max(-1.0, Math.min(1.0, v));
+    }
+
+    /**
+     * Render the backend-agnostic Free Flight HUD from a {@link FreeFlightHudState} snapshot: the
+     * text legend (bottom-left), and while flying the velocity bars (only when the backend supplies
+     * velocity — the tier-2 ship omits them), the turn-rate dot, and the centre flight cursor.
+     * The same code serves a tier-1 rocket and a tier-2 ship.
+     */
+    private static void renderFreeFlightHud(RenderGameOverlayEvent.Post event, Minecraft mc,
+                                            FreeFlightHudState state) {
+        FontRenderer fr = mc.fontRenderer;
+        List<String> ffLines = KeyBindings.freeFlightHudLines(state);
+        // Expose the rendered text for client-side e2e assertions (read reflectively by the bridge).
+        lastFreeFlightHud = String.join(" | ", ffLines);
+        int lineH = fr.FONT_HEIGHT + 1;
+        int scaledH2 = event.getResolution().getScaledHeight();
+        // Bottom-left, to the right of the instrument panel, stacked up.
+        int ffX = 22;
+        int ffY = scaledH2 - 4 - ffLines.size() * lineH;
+        for (int i = 0; i < ffLines.size(); i++) {
+            // Title/indicator line brighter; legend lines in FF cyan.
+            int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
+            fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
+        }
+        if (!state.inFlight) {
+            return;
+        }
+
+        int barX = ffX + 150, barW = 60, barH = 4;
+        int barsTop = scaledH2 - 4 - 3 * (barH + 3) - 22;
+        // Graphic thrust/velocity bars — only when the backend supplies velocity (rocket). Per
+        // body axis: a bipolar ±MAX_SPEED bar — cyan fill = actual velocity, notch = FA setpoint.
+        if (state.hasVelocity) {
+            double[] act = {state.bodyForward, state.bodyRight, state.bodyUp};
+            double[] sp = {state.faForward, state.faRight, state.faUp};
+            String[] axis = {"FWD", "LAT", "VRT"};
+            double max = zmaster587.advancedRocketry.api.FreeFlightPhysics.MAX_SPEED;
+            for (int i = 0; i < 3; i++) {
+                int y = barsTop + i * (barH + 3);
+                fr.drawStringWithShadow(axis[i], barX - 22, y - 2, 0xB0F0FF);
+                drawRect(barX, y, barX + barW, y + barH, 0xA0202830);
+                int mid = barX + barW / 2;
+                drawRect(mid, y - 1, mid + 1, y + barH + 1, 0xFF607078);
+                int actPx = (int) (clampUnit(act[i] / max) * (barW / 2.0));
+                if (actPx >= 0) drawRect(mid, y, mid + Math.max(actPx, 0) + 1, y + barH, 0xFF40D0FF);
+                else            drawRect(mid + actPx, y, mid + 1, y + barH, 0xFF40D0FF);
+                if (state.flightAssistOn) {
+                    int spPx = mid + (int) (clampUnit(sp[i] / max) * (barW / 2.0));
+                    drawRect(spPx - 1, y - 1, spPx + 1, y + barH + 1, 0xFFFFE060);
+                }
+            }
+        }
+
+        // Turn-rate dot: deflection from center = commanded yaw (x) / pitch (y). Both backends
+        // publish these to the shared KeyBindings fields.
+        int boxC = barX + barW + 18, boxR = 8;
+        int boxYc = barsTop + (3 * (barH + 3)) / 2;
+        drawRect(boxC - boxR, boxYc - boxR, boxC + boxR, boxYc + boxR, 0xA0202830);
+        drawRect(boxC - boxR, boxYc, boxC + boxR, boxYc + 1, 0xFF607078);
+        drawRect(boxC, boxYc - boxR, boxC + 1, boxYc + boxR, 0xFF607078);
+        int dx = (int) (clampUnit(KeyBindings.hudYawRate)   * (boxR - 2));
+        int dy = (int) (clampUnit(KeyBindings.hudPitchRate) * (boxR - 2));
+        drawRect(boxC + dx - 1, boxYc + dy - 1, boxC + dx + 2, boxYc + dy + 2, 0xFF40D0FF);
+
+        // Elite-style flight cursor at screen centre: a square deflection zone with a dot at the
+        // current (roll = X, pitch = Y) deflection. Absolute — stays where the mouse leaves it.
+        ScaledResolution sr = new ScaledResolution(Minecraft.getMinecraft());
+        int ccx = sr.getScaledWidth() / 2, ccy = sr.getScaledHeight() / 2;
+        int zone = 40;
+        drawRect(ccx - zone, ccy - zone, ccx + zone, ccy - zone + 1, 0x50FFFFFF);
+        drawRect(ccx - zone, ccy + zone, ccx + zone, ccy + zone + 1, 0x50FFFFFF);
+        drawRect(ccx - zone, ccy - zone, ccx - zone + 1, ccy + zone, 0x50FFFFFF);
+        drawRect(ccx + zone, ccy - zone, ccx + zone + 1, ccy + zone, 0x50FFFFFF);
+        float pt = event.getPartialTicks();
+        int fcx = (int) (clampUnit(KeyBindings.flightCursorX(pt)) * zone);
+        int fcy = (int) (clampUnit(KeyBindings.flightCursorY(pt)) * zone);
+        drawRect(ccx + fcx - 2, ccy + fcy - 2, ccx + fcx + 3, ccy + fcy + 3, 0xFFFFE060);
     }
 
     @SideOnly(Side.CLIENT)
@@ -240,83 +318,8 @@ public class RocketEventHandler extends Gui {
                     GL11.glPopMatrix();
                 }
 
-                // Free Flight Mode HUD: mode indicator + control legend with the
-                // pilot's actual bound keys. Only while riding a FF-mode rocket.
-                if (mc.currentScreen == null && rocket.isFreeFlight()) {
-                    FontRenderer fr = mc.fontRenderer;
-                    List<String> ffLines = KeyBindings.freeFlightHudLines(
-                            rocket, rocket.isInFlight());
-                    // Expose the rendered text for client-side e2e assertions
-                    // (read reflectively by the test bridge — no test-only code path).
-                    lastFreeFlightHud = String.join(" | ", ffLines);
-                    int lineH = fr.FONT_HEIGHT + 1;
-                    int scaledH2 = event.getResolution().getScaledHeight();
-                    // Bottom-left, to the right of the instrument panel, stacked up.
-                    int ffX = 22;
-                    int ffY = scaledH2 - 4 - ffLines.size() * lineH;
-                    for (int i = 0; i < ffLines.size(); i++) {
-                        // Title/indicator line brighter; legend lines in FF cyan.
-                        int color = (i == 0) ? 0x66FFE0 : 0xB0F0FF;
-                        fr.drawStringWithShadow(ffLines.get(i), ffX, ffY + i * lineH, color);
-                    }
-
-                    // Graphic thrust/velocity bars + turn-rate dot,
-                    // to the right of the text block. Per body axis:
-                    // a bipolar ±MAX_SPEED bar — cyan fill = actual velocity,
-                    // bright notch = FA setpoint marker (FA on only).
-                    if (rocket.isInFlight()) {
-                        int barX = ffX + 150, barW = 60, barH = 4;
-                        int barsTop = scaledH2 - 4 - 3 * (barH + 3) - 22;
-                        double[] act = zmaster587.advancedRocketry.api.FreeFlightPhysics.worldToBody(
-                                rocket.motionX, rocket.motionY, rocket.motionZ,
-                                rocket.rotationYaw, rocket.rotationPitch);
-                        double[] sp = {rocket.getFaSetpointForward(),
-                                rocket.getFaSetpointRight(), rocket.getFaSetpointUp()};
-                        String[] axis = {"FWD", "LAT", "VRT"};
-                        double max = zmaster587.advancedRocketry.api.FreeFlightPhysics.MAX_SPEED;
-                        for (int i = 0; i < 3; i++) {
-                            int y = barsTop + i * (barH + 3);
-                            fr.drawStringWithShadow(axis[i], barX - 22, y - 2, 0xB0F0FF);
-                            drawRect(barX, y, barX + barW, y + barH, 0xA0202830);
-                            int mid = barX + barW / 2;
-                            drawRect(mid, y - 1, mid + 1, y + barH + 1, 0xFF607078);
-                            int actPx = (int) (clampUnit(act[i] / max) * (barW / 2.0));
-                            if (actPx >= 0) drawRect(mid, y, mid + Math.max(actPx, 0) + 1, y + barH, 0xFF40D0FF);
-                            else            drawRect(mid + actPx, y, mid + 1, y + barH, 0xFF40D0FF);
-                            if (rocket.isFlightAssistOn()) {
-                                int spPx = mid + (int) (clampUnit(sp[i] / max) * (barW / 2.0));
-                                drawRect(spPx - 1, y - 1, spPx + 1, y + barH + 1, 0xFFFFE060);
-                            }
-                        }
-                        // Turn-rate dot: deflection from center = commanded
-                        // yaw (x) / pitch (y) rates, the mouse-as-rate echo.
-                        int boxC = barX + barW + 18, boxR = 8;
-                        int boxYc = barsTop + (3 * (barH + 3)) / 2;
-                        drawRect(boxC - boxR, boxYc - boxR, boxC + boxR, boxYc + boxR, 0xA0202830);
-                        drawRect(boxC - boxR, boxYc, boxC + boxR, boxYc + 1, 0xFF607078);
-                        drawRect(boxC, boxYc - boxR, boxC + 1, boxYc + boxR, 0xFF607078);
-                        int dx = (int) (clampUnit(KeyBindings.hudYawRate)   * (boxR - 2));
-                        int dy = (int) (clampUnit(KeyBindings.hudPitchRate) * (boxR - 2));
-                        drawRect(boxC + dx - 1, boxYc + dy - 1, boxC + dx + 2, boxYc + dy + 2, 0xFF40D0FF);
-
-                        // Elite-style flight cursor at screen centre: a square
-                        // deflection zone with a dot at the current (roll = X,
-                        // pitch = Y) deflection. Absolute — the dot stays where
-                        // the mouse leaves it (that fixed deflection IS the
-                        // command, which is what makes the mouse smooth).
-                        ScaledResolution sr = new ScaledResolution(Minecraft.getMinecraft());
-                        int ccx = sr.getScaledWidth() / 2, ccy = sr.getScaledHeight() / 2;
-                        int zone = 40;
-                        drawRect(ccx - zone, ccy - zone, ccx + zone, ccy - zone + 1, 0x50FFFFFF);
-                        drawRect(ccx - zone, ccy + zone, ccx + zone, ccy + zone + 1, 0x50FFFFFF);
-                        drawRect(ccx - zone, ccy - zone, ccx - zone + 1, ccy + zone, 0x50FFFFFF);
-                        drawRect(ccx + zone, ccy - zone, ccx + zone + 1, ccy + zone, 0x50FFFFFF);
-                        float pt = event.getPartialTicks();
-                        int fcx = (int) (clampUnit(KeyBindings.flightCursorX(pt)) * zone);
-                        int fcy = (int) (clampUnit(KeyBindings.flightCursorY(pt)) * zone);
-                        drawRect(ccx + fcx - 2, ccy + fcy - 2, ccx + fcx + 3, ccy + fcy + 3, 0xFFFFE060);
-                    }
-                }
+                // Free Flight Mode HUD is rendered below (backend-agnostic — it also serves the
+                // tier-2 ship), driven by a FreeFlightHudState snapshot rather than this rocket.
 
                 // Camera-nose lock telemetry: on every rendered
                 // frame of an FF flight, record the worst player-camera vs
@@ -337,6 +340,16 @@ public class RocketEventHandler extends Gui {
                     ffClientMinForwardZ = 1.0; // fresh loop witness per flight
                 }
 
+            }
+
+            // Free Flight HUD — backend-agnostic: renders for a tier-1 rocket AND a tier-2 ship
+            // (piloted from a seat), driven by one snapshot. Outside the EntityRocket block above
+            // because the ship pilot rides a seat dummy, not a rocket.
+            if (mc.currentScreen == null) {
+                FreeFlightHudState ffState = FreeFlightHudState.forView(mc.player, mc.world);
+                if (ffState != null) {
+                    renderFreeFlightHud(event, mc, ffState);
+                }
             }
 
             //Draw the O2 Bar if needed

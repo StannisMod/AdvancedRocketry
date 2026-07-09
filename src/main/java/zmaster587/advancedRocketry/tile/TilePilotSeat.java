@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.tile;
 import io.netty.buffer.ByteBuf;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -13,6 +14,7 @@ import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 
 import zmaster587.advancedRocketry.api.FreeFlightInput;
+import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.libVulpes.util.INetworkMachine;
 
 /**
@@ -42,8 +44,8 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     /** Control-packet id: the seated pilot's Free Flight input. */
     public static final byte PACKET_PILOT_INPUT = 0;
 
-    /** Only accept control packets from a player this close to the seat (blocks²). A seated
-     *  pilot is essentially on the block; this rejects a spoofed packet from across the map. */
+    /** World-frame fallback range (blocks²) for accepting a control packet, used only when the
+     *  rider's block position does not already match the seat (see {@link #isPilotOf}). */
     private static final double PILOT_RANGE_SQ = 36.0;
 
     private boolean linked = false;
@@ -76,6 +78,25 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     /** Whether this seat has been linked to a flight computer (i.e. it belongs to a tier-2 ship). */
     public boolean isLinked() {
         return linked;
+    }
+
+    /**
+     * The pilot seat a {@code riding} entity belongs to, or {@code null} if it is not a pilot-seat
+     * mount. Resolves via the dummy's bound {@link EntityDummy#getSeatPos() seat position} — NOT
+     * its own world position, which on a Valkyrien Skies ship differs from the seat block's
+     * ship-subspace position. Falls back to the dummy's block position for an unbound (ordinary)
+     * mount. Shared by every "is the player piloting a ship" check (input, HUD, key context).
+     */
+    public static TilePilotSeat forRider(Entity riding, World world) {
+        if (!(riding instanceof EntityDummy) || world == null) {
+            return null;
+        }
+        BlockPos seatPos = ((EntityDummy) riding).getSeatPos();
+        if (seatPos == null) {
+            seatPos = new BlockPos(riding);
+        }
+        TileEntity te = world.getTileEntity(seatPos);
+        return te instanceof TilePilotSeat ? (TilePilotSeat) te : null;
     }
 
     /**
@@ -119,15 +140,46 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         }
     }
 
+    /**
+     * Whether {@code player} is the pilot seated on THIS seat, checked frame-agnostically so it
+     * holds on a Valkyrien Skies ship where the seat lives in a distant subspace. On a ship the
+     * rider's world position and the seat's subspace position can be thousands of blocks apart, so
+     * a plain world-distance gate wrongly rejects every packet. Instead accept when the sender
+     * rides the seat's dummy (its block position matches this seat — subspace-safe), OR, as a
+     * world-frame fallback, when the sender is within {@link #PILOT_RANGE_SQ} of the seat.
+     */
+    private boolean isPilotOf(EntityPlayer player) {
+        if (player == null) {
+            return false;
+        }
+        Entity riding = player.getRidingEntity();
+        if (riding instanceof EntityDummy) {
+            BlockPos seatPos = ((EntityDummy) riding).getSeatPos();
+            if (seatPos == null) {
+                seatPos = new BlockPos(riding);
+            }
+            if (seatPos.equals(pos)) {
+                return true;
+            }
+        }
+        return player.getDistanceSqToCenter(pos) <= PILOT_RANGE_SQ;
+    }
+
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
         if (id == PACKET_PILOT_INPUT) {
-            // Reject a control packet from a player who is not actually at this seat.
-            if (player == null || player.getDistanceSqToCenter(pos) > PILOT_RANGE_SQ) {
-                return;
+            boolean pilot = isPilotOf(player);
+            TileAdvancedFlightComputer afc = pilot ? getFlightComputer() : null;
+            // Harness trace: the packet ARRIVED — log whether the pilot guard and the AFC resolve
+            // passed, so a playtest with -Dadvancedrocketry.tests=true shows where a seated pilot's
+            // input is dropped. No-op in normal play.
+            if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info(
+                        "[FF-TRACE/SEAT] recv pilotInput at " + pos + " pilotGuard=" + pilot
+                                + " afcResolved=" + (afc != null));
             }
-            TileAdvancedFlightComputer afc = getFlightComputer();
-            if (afc == null) {
+            // Reject a control packet from a player who is not actually at this seat.
+            if (!pilot || afc == null) {
                 return;
             }
             FreeFlightInput input = new FreeFlightInput(

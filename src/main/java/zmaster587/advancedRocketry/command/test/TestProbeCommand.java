@@ -388,8 +388,84 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true}");
             return;
         }
+        // seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll> — drive the ship through the
+        // PILOT SEAT path server-side: find the loaded pilot seat, resolve its linked AFC via the
+        // stored offset, and set that AFC's per-tile pilot input. Bisects the seat→AFC→force
+        // pipeline from the client packet/keybind path — if the ship moves under this but not under
+        // a real seated pilot, the break is client-side. Reports whether the seat + its AFC resolved.
+        if (args.length >= 8 && "seat-input".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            for (TileEntity te : world.loadedTileEntityList) {
+                if (te instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
+                    seat = (zmaster587.advancedRocketry.tile.TilePilotSeat) te;
+                    break;
+                }
+            }
+            if (seat == null) {
+                send(sender, "{\"seatFound\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc = seat.getFlightComputer();
+            if (afc != null) {
+                afc.setPilotInput(new zmaster587.advancedRocketry.api.FreeFlightInput(
+                        (float) parseDoubleOr(args[2], 0), (float) parseDoubleOr(args[3], 0),
+                        (float) parseDoubleOr(args[4], 0), (float) parseDoubleOr(args[5], 0),
+                        (float) parseDoubleOr(args[6], 0), (float) parseDoubleOr(args[7], 0),
+                        0f, false));
+            }
+            BlockPos sp = seat.getPos();
+            BlockPos ap = seat.getFlightComputerPos();
+            StringBuilder sb = new StringBuilder("{\"seatFound\":true");
+            sb.append(",\"seatLinked\":").append(seat.isLinked());
+            sb.append(",\"afcResolved\":").append(afc != null);
+            sb.append(",\"seatX\":").append(sp.getX()).append(",\"seatY\":").append(sp.getY())
+                    .append(",\"seatZ\":").append(sp.getZ());
+            if (ap != null) {
+                sb.append(",\"afcX\":").append(ap.getX()).append(",\"afcY\":").append(ap.getY())
+                        .append(",\"afcZ\":").append(ap.getZ());
+            }
+            sb.append("}");
+            send(sender, sb.toString());
+            return;
+        }
+        // seat-mount <dim> — spawn the pilot seat's dummy mount and return its entity id, so a
+        // test bot can `player mount-entity <id>` and become the ship's pilot. Mirrors
+        // BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a ship block).
+        if (args.length >= 2 && "seat-mount".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            for (TileEntity te : world.loadedTileEntityList) {
+                if (te instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
+                    seat = (zmaster587.advancedRocketry.tile.TilePilotSeat) te;
+                    break;
+                }
+            }
+            if (seat == null) {
+                send(sender, "{\"seatFound\":false}");
+                return;
+            }
+            BlockPos sp = seat.getPos();
+            zmaster587.advancedRocketry.entity.EntityDummy dummy =
+                    new zmaster587.advancedRocketry.entity.EntityDummy(
+                            world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+            dummy.setSeatPos(sp); // bind to the seat so the client resolves it despite VS subspace
+            world.spawnEntity(dummy);
+            send(sender, "{\"seatFound\":true,\"dummyId\":" + dummy.getEntityId()
+                    + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
+            return;
+        }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
-                + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>\"}");
+                + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
+                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>\"}");
     }
 
     /** Resolve (loading if needed) a {@link net.minecraft.world.WorldServer} for VS ship probes. */
@@ -7411,9 +7487,11 @@ public class TestProbeCommand extends CommandBase {
             String variant = args.length >= 6 ? args[5].toLowerCase(java.util.Locale.ROOT) : "simple";
             boolean includeEngines = !"invalid-no-engine".equals(variant);
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
-            boolean includeSeat = !"invalid-no-seat".equals(variant);
+            boolean includeSeat = !"invalid-no-seat".equals(variant)
+                    && !"with-pilot-seat".equals(variant); // pilot seat replaces the generic seat
             boolean includeGuidance = !"invalid-no-guidance".equals(variant)
-                    && !"advanced-flight-computer-only".equals(variant);
+                    && !"advanced-flight-computer-only".equals(variant)
+                    && !"with-pilot-seat".equals(variant); // AFC is the ship's brain — no guidance
             boolean includeCargo = "with-cargo".equals(variant);
             // with-fluid-cargo: same as simple but replaces 2 of the 6 BlockFuelTank
             // positions with BlockPressurizedFluidTank (registry "liquidTank") which
@@ -7453,8 +7531,14 @@ public class TestProbeCommand extends CommandBase {
             // build a player actually makes (the flight computer IS the ship's brain). With VS
             // it must assemble to a ship; without VS it must still fail NOGUIDANCE (fallback
             // rocket needs a real guidance computer).
+            // "with-pilot-seat" — AFC + a PILOT SEAT (the tier-2 control block), NO guidance and
+            // NO generic seat: the tier-2 ship a player builds to actually fly. The pilot seat is
+            // linked to the AFC at assembly, so `vs seat-input` can drive the ship through the
+            // seat→AFC path server-side (bisecting the seat pipeline from the client packet path).
+            boolean includePilotSeat = "with-pilot-seat".equals(variant);
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
-                    || "advanced-flight-computer-only".equals(variant);
+                    || "advanced-flight-computer-only".equals(variant)
+                    || includePilotSeat;
             boolean replaceEnginesWithNuclear = includeNuclearStack || includeNuclearMisplaced;
 
             net.minecraft.world.WorldServer world = server.getWorld(dim);
@@ -7477,6 +7561,8 @@ public class TestProbeCommand extends CommandBase {
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "guidanceComputer"));
             net.minecraft.block.Block seat =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "seat"));
+            net.minecraft.block.Block pilotSeat =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "pilotSeat"));
             net.minecraft.block.Block creativePlug =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("libvulpes", "advStructureMachine"));
             net.minecraft.block.Block liquidTank =
@@ -7512,6 +7598,10 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includeAdvancedFlightComputer && advancedFlightComputer == null) {
                 send(sender, "{\"error\":\"missing advancedFlightComputer block (advancedrocketry:advancedFlightComputer)\"}");
+                return;
+            }
+            if (includePilotSeat && pilotSeat == null) {
+                send(sender, "{\"error\":\"missing pilotSeat block (advancedrocketry:pilotSeat)\"}");
                 return;
             }
 
@@ -7618,6 +7708,11 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includeSeat) {
                 world.setBlockState(new BlockPos(rocketX, rocketY + 4, rocketZ), seat.getDefaultState());
+            }
+            if (includePilotSeat) {
+                // Pilot seat in the centre column (where the generic seat would go). Linked to the
+                // AFC at assembly; drives the ship via the seat→AFC path.
+                world.setBlockState(new BlockPos(rocketX, rocketY + 4, rocketZ), pilotSeat.getDefaultState());
             }
             if (includeCargo) {
                 // Vanilla chest above the seat — gives the rocket an IInventory

@@ -63,9 +63,6 @@ public class KeyBindings {
     /** Whether the ship-pilot mouse baseline is valid; false forces this tick's look-delta to
      *  zero (so an arbitrary pre-seat look doesn't read as one huge cursor jump on sit). */
     private boolean shipPilotPinValid = false;
-    /** Ship-pilot flight-cursor deflection in [-1,1] (X = roll, Y = pitch), independent of the
-     *  rocket cursor. Absolute: stays where the mouse leaves it. */
-    private float shipCursorX, shipCursorY;
     /** Player rotation baseline for the ship-pilot cursor (last tick's yaw/pitch). */
     private float shipLastYaw, shipLastPitch;
     /** Camera-pin state for mouse-as-rate steering: the player
@@ -269,11 +266,18 @@ public class KeyBindings {
         return String.format("%+.2f/%+.2f", sp, act);
     }
 
-    public static java.util.List<String> freeFlightHudLines(EntityRocket rocket, boolean inFlight) {
-        boolean flightAssistOn = rocket.isFlightAssistOn();
+    /**
+     * The Free Flight HUD text, backend-agnostic: driven by a {@link FreeFlightHudState} snapshot
+     * so the SAME lines serve a tier-1 rocket and a tier-2 ship. The active title carries the
+     * craft tier; the velocity vector + speed lines appear only when the backend supplies velocity
+     * ({@link FreeFlightHudState#hasVelocity}) — the ship omits them (physics-thread state).
+     */
+    public static java.util.List<String> freeFlightHudLines(FreeFlightHudState state) {
         GameSettings gs = Minecraft.getMinecraft().gameSettings;
         java.util.List<String> lines = new java.util.ArrayList<>();
-        if (!inFlight) {
+        if (!state.inFlight) {
+            // Pre-flight is a tier-1 rocket concept (the engine-start ritual). A tier-2 ship is
+            // always "in flight" while seated, so it never reaches this branch.
             lines.add(I18n.format("msg.ff.hud.title"));
             // Engine state: off → how to start; mid-hold → progress.
             if (engineStartHoldTicks > 0) {
@@ -287,8 +291,10 @@ public class KeyBindings {
             lines.add(I18n.format("msg.ff.hud.prelaunch", key(toggleFlightMode)));
             return lines;
         }
+        // Active title: FA state + the craft tier (1 = rocket, 2 = ship).
         lines.add(I18n.format("msg.ff.hud.active",
-                I18n.format(flightAssistOn ? "msg.ff.hud.fa.on" : "msg.ff.hud.fa.off")));
+                        I18n.format(state.flightAssistOn ? "msg.ff.hud.fa.on" : "msg.ff.hud.fa.off"))
+                + " " + I18n.format("msg.ff.hud.tier", state.tier));
         lines.add(engineFlashTicks > 0 && engineFlashStarted
                 ? I18n.format("msg.ff.engines.started")
                 : I18n.format("msg.ff.hud.engines.on"));
@@ -301,26 +307,23 @@ public class KeyBindings {
         lines.add(I18n.format("msg.ff.hud.brake",  key(gs.keyBindSneak)));
         lines.add(I18n.format("msg.ff.hud.assist", key(flightAssistToggle)));
 
-        // Per-axis vector readout: body-frame setpoint vs
-        // actual velocity, blocks/tick — the textual twin of the graphic bars
-        // (and what the client e2e reads). FA off shows the actual only.
-        double[] act = FreeFlightPhysics.worldToBody(
-                rocket.motionX, rocket.motionY, rocket.motionZ,
-                rocket.rotationYaw, rocket.rotationPitch);
-        if (flightAssistOn) {
-            lines.add(I18n.format("msg.ff.hud.vector",
-                    vecPair(rocket.getFaSetpointForward(), act[0]),
-                    vecPair(rocket.getFaSetpointRight(),   act[1]),
-                    vecPair(rocket.getFaSetpointUp(),      act[2])));
-        } else {
-            lines.add(I18n.format("msg.ff.hud.vector",
-                    String.format("%+.2f", act[0]),
-                    String.format("%+.2f", act[1]),
-                    String.format("%+.2f", act[2])));
+        // Per-axis vector readout: body-frame setpoint vs actual velocity, blocks/tick — the
+        // textual twin of the graphic bars (and what the client e2e reads). Only when the backend
+        // supplies velocity; FA off shows the actual only.
+        if (state.hasVelocity) {
+            if (state.flightAssistOn) {
+                lines.add(I18n.format("msg.ff.hud.vector",
+                        vecPair(state.faForward, state.bodyForward),
+                        vecPair(state.faRight,   state.bodyRight),
+                        vecPair(state.faUp,      state.bodyUp)));
+            } else {
+                lines.add(I18n.format("msg.ff.hud.vector",
+                        String.format("%+.2f", state.bodyForward),
+                        String.format("%+.2f", state.bodyRight),
+                        String.format("%+.2f", state.bodyUp)));
+            }
+            lines.add(I18n.format("msg.ff.hud.speed", String.format("%.1f", state.speed() * 20.0)));
         }
-        double speed = Math.sqrt(rocket.motionX * rocket.motionX
-                + rocket.motionY * rocket.motionY + rocket.motionZ * rocket.motionZ);
-        lines.add(I18n.format("msg.ff.hud.speed", String.format("%.1f", speed * 20.0)));
         return lines;
     }
 
@@ -497,19 +500,15 @@ public class KeyBindings {
      * so the caller skips the rocket steering path.</p>
      */
     private boolean handleShipPilotInput(Minecraft mc, EntityPlayerSP player) {
-        if (!(player.getRidingEntity() instanceof EntityDummy)) {
+        // Resolve the pilot seat via the dummy's BOUND seat position (its own world position does
+        // not locate the seat tile on a physics-mod ship — the seat lives in a distant subspace).
+        TilePilotSeat seat = TilePilotSeat.forRider(player.getRidingEntity(), mc.world);
+        if (seat == null || !seat.isLinked()) {
             shipPilotPinValid = false;
             lastSentShipInput = FreeFlightInput.zero();
             return false;
         }
-        // The dummy sits at its seat block; recover the seat tile from the dummy's position.
-        BlockPos seatPos = new BlockPos(player.getRidingEntity());
-        TileEntity te = mc.world.getTileEntity(seatPos);
-        if (!(te instanceof TilePilotSeat) || !((TilePilotSeat) te).isLinked()) {
-            shipPilotPinValid = false;
-            return false; // an ordinary (non-pilot) seat — not a ship pilot
-        }
-        TilePilotSeat seat = (TilePilotSeat) te;
+        BlockPos seatPos = seat.getPos();
 
         boolean cut = turnRocketDown.isKeyDown();
         float fwd = (mc.gameSettings.keyBindForward.isKeyDown() ? 1f : 0f)
@@ -523,30 +522,41 @@ public class KeyBindings {
                 + (turnRocketLeft.isKeyDown() ? -1f : 0f);
 
         // Mouse → absolute flight cursor (pitch on Y, roll on X). No camera lock: accumulate the
-        // per-tick look delta directly. First tick after sitting discards the stale look offset.
+        // per-tick look delta directly. Writes the SHARED cursor / turn-rate fields the FF HUD
+        // reads, so the ship gets the same on-screen flight cursor as the rocket. First tick after
+        // sitting centres the cursor and discards the stale look offset.
         float yawDelta, pitchDelta;
         if (!shipPilotPinValid) {
             yawDelta = 0f;
             pitchDelta = 0f;
             shipPilotPinValid = true;
+            flightCursorX = 0f;
+            flightCursorY = 0f;
         } else {
             yawDelta = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - shipLastYaw);
             pitchDelta = player.rotationPitch - shipLastPitch;
         }
-        shipCursorX = FreeFlightInput.clamp(shipCursorX + yawDelta * FF_CURSOR_SENS);
-        shipCursorY = FreeFlightInput.clamp(shipCursorY + pitchDelta * FF_CURSOR_SENS);
+        prevFlightCursorX = flightCursorX;
+        prevFlightCursorY = flightCursorY;
+        flightCursorX = FreeFlightInput.clamp(flightCursorX + yawDelta * FF_CURSOR_SENS);
+        flightCursorY = FreeFlightInput.clamp(flightCursorY + pitchDelta * FF_CURSOR_SENS);
         shipLastYaw = player.rotationYaw;
         shipLastPitch = player.rotationPitch;
 
         float yaw = FreeFlightInput.clamp(yawKeys);
-        float pitch = deadzone(shipCursorY);
-        float roll = deadzone(shipCursorX);
+        float pitch = deadzone(flightCursorY);
+        float roll = deadzone(flightCursorX);
         float brake = mc.gameSettings.keyBindSneak.isKeyDown() ? 1f : 0f;
+
+        // Publish the commanded pitch/roll deflection for the HUD turn-rate dot.
+        hudYawRate = roll;
+        hudPitchRate = pitch;
 
         FreeFlightInput input = new FreeFlightInput(fwd, vert, strafe, yaw, pitch, roll, brake, cut);
         if (!input.equals(lastSentShipInput)) {
             seat.pendingInput = input;
             PacketHandler.sendToServer(new PacketMachine(seat, TilePilotSeat.PACKET_PILOT_INPUT));
+            kbTrace("SHIP send " + input + " -> seat " + seatPos);
             lastSentShipInput = input;
         }
         return true;
