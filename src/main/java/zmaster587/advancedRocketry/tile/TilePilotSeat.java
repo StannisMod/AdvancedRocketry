@@ -40,9 +40,14 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     private static final String NBT_DX = "afcDx";
     private static final String NBT_DY = "afcDy";
     private static final String NBT_DZ = "afcDz";
+    /** Sync-only: the linked computer's Flight-Assist flag, piggybacked on the seat's update tag
+     *  so the piloting client's HUD shows the true value (the flag itself lives on the AFC). */
+    private static final String NBT_FA = "afcFa";
 
     /** Control-packet id: the seated pilot's Free Flight input. */
     public static final byte PACKET_PILOT_INPUT = 0;
+    /** Control-packet id: toggle the linked flight computer's Flight Assist on/off (no payload). */
+    public static final byte PACKET_FLIGHT_ASSIST_TOGGLE = 1;
 
     /** World-frame fallback range (blocks²) for accepting a control packet, used only when the
      *  rider's block position does not already match the seat (see {@link #isPilotOf}). */
@@ -50,6 +55,14 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
 
     private boolean linked = false;
     private int afcDx, afcDy, afcDz;
+
+    /**
+     * Client-only cache of the linked computer's Flight-Assist state, synced from the server via
+     * the seat's update tag ({@link #getUpdateTag}). The piloting client's HUD reads this so it
+     * shows the real on/off value instead of a hard-coded one. Server-authoritative - the truth
+     * lives on {@link TileAdvancedFlightComputer#isFlightAssistEnabled()}.
+     */
+    private boolean clientFlightAssistOn = true;
 
     /**
      * Client-only: the Free Flight input queued for the next control packet. The piloting
@@ -78,6 +91,12 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     /** Whether this seat has been linked to a flight computer (i.e. it belongs to a tier-2 ship). */
     public boolean isLinked() {
         return linked;
+    }
+
+    /** Client-side: the linked computer's Flight-Assist state, as last synced from the server.
+     *  Used by the Free Flight HUD to show the true on/off value. */
+    public boolean isFlightAssistOn() {
+        return clientFlightAssistOn;
     }
 
     /**
@@ -187,6 +206,19 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
                     nbt.getFloat("ffYaw"), nbt.getFloat("ffPitch"), nbt.getFloat("ffRoll"),
                     nbt.getFloat("ffBrake"), nbt.getBoolean("ffCut"));
             afc.setPilotInput(input);
+        } else if (id == PACKET_FLIGHT_ASSIST_TOGGLE) {
+            // Only the seated pilot may flip the ship's Flight Assist.
+            TileAdvancedFlightComputer afc = isPilotOf(player) ? getFlightComputer() : null;
+            if (afc == null) {
+                return;
+            }
+            afc.setFlightAssistEnabled(!afc.isFlightAssistEnabled());
+            // Push the new state to clients so the piloting HUD updates (the flag rides the seat's
+            // update tag, resent by this block update).
+            if (world != null && !world.isRemote) {
+                IBlockState state = world.getBlockState(pos);
+                world.notifyBlockUpdate(pos, state, state, 3);
+            }
         }
     }
 
@@ -200,7 +232,15 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
 
     @Override
     public NBTTagCompound getUpdateTag() {
-        return writeToNBT(new NBTTagCompound());
+        NBTTagCompound nbt = writeToNBT(new NBTTagCompound());
+        // Piggyback the linked computer's Flight-Assist state (server-authoritative) so the
+        // piloting client's HUD shows the true value. Kept out of writeLinkNbt so that method
+        // stays pure (no world lookup) for the persistence unit test.
+        TileAdvancedFlightComputer afc = getFlightComputer();
+        if (afc != null) {
+            nbt.setBoolean(NBT_FA, afc.isFlightAssistEnabled());
+        }
+        return nbt;
     }
 
     @Override
@@ -239,5 +279,9 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         afcDx = nbt.getInteger(NBT_DX);
         afcDy = nbt.getInteger(NBT_DY);
         afcDz = nbt.getInteger(NBT_DZ);
+        // Sync-only field: present on the client update tag, absent from disk saves (default on).
+        if (nbt.hasKey(NBT_FA)) {
+            clientFlightAssistOn = nbt.getBoolean(NBT_FA);
+        }
     }
 }

@@ -146,18 +146,12 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                 in.yawInput * FreeFlightPhysics.MAX_YAW_RATE,
                 in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
 
-        // Desired world velocity: throttles map to body forward/right/up, rotated to world by
-        // the target attitude. The controller's deadbeat force realizes it (Flight Assist).
-        double[] vWorld = FreeFlightPhysics.bodyToWorldQ(
-                in.throttleForward * SHIP_MAX_SPEED,
-                in.strafeInput * SHIP_MAX_SPEED,
-                in.throttleVertical * SHIP_MAX_SPEED,
-                target);
-
         // Publish to the PER-TILE channels the controller mixin prefers (falls back to the
         // static probe channels only when these are null). Writing them here means each ship's
-        // own computer drives its own ship, independent of any other computer or the probe.
-        commandedVelocity = new double[]{vWorld[0], vWorld[1], vWorld[2]};
+        // own computer drives its own ship, independent of any other computer or the probe. The
+        // command honours the Flight-Assist mode + cut/brake (a null velocity means "coast").
+        commandedVelocity = FreeFlightPhysics.shipVelocityCommand(
+                in, target, flightAssistEnabled, SHIP_MAX_SPEED);
         commandedAngVel = null; // attitude target drives the angular channel
         targetAttitude = new double[]{target.w, target.x, target.y, target.z};
     }

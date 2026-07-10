@@ -35,6 +35,7 @@ import zmaster587.advancedRocketry.client.KeyBindings;
 import zmaster587.advancedRocketry.client.render.ClientDynamicTexture;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.inventory.TextureResources;
+import zmaster587.advancedRocketry.tile.TilePilotSeat;
 import zmaster587.advancedRocketry.util.ItemAirUtils;
 import zmaster587.libVulpes.api.IArmorComponent;
 import zmaster587.libVulpes.api.IModularArmor;
@@ -194,31 +195,49 @@ public class RocketEventHandler extends Gui {
         net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
         if (view == null) return;
         net.minecraft.entity.Entity ridden = view.getRidingEntity();
-        if (!(ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket)) return;
-        zmaster587.advancedRocketry.entity.EntityRocket rocket =
-                (zmaster587.advancedRocketry.entity.EntityRocket) ridden;
-        if (!(rocket.isFreeFlight() && rocket.isInFlight())) return;
-
         float p = (float) event.getRenderPartialTicks();
-        // Slerp the attitude quaternion this frame, then derive the camera Euler —
-        // pole-safe through loops (see RendererRocket). The quaternion is the FF
-        // attitude source of truth; deriving yaw/pitch/roll here reproduces the
-        // craft basis exactly, so the view looks out the nose and banks with roll.
-        zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cq =
-                zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
-                        rocket.getPrevFfQuat(), rocket.getFfQuat(), p);
-        float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cq);
-        // +180: the vanilla camera-yaw convention faces opposite the raw
-        // heading, so the ship yaw must be flipped to look out the nose.
-        event.setYaw(e[0] + 180f);
-        event.setPitch(e[1]);
-        event.setRoll(e[2]);
-        // Client-attitude readback for perception-contract e2e (see the fields).
-        ffClientCamPitch = e[1];
-        ffClientCamRoll  = e[2];
-        double fz = cq.rotate(0, 0, 1)[2]; // client nose Z (world)
-        ffClientForwardZ = fz;
-        if (fz < ffClientMinForwardZ) ffClientMinForwardZ = fz;
+
+        if (ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket) {
+            zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                    (zmaster587.advancedRocketry.entity.EntityRocket) ridden;
+            if (!(rocket.isFreeFlight() && rocket.isInFlight())) return;
+
+            // Slerp the attitude quaternion this frame, then derive the camera Euler -
+            // pole-safe through loops (see RendererRocket). The quaternion is the FF
+            // attitude source of truth; deriving yaw/pitch/roll here reproduces the
+            // craft basis exactly, so the view looks out the nose and banks with roll.
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cq =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                            rocket.getPrevFfQuat(), rocket.getFfQuat(), p);
+            float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cq);
+            // +180: the vanilla camera-yaw convention faces opposite the raw
+            // heading, so the ship yaw must be flipped to look out the nose.
+            event.setYaw(e[0] + 180f);
+            event.setPitch(e[1]);
+            event.setRoll(e[2]);
+            // Client-attitude readback for perception-contract e2e (see the fields).
+            ffClientCamPitch = e[1];
+            ffClientCamRoll  = e[2];
+            double fz = cq.rotate(0, 0, 1)[2]; // client nose Z (world)
+            ffClientForwardZ = fz;
+            if (fz < ffClientMinForwardZ) ffClientMinForwardZ = fz;
+            return;
+        }
+
+        // Tier-2 ship: the pilot rides a seat dummy, not a rocket. Lock the camera to the ship
+        // attitude the client sampled this tick (KeyBindings), slerped prev->current by partialTicks
+        // for a smooth per-frame view - the same nose-lock + no-free-look behaviour as the rocket.
+        // Without this the ship view jitters (mouse leaks into free-look between ticks).
+        TilePilotSeat seat = TilePilotSeat.forRider(ridden, Minecraft.getMinecraft().world);
+        if (seat != null && seat.isLinked()) {
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cq =
+                    zmaster587.advancedRocketry.api.FreeFlightPhysics.slerp(
+                            KeyBindings.shipPrevQuat(), KeyBindings.shipQuat(), p);
+            float[] e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cq);
+            event.setYaw(e[0] + 180f);
+            event.setPitch(e[1]);
+            event.setRoll(e[2]);
+        }
     }
 
     /**
@@ -236,6 +255,12 @@ public class RocketEventHandler extends Gui {
         if (ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket
                 && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isFreeFlight()
                 && ((zmaster587.advancedRocketry.entity.EntityRocket) ridden).isInFlight()) {
+            event.setCanceled(true);
+            return;
+        }
+        // Same reasoning for a tier-2 ship pilot (camera hard-locked to the ship nose).
+        TilePilotSeat seat = TilePilotSeat.forRider(ridden, Minecraft.getMinecraft().world);
+        if (seat != null && seat.isLinked()) {
             event.setCanceled(true);
         }
     }

@@ -110,6 +110,20 @@ public final class VSIntegration {
     }
 
     /**
+     * The unit world-frame direction toward the floor of the loaded ship the point {@code (x,y,z)}
+     * is aboard, or {@code null} when VS is absent or the point is aboard no ship. Lets AR apply
+     * gravity toward a ship's deck (the ship's local down, rotated by its attitude) for entities
+     * standing on it; on an upright ship this is {@code (0,-1,0)}, so gravity is unchanged. Only
+     * AR-core/MC types cross the gate.
+     */
+    public static double[] shipDownDirectionFor(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipDownDirection(world, x, y, z);
+    }
+
+    /**
      * The world position {@code [x, y, z]} of the pilot seat at ship-subspace {@code seatPos},
      * or {@code null} when VS is absent or no ship manages the seat. Lets a seated rider be glued
      * to its ship's live world location every tick (the seat block itself lives in a distant,

@@ -462,6 +462,80 @@ public final class FreeFlightPhysics {
         return new Step(newMx, newMy, newMz, e[0], e[1], e[2], thrustApplied);
     }
 
+    // -- Tier-2 ship translation command -----------------------------------
+
+    /**
+     * The world-frame velocity command a tier-2 ship's force controller should realize for one
+     * tick of pilot input, or {@code null} to mean "apply NO linear force this tick" (coast on
+     * momentum) - distinct from a zero vector, which is "brake to a stop".
+     *
+     * <p>Unlike a rocket (which owns its own motion), a ship is a force-controlled rigid body whose
+     * velocity lives on the physics thread; the flight computer publishes this command and a
+     * deadbeat force realizes it. The two Flight-Assist modes:</p>
+     * <ul>
+     *   <li><b>FA on</b> (velocity hold): the throttles are a body-frame velocity setpoint the ship
+     *       holds (the deadbeat cancels gravity); releasing everything holds zero (hover); cut (X)
+     *       or brake (Shift) command a stop.</li>
+     *   <li><b>FA off</b> (Newtonian): holding a throttle commands a velocity in that direction so
+     *       the ship accelerates toward it; brake (Shift) commands a stop; cut (X) or releasing
+     *       everything returns {@code null} so no force is applied and the ship coasts (gravity
+     *       still acts). This coast-on-release is the observable difference from FA on.</li>
+     * </ul>
+     *
+     * @param in         pilot intent ({@code null} treated as idle)
+     * @param attitude   the (target) body&rarr;world attitude the throttles map through
+     * @param flightAssist whether Flight Assist is on
+     * @param maxSpeed   ship cruise speed (blocks/s) at full throttle
+     * @return world-frame velocity {@code {x,y,z}} (blocks/s), or {@code null} to coast
+     */
+    public static double[] shipVelocityCommand(FreeFlightInput in, Quat attitude,
+                                               boolean flightAssist, double maxSpeed) {
+        if (in == null) in = FreeFlightInput.zero();
+        boolean thrusting = in.throttleForward != 0f
+                || in.strafeInput != 0f
+                || in.throttleVertical != 0f;
+
+        if (flightAssist) {
+            if (in.cutActive || in.brakeInput > 0f) {
+                return new double[]{0.0, 0.0, 0.0}; // brake to hover
+            }
+            return shipThrottleVelocity(in, attitude, maxSpeed); // hold the throttle velocity
+        }
+
+        // Flight Assist off (Newtonian).
+        if (in.brakeInput > 0f) {
+            return new double[]{0.0, 0.0, 0.0}; // deadbeat decelerate
+        }
+        if (in.cutActive || !thrusting) {
+            return null; // no linear force -> coast on momentum
+        }
+        return shipThrottleVelocity(in, attitude, maxSpeed); // accelerate toward the command
+    }
+
+    /**
+     * The per-tick velocity delta to add so an entity's NET gravity this tick points toward a
+     * ship's floor {@code shipDown} (a unit world vector) at magnitude {@code g}, given the game
+     * will apply {@code (0,-g,0)} world-down later in the same tick. Pure math (no MC state):
+     * {@code delta + (0,-g,0) == g*shipDown}. Key properties:
+     * <ul>
+     *   <li>upright ship {@code (0,-1,0)} -> {@code (0,0,0)}: a byte-for-byte no-op (no regression);</li>
+     *   <li>inverted {@code (0,1,0)} -> {@code (0,2g,0)}: net gravity flips to +Y (the new floor);</li>
+     *   <li>on-its-side {@code (1,0,0)} -> {@code (g,g,0)}: cancels world-down, pulls toward +X.</li>
+     * </ul>
+     */
+    public static double[] shipGravityDelta(double g, double[] shipDown) {
+        return new double[]{g * shipDown[0], g * (shipDown[1] + 1.0), g * shipDown[2]};
+    }
+
+    /** The throttle channels mapped to a world-frame velocity via the attitude. */
+    private static double[] shipThrottleVelocity(FreeFlightInput in, Quat attitude, double maxSpeed) {
+        return bodyToWorldQ(
+                in.throttleForward * maxSpeed,
+                in.strafeInput * maxSpeed,
+                in.throttleVertical * maxSpeed,
+                attitude);
+    }
+
     // -- Flight Assist (velocity setpoint) ---------------------------------
 
     /**

@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.integration.vs;
 import java.util.Optional;
 
 import com.google.common.collect.ImmutableList;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -224,6 +225,44 @@ final class VSBridge {
         TileAdvancedFlightComputer.debugCommandedAngVel = null;
         TileAdvancedFlightComputer.debugTargetAttitude = new double[]{qw, qx, qy, qz};
         return true;
+    }
+
+    /** How far (blocks) to grow a ship's world AABB when testing whether an entity is "aboard",
+     *  so an entity resting on the top deck (feet at the box's max face) still counts. */
+    private static final double ABOARD_MARGIN = 1.0;
+
+    /**
+     * The unit world-frame direction toward the FLOOR of the loaded ship whose world bounding box
+     * contains {@code (x,y,z)}, or {@code null} if the point is aboard no loaded ship. "Floor-down"
+     * is the ship's local {@code -Y} axis rotated into world space by its attitude; on an upright
+     * ship this is {@code (0,-1,0)} (so gravity is unchanged), and it tilts with the ship. Only
+     * primitive/MC types cross back to AR core. The ship BB is axis-aligned in world space, so a
+     * tilted ship over-includes its corners slightly - acceptable for a gravity hint.
+     */
+    static double[] shipDownDirection(World world, double x, double y, double z) {
+        // Called per entity per tick; be defensive so a VS-side hiccup (e.g. querying loaded ships
+        // on a side that has none) degrades to "no ship gravity" rather than spamming exceptions.
+        try {
+            Vec3d point = new Vec3d(x, y, z);
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                AxisAlignedBB bb = physo.getShipBB();
+                if (bb == null || !bb.grow(ABOARD_MARGIN).contains(point)) {
+                    continue;
+                }
+                Quaterniond q = physo.getShipData().getShipTransform()
+                        .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+                // World-frame image of the ship's local down (-Y), via the AR-core quaternion helper.
+                double[] d = new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z).rotate(0.0, -1.0, 0.0);
+                double n = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (n < 1e-9) {
+                    return null;
+                }
+                return new double[]{d[0] / n, d[1] / n, d[2] / n};
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+        return null;
     }
 
     private static PhysicsObject nearestShip(World world, double x, double y, double z) {

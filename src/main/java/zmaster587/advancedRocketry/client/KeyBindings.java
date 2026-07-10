@@ -64,8 +64,11 @@ public class KeyBindings {
     /** Whether the ship-pilot mouse baseline is valid; false forces this tick's look-delta to
      *  zero (so an arbitrary pre-seat look doesn't read as one huge cursor jump on sit). */
     private boolean shipPilotPinValid = false;
-    /** Player rotation baseline for the ship-pilot cursor (last tick's yaw/pitch). */
-    private float shipLastYaw, shipLastPitch;
+    /** Ship attitude sampled this tick / previous tick (client), for the per-frame camera slerp -
+     *  the tier-2 analogue of the rocket's ffQuat/prevFfQuat. Read by the render camera lock in
+     *  RocketEventHandler via {@link #shipQuat()} / {@link #shipPrevQuat()}. */
+    private static volatile FreeFlightPhysics.Quat shipQuat = FreeFlightPhysics.Quat.IDENTITY;
+    private static volatile FreeFlightPhysics.Quat shipPrevQuat = FreeFlightPhysics.Quat.IDENTITY;
     /** Camera-pin state for mouse-as-rate steering: the player
      *  rotation we pinned at the end of the previous tick. Whatever the mouse
      *  added on top of it since is this tick's turn command. Static so the
@@ -99,6 +102,10 @@ public class KeyBindings {
     public static float flightCursorY(float partialTicks) {
         return prevFlightCursorY + (flightCursorY - prevFlightCursorY) * partialTicks;
     }
+    /** Ship attitude sampled this / previous client tick, for the render camera lock's per-frame
+     *  slerp (RocketEventHandler). Identity until the client first pilots a tier-2 ship. */
+    public static FreeFlightPhysics.Quat shipQuat() { return shipQuat; }
+    public static FreeFlightPhysics.Quat shipPrevQuat() { return shipPrevQuat; }
     /** True once the camera has been pinned to the craft this flight — gates
      *  the frame-time lock telemetry in RocketEventHandler so pre-takeoff
      *  frames (arbitrary look) don't pollute it. */
@@ -143,6 +150,21 @@ public class KeyBindings {
     }
 
     /**
+     * The camera-pinned tier-2 ship attitude as Euler {yaw, pitch, roll}, or null when the client
+     * is not piloting a ship (or off the MC thread). The tier-2 analogue of
+     * {@link #pinnedFlightCraft()}: it lets the PosLook re-pin below keep the ship pilot's cursor
+     * baseline consistent against the vanilla riding echo, exactly as for the rocket.
+     */
+    private static float[] pinnedShipEuler() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null) return null;
+        if (!mc.isCallingFromMinecraftThread()) return null;
+        TilePilotSeat seat = TilePilotSeat.forRider(mc.player.getRidingEntity(), mc.world);
+        if (seat == null || !seat.isLinked()) return null;
+        return FreeFlightPhysics.eulerFromQuat(shipQuat);
+    }
+
+    /**
      * PosLook HEAD hook: capture the mouse motion accumulated since the last
      * camera pin BEFORE the vanilla handler overwrites the player rotation
      * with the riding echo's ~1-RTT-stale values. Without this, every echo
@@ -152,7 +174,9 @@ public class KeyBindings {
      */
     public static void captureMouseBeforeTeleport() {
         EntityPlayerSP player = Minecraft.getMinecraft() == null ? null : Minecraft.getMinecraft().player;
-        if (player == null || pinnedFlightCraft() == null) return;
+        if (player == null) return;
+        // Gated on an FF-pinned craft - a rocket OR a tier-2 ship pilot; a no-op otherwise.
+        if (pinnedFlightCraft() == null && pinnedShipEuler() == null) return;
         pendingMouseYaw   = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - lastPinnedYaw);
         pendingMousePitch = player.rotationPitch - lastPinnedPitch;
         teleportCaptureArmed = true;
@@ -170,17 +194,27 @@ public class KeyBindings {
      */
     public static void repinCameraAfterTeleport() {
         EntityRocket rocket = pinnedFlightCraft();
-        if (rocket == null) return;
+        float[] shipEuler = rocket == null ? pinnedShipEuler() : null;
+        if (rocket == null && shipEuler == null) return;
         EntityPlayerSP player = Minecraft.getMinecraft().player;
         float pendYaw   = teleportCaptureArmed ? pendingMouseYaw   : 0f;
         float pendPitch = teleportCaptureArmed ? pendingMousePitch : 0f;
         teleportCaptureArmed = false;
-        player.rotationYaw       = rocket.rotationYaw + pendYaw;
-        player.prevRotationYaw   = rocket.prevRotationYaw + pendYaw;
-        player.rotationPitch     = rocket.rotationPitch + pendPitch;
-        player.prevRotationPitch = rocket.prevRotationPitch + pendPitch;
-        lastPinnedYaw   = rocket.rotationYaw;
-        lastPinnedPitch = rocket.rotationPitch;
+        // Re-pin to the craft attitude (the rocket's live rotation, or the ship's sampled Euler).
+        float yaw, prevYaw, pitch, prevPitch;
+        if (rocket != null) {
+            yaw = rocket.rotationYaw;   prevYaw = rocket.prevRotationYaw;
+            pitch = rocket.rotationPitch; prevPitch = rocket.prevRotationPitch;
+        } else {
+            yaw = prevYaw = shipEuler[0];
+            pitch = prevPitch = shipEuler[1];
+        }
+        player.rotationYaw       = yaw + pendYaw;
+        player.prevRotationYaw   = prevYaw + pendYaw;
+        player.rotationPitch     = pitch + pendPitch;
+        player.prevRotationPitch = prevPitch + pendPitch;
+        lastPinnedYaw   = yaw;
+        lastPinnedPitch = pitch;
     }
 
     /** Harness-only ([FF-TRACE/K]) client keybind log; pass -Dadvancedrocketry.tests=true. */
@@ -529,39 +563,45 @@ public class KeyBindings {
         // the SHARED cursor / turn-rate fields the FF HUD reads, so the ship gets the same on-screen
         // flight cursor as the rocket. First tick after sitting centres the cursor and discards the
         // stale look offset.
+        boolean firstShipTick = !shipPilotPinValid;
         float yawDelta, pitchDelta;
-        if (!shipPilotPinValid) {
+        if (firstShipTick) {
             yawDelta = 0f;
             pitchDelta = 0f;
             shipPilotPinValid = true;
             flightCursorX = 0f;
             flightCursorY = 0f;
         } else {
-            yawDelta = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - shipLastYaw);
-            pitchDelta = player.rotationPitch - shipLastPitch;
+            yawDelta = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - lastPinnedYaw);
+            pitchDelta = player.rotationPitch - lastPinnedPitch;
         }
         prevFlightCursorX = flightCursorX;
         prevFlightCursorY = flightCursorY;
         flightCursorX = FreeFlightInput.clamp(flightCursorX + yawDelta * FF_CURSOR_SENS);
         flightCursorY = FreeFlightInput.clamp(flightCursorY + pitchDelta * FF_CURSOR_SENS);
 
-        // Camera-nose lock (matches the rocket FF path): pin the player's view to the ship's
-        // forward axis so the mouse only steers and the camera sweeps with the ship as it turns.
-        // The ship's world-forward comes from its physics attitude; eulerFromQuat maps it to the
-        // MC yaw/pitch the camera uses (same conversion the rocket renderer uses — camera stays
-        // upright, no roll). Keep the delta baseline AT the pin so next tick reads pure mouse
-        // motion. When no attitude is available this tick (VS transform not ready) don't fight the
-        // view — just re-baseline so the gap isn't read as one huge cursor jump next tick.
+        // Sample the ship attitude for BOTH the cursor baseline and the per-frame render camera
+        // lock. The visible camera is owned by RocketEventHandler.onFreeFlightCameraSetup, which
+        // slerps shipPrevQuat->shipQuat by partialTicks (smooth at frame rate instead of stepping
+        // at the 20 Hz tick - the old prev==current pin was the tier-2 jitter). Here we only mirror
+        // the ship attitude onto the player rotation and re-baseline the pin, so the flight-cursor
+        // delta above reads pure mouse motion next tick. When no attitude is available this tick
+        // (VS transform not ready) don't fight the view - just re-baseline the pin.
         FreeFlightPhysics.Quat shipAttitude = VSIntegration.getShipAttitude(mc.world, seatPos);
         if (shipAttitude != null) {
-            float[] euler = FreeFlightPhysics.eulerFromQuat(shipAttitude);
-            player.rotationYaw = player.prevRotationYaw = euler[0];
-            player.rotationPitch = player.prevRotationPitch = euler[1];
-            shipLastYaw = euler[0];
-            shipLastPitch = euler[1];
+            shipPrevQuat = firstShipTick ? shipAttitude : shipQuat;
+            shipQuat = shipAttitude;
+            float[] euler = FreeFlightPhysics.eulerFromQuat(shipQuat);
+            float[] prevEuler = FreeFlightPhysics.eulerFromQuat(shipPrevQuat);
+            player.rotationYaw = euler[0];
+            player.prevRotationYaw = prevEuler[0];
+            player.rotationPitch = euler[1];
+            player.prevRotationPitch = prevEuler[1];
+            lastPinnedYaw = euler[0];
+            lastPinnedPitch = euler[1];
         } else {
-            shipLastYaw = player.rotationYaw;
-            shipLastPitch = player.rotationPitch;
+            lastPinnedYaw = player.rotationYaw;
+            lastPinnedPitch = player.rotationPitch;
         }
 
         float yaw = FreeFlightInput.clamp(yawKeys);
@@ -601,6 +641,16 @@ public class KeyBindings {
 				rocket.launch();
 			}*/
  
+        // Tier-2 ship pilot: the flight keys are sampled per-tick in onClientTick's
+        // handleShipPilotInput; only the edge-triggered Flight-Assist toggle (N) lives here. Guarded
+        // by forRider==linked seat, so isPressed() is never consumed for a non-ship pilot (the
+        // rocket branch below still gets the N press when riding a rocket).
+        TilePilotSeat pilotSeat = TilePilotSeat.forRider(player.getRidingEntity(), minecraft.world);
+        if (pilotSeat != null && pilotSeat.isLinked() && flightAssistToggle.isPressed()) {
+            PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_FLIGHT_ASSIST_TOGGLE));
+            kbTrace("SHIP flight-assist toggle -> seat " + pilotSeat.getPos());
+        }
+
         if (player.getRidingEntity() != null && player.getRidingEntity() instanceof EntityRocket) {
             EntityRocket rocket = (EntityRocket) player.getRidingEntity();
             /* spacehammercode : janky in large packs

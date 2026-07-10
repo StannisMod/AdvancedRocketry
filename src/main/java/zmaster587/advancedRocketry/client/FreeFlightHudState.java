@@ -84,9 +84,10 @@ public final class FreeFlightHudState {
         }
         TilePilotSeat seat = TilePilotSeat.forRider(riding, world);
         if (seat != null && seat.isLinked()) {
-            // Tier-2 ship: seated = flying; its control law is always flight-assisted. The ship's
-            // velocity is physics-thread state not synced to the client, so no bars.
-            return new FreeFlightHudState(2, true, true, false, 0, 0, 0, 0, 0, 0);
+            // Tier-2 ship: seated = flying. Flight-Assist state is synced from the ship's computer
+            // to the seat, so the HUD shows the real value. The ship's velocity is physics-thread
+            // state not synced to the client, so no velocity bars.
+            return new FreeFlightHudState(2, true, seat.isFlightAssistOn(), false, 0, 0, 0, 0, 0, 0);
         }
         return null;
     }

@@ -12,6 +12,7 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryAPI;
 import zmaster587.advancedRocketry.api.IGravityManager;
 import zmaster587.advancedRocketry.api.IPlanetaryProvider;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.world.provider.WorldProviderSpace;
 
 import java.lang.reflect.InvocationTargetException;
@@ -51,6 +52,25 @@ public class GravityHandler implements IGravityManager {
         //With no set methods
         //So I cannot, without much more effort than it's worth, set elytra flight. Therefore, they're magic.
         if ((!(entity instanceof EntityPlayer) && !(entity instanceof EntityFlying)) || (!(entity instanceof EntityFlying) && !(((EntityPlayer) entity).capabilities.isFlying || ((EntityLivingBase) entity).isElytraFlying()))) {
+
+            // Ship-floor gravity: an entity aboard a Valkyrien Skies ship is pulled toward the
+            // ship's deck (its local down, rotated by the ship attitude) rather than straight
+            // world-down, so the floor is "down" at any ship orientation. On an upright ship the
+            // direction is (0,-1,0) and the delta below is exactly zero (no change from vanilla).
+            // A fixed ~1G deck gravity (the per-type offset) makes ships walkable even in 0G space.
+            // Takes precedence over dimension gravity (the ship supplies its own). Null (no ship /
+            // no VS) falls through to the existing per-dimension handling unchanged.
+            double[] shipDown = VSIntegration.shipDownDirectionFor(
+                    entity.world, entity.posX, entity.posY, entity.posZ);
+            if (shipDown != null) {
+                double[] dv = zmaster587.advancedRocketry.api.FreeFlightPhysics
+                        .shipGravityDelta(shipGravityOffset(entity), shipDown);
+                entity.motionX += dv[0];
+                entity.motionY += dv[1];
+                entity.motionZ += dv[2];
+                return;
+            }
+
             Double d;
             if (entityMap.containsKey(entity) && (d = entityMap.get(entity)) != null) {
 
@@ -95,6 +115,27 @@ public class GravityHandler implements IGravityManager {
 
     public static boolean isOtherEntity(Entity entity) {
         return entity instanceof EntityBoat || entity instanceof EntityMinecart || entity instanceof EntityFallingBlock || entity instanceof EntityTNTPrimed;
+    }
+
+    /**
+     * The per-tick gravity magnitude (blocks/tick) used for a ship's ~1G deck gravity, chosen by
+     * entity type. Mirrors the per-type offset selection of the scalar world-Y path, minus the
+     * dimension multiplier - a ship supplies a constant deck gravity independent of the dimension.
+     */
+    private static float shipGravityOffset(Entity entity) {
+        if (entity instanceof EntityItem || isOtherEntity(entity)) {
+            return OTHER_OFFSET;
+        }
+        if (entity instanceof EntityThrowable) {
+            return THROWABLE_OFFSET;
+        }
+        if (entity instanceof EntityArrow) {
+            return ARROW_OFFSET;
+        }
+        if (entity instanceof EntityLivingBase && (entity.isInWater() || entity.isInLava())) {
+            return FLUID_LIVING_OFFSET;
+        }
+        return LIVING_OFFSET;
     }
 
     @Override
