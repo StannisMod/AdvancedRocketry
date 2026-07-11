@@ -183,8 +183,16 @@ public class EntityDummy extends Entity {
             dismountedPilot = null;
             return;
         }
-        // Not captured yet - re-seat onto the deck (this dummy is glued to the seat's world pos this tick).
-        exit.setPositionAndUpdate(posX, posY, posZ);
+        // Not captured yet - place his FEET on the deck top beneath the seat, NOT at the seat centre
+        // (which sits 0.2 above the deck, so the ship-frame support probe overlaps by only ~0.10 and
+        // captures only intermittently on a tilted ship; feet on the deck give the probe a solid 0.30).
+        // Fall back to the seat/dummy position if the deck stand point is unavailable.
+        double[] stand = VSIntegration.getDeckStandPosition(world, seatPos);
+        if (stand != null) {
+            exit.setPositionAndUpdate(stand[0], stand[1], stand[2]);
+        } else {
+            exit.setPositionAndUpdate(posX, posY, posZ);
+        }
         exit.motionX = 0.0;
         exit.motionY = 0.0;
         exit.motionZ = 0.0;

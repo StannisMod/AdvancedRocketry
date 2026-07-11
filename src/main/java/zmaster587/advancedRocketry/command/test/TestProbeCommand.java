@@ -337,6 +337,22 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadedShipCount(world) + "}");
             return;
         }
+        // spin-ship <dim> <x> <y> <z> <wx> <wy> <wz> — TEST-ONLY: set the angular velocity (rad/s) of
+        // the ship nearest to (x,y,z) directly, bypassing the controller, to spin it to a fully inverted
+        // attitude via free physics.
+        if (args.length >= 8 && "spin-ship".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            boolean spun = zmaster587.advancedRocketry.integration.vs.VSIntegration.spinNearestShip(
+                    world,
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            send(sender, "{\"spun\":" + spun + "}");
+            return;
+        }
         // force-vel <dim> <x> <y> <z> <vx> <vy> <vz> — command a world-frame velocity on the
         // ship nearest to (x,y,z), realized as FORCE via a per-physics-tick controller (the
         // working flight path; velocity setpoint alone does nothing).
@@ -8014,7 +8030,11 @@ public class TestProbeCommand extends CommandBase {
             // NO generic seat: the tier-2 ship a player builds to actually fly. The pilot seat is
             // linked to the AFC at assembly, so `vs seat-input` can drive the ship through the
             // seat→AFC path server-side (bisecting the seat pipeline from the client packet path).
-            boolean includePilotSeat = "with-pilot-seat".equals(variant);
+            // "with-pilot-deck" — like with-pilot-seat, but the seat sits on a real 5x5 walkable DECK
+            // (a bare rocket seat sits over air, so a dismounted pilot has nowhere to stand — not
+            // representative of a ship with a deck). Used by the crew/dismount e2e.
+            boolean includePilotDeck = "with-pilot-deck".equals(variant);
+            boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck;
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
                     || includePilotSeat;
@@ -8170,8 +8190,10 @@ public class TestProbeCommand extends CommandBase {
             if (includeAdvancedFlightComputer) {
                 // Free cell on the far side of the guidance column (rocketX-1,
                 // rocketY+3). Above it stays air (seat is the centre column only),
-                // so the seat's "passable above" scan check is unaffected.
-                world.setBlockState(new BlockPos(rocketX - 1, rocketY + 3, rocketZ),
+                // so the seat's "passable above" scan check is unaffected. For the deck variant
+                // rocketY+3 becomes the walkable deck, so put the AFC one up, beside the seat.
+                int afcY = includePilotDeck ? rocketY + 4 : rocketY + 3;
+                world.setBlockState(new BlockPos(rocketX - 1, afcY, rocketZ),
                         advancedFlightComputer.getDefaultState());
             }
             if (includeFluidCargo) {
@@ -8192,6 +8214,17 @@ public class TestProbeCommand extends CommandBase {
                 // Pilot seat in the centre column (where the generic seat would go). Linked to the
                 // AFC at assembly; drives the ship via the seat→AFC path.
                 world.setBlockState(new BlockPos(rocketX, rocketY + 4, rocketZ), pilotSeat.getDefaultState());
+            }
+            if (includePilotDeck) {
+                // A 5x5 solid walkable DECK directly beneath the seat (rocketY+3), so a dismounted pilot
+                // stands ON the deck (a bare rocket seat sits over air). Any solid full block the
+                // ship-frame sweep can rest on; the seat's centre column stays clear above it.
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        world.setBlockState(new BlockPos(rocketX + dx, rocketY + 3, rocketZ + dz),
+                                net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
+                    }
+                }
             }
             if (includeCargo) {
                 // Vanilla chest above the seat — gives the rocket an IInventory
