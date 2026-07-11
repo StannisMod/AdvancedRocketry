@@ -124,40 +124,66 @@ public class EntityDummy extends Entity {
                 this.dataManager.get(SETPOINT_UP)};
     }
 
-    /** The pilot this dummy carried last server tick, so a dismount can be detected and the ex-pilot
-     *  put back on the deck. Server-side only; a strong ref for one tick is fine (players persist). */
+    /** The pilot this dummy carried last server tick, so a dismount can be detected. */
     private Entity lastRider = null;
+    /** The just-dismounted pilot being held onto the deck, or null. */
+    private Entity dismountedPilot = null;
+    /** Ticks left in the hold window during which the ex-pilot is kept on the deck. */
+    private int dismountHoldTicks = 0;
+    /** How long (ticks) to keep re-seating a just-dismounted pilot onto the deck. One snap is not enough:
+     *  the seat block has no collision and the deck sits a fraction below the seat, so ShipFrameTravel's
+     *  support probe only barely overlaps it - a single tick where it just misses (thin margin, or the
+     *  client has not yet applied the server teleport) drops the pilot off a hovering ship. Re-seating
+     *  across a short window gives the capture many attempts, so it reliably sticks. */
+    private static final int DISMOUNT_HOLD_TICKS = 20;
 
     /**
-     * When the pilot stands up, put him back ON the deck. Vanilla's dismount searches for a
-     * non-colliding spot around this dummy, but the ship's deck lives in a subspace it cannot see (and
-     * the seat block itself has no collision), so it can drop the pilot beside or below the hull - off a
-     * hovering ship he then falls away entirely (the playtest: stood up, ended on the ground far below).
-     * This snaps the just-dismounted rider to the seat's live world position, where this dummy sits, on
-     * the deck, so {@link zmaster587.advancedRocketry.integration.vs.ShipFrameTravel} captures him there.
-     * Fires once, on the tick the seat empties, and only for a linked pilot seat on a loaded ship - a
-     * plain ground seat keeps vanilla's dismount untouched.
+     * When the pilot stands up, keep him ON the deck. Vanilla's dismount searches for a non-colliding
+     * spot around this dummy, but the ship's deck lives in a subspace it cannot see (and the seat block
+     * has no collision), so it can drop the pilot beside or below the hull - off a hovering ship he then
+     * falls away entirely (the playtest: stood up, ended on the ground far below). This re-seats the
+     * just-dismounted rider onto the seat's live world position, where this dummy sits on the deck, every
+     * tick for a short window until {@link zmaster587.advancedRocketry.integration.vs.ShipFrameTravel}
+     * has captured him there. Only for a linked pilot seat on a loaded ship - a plain ground seat keeps
+     * vanilla's dismount untouched.
      */
     private void keepDismountedPilotOnDeck() {
         Entity current = getPassengers().isEmpty() ? null : getPassengers().get(0);
         if (current != null) {
             lastRider = current;
+            dismountedPilot = null;
+            dismountHoldTicks = 0;
             return;
         }
-        Entity exit = lastRider;
-        lastRider = null;
-        if (exit == null || exit.isDead || exit.world != world) {
+        if (lastRider != null) {
+            // The seat emptied this tick: begin holding the ex-pilot on the deck.
+            dismountedPilot = lastRider;
+            lastRider = null;
+            dismountHoldTicks = DISMOUNT_HOLD_TICKS;
+        }
+        if (dismountedPilot == null || dismountHoldTicks <= 0) {
+            dismountedPilot = null;
+            return;
+        }
+        dismountHoldTicks--;
+        Entity exit = dismountedPilot;
+        if (exit.isDead || exit.world != world) {
+            dismountedPilot = null;
             return;
         }
         TilePilotSeat seat = TilePilotSeat.forRider(this, world);
-        if (seat == null || !seat.isLinked()) {
-            return; // a plain seat: leave vanilla's dismount alone
-        }
         BlockPos seatPos = getSeatPos();
-        if (seatPos == null || VSIntegration.getSeatWorldPosition(world, seatPos) == null) {
-            return; // not on a loaded ship: nothing to keep him on
+        if (seat == null || !seat.isLinked() || seatPos == null
+                || VSIntegration.getSeatWorldPosition(world, seatPos) == null) {
+            dismountedPilot = null; // a plain seat, or off a loaded ship: leave vanilla's dismount alone
+            return;
         }
-        // this dummy was glued to the seat's world position earlier this tick, so posX/Y/Z is the deck.
+        // Captured on the deck by ShipFrameTravel already? Stop holding so he can walk freely.
+        if (zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(exit)) {
+            dismountedPilot = null;
+            return;
+        }
+        // Not captured yet - re-seat onto the deck (this dummy is glued to the seat's world pos this tick).
         exit.setPositionAndUpdate(posX, posY, posZ);
         exit.motionX = 0.0;
         exit.motionY = 0.0;

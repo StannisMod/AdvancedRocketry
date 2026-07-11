@@ -36,6 +36,16 @@ import zmaster587.libVulpes.inventory.modules.ModuleBase;
 public class TileAdvancedFlightComputer extends TileEntity implements IModularInventory, ITickable {
 
     private static final String NBT_FLIGHT_ASSIST = "faEnabled";
+    private static final String NBT_STATION_KEEPING = "stationKeeping";
+
+    /**
+     * Whether this ship holds station (hover + attitude) while unmanned. Set true the first time a pilot
+     * flies it, and PERSISTED: the live {@link #attitudeReference} does not survive a world save/load, so
+     * without a saved flag a hovering ship dropped out of the sky the instant its world was reloaded and
+     * then tumbled inverted (live playtest 2026-07-11). Never auto-cleared - there is no engine-shutdown
+     * yet, and a parked ship holding position (in the air, or resting on the ground) is the intent.
+     */
+    private boolean stationKeeping = false;
 
     /**
      * Bring-up command for the force-mode flight controller: the desired world-frame
@@ -206,11 +216,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             // than clearing the command, keep commanding a zero-velocity, hold-current-attitude station
             // keep. attitudeReference is non-null only once a pilot has actually flown the ship, so it is
             // the "was piloted" witness - hold it, do not clear it.
-            if (attitudeReference == null) {
+            // The "was flown" witness is the PERSISTED stationKeeping flag, not the live attitudeReference
+            // (which is null after a reload). A never-flown ship (physics off) stays inert; a ship that has
+            // been flown holds station, and does so again after a world reload instead of falling.
+            if (!stationKeeping) {
                 commandedVelocity = null;
                 commandedAngVel = null;
                 targetAttitude = null;
                 return;
+            }
+            if (attitudeReference == null) {
+                attitudeReference = attitude; // re-seed from the ship's current attitude after a reload
             }
             VSIntegration.ensureShipPhysicsEnabled(world, getPos());
             commandedVelocity = new double[]{0.0, 0.0, 0.0};
@@ -220,6 +236,12 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             velocitySetpoint = new double[]{0.0, 0.0, 0.0};
             captureSetpointOnNextTick = true; // a returning pilot re-seeds cruise from the live velocity
             return;
+        }
+        // A pilot is flying: from now on this ship holds station when unmanned - persisted, so the hold
+        // survives a world reload.
+        if (!stationKeeping) {
+            stationKeeping = true;
+            markDirty();
         }
         VSIntegration.ensureShipPhysicsEnabled(world, getPos());
 
@@ -332,6 +354,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
         nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
+        nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
         return nbt;
     }
 
@@ -340,6 +363,8 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         super.readFromNBT(nbt);
         // Absent key → default ON (a freshly-placed computer, or a pre-FA save).
         flightAssistEnabled = !nbt.hasKey(NBT_FLIGHT_ASSIST) || nbt.getBoolean(NBT_FLIGHT_ASSIST);
+        // Absent key → not station-keeping (a fresh, never-flown ship stays inert).
+        stationKeeping = nbt.getBoolean(NBT_STATION_KEEPING);
     }
 
     @Override

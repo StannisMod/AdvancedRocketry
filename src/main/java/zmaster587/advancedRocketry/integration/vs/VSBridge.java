@@ -309,6 +309,58 @@ final class VSBridge {
         }
     }
 
+    /**
+     * Read-only transform-consistency diagnostic for the ship {@code entity} is aboard. The MOVEMENT
+     * frame ({@link #rotateToShipFrame}/{@link #toShipFrame}) uses VS's {@code ShipTransform.rotate}
+     * /{@code transform}; the CAMERA and gravity use the attitude quaternion
+     * ({@code rotationQuaternion}, via {@link #shipAttitudeAt}). AR ASSUMES those two describe the same
+     * rotation. This measures whether they actually agree - the world image of the ship's local up (+Y)
+     * and nose (+Z) computed BOTH ways, plus the world<->subspace position round-trip error. A large
+     * disagreement at a non-trivial attitude means movement and camera use inconsistent frames, which
+     * would drag a body through a deck the camera does not level. Returns primitives only; null off-ship.
+     */
+    static Map<String, Object> transformConsistency(Entity entity) {
+        try {
+            ShipTransform t = transformFor(entity);
+            if (t == null) {
+                return null;
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            Quaterniond q = t.rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+            out.put("qw", q.w); out.put("qx", q.x); out.put("qy", q.y); out.put("qz", q.z);
+            FreeFlightPhysics.Quat arq = new FreeFlightPhysics.Quat(q.w, q.x, q.y, q.z);
+
+            double[] upQuat = arq.rotate(0.0, 1.0, 0.0);
+            Vec3d upRot = t.rotate(new Vec3d(0.0, 1.0, 0.0), TransformType.SUBSPACE_TO_GLOBAL);
+            out.put("upQuatX", upQuat[0]); out.put("upQuatY", upQuat[1]); out.put("upQuatZ", upQuat[2]);
+            out.put("upRotX", upRot.x); out.put("upRotY", upRot.y); out.put("upRotZ", upRot.z);
+            out.put("upDisagreement", dist3(upQuat[0], upQuat[1], upQuat[2], upRot.x, upRot.y, upRot.z));
+
+            double[] fwdQuat = arq.rotate(0.0, 0.0, 1.0);
+            Vec3d fwdRot = t.rotate(new Vec3d(0.0, 0.0, 1.0), TransformType.SUBSPACE_TO_GLOBAL);
+            out.put("fwdDisagreement", dist3(fwdQuat[0], fwdQuat[1], fwdQuat[2], fwdRot.x, fwdRot.y, fwdRot.z));
+
+            Vec3d p = new Vec3d(entity.posX, entity.posY, entity.posZ);
+            Vec3d sub = t.transform(p, TransformType.GLOBAL_TO_SUBSPACE);
+            Vec3d back = t.transform(sub, TransformType.SUBSPACE_TO_GLOBAL);
+            out.put("posRoundTripErr", back.distanceTo(p));
+
+            // Rotation round-trip on a world vector via the two VS rotate directions.
+            Vec3d wv = new Vec3d(1.0, 0.0, 0.0);
+            Vec3d toSub = t.rotate(wv, TransformType.GLOBAL_TO_SUBSPACE);
+            Vec3d backW = t.rotate(toSub, TransformType.SUBSPACE_TO_GLOBAL);
+            out.put("rotRoundTripErr", backW.distanceTo(wv));
+            return out;
+        } catch (Throwable tt) {
+            return null;
+        }
+    }
+
+    private static double dist3(double ax, double ay, double az, double bx, double by, double bz) {
+        double dx = ax - bx, dy = ay - by, dz = az - bz;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     // ---- Ship-frame transforms ------------------------------------------------------------
     // A crew member on a rotated deck cannot be collided correctly in the world frame: his box is
     // upright and the deck is not. But the ship's blocks also exist, unrotated and axis-aligned, in

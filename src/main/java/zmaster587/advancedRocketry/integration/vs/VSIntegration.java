@@ -151,6 +151,19 @@ public final class VSIntegration {
     }
 
     /**
+     * Read-only transform-consistency diagnostic for the ship {@code entity} is aboard: whether the VS
+     * vector rotate (the MOVEMENT frame) and the attitude quaternion (the CAMERA/gravity frame) agree,
+     * plus the position/rotation round-trip errors. A plain JDK map, or {@code null} when VS is absent or
+     * the entity is aboard no loaded ship. Only AR-core/MC types cross the gate.
+     */
+    public static java.util.Map<String, Object> transformConsistency(net.minecraft.entity.Entity entity) {
+        if (!isAvailable() || entity == null) {
+            return null;
+        }
+        return VSBridge.transformConsistency(entity);
+    }
+
+    /**
      * The world-frame linear velocity {@code [x,y,z]} (blocks/second) of the ship managing the block
      * at {@code pos}, or {@code null} when VS is absent or no ship manages it. Used to capture the
      * live velocity as a Flight-Assist setpoint on re-enable. Only AR-core/MC types cross the gate.

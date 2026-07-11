@@ -627,6 +627,30 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // ship-frame-check [<dim> <entityId>] - READ-ONLY. For the ship the subject (default: first
+        // player) is aboard, whether the MOVEMENT vector-rotate and the CAMERA attitude quaternion
+        // describe the SAME rotation (upDisagreement/fwdDisagreement ~0 = consistent), plus the world<->
+        // subspace round-trip errors. Localizes a movement-vs-camera frame mismatch at extreme attitudes.
+        if (args.length >= 1 && "ship-frame-check".equalsIgnoreCase(args[0])) {
+            net.minecraft.entity.Entity subject;
+            if (args.length >= 3) {
+                net.minecraft.world.WorldServer w = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+                subject = w == null ? null : w.getEntityByID(parseIntOr(args[2], -1));
+            } else {
+                java.util.List<EntityPlayerMP> ps = sender.getServer() == null
+                        ? java.util.Collections.<EntityPlayerMP>emptyList()
+                        : sender.getServer().getPlayerList().getPlayers();
+                subject = ps.isEmpty() ? null : ps.get(0);
+            }
+            java.util.Map<String, Object> tc = subject == null ? null
+                    : zmaster587.advancedRocketry.integration.vs.VSIntegration.transformConsistency(subject);
+            if (tc == null) {
+                send(sender, "{\"available\":false}");
+                return;
+            }
+            send(sender, jsonMap(tc));
+            return;
+        }
         if (args.length >= 1 && "shipframe-stats".equalsIgnoreCase(args[0])) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("resolvedTicks",

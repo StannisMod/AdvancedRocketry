@@ -288,6 +288,168 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         assertTrue("a player actually standing on the deck must get the deck camera", onDeckCam);
     }
 
+    // ---- Bug: a hovering ship falls (and tumbles inverted) after a world reload -----------------
+
+    @Test
+    public void aHoveringShipKeepsHoveringAcrossAReloadInsteadOfFalling() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 4320, by = 64, bz = 4320;
+
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        // Fly it into a hover, then stand up: it is now an unmanned, station-keeping, hovering ship -
+        // exactly the state a saved hovering ship is in on disk.
+        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double liftedY = startY;
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_R);
+        try {
+            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
+                bot().waitTicks(2);
+                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
+            }
+        } finally {
+            bot().releaseKey(org.lwjgl.input.Keyboard.KEY_R);
+        }
+        assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
+                liftedY - startY > 2.0);
+        exec("artest player dismount");
+        bot().waitTicks(40);
+        double hoverY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        assertTrue("the unmanned ship must still be hovering off the ground: " + hoverY,
+                hoverY - startY > 1.0);
+
+        // Simulate a world reload: unload the ship (its flight-computer tile is written to NBT, its LIVE
+        // attitudeReference lost) and load it again. The persisted station-keeping flag must bring the
+        // hold back so the ship does NOT fall - the live playtest's "hovering ship survived a restart,
+        // then fell and flipped".
+        exec("artest chunk release-all");
+        exec("tp @a " + (bx + 4000) + " 120 " + (bz + 4000) + " 0 0");
+        int loaded = 1;
+        for (int i = 0; i < 80 && loaded > 0; i++) {
+            bot().waitTicks(10);
+            loaded = count("ship-count");
+        }
+        Assume.assumeTrue("harness did not unload the ship (loaded=" + loaded + "); cannot exercise the "
+                + "reload path", loaded == 0);
+
+        exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
+        for (int i = 0; i < 40 && count("ship-count") < 1; i++) {
+            bot().waitTicks(5);
+        }
+        bot().waitTicks(80); // give a ship that lost its hold time to visibly fall
+
+        double afterY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        System.out.println("[deckcap] reload-hover startY=" + startY + " hoverY=" + hoverY
+                + " afterReloadY=" + afterY);
+        assertTrue("a hovering ship must KEEP hovering across a reload, not fall out of the sky: it was "
+                + "at " + hoverY + " and after reload is at " + afterY, hoverY - afterY < 3.0);
+    }
+
+    // ---- Bug: camera/capture instability on a steeply tilted, HELD deck ------------------------
+
+    @Test
+    public void aClientPlayerRidingASteeplyTiltedDeckHasStableCaptureAndCamera() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 4120, by = 64, bz = 4120;
+
+        double[] ship = buildShip(bx, by, bz);
+
+        // Stand the client player on the UPRIGHT deck first (capture works there), then tilt the ship
+        // and hold it. The player rides the deck; the camera and capture must stay STABLE while the ship
+        // is stationary at a steep angle - not jitter frame-to-frame (RC-2 Euler pole) nor flicker the
+        // capture (which alternates gravity and drags the body "back and forth through the deck").
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(80);
+        assertTrue("client must be captured on the upright deck first: " + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"verdict\":true"));
+
+        double h = Math.toRadians(90.0) / 2.0; // 90deg roll about the nose (+Z): deck on its side
+        assertTrue("attitude hold must accept the tilt",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " 0.0 0.0 " + Math.sin(h)).contains("\"commanded\":true"));
+        bot().waitTicks(160); // slew to the tilt and settle - the ship is now HELD stationary
+
+        // Sample across frames while the ship is stationary. Any variation is instability, not motion.
+        int n = 5;
+        double rollMin = Double.MAX_VALUE, rollMax = -Double.MAX_VALUE;
+        double yMin = Double.MAX_VALUE, yMax = -Double.MAX_VALUE;
+        int captured = 0, camOn = 0;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            bot().waitTicks(4);
+            boolean active = Boolean.parseBoolean(clientString(SHIP_CAMERA, "shipCamActive"));
+            double roll = clientDouble(SHIP_CAMERA, "shipCamRoll");
+            boolean verdict = exec("artest vs deck-capture").contains("\"verdict\":true");
+            double y = bot().reportState().get("playerY").getAsDouble();
+            if (active) { camOn++; rollMin = Math.min(rollMin, roll); rollMax = Math.max(rollMax, roll); }
+            if (verdict) captured++;
+            yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
+            trace.append(String.format("[%d act=%b roll=%.1f verd=%b y=%.2f] ", i, active, roll, verdict, y));
+        }
+        double rollJitter = camOn > 0 ? rollMax - rollMin : 0.0;
+        double yOsc = yMax - yMin;
+        System.out.println("[deckcap] tilted-stability n=" + n + " captured=" + captured + " camOn=" + camOn
+                + " rollJitter=" + rollJitter + " yOsc=" + yOsc + " :: " + trace);
+
+        assertTrue("capture must stay STABLE on a held tilted deck, not flicker (captured " + captured
+                + "/" + n + "): " + trace, captured == n);
+        assertTrue("the deck camera must stay engaged on a held tilted deck (camOn " + camOn + "/" + n
+                + "): " + trace, camOn == n);
+        assertTrue("the levelled camera roll must be STABLE while the ship is stationary, not jitter at "
+                + "the Euler pole (jitter=" + rollJitter + " deg): " + trace, rollJitter < 5.0);
+        assertTrue("the client player must not be dragged through the deck (Y oscillation=" + yOsc
+                + "): " + trace, yOsc < 1.0);
+    }
+
+    // ---- Bug: coordinate transforms break at extreme (inverted) attitudes ----------------------
+
+    @Test
+    public void anInvertedShipsMovementAndCameraFramesStayConsistent() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 4020, by = 64, bz = 4020;
+
+        double[] ship = buildShip(bx, by, bz);
+
+        // Flip the ship nearly upside-down: a 160-degree roll about its nose (+Z) - past inverted, but
+        // shy of the exact 180 axis-angle singularity so the controller converges cleanly. Quaternion
+        // (w,x,y,z) = (cos80, 0, 0, sin80). This is the regime the playtest saw break.
+        assertTrue("attitude hold must accept the flip",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " 0.17365 0.0 0.0 0.98481")
+                        .contains("\"commanded\":true"));
+        bot().waitTicks(200); // slew all the way over and settle
+
+        String info = shipInfo(bx, by, bz);
+        double sx = readDouble(info, POS_X), sy = readDouble(info, POS_Y), sz = readDouble(info, POS_Z);
+        exec("tp @a " + sx + " " + (sy + 1) + " " + sz + " 0 0"); // inside the AABB so the probe resolves
+        bot().waitTicks(2);
+
+        String tc = exec("artest vs ship-frame-check");
+        System.out.println("[deckcap] inverted transform-check=" + tc);
+        // The attitude controller converges shy of a full 180 (axis-angle is singular there), settling
+        // near 135deg - deck-up well past horizontal and pointing downward. That is a strongly non-trivial
+        // attitude, which is all the consistency check needs.
+        assertTrue("ship must be strongly inverted (deck-up points well below horizontal): " + tc,
+                readDouble(tc, Pattern.compile("\"upQuatY\":(-?[0-9.E\\-]+)")) < -0.5);
+
+        // THE decisive check: the MOVEMENT frame (VS vector rotate, used by ShipFrameTravel) and the
+        // CAMERA/gravity frame (the attitude quaternion) must describe the SAME rotation. A disagreement
+        // here is the root of "the inverted ship drags me through the deck while the camera never turns
+        // over" - movement resolving in one frame, the camera reading another.
+        double upDis = readDouble(tc, Pattern.compile("\"upDisagreement\":(-?[0-9.E\\-]+)"));
+        double fwdDis = readDouble(tc, Pattern.compile("\"fwdDisagreement\":(-?[0-9.E\\-]+)"));
+        double posRt = readDouble(tc, Pattern.compile("\"posRoundTripErr\":(-?[0-9.E\\-]+)"));
+        double rotRt = readDouble(tc, Pattern.compile("\"rotRoundTripErr\":(-?[0-9.E\\-]+)"));
+        System.out.println("[deckcap] inverted upDis=" + upDis + " fwdDis=" + fwdDis
+                + " posRt=" + posRt + " rotRt=" + rotRt);
+        assertTrue("movement rotate and camera quaternion must agree on ship-up (disagree=" + upDis
+                + "): " + tc, upDis < 0.02);
+        assertTrue("movement rotate and camera quaternion must agree on ship-forward (disagree=" + fwdDis
+                + ")", fwdDis < 0.02);
+        assertTrue("world<->subspace position round-trip must be exact (err=" + posRt + ")", posRt < 0.02);
+        assertTrue("world<->subspace rotation round-trip must be exact (err=" + rotRt + ")", rotRt < 0.02);
+    }
+
     // ---- helpers (self-contained, mirroring the other tier-2 e2e classes) ----------------------
 
     private String clientString(String className, String field) throws Exception {

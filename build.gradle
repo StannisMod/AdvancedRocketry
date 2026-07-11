@@ -85,6 +85,12 @@ minecraft {
 
     // Add various JVM arguments here for runtime
     def args = ['-ea:' + group]
+    // Dev convenience: expose the /artest test-only probe command tree in runClient/runServer so the
+    // maintainer can diagnose a live world without a launch flag. Gated by this system property, which
+    // shipped jars never pass, so it stays a dev-only tool. Opt out with -Pdev_artest=false.
+    if ((project.findProperty('dev_artest') ?: 'true').toString().toBoolean()) {
+        args << '-Dadvancedrocketry.tests=true'
+    }
     if (propertyBool('use_mixins')) {
         args << '-Dmixin.hotSwap=true'
         args << '-Dmixin.checks.interfaces=true'
