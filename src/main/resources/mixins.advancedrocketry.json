@@ -7,6 +7,8 @@
   "refmap": "mixins.advancedrocketry.refmap.json",
   "mixins": [
     "MixinEntityGravity",
+    "MixinEntityLivingShipTravel",
+    "MixinEntityShipLocalMove",
     "MixinEntityPlayerInventoryAccess",
     "MixinEntityPlayerMPInventoryAccess",
     "MixinPlayerList",
@@ -18,7 +20,9 @@
   ],
   "client": [
     "MixinNetHandlerFFCameraRepin",
-    "MixinAcidRainRender"
+    "MixinAcidRainRender",
+    "MixinEntityRendererShipEye",
+    "MixinRenderLivingBaseShipRoll"
   ],
   "server": []
 }

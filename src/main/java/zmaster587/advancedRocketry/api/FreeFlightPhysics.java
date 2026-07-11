@@ -465,6 +465,34 @@ public final class FreeFlightPhysics {
     // -- Tier-2 ship translation command -----------------------------------
 
     /**
+     * Advance a tier-2 ship's BODY-frame velocity setpoint (blocks/s) by one tick of pilot input,
+     * the ship analogue of {@link #rampSetpoint}. Holding a translation key RAMPS that axis by
+     * {@code rampPerTick}; <b>releasing leaves the setpoint where it is</b> (the craft keeps
+     * cruising - this is what makes Flight Assist a cruise control rather than a dead-man switch);
+     * cut (X) or a held brake (Shift) zero the whole vector instantly. Magnitude is clamped to
+     * {@code maxSpeed}.
+     *
+     * @return new setpoint {forward, right, up}
+     */
+    public static double[] shipRampSetpoint(double spFwd, double spRight, double spUp,
+                                            FreeFlightInput in, double maxSpeed, double rampPerTick) {
+        if (in == null) in = FreeFlightInput.zero();
+        if (in.cutActive || in.brakeInput > 0f) {
+            return new double[]{0.0, 0.0, 0.0};
+        }
+        double f = sane(spFwd)   + in.throttleForward  * rampPerTick;
+        double r = sane(spRight) + in.strafeInput      * rampPerTick;
+        double u = sane(spUp)    + in.throttleVertical * rampPerTick;
+
+        double mag = Math.sqrt(f * f + r * r + u * u);
+        if (mag > maxSpeed && mag > 1e-9) {
+            double s = maxSpeed / mag;
+            f *= s; r *= s; u *= s;
+        }
+        return new double[]{f, r, u};
+    }
+
+    /**
      * The world-frame velocity command a tier-2 ship's force controller should realize for one
      * tick of pilot input, or {@code null} to mean "apply NO linear force this tick" (coast on
      * momentum) - distinct from a zero vector, which is "brake to a stop".
@@ -473,36 +501,38 @@ public final class FreeFlightPhysics {
      * velocity lives on the physics thread; the flight computer publishes this command and a
      * deadbeat force realizes it. The two Flight-Assist modes:</p>
      * <ul>
-     *   <li><b>FA on</b> (velocity hold): the throttles are a body-frame velocity setpoint the ship
-     *       holds (the deadbeat cancels gravity); releasing everything holds zero (hover); cut (X)
-     *       or brake (Shift) command a stop.</li>
+     *   <li><b>FA on</b> (cruise control): the ship holds the body-frame velocity {@code setpoint}
+     *       the pilot has ramped with {@link #shipRampSetpoint} (the deadbeat cancels gravity).
+     *       Releasing the throttle keeps cruising; only cut (X) or brake (Shift) - which zero the
+     *       setpoint - bring it to a hover.</li>
      *   <li><b>FA off</b> (Newtonian): holding a throttle commands a velocity in that direction so
      *       the ship accelerates toward it; brake (Shift) commands a stop; cut (X) or releasing
      *       everything returns {@code null} so no force is applied and the ship coasts (gravity
-     *       still acts). This coast-on-release is the observable difference from FA on.</li>
+     *       still acts). The setpoint is ignored.</li>
      * </ul>
      *
      * @param in         pilot intent ({@code null} treated as idle)
-     * @param attitude   the (target) body&rarr;world attitude the throttles map through
+     * @param attitude   the (target) body&rarr;world attitude the command maps through
      * @param flightAssist whether Flight Assist is on
+     * @param setpoint   body-frame velocity setpoint {forward, right, up} (blocks/s); FA on only
      * @param maxSpeed   ship cruise speed (blocks/s) at full throttle
      * @return world-frame velocity {@code {x,y,z}} (blocks/s), or {@code null} to coast
      */
     public static double[] shipVelocityCommand(FreeFlightInput in, Quat attitude,
-                                               boolean flightAssist, double maxSpeed) {
+                                               boolean flightAssist, double[] setpoint,
+                                               double maxSpeed) {
         if (in == null) in = FreeFlightInput.zero();
-        boolean thrusting = in.throttleForward != 0f
-                || in.strafeInput != 0f
-                || in.throttleVertical != 0f;
 
         if (flightAssist) {
-            if (in.cutActive || in.brakeInput > 0f) {
-                return new double[]{0.0, 0.0, 0.0}; // brake to hover
-            }
-            return shipThrottleVelocity(in, attitude, maxSpeed); // hold the throttle velocity
+            // Cruise control: realize the persistent setpoint (already zeroed by cut/brake).
+            double[] sp = setpoint != null ? setpoint : new double[]{0, 0, 0};
+            return bodyToWorldQ(sane(sp[0]), sane(sp[1]), sane(sp[2]), attitude);
         }
 
         // Flight Assist off (Newtonian).
+        boolean thrusting = in.throttleForward != 0f
+                || in.strafeInput != 0f
+                || in.throttleVertical != 0f;
         if (in.brakeInput > 0f) {
             return new double[]{0.0, 0.0, 0.0}; // deadbeat decelerate
         }
@@ -824,4 +854,223 @@ public final class FreeFlightPhysics {
     private static double sane(double v) {
         return (Double.isNaN(v) || Double.isInfinite(v)) ? 0.0 : v;
     }
+
+    // -- Ship-frame crew helpers -------------------------------------------
+    // Pure math shared by the aboard-entity movement frame, the render camera and the
+    // model orientation. No Minecraft state: every input is a plain vector.
+
+    /**
+     * The attitude whose body basis is exactly the given orthonormal frame, in the
+     * {@link #bodyBasisFromQuat} layout ({@code forward = right x up}). Inverse of
+     * {@code bodyBasisFromQuat}: {@code quatFromBasis(bodyBasisFromQuat(q)) == q} up to sign.
+     *
+     * <p>Lets a camera or a model orientation be assembled from vectors that are natural to
+     * compute (a look direction, a deck up) and then converted, once, into the quaternion the
+     * rest of Free Flight speaks. A degenerate or non-orthonormal frame collapses to identity
+     * rather than producing a NaN attitude.</p>
+     *
+     * @param f forward (body +Z), r right (body +X), u up (body +Y) - all world, unit
+     */
+    public static Quat quatFromBasis(double[] f, double[] r, double[] u) {
+        if (f == null || r == null || u == null) return Quat.IDENTITY;
+        // Rotation matrix columns are the images of the body axes: R = [r | u | f].
+        double m00 = r[0], m01 = u[0], m02 = f[0];
+        double m10 = r[1], m11 = u[1], m12 = f[1];
+        double m20 = r[2], m21 = u[2], m22 = f[2];
+        double trace = m00 + m11 + m22;
+        double qw, qx, qy, qz;
+        if (trace > 0.0) {
+            double s = Math.sqrt(trace + 1.0) * 2.0;
+            qw = 0.25 * s;
+            qx = (m21 - m12) / s;
+            qy = (m02 - m20) / s;
+            qz = (m10 - m01) / s;
+        } else if (m00 > m11 && m00 > m22) {
+            double s = Math.sqrt(1.0 + m00 - m11 - m22) * 2.0;
+            qw = (m21 - m12) / s;
+            qx = 0.25 * s;
+            qy = (m01 + m10) / s;
+            qz = (m02 + m20) / s;
+        } else if (m11 > m22) {
+            double s = Math.sqrt(1.0 + m11 - m00 - m22) * 2.0;
+            qw = (m02 - m20) / s;
+            qx = (m01 + m10) / s;
+            qy = 0.25 * s;
+            qz = (m12 + m21) / s;
+        } else {
+            double s = Math.sqrt(1.0 + m22 - m00 - m11) * 2.0;
+            qw = (m10 - m01) / s;
+            qx = (m02 + m20) / s;
+            qy = (m12 + m21) / s;
+            qz = 0.25 * s;
+        }
+        return new Quat(qw, qx, qy, qz).normalized();
+    }
+
+    /**
+     * The camera attitude for someone standing on a ship's deck: he keeps looking exactly where
+     * he is looking ({@code forward}), but his horizon is the ship's, not the world's.
+     *
+     * <p>Feeding {@link #eulerFromQuat} the result gives back the viewer's own yaw and pitch
+     * (because forward is unchanged) plus the roll that levels the view with the deck. That is
+     * what makes this safe: the look vector - and therefore block interaction, which derives from
+     * yaw/pitch - is never touched, so only the roll degree of freedom is added.</p>
+     *
+     * <p>Returns {@code null} when the deck up is (nearly) parallel to the view, where the roll is
+     * undefined; the caller should hold its previous value.</p>
+     *
+     * @param forward the viewer's world look direction (unit)
+     * @param shipUp  the ship's local +Y, in world coordinates (unit)
+     */
+    public static Quat deckLevelledCameraQuat(double[] forward, double[] shipUp) {
+        if (forward == null || shipUp == null) return null;
+        double fx = forward[0], fy = forward[1], fz = forward[2];
+        double fn = Math.sqrt(fx * fx + fy * fy + fz * fz);
+        if (fn < 1e-9 || Double.isNaN(fn)) return null;
+        fx /= fn; fy /= fn; fz /= fn;
+
+        // Project the deck up perpendicular to the view: that is the direction the top of the
+        // screen must point at.
+        double dot = shipUp[0] * fx + shipUp[1] * fy + shipUp[2] * fz;
+        double ux = shipUp[0] - fx * dot;
+        double uy = shipUp[1] - fy * dot;
+        double uz = shipUp[2] - fz * dot;
+        double un = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (un < 1e-6 || Double.isNaN(un)) {
+            return null; // looking straight along the deck normal - roll is undefined
+        }
+        ux /= un; uy /= un; uz /= un;
+
+        // right = up x forward (the handedness bodyBasis uses: forward = right x up).
+        double rx = uy * fz - uz * fy;
+        double ry = uz * fx - ux * fz;
+        double rz = ux * fy - uy * fx;
+        return quatFromBasis(new double[]{fx, fy, fz}, new double[]{rx, ry, rz},
+                new double[]{ux, uy, uz});
+    }
+
+    /**
+     * Minecraft yaw (degrees) of a look direction, in whatever frame the direction is expressed.
+     * Handed a ship-frame look vector it yields the yaw to walk by on the deck, exactly as
+     * {@code moveRelative} uses {@code rotationYaw} in the world frame.
+     */
+    public static float yawFromForwardDeg(double fx, double fy, double fz) {
+        if (Double.isNaN(fx) || Double.isNaN(fz)) return 0f;
+        return (float) Math.toDegrees(Math.atan2(-fx, fz));
+    }
+
+    /**
+     * The pilot's held body rates, as a world-frame angular velocity (rad/s) at attitude {@code q}.
+     *
+     * <p>The FEED-FORWARD term of the ship's attitude controller. Without it, a proportional law
+     * chasing a reference that is itself turning settles at a standing error of {@code rate/gain} -
+     * about 50 degrees at the rates and gain this craft uses - and the ship visibly lags the pilot's
+     * hand. Adding the rate the reference is known to be turning at removes that lag by construction,
+     * leaving the proportional term to do only what it is good at: null the residual error.</p>
+     *
+     * <p>Rates arrive in the same units and sign convention as {@link #integrateBodyRates}: degrees per
+     * TICK, pitch about body {@code +X}, yaw about body {@code +Y} (negated), roll about body {@code +Z}.</p>
+     */
+    public static double[] bodyRatesToWorldOmega(Quat q, double pitchRateDeg, double yawRateDeg,
+                                                 double rollRateDeg) {
+        if (q == null) q = Quat.IDENTITY;
+        double perTickToRadPerSecond = Math.toRadians(1.0) * 20.0;
+        double[] world = q.rotate(
+                sane(pitchRateDeg) * perTickToRadPerSecond,
+                -sane(yawRateDeg) * perTickToRadPerSecond,
+                sane(rollRateDeg) * perTickToRadPerSecond);
+        return world;
+    }
+
+    /**
+     * The world-frame angular acceleration a ship's attitude controller should command to hold
+     * {@code target} while spinning at {@code omega}.
+     *
+     * <p>A PD law. P drives the shortest-arc orientation error out at a capped rate; D is implicit
+     * in the deadbeat toward that rate - when the error is already null the desired rate is zero
+     * and the term becomes {@code -omega/dt}, i.e. it BRAKES residual spin. That braking is the
+     * whole point: a force-controlled rigid body carries angular momentum a kinematic craft does
+     * not, so "no pilot input" must mean "stop turning", not "coast".</p>
+     *
+     * <p>Returns {@code null} when nothing should be commanded (no target, or both the error and
+     * the spin are below their numeric thresholds), so the caller applies no torque at all.</p>
+     *
+     * @param errAxisX,errAxisY,errAxisZ unit rotation axis of the target-from-current error
+     * @param errAngle                   signed shortest-arc error angle (radians)
+     * @param wx,wy,wz                   measured world-frame angular velocity (rad/s)
+     * @param dt                         physics step (seconds)
+     * @param pGain                      desired angular speed per radian of error (1/s)
+     * @param maxAngSpeed                cap on the desired angular speed (rad/s)
+     * @param maxAngAccel                cap on the returned angular acceleration (rad/s^2)
+     * @return angular acceleration {x,y,z} (rad/s^2), or null for "apply no torque"
+     */
+    public static double[] attitudeHoldAngAccel(double errAxisX, double errAxisY, double errAxisZ,
+                                                double errAngle, double wx, double wy, double wz,
+                                                double dt, double pGain, double maxAngSpeed,
+                                                double maxAngAccel) {
+        return attitudeHoldAngAccel(errAxisX, errAxisY, errAxisZ, errAngle,
+                0.0, 0.0, 0.0, wx, wy, wz, dt, pGain, maxAngSpeed, maxAngAccel);
+    }
+
+    /**
+     * As {@link #attitudeHoldAngAccel(double, double, double, double, double, double, double, double,
+     * double, double, double)}, plus the FEED-FORWARD rate {@code (ffX,ffY,ffZ)} the target itself is
+     * turning at (see {@link #bodyRatesToWorldOmega}). The desired rate becomes
+     * {@code feedForward + P * error} rather than {@code P * error} alone, so a ship tracks a moving
+     * attitude reference without the standing lag a proportional law would otherwise settle at.
+     *
+     * <p>Both halves still hold when the pilot centres his controls: the feed-forward is zero, the
+     * error is zero, and the deadbeat becomes {@code -omega/dt} - it brakes the residual spin.</p>
+     */
+    public static double[] attitudeHoldAngAccel(double errAxisX, double errAxisY, double errAxisZ,
+                                                double errAngle, double ffX, double ffY, double ffZ,
+                                                double wx, double wy, double wz,
+                                                double dt, double pGain, double maxAngSpeed,
+                                                double maxAngAccel) {
+        if (dt <= 0.0 || Double.isNaN(dt)) return null;
+        if (Double.isNaN(errAngle) || Double.isNaN(wx) || Double.isNaN(wy) || Double.isNaN(wz)) {
+            return null;
+        }
+        if (Double.isNaN(ffX) || Double.isNaN(ffY) || Double.isNaN(ffZ)) {
+            return null;
+        }
+        double spin = Math.sqrt(wx * wx + wy * wy + wz * wz);
+        double feedForward = Math.sqrt(ffX * ffX + ffY * ffY + ffZ * ffZ);
+        // Nothing to do: pointed where we want, not turning, and not asked to turn. Below all three
+        // thresholds we leave the body alone entirely rather than dither torque at the noise floor.
+        if (Math.abs(errAngle) < ATTITUDE_ANGLE_EPSILON && spin < ANGULAR_RATE_EPSILON
+                && feedForward < ANGULAR_RATE_EPSILON) {
+            return null;
+        }
+
+        double speed = errAngle * pGain;
+        if (speed > maxAngSpeed) speed = maxAngSpeed;
+        if (speed < -maxAngSpeed) speed = -maxAngSpeed;
+        double wDesX = errAxisX * speed + ffX;
+        double wDesY = errAxisY * speed + ffY;
+        double wDesZ = errAxisZ * speed + ffZ;
+        double wDesMag = Math.sqrt(wDesX * wDesX + wDesY * wDesY + wDesZ * wDesZ);
+        if (wDesMag > maxAngSpeed && wDesMag > 1e-9) {
+            double s = maxAngSpeed / wDesMag;
+            wDesX *= s; wDesY *= s; wDesZ *= s;
+        }
+
+        double ax = (wDesX - wx) / dt;
+        double ay = (wDesY - wy) / dt;
+        double az = (wDesZ - wz) / dt;
+        double am = Math.sqrt(ax * ax + ay * ay + az * az);
+        if (Double.isNaN(am) || Double.isInfinite(am)) return null;
+        if (am > maxAngAccel && am > 1e-9) {
+            double s = maxAngAccel / am;
+            ax *= s; ay *= s; az *= s;
+        }
+        return new double[]{ax, ay, az};
+    }
+
+    /** Orientation error (radians) below which a ship counts as "pointed". Numeric guard only:
+     *  unlike a dead-band it does not disengage the controller, because the rate term must keep
+     *  braking residual spin at zero error. */
+    public static final double ATTITUDE_ANGLE_EPSILON = 1.0e-3;
+    /** Angular speed (rad/s) below which a ship counts as "not turning". */
+    public static final double ANGULAR_RATE_EPSILON = 1.0e-3;
 }

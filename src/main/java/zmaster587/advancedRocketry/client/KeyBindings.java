@@ -69,6 +69,10 @@ public class KeyBindings {
      *  RocketEventHandler via {@link #shipQuat()} / {@link #shipPrevQuat()}. */
     private static volatile FreeFlightPhysics.Quat shipQuat = FreeFlightPhysics.Quat.IDENTITY;
     private static volatile FreeFlightPhysics.Quat shipPrevQuat = FreeFlightPhysics.Quat.IDENTITY;
+    /** RAW mouse motion (converted to vanilla look degrees) accumulated since the last client tick,
+     *  consumed by the tier-2 flight cursor. See {@link #handleShipPilotInput} for why the ship
+     *  cursor must be driven by the mouse itself and never by a player-rotation difference. */
+    private static volatile float pendingCursorYawDeg, pendingCursorPitchDeg;
     /** Camera-pin state for mouse-as-rate steering: the player
      *  rotation we pinned at the end of the previous tick. Whatever the mouse
      *  added on top of it since is this tick's turn command. Static so the
@@ -305,7 +309,7 @@ public class KeyBindings {
      * The Free Flight HUD text, backend-agnostic: driven by a {@link FreeFlightHudState} snapshot
      * so the SAME lines serve a tier-1 rocket and a tier-2 ship. The active title carries the
      * craft tier; the velocity vector + speed lines appear only when the backend supplies velocity
-     * ({@link FreeFlightHudState#hasVelocity}) — the ship omits them (physics-thread state).
+     * ({@link FreeFlightHudState#hasVelocity}).
      */
     public static java.util.List<String> freeFlightHudLines(FreeFlightHudState state) {
         GameSettings gs = Minecraft.getMinecraft().gameSettings;
@@ -542,6 +546,8 @@ public class KeyBindings {
         if (seat == null || !seat.isLinked()) {
             shipPilotPinValid = false;
             lastSentShipInput = FreeFlightInput.zero();
+            pendingCursorYawDeg = 0f;
+            pendingCursorPitchDeg = 0f;
             return false;
         }
         BlockPos seatPos = seat.getPos();
@@ -557,23 +563,24 @@ public class KeyBindings {
         float yawKeys = (turnRocketRight.isKeyDown() ? 1f : 0f)
                 + (turnRocketLeft.isKeyDown() ? -1f : 0f);
 
-        // Mouse → absolute flight cursor (pitch on Y, roll on X). The look delta the mouse
-        // accumulated since the last camera pin IS this tick's steer command; the view is then
-        // re-pinned to the ship nose below, so mouse motion can never leak into free-look. Writes
-        // the SHARED cursor / turn-rate fields the FF HUD reads, so the ship gets the same on-screen
-        // flight cursor as the rocket. First tick after sitting centres the cursor and discards the
-        // stale look offset.
+        // Mouse -> absolute flight cursor (pitch on Y, roll on X). The steer command is the RAW
+        // mouse motion accumulated since the last tick (see onShipPilotMouseMoved), NOT a difference
+        // of player rotations: the pin below and the vanilla riding echo both write that rotation,
+        // so a difference would alias the ship's own A/D yaw into the cursor and bank the craft.
+        // Writes the SHARED cursor / turn-rate fields the FF HUD reads, so the ship gets the same
+        // on-screen flight cursor as the rocket. The first tick after sitting centres the cursor and
+        // discards any motion made before the pilot sat down.
         boolean firstShipTick = !shipPilotPinValid;
-        float yawDelta, pitchDelta;
+        float yawDelta = pendingCursorYawDeg;
+        float pitchDelta = pendingCursorPitchDeg;
+        pendingCursorYawDeg = 0f;
+        pendingCursorPitchDeg = 0f;
         if (firstShipTick) {
             yawDelta = 0f;
             pitchDelta = 0f;
             shipPilotPinValid = true;
             flightCursorX = 0f;
             flightCursorY = 0f;
-        } else {
-            yawDelta = net.minecraft.util.math.MathHelper.wrapDegrees(player.rotationYaw - lastPinnedYaw);
-            pitchDelta = player.rotationPitch - lastPinnedPitch;
         }
         prevFlightCursorX = flightCursorX;
         prevFlightCursorY = flightCursorY;
@@ -621,6 +628,47 @@ public class KeyBindings {
             lastSentShipInput = input;
         }
         return true;
+    }
+
+    /**
+     * Accumulate the RAW mouse motion a tier-2 ship pilot makes, converted to the same degrees the
+     * vanilla look would have applied (so the pilot's mouse-sensitivity and invert-Y settings still
+     * govern the flight cursor). Consumed once per client tick by {@link #handleShipPilotInput}.
+     *
+     * <p>This exists because the ship cursor CANNOT be recovered from the player's rotation: that
+     * field is overwritten every tick by the ship-attitude camera pin, and in between by the vanilla
+     * riding position echo, which carries a rotation about one round-trip old. Any tick where those
+     * two disagree folds the ship's own yaw - i.e. the A/D steering - into the "mouse" delta and
+     * banks the craft whenever the pilot turns. Reading the mouse directly cannot alias that way.</p>
+     */
+    @SubscribeEvent
+    public void onShipPilotMouseMoved(net.minecraftforge.client.event.MouseEvent event) {
+        // Only motion of a GRABBED cursor is steering. A GUI that has just closed leaves the mouse
+        // ungrabbed for a tick, and the pointer's jump back to the screen centre would otherwise arrive
+        // here as a hard flick of the flight stick.
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || !mc.inGameHasFocus) return;
+        acceptShipPilotMouseDelta(event.getDx(), event.getDy());
+    }
+
+    /**
+     * Accumulate one raw mouse delta into the ship pilot's flight cursor. Split out of the event handler
+     * so the SAME code runs whether the delta arrives from the window's mouse or is injected by a driver
+     * that has no window - a cursor no test can deflect is a cursor whose behaviour cannot be pinned,
+     * and the key path already works exactly this way.
+     */
+    public static void acceptShipPilotMouseDelta(int dx, int dy) {
+        if (dx == 0 && dy == 0) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.currentScreen != null) return;
+        TilePilotSeat seat = TilePilotSeat.forRider(mc.player.getRidingEntity(), mc.world);
+        if (seat == null || !seat.isLinked()) return;
+        // Vanilla's raw-delta to degrees mapping (EntityRenderer sensitivity curve x Entity.turn).
+        float f = mc.gameSettings.mouseSensitivity * 0.6F + 0.2F;
+        float degPerUnit = f * f * f * 8.0F * 0.15F;
+        int invert = mc.gameSettings.invertMouse ? -1 : 1;
+        pendingCursorYawDeg += dx * degPerUnit;
+        pendingCursorPitchDeg -= dy * degPerUnit * invert;
     }
 
     @SubscribeEvent

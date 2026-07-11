@@ -308,6 +308,16 @@ public class TestProbeCommand extends CommandBase {
             m.put("velX", s[7]);
             m.put("velY", s[8]);
             m.put("velZ", s[9]);
+            // Angular velocity (rad/s): without it a test cannot tell "the pilot centred the flight
+            // cursor and the ship stopped turning" from "it is still turning, slowly".
+            double[] omega = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .nearestShipAngularVelocity(world, parseDoubleOr(args[2], 0),
+                            parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            m.put("omegaX", omega == null ? 0.0 : omega[0]);
+            m.put("omegaY", omega == null ? 0.0 : omega[1]);
+            m.put("omegaZ", omega == null ? 0.0 : omega[2]);
+            m.put("omega", omega == null ? 0.0
+                    : Math.sqrt(omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2]));
             send(sender, jsonMap(m));
             return;
         }
@@ -466,12 +476,224 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
             return;
         }
+        // shiplocal <off|observe|takeover|status> — arm the Entity.move takeover for the first
+        // player, or report it. "observe" fires the hook without cancelling (proves the injection
+        // lives); "takeover" cancels the vanilla move, which also suppresses every hook queued
+        // behind ours — that is what tells us whether AR runs before the physics mod at that point.
+        if (args.length >= 2 && "shiplocal".equalsIgnoreCase(args[0])) {
+            net.minecraft.server.MinecraftServer srv = sender.getServer();
+            java.util.List<EntityPlayerMP> players = srv == null
+                    ? java.util.Collections.<EntityPlayerMP>emptyList()
+                    : srv.getPlayerList().getPlayers();
+            String mode = args[1].toLowerCase(java.util.Locale.ROOT);
+            // Optional explicit subject; default is the first player. A player is a poor subject for
+            // ordering experiments because the physics mod also feeds his ship association from the
+            // client movement packet, so pass a server-only entity (e.g. a dropped item) instead.
+            int subject = args.length >= 3
+                    ? parseIntOr(args[2], -1)
+                    : (players.isEmpty() ? -1 : players.get(0).getEntityId());
+            if (!"status".equals(mode) && !"off".equals(mode) && subject < 0) {
+                send(sender, "{\"error\":\"no subject entity\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode requested =
+                    shipLocalMode(mode);
+            if (requested == null) {
+                send(sender, "{\"error\":\"usage: vs shiplocal off|observe|takeover|shipframe|status [entityId]\"}");
+                return;
+            }
+            if ("off".equals(mode)) {
+                zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.disable();
+            } else if (!"status".equals(mode)) {
+                zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.enable(subject, requested);
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("mode", zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getMode().name());
+            m.put("enabled", zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.isEnabled());
+            m.put("targetEntityId",
+                    zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getTargetEntityId());
+            m.put("fires", zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getFires());
+            double[] sf = zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getShipFramePos();
+            if (sf != null) {
+                m.put("frameX", sf[0]);
+                m.put("frameY", sf[1]);
+                m.put("frameZ", sf[2]);
+            }
+            send(sender, jsonMap(m));
+            return;
+        }
+        // drop-stand <dim> <x> <y> <z> [mode] — spawn an armour stand: a TALL (1.975) subject, unlike
+        // an item, so the orientation of its collision box actually matters on a rolled deck. Same
+        // atomic arming as drop-item.
+        if (args.length >= 5 && "drop-stand".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.entity.item.EntityArmorStand stand = new net.minecraft.entity.item.EntityArmorStand(
+                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            stand.motionX = 0;
+            stand.motionY = 0;
+            stand.motionZ = 0;
+            zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode standMode =
+                    args.length >= 6 ? shipLocalMode(args[5].toLowerCase(java.util.Locale.ROOT)) : null;
+            boolean standArmed = standMode != null
+                    && standMode != zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.OFF;
+            if (standArmed) {
+                zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl
+                        .enable(stand.getEntityId(), standMode);
+            }
+            world.spawnEntity(stand);
+            send(sender, "{\"entityId\":" + stand.getEntityId() + ",\"armed\":" + standArmed
+                    + ",\"height\":" + stand.height + "}");
+            return;
+        }
+        // player-ship-data — READ-ONLY. Reports what the physics mod already believes about the
+        // first player's relationship to a ship: its own entity-to-ship association, whether it
+        // counts the player as standing on that ship, the motion it imparts, and the player's
+        // position mapped into the ship's subspace. That subspace position is the coordinate a
+        // deck-aligned collision frame would treat as authoritative, so watching it while the ship
+        // rolls says how much of such a frame the physics mod already supplies. Mutates nothing.
+        // would-take-over <dim> <entityId> - READ-ONLY. Whether ShipFrameTravel would resolve this
+        // living entity's movement in a ship frame. Pins the gate that keeps a body standing on world
+        // terrain near a ship (its box overlaps the ship's world AABB) from being dropped through the
+        // floor into the ship's empty subspace.
+        if (args.length >= 3 && "would-take-over".equalsIgnoreCase(args[0])) {
+            net.minecraft.server.MinecraftServer server = sender.getServer();
+            net.minecraft.world.WorldServer world = server == null ? null
+                    : server.getWorld(parseIntOr(args[1], 0));
+            net.minecraft.entity.Entity ent = world == null ? null
+                    : world.getEntityByID(parseIntOr(args[2], Integer.MIN_VALUE));
+            if (!(ent instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"not a living entity\"}");
+                return;
+            }
+            boolean handles = zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.handles(
+                    (net.minecraft.entity.EntityLivingBase) ent);
+            send(sender, "{\"handles\":" + handles + "}");
+            return;
+        }
+        // shipframe-stats - READ-ONLY. Whether the ship-frame movement hook is actually running, and
+        // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
+        // that applied and declined every entity look identical from outside the JVM; these counters
+        // tell them apart, and a resolved tick that saw zero obstacles means bodies fall through decks.
+        // afc-debug - READ-ONLY. What the flight controller last commanded, from the physics thread.
+        if (args.length >= 1 && "afc-debug".equalsIgnoreCase(args[0])) {
+            double[] s = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugControllerState;
+            if (s == null || s.length < 8) {
+                send(sender, "{\"ran\":false}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ran", true);
+            m.put("dt", s[0]);
+            m.put("alphaX", s[1]);
+            m.put("alphaY", s[2]);
+            m.put("alphaZ", s[3]);
+            m.put("alpha", Math.sqrt(s[1] * s[1] + s[2] * s[2] + s[3] * s[3]));
+            m.put("omegaX", s[4]);
+            m.put("omegaY", s[5]);
+            m.put("omegaZ", s[6]);
+            m.put("omega", Math.sqrt(s[4] * s[4] + s[5] * s[5] + s[6] * s[6]));
+            m.put("angularEngaged", s[7] > 0.0);
+            send(sender, jsonMap(m));
+            return;
+        }
+        if (args.length >= 1 && "shipframe-stats".equalsIgnoreCase(args[0])) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("resolvedTicks",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.resolvedTicks);
+            m.put("declinedTicks",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.declinedTicks);
+            m.put("lastObstacleCount",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastObstacleCount);
+            m.put("lastOnDeck",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastOnDeck);
+            send(sender, jsonMap(m));
+            return;
+        }
+        if (args.length >= 1 && "player-ship-data".equalsIgnoreCase(args[0])) {
+            net.minecraft.server.MinecraftServer server = sender.getServer();
+            // Optional "<dim> <entityId>" reports any entity instead of the first player, so a
+            // purely server-driven subject (a dropped item) can be observed.
+            net.minecraft.entity.Entity subject = null;
+            if (args.length >= 3) {
+                net.minecraft.world.WorldServer w = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+                subject = w == null ? null : w.getEntityByID(parseIntOr(args[2], -1));
+            } else {
+                java.util.List<EntityPlayerMP> ps = server == null
+                        ? java.util.Collections.<EntityPlayerMP>emptyList()
+                        : server.getPlayerList().getPlayers();
+                subject = ps.isEmpty() ? null : ps.get(0);
+            }
+            if (subject == null) {
+                send(sender, "{\"error\":\"no subject entity\"}");
+                return;
+            }
+            Map<String, Object> vsData =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.getEntityShipMovementData(subject);
+            if (vsData == null) {
+                send(sender, "{\"available\":false}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>(vsData);
+            m.put("playerX", subject.posX);
+            m.put("playerY", subject.posY);
+            m.put("playerZ", subject.posZ);
+            m.put("playerOnGround", subject.onGround);
+            send(sender, jsonMap(m));
+            return;
+        }
+        // drop-item <dim> <x> <y> <z> [takeover] — spawn a plain item entity. Its movement is driven
+        // ONLY by the server tick (no client packet feeds its ship association), which makes it the
+        // right subject for measuring who owns Entity.move. With "takeover", the move hook is armed
+        // for the new entity BEFORE it is spawned, so it never ticks unguarded: a fresh entity's
+        // ship association starts null and only the physics mod's hook can set it, which makes the
+        // association a clean witness for whether that hook ran at all.
+        if (args.length >= 5 && "drop-item".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.entity.item.EntityItem item = new net.minecraft.entity.item.EntityItem(world,
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    new net.minecraft.item.ItemStack(net.minecraft.init.Blocks.STONE));
+            item.motionX = 0;
+            item.motionY = 0;
+            item.motionZ = 0;
+            item.setInfinitePickupDelay(); // the observing bot must not vacuum up the subject
+            zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode armMode =
+                    args.length >= 6 ? shipLocalMode(args[5].toLowerCase(java.util.Locale.ROOT)) : null;
+            boolean armed = armMode != null
+                    && armMode != zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.OFF;
+            if (armed) {
+                zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl
+                        .enable(item.getEntityId(), armMode);
+            }
+            world.spawnEntity(item);
+            send(sender, "{\"entityId\":" + item.getEntityId() + ",\"armed\":" + armed + "}");
+            return;
+        }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
-                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>\"}");
+                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>"
+                + "|player-ship-data|shipframe-stats|would-take-over\"}");
     }
 
     /** Resolve (loading if needed) a {@link net.minecraft.world.WorldServer} for VS ship probes. */
+    /** Map a probe word to a move-hook mode; null when the word is not one. "status" keeps the
+     *  current mode (the caller only wants a report). */
+    private static zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode shipLocalMode(String word) {
+        if ("off".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.OFF;
+        if ("observe".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.OBSERVE;
+        if ("takeover".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.CANCEL;
+        if ("shipframe".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.SHIP_FRAME;
+        if ("status".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getMode();
+        return null;
+    }
+
     private static net.minecraft.world.WorldServer vsWorld(ICommandSender sender, int dim) {
         if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
             net.minecraftforge.common.DimensionManager.initDimension(dim);

@@ -17,12 +17,15 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.opengl.GL11;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -717,6 +720,94 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("block", "");
                         response.addProperty("tile", "");
                     }
+                    return response;
+                });
+            case "invoke_static_int":
+                // Drive a mod's own CLIENT-side input entry point on the client thread. The sibling of
+                // set_key: that one writes KeyBinding state rather than feeding the LWJGL key queue,
+                // and this one calls the method the mouse handler calls rather than feeding the LWJGL
+                // mouse queue. Both run the real client code; neither invents the outcome.
+                return runOnClientThread(() -> {
+                    String className = requireString(request, "className");
+                    String methodName = requireString(request, "methodName");
+                    JsonArray args = request.has("intArgs")
+                            ? request.getAsJsonArray("intArgs") : new JsonArray();
+                    Class<?>[] types = new Class<?>[args.size()];
+                    Object[] values = new Object[args.size()];
+                    for (int i = 0; i < args.size(); i++) {
+                        types[i] = int.class;
+                        values[i] = args.get(i).getAsInt();
+                    }
+                    JsonObject response = ok();
+                    try {
+                        Class<?> clazz = Class.forName(className);
+                        java.lang.reflect.Method method = clazz.getDeclaredMethod(methodName, types);
+                        method.setAccessible(true);
+                        Object result = method.invoke(null, values);
+                        response.addProperty("returned", result == null ? "" : String.valueOf(result));
+                    } catch (Throwable t) {
+                        throw new IllegalStateException("invoke_static_int(" + className + "#"
+                                + methodName + ") failed: " + t, t);
+                    }
+                    return response;
+                });
+            case "set_framebuffer":
+                // A capture needs the framebuffer object: without it the last frame lives only in a back
+                // buffer whose contents are undefined after the swap, and the image comes out flat. The
+                // harness leaves the FBO off by default (vendor GL drivers), so a test that wants to SEE
+                // the frame turns it on for itself, renders a few, and turns it back off - rather than
+                // every other test paying for a render path it never looks at.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    boolean enabled = request.get("enabled").getAsBoolean();
+                    boolean previous = mc.gameSettings.fboEnable;
+                    mc.gameSettings.fboEnable = enabled;
+                    // The framebuffer object is allocated at init only if it was enabled THEN; flipping
+                    // the setting now does not retroactively create the GL texture the render loop draws
+                    // into, so a capture would read an empty one. Allocate it here so the next frames
+                    // actually render into it. Guarded on driver support.
+                    if (enabled && OpenGlHelper.framebufferSupported && mc.getFramebuffer() != null) {
+                        mc.getFramebuffer().createBindFramebuffer(mc.displayWidth, mc.displayHeight);
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("previous", previous);
+                    response.addProperty("enabled", enabled);
+                    response.addProperty("supported", OpenGlHelper.framebufferSupported);
+                    return response;
+                });
+            case "screenshot":
+                // The only way a headless test can see what the client actually DREW. Vanilla's F2
+                // cannot be driven: it is dispatched off the raw LWJGL key-event queue, which
+                // set_key (a KeyBinding state write) never reaches. So call the same helper directly,
+                // on the client thread, where the GL context is current.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    String name = requireString(request, "name");
+                    String fileName = name.endsWith(".png") ? name : name + ".png";
+                    // Without the FBO, ScreenShotHelper falls back to glReadPixels of the current READ
+                    // buffer. Read the FRONT buffer, which at least holds the frame on screen; the
+                    // caller should have enabled the framebuffer if it means to trust the pixels.
+                    boolean fbo = OpenGlHelper.isFramebufferEnabled();
+                    int previousReadBuffer = fbo ? 0 : GL11.glGetInteger(GL11.GL_READ_BUFFER);
+                    if (!fbo) {
+                        GL11.glReadBuffer(GL11.GL_FRONT);
+                    }
+                    try {
+                        ScreenShotHelper.saveScreenshot(mc.mcDataDir, fileName,
+                                mc.displayWidth, mc.displayHeight, mc.getFramebuffer());
+                    } finally {
+                        if (!fbo) {
+                            GL11.glReadBuffer(previousReadBuffer);
+                        }
+                    }
+                    File written = new File(new File(mc.mcDataDir, "screenshots"), fileName);
+                    JsonObject response = ok();
+                    response.addProperty("path", written.getAbsolutePath());
+                    response.addProperty("exists", written.isFile());
+                    response.addProperty("bytes", written.isFile() ? written.length() : 0L);
+                    response.addProperty("width", mc.displayWidth);
+                    response.addProperty("height", mc.displayHeight);
+                    response.addProperty("framebuffer", fbo);
                     return response;
                 });
             case "shutdown":

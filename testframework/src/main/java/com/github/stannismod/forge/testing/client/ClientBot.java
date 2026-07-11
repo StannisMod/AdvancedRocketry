@@ -230,6 +230,57 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Call a static {@code void}/value method with {@code int} parameters on the CLIENT thread.
+     *
+     * <p>The mouse counterpart of {@link #setKey}: a bot has no window, so it cannot feed LWJGL's
+     * mouse queue any more than it can feed the key queue. Pointing this at the mod's own raw-delta
+     * entry point runs exactly the code a real mouse move runs.</p>
+     */
+    public JsonObject invokeStaticInt(String className, String methodName, int... args)
+            throws IOException {
+        JsonObject command = command("invoke_static_int");
+        command.addProperty("className", className);
+        command.addProperty("methodName", methodName);
+        com.google.gson.JsonArray intArgs = new com.google.gson.JsonArray();
+        for (int arg : args) {
+            intArgs.add(arg);
+        }
+        command.add("intArgs", intArgs);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Capture what the client is actually drawing, to {@code <gameDir>/screenshots/<name>.png}.
+     *
+     * <p>The bot cannot press F2 - vanilla dispatches that from the raw LWJGL key-event queue, which
+     * {@link #setKey} does not feed - so this calls {@code ScreenShotHelper} on the client thread
+     * instead. The game directory is the harness {@code root()}, which is deleted after the test, so
+     * read or copy the file before teardown.</p>
+     *
+     * @return {@code path}, {@code exists}, {@code bytes}, {@code width}, {@code height}, and
+     *         {@code framebuffer} (whether the FBO capture path was used)
+     */
+    public JsonObject screenshot(String name) throws IOException {
+        JsonObject command = command("screenshot");
+        command.addProperty("name", name);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Turn the client's framebuffer object on or off at runtime, returning its {@code previous} value.
+     *
+     * <p>{@link #screenshot} can only see real pixels when it is on: otherwise the last frame lives in a
+     * back buffer whose contents the driver may discard at the swap. The harness leaves it off for
+     * driver safety, so a test that means to LOOK at the frame enables it, renders a few
+     * ({@link #waitTicks}), captures, and puts it back.</p>
+     */
+    public JsonObject setFramebuffer(boolean enabled) throws IOException {
+        JsonObject command = command("set_framebuffer");
+        command.addProperty("enabled", enabled);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Right-clicks the HELD item with no block target: routes through
      * {@code PlayerControllerMP.processRightClick} (the real
      * {@code CPacketPlayerTryUseItem} path), so {@code Item.onItemRightClick}

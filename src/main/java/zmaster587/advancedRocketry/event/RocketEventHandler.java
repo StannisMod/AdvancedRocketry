@@ -121,13 +121,13 @@ public class RocketEventHandler extends Gui {
 
         int barX = ffX + 150, barW = 60, barH = 4;
         int barsTop = scaledH2 - 4 - 3 * (barH + 3) - 22;
-        // Graphic thrust/velocity bars — only when the backend supplies velocity (rocket). Per
-        // body axis: a bipolar ±MAX_SPEED bar — cyan fill = actual velocity, notch = FA setpoint.
+        // Graphic thrust/velocity bars. Per body axis: a bipolar bar scaled to the craft's own top
+        // speed — cyan fill = actual velocity, notch = FA setpoint.
         if (state.hasVelocity) {
             double[] act = {state.bodyForward, state.bodyRight, state.bodyUp};
             double[] sp = {state.faForward, state.faRight, state.faUp};
             String[] axis = {"FWD", "LAT", "VRT"};
-            double max = zmaster587.advancedRocketry.api.FreeFlightPhysics.MAX_SPEED;
+            double max = state.barScale;
             for (int i = 0; i < 3; i++) {
                 int y = barsTop + i * (barH + 3);
                 fr.drawStringWithShadow(axis[i], barX - 22, y - 2, 0xB0F0FF);
@@ -237,7 +237,36 @@ public class RocketEventHandler extends Gui {
             event.setYaw(e[0] + 180f);
             event.setPitch(e[1]);
             event.setRoll(e[2]);
+            zmaster587.advancedRocketry.client.ShipFrameCamera.recordCamera(true, e[0], e[1], e[2],
+                    cq.rotate(0, 1, 0),
+                    zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeX,
+                    zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeY,
+                    zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeZ);
+            return;
         }
+
+        // A crew member standing on a deck: level the horizon with the deck, and nothing else. Rolling
+        // the view is the ONLY degree of freedom added - his yaw and pitch come back exactly as he
+        // aimed them, so getLook(), and therefore which block he mines, is untouched. Composing a full
+        // ship-frame look instead would silently aim his cursor somewhere the camera is not pointing.
+        double[] shipUp = zmaster587.advancedRocketry.client.ShipFrameCamera.shipUpFor(view, p);
+        if (shipUp == null) {
+            zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
+            return;
+        }
+        float[] levelled = zmaster587.advancedRocketry.client.ShipFrameCamera
+                .deckLevelledCameraEuler(shipUp, event.getYaw() - 180f, (float) event.getPitch());
+        if (levelled == null) {
+            return; // looking straight along the deck normal: roll is undefined, hold the last one
+        }
+        event.setYaw(levelled[0] + 180f);
+        event.setPitch(levelled[1]);
+        event.setRoll(levelled[2]);
+        zmaster587.advancedRocketry.client.ShipFrameCamera.recordCamera(true,
+                levelled[0], levelled[1], levelled[2], shipUp,
+                zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeX,
+                zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeY,
+                zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeZ);
     }
 
     /**

@@ -474,12 +474,16 @@ public final class RealClientHarness implements AutoCloseable {
     private static void bootstrapClientFiles(Path root) throws IOException {
         // Conservative GL settings — the test client only needs to reach the
         // in-world handshake, never to render anything pretty. Aggressive GL
-        // features (VBOs, FBOs, fancy graphics) are the usual trigger for
+        // features (VBOs, fancy graphics) are the usual trigger for
         // EXCEPTION_ACCESS_VIOLATION crashes inside flaky vendor GL drivers
         // (notably Intel integrated GPUs running legacy MC 1.12 OpenGL).
         List<String> options = new ArrayList<>();
         options.add("pauseOnLostFocus:false");
-        options.add("fboEnable:false");
+        // The framebuffer object stays OFF here, as the other GL features do. A test that needs to SEE
+        // what the client drew turns it on for itself (ClientBot.setFramebuffer) for the few frames it
+        // captures, so the render path every other test runs is unchanged. -Dforge.test.client.fbo=true
+        // turns it on from the start.
+        options.add("fboEnable:" + "true".equalsIgnoreCase(System.getProperty("forge.test.client.fbo")));
         options.add("useVbo:false");
         options.add("renderDistance:2");
         options.add("fancyGraphics:false");

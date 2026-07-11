@@ -12,6 +12,7 @@ import org.valkyrienskies.mod.common.physics.PhysicsCalculations;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import valkyrienwarfare.api.TransformType;
 
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
 import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 
 /**
@@ -36,22 +37,19 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
 
     /** Linear thrust authority (blocks/s²) — caps the deadbeat acceleration. Tuned at runtime. */
     private static final double AR_MAX_LINEAR_ACCEL = 40.0;
-    /** Angular thrust authority (rad/s²) — caps the deadbeat angular acceleration. Kept gentle:
-     *  an aggressive torque overshoots and trips VS's "ship moving too fast" freeze. */
+    /** Angular thrust authority (rad/s²) — caps the deadbeat angular acceleration. */
     private static final double AR_MAX_ANGULAR_ACCEL = 4.0;
-    /** Below this commanded angular speed (rad/s) the angular channel is left alone entirely —
-     *  we do NOT brake residual spin. Braking an unknown-frame residual ω was tripping the VS
-     *  "too fast" freeze during pure-translation flight; "no yaw input" must mean "no torque". */
+    /** Below this commanded angular speed (rad/s) a RAW angular-velocity command counts as absent.
+     *  Only the probe channel uses that command; the attitude-hold path below brakes residual spin. */
     private static final double AR_ANGULAR_CMD_EPSILON = 1.0e-4;
     /** Attitude-hold P gain: desired angular speed per radian of orientation error (1/s). */
     private static final double AR_ATTITUDE_GAIN = 2.0;
-    /** Cap on the attitude-hold desired angular speed (rad/s) — gentle, to stay under VS's
-     *  "too fast" freeze while a large orientation error is being nulled. */
-    private static final double AR_MAX_ANGULAR_SPEED = 1.5;
-    /** Attitude-hold dead-band (rad, ~1.7°): once within it the angular channel disengages and
-     *  the ship coasts. Actively braking residual spin at the target tripped VS's "too fast"
-     *  freeze — so "already pointed" must mean "no torque", like "no input" does. */
-    private static final double AR_ATTITUDE_DEADBAND = 0.03;
+    /** Cap on the attitude-hold desired angular speed (rad/s). Also the ceiling on how fast the ship
+     *  slews toward a large commanded change, so a hard flick of the mouse is a sweep, not a snap. Sits
+     *  just above the fastest rate the pilot can command (5 deg/tick of roll = 1.75 rad/s), so a ship at
+     *  full deflection tracks its attitude reference instead of forever lagging it. Two orders of
+     *  magnitude below the physics mod's ~223 rad/s sanity freeze. */
+    private static final double AR_MAX_ANGULAR_SPEED = 2.0;
 
     private int arFlightControllerPriority;
 
@@ -91,55 +89,68 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
             fx = ax * mass; fy = ay * mass; fz = az * mass;
         }
 
-        // Decide the DESIRED world-frame angular velocity. An attitude-hold target wins: read
-        // the ship's current orientation and turn the shortest-arc error into a rate that nulls
-        // it (P control, capped) — this is the interface Free Flight feeds. Otherwise a raw
-        // angular-velocity command, engaged only for a real turn (braking residual spin toward
-        // zero tripped VS's "too fast" freeze during straight flight).
-        double wDesX = 0.0, wDesY = 0.0, wDesZ = 0.0;
-        boolean haveAngular = false;
+        // Angular: a PD law. An attitude-hold target wins — read the ship's current orientation, turn
+        // the shortest-arc error into a desired rate (P, capped), then deadbeat toward that rate. When
+        // the error is already null the desired rate is ZERO and the deadbeat becomes -w/dt: it BRAKES
+        // residual spin. That braking is the point. A rocket's attitude is kinematic state, so a
+        // centred cursor freezes it; a ship is a rigid body carrying angular momentum, so a centred
+        // cursor must actively stop it, or it keeps turning until something else bleeds the spin.
+        //
+        // An earlier revision disengaged inside a 0.03 rad dead-band, believing the brake tripped VS's
+        // "ship moving too fast" guard. It does not: that guard trips at |w|^2 > 50000 (|w| > ~223
+        // rad/s), some 150x above AR_MAX_ANGULAR_SPEED, or on a non-finite velocity. The real historical
+        // cause was a NaN torque from a scalar inertia, which the MOI tensor below already fixed.
+        Vector3d w = calc.getAngularVelocity();
+        double[] angAccel = null;
         if (attCmd != null && attCmd.length >= 4) {
             Quaterniond current = physo.getShipTransform().rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
             Quaterniond target = new Quaterniond(attCmd[1], attCmd[2], attCmd[3], attCmd[0]); // JOML x,y,z,w
             Quaterniond err = new Quaterniond(target).mul(new Quaterniond(current).conjugate()).normalize();
             AxisAngle4d aa = new AxisAngle4d().set(err);
             double angle = aa.angle > Math.PI ? aa.angle - 2.0 * Math.PI : aa.angle; // shortest arc
-            // Within the dead-band the ship is "pointed": disengage so we don't brake residual
-            // spin into the "too fast" freeze. Outside it, drive the error out at a capped rate.
-            if (Math.abs(angle) >= AR_ATTITUDE_DEADBAND) {
-                double speed = angle * AR_ATTITUDE_GAIN;
-                if (speed > AR_MAX_ANGULAR_SPEED) speed = AR_MAX_ANGULAR_SPEED;
-                if (speed < -AR_MAX_ANGULAR_SPEED) speed = -AR_MAX_ANGULAR_SPEED;
-                wDesX = aa.x * speed; wDesY = aa.y * speed; wDesZ = aa.z * speed;
-                haveAngular = true;
+            // With an attitude target, an angular-velocity command is the rate that target is TURNING
+            // at - the feed-forward, not an independent command.
+            double ffX = 0.0, ffY = 0.0, ffZ = 0.0;
+            if (wCmd != null && wCmd.length >= 3) {
+                ffX = wCmd[0]; ffY = wCmd[1]; ffZ = wCmd[2];
             }
+            angAccel = FreeFlightPhysics.attitudeHoldAngAccel(aa.x, aa.y, aa.z, angle,
+                    ffX, ffY, ffZ, w.x, w.y, w.z, dt,
+                    AR_ATTITUDE_GAIN, AR_MAX_ANGULAR_SPEED, AR_MAX_ANGULAR_ACCEL);
         } else if (wCmd != null && wCmd.length >= 3
                 && (wCmd[0] * wCmd[0] + wCmd[1] * wCmd[1] + wCmd[2] * wCmd[2])
                         > AR_ANGULAR_CMD_EPSILON * AR_ANGULAR_CMD_EPSILON) {
-            wDesX = wCmd[0]; wDesY = wCmd[1]; wDesZ = wCmd[2];
-            haveAngular = true;
-        }
-
-        // Angular: deadbeat toward the desired angular velocity; torque = MOI · desiredAngAccel
-        // (full inertia TENSOR, not a scalar — VS integrates α = MOI⁻¹·τ, so this yields exactly
-        // the commanded angular accel; a scalar "inertia along axis" is zero when the ship isn't
-        // already spinning and wrong otherwise, giving no torque or the "too fast" freeze).
-        double tx = 0.0, ty = 0.0, tz = 0.0;
-        if (haveAngular) {
-            Vector3d w = calc.getAngularVelocity();
-            double alx = (wDesX - w.x) / dt;
-            double aly = (wDesY - w.y) / dt;
-            double alz = (wDesZ - w.z) / dt;
+            // Raw rate command (probe channel only): deadbeat toward it, no attitude reference.
+            double alx = (wCmd[0] - w.x) / dt;
+            double aly = (wCmd[1] - w.y) / dt;
+            double alz = (wCmd[2] - w.z) / dt;
             double alm = Math.sqrt(alx * alx + aly * aly + alz * alz);
             if (alm > AR_MAX_ANGULAR_ACCEL && alm > 1e-9) {
                 double s = AR_MAX_ANGULAR_ACCEL / alm;
                 alx *= s; aly *= s; alz *= s;
             }
+            angAccel = new double[]{alx, aly, alz};
+        }
+
+        // torque = MOI · desiredAngAccel, with the full inertia TENSOR — VS integrates
+        // alpha = MOI^-1 · tau, so this yields exactly the commanded angular accel. A scalar "inertia
+        // along the rotation axis" is zero when the ship is not already spinning (no torque) and wrong
+        // otherwise.
+        double tx = 0.0, ty = 0.0, tz = 0.0;
+        if (angAccel != null) {
             Matrix3dc moi = calc.getPhysMOITensor();
-            Vector3d torque = new Vector3d(alx, aly, alz);
+            Vector3d torque = new Vector3d(angAccel[0], angAccel[1], angAccel[2]);
             moi.transform(torque);
             tx = torque.x; ty = torque.y; tz = torque.z;
         }
+
+        TileAdvancedFlightComputer.debugControllerState = new double[]{
+                dt,
+                angAccel == null ? 0.0 : angAccel[0],
+                angAccel == null ? 0.0 : angAccel[1],
+                angAccel == null ? 0.0 : angAccel[2],
+                w.x, w.y, w.z,
+                angAccel == null ? -1.0 : 1.0};
 
         calc.addForceAndTorque(new Vector3d(fx, fy, fz), new Vector3d(tx, ty, tz));
     }

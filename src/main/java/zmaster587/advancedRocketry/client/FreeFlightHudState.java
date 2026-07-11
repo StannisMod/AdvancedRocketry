@@ -7,7 +7,9 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.advancedRocketry.entity.EntityRocket;
+import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 import zmaster587.advancedRocketry.tile.TilePilotSeat;
 
 /**
@@ -26,10 +28,9 @@ public final class FreeFlightHudState {
     public final boolean inFlight;
     public final boolean flightAssistOn;
     /**
-     * Whether {@link #bodyForward}/{@link #bodyRight}/{@link #bodyUp} and the FA setpoints carry
-     * real client-side data. The rocket knows its own motion + setpoints; the tier-2 ship's
-     * velocity lives on the physics thread and is not synced to the client, so its HUD omits the
-     * velocity bars rather than showing zeros.
+     * Whether {@link #bodyForward}/{@link #bodyRight}/{@link #bodyUp} and the FA setpoints carry real
+     * client-side data. The rocket knows its own motion + setpoints because it IS an entity; the ship's
+     * ride the seat dummy's tracked data. False only when a backend cannot supply them at all.
      */
     public final boolean hasVelocity;
 
@@ -37,10 +38,13 @@ public final class FreeFlightHudState {
     public final double bodyForward, bodyRight, bodyUp;
     /** Flight-Assist setpoints (body frame, blocks/tick). Valid iff {@link #hasVelocity}. */
     public final double faForward, faRight, faUp;
+    /** Full-scale deflection of the HUD's velocity bars (blocks/tick) - the craft's own top speed, so
+     *  each backend's bars use their whole width instead of a rocket-sized fraction of it. */
+    public final double barScale;
 
     private FreeFlightHudState(int tier, boolean inFlight, boolean flightAssistOn, boolean hasVelocity,
                               double bodyForward, double bodyRight, double bodyUp,
-                              double faForward, double faRight, double faUp) {
+                              double faForward, double faRight, double faUp, double barScale) {
         this.tier = tier;
         this.inFlight = inFlight;
         this.flightAssistOn = flightAssistOn;
@@ -51,6 +55,7 @@ public final class FreeFlightHudState {
         this.faForward = faForward;
         this.faRight = faRight;
         this.faUp = faUp;
+        this.barScale = barScale;
     }
 
     /** Speed magnitude (blocks/tick) from the body-frame velocity; 0 when velocity is unknown. */
@@ -80,14 +85,21 @@ public final class FreeFlightHudState {
                     rocket.rotationYaw, rocket.rotationPitch);
             return new FreeFlightHudState(1, rocket.isInFlight(), rocket.isFlightAssistOn(), true,
                     act[0], act[1], act[2],
-                    rocket.getFaSetpointForward(), rocket.getFaSetpointRight(), rocket.getFaSetpointUp());
+                    rocket.getFaSetpointForward(), rocket.getFaSetpointRight(), rocket.getFaSetpointUp(),
+                    FreeFlightPhysics.MAX_SPEED);
         }
         TilePilotSeat seat = TilePilotSeat.forRider(riding, world);
         if (seat != null && seat.isLinked()) {
-            // Tier-2 ship: seated = flying. Flight-Assist state is synced from the ship's computer
-            // to the seat, so the HUD shows the real value. The ship's velocity is physics-thread
-            // state not synced to the client, so no velocity bars.
-            return new FreeFlightHudState(2, true, seat.isFlightAssistOn(), false, 0, 0, 0, 0, 0, 0);
+            // Tier-2 ship: seated = flying. Flight-Assist state is synced from the ship's computer to
+            // the seat; the ship's body-frame velocity and cruise setpoint ride the seat dummy's
+            // tracked data, both already in blocks/tick, so the panel reads exactly as the rocket's.
+            EntityDummy dummy = (EntityDummy) riding;
+            double[] velocity = dummy.getShipBodyVelocity();
+            double[] setpoint = dummy.getShipSetpoint();
+            return new FreeFlightHudState(2, true, seat.isFlightAssistOn(), true,
+                    velocity[0], velocity[1], velocity[2],
+                    setpoint[0], setpoint[1], setpoint[2],
+                    TileAdvancedFlightComputer.SHIP_MAX_SPEED / 20.0);
         }
         return null;
     }

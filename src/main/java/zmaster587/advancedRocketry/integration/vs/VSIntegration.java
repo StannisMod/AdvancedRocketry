@@ -110,6 +110,59 @@ public final class VSIntegration {
     }
 
     /**
+     * Move a point or a direction between the world frame and the frame of the ship {@code entity}
+     * is aboard. In the ship's own frame the deck is axis-aligned and "down" is plain {@code -Y}, so
+     * an aboard entity's movement can be resolved there with ordinary rules and mapped back. Each
+     * returns {@code null} when VS is absent or the entity is aboard no loaded ship, so callers fall
+     * back to vanilla movement. Only AR-core/MC types cross the gate.
+     */
+    public static double[] toShipFrame(net.minecraft.entity.Entity e, double x, double y, double z) {
+        return (!isAvailable() || e == null) ? null : VSBridge.toShipFrame(e, x, y, z);
+    }
+
+    /** Ship-frame point to world point. See {@link #toShipFrame}. */
+    public static double[] toWorldFrame(net.minecraft.entity.Entity e, double x, double y, double z) {
+        return (!isAvailable() || e == null) ? null : VSBridge.toWorldFrame(e, x, y, z);
+    }
+
+    /** World direction to ship-frame direction (rotation only). See {@link #toShipFrame}. */
+    public static double[] rotateToShipFrame(net.minecraft.entity.Entity e, double x, double y, double z) {
+        return (!isAvailable() || e == null) ? null : VSBridge.rotateToShipFrame(e, x, y, z);
+    }
+
+    /** Ship-frame direction to world direction (rotation only). See {@link #toShipFrame}. */
+    public static double[] rotateToWorldFrame(net.minecraft.entity.Entity e, double x, double y, double z) {
+        return (!isAvailable() || e == null) ? null : VSBridge.rotateToWorldFrame(e, x, y, z);
+    }
+
+    /**
+     * Read-only diagnostic of what Valkyrien Skies already knows about {@code entity}'s relationship
+     * to a ship: its last-touched ship, whether VS counts it as standing on that ship
+     * ({@code ticksPartOfGround}), the motion VS imparts to it, whether VS considers it mounted, and
+     * its position mapped into the ship's subspace. Returns a plain JDK map, or {@code null} when VS
+     * is absent or cannot be consulted. Used to decide how much of a ship-local movement frame VS
+     * already supplies before AR builds its own. Only AR-core/MC types cross the gate.
+     */
+    public static java.util.Map<String, Object> getEntityShipMovementData(net.minecraft.entity.Entity entity) {
+        if (!isAvailable() || entity == null) {
+            return null;
+        }
+        return VSBridge.entityShipMovementData(entity);
+    }
+
+    /**
+     * The world-frame linear velocity {@code [x,y,z]} (blocks/second) of the ship managing the block
+     * at {@code pos}, or {@code null} when VS is absent or no ship manages it. Used to capture the
+     * live velocity as a Flight-Assist setpoint on re-enable. Only AR-core/MC types cross the gate.
+     */
+    public static double[] getShipVelocity(World world, BlockPos pos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipLinearVelocity(world, pos);
+    }
+
+    /**
      * The unit world-frame direction toward the floor of the loaded ship the point {@code (x,y,z)}
      * is aboard, or {@code null} when VS is absent or the point is aboard no ship. Lets AR apply
      * gravity toward a ship's deck (the ship's local down, rotated by its attitude) for entities
@@ -121,6 +174,40 @@ public final class VSIntegration {
             return null;
         }
         return VSBridge.shipDownDirection(world, x, y, z);
+    }
+
+    /**
+     * The body&rarr;world attitude of the loaded ship the point {@code (x,y,z)} is aboard, or
+     * {@code null} when VS is absent or the point is aboard no ship. Located by containment, so it
+     * answers for a crew member standing anywhere on the deck, not only for a block on the ship.
+     * Resolves on both sides. Only AR-core/MC types cross the gate.
+     */
+    public static FreeFlightPhysics.Quat shipAttitudeAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        double[] q = VSBridge.shipAttitudeAt(world, x, y, z);
+        return q == null ? null : new FreeFlightPhysics.Quat(q[0], q[1], q[2], q[3]);
+    }
+
+    /** The attitude of the ship {@code entity} is aboard, or {@code null}. See {@link #shipAttitudeAt}. */
+    public static FreeFlightPhysics.Quat shipAttitudeFor(net.minecraft.entity.Entity entity) {
+        if (entity == null || entity.world == null) {
+            return null;
+        }
+        return shipAttitudeAt(entity.world, entity.posX, entity.posY, entity.posZ);
+    }
+
+    /**
+     * The world-frame angular velocity {@code [x,y,z]} (rad/s) of the loaded ship nearest to
+     * {@code (x,y,z)}, or {@code null} when VS is absent or no ship is loaded. Only AR-core/MC types
+     * cross the gate.
+     */
+    public static double[] nearestShipAngularVelocity(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.nearestShipAngularVelocity(world, x, y, z);
     }
 
     /**

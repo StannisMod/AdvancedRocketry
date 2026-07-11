@@ -14,6 +14,8 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
+import zmaster587.advancedRocketry.tile.TilePilotSeat;
 
 public class EntityDummy extends Entity {
 
@@ -28,6 +30,28 @@ public class EntityDummy extends Entity {
      */
     private static final DataParameter<Optional<BlockPos>> SEAT_POS =
             EntityDataManager.createKey(EntityDummy.class, DataSerializers.OPTIONAL_BLOCK_POS);
+
+    /**
+     * The piloted ship's body-frame velocity and Flight-Assist setpoint (blocks/tick), replicated so
+     * the pilot's Free Flight HUD can draw the same three-axis panel a tier-1 rocket gets.
+     *
+     * <p>A ship's velocity lives on the physics thread and its setpoint on the flight computer, neither
+     * of which the client can see. A rocket needs no such channel — it IS an entity, so vanilla motion
+     * sync carries it. Hanging the six numbers off the seat's dummy reuses exactly that mechanism: the
+     * dummy already ticks on both sides and is tracked by precisely the player riding it.</p>
+     */
+    private static final DataParameter<Float> VEL_FORWARD =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> VEL_RIGHT =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> VEL_UP =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> SETPOINT_FORWARD =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> SETPOINT_RIGHT =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    private static final DataParameter<Float> SETPOINT_UP =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
 
     //Just a dummy so a player can sit on a chair
     public EntityDummy(World world) {
@@ -76,6 +100,61 @@ public class EntityDummy extends Entity {
     @Override
     protected void entityInit() {
         this.dataManager.register(SEAT_POS, Optional.absent());
+        this.dataManager.register(VEL_FORWARD, 0f);
+        this.dataManager.register(VEL_RIGHT, 0f);
+        this.dataManager.register(VEL_UP, 0f);
+        this.dataManager.register(SETPOINT_FORWARD, 0f);
+        this.dataManager.register(SETPOINT_RIGHT, 0f);
+        this.dataManager.register(SETPOINT_UP, 0f);
+    }
+
+    /** The piloted ship's body-frame velocity {forward, right, up} in blocks/tick, as last synced. */
+    public double[] getShipBodyVelocity() {
+        return new double[]{
+                this.dataManager.get(VEL_FORWARD),
+                this.dataManager.get(VEL_RIGHT),
+                this.dataManager.get(VEL_UP)};
+    }
+
+    /** The ship's Flight-Assist setpoint {forward, right, up} in blocks/tick, as last synced. */
+    public double[] getShipSetpoint() {
+        return new double[]{
+                this.dataManager.get(SETPOINT_FORWARD),
+                this.dataManager.get(SETPOINT_RIGHT),
+                this.dataManager.get(SETPOINT_UP)};
+    }
+
+    /** Server-side: publish the ship's flight telemetry to the rider. Only writes on a real change,
+     *  so an idle ship costs no metadata packets. Also releases the controls when the pilot stands up:
+     *  the computer holds the last input it was sent, so without this the ship would keep flying his
+     *  final command after he left the seat. */
+    private void syncFlightTelemetry() {
+        TilePilotSeat seat = TilePilotSeat.forRider(this, world);
+        if (seat == null || !seat.isLinked()) {
+            return;
+        }
+        TileAdvancedFlightComputer afc = seat.getFlightComputer();
+        if (afc == null) {
+            return;
+        }
+        if (getPassengers().isEmpty() && afc.pilotInput != null) {
+            afc.setPilotInput(null);
+        }
+        double[] velocity = afc.getHudBodyVelocity();
+        double[] setpoint = afc.getHudSetpoint();
+        setIfChanged(VEL_FORWARD, velocity[0]);
+        setIfChanged(VEL_RIGHT, velocity[1]);
+        setIfChanged(VEL_UP, velocity[2]);
+        setIfChanged(SETPOINT_FORWARD, setpoint[0]);
+        setIfChanged(SETPOINT_RIGHT, setpoint[1]);
+        setIfChanged(SETPOINT_UP, setpoint[2]);
+    }
+
+    private void setIfChanged(DataParameter<Float> key, double value) {
+        float next = (float) value;
+        if (Math.abs(this.dataManager.get(key) - next) > 1.0e-4f) {
+            this.dataManager.set(key, next);
+        }
     }
 
     @Override
@@ -105,6 +184,9 @@ public class EntityDummy extends Entity {
         double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seat);
         if (worldSeat != null) {
             setPosition(worldSeat[0], worldSeat[1], worldSeat[2]);
+        }
+        if (!world.isRemote) {
+            syncFlightTelemetry();
         }
     }
 

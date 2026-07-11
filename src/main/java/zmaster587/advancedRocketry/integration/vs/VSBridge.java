@@ -1,8 +1,11 @@
 package zmaster587.advancedRocketry.integration.vs;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import com.google.common.collect.ImmutableList;
+import net.minecraft.entity.Entity;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -12,8 +15,10 @@ import org.apache.logging.log4j.Logger;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
+import org.valkyrienskies.mod.common.entity.EntityShipMovementData;
 import org.valkyrienskies.mod.common.ships.ShipData;
 import org.valkyrienskies.mod.common.ships.block_relocation.BlockFinder;
+import org.valkyrienskies.mod.common.ships.entity_interaction.EntityShipMountData;
 import org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import org.valkyrienskies.mod.common.ships.ship_world.WorldServerShipManager;
@@ -95,6 +100,21 @@ final class VSBridge {
         Vec3d subspaceSeat = new Vec3d(seatPos.getX() + 0.5, seatPos.getY() + 0.2, seatPos.getZ() + 0.5);
         Vec3d worldSeat = transform.transform(subspaceSeat, TransformType.SUBSPACE_TO_GLOBAL);
         return new double[]{worldSeat.x, worldSeat.y, worldSeat.z};
+    }
+
+    /**
+     * The world-frame linear velocity {@code [x,y,z]} (blocks/second) of the ship managing the
+     * block at {@code pos}, or {@code null} if no ship manages it. Lets the flight computer capture
+     * the ship's live velocity as a body-frame setpoint when the pilot re-enables Flight Assist, so
+     * the cruise control engages at the current speed instead of jerking to a stop.
+     */
+    static double[] shipLinearVelocity(World world, BlockPos pos) {
+        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+        if (!managing.isPresent()) {
+            return null;
+        }
+        Vector3dc v = managing.get().getPhysicsData().getLinearVelocity();
+        return new double[]{v.x(), v.y(), v.z()};
     }
 
     /** Whether VS's per-world ship manager is attached to {@code world} (i.e. VS ships can live
@@ -206,6 +226,10 @@ final class VSBridge {
         physo.getShipData().setPhysicsEnabled(true);
         TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{vx, vy, vz};
         TileAdvancedFlightComputer.debugCommandedAngVel = new double[]{wx, wy, wz};
+        // These static channels persist for the life of the JVM. An attitude target left behind by an
+        // earlier probe outranks a raw rate command, so a velocity probe would silently run
+        // attitude-hold against a stale orientation. Clear it: this probe commands rates, not a pose.
+        TileAdvancedFlightComputer.debugTargetAttitude = null;
         return true;
     }
 
@@ -225,6 +249,147 @@ final class VSBridge {
         TileAdvancedFlightComputer.debugCommandedAngVel = null;
         TileAdvancedFlightComputer.debugTargetAttitude = new double[]{qw, qx, qy, qz};
         return true;
+    }
+
+    /**
+     * Read-only diagnostic: what Valkyrien Skies already believes about {@code entity}'s relationship
+     * to a ship. VS tracks this itself (it even ships a {@code PlayerMovementData} record with the
+     * player's SHIP-LOCAL position over the movement packet), so before AR builds its own "is this
+     * entity aboard, and where is it on the deck" machinery, this reports what VS supplies for free:
+     *
+     * <ul>
+     *   <li>{@code lastTouchedShip} / {@code ticksSinceTouchedShip} / {@code ticksPartOfGround} -
+     *       VS's own entity-to-ship association and "is standing on it" counter;</li>
+     *   <li>{@code addedVel*} / {@code addedYawVelocity} - the motion VS imparts to the entity;</li>
+     *   <li>{@code mounted} - whether VS considers the entity fixed to a ship (its own seat concept,
+     *       which AR's pilot dummy is NOT);</li>
+     *   <li>{@code local*} - the entity's position mapped into the ship's subspace by the ship
+     *       transform. This is the coordinate a deck-aligned collision frame would treat as
+     *       authoritative, so it is the number to watch while the ship rolls.</li>
+     * </ul>
+     *
+     * Returns a plain JDK map (no VS types cross back to AR core), or {@code null} if VS cannot be
+     * consulted. Defensive: any VS-side failure degrades to {@code null} rather than throwing.
+     */
+    static Map<String, Object> entityShipMovementData(Entity entity) {
+        try {
+            Map<String, Object> out = new LinkedHashMap<>();
+            EntityShipMovementData data = ValkyrienUtils.getEntityShipMovementDataFor(entity);
+            ShipData lastTouched = data == null ? null : data.getLastTouchedShip();
+            out.put("lastTouchedShip", lastTouched == null ? null : lastTouched.getUuid().toString());
+            out.put("ticksSinceTouchedShip", data == null ? -1 : data.getTicksSinceTouchedShip());
+            out.put("ticksPartOfGround", data == null ? -1 : data.getTicksPartOfGround());
+            Vector3dc added = data == null ? null : data.getAddedLinearVelocity();
+            out.put("addedVelX", added == null ? 0.0 : added.x());
+            out.put("addedVelY", added == null ? 0.0 : added.y());
+            out.put("addedVelZ", added == null ? 0.0 : added.z());
+            out.put("addedYawVelocity", data == null ? 0.0 : data.getAddedYawVelocity());
+
+            EntityShipMountData mount = ValkyrienUtils.getMountedShipAndPos(entity);
+            out.put("mounted", mount != null && mount.isMounted());
+
+            // The entity's position in the ship's subspace. Located by CONTAINMENT, not by the
+            // physics mod's own association: when AR resolves an entity's movement itself, that
+            // association is never set, and we still need to report where the entity is on the deck.
+            PhysicsObject physo = physoAt(entity.world, entity.posX, entity.posY, entity.posZ);
+            if (physo == null && lastTouched != null) {
+                physo = loadedPhysoByUuid(entity.world, lastTouched);
+            }
+            out.put("shipLoaded", physo != null);
+            if (physo != null) {
+                Vec3d local = physo.getShipData().getShipTransform().transform(
+                        new Vec3d(entity.posX, entity.posY, entity.posZ), TransformType.GLOBAL_TO_SUBSPACE);
+                out.put("localX", local.x);
+                out.put("localY", local.y);
+                out.put("localZ", local.z);
+            }
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    // ---- Ship-frame transforms ------------------------------------------------------------
+    // A crew member on a rotated deck cannot be collided correctly in the world frame: his box is
+    // upright and the deck is not. But the ship's blocks also exist, unrotated and axis-aligned, in
+    // its subspace. These four calls move a point or a direction between the two frames so movement
+    // can be resolved where the deck is flat. All take the entity only to locate its ship; each
+    // returns null when the entity is aboard no loaded ship, so callers fall back to vanilla.
+
+    /** The loaded ship whose world bounding box contains {@code (x,y,z)}, or null. */
+    private static PhysicsObject physoAt(World world, double x, double y, double z) {
+        Vec3d point = new Vec3d(x, y, z);
+        for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+            AxisAlignedBB bb = physo.getShipBB();
+            if (bb != null && bb.grow(ABOARD_MARGIN).contains(point)) {
+                return physo;
+            }
+        }
+        return null;
+    }
+
+    /** The ship this entity is aboard, located by its own world position. */
+    private static ShipTransform transformFor(Entity entity) {
+        PhysicsObject physo = physoAt(entity.world, entity.posX, entity.posY, entity.posZ);
+        return physo == null ? null : physo.getShipData().getShipTransform();
+    }
+
+    /** World point -> ship-frame point. */
+    static double[] toShipFrame(Entity entity, double x, double y, double z) {
+        try {
+            ShipTransform t = transformFor(entity);
+            if (t == null) return null;
+            Vec3d v = t.transform(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame point -> world point. */
+    static double[] toWorldFrame(Entity entity, double x, double y, double z) {
+        try {
+            ShipTransform t = transformFor(entity);
+            if (t == null) return null;
+            Vec3d v = t.transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** World direction -> ship-frame direction (rotation only). */
+    static double[] rotateToShipFrame(Entity entity, double x, double y, double z) {
+        try {
+            ShipTransform t = transformFor(entity);
+            if (t == null) return null;
+            Vec3d v = t.rotate(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame direction -> world direction (rotation only). */
+    static double[] rotateToWorldFrame(Entity entity, double x, double y, double z) {
+        try {
+            ShipTransform t = transformFor(entity);
+            if (t == null) return null;
+            Vec3d v = t.rotate(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** The loaded ship in {@code world} whose data matches {@code target}, or null. */
+    private static PhysicsObject loadedPhysoByUuid(World world, ShipData target) {
+        for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+            if (physo.getShipData().getUuid().equals(target.getUuid())) {
+                return physo;
+            }
+        }
+        return null;
     }
 
     /** How far (blocks) to grow a ship's world AABB when testing whether an entity is "aboard",
@@ -263,6 +428,44 @@ final class VSBridge {
             return null;
         }
         return null;
+    }
+
+    /**
+     * The body&rarr;world attitude {@code [w,x,y,z]} of the loaded ship whose world bounding box
+     * contains {@code (x,y,z)}, or {@code null} if the point is aboard no loaded ship. Located by
+     * CONTAINMENT (the same test the gravity hint uses), not by a block lookup, so it answers for a
+     * crew member standing anywhere on the deck as well as for a seated pilot.
+     *
+     * <p>Works on both sides: the ship transform is replicated, and {@code getPhysosLoadedInWorld}
+     * resolves through the side-agnostic {@code IPhysObjectWorld}. The render camera and the client's
+     * movement prediction both need it, so a client-side answer is not optional.</p>
+     */
+    static double[] shipAttitudeAt(World world, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoAt(world, x, y, z);
+            if (physo == null) {
+                return null;
+            }
+            Quaterniond q = physo.getShipData().getShipTransform()
+                    .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{q.w, q.x, q.y, q.z};
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * The world-frame angular velocity {@code [x,y,z]} (rad/s) of the loaded ship nearest to
+     * {@code (x,y,z)}, or {@code null} if no ship is loaded. Read-only; used by the flight HUD and by
+     * the test probe that pins "a centred flight cursor brings the ship's spin to rest".
+     */
+    static double[] nearestShipAngularVelocity(World world, double x, double y, double z) {
+        PhysicsObject physo = nearestShip(world, x, y, z);
+        if (physo == null) {
+            return null;
+        }
+        Vector3dc w = physo.getPhysicsData().getAngularVelocity();
+        return new double[]{w.x(), w.y(), w.z()};
     }
 
     private static PhysicsObject nearestShip(World world, double x, double y, double z) {

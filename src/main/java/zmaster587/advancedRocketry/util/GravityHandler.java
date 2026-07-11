@@ -12,6 +12,7 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryAPI;
 import zmaster587.advancedRocketry.api.IGravityManager;
 import zmaster587.advancedRocketry.api.IPlanetaryProvider;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
+import zmaster587.advancedRocketry.integration.vs.ShipFrameTravel;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.world.provider.WorldProviderSpace;
 
@@ -53,13 +54,25 @@ public class GravityHandler implements IGravityManager {
         //So I cannot, without much more effort than it's worth, set elytra flight. Therefore, they're magic.
         if ((!(entity instanceof EntityPlayer) && !(entity instanceof EntityFlying)) || (!(entity instanceof EntityFlying) && !(((EntityPlayer) entity).capabilities.isFlying || ((EntityLivingBase) entity).isElytraFlying()))) {
 
-            // Ship-floor gravity: an entity aboard a Valkyrien Skies ship is pulled toward the
-            // ship's deck (its local down, rotated by the ship attitude) rather than straight
-            // world-down, so the floor is "down" at any ship orientation. On an upright ship the
-            // direction is (0,-1,0) and the delta below is exactly zero (no change from vanilla).
-            // A fixed ~1G deck gravity (the per-type offset) makes ships walkable even in 0G space.
-            // Takes precedence over dimension gravity (the ship supplies its own). Null (no ship /
-            // no VS) falls through to the existing per-dimension handling unchanged.
+            // A living entity aboard a ship has its whole movement - gravity included - resolved in
+            // the ship's frame by ShipFrameTravel. Applying a world-frame delta here as well would
+            // pull it toward the deck twice, so we hand it over untouched. The two call sites must
+            // agree on WHICH entities: both ask ShipFrameTravel.handles.
+            if (entity instanceof EntityLivingBase
+                    && ShipFrameTravel.handles((EntityLivingBase) entity)) {
+                return;
+            }
+
+            // Ship-floor gravity for everything else (items, minecarts, TNT, arrows): an entity
+            // aboard a Valkyrien Skies ship is pulled toward the ship's deck (its local down,
+            // rotated by the ship attitude) rather than straight world-down, so the floor is "down"
+            // at any ship orientation. On an upright ship the direction is (0,-1,0) and the delta
+            // below is exactly zero (no change from vanilla). A fixed ~1G deck gravity (the per-type
+            // offset) makes ships walkable even in 0G space. These types are safe to steer from the
+            // world frame: their per-type offset cancels vanilla's own gravity EXACTLY (unlike the
+            // living one), and their drag is isotropic, so no along-deck force survives. Takes
+            // precedence over dimension gravity (the ship supplies its own). Null (no ship / no VS)
+            // falls through to the existing per-dimension handling unchanged.
             double[] shipDown = VSIntegration.shipDownDirectionFor(
                     entity.world, entity.posX, entity.posY, entity.posZ);
             if (shipDown != null) {

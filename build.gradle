@@ -384,6 +384,12 @@ def configureHarnessTest = { Test t, boolean enableClient ->
         t.systemProperty 'forge.test.client.enabled', 'true'
         t.systemProperty 'forge.test.client.nativesDir',
                 nativesTask.outputs.files.singleFile.absolutePath
+        // -PclientFbo=false renders the test client straight to the back buffer, as before screenshots
+        // needed a readable framebuffer. Kept as an escape hatch for a vendor driver that cannot take
+        // the FBO path, and as the knob that tells a timing-sensitive failure from an FBO-caused one.
+        if (project.hasProperty('clientFbo')) {
+            t.systemProperty 'forge.test.client.fbo', project.property('clientFbo').toString()
+        }
         ['DISPLAY', 'XAUTHORITY', 'LIBGL_ALWAYS_SOFTWARE'].each { var ->
             def v = System.getenv(var)
             if (v != null) {

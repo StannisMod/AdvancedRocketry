@@ -102,8 +102,65 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     public volatile double[] targetAttitude = null;
 
     /** Ship cruise speed cap (blocks/second) mapped from full throttle. Kept modest so a
-     *  commanded velocity stays under the physics mod's "moving too fast" freeze. */
-    private static final double SHIP_MAX_SPEED = 8.0;
+     *  commanded velocity stays under the physics mod's "moving too fast" freeze. Public because the
+     *  flight HUD scales its velocity bars by the craft's own top speed. */
+    public static final double SHIP_MAX_SPEED = 8.0;
+
+    /** Setpoint ramp (blocks/s per tick) while a throttle is held: full deflection sweeps an axis
+     *  from rest to {@link #SHIP_MAX_SPEED} in 60 ticks (3 s), matching Free Flight's feel. */
+    private static final double SHIP_SETPOINT_RAMP = SHIP_MAX_SPEED / 60.0;
+
+    /**
+     * The pilot's body-frame velocity setpoint (blocks/s) while Flight Assist is on - the ship's
+     * cruise control. Holding a throttle ramps it; RELEASING LEAVES IT (the ship keeps cruising);
+     * cut (X) or brake (Shift) zero it. Live state only: not persisted, and re-captured from the
+     * ship's actual velocity whenever the pilot switches Flight Assist back on.
+     */
+    private double[] velocitySetpoint = new double[]{0.0, 0.0, 0.0};
+
+    /** Set when the pilot enables Flight Assist, so the next tick seeds {@link #velocitySetpoint}
+     *  from the ship's live velocity instead of jerking the ship to the stale setpoint. */
+    private boolean captureSetpointOnNextTick = false;
+
+    /**
+     * The attitude the ship is being held at - a PERSISTENT reference the pilot's rates steer, not a
+     * fresh reading of where the ship happens to be pointing.
+     *
+     * <p>This is the whole difference between a ship and a rocket. A rocket's attitude IS its state:
+     * zero input freezes it, because there is nothing else moving it. A ship is a force-controlled
+     * rigid body that carries angular momentum, so if the controller re-anchors its target to the
+     * measured attitude every tick, a centred cursor commands "hold wherever you have drifted to" and
+     * the spin never stops. Holding the reference makes zero input mean zero rotation, as the pilot
+     * expects from Free Flight.</p>
+     *
+     * <p>Live state, not persisted. It is the pilot's own while he is turning; the moment he stops
+     * asking for rotation it is pinned to wherever the ship actually is, so the controller brakes the
+     * spin rather than hauling the craft back through the lag it had built up. It is also re-seeded
+     * whenever the ship has been knocked far enough off it (a collision) that chasing it would lurch.</p>
+     */
+    private FreeFlightPhysics.Quat attitudeReference = null;
+
+    /** Beyond this much orientation error (radians, ~60 degrees) the reference is abandoned and
+     *  re-seeded from the ship's real attitude. Something the pilot did not command moved the ship -
+     *  a collision, a chunk reload - and hauling it back would be a lurch, not a correction. */
+    private static final double ATTITUDE_REFERENCE_RESEED = Math.PI / 3.0;
+
+    /** Body-frame velocity (blocks/tick) and setpoint published for the pilot's HUD. Written every
+     *  server tick, with or without pilot input; read by the seat's dummy to sync to the client. */
+    private volatile double[] hudBodyVelocity = new double[]{0.0, 0.0, 0.0};
+    private volatile double[] hudSetpoint = new double[]{0.0, 0.0, 0.0};
+
+    /** Ticks per second, to convert the ship's blocks/second physics values into the blocks/tick the
+     *  Free Flight HUD speaks (tier-1 fills the same fields from entity motion, which is per-tick). */
+    private static final double TICKS_PER_SECOND = 20.0;
+
+    /**
+     * What the force controller last did, written from the PHYSICS thread and read by a test probe.
+     * The controller runs where no breakpoint and no log line is welcome, so without this the only way
+     * to tell an under-powered brake from a mis-framed torque is to guess.
+     * {@code {dt, alphaX, alphaY, alphaZ, omegaX, omegaY, omegaZ, errorAngle}}
+     */
+    public static volatile double[] debugControllerState = null;
 
     /**
      * Set (or clear) the seated pilot's Free Flight input for this computer. Server-side; called
@@ -129,31 +186,114 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (world == null || world.isRemote) {
             return;
         }
-        // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
-        FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
-        if (in == null) {
-            return;
-        }
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
         }
+        // Telemetry first, and unconditionally: the pilot's HUD must keep reading the ship's real
+        // velocity while he holds no key at all, which is exactly when the input channel is idle.
+        publishHudTelemetry(attitude);
+
+        // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
+        FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
+        if (in == null) {
+            // Nobody is flying. Stop commanding: an unmanned ship coasts on its momentum rather than
+            // cruising on the last order its pilot gave before he stood up. Clearing the per-tile
+            // channels also hands the controller back to the static probe channels.
+            attitudeReference = null;
+            commandedVelocity = null;
+            commandedAngVel = null;
+            targetAttitude = null;
+            return;
+        }
         VSIntegration.ensureShipPhysicsEnabled(world, getPos());
 
-        // Target attitude: advance the ship's current orientation by the pilot's body rates.
-        FreeFlightPhysics.Quat target = FreeFlightPhysics.integrateBodyRates(attitude,
-                in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE,
-                in.yawInput * FreeFlightPhysics.MAX_YAW_RATE,
-                in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE);
+        double pitchRate = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
+        double yawRate = in.yawInput * FreeFlightPhysics.MAX_YAW_RATE;
+        double rollRate = in.rollInput * FreeFlightPhysics.MAX_ROLL_RATE;
+        boolean turning = pitchRate != 0.0 || yawRate != 0.0 || rollRate != 0.0;
+
+        // The attitude the pilot is steering.
+        //
+        // While he asks for no rotation, the reference is pinned to where the ship IS. That makes the
+        // controller a pure rate brake: "stop turning", not "fly back to where you were steering
+        // toward". The two are very different to fly. A ship lags the reference it is chasing, so a
+        // reference that stayed put the moment the pilot centred his controls would haul the craft back
+        // through that lag - it would keep swinging after he asked it to stop, which is the very thing
+        // he complained about. Once the spin is gone the reference stops moving with it, and the same
+        // law holds the attitude against anything that tries to turn the ship.
+        //
+        // While he IS turning, the reference is his: advanced by his rates, independent of where the
+        // ship has got to. Re-seeded only when something uncommanded threw the ship far off it.
+        if (!turning || attitudeReference == null
+                || attitudeError(attitudeReference, attitude) > ATTITUDE_REFERENCE_RESEED) {
+            attitudeReference = attitude;
+        }
+        FreeFlightPhysics.Quat target = FreeFlightPhysics.integrateBodyRates(attitudeReference,
+                pitchRate, yawRate, rollRate);
+        attitudeReference = target;
+
+        if (flightAssistEnabled) {
+            // Engaging Flight Assist adopts the ship's CURRENT velocity as the cruise setpoint, so
+            // the cruise control takes over smoothly instead of braking a coasting ship to a stop.
+            if (captureSetpointOnNextTick) {
+                double[] vWorld = VSIntegration.getShipVelocity(world, getPos());
+                velocitySetpoint = vWorld == null
+                        ? new double[]{0.0, 0.0, 0.0}
+                        : FreeFlightPhysics.worldToBodyQ(vWorld[0], vWorld[1], vWorld[2], attitude);
+                captureSetpointOnNextTick = false;
+            }
+            // Cruise control: held throttles ramp the setpoint, releasing keeps it, cut/brake zero it.
+            velocitySetpoint = FreeFlightPhysics.shipRampSetpoint(
+                    velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2],
+                    in, SHIP_MAX_SPEED, SHIP_SETPOINT_RAMP);
+        }
 
         // Publish to the PER-TILE channels the controller mixin prefers (falls back to the
         // static probe channels only when these are null). Writing them here means each ship's
         // own computer drives its own ship, independent of any other computer or the probe. The
         // command honours the Flight-Assist mode + cut/brake (a null velocity means "coast").
         commandedVelocity = FreeFlightPhysics.shipVelocityCommand(
-                in, target, flightAssistEnabled, SHIP_MAX_SPEED);
-        commandedAngVel = null; // attitude target drives the angular channel
+                in, target, flightAssistEnabled, velocitySetpoint, SHIP_MAX_SPEED);
+        // The angular channel is an attitude target PLUS the rate that target is turning at. The rate
+        // is the feed-forward: a proportional law chasing a moving reference settles at a standing
+        // error of rate/gain, so without it the ship visibly lags the pilot's hand.
         targetAttitude = new double[]{target.w, target.x, target.y, target.z};
+        commandedAngVel = FreeFlightPhysics.bodyRatesToWorldOmega(target, pitchRate, yawRate, rollRate);
+    }
+
+    /** The shortest-arc angle (radians) between two attitudes. */
+    private static double attitudeError(FreeFlightPhysics.Quat a, FreeFlightPhysics.Quat b) {
+        double dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+        if (dot < 0.0) dot = -dot;
+        if (dot > 1.0) dot = 1.0;
+        return 2.0 * Math.acos(dot);
+    }
+
+    /** Snapshot the ship's body-frame velocity and the cruise setpoint, in blocks/tick, for the HUD. */
+    private void publishHudTelemetry(FreeFlightPhysics.Quat attitude) {
+        double[] vWorld = VSIntegration.getShipVelocity(world, getPos());
+        if (vWorld == null) {
+            hudBodyVelocity = new double[]{0.0, 0.0, 0.0};
+        } else {
+            double[] body = FreeFlightPhysics.worldToBodyQ(vWorld[0], vWorld[1], vWorld[2], attitude);
+            hudBodyVelocity = new double[]{
+                    body[0] / TICKS_PER_SECOND, body[1] / TICKS_PER_SECOND, body[2] / TICKS_PER_SECOND};
+        }
+        hudSetpoint = new double[]{
+                velocitySetpoint[0] / TICKS_PER_SECOND,
+                velocitySetpoint[1] / TICKS_PER_SECOND,
+                velocitySetpoint[2] / TICKS_PER_SECOND};
+    }
+
+    /** The ship's body-frame velocity {forward, right, up} in blocks/tick, for the pilot's HUD. */
+    public double[] getHudBodyVelocity() {
+        return hudBodyVelocity;
+    }
+
+    /** The Flight-Assist cruise setpoint {forward, right, up} in blocks/tick, for the pilot's HUD. */
+    public double[] getHudSetpoint() {
+        return hudSetpoint;
     }
 
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
@@ -165,6 +305,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     }
 
     public void setFlightAssistEnabled(boolean enabled) {
+        if (enabled && !this.flightAssistEnabled) {
+            // Re-engaging: seed the cruise setpoint from the ship's live velocity next tick.
+            this.captureSetpointOnNextTick = true;
+        }
         this.flightAssistEnabled = enabled;
         markDirty();
     }

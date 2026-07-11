@@ -1,0 +1,478 @@
+package zmaster587.advancedRocketry.integration.vs;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.init.MobEffects;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
+
+import zmaster587.advancedRocketry.api.FreeFlightPhysics;
+
+/**
+ * Resolves one tick of an aboard living entity's movement in its SHIP's frame instead of the world's.
+ *
+ * <p>Minecraft moves a body on world axes: gravity is {@code -Y}, the vertical drag (0.98) differs from
+ * the horizontal friction (0.91), the walking basis comes from yaw alone, "on the ground" means a
+ * blocked {@code -Y} motion, and the collision box is axis-aligned by definition. Rotate the floor and
+ * every one of those is wrong. Worst is the drag: the two constants give a 49x vertical and a 10x
+ * horizontal terminal-velocity gain, so a deck-down pull with real world X/Z components is bent steeply
+ * toward world {@code +Y} - the crew member is flung up a wall instead of settling on the deck.</p>
+ *
+ * <p>The ship's blocks, however, also exist unrotated and axis-aligned in the ship's own subspace. Map
+ * the entity there and the deck is flat, "down" is plain {@code -Y}, and the box is deck-aligned for
+ * free. Apply the ordinary rules, map the result back, and the world sees a body that stands, walks and
+ * falls on a tilted floor.</p>
+ *
+ * <p>The ship-frame position is AUTHORITATIVE; the world position is derived from it through the ship
+ * transform every tick. That single choice is what makes an entity ride a moving, rotating ship with no
+ * separate "drag" step: when the transform changes, the derived world position follows. It is also
+ * forced. The physics mod carries aboard entities itself, but only those it has associated with a ship
+ * inside {@code Entity.move} - and an entity whose movement AR resolves never reaches that method, so
+ * that carry is not available to us. Deriving the ship-frame position from the world position instead
+ * would leave the body standing still in the world while the deck rotated out from under it.</p>
+
+ * <p>The stored position is abandoned and re-seeded whenever something OTHER than this class moved the
+ * entity in the world - a teleport, or the server applying a client's own movement packet.</p>
+ *
+ * <p>Deliberately narrow. {@link #handles} refuses water, lava, ladders, elytra, levitation, creative
+ * flight and passengers; those keep world-frame semantics, and the caller must let vanilla run.
+ * {@code doBlockCollisions} (cactus, cobweb, portals) is not replicated inside the deck frame.</p>
+ */
+public final class ShipFrameTravel {
+
+    private ShipFrameTravel() {}
+
+    /** Vanilla's living gravity, exactly ({@code EntityLivingBase.travel}). Using the true constant is
+     *  what keeps deck gravity from leaking a world-down residual: AR's own 0.0755f offset does not
+     *  cancel it, and the difference becomes a pure along-deck force on a rolled ship. */
+    private static final double LIVING_GRAVITY = 0.08D;
+    /** Vanilla's drag along the gravity axis, exactly. */
+    private static final double GRAVITY_AXIS_DRAG = 0.9800000190734863D;
+    /** Vanilla's in-plane friction while airborne, exactly. */
+    private static final float AIR_FRICTION = 0.91F;
+    /** Vanilla's magic normalisation of the friction-compensated move speed. */
+    private static final float SPEED_NORMALISER = 0.16277136F;
+
+    // ---- Diagnostics. A mixin that silently fails to apply looks exactly like a mixin that applied
+    // and decided to do nothing, so the two must be told apart from outside the JVM.
+
+    /** Ticks resolved in a ship frame since the game started. */
+    public static volatile long resolvedTicks = 0L;
+    /** Ticks where the hook ran, an entity was aboard, but the frame could not be resolved. */
+    public static volatile long declinedTicks = 0L;
+    /** Ship-frame obstacles the last resolved sweep saw. Zero on every tick means the deck's blocks
+     *  are not being found, and an aboard body falls straight through it. */
+    public static volatile int lastObstacleCount = -1;
+    /** Whether the last resolved entity ended the tick standing on its deck. */
+    public static volatile boolean lastOnDeck = false;
+
+    /**
+     * Each aboard entity's authoritative position in its ship's frame, plus the world position this
+     * class last derived from it. Weak keys: an entity that goes away takes its entry with it. The two
+     * logical sides tick on different threads but hold different entity objects, so one map serves both;
+     * it is synchronized only against that concurrency, never contended.
+     */
+    private static final Map<Entity, ShipFrameState> STATE =
+            Collections.synchronizedMap(new WeakHashMap<Entity, ShipFrameState>());
+
+    /** An aboard entity's ship-frame position, and the world position last derived from it. */
+    private static final class ShipFrameState {
+        double localX, localY, localZ;
+        double worldX, worldY, worldZ;
+    }
+
+    /** How far the world may have drifted from what we last wrote before we treat the entity as having
+     *  been moved by someone else (a teleport, a server position correction) and re-seed from it. */
+    private static final double EXTERNAL_MOVE_EPSILON_SQ = 1.0e-6;
+
+    /**
+     * Whether this entity's movement should be resolved in its ship's frame this tick. Kept as one
+     * function because two callers must agree exactly: {@code travel} (which then owns gravity) and
+     * {@link zmaster587.advancedRocketry.util.GravityHandler} (which must NOT also apply a world-frame
+     * deck-gravity delta to the same entity, or the pull is counted twice).
+     */
+    public static boolean handles(EntityLivingBase entity) {
+        if (entity == null || entity.world == null || !VSIntegration.isAvailable()) {
+            return false;
+        }
+        // Vanilla's own gate on travel(): an entity whose movement this side does not simulate (a mob
+        // the client only interpolates) must be left alone. The gravity hook consults this method too,
+        // so it has to know - otherwise gravity is handed over for a tick that never resolves.
+        if (!entity.isServerWorld() && !entity.canPassengerSteer()) {
+            return false;
+        }
+        if (entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()) {
+            return false;
+        }
+        if (entity.isInWater() || entity.isInLava() || entity.isOnLadder()) {
+            return false;
+        }
+        if (entity.isPotionActive(MobEffects.LEVITATION)) {
+            return false;
+        }
+        if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
+            return false;
+        }
+        if (VSIntegration.shipAttitudeAt(entity.world, entity.posX, entity.posY, entity.posZ) == null) {
+            return false;
+        }
+        // Aboard by containment - but "aboard" and "standing on the ship" are not the same thing. A
+        // ship's world bounding box is axis-aligned and, for a ship resting on or near the ground, it
+        // OVERLAPS the terrain beside and beneath it. An entity standing on that terrain is inside the
+        // box yet is not on the ship. Resolving its movement in the ship's subspace - where the terrain
+        // it is standing on does not exist - drops it through the world floor (the playtest report:
+        // "fell through the ship and the 1-2 blocks next to it"). So the true test is support: if solid
+        // WORLD ground is directly under the feet, the entity is on the ground, and vanilla must keep
+        // it there. Only an entity with no world block beneath it - on a flying ship's deck (subspace),
+        // or in the air - is resolved in the ship frame.
+        return !isSupportedByWorldTerrain(entity);
+    }
+
+    /** Whether solid world collision sits directly beneath the entity's feet - i.e. it is standing on
+     *  world terrain, not on the ship (whose blocks live in a distant subspace, never at the feet). */
+    private static boolean isSupportedByWorldTerrain(Entity entity) {
+        AxisAlignedBB box = entity.getEntityBoundingBox();
+        AxisAlignedBB underFeet = new AxisAlignedBB(
+                box.minX, box.minY - WORLD_SUPPORT_PROBE, box.minZ,
+                box.maxX, box.minY, box.maxZ);
+        return !entity.world.getCollisionBoxes(entity, underFeet).isEmpty();
+    }
+
+    /** How far below the feet to look for world ground before deciding an entity is on the ground, not
+     *  the ship. Small, so a body genuinely airborne over a flying deck still resolves in the ship frame. */
+    private static final double WORLD_SUPPORT_PROBE = 0.30;
+
+    /**
+     * Resolve {@code travel(strafe, vertical, forward)} in the entity's ship frame.
+     *
+     * @param jumpMovementFactor the entity's airborne move factor (protected in vanilla; the mixin
+     *                           shadows it and passes it in)
+     * @return true if the movement was fully handled and the vanilla body must be skipped
+     */
+    public static boolean travel(EntityLivingBase entity, float strafe, float vertical, float forward,
+                                 float jumpMovementFactor) {
+        if (!handles(entity)) {
+            return false;
+        }
+        World world = entity.world;
+
+        // The deck frame. Held across ticks, so the ship can rotate under a body that is standing
+        // still ON it; re-seeded from the world whenever anything else has moved the entity there.
+        double[] local = heldShipFramePos(entity);
+        if (local == null) {
+            local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
+        }
+        double[] motion = VSIntegration.rotateToShipFrame(entity,
+                entity.motionX, entity.motionY, entity.motionZ);
+        if (local == null || motion == null) {
+            declinedTicks++;
+            return false;
+        }
+
+        // "Standing" is the deck contact this class established last tick; nothing else writes
+        // onGround for an entity whose move we own.
+        boolean wasOnDeck = entity.onGround;
+
+        // Friction of the block under the feet, sampled ALONG THE DECK NORMAL rather than world -Y.
+        float friction = AIR_FRICTION;
+        if (wasOnDeck) {
+            BlockPos under = new BlockPos(local[0], local[1] - 1.0D, local[2]);
+            IBlockState underState = world.getBlockState(under);
+            friction = underState.getBlock().getSlipperiness(underState, world, under, entity) * AIR_FRICTION;
+        }
+        float speedFactor = SPEED_NORMALISER / (friction * friction * friction);
+        float moveFactor = wasOnDeck ? entity.getAIMoveSpeed() * speedFactor : jumpMovementFactor;
+
+        // Walking input, in the deck plane. The entity's yaw is a WORLD yaw; the direction he is
+        // actually facing along the deck is his world look mapped into the ship frame.
+        float deckYaw = deckYawDeg(entity);
+        moveRelative(motion, strafe, vertical, forward, moveFactor, deckYaw);
+
+        // Gravity toward the deck: plain -Y here, at vanilla's exact magnitude, BEFORE the sweep. This
+        // is a deliberate deviation from vanilla's after-move ordering. Because this class re-derives
+        // the ship-frame VELOCITY from the world velocity each tick, applying gravity after the sweep
+        // leaves the deck-normal residual to be re-projected through a rotating transform, and during a
+        // roll it briefly changes sign and drops the entity off the deck. Applying it first keeps the
+        // motion fed into the sweep unambiguously deck-downward, which holds crew on a rolling deck.
+        // The cost is a jump that rises one gravity step short of vanilla's (ledgered) - a fair trade
+        // for a body that does not slide off when the ship turns.
+        motion[1] -= LIVING_GRAVITY;
+
+        // Sweep the deck-aligned box through the deck-aligned blocks.
+        Sweep sweep = sweepShipFrame(world, entity, local, motion[0], motion[1], motion[2], wasOnDeck);
+
+        boolean onDeck = sweep.collidedVertically && sweep.wantY < 0.0;
+        if (sweep.collidedX) motion[0] = 0.0;
+        if (sweep.collidedY) motion[1] = 0.0;
+        if (sweep.collidedZ) motion[2] = 0.0;
+
+        // Drag, in the deck frame: 0.98 along the deck normal, `friction` in the deck plane - the same
+        // two constants vanilla uses, now applied to the axes they were meant for. `friction` is the
+        // PRE-move value, as in vanilla.
+        motion[1] *= GRAVITY_AXIS_DRAG;
+        motion[0] *= friction;
+        motion[2] *= friction;
+
+        // Commit: the deck-frame result, expressed back on world axes.
+        double[] worldPos = VSIntegration.toWorldFrame(entity, sweep.x, sweep.y, sweep.z);
+        double[] worldMotion = VSIntegration.rotateToWorldFrame(entity, motion[0], motion[1], motion[2]);
+        if (worldPos == null || worldMotion == null) {
+            declinedTicks++;
+            return false; // the ship went away mid-tick; leave the entity untouched for vanilla
+        }
+        resolvedTicks++;
+        lastObstacleCount = sweep.obstacleCount;
+        lastOnDeck = onDeck;
+        remember(entity, sweep.x, sweep.y, sweep.z, worldPos);
+        double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
+        entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
+        entity.motionX = worldMotion[0];
+        entity.motionY = worldMotion[1];
+        entity.motionZ = worldMotion[2];
+        entity.onGround = onDeck;
+        entity.collidedHorizontally = sweep.collidedX || sweep.collidedZ;
+        entity.collidedVertically = sweep.collidedVertically;
+        entity.collided = entity.collidedHorizontally || entity.collidedVertically;
+
+        updateFallState(world, entity, sweep, fallenAlongDeck, onDeck);
+        updateLimbSwing(entity);
+        return true;
+    }
+
+    /** One tick of jump, along the deck's up rather than the world's. */
+    public static boolean jump(EntityLivingBase entity, double jumpUpwardsMotion, double jumpBoost) {
+        if (!handles(entity)) {
+            return false;
+        }
+        double up = jumpUpwardsMotion + jumpBoost;
+        double[] motion = VSIntegration.rotateToShipFrame(entity,
+                entity.motionX, entity.motionY, entity.motionZ);
+        if (motion == null) {
+            return false;
+        }
+        motion[1] = up;
+        if (entity.isSprinting()) {
+            float rad = deckYawDeg(entity) * 0.017453292F;
+            motion[0] -= MathHelper.sin(rad) * 0.2F;
+            motion[2] += MathHelper.cos(rad) * 0.2F;
+        }
+        double[] worldMotion = VSIntegration.rotateToWorldFrame(entity, motion[0], motion[1], motion[2]);
+        if (worldMotion == null) {
+            return false;
+        }
+        entity.motionX = worldMotion[0];
+        entity.motionY = worldMotion[1];
+        entity.motionZ = worldMotion[2];
+        entity.isAirBorne = true;
+        net.minecraftforge.common.ForgeHooks.onLivingJump(entity);
+        return true;
+    }
+
+    /**
+     * The entity's held ship-frame position, or {@code null} when there is none to trust - either it has
+     * never been aboard, or its world position is no longer the one this class last wrote there, which
+     * means someone else moved it and the ship frame must be re-derived from where it now is.
+     */
+    private static double[] heldShipFramePos(Entity entity) {
+        ShipFrameState state = STATE.get(entity);
+        if (state == null) {
+            return null;
+        }
+        double dx = entity.posX - state.worldX;
+        double dy = entity.posY - state.worldY;
+        double dz = entity.posZ - state.worldZ;
+        if (dx * dx + dy * dy + dz * dz > EXTERNAL_MOVE_EPSILON_SQ) {
+            STATE.remove(entity);
+            return null;
+        }
+        return new double[]{state.localX, state.localY, state.localZ};
+    }
+
+    private static void remember(Entity entity, double localX, double localY, double localZ,
+                                 double[] worldPos) {
+        ShipFrameState state = new ShipFrameState();
+        state.localX = localX;
+        state.localY = localY;
+        state.localZ = localZ;
+        state.worldX = worldPos[0];
+        state.worldY = worldPos[1];
+        state.worldZ = worldPos[2];
+        STATE.put(entity, state);
+    }
+
+    /** The entity's facing, as a yaw in the ship frame: his world look, rotated into that frame. */
+    private static float deckYawDeg(EntityLivingBase entity) {
+        Vec3d look = entity.getLookVec();
+        double[] deckLook = VSIntegration.rotateToShipFrame(entity, look.x, look.y, look.z);
+        if (deckLook == null) {
+            return entity.rotationYaw;
+        }
+        return FreeFlightPhysics.yawFromForwardDeg(deckLook[0], deckLook[1], deckLook[2]);
+    }
+
+    /** Vanilla's moveRelative, about {@code yawDeg} instead of {@code rotationYaw}, in place. */
+    private static void moveRelative(double[] motion, float strafe, float up, float forward,
+                                     float friction, float yawDeg) {
+        float mag = strafe * strafe + up * up + forward * forward;
+        if (mag < 1.0E-4F) {
+            return;
+        }
+        mag = MathHelper.sqrt(mag);
+        if (mag < 1.0F) mag = 1.0F;
+        mag = friction / mag;
+        strafe *= mag;
+        up *= mag;
+        forward *= mag;
+        float sin = MathHelper.sin(yawDeg * 0.017453292F);
+        float cos = MathHelper.cos(yawDeg * 0.017453292F);
+        motion[0] += strafe * cos - forward * sin;
+        motion[1] += up;
+        motion[2] += forward * cos + strafe * sin;
+    }
+
+    /** Result of a deck-frame collision sweep: the resolved feet position and what blocked it. */
+    private static final class Sweep {
+        double x, y, z;
+        double startY;
+        double wantY;
+        int obstacleCount;
+        boolean collidedX, collidedY, collidedZ, collidedVertically;
+    }
+
+    /**
+     * Vanilla's axis-by-axis box sweep, run on the ship's blocks in the ship's frame - including the
+     * step-up assist, without which a crew member could not walk over a single raised block on his own
+     * deck. {@code World.getCollisionBoxes} takes the box as a parameter, independent of where the
+     * entity actually is, which is what makes resolving in a foreign frame possible at all.
+     */
+    private static Sweep sweepShipFrame(World world, EntityLivingBase entity, double[] local,
+                                        double wantX, double wantY, double wantZ, boolean wasOnDeck) {
+        double halfWidth = entity.width / 2.0;
+        AxisAlignedBB box = new AxisAlignedBB(
+                local[0] - halfWidth, local[1], local[2] - halfWidth,
+                local[0] + halfWidth, local[1] + entity.height, local[2] + halfWidth);
+
+        List<AxisAlignedBB> obstacles = world.getCollisionBoxes(entity,
+                box.expand(wantX, wantY, wantZ));
+
+        double gotY = wantY;
+        for (AxisAlignedBB obstacle : obstacles) {
+            gotY = obstacle.calculateYOffset(box, gotY);
+        }
+        box = box.offset(0.0, gotY, 0.0);
+
+        double gotX = wantX;
+        for (AxisAlignedBB obstacle : obstacles) {
+            gotX = obstacle.calculateXOffset(box, gotX);
+        }
+        box = box.offset(gotX, 0.0, 0.0);
+
+        double gotZ = wantZ;
+        for (AxisAlignedBB obstacle : obstacles) {
+            gotZ = obstacle.calculateZOffset(box, gotZ);
+        }
+        box = box.offset(0.0, 0.0, gotZ);
+
+        // Step assist: retry the horizontal move lifted by stepHeight and keep it if it gets further.
+        boolean grounded = wasOnDeck || (gotY != wantY && wantY < 0.0);
+        if (entity.stepHeight > 0.0F && grounded && (gotX != wantX || gotZ != wantZ)) {
+            AxisAlignedBB stepped = new AxisAlignedBB(
+                    local[0] - halfWidth, local[1], local[2] - halfWidth,
+                    local[0] + halfWidth, local[1] + entity.height, local[2] + halfWidth);
+            double stepY = entity.stepHeight;
+            List<AxisAlignedBB> stepObstacles = world.getCollisionBoxes(entity,
+                    stepped.expand(wantX, stepY, wantZ));
+
+            for (AxisAlignedBB obstacle : stepObstacles) {
+                stepY = obstacle.calculateYOffset(stepped, stepY);
+            }
+            stepped = stepped.offset(0.0, stepY, 0.0);
+
+            double stepX = wantX;
+            for (AxisAlignedBB obstacle : stepObstacles) {
+                stepX = obstacle.calculateXOffset(stepped, stepX);
+            }
+            stepped = stepped.offset(stepX, 0.0, 0.0);
+
+            double stepZ = wantZ;
+            for (AxisAlignedBB obstacle : stepObstacles) {
+                stepZ = obstacle.calculateZOffset(stepped, stepZ);
+            }
+            stepped = stepped.offset(0.0, 0.0, stepZ);
+
+            // Settle back down onto whatever we stepped onto.
+            double settle = -stepY;
+            for (AxisAlignedBB obstacle : stepObstacles) {
+                settle = obstacle.calculateYOffset(stepped, settle);
+            }
+            stepped = stepped.offset(0.0, settle, 0.0);
+
+            if (stepX * stepX + stepZ * stepZ > gotX * gotX + gotZ * gotZ) {
+                box = stepped;
+                gotX = stepX;
+                gotZ = stepZ;
+                gotY = stepY + settle;
+            }
+        }
+
+        Sweep out = new Sweep();
+        out.obstacleCount = obstacles.size();
+        out.startY = local[1];
+        out.wantY = wantY;
+        out.x = box.minX + halfWidth;
+        out.y = box.minY;
+        out.z = box.minZ + halfWidth;
+        out.collidedX = gotX != wantX;
+        out.collidedY = gotY != wantY;
+        out.collidedZ = gotZ != wantZ;
+        out.collidedVertically = out.collidedY;
+        return out;
+    }
+
+    /**
+     * Fall distance accumulates along the DECK normal, and landing is dispatched to the block that was
+     * landed ON - sampled, like everything else here, in the ship's frame. Vanilla does this inside
+     * {@code Entity.move}; a deck of hay must break a crew member's fall exactly as one on the ground
+     * does, and farmland must be trampled.
+     *
+     * <p>{@code Block.onLanded} is deliberately NOT dispatched. Its default zeroes {@code motionY} and
+     * a slime block negates it - both on WORLD axes, which on a rolled deck would push a body sideways.
+     * The deck-frame sweep has already stopped the fall correctly.</p>
+     */
+    private static void updateFallState(World world, EntityLivingBase entity, Sweep sweep,
+                                        double fallenAlongDeck, boolean onDeck) {
+        if (onDeck) {
+            if (entity.fallDistance > 0.0F) {
+                BlockPos landedOn = new BlockPos(sweep.x, sweep.y - 0.20000000298023224D, sweep.z);
+                world.getBlockState(landedOn).getBlock()
+                        .onFallenUpon(world, landedOn, entity, entity.fallDistance);
+            }
+            entity.fallDistance = 0.0F;
+        } else if (fallenAlongDeck > 0.0) {
+            entity.fallDistance += (float) fallenAlongDeck;
+        }
+    }
+
+    /** Vanilla's walk-animation bookkeeping, which lives outside the branch we cancelled. */
+    private static void updateLimbSwing(EntityLivingBase entity) {
+        entity.prevLimbSwingAmount = entity.limbSwingAmount;
+        double dx = entity.posX - entity.prevPosX;
+        double dz = entity.posZ - entity.prevPosZ;
+        float swing = MathHelper.sqrt(dx * dx + dz * dz) * 4.0F;
+        if (swing > 1.0F) {
+            swing = 1.0F;
+        }
+        entity.limbSwingAmount += (swing - entity.limbSwingAmount) * 0.4F;
+        entity.limbSwing += entity.limbSwingAmount;
+    }
+}
