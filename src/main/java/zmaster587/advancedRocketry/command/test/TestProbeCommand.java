@@ -574,6 +574,33 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"handles\":" + handles + "}");
             return;
         }
+        // deck-capture [<dim> <entityId>] - READ-ONLY. The full ShipFrameTravel.handles() decision tree
+        // for a living entity (defaults to the first player when no id is given): every gate, the number
+        // of ship-frame collision boxes under the feet, and the final verdict. Localizes WHY a body
+        // standing on a deck is or is not resolved in the ship frame - ship not found, found-but-nothing-
+        // solid-under-the-feet (a partial capture that drops it through), or captured. Mutates nothing.
+        if (args.length >= 1 && "deck-capture".equalsIgnoreCase(args[0])) {
+            net.minecraft.entity.Entity subject;
+            if (args.length >= 3) {
+                net.minecraft.world.WorldServer w = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+                subject = w == null ? null : w.getEntityByID(parseIntOr(args[2], -1));
+            } else {
+                java.util.List<EntityPlayerMP> ps = sender.getServer() == null
+                        ? java.util.Collections.<EntityPlayerMP>emptyList()
+                        : sender.getServer().getPlayerList().getPlayers();
+                subject = ps.isEmpty() ? null : ps.get(0);
+            }
+            if (!(subject instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"no living subject\"}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>(
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.explainHandles(
+                            (net.minecraft.entity.EntityLivingBase) subject));
+            m.put("entityId", subject.getEntityId());
+            send(sender, jsonMap(m));
+            return;
+        }
         // shipframe-stats - READ-ONLY. Whether the ship-frame movement hook is actually running, and
         // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
         // that applied and declined every entity look identical from outside the JVM; these counters
@@ -679,7 +706,7 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
                 + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>"
-                + "|player-ship-data|shipframe-stats|would-take-over\"}");
+                + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]\"}");
     }
 
     /** Resolve (loading if needed) a {@link net.minecraft.world.WorldServer} for VS ship probes. */

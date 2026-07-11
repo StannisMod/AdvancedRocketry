@@ -124,33 +124,149 @@ public final class ShipFrameTravel {
             return false;
         }
         if (VSIntegration.shipAttitudeAt(entity.world, entity.posX, entity.posY, entity.posZ) == null) {
+            STATE.remove(entity); // left every ship's box - definitely not aboard any more
             return false;
         }
-        // Aboard by containment - but "aboard" and "standing on the ship" are not the same thing. A
-        // ship's world bounding box is axis-aligned and, for a ship resting on or near the ground, it
-        // OVERLAPS the terrain beside and beneath it. An entity standing on that terrain is inside the
-        // box yet is not on the ship. Resolving its movement in the ship's subspace - where the terrain
-        // it is standing on does not exist - drops it through the world floor (the playtest report:
-        // "fell through the ship and the 1-2 blocks next to it"). So the true test is support: if solid
-        // WORLD ground is directly under the feet, the entity is on the ground, and vanilla must keep
-        // it there. Only an entity with no world block beneath it - on a flying ship's deck (subspace),
-        // or in the air - is resolved in the ship frame.
-        return !isSupportedByWorldTerrain(entity);
+        // Aboard by containment - but "inside the ship's box" and "standing ON the ship" are different.
+        // A ship's world bounding box is axis-aligned and, for a ship resting on the ground, it OVERLAPS
+        // the terrain around AND beneath it, and even its own deck sits close above that terrain. The
+        // question is not "is there world ground nearby" - near a grounded ship there always is, both
+        // under the deck and beside it. The question is what the entity is standing ON:
+        //
+        //   - on a SHIP block (the deck): resolve in the ship frame, where that deck is axis-aligned;
+        //   - on WORLD terrain (the ground beside/under the ship): leave it to vanilla, which collides
+        //     that terrain correctly;
+        //   - in the air over the ship: keep whichever frame already owns it.
+        //
+        // The earlier "decline if world ground is under the feet" got the grounded case exactly wrong:
+        // a body on the deck of a ship sitting on the ground has world ground close below, so it was
+        // handed to vanilla, which does not see the subspace deck and dropped the body through it (the
+        // playtest report: "fell through the deck I'm standing on"). Test support against the SHIP, not
+        // the absence of world ground.
+        if (STATE.containsKey(entity)) {
+            // Already resolving in the ship frame. Stay - a body mid-jump or mid-step is momentarily
+            // unsupported yet has not left the ship - UNLESS it is now standing on real world ground and
+            // not on the ship: it stepped off the deck onto terrain, so hand it straight back to vanilla.
+            if (isSupportedByWorldTerrain(entity) && !isSupportedByShip(entity)) {
+                STATE.remove(entity);
+                return false;
+            }
+            return true;
+        }
+        // First contact: capture only a body actually standing on the ship - a ship block directly under
+        // its feet in the ship's own frame.
+        return isSupportedByShip(entity);
     }
 
-    /** Whether solid world collision sits directly beneath the entity's feet - i.e. it is standing on
-     *  world terrain, not on the ship (whose blocks live in a distant subspace, never at the feet). */
+    /**
+     * Whether this class is currently resolving {@code entity}'s movement in a ship frame - i.e. it is
+     * captured and standing on a deck (its ship-frame position is held across ticks). Read-only.
+     *
+     * <p>This is the single "is on a deck" truth. The client deck camera gates on it so the view is
+     * levelled to the deck ONLY for a body actually resolved on it - the same gate the movement uses -
+     * rather than for any body merely inside the ship's world AABB. A ship's axis-aligned world box
+     * overlaps a large air (and, when grounded, terrain) volume around the hull; gating the camera on
+     * containment hijacks the view of anyone flying THROUGH that airspace without standing on the deck.</p>
+     */
+    public static boolean isResolving(Entity entity) {
+        return entity != null && STATE.containsKey(entity);
+    }
+
+    /**
+     * A read-only breakdown of the {@link #handles} decision for {@code entity} - every gate, the
+     * ship-frame support obstacle count under the feet, and the final verdict - WITHOUT the state
+     * re-seeding {@code handles} performs as a side effect. Fed to the {@code /artest vs deck-capture}
+     * probe so a live playtest can see exactly WHY a body standing on a deck is or is not resolved in
+     * the ship frame: not aboard at all, aboard-by-containment but with no solid block under the feet
+     * in the ship's subspace (a partial capture that drops the body through the deck), or captured.
+     */
+    public static Map<String, Object> explainHandles(EntityLivingBase entity) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (entity == null || entity.world == null) {
+            m.put("verdict", false);
+            m.put("reason", "no entity/world");
+            return m;
+        }
+        boolean available = VSIntegration.isAvailable();
+        m.put("vsAvailable", available);
+        m.put("isRemote", entity.world.isRemote);
+        m.put("isServerWorld", entity.isServerWorld());
+        m.put("canPassengerSteer", entity.canPassengerSteer());
+        m.put("isRiding", entity.isRiding());
+        m.put("isElytraFlying", entity.isElytraFlying());
+        m.put("isFlying", entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying);
+        boolean aboard = VSIntegration.shipAttitudeAt(
+                entity.world, entity.posX, entity.posY, entity.posZ) != null;
+        m.put("aboardByContainment", aboard);
+        boolean tracked = STATE.containsKey(entity);
+        m.put("alreadyTracked", tracked);
+        int shipObstacles = shipSupportObstacleCount(entity);
+        m.put("shipFrameResolved", shipObstacles >= 0);
+        m.put("shipSupportObstacles", shipObstacles);
+        m.put("supportedByShip", shipObstacles > 0);
+        m.put("supportedByWorldTerrain", isSupportedByWorldTerrain(entity));
+        // The handles() verdict, replicated WITHOUT its STATE.remove side effects.
+        boolean verdict;
+        if (!available || (!entity.isServerWorld() && !entity.canPassengerSteer())
+                || entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()
+                || entity.isInWater() || entity.isInLava() || entity.isOnLadder()
+                || entity.isPotionActive(MobEffects.LEVITATION)
+                || (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying)
+                || !aboard) {
+            verdict = false;
+        } else if (tracked) {
+            verdict = !(isSupportedByWorldTerrain(entity) && shipObstacles <= 0);
+        } else {
+            verdict = shipObstacles > 0;
+        }
+        m.put("verdict", verdict);
+        return m;
+    }
+
+    /** Whether a SHIP block sits directly beneath the entity's feet, tested in the ship's frame (where
+     *  the deck is axis-aligned). The probe reaches further for a fast faller so it is caught before it
+     *  can tunnel through a thin deck in one tick. Ship blocks live in a subspace never at the entity's
+     *  world position, so this is what tells "standing on the deck" from "standing on the ground". */
+    private static boolean isSupportedByShip(Entity entity) {
+        return shipSupportObstacleCount(entity) > 0;
+    }
+
+    /** How many SHIP-frame collision boxes sit directly beneath the entity's feet - the exact query
+     *  {@link #isSupportedByShip} decides on - or {@code -1} when the entity maps to no loaded ship
+     *  frame at all. Read-only. Split out so the deck-capture diagnostic can tell "no ship here"
+     *  ({@code -1}) from "ship here but nothing solid under the feet" ({@code 0}, a partial capture
+     *  that would drop the body through the deck) from "supported" ({@code > 0}). */
+    private static int shipSupportObstacleCount(Entity entity) {
+        double[] local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            return -1;
+        }
+        double reach = SUPPORT_PROBE;
+        double[] motion = VSIntegration.rotateToShipFrame(entity,
+                entity.motionX, entity.motionY, entity.motionZ);
+        if (motion != null && motion[1] < 0.0) {
+            reach += -motion[1];
+        }
+        double half = entity.width / 2.0;
+        AxisAlignedBB underFeet = new AxisAlignedBB(
+                local[0] - half, local[1] - reach, local[2] - half,
+                local[0] + half, local[1], local[2] + half);
+        return entity.world.getCollisionBoxes(entity, underFeet).size();
+    }
+
+    /** Whether solid WORLD collision sits directly beneath the entity's feet - it stepped off the deck
+     *  onto real ground. Only a release condition now, never a capture one. */
     private static boolean isSupportedByWorldTerrain(Entity entity) {
         AxisAlignedBB box = entity.getEntityBoundingBox();
         AxisAlignedBB underFeet = new AxisAlignedBB(
-                box.minX, box.minY - WORLD_SUPPORT_PROBE, box.minZ,
+                box.minX, box.minY - SUPPORT_PROBE, box.minZ,
                 box.maxX, box.minY, box.maxZ);
         return !entity.world.getCollisionBoxes(entity, underFeet).isEmpty();
     }
 
-    /** How far below the feet to look for world ground before deciding an entity is on the ground, not
-     *  the ship. Small, so a body genuinely airborne over a flying deck still resolves in the ship frame. */
-    private static final double WORLD_SUPPORT_PROBE = 0.30;
+    /** How far below the feet to look for a supporting block. Small, so a body genuinely airborne over a
+     *  deck still resolves in the ship frame; extended by the fall speed for a fast faller. */
+    private static final double SUPPORT_PROBE = 0.30;
 
     /**
      * Resolve {@code travel(strafe, vertical, forward)} in the entity's ship frame.

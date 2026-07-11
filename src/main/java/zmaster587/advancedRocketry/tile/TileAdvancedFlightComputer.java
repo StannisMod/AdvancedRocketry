@@ -197,13 +197,28 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
         FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
         if (in == null) {
-            // Nobody is flying. Stop commanding: an unmanned ship coasts on its momentum rather than
-            // cruising on the last order its pilot gave before he stood up. Clearing the per-tile
-            // channels also hands the controller back to the static probe channels.
-            attitudeReference = null;
-            commandedVelocity = null;
-            commandedAngVel = null;
-            targetAttitude = null;
+            // Nobody is flying. A ship that has NEVER been flown this load stays inert - its physics is
+            // off, so it just rests and there is nothing to hold. But a ship that WAS being flown must
+            // HOLD STATION when the pilot stands up: hover in place, at the attitude he left it, until a
+            // pilot returns. A hovering craft is not coasting - it needs continuous force to fight
+            // gravity, so the instant the controller stops commanding it falls out of the sky (the
+            // playtest: stood up mid-hover, the ship dropped and took the pilot down with it). So rather
+            // than clearing the command, keep commanding a zero-velocity, hold-current-attitude station
+            // keep. attitudeReference is non-null only once a pilot has actually flown the ship, so it is
+            // the "was piloted" witness - hold it, do not clear it.
+            if (attitudeReference == null) {
+                commandedVelocity = null;
+                commandedAngVel = null;
+                targetAttitude = null;
+                return;
+            }
+            VSIntegration.ensureShipPhysicsEnabled(world, getPos());
+            commandedVelocity = new double[]{0.0, 0.0, 0.0};
+            commandedAngVel = new double[]{0.0, 0.0, 0.0};
+            targetAttitude = new double[]{attitudeReference.w, attitudeReference.x,
+                    attitudeReference.y, attitudeReference.z};
+            velocitySetpoint = new double[]{0.0, 0.0, 0.0};
+            captureSetpointOnNextTick = true; // a returning pilot re-seeds cruise from the live velocity
             return;
         }
         VSIntegration.ensureShipPhysicsEnabled(world, getPos());

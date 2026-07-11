@@ -249,6 +249,16 @@ public class RocketEventHandler extends Gui {
         // the view is the ONLY degree of freedom added - his yaw and pitch come back exactly as he
         // aimed them, so getLook(), and therefore which block he mines, is untouched. Composing a full
         // ship-frame look instead would silently aim his cursor somewhere the camera is not pointing.
+        //
+        // Gate on the SAME "actually on a deck" truth the movement uses (ShipFrameTravel is resolving
+        // this body), not on mere containment in the ship's world AABB. That box is axis-aligned and
+        // overlaps a large air (and, for a grounded ship, terrain) volume around the hull; levelling the
+        // view for anyone inside it hijacks the camera of a player merely flying up through the airspace
+        // or standing on the ground beside the hull - he is not on the deck, so his view must be his own.
+        if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(view)) {
+            zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
+            return;
+        }
         double[] shipUp = zmaster587.advancedRocketry.client.ShipFrameCamera.shipUpFor(view, p);
         if (shipUp == null) {
             zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;

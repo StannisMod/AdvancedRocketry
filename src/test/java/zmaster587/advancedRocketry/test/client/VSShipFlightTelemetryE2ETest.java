@@ -268,49 +268,57 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
                 data.contains("\"playerOnGround\":true"));
     }
 
-    // ---- Test 4: an entity on world terrain near a ship is NOT swallowed by its subspace ------
+    // ---- Test 4: a body on a GROUNDED ship's deck stays on the deck, not through it -----------
 
     @Test
-    public void anEntityStandingOnWorldTerrainNearAShipIsNotDroppedThroughIt() throws Exception {
+    public void aBodyOnADeckWithWorldGroundBelowStaysOnTheDeck() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
         final int bx = 3420, by = 64, bz = 3420;
 
-        // Playtest report: walking up to a docked tier-2 ship, the player fell through it and the 1-2
-        // blocks of ground beside it. Cause: a ship's world bounding box is axis-aligned and, resting
-        // near the ground, it OVERLAPS the terrain around it; movement of anything inside that box was
-        // being resolved in the ship's subspace, where that terrain does not exist. The fix: an entity
-        // supported by real world ground stays with vanilla, whatever ship box it happens to be inside.
+        // Playtest report: standing on the deck of a DOCKED tier-2 ship (one resting on the ground), the
+        // player fell through the deck. A ship's world bounding box overlaps the terrain it sits on, and
+        // the movement takeover was declined for any body with world ground near its feet - so a body on
+        // the deck of a grounded ship was handed to vanilla, which cannot see the subspace deck and let
+        // it fall. The fix keys the takeover on standing on a SHIP block, not on the absence of world
+        // ground: a body on the deck is resolved in the ship frame whatever the terrain below does.
         double[] ship = buildShip(bx, by, bz);
-        int cx = (int) Math.floor(ship[0]);
-        int cy = (int) Math.floor(ship[1]);
-        int cz = (int) Math.floor(ship[2]);
 
-        // The world space inside a ship's box is empty - the ship's own blocks live in a far subspace,
-        // never at these coordinates - so a block placed at the ship's centre is genuine WORLD terrain
-        // sitting squarely inside the ship's (grown) bounding box: exactly the overlap that bit the
-        // playtest. A body dropped onto it must rest on it.
-        assertTrue("must place the world block inside the ship box",
-                exec("artest fill 0 " + cx + " " + cy + " " + cz + " " + cx + " " + cy + " " + cz
-                        + " minecraft:stone").contains("\"ok\":true"));
-        // Set it down right on the block's top face - no long fall to build up speed - so the gate is
-        // exercised while it rests, which is the reported situation (a player walking up and standing).
-        int standId = readInt(exec("artest vs drop-stand 0 " + (cx + 0.5) + " " + (cy + 1.05)
-                + " " + (cz + 0.5)), ENTITY_ID);
+        // A body settled on the actual deck - the exact thing the pilot stands on.
+        int standId = readInt(exec("artest vs drop-stand 0 " + ship[0] + " " + (ship[1] + 3)
+                + " " + ship[2]), ENTITY_ID);
+        bot().waitTicks(70);
+
+        String onDeck = exec("artest vs player-ship-data 0 " + standId);
+        assertTrue("the body must have settled on the deck: " + onDeck,
+                onDeck.contains("\"playerOnGround\":true") && onDeck.contains("\"shipLoaded\":true"));
+        double deckY = readDouble(onDeck, Pattern.compile("\"playerY\":(-?[0-9.E\\-]+)"));
+        assertTrue("a body on the deck must be resolved in the ship frame: "
+                + exec("artest vs would-take-over 0 " + standId),
+                exec("artest vs would-take-over 0 " + standId).contains("\"handles\":true"));
+
+        // Now make the ship "grounded": lay a world stone floor right under the deck, so the deck has
+        // real terrain close beneath it - the overlap that broke the playtest. A body on the deck must
+        // stay ON the deck, not fall to (or through) this floor.
+        int fy = (int) Math.floor(deckY) - 1;
+        int sx = (int) Math.floor(ship[0]);
+        int sz = (int) Math.floor(ship[2]);
+        assertTrue("must lay the world floor under the deck",
+                exec("artest fill 0 " + (sx - 3) + " " + fy + " " + (sz - 3) + " "
+                        + (sx + 3) + " " + fy + " " + (sz + 3) + " minecraft:stone").contains("\"ok\":true"));
         bot().waitTicks(60);
 
+        String afterFloor = exec("artest vs player-ship-data 0 " + standId);
+        double yAfter = readDouble(afterFloor, Pattern.compile("\"playerY\":(-?[0-9.E\\-]+)"));
         String handles = exec("artest vs would-take-over 0 " + standId);
-        System.out.println("[tier2] terrain-in-box would-take-over: " + handles);
-        assertTrue("an entity standing on world terrain must NOT have its movement taken into the "
-                + "ship frame, even inside the ship box: " + handles, handles.contains("\"handles\":false"));
-
-        String data = exec("artest vs player-ship-data 0 " + standId);
-        double standY = readDouble(data, Pattern.compile("\"playerY\":(-?[0-9.E\\-]+)"));
-        System.out.println("[tier2] stand rests at y=" + standY + " on a block whose top is " + (cy + 1)
-                + " (data=" + data + ")");
-        assertTrue("the body must rest ON the world block (top y=" + (cy + 1) + "), not fall through it "
-                + "into the ship's empty subspace: it is at y=" + standY, standY > cy + 0.5);
-        assertTrue("and it must be on the ground, not falling: " + data,
-                data.contains("\"playerOnGround\":true"));
+        System.out.println("[tier2] grounded-deck: deckY=" + deckY + " afterFloor y=" + yAfter
+                + " floorTop=" + (fy + 1) + " would-take-over=" + handles);
+        assertTrue("a body on the deck of a grounded ship must stay resolved in the ship frame, not be "
+                + "handed to vanilla because there is now ground below: " + handles,
+                handles.contains("\"handles\":true"));
+        assertTrue("it must stay ON the deck (y=" + deckY + "), not drop toward the world floor (top "
+                + (fy + 1) + "): it is at y=" + yAfter, Math.abs(yAfter - deckY) < 1.0);
+        assertTrue("and still on the ground (the deck), not falling: " + afterFloor,
+                afterFloor.contains("\"playerOnGround\":true"));
     }
 
     // ---- helpers ------------------------------------------------------------------------------

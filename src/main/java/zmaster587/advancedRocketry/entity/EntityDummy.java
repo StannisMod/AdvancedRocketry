@@ -124,6 +124,47 @@ public class EntityDummy extends Entity {
                 this.dataManager.get(SETPOINT_UP)};
     }
 
+    /** The pilot this dummy carried last server tick, so a dismount can be detected and the ex-pilot
+     *  put back on the deck. Server-side only; a strong ref for one tick is fine (players persist). */
+    private Entity lastRider = null;
+
+    /**
+     * When the pilot stands up, put him back ON the deck. Vanilla's dismount searches for a
+     * non-colliding spot around this dummy, but the ship's deck lives in a subspace it cannot see (and
+     * the seat block itself has no collision), so it can drop the pilot beside or below the hull - off a
+     * hovering ship he then falls away entirely (the playtest: stood up, ended on the ground far below).
+     * This snaps the just-dismounted rider to the seat's live world position, where this dummy sits, on
+     * the deck, so {@link zmaster587.advancedRocketry.integration.vs.ShipFrameTravel} captures him there.
+     * Fires once, on the tick the seat empties, and only for a linked pilot seat on a loaded ship - a
+     * plain ground seat keeps vanilla's dismount untouched.
+     */
+    private void keepDismountedPilotOnDeck() {
+        Entity current = getPassengers().isEmpty() ? null : getPassengers().get(0);
+        if (current != null) {
+            lastRider = current;
+            return;
+        }
+        Entity exit = lastRider;
+        lastRider = null;
+        if (exit == null || exit.isDead || exit.world != world) {
+            return;
+        }
+        TilePilotSeat seat = TilePilotSeat.forRider(this, world);
+        if (seat == null || !seat.isLinked()) {
+            return; // a plain seat: leave vanilla's dismount alone
+        }
+        BlockPos seatPos = getSeatPos();
+        if (seatPos == null || VSIntegration.getSeatWorldPosition(world, seatPos) == null) {
+            return; // not on a loaded ship: nothing to keep him on
+        }
+        // this dummy was glued to the seat's world position earlier this tick, so posX/Y/Z is the deck.
+        exit.setPositionAndUpdate(posX, posY, posZ);
+        exit.motionX = 0.0;
+        exit.motionY = 0.0;
+        exit.motionZ = 0.0;
+        exit.fallDistance = 0.0f;
+    }
+
     /** Server-side: publish the ship's flight telemetry to the rider. Only writes on a real change,
      *  so an idle ship costs no metadata packets. Also releases the controls when the pilot stands up:
      *  the computer holds the last input it was sent, so without this the ship would keep flying his
@@ -186,6 +227,7 @@ public class EntityDummy extends Entity {
             setPosition(worldSeat[0], worldSeat[1], worldSeat[2]);
         }
         if (!world.isRemote) {
+            keepDismountedPilotOnDeck();
             syncFlightTelemetry();
         }
     }
