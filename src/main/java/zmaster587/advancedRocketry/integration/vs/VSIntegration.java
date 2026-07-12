@@ -237,19 +237,6 @@ public final class VSIntegration {
     }
 
     /**
-     * The WORLD position {@code [x, y, z]} where a dismounted pilot's feet should stand on the deck at
-     * ship-subspace {@code seatPos} (the deck top beneath the seat), or {@code null} when VS is absent or
-     * no ship manages the seat. Used to place a just-dismounted pilot solidly on the deck so the ship
-     * frame captures him reliably at any attitude. Only AR-core/MC types cross the gate.
-     */
-    public static double[] getDeckStandPosition(World world, BlockPos seatPos) {
-        if (!isAvailable()) {
-            return null;
-        }
-        return VSBridge.deckStandWorldPosition(world, seatPos);
-    }
-
-    /**
      * Whether Valkyrien Skies ship support (its per-world ship manager) is attached to
      * {@code world}. Used by the space slot-pool spike to confirm VS lights up on a
      * dynamically-created pool world, not just the vanilla/AR dimensions. {@code false} when VS

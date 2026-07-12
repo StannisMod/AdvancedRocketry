@@ -91,9 +91,15 @@ public final class ShipFrameTravel {
         double worldX, worldY, worldZ;
     }
 
-    /** How far the world may have drifted from what we last wrote before we treat the entity as having
-     *  been moved by someone else (a teleport, a server position correction) and re-seed from it. */
-    private static final double EXTERNAL_MOVE_EPSILON_SQ = 1.0e-6;
+    /** How far (squared, in blocks) the world may have drifted from what we last wrote before we treat
+     *  the entity as having been moved by someone ELSE - a real teleport - and re-derive from it. Travel
+     *  writes the position it derived every tick, so a body this class owns never drifts on its own; the
+     *  slack only has to absorb the sub-block client/server position reconciliation that rides on a moving
+     *  ship (a captured crew member's own client resolves and reports his position, and the server accepts
+     *  it a tick later slightly transformed). Set too tight (it was 1e-6 ~ 1mm) that ordinary
+     *  reconciliation reads as an external move and drops the capture; 0.2 block keeps a freshly-captured
+     *  dismounted pilot held across it while still releasing on a genuine multi-tenth teleport. */
+    private static final double EXTERNAL_MOVE_EPSILON_SQ = 0.04;
 
     /**
      * Whether this entity's movement should be resolved in its ship's frame this tick. Kept as one
@@ -156,6 +162,43 @@ public final class ShipFrameTravel {
         // First contact: capture only a body actually standing on the ship - a ship block directly under
         // its feet in the ship's own frame.
         return isSupportedByShip(entity);
+    }
+
+    /**
+     * Force a ship-frame capture for {@code entity} onto an explicit SHIP-FRAME (subspace) deck point,
+     * snapping the body there and holding it. MUST be called on the side that OWNS the body's movement -
+     * for a player that is the CLIENT (its own {@code EntityPlayerSP.travel}). Both the world position the
+     * body is snapped to and the stored {@code state.world} are computed HERE, on this side, from the same
+     * subspace point through this side's own ship transform, so {@code entity.pos == state.world} exactly
+     * and {@link #heldShipFramePos}'s external-move guard holds instead of dropping the capture. This is
+     * why the deck point travels as a SUBSPACE triple in a packet, never a world position: a world
+     * position computed on the server and re-derived here would differ by more than the guard's ~1 mm and
+     * drop instantly. The travel then keeps the body on the deck across ticks. Returns false off a loaded
+     * ship. Idempotent enough to re-send: pair with an {@link #isResolving} check at the call site so a
+     * re-seed after the capture already took is skipped (no repeated teleport).
+     */
+    public static boolean seedShipFrameCapture(Entity entity, double subX, double subY, double subZ) {
+        if (entity == null) {
+            return false;
+        }
+        double[] world = VSIntegration.toWorldFrame(entity, subX, subY, subZ);
+        if (world == null) {
+            return false;
+        }
+        ShipFrameState state = new ShipFrameState();
+        state.localX = subX;
+        state.localY = subY;
+        state.localZ = subZ;
+        state.worldX = world[0];
+        state.worldY = world[1];
+        state.worldZ = world[2];
+        STATE.put(entity, state);
+        entity.setPositionAndUpdate(world[0], world[1], world[2]);
+        entity.motionX = 0.0;
+        entity.motionY = 0.0;
+        entity.motionZ = 0.0;
+        entity.fallDistance = 0.0f;
+        return true;
     }
 
     /**

@@ -350,6 +350,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
 
     private static final String KEY_BINDINGS = "zmaster587.advancedRocketry.client.KeyBindings";
     private static final Pattern OMEGA = Pattern.compile("\"omega\":(-?[0-9.E\\-]+)");
+    private static final Pattern RESOLVED_TICKS = Pattern.compile("\"resolvedTicks\":(-?[0-9]+)");
     private static final Pattern QX = Pattern.compile("\"qx\":(-?[0-9.E\\-]+)");
     private static final Pattern QZ = Pattern.compile("\"qz\":(-?[0-9.E\\-]+)");
 
@@ -372,27 +373,27 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
 
         // Roll the ship to a steep tilt with the pilot's mouse, then stand up FROM the seat while it is
         // tilted - the maintainer's "after leaving, I fall through" is on a non-upright ship, which the
-        // upright dismount test never exercised.
+        // upright dismount test never exercised. Stop rolling EARLY (at ~40deg): angular momentum keeps
+        // rolling the ship after the cursor centres, so a low break target overshoots to a near-vertical
+        // wall; breaking at ~40 lands the settle in the steep-but-standable envelope.
         for (int i = 0; i < 220; i++) {
-            if (shipUpYFromInfo(shipInfo(bx, by, bz)) < 0.55) { // ~57deg bank - a clear tilt, not past vertical
+            if (shipUpYFromInfo(shipInfo(bx, by, bz)) < 0.76) {
                 break;
             }
             if (Math.abs(clientDouble(KEY_BINDINGS, "flightCursorX")) < 0.5) {
-                mouseDelta(30, 0);
+                mouseDelta(20, 0);
             }
             bot().waitTicks(2);
         }
         centreFlightCursor();
         bot().waitTicks(30);
         double tilted = shipUpYFromInfo(shipInfo(bx, by, bz));
-        // Only a MODERATE tilt is a valid dismount subject: a ~vertical deck (upY -> 0) is a wall, where a
-        // crew member physically cannot stand and slides off - and the mouse-roll overshoots to there via
-        // angular momentum, so the harness rarely lands a moderate hold. Skip (not fail) the near-wall
-        // case; assert stays-on-ship only when the deck is actually stand-on-able. Fresh-dismount capture
-        // on a steep-but-standable deck is the open item (client-side ship-frame capture; see ledger).
-        Assume.assumeTrue("harness produced a near-vertical (wall) tilt where standing is not physical; "
-                + "cannot exercise a moderate-tilt dismount here (upY=" + tilted + ")",
-                tilted > 0.6 && tilted < 0.95);
+        // A steep but standable tilt is the subject. The client-side capture packet snaps the fresh
+        // dismount onto the deck and holds it there (like a crew member who rode in and holds at 90deg).
+        // Skip only if the mouse-roll under- or overshot the envelope (no tilt, or a near-vertical wall
+        // where standing is not physical) - the harness's angular momentum makes the landing variable.
+        Assume.assumeTrue("could not tilt the ship into the steep-but-standable envelope (upY=" + tilted
+                + ")", tilted >= 0.25 && tilted < 0.80);
 
         double[] seat = readShipInfoXYZ(shipInfo(bx, by, bz));
         String statsBefore = exec("artest vs shipframe-stats");
@@ -427,6 +428,94 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
                 settledMin > 66.0);
         assertTrue("the client and server must agree on the ex-pilot's height on the tilted ship: serverY="
                 + serverY + " clientY=" + clientY, Math.abs(clientY - serverY) < 3.0);
+    }
+
+    @Test
+    public void aFreshlyDismountedPilotStaysCapturedWhenTheShipThenRollsNinetyDegrees() throws Exception {
+        double h = Math.toRadians(90.0) / 2.0; // deck on its side (upY ~ 0)
+        assertDismountThenRollHolds(4720, 64, 4720, Math.cos(h), Math.sin(h), -0.35, 0.35, "90deg");
+    }
+
+    @Test
+    public void aFreshlyDismountedPilotStaysCapturedWhenTheShipThenRollsPastVertical() throws Exception {
+        // Command 160deg; the attitude hold settles well PAST vertical on this fixture (measured deck-up
+        // ~ -0.93, i.e. ~160deg - nearly inverted, the ex-pilot hanging below the deck). An EXACT 180deg is
+        // the axis-angle singularity the controller cannot converge to, and a free spin to it is VS-damped
+        // in a headless run - so the last few degrees to full inversion are a manual-playtest item.
+        assertDismountThenRollHolds(4820, 64, 4820, 0.17365, 0.98481, -1.01, -0.4, "past-vertical");
+    }
+
+    /**
+     * The fresh-dismount capture must survive the ship SUBSEQUENTLY rolling to a steep/inverted attitude:
+     * stand up from the seat on a LEVEL deck (the client-side {@code PacketDeckCapture} seeds the ex-pilot
+     * on the deck), THEN command the ship to a fixed roll about its nose and hold it, and assert the
+     * ex-pilot rode the deck over - still resolved on it, held at deck height, client and server agreeing -
+     * instead of being dropped through the hull or left behind in the world.
+     *
+     * <p>Reliable because the roll is a commanded quaternion on an UNMANNED ship ({@code artest vs point}):
+     * a seated pilot's own input overwrites the attitude target every tick, and a free spin is VS-damped,
+     * so commanding the attitude after the dismount is the only way to put a walking ex-pilot on a
+     * steep/inverted deck in the headless harness. Thresholds are deck-relative (derived from the measured
+     * ship Y), never a magic absolute.</p>
+     */
+    private void assertDismountThenRollHolds(int bx, int by, int bz, double qw, double qz,
+            double upYLo, double upYHi, String label) throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        // Stand up on the LEVEL deck: the dismount capture packet seeds the ex-pilot on the deck.
+        exec("artest player dismount");
+        bot().waitTicks(30);
+        int resolvedAfterDismount = (int) readDouble(exec("artest vs shipframe-stats"), RESOLVED_TICKS);
+        assertTrue("the fresh dismount must engage the ship-frame capture on the level deck (resolvedTicks="
+                + resolvedAfterDismount + ")", resolvedAfterDismount > 0);
+
+        // Roll the now-UNMANNED ship (a mounted pilot would overwrite the target) to the commanded attitude.
+        assertTrue("attitude hold must accept the " + label + " roll command",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " " + qw + " 0.0 0.0 " + qz)
+                        .contains("\"commanded\":true"));
+        bot().waitTicks(200); // slew to the roll and settle - stationary, not a transient
+        double tilted = shipUpYFromInfo(shipInfo(bx, by, bz));
+        // Reliable command -> a HARD assert that the regime was reached (fail loudly, not a silent skip).
+        assertTrue("the ship must reach the " + label + " regime for the test to mean anything (upY="
+                + tilted + " expected [" + upYLo + "," + upYHi + "])", tilted >= upYLo && tilted <= upYHi);
+
+        double shipPosY = readShipInfoXYZ(shipInfo(bx, by, bz))[1];
+        StringBuilder traj = new StringBuilder();
+        double settledMin = Double.MAX_VALUE, settledMax = -Double.MAX_VALUE;
+        for (int i = 0; i < 22; i++) {
+            bot().waitTicks(2);
+            double y = bot().reportState().get("playerY").getAsDouble();
+            traj.append(String.format("%.1f ", y));
+            if (i >= 14) { // last ~8 samples, once the roll has settled
+                settledMin = Math.min(settledMin, y);
+                settledMax = Math.max(settledMax, y);
+            }
+        }
+        double osc = settledMax - settledMin;
+        int resolvedOnRoll = (int) readDouble(exec("artest vs shipframe-stats"), RESOLVED_TICKS);
+        String capture = exec("artest vs deck-capture");
+        double clientY = bot().reportState().get("playerY").getAsDouble();
+        double serverY = readDouble(exec("artest vs player-ship-data"), PLAYER_Y);
+        System.out.println("[deckcap] dismount-then-roll " + label + " upY=" + tilted + " shipPosY="
+                + shipPosY + " settledMin=" + settledMin + " osc=" + osc + " resolvedOnRoll=" + resolvedOnRoll
+                + " capture=" + capture + " clientY=" + clientY + " serverY=" + serverY + " Ytraj=" + traj);
+
+        // Still captured while the deck is steep/inverted - the ship frame keeps resolving him, not vanilla.
+        assertTrue("the ex-pilot must stay resolved on the " + label + " deck, not be handed to vanilla: "
+                + capture, capture.contains("\"verdict\":true"));
+        // Deck-relative hold: he must not slide down toward the ~" + (by + 1) + " ground - his settled
+        // height stays within a body of the measured ship, not 2.5+ blocks below it.
+        assertTrue("the ex-pilot must ride the " + label + " deck over, not drop to the ground: settledMin="
+                + settledMin + " shipPosY=" + shipPosY + " Ytraj=" + traj, settledMin > shipPosY - 2.5);
+        // Held, not sliding: a captured body is stationary on the stationary rolled ship (small tail swing);
+        // a body sliding off shows a large monotonic settle.
+        assertTrue("the captured ex-pilot must be HELD on the " + label + " deck, not sliding (settled Y "
+                + "oscillation=" + osc + "): " + traj, osc < 1.5);
+        assertTrue("the client and server must agree on the ex-pilot's height (serverY=" + serverY
+                + " clientY=" + clientY + ")", Math.abs(clientY - serverY) < 3.0);
     }
 
     @Test

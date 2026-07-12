@@ -103,26 +103,6 @@ final class VSBridge {
     }
 
     /**
-     * The WORLD position {@code [x, y, z]} where a dismounted pilot's FEET should be placed to stand on
-     * the deck at ship-subspace {@code seatPos} - the bottom of the seat block's cell (i.e. the top of the
-     * deck block directly beneath the seat), mapped through the ship transform. Distinct from
-     * {@link #seatWorldPosition} (seat centre + 0.2): a body dropped at the seat centre sits 0.2 above the
-     * deck, so {@code ShipFrameTravel}'s 0.30 support probe overlaps the deck by only ~0.10 and captures
-     * only intermittently - dropping the feet onto the deck top instead gives the probe a solid 0.30 into
-     * the deck block, so capture is reliable at ANY ship attitude. Null off a loaded ship.
-     */
-    static double[] deckStandWorldPosition(World world, BlockPos seatPos) {
-        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, seatPos);
-        if (!managing.isPresent()) {
-            return null;
-        }
-        ShipTransform transform = managing.get().getShipData().getShipTransform();
-        Vec3d subspaceFeet = new Vec3d(seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5);
-        Vec3d worldFeet = transform.transform(subspaceFeet, TransformType.SUBSPACE_TO_GLOBAL);
-        return new double[]{worldFeet.x, worldFeet.y, worldFeet.z};
-    }
-
-    /**
      * The world-frame linear velocity {@code [x,y,z]} (blocks/second) of the ship managing the
      * block at {@code pos}, or {@code null} if no ship manages it. Lets the flight computer capture
      * the ship's live velocity as a body-frame setpoint when the pilot re-enables Flight Assist, so

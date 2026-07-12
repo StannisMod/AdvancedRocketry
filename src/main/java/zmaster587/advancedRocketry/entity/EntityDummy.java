@@ -183,20 +183,19 @@ public class EntityDummy extends Entity {
             dismountedPilot = null;
             return;
         }
-        // Not captured yet - place his FEET on the deck top beneath the seat, NOT at the seat centre
-        // (which sits 0.2 above the deck, so the ship-frame support probe overlaps by only ~0.10 and
-        // captures only intermittently on a tilted ship; feet on the deck give the probe a solid 0.30).
-        // Fall back to the seat/dummy position if the deck stand point is unavailable.
-        double[] stand = VSIntegration.getDeckStandPosition(world, seatPos);
-        if (stand != null) {
-            exit.setPositionAndUpdate(stand[0], stand[1], stand[2]);
-        } else {
-            exit.setPositionAndUpdate(posX, posY, posZ);
+        // Not captured yet. Crew movement is client-authoritative, so we cannot capture him from the
+        // server - a server teleport of his body reads on his own client as an external move and drops the
+        // client-side capture that actually holds him (ShipFrameTravel's ~1mm external-move guard). Instead
+        // ASK his client to capture him, handing it the deck point in ship SUBSPACE (the seat column's
+        // centre at the deck top); the client maps that through its OWN ship transform, snaps there and
+        // holds it. A server-computed world position would differ here by more than the guard and drop
+        // instantly. Re-sent each tick of the window; the client seeds once and no-ops the rest.
+        if (exit instanceof net.minecraft.entity.player.EntityPlayerMP) {
+            zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
+                    new zmaster587.advancedRocketry.network.PacketDeckCapture(
+                            seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
+                    (net.minecraft.entity.player.EntityPlayerMP) exit);
         }
-        exit.motionX = 0.0;
-        exit.motionY = 0.0;
-        exit.motionZ = 0.0;
-        exit.fallDistance = 0.0f;
     }
 
     /** Server-side: publish the ship's flight telemetry to the rider. Only writes on a real change,
