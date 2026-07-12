@@ -183,7 +183,19 @@ public final class ShipFrameTravel {
         }
         double[] world = VSIntegration.toWorldFrame(entity, subX, subY, subZ);
         if (world == null) {
+            // Playtest trace ([FF-TRACE/CAP], -Dadvancedrocketry.tests=true): the deck point could not be
+            // mapped to the world because the entity is aboard no loaded ship by containment - i.e. it was
+            // ejected off the ship's world AABB (the inverted-deck fall-through). No-op in normal play.
+            if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed FAILED "
+                        + "(toWorldFrame null - not aboard a loaded ship) sub=(" + subX + "," + subY + ","
+                        + subZ + ") entityPos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")");
+            }
             return false;
+        }
+        if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+            zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK world=("
+                    + world[0] + "," + world[1] + "," + world[2] + ")");
         }
         ShipFrameState state = new ShipFrameState();
         state.localX = subX;

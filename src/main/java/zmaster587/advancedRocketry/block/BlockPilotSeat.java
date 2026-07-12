@@ -21,6 +21,7 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 
 import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.entity.EntityDummy;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.tile.TilePilotSeat;
 
 /**
@@ -54,16 +55,15 @@ public class BlockPilotSeat extends BlockSeat {
     public boolean onBlockActivated(World world, BlockPos pos, IBlockState state, EntityPlayer player,
                                     EnumHand hand, EnumFacing facing, float hitX, float hitY, float hitZ) {
         if (!world.isRemote) {
-            for (Entity e : world.getEntitiesWithinAABBExcludingEntity(player, new AxisAlignedBB(pos, pos.add(1, 1, 1)))) {
-                if (e instanceof EntityDummy) {
-                    if (!e.getPassengers().isEmpty()) {
-                        return true;
-                    }
-                    e.setPosition(pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
-                    ((EntityDummy) e).setSeatPos(pos);
-                    player.startRiding(e);
-                    return true;
+            EntityDummy existing = findSeatDummy(world, pos, player);
+            if (existing != null) {
+                if (!existing.getPassengers().isEmpty()) {
+                    return true; // someone is already piloting from this seat
                 }
+                existing.setPosition(pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
+                existing.setSeatPos(pos);
+                player.startRiding(existing);
+                return true;
             }
             EntityDummy dummy = new EntityDummy(world, pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
             dummy.setSeatPos(pos);
@@ -71,6 +71,42 @@ public class BlockPilotSeat extends BlockSeat {
             player.startRiding(dummy);
         }
         return true;
+    }
+
+    /**
+     * The dummy already bound to this seat, or {@code null} if none. A tier-2 seat block lives in
+     * the ship's distant subspace while its bound dummy is glued to the seat's live WORLD position
+     * ({@link EntityDummy#onUpdate}), so a search at the block position alone never finds it on a
+     * moving ship. Without this, every re-mount would spawn a FRESH dummy and leave the old (empty)
+     * one behind — and an empty dummy clears the flight computer's pilot input every server tick
+     * ({@link EntityDummy} telemetry), so the accumulated dummies would fight a returning pilot's
+     * input. Search the seat's live world position too, and match on the bound seat pos so a
+     * neighbouring seat's dummy is never grabbed.
+     */
+    private static EntityDummy findSeatDummy(World world, BlockPos seatPos, EntityPlayer player) {
+        EntityDummy atBlock = firstBoundDummy(world,
+                new AxisAlignedBB(seatPos, seatPos.add(1, 1, 1)), seatPos, player);
+        if (atBlock != null) {
+            return atBlock;
+        }
+        double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seatPos);
+        if (worldSeat == null) {
+            return null; // not on a loaded ship: the block-position search above is authoritative
+        }
+        AxisAlignedBB atWorld = new AxisAlignedBB(worldSeat[0], worldSeat[1], worldSeat[2],
+                worldSeat[0], worldSeat[1], worldSeat[2]).grow(1.0);
+        return firstBoundDummy(world, atWorld, seatPos, player);
+    }
+
+    /** The first dummy in {@code box} bound to {@code seatPos}, or {@code null}. */
+    private static EntityDummy firstBoundDummy(World world, AxisAlignedBB box, BlockPos seatPos,
+                                               EntityPlayer player) {
+        for (Entity e : world.getEntitiesWithinAABBExcludingEntity(player, box)) {
+            if (e instanceof EntityDummy && seatPos.equals(((EntityDummy) e).getSeatPos())) {
+                return (EntityDummy) e;
+            }
+        }
+        return null;
     }
 
     @SideOnly(Side.CLIENT)

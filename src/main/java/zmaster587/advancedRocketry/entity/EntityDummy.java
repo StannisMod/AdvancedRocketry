@@ -212,6 +212,13 @@ public class EntityDummy extends Entity {
             return;
         }
         if (getPassengers().isEmpty() && afc.pilotInput != null) {
+            // Playtest trace ([FF-TRACE/DUMMY], -Dadvancedrocketry.tests=true): a riderless dummy is
+            // clearing the pilot input. Expected ONCE right after a real dismount; if it keeps firing
+            // while a pilot is seated and steering, a stale accumulated dummy is fighting his input.
+            if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/DUMMY] empty dummy "
+                        + getEntityId() + " clearing pilotInput for seat " + seat.getPos());
+            }
             afc.setPilotInput(null);
         }
         double[] velocity = afc.getHudBodyVelocity();

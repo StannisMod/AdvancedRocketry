@@ -132,6 +132,11 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      *  from the ship's live velocity instead of jerking the ship to the stale setpoint. */
     private boolean captureSetpointOnNextTick = false;
 
+    /** Diagnostic only ({@code -Dadvancedrocketry.tests=true}): last-logged presence of a live
+     *  {@link #pilotInput}, so a playtest trace prints one line each time the seated pilot's input
+     *  appears or is cleared. Not gameplay state. */
+    private transient Boolean arLastPilotPresent = null;
+
     /**
      * The attitude the ship is being held at - a PERSISTENT reference the pilot's rates steer, not a
      * fresh reading of where the ship happens to be pointing.
@@ -206,6 +211,18 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
 
         // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
         FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
+        // Playtest trace ([FF-TRACE/AFC], -Dadvancedrocketry.tests=true): log each null<->set flip of
+        // the seated pilot's input. If it flips to null while the pilot holds a key, the ship falls into
+        // the station-keeping branch below and reads as "unresponsive"; a stable SET means the input
+        // reaches the AFC and any freeze is downstream (mixin/VS). No-op in normal play.
+        if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+            boolean present = pilotInput != null;
+            if (arLastPilotPresent == null || arLastPilotPresent != present) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/AFC] " + getPos()
+                        + " pilotInput=" + (present ? "SET" : "null") + " stationKeeping=" + stationKeeping);
+                arLastPilotPresent = present;
+            }
+        }
         if (in == null) {
             // Nobody is flying. A ship that has NEVER been flown this load stays inert - its physics is
             // off, so it just rests and there is nothing to hold. But a ship that WAS being flown must
