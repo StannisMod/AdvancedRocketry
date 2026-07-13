@@ -109,6 +109,126 @@ public final class VSIntegration {
     }
 
     /**
+     * PARK the VS ship whose world BB contains {@code (x,y,z)}: disable its physics so it holds position
+     * (used while a ship is in transit — {@code ShipTransit} advances its coordinate logically, not by
+     * physically flying). Returns false when VS is absent or no ship is there. A safe no-op when VS absent.
+     */
+    public static boolean parkShipAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.parkShipAt(world, x, y, z);
+    }
+
+    /** UNPARK (re-enable physics on) the VS ship at {@code (x,y,z)}. See {@link #parkShipAt}. */
+    public static boolean unparkShipAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.unparkShipAt(world, x, y, z);
+    }
+
+    /**
+     * Result of a {@link #crossShip} per-ship crossing: the destination anchor block the re-assembly was
+     * seeded on ({@code null} = the crossing failed and no ship was created), whether the source ship was
+     * deregistered, and the ship's actual Y band in the source shipyard (diagnostics).
+     */
+    public static final class CrossResult {
+        /** The destination anchor the ship was re-assembled on, or {@code null} if the crossing failed. */
+        public final BlockPos anchor;
+        public final boolean removed;
+        public final int minShipY;
+        public final int maxShipY;
+
+        CrossResult(BlockPos anchor, boolean removed, int minShipY, int maxShipY) {
+            this.anchor = anchor;
+            this.removed = removed;
+            this.minShipY = minShipY;
+            this.maxShipY = maxShipY;
+        }
+
+        /** {@code true} iff a ship was re-assembled at the destination. */
+        public boolean ok() {
+            return anchor != null;
+        }
+    }
+
+    /**
+     * The per-ship "crossing" (space-model §4): move ONE VS ship's blocks + TEs from a source world region
+     * into a destination world (which may differ — origin cell &harr; hyperspace &harr; target cell), and
+     * re-assemble it there. This is the recipe proven by {@code VSShipCrossingSpikeTest}, factored out so
+     * production transit and the {@code /artest vs ship-repack} probe share one code path:
+     * <ol>
+     *   <li>find the ship's subspace shipyard bounds (XZ claim, full column) at the source;</li>
+     *   <li>scan the shipyard for the ship's actual Y band (the full 256 column would clip on paste) —
+     *       the region is void but for this ship, so any non-air block is a ship block;</li>
+     *   <li>deregister the source ship, snapshot a TIGHT box of its blocks/TEs, and paste it into clear
+     *       sky at the destination (so the flood-fill grabs only the ship, never the destination terrain);</li>
+     *   <li>anchor by scanning the pasted sky band (no cut&rarr;paste offset math — claims span multiple
+     *       chunks) and re-assemble the ship there.</li>
+     * </ol>
+     * Riders are NOT moved here (they differ per caller: same-world reposition vs. cross-world transfer);
+     * the caller enumerates and moves them around this call. Returns a {@link CrossResult}; a failed
+     * crossing leaves {@code anchor == null}. Requires the destination sky at {@code (dstX,dstY,dstZ)} to
+     * be clear. A safe no-op ({@code anchor == null}) when VS is absent.
+     */
+    public static CrossResult crossShip(World srcWorld, double sx, double sy, double sz,
+                                        World dstWorld, int dstX, int dstY, int dstZ) {
+        if (!isAvailable()) {
+            return new CrossResult(null, false, 0, 0);
+        }
+        AxisAlignedBB yard = shipyardBoundsAt(srcWorld, sx, sy, sz);
+        if (yard == null) {
+            return new CrossResult(null, false, 0, 0);
+        }
+        int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
+        int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
+        // The shipyard region holds only this ship, so any non-air block in it is a ship block. Find the
+        // ship's real Y band (the claim gives only XZ; the full-height column would clip on paste).
+        int minShipY = Integer.MAX_VALUE, maxShipY = Integer.MIN_VALUE;
+        for (int wx = yMinX; wx < yMaxX; wx++) {
+            for (int wy = 0; wy < 256; wy++) {
+                for (int wz = yMinZ; wz < yMaxZ; wz++) {
+                    if (!srcWorld.isAirBlock(new BlockPos(wx, wy, wz))) {
+                        if (wy < minShipY) minShipY = wy;
+                        if (wy > maxShipY) maxShipY = wy;
+                    }
+                }
+            }
+        }
+        if (minShipY == Integer.MAX_VALUE) {
+            return new CrossResult(null, false, 0, 0); // source shipyard empty
+        }
+        boolean removed = removeShipRegistrationAt(srcWorld, sx, sy, sz);
+        // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
+        // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
+        AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
+        zmaster587.advancedRocketry.util.StorageChunk snap =
+                zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(srcWorld, tight);
+        snap.pasteInWorld(dstWorld, dstX, dstY, dstZ);
+        // The paste landed in clear sky, so the first non-air block in the footprint IS a ship block —
+        // no offset arithmetic, no risk of anchoring on the destination's terrain.
+        int width = yMaxX - yMinX, depth = yMaxZ - yMinZ, height = (maxShipY - minShipY) + 3;
+        BlockPos anchor = null;
+        outer:
+        for (int ey = 0; ey < height; ey++) {
+            for (int ex = 0; ex < width; ex++) {
+                for (int ez = 0; ez < depth; ez++) {
+                    BlockPos p = new BlockPos(dstX + ex, dstY + ey, dstZ + ez);
+                    if (!dstWorld.isAirBlock(p)) {
+                        anchor = p;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (anchor != null) {
+            assembleTier2Ship(dstWorld, anchor);
+        }
+        return new CrossResult(anchor, removed, minShipY, maxShipY);
+    }
+
+    /**
      * TEST/HEADLESS: keep VS ships permanently loaded (the {@code permanentlyLoaded} loading setting) so
      * a player-less server test can observe a freshly assembled ship across probe calls instead of it
      * auto-unloading. A safe no-op when VS is absent.

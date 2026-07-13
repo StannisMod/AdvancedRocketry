@@ -342,79 +342,32 @@ public class TestProbeCommand extends CommandBase {
             }
             double sx = parseDoubleOr(args[2], 0), sy = parseDoubleOr(args[3], 0), sz = parseDoubleOr(args[4], 0);
             int dstX = parseIntOr(args[5], 0), dstY = parseIntOr(args[6], 0), dstZ = parseIntOr(args[7], 0);
-            net.minecraft.util.math.AxisAlignedBB yard =
-                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(world, sx, sy, sz);
-            if (yard == null) {
+            if (zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(world, sx, sy, sz) == null) {
                 send(sender, "{\"error\":\"no ship at source\"}");
                 return;
             }
             try {
-                int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
-                int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
-                // The shipyard region is void except for this one ship, so any non-air block in it is a
-                // ship block. Find the ship's actual Y band (the claim gives only XZ, and the full-height
-                // column would clip on paste) and remember one ship block to anchor the re-assembly on —
-                // NOT a first-non-air scan at the destination, which would hit the destination's terrain.
-                int minShipY = Integer.MAX_VALUE, maxShipY = Integer.MIN_VALUE;
-                for (int wx = yMinX; wx < yMaxX; wx++) {
-                    for (int wy = 0; wy < 256; wy++) {
-                        for (int wz = yMinZ; wz < yMaxZ; wz++) {
-                            if (!world.isAirBlock(new net.minecraft.util.math.BlockPos(wx, wy, wz))) {
-                                if (wy < minShipY) minShipY = wy;
-                                if (wy > maxShipY) maxShipY = wy;
-                            }
-                        }
-                    }
-                }
-                if (minShipY == Integer.MAX_VALUE) {
-                    send(sender, "{\"error\":\"source shipyard empty\"}");
-                    return;
-                }
                 // Aboard dummies sit at the ship's VISIBLE position; capture them before the crossing.
                 java.util.List<zmaster587.advancedRocketry.entity.EntityDummy> riders =
                         world.getEntitiesWithinAABB(zmaster587.advancedRocketry.entity.EntityDummy.class,
                                 new net.minecraft.util.math.AxisAlignedBB(
                                         sx - 8, sy - 8, sz - 8, sx + 8, sy + 8, sz + 8));
-                boolean removed = zmaster587.advancedRocketry.integration.vs.VSIntegration
-                        .removeShipRegistrationAt(world, sx, sy, sz);
-                // Cut a TIGHT box around the ship's actual Y band (not the 256-tall column), so the paste
-                // fits in bounds. Paste into clear sky at dstY (well above the destination terrain), so the
-                // FIND_ALL_BLOCKS flood-fill grabs only the ship, not the ground.
-                net.minecraft.util.math.AxisAlignedBB tight = new net.minecraft.util.math.AxisAlignedBB(
-                        yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
-                zmaster587.advancedRocketry.util.StorageChunk snap =
-                        zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(world, tight);
-                snap.pasteInWorld(world, dstX, dstY, dstZ);
-                // The paste landed in clear sky, so the first non-air block in the footprint's Y band IS a
-                // ship block — no offset arithmetic (the cut/paste indexing and claim width need not match
-                // any assumption), and no risk of anchoring on the destination's terrain.
-                int width = yMaxX - yMinX, depth = yMaxZ - yMinZ, height = (maxShipY - minShipY) + 3;
-                net.minecraft.util.math.BlockPos anchor = null;
-                outer:
-                for (int ey = 0; ey < height; ey++) {
-                    for (int ex = 0; ex < width; ex++) {
-                        for (int ez = 0; ez < depth; ez++) {
-                            net.minecraft.util.math.BlockPos p =
-                                    new net.minecraft.util.math.BlockPos(dstX + ex, dstY + ey, dstZ + ez);
-                            if (!world.isAirBlock(p)) {
-                                anchor = p;
-                                break outer;
-                            }
-                        }
-                    }
-                }
-                boolean anchorSolid = anchor != null;
+                // Production crossing recipe (same world here; VSIntegration.crossShip supports cross-world).
+                zmaster587.advancedRocketry.integration.vs.VSIntegration.CrossResult res =
+                        zmaster587.advancedRocketry.integration.vs.VSIntegration.crossShip(
+                                world, sx, sy, sz, world, dstX, dstY, dstZ);
+                net.minecraft.util.math.BlockPos anchor = res.anchor;
+                boolean anchorSolid = res.ok();
                 if (anchorSolid) {
-                    zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(world, anchor);
                     for (zmaster587.advancedRocketry.entity.EntityDummy d : riders) {
                         d.setPositionAndUpdate(anchor.getX() + 0.5, anchor.getY() + 1.0, anchor.getZ() + 0.5);
                     }
                 }
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("ok", anchorSolid);
-                m.put("removed", removed);
-                m.put("minShipY", minShipY);
-                m.put("maxShipY", maxShipY);
+                m.put("removed", res.removed);
+                m.put("minShipY", res.minShipY);
+                m.put("maxShipY", res.maxShipY);
                 m.put("anchorX", anchor == null ? -1 : anchor.getX());
                 m.put("anchorY", anchor == null ? -1 : anchor.getY());
                 m.put("anchorZ", anchor == null ? -1 : anchor.getZ());
@@ -882,7 +835,94 @@ public class TestProbeCommand extends CommandBase {
      * dimension can be rebound to different on-disk cells at runtime (retargetable SaveHandler via
      * {@link zmaster587.advancedRocketry.space.WorldProviderSpaceSlot#getSaveFolder()}).
      */
+    // --- Transit e2e state (persists across probe calls so a test can tick the state machine; server
+    //     main thread only). The production transit manager (SpaceSubsystem) no-ops in test mode, so the
+    //     transit e2e drives its OWN manager here, exactly as the space-manager probe drives its own pool.
+    private static zmaster587.advancedRocketry.space.SpaceManager transitMgr;
+    private static zmaster587.advancedRocketry.space.ShipTransitManager transitTm;
+    private static zmaster587.advancedRocketry.space.GalacticCoord transitOrigin;
+    private static zmaster587.advancedRocketry.space.GalacticCoord transitTarget;
+
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        // transit-setup: build an isolated transit stack (pool of 2 + hyperspace) and assemble a ship in a
+        // fresh origin cell. The test then waits for the origin ship to load, calls transit-begin, and
+        // polls transit-tick until arrival.
+        if (args.length >= 1 && "transit-setup".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(2);
+            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
+                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                    () -> (long) server.getTickCounter(),
+                    new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                            zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
+            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
+                    transitMgr,
+                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                    new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
+            transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
+            int originDim = transitMgr.materialize(transitOrigin);
+            net.minecraft.world.WorldServer w = net.minecraftforge.common.DimensionManager.getWorld(originDim);
+            if (w == null) {
+                send(sender, "{\"error\":\"origin cell world not loaded\"}");
+                return;
+            }
+            // A small stone cube floating in the void origin cell, assembled into a VS ship.
+            net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+            for (int dx = 0; dx < 3; dx++) {
+                for (int dy = 0; dy < 3; dy++) {
+                    for (int dz = 0; dz < 3; dz++) {
+                        w.setBlockState(new net.minecraft.util.math.BlockPos(dx, 64 + dy, dz), stone);
+                    }
+                }
+            }
+            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(
+                    w, new net.minecraft.util.math.BlockPos(1, 65, 1));
+            send(sender, "{\"ok\":true,\"originDim\":" + originDim
+                    + ",\"anchorX\":1,\"anchorY\":65,\"anchorZ\":1}");
+            return;
+        }
+        // transit-begin <originDim> <ax> <ay> <az>: start the jump (arrival retries until the async
+        // hyperspace ship is crossable, so a large speed is fine).
+        if (args.length >= 5 && "transit-begin".equalsIgnoreCase(args[0])) {
+            if (transitTm == null) {
+                send(sender, "{\"error\":\"transit not set up\"}");
+                return;
+            }
+            int originDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            boolean began = transitTm.beginTransit("t", transitOrigin, originDim, anchor,
+                    transitTarget, 5_000_000L);
+            send(sender, "{\"ok\":true,\"began\":" + began + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
+            return;
+        }
+        // transit-tick: advance the transit one tick; report in-transit count and (once arrived) the
+        // target cell's slot dim so the test can confirm the ship is VS-managed there.
+        if (args.length >= 1 && "transit-tick".equalsIgnoreCase(args[0])) {
+            if (transitTm == null) {
+                send(sender, "{\"error\":\"transit not set up\"}");
+                return;
+            }
+            transitTm.tick();
+            int inTransit = transitTm.inTransitCount();
+            int targetDim = -1;
+            if (inTransit == 0 && transitMgr.isLoaded(transitTarget)) {
+                targetDim = transitMgr.materialize(transitTarget);
+                transitMgr.dematerialize(transitTarget);
+            }
+            // Diagnostic: has the departed ship actually assembled in the hyperspace world yet? (Arrival
+            // retries until it has.) -2 = hyperspace not created; -1 = world missing.
+            int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
+            int hyperShips = -2;
+            if (hyperDim != Integer.MIN_VALUE) {
+                net.minecraft.world.WorldServer hw = net.minecraftforge.common.DimensionManager.getWorld(hyperDim);
+                hyperShips = hw == null ? -1
+                        : zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(hw);
+            }
+            send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
+                    + ",\"hyperDim\":" + hyperDim + ",\"hyperShips\":" + hyperShips + "}");
+            return;
+        }
         if (args.length >= 1 && "roundtrip".equalsIgnoreCase(args[0])) {
             // Whole rebind round-trip in ONE synchronous probe call (no ticks between steps, so no
             // auto-unload and no lag-corrupted response capture): place a marker in cell A, rebind

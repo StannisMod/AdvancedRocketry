@@ -243,6 +243,31 @@ final class VSBridge {
     }
 
     /**
+     * PARK the ship nearest to {@code (x,y,z)} in the queryable registry: disable its physics so it
+     * holds position while {@code ShipTransit} advances its coordinate logically (a physically-flying
+     * parked ship in a shared hyperspace world would drift lanes into each other). Works off the
+     * queryable registry (loaded or not). Returns false if no ship is there. Unpark = the inverse.
+     */
+    static boolean parkShipAt(World world, double x, double y, double z) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return false;
+        }
+        ship.setPhysicsEnabled(false);
+        return true;
+    }
+
+    /** UNPARK: re-enable physics on the ship nearest to {@code (x,y,z)}. See {@link #parkShipAt}. */
+    static boolean unparkShipAt(World world, double x, double y, double z) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return false;
+        }
+        ship.setPhysicsEnabled(true);
+        return true;
+    }
+
+    /**
      * State of the loaded ship whose world position is nearest to {@code (x,y,z)}, as a
      * flat array {@code [posX, posY, posZ, qw, qx, qy, qz, velX, velY, velZ]} (world-frame
      * position + body&rarr;world attitude + linear velocity), or {@code null} if no ship is
