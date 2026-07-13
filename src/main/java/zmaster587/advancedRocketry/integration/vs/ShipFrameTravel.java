@@ -85,20 +85,27 @@ public final class ShipFrameTravel {
     private static final Map<Entity, ShipFrameState> STATE =
             Collections.synchronizedMap(new WeakHashMap<Entity, ShipFrameState>());
 
-    /** An aboard entity's ship-frame position, and the world position last derived from it. */
+    /** An aboard entity's authoritative position in its ship's frame (subspace). The world position is
+     *  derived from it every tick and is not stored: the held/external-move check is done in the ship frame
+     *  ({@link #heldShipFramePos}), where a body carried by a moving deck does not drift. */
     private static final class ShipFrameState {
         double localX, localY, localZ;
-        double worldX, worldY, worldZ;
     }
 
-    /** How far (squared, in blocks) the world may have drifted from what we last wrote before we treat
-     *  the entity as having been moved by someone ELSE - a real teleport - and re-derive from it. Travel
-     *  writes the position it derived every tick, so a body this class owns never drifts on its own; the
-     *  slack only has to absorb the sub-block client/server position reconciliation that rides on a moving
-     *  ship (a captured crew member's own client resolves and reports his position, and the server accepts
-     *  it a tick later slightly transformed). Set too tight (it was 1e-6 ~ 1mm) that ordinary
-     *  reconciliation reads as an external move and drops the capture; 0.2 block keeps a freshly-captured
-     *  dismounted pilot held across it while still releasing on a genuine multi-tenth teleport. */
+    /** How far (squared, in blocks, IN THE SHIP FRAME) the body may have drifted from the deck point we
+     *  hold before we treat it as moved by someone ELSE - a real teleport - and re-derive. The comparison
+     *  is done in SUBSPACE, not the world. A body standing still on a deck the ship is rotating or
+     *  translating keeps the same subspace position while its WORLD position changes every tick as the deck
+     *  carries it; measuring the world delta instead read that honest ship motion as an external teleport
+     *  and dropped the capture every tick on a steeply-rolled ship, thrashing drop/re-capture until the body
+     *  ratcheted off the deck and fell through it. The subspace delta is invariant under ship motion, so
+     *  only a genuine teleport (or a server-applied movement packet ACROSS the deck) trips it. Travel
+     *  rewrites the held point every tick, so a body this class owns never drifts on its own; the slack only
+     *  absorbs the sub-block client/server reconciliation - which in subspace is about one tick of ship
+     *  motion at the body's radius from the rotation centre, tiny at ordinary roll rates, so a far-from-centre
+     *  pilot on a violently spinning ship is the one case where it could still approach the slack. 1e-6
+     *  (~1mm) was too tight (ordinary reconciliation read as an external move); 0.2 block holds a
+     *  freshly-captured dismounted pilot while still releasing on a genuine multi-tenth teleport. */
     private static final double EXTERNAL_MOVE_EPSILON_SQ = 0.04;
 
     /**
@@ -171,13 +178,13 @@ public final class ShipFrameTravel {
     /**
      * Force a ship-frame capture for {@code entity} onto an explicit SHIP-FRAME (subspace) deck point,
      * snapping the body there and holding it. MUST be called on the side that OWNS the body's movement -
-     * for a player that is the CLIENT (its own {@code EntityPlayerSP.travel}). Both the world position the
-     * body is snapped to and the stored {@code state.world} are computed HERE, on this side, from the same
-     * subspace point through this side's own ship transform, so {@code entity.pos == state.world} exactly
-     * and {@link #heldShipFramePos}'s external-move guard holds instead of dropping the capture. This is
-     * why the deck point travels as a SUBSPACE triple in a packet, never a world position: a world
-     * position computed on the server and re-derived here would differ by more than the guard's ~1 mm and
-     * drop instantly. The travel then keeps the body on the deck across ticks. Returns false off a loaded
+     * for a player that is the CLIENT (its own {@code EntityPlayerSP.travel}). The world position the body
+     * is snapped to and the stored subspace anchor are both computed HERE, on this side, from the same
+     * subspace point through this side's own ship transform, so the body sits exactly on its held deck point
+     * and {@link #heldShipFramePos}'s external-move guard - measured in the ship frame - reads no drift. The
+     * deck point travels as a SUBSPACE triple in a packet, never a world position: the client maps it
+     * through its OWN transform, keeping the snapped body and its stored anchor consistent on the side that
+     * owns the movement. The travel then keeps the body on the deck across ticks. Returns false off a loaded
      * ship. Idempotent enough to re-send: pair with an {@link #isResolving} check at the call site so a
      * re-seed after the capture already took is skipped (no repeated teleport).
      */
@@ -205,9 +212,6 @@ public final class ShipFrameTravel {
         state.localX = subX;
         state.localY = subY;
         state.localZ = subZ;
-        state.worldX = world[0];
-        state.worldY = world[1];
-        state.worldZ = world[2];
         STATE.put(entity, state);
         entity.setPositionAndUpdate(world[0], world[1], world[2]);
         entity.motionX = 0.0;
@@ -466,7 +470,7 @@ public final class ShipFrameTravel {
         resolvedTicks++;
         lastObstacleCount = sweep.obstacleCount;
         lastOnDeck = onDeck;
-        remember(entity, sweep.x, sweep.y, sweep.z, worldPos);
+        remember(entity, sweep.x, sweep.y, sweep.z);
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
@@ -478,7 +482,7 @@ public final class ShipFrameTravel {
         entity.collided = entity.collidedHorizontally || entity.collidedVertically;
 
         updateFallState(world, entity, sweep, fallenAlongDeck, onDeck);
-        updateLimbSwing(entity);
+        updateLimbSwing(entity, sweep.x - local[0], sweep.z - local[2]);
         return true;
     }
 
@@ -513,36 +517,42 @@ public final class ShipFrameTravel {
 
     /**
      * The entity's held ship-frame position, or {@code null} when there is none to trust - either it has
-     * never been aboard, or its world position is no longer the one this class last wrote there, which
-     * means someone else moved it and the ship frame must be re-derived from where it now is.
+     * never been aboard, or it has moved OFF its held deck point in the SHIP frame, which means someone else
+     * moved it (a teleport, or the server applying a movement packet) and the frame must be re-derived from
+     * where it now is. The drift is measured in subspace, not the world, so the deck carrying the body as
+     * the ship rotates/translates is not mistaken for an external move.
      */
     private static double[] heldShipFramePos(Entity entity) {
         ShipFrameState state = STATE.get(entity);
         if (state == null) {
             return null;
         }
-        double dx = entity.posX - state.worldX;
-        double dy = entity.posY - state.worldY;
-        double dz = entity.posZ - state.worldZ;
+        double[] local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            // Near-unreachable defensive branch: handles() already dropped and returned false this tick if
+            // the body maps to no loaded ship (shipAttitudeAt uses the SAME containment as toShipFrame), so
+            // handles() - not this - is the ship-unloaded gate. Reached only on an async ship-unload between
+            // handles() and here; hand back the held point and let travel() decline (rotateToShipFrame null).
+            return new double[]{state.localX, state.localY, state.localZ};
+        }
+        double dx = local[0] - state.localX;
+        double dy = local[1] - state.localY;
+        double dz = local[2] - state.localZ;
         if (dx * dx + dy * dy + dz * dz > EXTERNAL_MOVE_EPSILON_SQ) {
             if (STATE.remove(entity) != null) {
-                logDrop(entity, "externalMove d2=" + (dx * dx + dy * dy + dz * dz));
+                logDrop(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz));
             }
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};
     }
 
-    private static void remember(Entity entity, double localX, double localY, double localZ,
-                                 double[] worldPos) {
+    private static void remember(Entity entity, double localX, double localY, double localZ) {
         boolean firstContact = !STATE.containsKey(entity);
         ShipFrameState state = new ShipFrameState();
         state.localX = localX;
         state.localY = localY;
         state.localZ = localZ;
-        state.worldX = worldPos[0];
-        state.worldY = worldPos[1];
-        state.worldZ = worldPos[2];
         STATE.put(entity, state);
         if (firstContact) {
             logCapture(entity, localX, localY, localZ);
@@ -702,12 +712,13 @@ public final class ShipFrameTravel {
         }
     }
 
-    /** Vanilla's walk-animation bookkeeping, which lives outside the branch we cancelled. */
-    private static void updateLimbSwing(EntityLivingBase entity) {
+    /** Vanilla's walk-animation bookkeeping, which lives outside the branch we cancelled. Driven by the
+     *  along-DECK displacement (ship frame), not the world delta: a body held still on a moving/rotating
+     *  deck has a non-zero world delta every tick (the deck carries it) but a zero deck displacement, so
+     *  measuring in the world would run its legs while it stands still. */
+    private static void updateLimbSwing(EntityLivingBase entity, double deckDx, double deckDz) {
         entity.prevLimbSwingAmount = entity.limbSwingAmount;
-        double dx = entity.posX - entity.prevPosX;
-        double dz = entity.posZ - entity.prevPosZ;
-        float swing = MathHelper.sqrt(dx * dx + dz * dz) * 4.0F;
+        float swing = MathHelper.sqrt(deckDx * deckDx + deckDz * deckDz) * 4.0F;
         if (swing > 1.0F) {
             swing = 1.0F;
         }
