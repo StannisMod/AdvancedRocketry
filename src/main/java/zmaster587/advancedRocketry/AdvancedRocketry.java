@@ -1165,6 +1165,8 @@ public class AdvancedRocketry {
         // End compat stuff
 
         MinecraftForge.EVENT_BUS.register(SpaceObjectManager.getSpaceManager());
+        // Movable-ship space subsystem GC ticker (idle unless a server-start builds the controller).
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystem.Ticker());
 
         PacketHandler.init();
 
@@ -1214,6 +1216,10 @@ public class AdvancedRocketry {
         // Test-only /artest probe surface — no-op unless -Dadvancedrocketry.tests=true
         // (or a harness-spawned server sets -Dforge.test.server=true).
         TestProbeCommandRegistration.registerIfTestMode(event);
+
+        // Movable-ship space subsystem: register the slot pool + build the controller. No-op in test
+        // mode so it never collides with the /artest probe's own pool registration.
+        zmaster587.advancedRocketry.space.SpaceSubsystem.onServerStarting();
 
         //Regenerate Chemical Reactor armor recipes
         TileChemicalReactor.reloadRecipesSpecial();
@@ -1314,6 +1320,7 @@ public class AdvancedRocketry {
         zmaster587.advancedRocketry.wirelessdata.NetworkRegistry.clear();
         zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().onServerStopped();
         SpaceObjectManager.getSpaceManager().onServerStopped();
+        zmaster587.advancedRocketry.space.SpaceSubsystem.onServerStopped();
         zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.clear();
         zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().MoonId = Constants.INVALID_PLANET;
         ((BlockSeal) AdvancedRocketryBlocks.blockPipeSealer).clearMap();

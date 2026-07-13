@@ -142,6 +142,51 @@ public class SpaceManagerTest {
         }
     }
 
+    // -- pool-pressure eviction listener (the tier-1 overload signal) --------
+
+    @Test
+    public void forcedEvictionOfDirtyCellNotifiesListenerAsFlushed() {
+        FakeBinder binder = new FakeBinder(10); // pool of 1 => next materialize forces an eviction
+        List<String> fired = new ArrayList<>();
+        SpaceManager m = new SpaceManager(binder, new Clock()::now, never(),
+                (cellKey, wasDirty) -> fired.add(cellKey + ":" + wasDirty));
+
+        m.materialize(cell(1));
+        m.markDirty(cell(1));
+        m.dematerialize(cell(1));   // idle, dirty
+        m.materialize(cell(2));     // saturated pool => force-evict cell1 (flushed to store)
+
+        assertEquals(1, fired.size());
+        assertEquals("reports the victim and that it was flushed", cell(1).cellKey() + ":true", fired.get(0));
+    }
+
+    @Test
+    public void forcedEvictionOfCleanCellNotifiesListenerAsDiscarded() {
+        FakeBinder binder = new FakeBinder(10);
+        List<String> fired = new ArrayList<>();
+        SpaceManager m = new SpaceManager(binder, new Clock()::now, never(),
+                (cellKey, wasDirty) -> fired.add(cellKey + ":" + wasDirty));
+
+        m.materialize(cell(1));     // never dirtied
+        m.dematerialize(cell(1));
+        m.materialize(cell(2));     // force-evict clean cell1 (discarded)
+
+        assertEquals(cell(1).cellKey() + ":false", fired.get(0));
+    }
+
+    @Test
+    public void bindingIntoAFreeSlotDoesNotNotifyListener() {
+        FakeBinder binder = new FakeBinder(10, 11); // pool of 2 => no pressure for two cells
+        List<String> fired = new ArrayList<>();
+        SpaceManager m = new SpaceManager(binder, new Clock()::now, never(),
+                (cellKey, wasDirty) -> fired.add(cellKey));
+
+        m.materialize(cell(1));
+        m.materialize(cell(2)); // second cell takes the other free slot, no eviction
+
+        assertTrue("no forced eviction => the overload signal stays silent", fired.isEmpty());
+    }
+
     // -- flush (dirty) vs. discard (clean) on eviction -----------------------
 
     @Test

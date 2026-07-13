@@ -53,6 +53,20 @@ public final class SpaceManager {
         }
     }
 
+    /**
+     * Notified when the pool is full and a live (loaded, idle) cell has to be evicted to free a slot -
+     * i.e. the working set is saturated. This is the tier-1 pool-pressure overload signal; production
+     * wires it to a WARN log (see {@code SpaceSubsystem}). Kept pure: {@link SpaceManager} takes no
+     * logger, it only surfaces the event. {@code wasDirty} = the victim was flushed to the store (true)
+     * vs. discarded as regenerable (false).
+     */
+    @FunctionalInterface
+    public interface EvictionListener {
+        void onForcedEviction(String cellKey, boolean wasDirty);
+    }
+
+    private static final EvictionListener NO_EVICTION_LISTENER = (cellKey, wasDirty) -> { };
+
     /** Per-cell metadata that outlives a single load (drives eviction flush/discard and GC). */
     private static final class CellMeta {
         long lastVisitTick;
@@ -64,6 +78,7 @@ public final class SpaceManager {
     private final SlotBinder binder;
     private final LongSupplier clock;
     private final Config config;
+    private final EvictionListener evictionListener;
 
     /** cellKey &rarr; the slot dim id it is currently materialized in. */
     private final Map<String, Integer> loadedCellToSlot = new HashMap<>();
@@ -73,9 +88,15 @@ public final class SpaceManager {
     private final Map<String, CellMeta> meta = new HashMap<>();
 
     public SpaceManager(SlotBinder binder, LongSupplier clock, Config config) {
+        this(binder, clock, config, NO_EVICTION_LISTENER);
+    }
+
+    public SpaceManager(SlotBinder binder, LongSupplier clock, Config config,
+                        EvictionListener evictionListener) {
         this.binder = binder;
         this.clock = clock;
         this.config = config;
+        this.evictionListener = evictionListener;
     }
 
     private CellMeta metaOf(String cellKey) {
@@ -168,6 +189,9 @@ public final class SpaceManager {
                     "no free slot and no evict-eligible cell for " + incomingCellKey
                             + " (all " + binder.slotDims().length + " slots in use)");
         }
+        // Pool pressure: a live (but idle) bubble is being dropped to make room. Surface it before the
+        // eviction resets the dirty flag, so a listener can log the true flush-vs-discard outcome.
+        evictionListener.onForcedEviction(victim, metaOf(victim).dirty);
         evict(victim);
         int freed = firstFreeSlot();
         if (freed < 0) {

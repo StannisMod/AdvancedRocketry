@@ -79,6 +79,11 @@ public class ARConfiguration {
     public int MoonId = Constants.INVALID_PLANET;
     @ConfigProperty(needsSync = true)
     public int spaceDimId = -2;
+    // Movable-ship space subsystem (server-authoritative; loaded in loadPreInit, never network-synced).
+    public int spaceCellPoolSize = 10;
+    public String spaceCellGcPolicy = "both";
+    public int spaceCellMaxAgeTicks = 1728000;
+    public int spaceMaxStoredCells = 4096;
     @ConfigProperty
     public int fuelPointsPer10Mb = 10;
     @ConfigProperty(needsSync = true)
@@ -511,6 +516,13 @@ public class ARConfiguration {
         //Performance
         arConfig.atmosphereHandleBitMask = config.get(PERFORMANCE, "atmosphereCalculationMethod", 3, "BitMask: 0: no threading, radius based; 1: threading, radius based (EXP); 2: no threading volume based; 3: threading volume based (EXP)").getInt();
         arConfig.oxygenVentSize = config.get(PERFORMANCE, "oxygenVentSize", 32, "Radius of the O2 vent.  if atmosphereCalculationMethod is 2 or 3 then max volume is calculated from this radius.  WARNING: larger numbers can lead to lag").getInt();
+
+        //Movable-ship space subsystem (tier-2 ships). The pool size is the direct perf knob: only this
+        //many space "bubble" worlds ever tick at once. GC trims the on-disk store of modified cells.
+        arConfig.spaceCellPoolSize = config.getInt("spaceCellPoolSize", PERFORMANCE, 10, 1, 64, "Number of pre-registered space 'bubble' worlds that can be live (ticking) at once. The direct performance knob for the movable-ship space subsystem.");
+        arConfig.spaceCellGcPolicy = config.getString("spaceCellGcPolicy", PERFORMANCE, "both", "Garbage-collection policy for the on-disk store of modified space cells: age | count | both | never.", new String[]{"age", "count", "both", "never"});
+        arConfig.spaceCellMaxAgeTicks = config.getInt("spaceCellMaxAgeTicks", PERFORMANCE, 1728000, 0, Integer.MAX_VALUE, "Ticks since last visit before an age/both GC deletes a stored space cell (1728000 = 24h at 20 tps).");
+        arConfig.spaceMaxStoredCells = config.getInt("spaceMaxStoredCells", PERFORMANCE, 4096, 0, Integer.MAX_VALUE, "Max modified space cells kept on disk before a count/both GC trims the oldest.");
 
         //Rockets
         arConfig.rocketRequireFuel = config.get(ROCKET, "rocketsRequireFuel", true, "Require fuel for rockets to fly.").getBoolean();
