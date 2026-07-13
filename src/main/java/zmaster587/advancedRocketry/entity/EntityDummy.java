@@ -161,7 +161,13 @@ public class EntityDummy extends Entity {
             lastRider = null;
             dismountHoldTicks = DISMOUNT_HOLD_TICKS;
         }
-        if (dismountedPilot == null || dismountHoldTicks <= 0) {
+        if (dismountedPilot == null) {
+            return;
+        }
+        if (dismountHoldTicks <= 0) {
+            // The 20-tick hold window ran out before the client seeded the deck capture - at steep tilt the
+            // seed keeps failing and the pilot is handed back to vanilla's dismount. The give-up moment.
+            logHold("holdExpired", dismountedPilot);
             dismountedPilot = null;
             return;
         }
@@ -175,6 +181,12 @@ public class EntityDummy extends Entity {
         BlockPos seatPos = getSeatPos();
         if (seat == null || !seat.isLinked() || seatPos == null
                 || VSIntegration.getSeatWorldPosition(world, seatPos) == null) {
+            if (seat != null && seat.isLinked() && seatPos != null) {
+                // A LINKED ship seat whose world transform vanished mid-window (ship chunk unloaded or
+                // desynced): the pilot is abandoned before ever seeding. The interesting abandonment; a
+                // plain unlinked chair is expected and stays silent.
+                logHold("seatWorldPosLost", exit);
+            }
             dismountedPilot = null; // a plain seat, or off a loaded ship: leave vanilla's dismount alone
             return;
         }
@@ -196,6 +208,24 @@ public class EntityDummy extends Entity {
                             seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
                     (net.minecraft.entity.player.EntityPlayerMP) exit);
         }
+    }
+
+    /** [FF-TRACE/HOLD] server-side: the just-dismounted-pilot deck hold gave up before the client seeded
+     *  the capture (the 20-tick window expired, or a linked seat's ship transform vanished mid-window).
+     *  Marks the moment the pilot is handed to vanilla's dismount and can free-fall off a hovering or
+     *  inverted ship - the "never seeded" branch of bug #32. Fired once per abandonment. Test-gated. */
+    private void logHold(String reason, Entity pilot) {
+        if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
+                || pilot == null) {
+            return;
+        }
+        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/HOLD] " + reason
+                + " dummy=" + getEntityId()
+                + " pilot=" + pilot.getEntityId()
+                + " ticksLeft=" + dismountHoldTicks
+                + " resolving="
+                + zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(pilot)
+                + " pilotPos=(" + pilot.posX + "," + pilot.posY + "," + pilot.posZ + ")");
     }
 
     /** Server-side: publish the ship's flight telemetry to the rider. Only writes on a real change,

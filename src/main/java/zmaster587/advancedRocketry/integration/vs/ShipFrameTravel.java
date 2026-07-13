@@ -130,7 +130,9 @@ public final class ShipFrameTravel {
             return false;
         }
         if (VSIntegration.shipAttitudeAt(entity.world, entity.posX, entity.posY, entity.posZ) == null) {
-            STATE.remove(entity); // left every ship's box - definitely not aboard any more
+            if (STATE.remove(entity) != null) { // left every ship's box - definitely not aboard any more
+                logDrop(entity, "leftShipBox");
+            }
             return false;
         }
         // Aboard by containment - but "inside the ship's box" and "standing ON the ship" are different.
@@ -154,7 +156,9 @@ public final class ShipFrameTravel {
             // unsupported yet has not left the ship - UNLESS it is now standing on real world ground and
             // not on the ship: it stepped off the deck onto terrain, so hand it straight back to vanilla.
             if (isSupportedByWorldTerrain(entity) && !isSupportedByShip(entity)) {
-                STATE.remove(entity);
+                if (STATE.remove(entity) != null) {
+                    logDrop(entity, "steppedOntoTerrain");
+                }
                 return false;
             }
             return true;
@@ -323,6 +327,64 @@ public final class ShipFrameTravel {
      *  deck still resolves in the ship frame; extended by the fall speed for a fast faller. */
     private static final double SUPPORT_PROBE = 0.30;
 
+    /** Deck tilt in degrees (deck up vs world up) for an already-resolved ship attitude, or {@code "n/a"}
+     *  when the point maps to no loaded ship. The discriminator for whether a drop is attitude-dependent. */
+    private static String tiltFrom(FreeFlightPhysics.Quat att) {
+        if (att == null) {
+            return "n/a";
+        }
+        double uy = att.rotate(0.0, 1.0, 0.0)[1];
+        uy = uy < -1.0 ? -1.0 : (uy > 1.0 ? 1.0 : uy);
+        return String.format(java.util.Locale.ROOT, "%.1f", Math.toDegrees(Math.acos(uy)));
+    }
+
+    /**
+     * Emit one line when a body enters the ship frame by WALKING onto the deck (first-contact capture),
+     * as opposed to the dismount packet path which logs its own {@code seed OK}/{@code seed FAILED}. Fired
+     * once, on the untracked-&gt;tracked transition in {@link #remember}. Without it the walking-capture
+     * path is untraced, so "seeded then lost" reads identically to "never seeded" in the log - the gap the
+     * camera-while-walking symptom needs closed. Test-gated ({@code -Dadvancedrocketry.tests=true}).
+     */
+    private static void logCapture(Entity entity, double localX, double localY, double localZ) {
+        if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
+                || entity == null || entity.world == null) {
+            return;
+        }
+        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] auto-capture"
+                + " remote=" + entity.world.isRemote
+                + " shipObstacles=" + shipSupportObstacleCount(entity)
+                + " tiltDeg=" + tiltFrom(VSIntegration.shipAttitudeAt(
+                        entity.world, entity.posX, entity.posY, entity.posZ))
+                + " local=(" + localX + "," + localY + "," + localZ + ")"
+                + " pos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")");
+    }
+
+    /**
+     * Emit one line when a body that WAS resolved in the ship frame loses that capture. That drop is what
+     * precedes an inverted-deck fall-through: once the ship frame stops owning the body, vanilla runs,
+     * cannot see the subspace deck, and drops the body through it. Test-gated
+     * ({@code -Dadvancedrocketry.tests=true}); fires at most once per capture episode - the callers guard
+     * it on an actual {@code STATE} removal - so a live fall SELF-records WHICH gate dropped it and at what
+     * attitude, with no {@code /artest} command to time by hand. The fields mirror the {@code vs
+     * deck-capture} probe: {@code aboardByContainment}/{@code shipObstacles} localise the gate,
+     * {@code tiltDeg} (deck up vs world up) confirms whether the drop is attitude-dependent.
+     */
+    private static void logDrop(Entity entity, String reason) {
+        if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
+                || entity == null || entity.world == null) {
+            return;
+        }
+        FreeFlightPhysics.Quat att = VSIntegration.shipAttitudeAt(
+                entity.world, entity.posX, entity.posY, entity.posZ);
+        zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/DROP] " + reason
+                + " remote=" + entity.world.isRemote
+                + " aboardByContainment=" + (att != null)
+                + " shipObstacles=" + shipSupportObstacleCount(entity)
+                + " tiltDeg=" + tiltFrom(att)
+                + " pos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")"
+                + " motionY=" + entity.motionY);
+    }
+
     /**
      * Resolve {@code travel(strafe, vertical, forward)} in the entity's ship frame.
      *
@@ -463,7 +525,9 @@ public final class ShipFrameTravel {
         double dy = entity.posY - state.worldY;
         double dz = entity.posZ - state.worldZ;
         if (dx * dx + dy * dy + dz * dz > EXTERNAL_MOVE_EPSILON_SQ) {
-            STATE.remove(entity);
+            if (STATE.remove(entity) != null) {
+                logDrop(entity, "externalMove d2=" + (dx * dx + dy * dy + dz * dz));
+            }
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};
@@ -471,6 +535,7 @@ public final class ShipFrameTravel {
 
     private static void remember(Entity entity, double localX, double localY, double localZ,
                                  double[] worldPos) {
+        boolean firstContact = !STATE.containsKey(entity);
         ShipFrameState state = new ShipFrameState();
         state.localX = localX;
         state.localY = localY;
@@ -479,6 +544,9 @@ public final class ShipFrameTravel {
         state.worldY = worldPos[1];
         state.worldZ = worldPos[2];
         STATE.put(entity, state);
+        if (firstContact) {
+            logCapture(entity, localX, localY, localZ);
+        }
     }
 
     /** The entity's facing, as a yaw in the ship frame: his world look, rotated into that frame. */
