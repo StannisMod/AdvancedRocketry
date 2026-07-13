@@ -11,13 +11,12 @@ import net.minecraftforge.common.DimensionManager;
  * TEs run, passengers walk) for the whole transit. Ships are spaced across it by {@link HyperspaceTiles}
  * so they never see or collide with one another.
  *
- * <p>Registered lazily on first use with the void {@link WorldProviderSpaceSlot} provider (an all-air
- * world - the transit lanes are the only content). Server main thread only.</p>
+ * <p>Registered upfront by {@link #register()} (a cheap Forge map entry, mirroring the slot pool) with
+ * the void {@link WorldProviderSpaceSlot} provider (an all-air world - the transit lanes are the only
+ * content); the world itself is loaded lazily by {@link #getOrCreate()} on the first transit. Server main
+ * thread only.</p>
  */
 public final class HyperspaceWorld {
-
-    /** DimensionType id for the hyperspace world. Distinct from the slot pool's ({@code 90}). */
-    private static final int HYPERSPACE_TYPE_ID = 91;
 
     private static DimensionType type;
     private static int dimId = Integer.MIN_VALUE;
@@ -25,18 +24,31 @@ public final class HyperspaceWorld {
     private HyperspaceWorld() { }
 
     /**
-     * The hyperspace {@link WorldServer}, registering + loading it on first call and pinning it loaded.
-     * Returns {@code null} only if the world could not be initialised.
+     * Register the hyperspace {@link DimensionType} and dimension id (no world loaded — one Forge map
+     * entry, like {@link SpaceSlotPool#registerPool}). Idempotent + JVM-global: safe to call every
+     * server start; the id survives a single-player re-open. Called upfront from {@code SpaceSubsystem}
+     * so the world is never lazily registered mid-transit. Uses a dynamic (scan-max) type id so it never
+     * collides with another mod's {@code DimensionType}. Server thread only.
      */
-    public static WorldServer getOrCreate() {
+    public static void register() {
         if (type == null) {
-            type = DimensionType.register("arhyperspace", "arhyperspace", HYPERSPACE_TYPE_ID,
-                    WorldProviderSpaceSlot.class, false);
+            type = DimensionType.register("arhyperspace", "arhyperspace",
+                    SpaceSlotPool.nextFreeDimensionTypeId(), WorldProviderSpaceSlot.class, false);
         }
         if (dimId == Integer.MIN_VALUE) {
             dimId = DimensionManager.getNextFreeDimId();
             DimensionManager.registerDimension(dimId, type);
         }
+    }
+
+    /**
+     * The hyperspace {@link WorldServer}, LOADING it on first use and pinning it loaded. Registration is
+     * done upfront by {@link #register()}; this call is the lazy world-init half (an empty-air world is
+     * only worth loading once a ship actually transits). If called before {@link #register()} it
+     * registers as a fallback (test parity). Returns {@code null} only if the world could not init.
+     */
+    public static WorldServer getOrCreate() {
+        register();
         // Init ONLY when not already loaded: calling initDimension on a live dimension reloads it, which
         // wipes VS's per-world ship registry (a ship crossed here would vanish on the next getOrCreate).
         WorldServer world = DimensionManager.getWorld(dimId);
@@ -54,7 +66,14 @@ public final class HyperspaceWorld {
         return dimId;
     }
 
-    /** Server-stop teardown: drop the registration so a single-player re-open re-creates it cleanly. */
+    /**
+     * Server-stop teardown: release the keep-loaded pin and clear the dim id so a single-player re-open
+     * allocates a FRESH hyperspace (a new {@code slot<dimId>} folder). This deliberately does NOT reuse
+     * the id: the hyperspace world persists to disk and is not yet ephemeral, so reusing it would reload a
+     * ship left parked by a mid-transit quit as an untracked ghost. Cost of the fresh id: one leaked dim
+     * registration + one orphan {@code slot<oldId>} folder per same-JVM re-open — harmless (near-empty void
+     * files). The {@link DimensionType} stays registered JVM-global.
+     */
     public static void reset() {
         if (dimId != Integer.MIN_VALUE) {
             DimensionManager.keepDimensionLoaded(dimId, false);

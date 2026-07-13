@@ -849,6 +849,8 @@ public class TestProbeCommand extends CommandBase {
         // polls transit-tick until arrival.
         if (args.length >= 1 && "transit-setup".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(2);
+            // Register hyperspace upfront too (SpaceSubsystem no-ops in test mode, so mirror its order).
+            zmaster587.advancedRocketry.space.HyperspaceWorld.register();
             transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
                     new zmaster587.advancedRocketry.space.PoolSlotBinder(),
                     () -> (long) server.getTickCounter(),

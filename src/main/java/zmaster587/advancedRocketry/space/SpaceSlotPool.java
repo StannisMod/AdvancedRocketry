@@ -29,11 +29,24 @@ public final class SpaceSlotPool {
 
     private SpaceSlotPool() {}
 
-    /** DimensionType id for slot worlds. Distinctive to avoid clashes; adjust if it collides. */
-    private static final int SLOT_TYPE_ID = 90;
-
     /** The shared slot {@link DimensionType} (provider = {@link WorldProviderSpaceSlot}). */
     public static DimensionType slotType;
+
+    /**
+     * A {@link DimensionType} id guaranteed free right now: one past the highest currently-registered
+     * type id. Called at server-start, after every other mod has registered its {@code DimensionType}s,
+     * so it never collides — unlike a hardcoded id. Server thread only; call sequentially (the caller
+     * registers the type before the next call scans, so two consecutive calls yield distinct ids).
+     */
+    public static int nextFreeDimensionTypeId() {
+        int max = Integer.MIN_VALUE;
+        for (DimensionType t : DimensionType.values()) {
+            if (t.getId() > max) {
+                max = t.getId();
+            }
+        }
+        return max + 1;
+    }
 
     /** dimId &rarr; cell key currently bound to that slot ({@code null} = unbound scratch). */
     private static final Map<Integer, String> DIM_TO_CELL = new ConcurrentHashMap<>();
@@ -69,8 +82,11 @@ public final class SpaceSlotPool {
             // keepLoaded = false: no spawn-chunk force-load (which lagged the server). Lifecycle is
             // controlled EXPLICITLY (load / synchronous unload); callers must not leave a slot loaded
             // across ticks with no occupant, or Forge's auto-unload discards unsaved changes.
+            // Dynamic type id (scan-max) instead of a hardcoded one, so it never collides with another
+            // mod's DimensionType.
             slotType = DimensionType.register(
-                    "arspacepoolslot", "arspacepoolslot", SLOT_TYPE_ID, WorldProviderSpaceSlot.class, false);
+                    "arspacepoolslot", "arspacepoolslot", nextFreeDimensionTypeId(),
+                    WorldProviderSpaceSlot.class, false);
         }
         int[] ids = new int[n];
         for (int i = 0; i < n; i++) {

@@ -66,6 +66,10 @@ public final class SpaceSubsystem {
         if (SpaceSlotPool.slotDims().isEmpty()) {
             SpaceSlotPool.registerPool(Math.max(1, cfg.spaceCellPoolSize));
         }
+        // Register the shared hyperspace dim UPFRONT here, exactly like the pool (cheap - a Forge map
+        // entry, no world loaded until a ship first transits). Idempotent, so safe on a single-player
+        // re-open. Consistent with the pool + gives a predictable id at a known point.
+        HyperspaceWorld.register();
         SpaceManager.Config mgrConfig = new SpaceManager.Config(
                 parseGcPolicy(cfg.spaceCellGcPolicy),
                 cfg.spaceCellMaxAgeTicks,
