@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.integration.vs;
 
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.common.Loader;
@@ -80,6 +81,43 @@ public final class VSIntegration {
             return;
         }
         VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
+    }
+
+    /**
+     * The subspace shipyard bounding box (world coordinates) of the loaded VS ship whose world BB
+     * contains {@code (x,y,z)}, or {@code null} when VS is absent or no ship is there. A ship's blocks
+     * live in this far-off shipyard region, not at the rendered position — the per-ship "crossing"
+     * snapshots THIS box. Only vanilla/AR types appear in the signature.
+     */
+    public static AxisAlignedBB shipyardBoundsAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipyardBoundsAt(world, x, y, z);
+    }
+
+    /**
+     * Deregister the VS ship whose world BB contains {@code (x,y,z)} from its per-world registry, or
+     * return false when VS is absent or no ship is there. Used by the per-ship "crossing" to drop the
+     * source ship after snapshotting its shipyard blocks. A safe no-op when VS is absent.
+     */
+    public static boolean removeShipRegistrationAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.removeShipRegistrationAt(world, x, y, z);
+    }
+
+    /**
+     * TEST/HEADLESS: keep VS ships permanently loaded (the {@code permanentlyLoaded} loading setting) so
+     * a player-less server test can observe a freshly assembled ship across probe calls instead of it
+     * auto-unloading. A safe no-op when VS is absent.
+     */
+    public static void setShipsPermanentlyLoaded(boolean value) {
+        if (!isAvailable()) {
+            return;
+        }
+        VSBridge.setShipsPermanentlyLoaded(value);
     }
 
     /**

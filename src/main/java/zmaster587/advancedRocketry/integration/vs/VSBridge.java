@@ -8,6 +8,7 @@ import com.google.common.collect.ImmutableList;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
@@ -167,6 +168,78 @@ final class VSBridge {
             requested++;
         }
         return requested;
+    }
+
+    /**
+     * The subspace SHIPYARD bounding box (world coordinates, in VS's far-off shipyard region) of the
+     * loaded ship whose world BB contains {@code (x,y,z)}, or {@code null} if no ship is there. VS stores
+     * a ship's blocks in a fixed shipyard keyed by its chunk claim, NOT at the ship's rendered position;
+     * to snapshot a ship's actual blocks you must cut THIS region, not the visible AABB. Spans the claim's
+     * chunks over the full Y column. Only MC types cross back to AR core.
+     */
+    static AxisAlignedBB shipyardBoundsAt(World world, double x, double y, double z) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return null;
+        }
+        int minCx = Integer.MAX_VALUE, minCz = Integer.MAX_VALUE;
+        int maxCx = Integer.MIN_VALUE, maxCz = Integer.MIN_VALUE;
+        for (ChunkPos cp : ship.getChunkClaim()) {
+            if (cp.x < minCx) minCx = cp.x;
+            if (cp.z < minCz) minCz = cp.z;
+            if (cp.x > maxCx) maxCx = cp.x;
+            if (cp.z > maxCz) maxCz = cp.z;
+        }
+        if (minCx == Integer.MAX_VALUE) {
+            return null;
+        }
+        return new AxisAlignedBB(minCx * 16, 0, minCz * 16,
+                (maxCx + 1) * 16, 256, (maxCz + 1) * 16);
+    }
+
+    /**
+     * Deregister the ship nearest to {@code (x,y,z)} from VS's per-world queryable ship registry (by
+     * UUID), or return false if none exists. The per-ship "crossing" calls this after snapshotting the
+     * ship's shipyard blocks, so cutting those blocks to air leaves no dangling ship in the registry.
+     * Does not delete the shipyard chunks — the caller cuts those.
+     */
+    static boolean removeShipRegistrationAt(World world, double x, double y, double z) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return false;
+        }
+        ValkyrienUtils.getQueryableData(world).removeShip(ship.getUuid());
+        return true;
+    }
+
+    /**
+     * The ship in {@code world}'s QUERYABLE registry (loaded OR not) whose transform position is nearest
+     * to {@code (x,y,z)}, or {@code null} if the registry is empty. The crossing works off the queryable
+     * registry, not the loaded-physo set, so it does not race VS's headless auto-unload: a ship's chunk
+     * claim, UUID and transform live in {@link ShipData} whether or not a physics object is loaded.
+     */
+    private static ShipData nearestQueryableShip(World world, double x, double y, double z) {
+        ShipData best = null;
+        double bestSq = Double.MAX_VALUE;
+        for (ShipData ship : ValkyrienUtils.getQueryableData(world).getShips()) {
+            Vec3d p = ship.getShipTransform().getShipPositionVec3d();
+            double distSq = p.squareDistanceTo(x, y, z);
+            if (distSq < bestSq) {
+                bestSq = distSq;
+                best = ship;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * TEST/HEADLESS: set VS's "ships permanently loaded" flag. Without a player nearby VS unloads a
+     * freshly assembled ship within a tick, so its physics object drops out of the loaded set between
+     * probe calls; enabling this keeps ships loaded so a headless server test can observe them across
+     * calls. (This is the {@code VSConfig.SHIP_LOADING_SETTINGS.permanentlyLoaded} lever.)
+     */
+    static void setShipsPermanentlyLoaded(boolean value) {
+        org.valkyrienskies.mod.common.config.VSConfig.SHIP_LOADING_SETTINGS.permanentlyLoaded = value;
     }
 
     /**

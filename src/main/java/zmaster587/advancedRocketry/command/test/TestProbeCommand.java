@@ -248,6 +248,14 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.isAvailable() + "}");
             return;
         }
+        // permaload <bool> — keep VS ships permanently loaded (headless has no player to hold a ship
+        // loaded, so a freshly assembled ship auto-unloads between probe calls). TASK-72 lever.
+        if (args.length >= 2 && "permaload".equalsIgnoreCase(args[0])) {
+            boolean v = Boolean.parseBoolean(args[1]);
+            zmaster587.advancedRocketry.integration.vs.VSIntegration.setShipsPermanentlyLoaded(v);
+            send(sender, "{\"ok\":true,\"permanentlyLoaded\":" + v + "}");
+            return;
+        }
         // ship-count <dim> — number of loaded VS ships (poll for async assembly).
         if (args.length >= 2 && "ship-count".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
@@ -319,6 +327,103 @@ public class TestProbeCommand extends CommandBase {
             m.put("omega", omega == null ? 0.0
                     : Math.sqrt(omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2]));
             send(sender, jsonMap(m));
+            return;
+        }
+        // ship-repack <dim> <sx> <sy> <sz> <dstX> <dstY> <dstZ> — the per-ship "crossing" (space-model
+        // §4): snapshot the ship's subspace SHIPYARD blocks (+TileEntities) at visible pos (sx,sy,sz) via
+        // StorageChunk, deregister the ship, paste the blocks at (dstX,dstY,dstZ), and re-assemble them
+        // into a fresh VS ship. Proves a VS ship + its linked-TE state survive a pack/paste round-trip and
+        // re-VS. Any EntityDummy within 8 blocks of the source is carried to the destination.
+        if (args.length >= 8 && "ship-repack".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double sx = parseDoubleOr(args[2], 0), sy = parseDoubleOr(args[3], 0), sz = parseDoubleOr(args[4], 0);
+            int dstX = parseIntOr(args[5], 0), dstY = parseIntOr(args[6], 0), dstZ = parseIntOr(args[7], 0);
+            net.minecraft.util.math.AxisAlignedBB yard =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(world, sx, sy, sz);
+            if (yard == null) {
+                send(sender, "{\"error\":\"no ship at source\"}");
+                return;
+            }
+            try {
+                int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
+                int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
+                // The shipyard region is void except for this one ship, so any non-air block in it is a
+                // ship block. Find the ship's actual Y band (the claim gives only XZ, and the full-height
+                // column would clip on paste) and remember one ship block to anchor the re-assembly on —
+                // NOT a first-non-air scan at the destination, which would hit the destination's terrain.
+                int minShipY = Integer.MAX_VALUE, maxShipY = Integer.MIN_VALUE;
+                for (int wx = yMinX; wx < yMaxX; wx++) {
+                    for (int wy = 0; wy < 256; wy++) {
+                        for (int wz = yMinZ; wz < yMaxZ; wz++) {
+                            if (!world.isAirBlock(new net.minecraft.util.math.BlockPos(wx, wy, wz))) {
+                                if (wy < minShipY) minShipY = wy;
+                                if (wy > maxShipY) maxShipY = wy;
+                            }
+                        }
+                    }
+                }
+                if (minShipY == Integer.MAX_VALUE) {
+                    send(sender, "{\"error\":\"source shipyard empty\"}");
+                    return;
+                }
+                // Aboard dummies sit at the ship's VISIBLE position; capture them before the crossing.
+                java.util.List<zmaster587.advancedRocketry.entity.EntityDummy> riders =
+                        world.getEntitiesWithinAABB(zmaster587.advancedRocketry.entity.EntityDummy.class,
+                                new net.minecraft.util.math.AxisAlignedBB(
+                                        sx - 8, sy - 8, sz - 8, sx + 8, sy + 8, sz + 8));
+                boolean removed = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .removeShipRegistrationAt(world, sx, sy, sz);
+                // Cut a TIGHT box around the ship's actual Y band (not the 256-tall column), so the paste
+                // fits in bounds. Paste into clear sky at dstY (well above the destination terrain), so the
+                // FIND_ALL_BLOCKS flood-fill grabs only the ship, not the ground.
+                net.minecraft.util.math.AxisAlignedBB tight = new net.minecraft.util.math.AxisAlignedBB(
+                        yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
+                zmaster587.advancedRocketry.util.StorageChunk snap =
+                        zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(world, tight);
+                snap.pasteInWorld(world, dstX, dstY, dstZ);
+                // The paste landed in clear sky, so the first non-air block in the footprint's Y band IS a
+                // ship block — no offset arithmetic (the cut/paste indexing and claim width need not match
+                // any assumption), and no risk of anchoring on the destination's terrain.
+                int width = yMaxX - yMinX, depth = yMaxZ - yMinZ, height = (maxShipY - minShipY) + 3;
+                net.minecraft.util.math.BlockPos anchor = null;
+                outer:
+                for (int ey = 0; ey < height; ey++) {
+                    for (int ex = 0; ex < width; ex++) {
+                        for (int ez = 0; ez < depth; ez++) {
+                            net.minecraft.util.math.BlockPos p =
+                                    new net.minecraft.util.math.BlockPos(dstX + ex, dstY + ey, dstZ + ez);
+                            if (!world.isAirBlock(p)) {
+                                anchor = p;
+                                break outer;
+                            }
+                        }
+                    }
+                }
+                boolean anchorSolid = anchor != null;
+                if (anchorSolid) {
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(world, anchor);
+                    for (zmaster587.advancedRocketry.entity.EntityDummy d : riders) {
+                        d.setPositionAndUpdate(anchor.getX() + 0.5, anchor.getY() + 1.0, anchor.getZ() + 0.5);
+                    }
+                }
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("ok", anchorSolid);
+                m.put("removed", removed);
+                m.put("minShipY", minShipY);
+                m.put("maxShipY", maxShipY);
+                m.put("anchorX", anchor == null ? -1 : anchor.getX());
+                m.put("anchorY", anchor == null ? -1 : anchor.getY());
+                m.put("anchorZ", anchor == null ? -1 : anchor.getZ());
+                m.put("anchorSolid", anchorSolid);
+                m.put("ridersCarried", riders.size());
+                send(sender, jsonMap(m));
+            } catch (Throwable t) {
+                send(sender, "{\"error\":\"repack-failed\",\"ex\":\"" + t.getClass().getSimpleName() + "\"}");
+            }
             return;
         }
         // push-ship <dim> <x> <y> <z> <vx> <vy> <vz> — set the linear-velocity setpoint
