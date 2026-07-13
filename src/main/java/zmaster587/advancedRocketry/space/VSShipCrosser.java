@@ -45,6 +45,10 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         if (hyper == null || dst == null || hyperAnchor == null) {
             return null;
         }
+        // Pin the target cell world loaded across the crossing: a freshly-materialized pool slot with no
+        // occupant auto-unloads at tick end, which would discard the ship VS is still assembling. Once the
+        // ship loads there (permaload / a nearby player) it keeps the world loaded on its own.
+        DimensionManager.keepDimensionLoaded(targetSlotDim, true);
         int dstX = tile.index * ARRIVAL_LANE_STRIDE;
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 hyper, hyperAnchor.getX() + 0.5, hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5,

@@ -1,7 +1,6 @@
 package zmaster587.advancedRocketry.test.server;
 
 import org.junit.Assume;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -19,23 +18,9 @@ import static org.junit.Assert.assertTrue;
  * world; the state machine itself is pinned deterministically by {@code ShipTransitManagerTest}.
  *
  * <p>Gated on the server's real VS presence (run with {@code -PwithVS}); skips cleanly otherwise.</p>
- *
- * <p><b>Currently @Ignored - documents a real blocker, not a passing contract.</b> The harness reaches
- * the arrival step: setup succeeds, the origin ship assembles in its pool-slot cell, and the departure
- * crossing succeeds (blocks pasted into the hyperspace world + assembly queued). But the ship never
- * registers in the hyperspace world - the {@code transit-tick} diagnostic reports {@code hyperShips:0}
- * indefinitely - so the arrival crossing has nothing to snapshot and the ship stays in transit. VS's
- * async assembly completes in the origin pool-slot cell but NOT in the permanently-loaded hyperspace
- * world, i.e. VS is not spinning its assembly/physics loop for that dynamically-registered world. That is
- * a separate, unproven spike (VS's physics loop on a pre-registered space world); the transit wiring +
- * state machine are otherwise complete (see {@code ShipTransitManagerTest}) and the per-ship crossing is
- * proven ({@code VSShipCrossingSpikeTest}). Un-ignore once the hyperspace world ticks VS assembly.</p>
  */
 public class VSShipTransitE2ETest extends AbstractSharedServerTest {
 
-    @Ignore("Blocked: VS async assembly does not complete in the permanent hyperspace world "
-            + "(transit-tick reports hyperShips:0); depart succeeds but arrival has no ship to cross. "
-            + "Needs the VS-physics-loop-on-a-pre-registered-world spike first. Harness left ready.")
     @Test
     public void aVsShipTransitsFromOneCellToAnotherThroughHyperspace() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the server classpath (run with -PwithVS)", serverHasVs());

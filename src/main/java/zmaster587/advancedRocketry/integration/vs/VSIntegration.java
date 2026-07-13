@@ -205,6 +205,16 @@ public final class VSIntegration {
         AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
         zmaster587.advancedRocketry.util.StorageChunk snap =
                 zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(srcWorld, tight);
+        // Force-load the destination paste footprint's chunks first: a freshly-materialized cell world
+        // may not have them loaded, in which case setBlockState/isAirBlock see an unloaded (all-air)
+        // region and the anchor scan below finds nothing.
+        int dstCxMin = dstX >> 4, dstCxMax = (dstX + (yMaxX - yMinX)) >> 4;
+        int dstCzMin = dstZ >> 4, dstCzMax = (dstZ + (yMaxZ - yMinZ)) >> 4;
+        for (int cx = dstCxMin; cx <= dstCxMax; cx++) {
+            for (int cz = dstCzMin; cz <= dstCzMax; cz++) {
+                dstWorld.getChunkProvider().provideChunk(cx, cz);
+            }
+        }
         snap.pasteInWorld(dstWorld, dstX, dstY, dstZ);
         // The paste landed in clear sky, so the first non-air block in the footprint IS a ship block —
         // no offset arithmetic, no risk of anchoring on the destination's terrain.

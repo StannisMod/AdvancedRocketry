@@ -910,17 +910,7 @@ public class TestProbeCommand extends CommandBase {
                 targetDim = transitMgr.materialize(transitTarget);
                 transitMgr.dematerialize(transitTarget);
             }
-            // Diagnostic: has the departed ship actually assembled in the hyperspace world yet? (Arrival
-            // retries until it has.) -2 = hyperspace not created; -1 = world missing.
-            int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
-            int hyperShips = -2;
-            if (hyperDim != Integer.MIN_VALUE) {
-                net.minecraft.world.WorldServer hw = net.minecraftforge.common.DimensionManager.getWorld(hyperDim);
-                hyperShips = hw == null ? -1
-                        : zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(hw);
-            }
-            send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
-                    + ",\"hyperDim\":" + hyperDim + ",\"hyperShips\":" + hyperShips + "}");
+            send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim + "}");
             return;
         }
         if (args.length >= 1 && "roundtrip".equalsIgnoreCase(args[0])) {

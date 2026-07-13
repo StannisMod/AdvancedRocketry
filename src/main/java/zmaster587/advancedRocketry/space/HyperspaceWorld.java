@@ -37,10 +37,16 @@ public final class HyperspaceWorld {
             dimId = DimensionManager.getNextFreeDimId();
             DimensionManager.registerDimension(dimId, type);
         }
-        DimensionManager.initDimension(dimId);
+        // Init ONLY when not already loaded: calling initDimension on a live dimension reloads it, which
+        // wipes VS's per-world ship registry (a ship crossed here would vanish on the next getOrCreate).
+        WorldServer world = DimensionManager.getWorld(dimId);
+        if (world == null) {
+            DimensionManager.initDimension(dimId);
+            world = DimensionManager.getWorld(dimId);
+        }
         // Permanent: keep it loaded with no occupant so parked in-transit ships keep ticking.
         DimensionManager.keepDimensionLoaded(dimId, true);
-        return DimensionManager.getWorld(dimId);
+        return world;
     }
 
     /** The hyperspace dimension id, or {@link Integer#MIN_VALUE} if it has not been created yet. */
