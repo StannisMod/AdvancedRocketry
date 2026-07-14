@@ -4,6 +4,12 @@ A maintained fork of **Advanced Rocketry** for **Minecraft 1.12.2**.
 
 This project continues development of the original mod with ongoing bug fixes, improvements, and quality-of-life updates for modern 1.12.2 modpacks.
 
+> [!CAUTION]
+> ## ⚠️ VERSION 3.0.0 IS NOT COMPATIBLE WITH OLD SAVES ⚠️
+> **ADVANCED ROCKETRY 3.0.0 IS A CLEAN BREAK. WORLDS AND SAVES FROM ANY EARLIER AR VERSION (2.x AND BELOW) WILL NOT LOAD CORRECTLY AND MAY BE CORRUPTED.**
+> The space-model rework changes NBT data, registry names, and world structure **WITHOUT BACKWARD COMPATIBILITY**.
+> **BACK UP YOUR WORLD FIRST — DO NOT UPGRADE AN EXISTING SAVE IN PLACE.**
+
 ---
 
 ## Download
