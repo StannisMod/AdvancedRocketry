@@ -22,7 +22,8 @@
     "MixinNetHandlerFFCameraRepin",
     "MixinAcidRainRender",
     "MixinEntityRendererShipEye",
-    "MixinRenderLivingBaseShipRoll"
+    "MixinRenderLivingBaseShipRoll",
+    "MixinEntityDeckLookTurn"
   ],
   "server": []
 }

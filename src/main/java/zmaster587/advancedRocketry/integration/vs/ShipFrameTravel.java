@@ -90,6 +90,13 @@ public final class ShipFrameTravel {
      *  ({@link #heldShipFramePos}), where a body carried by a moving deck does not drift. */
     private static final class ShipFrameState {
         double localX, localY, localZ;
+        /** The exact WORLD position this class last committed for the body (the value handed to
+         *  {@code setPosition} / {@code setPositionAndUpdate}). Diagnostic-only input for the #32
+         *  discriminator: the world distance the body has since moved FROM this point localises whether an
+         *  external agent (a VS carry, or the server player's own travel) moved it - a carry-attitude
+         *  mismatch, #32 candidate C - or it merely lagged AR's own transform by a tick (a converter-only
+         *  residual a committed-world guard would absorb). Not read by the guard decision. */
+        double worldX, worldY, worldZ;
     }
 
     /** How far (squared, in blocks, IN THE SHIP FRAME) the body may have drifted from the deck point we
@@ -212,6 +219,9 @@ public final class ShipFrameTravel {
         state.localX = subX;
         state.localY = subY;
         state.localZ = subZ;
+        state.worldX = world[0];
+        state.worldY = world[1];
+        state.worldZ = world[2];
         STATE.put(entity, state);
         entity.setPositionAndUpdate(world[0], world[1], world[2]);
         entity.motionX = 0.0;
@@ -470,7 +480,7 @@ public final class ShipFrameTravel {
         resolvedTicks++;
         lastObstacleCount = sweep.obstacleCount;
         lastOnDeck = onDeck;
-        remember(entity, sweep.x, sweep.y, sweep.z);
+        remember(entity, sweep.x, sweep.y, sweep.z, worldPos[0], worldPos[1], worldPos[2]);
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
@@ -540,19 +550,33 @@ public final class ShipFrameTravel {
         double dz = local[2] - state.localZ;
         if (dx * dx + dy * dy + dz * dz > EXTERNAL_MOVE_EPSILON_SQ) {
             if (STATE.remove(entity) != null) {
-                logDrop(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz));
+                // [FF-TRACE/DROP] #32 discriminator: worldMiss = how far an external agent moved the body in
+                // the WORLD since our last commit. worldMiss ~0 while d2 is large => the body sat where we
+                // left it and only AR's own transform lagged a tick (a committed-world guard would absorb
+                // it, no VS-boundary change). worldMiss ~= sqrt(d2) => an external carry (VS / server travel)
+                // moved it off its deck point at a different attitude (candidate C). Diagnostic only.
+                double wmx = entity.posX - state.worldX;
+                double wmy = entity.posY - state.worldY;
+                double wmz = entity.posZ - state.worldZ;
+                double worldMiss = Math.sqrt(wmx * wmx + wmy * wmy + wmz * wmz);
+                logDrop(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz)
+                        + " worldMiss=" + worldMiss);
             }
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};
     }
 
-    private static void remember(Entity entity, double localX, double localY, double localZ) {
+    private static void remember(Entity entity, double localX, double localY, double localZ,
+                                 double worldX, double worldY, double worldZ) {
         boolean firstContact = !STATE.containsKey(entity);
         ShipFrameState state = new ShipFrameState();
         state.localX = localX;
         state.localY = localY;
         state.localZ = localZ;
+        state.worldX = worldX;
+        state.worldY = worldY;
+        state.worldZ = worldZ;
         STATE.put(entity, state);
         if (firstContact) {
             logCapture(entity, localX, localY, localZ);
