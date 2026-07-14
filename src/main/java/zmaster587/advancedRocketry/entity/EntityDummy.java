@@ -213,7 +213,8 @@ public class EntityDummy extends Entity {
     /** [FF-TRACE/HOLD] server-side: the just-dismounted-pilot deck hold gave up before the client seeded
      *  the capture (the 20-tick window expired, or a linked seat's ship transform vanished mid-window).
      *  Marks the moment the pilot is handed to vanilla's dismount and can free-fall off a hovering or
-     *  inverted ship - the "never seeded" branch of bug #32. Fired once per abandonment. Test-gated. */
+     *  inverted ship - the "never seeded" branch of the dismount deck-hold failure. Fired once per
+     *  abandonment. Test-gated. */
     private void logHold(String reason, Entity pilot) {
         if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
                 || pilot == null) {

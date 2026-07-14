@@ -256,10 +256,10 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
 
         double[] afterRoll = localOf(crewId);
 
-        // TASK-82: measured on a real client run - the frame ShipFrameTravel MOVES in (VS
+        // Measured on a real client run - the frame ShipFrameTravel MOVES in (VS
         // ShipTransform.rotate) and the frame the camera LEVELS to (the attitude quaternion) are ONE
         // rotation, so "keys/mouse feel inverted" is NOT a frame-source split - it is the world-frame aim
-        // under a deck-levelled camera (TASK-82 Path B). Pin it: at 75 degrees the disagreement is ~0.
+        // under a deck-levelled camera. Pin it: at 75 degrees the disagreement is ~0.
         String rolledStats = exec("artest vs shipframe-stats");
         double tcUp = readDouble(rolledStats, Pattern.compile("\"lastTcUpDisagreement\":(-?[0-9.E\\-]+)"));
         double tcFwd = readDouble(rolledStats, Pattern.compile("\"lastTcFwdDisagreement\":(-?[0-9.E\\-]+)"));

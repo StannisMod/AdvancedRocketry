@@ -5,8 +5,8 @@ import java.util.TreeSet;
 import net.minecraft.util.math.BlockPos;
 
 /**
- * Allocates parking "lanes" in the shared hyperspace world for ships in transit (space-model
- * §10 "Transit hosting"). Every in-flight ship is parked at a distinct tile; the star-tunnel is a
+ * Allocates parking "lanes" in the shared hyperspace world for ships in transit ("transit
+ * hosting"). Every in-flight ship is parked at a distinct tile; the star-tunnel is a
  * client animation and {@link ShipTransit} advances the ship's coordinate logically, so the parked
  * ships never physically move and must simply not overlap.
  *

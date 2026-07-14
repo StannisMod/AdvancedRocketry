@@ -99,7 +99,7 @@ public class InventoryBypassRedirectE2ETest extends AbstractClientE2ETest {
         // Open the chest container GUI SERVER-SIDE (mirrors
         // BlockChest.onBlockActivated → player.displayGUIChest) instead of via
         // bot.rightClickBlock. The right-click packet was dropped before the
-        // chunk/player settled (the prior @Ignore reason — see bug ledger #6),
+        // chunk/player settled (the prior @Ignore reason, a settle-timing race),
         // which is orthogonal to the mixin contract under test. The S2C
         // open-window packet makes the real client render GuiChest.
         String open = String.join("\n", serverClient().execute(

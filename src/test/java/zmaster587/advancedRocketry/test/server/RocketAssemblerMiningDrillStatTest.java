@@ -34,7 +34,7 @@ import static org.junit.Assert.assertTrue;
  * delta isolates the IMiningDrill scan branch.</p>
  *
  * <p>Rejected sub-pins: exact drillingPower magnitude (= 0.02f for one
- * sky-exposed drill) is impl per SOP — the contract is the polarity
+ * sky-exposed drill) is an impl detail — the contract is the polarity
  * (zero vs positive). The mission-duration formula in
  * {@code EntityRocket} is impl-side magnitude algebra, not a separate
  * contract here.</p>

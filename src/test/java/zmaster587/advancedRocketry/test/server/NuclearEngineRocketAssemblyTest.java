@@ -53,7 +53,7 @@ import static org.junit.Assert.assertTrue;
  * </ul>
  *
  * <p>Rejected sub-pins: exact thrust magnitude (= 35 per motor × ratio)
- * is impl per SOP — the player-visible contract is "rocket has thrust"
+ * is an impl detail — the player-visible contract is "rocket has thrust"
  * vs "rocket has none", not the specific numbers. The
  * {@code nuclearCoreThrustRatio} config flows through {@link
  * zmaster587.advancedRocketry.test.unit.ARConfigurationTest} and is

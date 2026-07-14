@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
  * is null) floating in a void. The dimension's defining player-visible
  * feature is that asteroids exist there to mine.</p>
  *
- * <p>Pinned (band / end-state, per SOP — NOT an exact density which is a
+ * <p>Pinned (band / end-state — NOT an exact density which is a
  * chunkgen-RNG impl detail): loading a freshly-registered asteroid dim and
  * scanning a chunk region finds &gt; 0 fill blocks. The asteroid dim is
  * created on demand by cloning an existing AR planet's DimensionProperties

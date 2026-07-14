@@ -10,16 +10,16 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * SPIKE (space-model §4, TASK-74 crossing): does a per-ship "crossing" — snapshot ONE Valkyrien Skies
+ * SPIKE — does a per-ship "crossing": snapshot ONE Valkyrien Skies
  * ship's subspace shipyard blocks (+ its TileEntities) with {@code StorageChunk}, deregister it, paste
  * the blocks elsewhere and re-assemble them into a fresh VS ship — preserve the ship's linked-TE state
  * and re-VS, carrying an aboard rider? This is the GO/NO-GO the transit subsystem is gated on: it decides
  * whether a jump can move a live piloted ship, or whether we fall back to whole-slot rebind.
  *
- * <p>Subject chosen to FALSIFY (spike Rule 6): a {@code with-pilot-seat} ship whose pilot seat is linked
+ * <p>Subject chosen to FALSIFY: a {@code with-pilot-seat} ship whose pilot seat is linked
  * to an Advanced Flight Computer at a fixed RELATIVE offset — cross-TE state that a scrambled pack/paste
  * would break. Witness: the seat still resolves its AFC (`afcResolved`) at the SAME relative offset after
- * the crossing. CONTROL (Rule 4): the seat probe reports {@code seatFound:false} before any ship exists,
+ * the crossing. CONTROL: the seat probe reports {@code seatFound:false} before any ship exists,
  * proving the witness can report a negative.</p>
  *
  * <p>Gated on the server's real VS presence (run with {@code -PwithVS}); skips cleanly otherwise. This is
@@ -43,10 +43,10 @@ public class VSShipCrossingSpikeTest extends AbstractSharedServerTest {
 
         // A headless server has no player to hold a ship loaded, so a freshly assembled ship auto-unloads
         // between probe calls (its physics object drops out of the loaded set). Pin ships loaded so the
-        // observations below are stable; reset in @After. (This is the TASK-72 permanentlyLoaded lever.)
+        // observations below are stable; reset in @After. (This is the permanentlyLoaded lever.)
         exec("artest vs permaload true");
 
-        // CONTROL (Rule 4): no ship exists yet, so the seat witness must report a negative. This proves a
+        // CONTROL: no ship exists yet, so the seat witness must report a negative. This proves a
         // later "afcResolved:true" is a real observation, not a stuck-on witness.
         String control = exec("artest vs seat-input 0 0 0 0 0 0 0");
         assertTrue("witness sensitivity control — seat probe must report seatFound:false before any ship: "

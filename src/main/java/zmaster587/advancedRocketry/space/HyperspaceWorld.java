@@ -6,7 +6,7 @@ import net.minecraftforge.common.DimensionManager;
 
 /**
  * The single, permanent, shared <b>hyperspace world</b> that holds every tier-2 ship in transit
- * (space-model §10 "Transit hosting"). Unlike the pool {@linkplain SpaceSlotPool slots} it is never
+ * ("transit hosting"). Unlike the pool {@linkplain SpaceSlotPool slots} it is never
  * rebound or evicted - it is registered once and force-kept-loaded, so parked ships keep ticking (their
  * TEs run, passengers walk) for the whole transit. Ships are spaced across it by {@link HyperspaceTiles}
  * so they never see or collide with one another.

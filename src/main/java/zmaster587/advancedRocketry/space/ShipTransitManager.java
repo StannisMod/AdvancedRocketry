@@ -10,7 +10,7 @@ import org.apache.logging.log4j.Logger;
 import net.minecraft.util.math.BlockPos;
 
 /**
- * The transit state machine for tier-2 ships (space-model §3/§4/§10). A ship jumping between bubble
+ * The transit state machine for tier-2 ships. A ship jumping between bubble
  * cells is never frozen for the whole trip: it is <b>parked in a shared hyperspace world</b> (a live,
  * ticking bubble) while {@link ShipTransit} advances its {@link GalacticCoord} <i>logically</i>, and it
  * makes exactly <b>two momentary pack/paste crossings</b> - depart (origin cell &rarr; hyperspace) and

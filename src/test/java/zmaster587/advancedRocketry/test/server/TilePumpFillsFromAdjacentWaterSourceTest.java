@@ -29,8 +29,8 @@ import static org.junit.Assert.assertTrue;
  * ({@code advancedrocketry:rocketFuel} etc.) extend
  * {@code BlockFluidClassic} → ARE {@code IFluidBlock}, and a meta-0
  * placement is a drainable source ({@code BlockFluidClassic.canDrain}
- * returns true for LEVEL==0). Logged as ledger observation: pump does
- * not drain vanilla water — see </p>
+ * returns true for LEVEL==0). Observed: the pump does
+ * not drain vanilla water.</p>
  *
  * <p>Pinned: a powered pump with an AR Forge-fluid source block below
  * it has &gt;0 mB in its tank after a tick budget. Player-visible:

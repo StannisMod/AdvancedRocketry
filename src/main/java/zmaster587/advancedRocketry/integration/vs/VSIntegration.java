@@ -154,7 +154,7 @@ public final class VSIntegration {
     }
 
     /**
-     * The per-ship "crossing" (space-model §4): move ONE VS ship's blocks + TEs from a source world region
+     * The per-ship "crossing": move ONE VS ship's blocks + TEs from a source world region
      * into a destination world (which may differ — origin cell &harr; hyperspace &harr; target cell), and
      * re-assemble it there. This is the recipe proven by {@code VSShipCrossingSpikeTest}, factored out so
      * production transit and the {@code /artest vs ship-repack} probe share one code path:

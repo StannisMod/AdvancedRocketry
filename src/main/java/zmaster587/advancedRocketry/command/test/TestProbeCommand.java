@@ -249,7 +249,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         // permaload <bool> — keep VS ships permanently loaded (headless has no player to hold a ship
-        // loaded, so a freshly assembled ship auto-unloads between probe calls). TASK-72 lever.
+        // loaded, so a freshly assembled ship auto-unloads between probe calls).
         if (args.length >= 2 && "permaload".equalsIgnoreCase(args[0])) {
             boolean v = Boolean.parseBoolean(args[1]);
             zmaster587.advancedRocketry.integration.vs.VSIntegration.setShipsPermanentlyLoaded(v);
@@ -329,8 +329,8 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
-        // ship-repack <dim> <sx> <sy> <sz> <dstX> <dstY> <dstZ> — the per-ship "crossing" (space-model
-        // §4): snapshot the ship's subspace SHIPYARD blocks (+TileEntities) at visible pos (sx,sy,sz) via
+        // ship-repack <dim> <sx> <sy> <sz> <dstX> <dstY> <dstZ> — the per-ship "crossing":
+        // snapshot the ship's subspace SHIPYARD blocks (+TileEntities) at visible pos (sx,sy,sz) via
         // StorageChunk, deregister the ship, paste the blocks at (dstX,dstY,dstZ), and re-assemble them
         // into a fresh VS ship. Proves a VS ship + its linked-TE state survive a pack/paste round-trip and
         // re-VS. Any EntityDummy within 8 blocks of the source is carried to the destination.

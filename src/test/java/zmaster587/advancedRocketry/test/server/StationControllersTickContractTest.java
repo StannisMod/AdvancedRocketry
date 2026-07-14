@@ -134,7 +134,7 @@ public class StationControllersTickContractTest extends AbstractSharedServerTest
      * Pin: gravity controller's tick walks station gravity toward the
      * controller's effective target.
      *
-     * <p><b>Production bug (logged to ledger 2026-05-26)</b>:
+     * <p><b>Production bug</b>:
      * {@link zmaster587.advancedRocketry.tile.station.TileStationGravityController}'s
      * constructor does NOT call
      * {@code redstoneControl.setRedstoneState(OFF)} the way its

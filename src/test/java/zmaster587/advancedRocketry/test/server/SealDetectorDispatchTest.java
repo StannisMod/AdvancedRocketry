@@ -221,7 +221,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
      *  <p>The branch exists in {@code ItemSealDetector.onItemUse:44-45} and
      *  is replicated in {@code TestProbeCommand.handleSealDetector:8913-8914},
      *  but appears to be effectively dead code in the current block set.
-     *  Logged in the bug ledger so a future fix (e.g. swapping the
+     *  Documented here so a future fix (e.g. swapping the
      *  {@code isFullBlock} predicate to its inverse, or removing the branch
      *  entirely) flips an explicit test rather than a silent no-op. </p> */
     @SuppressWarnings("unused")

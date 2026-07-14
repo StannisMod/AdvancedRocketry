@@ -78,14 +78,14 @@ public final class ShipFrameTravel {
     public static volatile int lastObstacleCount = -1;
     /** Whether the last resolved entity ended the tick standing on its deck. */
     public static volatile boolean lastOnDeck = false;
-    /** Diagnostic (TASK-82): the last measured disagreement between the MOVEMENT frame (VS
+    /** Diagnostic: the last measured disagreement between the MOVEMENT frame (VS
      *  {@code ShipTransform.rotate}, what this class uses) and the CAMERA frame (the attitude quaternion) for
      *  the ship the last-resolved body is aboard. ~0 => movement and camera are one rotation (so "keys
      *  inverted" is NOT a frame-source split); a non-trivial value at a rolled attitude => they diverge.
      *  {@code -1} until first measured. */
     public static volatile double lastTcUpDisagreement = -1.0;
     public static volatile double lastTcFwdDisagreement = -1.0;
-    /** Diagnostic (TASK-82 repro): the WORLD Y of the last-resolved body's ship up-vector - i.e. how
+    /** Diagnostic: the WORLD Y of the last-resolved body's ship up-vector - i.e. how
      *  inverted its deck is (+1 upright, 0 on its side, -1 fully inverted). Lets a spin-to-inversion repro
      *  poll the attitude server-side and stop the spin at a target roll. {@code 2} until first measured. */
     public static volatile double lastShipUpY = 2.0;
@@ -476,7 +476,7 @@ public final class ShipFrameTravel {
         // leaves the deck-normal residual to be re-projected through a rotating transform, and during a
         // roll it briefly changes sign and drops the entity off the deck. Applying it first keeps the
         // motion fed into the sweep unambiguously deck-downward, which holds crew on a rolling deck.
-        // The cost is a jump that rises one gravity step short of vanilla's (ledgered) - a fair trade
+        // The cost is a jump that rises one gravity step short of vanilla's - a fair trade
         // for a body that does not slide off when the ship turns.
         motion[1] -= LIVING_GRAVITY;
 
@@ -505,7 +505,7 @@ public final class ShipFrameTravel {
         resolvedTicks++;
         lastObstacleCount = sweep.obstacleCount;
         lastOnDeck = onDeck;
-        // TASK-82 measurement: is the frame this class MOVES in (VS ShipTransform.rotate) the same rotation
+        // Frame-consistency measurement: is the frame this class MOVES in (VS ShipTransform.rotate) the same rotation
         // the camera LEVELS to (the attitude quaternion)? Recorded from a body that is genuinely resolved on
         // the deck, so it is not confounded by "aboard by containment" edge cases. Diagnostic only.
         java.util.Map<String, Object> tc = VSIntegration.transformConsistency(entity);

@@ -38,8 +38,7 @@ import static org.junit.Assert.assertNull;
  * <p>This test pins the <b>current (buggy) contract</b> so a future fix
  * (return {@code SatelliteDefunct} from {@code getNewSatellite}, or add
  * a null-guard in {@code createFromNBT}) flips the assertion and forces
- * a re-evaluation. Ledgered as a known bug — see
- * Batch #2.</p>
+ * a re-evaluation. Documented here as a known bug.</p>
  *
  * <p><b>Why log this bug</b>: the player-visible scenario is "join a
  * server using a different mod set than the save was created with" →

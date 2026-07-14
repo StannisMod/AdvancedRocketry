@@ -32,7 +32,7 @@ import static org.junit.Assert.assertTrue;
  * </ol>
  *
  * <p><b>Honest-e2e shape</b>: mounting stays a
- * server probe — the SOP explicitly allows "mount" as arrange. The RIDE
+ * server probe — an honest client e2e allows "mount" as arrange. The RIDE
  * contracts are then driven through the real client input surface: the
  * forward key (W) feeds {@code MovementInput} → {@code CPacketInput} →
  * server {@code player.moveForward} → {@code getPassengerMovingForward()},
