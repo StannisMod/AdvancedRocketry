@@ -20,9 +20,11 @@ public class WorldProviderSpaceSlot extends WorldProviderSpace {
     public String getSaveFolder() {
         String cell = SpaceSlotPool.cellKeyFor(getDimension());
         // Unbound slot -> a private per-slot scratch folder; bound -> the cell's shared folder
-        // (two slots must never bind the same cell simultaneously -- the pool enforces that).
+        // (two slots must never bind the same cell simultaneously -- the pool enforces that). The unbound
+        // path goes through SpaceSlotPool so the hyperspace-folder wipe (deleteUnboundSlotStore) provably
+        // targets the exact folder this provider reads/writes.
         return cell == null
-                ? "advRocketry/spacepool/slot" + getDimension()
+                ? SpaceSlotPool.unboundSlotSubfolder(getDimension())
                 : "advRocketry/spacepool/cell_" + cell;
     }
 }

@@ -8,6 +8,7 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
+import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 /**
  * Production lifecycle for the movable-ship space subsystem: owns the single server-side
@@ -50,17 +51,48 @@ public final class SpaceSubsystem {
     }
 
     /**
+     * Whether the production subsystem should register the space dimensions on server start. Pure decision
+     * surface — factored out so the gate (test harness, {@code enableSpaceSubsystem} flag, Valkyrien Skies
+     * presence, once-per-session idempotence) is unit-testable without booting a server.
+     *
+     * <ul>
+     *   <li>{@code testMode} — the spike/probe tests register their OWN pool via {@code /artest space
+     *       manager}; the production register must stand down or it stacks pools and shifts slot ids.</li>
+     *   <li>{@code enabled} — the {@code enableSpaceSubsystem} config flag; when off the subsystem is fully
+     *       disabled, registering no dimensions at all (a config toggle must return the vanilla baseline).</li>
+     *   <li>{@code vsAvailable} — the subsystem only hosts tier-2 Valkyrien Skies ships; without VS there
+     *       is nothing to host, so registering ~10 dimensions is pure dead weight.</li>
+     *   <li>{@code alreadyBuilt} — a single-player re-open reuses the JVM-global registration.</li>
+     * </ul>
+     */
+    public static boolean shouldRegister(boolean testMode, boolean enabled, boolean vsAvailable,
+                                         boolean alreadyBuilt) {
+        return !testMode && enabled && vsAvailable && !alreadyBuilt;
+    }
+
+    /**
      * Server-start hook. Registers the pool (once per JVM) and builds the production
-     * {@link SpaceManager}. No-op under the test harness so it never collides with the probe's own pool.
+     * {@link SpaceManager}, unless {@link #shouldRegister} says to stand down (test harness, the
+     * {@code enableSpaceSubsystem} flag off, Valkyrien Skies absent, or already built).
      */
     public static void onServerStarting() {
-        if (TestProbeCommandRegistration.isTestMode()) {
-            return; // tests drive their own pool through the /artest space manager probe
-        }
-        if (instance != null) {
-            return; // already built for this server session
-        }
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        boolean testMode = TestProbeCommandRegistration.isTestMode();
+        boolean vsAvailable = VSIntegration.isAvailable();
+        if (!shouldRegister(testMode, cfg.enableSpaceSubsystem, vsAvailable, instance != null)) {
+            // Log the operator-facing reason for the two config/environment gates only (test mode and
+            // already-built are internal, expected no-ops that must stay quiet).
+            if (!testMode && instance == null) {
+                if (!cfg.enableSpaceSubsystem) {
+                    AdvancedRocketry.logger.info("[SPACE] subsystem disabled (enableSpaceSubsystem=false) - "
+                            + "no space dimensions registered");
+                } else if (!vsAvailable) {
+                    AdvancedRocketry.logger.info("[SPACE] Valkyrien Skies not installed - space subsystem "
+                            + "not registered (no tier-2 ships to host)");
+                }
+            }
+            return;
+        }
         // Register the physical slot dimensions once per JVM; a single-player world re-open reuses the
         // already-registered dims (DimensionManager registration is JVM-global and re-registering throws).
         if (SpaceSlotPool.slotDims().isEmpty()) {

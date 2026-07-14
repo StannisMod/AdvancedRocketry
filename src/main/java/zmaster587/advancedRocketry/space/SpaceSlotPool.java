@@ -166,6 +166,31 @@ public final class SpaceSlotPool {
         }
     }
 
+    /**
+     * The on-disk chunk subfolder (relative to the world save dir) of an UNBOUND slot dimension — a
+     * per-slot scratch folder, and the shared hyperspace world. Single source of truth for the unbound
+     * path, shared by {@link WorldProviderSpaceSlot#getSaveFolder()} and {@link #deleteUnboundSlotStore},
+     * so the hyperspace wipe provably targets exactly the folder the provider reads/writes.
+     */
+    public static String unboundSlotSubfolder(int dimId) {
+        return "advRocketry/spacepool/slot" + dimId;
+    }
+
+    /**
+     * Delete an UNBOUND slot dimension's on-disk chunk folder ({@link #unboundSlotSubfolder}). Makes the
+     * hyperspace world ephemeral: called before each (re)init so a ship left parked by a mid-transit quit
+     * is never reloaded as an untracked ghost — the world regenerates as clean void. No-op if the server
+     * or folder is absent. Server thread only.
+     */
+    public static void deleteUnboundSlotStore(int dimId) {
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server != null) {
+            java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
+            deleteDir(new java.io.File(worldDir, unboundSlotSubfolder(dimId)));
+        }
+    }
+
     /** The on-disk folder backing {@code cellKey}, matching {@link WorldProviderSpaceSlot#getSaveFolder()}. */
     private static java.io.File cellDir(net.minecraft.server.MinecraftServer server, String cellKey) {
         java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();

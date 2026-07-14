@@ -53,6 +53,11 @@ public final class HyperspaceWorld {
         // wipes VS's per-world ship registry (a ship crossed here would vanish on the next getOrCreate).
         WorldServer world = DimensionManager.getWorld(dimId);
         if (world == null) {
+            // Ephemeral hyperspace: wipe any persisted chunk folder BEFORE init, so a ship left parked by a
+            // mid-transit quit is not reloaded as an untracked, keep-loaded ghost (ShipTransitManager holds
+            // transit state in memory only and is empty on restart). The world then regenerates as clean
+            // void. Only ever reached when the world is NOT loaded, so this never wipes under a live world.
+            SpaceSlotPool.deleteUnboundSlotStore(dimId);
             DimensionManager.initDimension(dimId);
             world = DimensionManager.getWorld(dimId);
         }
@@ -67,17 +72,16 @@ public final class HyperspaceWorld {
     }
 
     /**
-     * Server-stop teardown: release the keep-loaded pin and clear the dim id so a single-player re-open
-     * allocates a FRESH hyperspace (a new {@code slot<dimId>} folder). This deliberately does NOT reuse
-     * the id: the hyperspace world persists to disk and is not yet ephemeral, so reusing it would reload a
-     * ship left parked by a mid-transit quit as an untracked ghost. Cost of the fresh id: one leaked dim
-     * registration + one orphan {@code slot<oldId>} folder per same-JVM re-open — harmless (near-empty void
-     * files). The {@link DimensionType} stays registered JVM-global.
+     * Server-stop teardown: release the keep-loaded pin. The dim id is kept STABLE across a same-JVM
+     * re-open (no leak): hyperspace is now EPHEMERAL — {@link #getOrCreate()} wipes its chunk folder before
+     * each (re)init — so reusing the same id never reloads a ghost ship. Keeping the id also avoids the old
+     * churn of one leaked dim registration + one orphan {@code slot<oldId>} folder per re-open. The
+     * {@link DimensionType} and the dimension registration both stay JVM-global; a later re-open simply
+     * re-inits the same (freshly-wiped) world.
      */
     public static void reset() {
         if (dimId != Integer.MIN_VALUE) {
             DimensionManager.keepDimensionLoaded(dimId, false);
         }
-        dimId = Integer.MIN_VALUE;
     }
 }
