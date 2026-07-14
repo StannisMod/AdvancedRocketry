@@ -735,6 +735,14 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastObstacleCount);
             m.put("lastOnDeck",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastOnDeck);
+            m.put("lastTcUpDisagreement",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastTcUpDisagreement);
+            m.put("lastTcFwdDisagreement",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastTcFwdDisagreement);
+            m.put("lastShipUpY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastShipUpY);
+            m.put("externalMoveDrops",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.externalMoveDrops);
             send(sender, jsonMap(m));
             return;
         }

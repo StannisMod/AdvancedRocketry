@@ -118,6 +118,35 @@ final class VSBridge {
         return new double[]{v.x(), v.y(), v.z()};
     }
 
+    /**
+     * The world-frame velocity {@code [x,y,z]} (blocks/second) of the ship AT the point {@code (x,y,z)} -
+     * the ship's linear velocity PLUS the tangential velocity of its rotation there ({@code omega x r}),
+     * or {@code null} if the point is aboard no loaded ship. This is how fast the DECK is carrying an
+     * aboard body at that point; the aboard-body external-move guard widens by one tick of it so a
+     * rotating deck is not mistaken for a teleport. The ship transform's position is used as the rotation
+     * centre - an approximation good enough for a guard tolerance. Only primitive/MC types cross the gate.
+     */
+    static double[] shipVelocityAtPoint(World world, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoAt(world, x, y, z);
+            if (physo == null) {
+                return null;
+            }
+            Vector3dc vLin = physo.getPhysicsData().getLinearVelocity();
+            Vector3dc w = physo.getPhysicsData().getAngularVelocity();
+            Vec3d c = physo.getShipData().getShipTransform().getShipPositionVec3d();
+            double rx = x - c.x, ry = y - c.y, rz = z - c.z;
+            // v = vLin + (omega x r)
+            return new double[]{
+                    vLin.x() + (w.y() * rz - w.z() * ry),
+                    vLin.y() + (w.z() * rx - w.x() * rz),
+                    vLin.z() + (w.x() * ry - w.y() * rx)
+            };
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Whether VS's per-world ship manager is attached to {@code world} (i.e. VS ships can live
      *  there). Defensive: any failure to consult VS is treated as "no support". */
     static boolean hasShipSupport(World world) {

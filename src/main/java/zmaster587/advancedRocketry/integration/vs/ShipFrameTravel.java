@@ -69,11 +69,26 @@ public final class ShipFrameTravel {
     public static volatile long resolvedTicks = 0L;
     /** Ticks where the hook ran, an entity was aboard, but the frame could not be resolved. */
     public static volatile long declinedTicks = 0L;
+    /** How many times the external-move guard has dropped a capture. On a ROTATING ship the deck carries an
+     *  aboard body faster than a tight guard tolerates, so it drops the capture every tick and the body
+     *  loses the deck (the tier-2 fall-through). A rotating ship that does NOT thrash keeps this ~flat. */
+    public static volatile long externalMoveDrops = 0L;
     /** Ship-frame obstacles the last resolved sweep saw. Zero on every tick means the deck's blocks
      *  are not being found, and an aboard body falls straight through it. */
     public static volatile int lastObstacleCount = -1;
     /** Whether the last resolved entity ended the tick standing on its deck. */
     public static volatile boolean lastOnDeck = false;
+    /** Diagnostic (TASK-82): the last measured disagreement between the MOVEMENT frame (VS
+     *  {@code ShipTransform.rotate}, what this class uses) and the CAMERA frame (the attitude quaternion) for
+     *  the ship the last-resolved body is aboard. ~0 => movement and camera are one rotation (so "keys
+     *  inverted" is NOT a frame-source split); a non-trivial value at a rolled attitude => they diverge.
+     *  {@code -1} until first measured. */
+    public static volatile double lastTcUpDisagreement = -1.0;
+    public static volatile double lastTcFwdDisagreement = -1.0;
+    /** Diagnostic (TASK-82 repro): the WORLD Y of the last-resolved body's ship up-vector - i.e. how
+     *  inverted its deck is (+1 upright, 0 on its side, -1 fully inverted). Lets a spin-to-inversion repro
+     *  poll the attitude server-side and stop the spin at a target roll. {@code 2} until first measured. */
+    public static volatile double lastShipUpY = 2.0;
 
     /**
      * Each aboard entity's authoritative position in its ship's frame, plus the world position this
@@ -113,6 +128,17 @@ public final class ShipFrameTravel {
      *  (~1mm) was too tight (ordinary reconciliation read as an external move); 0.2 block holds a
      *  freshly-captured dismounted pilot while still releasing on a genuine multi-tenth teleport. */
     private static final double EXTERNAL_MOVE_EPSILON_SQ = 0.04;
+    /** {@code sqrt(EXTERNAL_MOVE_EPSILON_SQ)} - the static-reconciliation slack, in blocks. */
+    private static final double EXTERNAL_MOVE_EPSILON = 0.2;
+    /** One tick, in seconds - turns the deck's carry velocity into a per-tick displacement. */
+    private static final double TICK_SECONDS = 0.05;
+    /** How many ticks of the deck's own carry to tolerate ON TOP of the static epsilon before treating a
+     *  move as external. On a ROTATING ship the deck carries an aboard body every tick, and the
+     *  main-thread/physics-thread transform discrepancy makes that carry read as a subspace drift; without
+     *  this the guard drops the capture every tick and the body loses the deck (the inverted/spinning
+     *  fall-through). Generous, because the discrepancy can span a couple of ticks; a genuine teleport is
+     *  far larger AND not explained by the deck's rotation, so it still trips. */
+    private static final double DECK_CARRY_MARGIN = 3.0;
 
     /**
      * Whether this entity's movement should be resolved in its ship's frame this tick. Kept as one
@@ -122,18 +148,6 @@ public final class ShipFrameTravel {
      */
     public static boolean handles(EntityLivingBase entity) {
         if (entity == null || entity.world == null || !VSIntegration.isAvailable()) {
-            return false;
-        }
-        // Crew movement is CLIENT-authoritative: the client's own player object owns the ship-frame
-        // resolution (see the class javadoc; PacketDeckCapture is how the server ASKS the client to
-        // capture). The SERVER must NOT run a second, competing ShipFrameTravel for a real remote player -
-        // it would commit a slightly different world position every tick, which vanilla's server-side
-        // movement validation reads as the client "moving wrongly" and corrects with an S08 PosLook,
-        // snapping the client body roughly every tick (the external shove that drops the deck capture and,
-        // at steep tilt, ratchets the body through the deck). A FakePlayer/AI has no controlling client, so
-        // it is genuinely server-simulated and must still resolve.
-        if (!entity.world.isRemote && entity instanceof EntityPlayer
-                && !(entity instanceof net.minecraftforge.common.util.FakePlayer)) {
             return false;
         }
         // Vanilla's own gate on travel(): an entity whose movement this side does not simulate (a mob
@@ -491,6 +505,22 @@ public final class ShipFrameTravel {
         resolvedTicks++;
         lastObstacleCount = sweep.obstacleCount;
         lastOnDeck = onDeck;
+        // TASK-82 measurement: is the frame this class MOVES in (VS ShipTransform.rotate) the same rotation
+        // the camera LEVELS to (the attitude quaternion)? Recorded from a body that is genuinely resolved on
+        // the deck, so it is not confounded by "aboard by containment" edge cases. Diagnostic only.
+        java.util.Map<String, Object> tc = VSIntegration.transformConsistency(entity);
+        if (tc != null) {
+            Object up = tc.get("upDisagreement");
+            Object fw = tc.get("fwdDisagreement");
+            if (up instanceof Number) lastTcUpDisagreement = ((Number) up).doubleValue();
+            if (fw instanceof Number) lastTcFwdDisagreement = ((Number) fw).doubleValue();
+            Object qw = tc.get("qw"), qx = tc.get("qx"), qy = tc.get("qy"), qz = tc.get("qz");
+            if (qw instanceof Number && qx instanceof Number && qy instanceof Number && qz instanceof Number) {
+                lastShipUpY = new FreeFlightPhysics.Quat(((Number) qw).doubleValue(),
+                        ((Number) qx).doubleValue(), ((Number) qy).doubleValue(),
+                        ((Number) qz).doubleValue()).rotate(0.0, 1.0, 0.0)[1];
+            }
+        }
         remember(entity, sweep.x, sweep.y, sweep.z, worldPos[0], worldPos[1], worldPos[2]);
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
@@ -559,7 +589,21 @@ public final class ShipFrameTravel {
         double dx = local[0] - state.localX;
         double dy = local[1] - state.localY;
         double dz = local[2] - state.localZ;
-        if (dx * dx + dy * dy + dz * dz > EXTERNAL_MOVE_EPSILON_SQ) {
+        // Widen the guard by the deck's OWN carry at the body's point (the ship's world velocity there,
+        // over one tick): on a rotating ship that carry can exceed the tight static epsilon and read as a
+        // teleport, dropping the capture every tick until the body loses the deck. A static ship carries at
+        // ~0, so this stays the tight epsilon; a genuine teleport is far beyond the deck's carry, so it
+        // still trips.
+        double allowed = EXTERNAL_MOVE_EPSILON;
+        double[] shipVel = VSIntegration.shipVelocityAtPoint(
+                entity.world, entity.posX, entity.posY, entity.posZ);
+        if (shipVel != null) {
+            double carry = Math.sqrt(shipVel[0] * shipVel[0] + shipVel[1] * shipVel[1]
+                    + shipVel[2] * shipVel[2]) * TICK_SECONDS;
+            allowed += DECK_CARRY_MARGIN * carry;
+        }
+        if (dx * dx + dy * dy + dz * dz > allowed * allowed) {
+            externalMoveDrops++;
             if (STATE.remove(entity) != null) {
                 // [FF-TRACE/DROP] #32 discriminator: worldMiss = how far an external agent moved the body in
                 // the WORLD since our last commit. worldMiss ~0 while d2 is large => the body sat where we

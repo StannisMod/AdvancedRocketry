@@ -56,6 +56,8 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
     private static final Pattern ENTITY_ID = Pattern.compile("\"entityId\":(-?\\d+)");
     private static final Pattern RESOLVED = Pattern.compile("\"resolvedTicks\":(-?\\d+)");
     private static final Pattern OBSTACLES = Pattern.compile("\"lastObstacleCount\":(-?\\d+)");
+    private static final Pattern SHIP_UP_Y = Pattern.compile("\"lastShipUpY\":(-?[0-9.E\\-]+)");
+    private static final Pattern DROPS = Pattern.compile("\"externalMoveDrops\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-seat";
     private static final String KEY_BINDINGS = "zmaster587.advancedRocketry.client.KeyBindings";
@@ -252,6 +254,19 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(200);
 
         double[] afterRoll = localOf(crewId);
+
+        // TASK-82: measured on a real client run - the frame ShipFrameTravel MOVES in (VS
+        // ShipTransform.rotate) and the frame the camera LEVELS to (the attitude quaternion) are ONE
+        // rotation, so "keys/mouse feel inverted" is NOT a frame-source split - it is the world-frame aim
+        // under a deck-levelled camera (TASK-82 Path B). Pin it: at 75 degrees the disagreement is ~0.
+        String rolledStats = exec("artest vs shipframe-stats");
+        double tcUp = readDouble(rolledStats, Pattern.compile("\"lastTcUpDisagreement\":(-?[0-9.E\\-]+)"));
+        double tcFwd = readDouble(rolledStats, Pattern.compile("\"lastTcFwdDisagreement\":(-?[0-9.E\\-]+)"));
+        System.out.println("[tier2][TC] rolled-deck frame disagreement up=" + tcUp + " fwd=" + tcFwd);
+        assertTrue("the movement frame and the camera frame must be ONE rotation on a 75-degree deck, so "
+                + "the keys/mouse inversion is the aim-frame (Path B), not a frame-source split "
+                + "(up=" + tcUp + " fwd=" + tcFwd + ")", tcUp < 1e-6 && tcFwd < 1e-6);
+
         double drift = distance(restingOnDeck, afterRoll);
         System.out.println("[tier2] crew on rolled deck: start=" + java.util.Arrays.toString(restingOnDeck)
                 + " end=" + java.util.Arrays.toString(afterRoll) + " drift=" + drift);
@@ -266,6 +281,55 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         String data = exec("artest vs player-ship-data 0 " + crewId);
         assertTrue("the crew member must still be resting on the deck: " + data,
                 data.contains("\"playerOnGround\":true"));
+    }
+
+    // ---- Test 3b: a crew member rides a ROTATING deck without the capture thrashing ------------
+    // The maintainer's fall-through: a body loses an inverted/spinning ship's deck. The real driver is
+    // ship ANGULAR VELOCITY, not the inversion ANGLE - a STATICALLY inverted deck rides fine (the 75deg
+    // test), but the deck ROTATING under the body carries it faster than a tight external-move guard
+    // tolerates, so the guard mistakes the deck's own rotation for a teleport and drops the capture every
+    // tick until the body loses the deck. Reproduced by a free spin; the omega-aware guard fixes it.
+
+    @Test
+    public void aCrewMemberRidesARotatingDeckWithoutTheCaptureThrashing() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 3520, by = 64, bz = 3520;
+
+        double[] ship = buildShip(bx, by, bz);
+        int crewId = readInt(exec("artest vs drop-stand 0 " + ship[0] + " " + (ship[1] + 3)
+                + " " + ship[2]), ENTITY_ID);
+        bot().waitTicks(70);
+
+        String settled = exec("artest vs shipframe-stats");
+        System.out.println("[tier2][INV] settled stats: " + settled);
+        assertTrue("the ship-frame hook must run for the aboard body first: " + settled,
+                readInt(settled, RESOLVED) > 0);
+        assertTrue("the body must rest ON the level deck before we invert it: " + settled,
+                settled.contains("\"lastOnDeck\":true"));
+        int dropsBefore = readInt(settled, DROPS);
+
+        // Spin the ship about a horizontal axis via free VS physics - the deck ROTATES under the standing
+        // body. A body that rides the rotation stays captured; a tight external-move guard mistakes the
+        // deck's OWN rotation for a teleport and drops the capture every tick, so the body loses the deck.
+        // This isolates the fall-through's real driver: ship ANGULAR VELOCITY, not the inversion angle (a
+        // STATICALLY inverted deck rides fine - the 75deg test). Reproduces the maintainer's ~174deg case,
+        // which was a ship oscillating/hunting near the unstable inverted attitude (nonzero omega).
+        exec("artest vs spin-ship 0 " + bx + " " + by + " " + bz + " 2.0 0.0 0.0");
+        bot().waitTicks(30);
+        exec("artest vs spin-ship 0 " + bx + " " + by + " " + bz + " 0.0 0.0 0.0");
+
+        String spun = exec("artest vs shipframe-stats");
+        int dropsAfter = readInt(spun, DROPS);
+        int drops = dropsAfter - dropsBefore;
+        System.out.println("[tier2][SPIN] external-move drops during a 2 rad/s roll spin: " + drops
+                + " (before=" + dropsBefore + " after=" + dropsAfter + ")");
+        System.out.println("[tier2][SPIN] spun stats: " + spun);
+
+        // A rotating deck must NOT thrash the capture. Without the omega-aware guard this ratchets ~1 drop
+        // per tick (tens over the window) and the body loses the deck; with it, the deck's own carry is
+        // tolerated and the body rides the spin.
+        assertTrue("a rotating deck must not thrash the aboard-body capture (external-move drops=" + drops
+                + " during a 2 rad/s spin): " + spun, drops < 8);
     }
 
     // ---- Test 4: a body on a GROUNDED ship's deck stays on the deck, not through it -----------

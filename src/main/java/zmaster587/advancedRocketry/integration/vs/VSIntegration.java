@@ -344,6 +344,20 @@ public final class VSIntegration {
     }
 
     /**
+     * The world-frame velocity {@code [x,y,z]} (blocks/second) of the ship AT {@code (x,y,z)} - its
+     * linear velocity plus the tangential velocity of its rotation there - or {@code null} when VS is
+     * absent or the point is aboard no loaded ship. How fast the DECK carries an aboard body at that
+     * point; the ship-frame movement guard widens by one tick of it so a rotating deck is not read as a
+     * teleport. Only AR-core/MC types cross the gate.
+     */
+    public static double[] shipVelocityAtPoint(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipVelocityAtPoint(world, x, y, z);
+    }
+
+    /**
      * The unit world-frame direction toward the floor of the loaded ship the point {@code (x,y,z)}
      * is aboard, or {@code null} when VS is absent or the point is aboard no ship. Lets AR apply
      * gravity toward a ship's deck (the ship's local down, rotated by its attitude) for entities
