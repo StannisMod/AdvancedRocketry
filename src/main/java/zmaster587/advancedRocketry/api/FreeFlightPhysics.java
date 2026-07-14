@@ -566,6 +566,47 @@ public final class FreeFlightPhysics {
                 attitude);
     }
 
+    /**
+     * The world-frame linear acceleration (blocks/s&sup2;) a tier-2 ship's force controller should
+     * command to realize the world-frame velocity {@code (cx,cy,cz)} in one physics step, given the
+     * physics solver adds {@code (gravX,gravY,gravZ)*dt} to the ship's velocity that SAME tick.
+     *
+     * <p>A bare velocity deadbeat - {@code a = (vCmd - v)/dt} - cannot hold a velocity against a
+     * constant force. The solver applies gravity every physics tick, running it BEFORE this controller
+     * and reading {@code v} before the controller's force is integrated, so a deadbeat alone settles at
+     * {@code vCmd + gravity*dt}: a ship commanded to hover instead sinks at a steady {@code -g*dt}
+     * (&asymp; 0.16 blk/s at g=9.8 and 60 physics TPS - the {@code -0.01/tick} HUD residual). The
+     * feed-forward {@code -gravity} added here cancels exactly the velocity the solver is about to add,
+     * so {@code vCmd} is truly held and a zero command is a real hover.</p>
+     *
+     * <p>The result is clamped to {@code maxAccel}: an under-powered ship (authority below the pull it
+     * fights) honestly sags rather than exceeding its thrust. Gravity is passed in - the solver's own
+     * vector - so this stays MC-free; pass a zero vector when the solver applies none. A non-positive or
+     * NaN {@code dt}, or a NaN result, yields a zero command (apply no force).</p>
+     *
+     * @return world-frame acceleration {x, y, z} (blocks/s&sup2;)
+     */
+    public static double[] shipControlAccel(double cx, double cy, double cz,
+                                            double vx, double vy, double vz, double dt,
+                                            double gravX, double gravY, double gravZ,
+                                            double maxAccel) {
+        if (dt <= 0.0 || Double.isNaN(dt)) {
+            return new double[]{0.0, 0.0, 0.0};
+        }
+        double ax = (sane(cx) - vx) / dt - gravX;
+        double ay = (sane(cy) - vy) / dt - gravY;
+        double az = (sane(cz) - vz) / dt - gravZ;
+        double am = Math.sqrt(ax * ax + ay * ay + az * az);
+        if (Double.isNaN(am) || Double.isInfinite(am)) {
+            return new double[]{0.0, 0.0, 0.0};
+        }
+        if (am > maxAccel && am > 1e-9) {
+            double s = maxAccel / am;
+            ax *= s; ay *= s; az *= s;
+        }
+        return new double[]{ax, ay, az};
+    }
+
     // -- Flight Assist (velocity setpoint) ---------------------------------
 
     /**

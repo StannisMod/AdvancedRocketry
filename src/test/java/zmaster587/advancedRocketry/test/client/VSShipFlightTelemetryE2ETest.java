@@ -48,6 +48,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
+    private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
     private static final Pattern OMEGA = Pattern.compile("\"omega\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
     private static final Pattern LOCAL_X = Pattern.compile("\"localX\":(-?[0-9.E\\-]+)");
@@ -383,6 +384,65 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
                 + (fy + 1) + "): it is at y=" + yAfter, Math.abs(yAfter - deckY) < 1.0);
         assertTrue("and still on the ground (the deck), not falling: " + afterFloor,
                 afterFloor.contains("\"playerOnGround\":true"));
+    }
+
+    // ---- Test 5: a station-keeping ship holds altitude, it does not sink ----------------------
+    // Playtest report: a flown tier-2 ship left to hold station could not be brought
+    // to a full stop - the HUD showed a persistent ~-0.01/tick vertical velocity and the ship slowly
+    // sank. The force controller was a bare velocity deadbeat with no gravity feed-forward, so against
+    // the constant gravity the physics solver adds each tick it settled at vCmd + gravity*dt instead of
+    // vCmd (a steady -g*dt ~ -0.16 blk/s). With the feed-forward, a ship commanded to hover - here flown
+    // and then left UNMANNED, which makes the flight computer command a zero world velocity while holding
+    // attitude - holds its altitude. Read the CLIENT-loaded ship's own world velocity + position.
+
+    @Test
+    public void aStationKeepingShipHoldsAltitudeInsteadOfSinking() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 3620, by = 64, bz = 3620;
+
+        double[] ship = buildAndBoardShip(bx, by, bz);
+
+        // Fly it a couple of blocks up so it is genuinely airborne (and mark it "flown", which arms the
+        // unmanned station-keeping hold), then release the throttle.
+        bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
+        double climbed = ship[1];
+        try {
+            for (int i = 0; i < 100 && climbed - ship[1] <= 2.0; i++) {
+                bot().waitTicks(2);
+                climbed = readDouble(shipInfo(bx, by, bz), POS_Y);
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_R);
+        }
+        assertTrue("holding vertical-up must lift the ship: " + ship[1] + " -> " + climbed,
+                climbed - ship[1] > 1.0);
+
+        // Stand up. A ship that has been flown holds station while unmanned: the flight computer commands
+        // a ZERO world velocity and holds the attitude - the exact path this bug lives on.
+        exec("artest player dismount");
+        bot().waitTicks(60); // let the controller brake the climb out and settle onto the hold
+
+        double yStart = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double worstVelY = 0.0;
+        for (int i = 0; i < 40; i++) {
+            bot().waitTicks(3);
+            double velY = readDouble(shipInfo(bx, by, bz), VEL_Y);
+            if (Math.abs(velY) > Math.abs(worstVelY)) {
+                worstVelY = velY;
+            }
+        }
+        double yEnd = readDouble(shipInfo(bx, by, bz), POS_Y);
+        System.out.println("[tier2][STATIONKEEP] yStart=" + yStart + " yEnd=" + yEnd
+                + " drift=" + (yEnd - yStart) + " worstVelY=" + worstVelY);
+
+        // The bug held a steady -0.16 blk/s sink; the fix holds ~0. A threshold well under the bug and
+        // well over solver noise separates them cleanly.
+        assertTrue("a station-keeping ship must not sink: its vertical velocity peaked at " + worstVelY
+                + " blk/s (the bug held ~-0.16)", Math.abs(worstVelY) < 0.05);
+        assertTrue("a station-keeping ship must hold its altitude: it drifted " + (yEnd - yStart)
+                + " blocks over ~6 s (the bug sank ~1 block)", Math.abs(yEnd - yStart) < 0.3);
+
+        exec("artest player dismount");
     }
 
     // ---- helpers ------------------------------------------------------------------------------

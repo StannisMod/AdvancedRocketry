@@ -6,7 +6,9 @@ import org.joml.AxisAngle4d;
 import org.joml.Matrix3dc;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
+import org.joml.Vector3dc;
 import org.spongepowered.asm.mixin.Mixin;
+import org.valkyrienskies.mod.common.config.VSConfig;
 import org.valkyrienskies.mod.common.physics.IPhysicsBlockController;
 import org.valkyrienskies.mod.common.physics.PhysicsCalculations;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
@@ -72,21 +74,26 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
             return;
         }
 
-        // Linear: deadbeat toward the commanded world velocity; force = mass · accel (mass
-        // cancels, so the ship accelerates as commanded regardless of how heavy it is).
+        // Linear: deadbeat toward the commanded world velocity, PLUS a gravity feed-forward; force =
+        // mass · accel (mass cancels, so the ship accelerates as commanded regardless of how heavy it
+        // is). VS runs applyGravity() before this controller in the same physics step and reads the
+        // velocity BEFORE the controller's force is integrated, so it adds gravity*dt to the ship's
+        // velocity every tick no matter what we command. A bare deadbeat therefore settles at
+        // vCmd + gravity*dt — a ship told to hover sinks at a steady -g*dt (~0.16 blk/s at 9.8/60, the
+        // -0.01/tick HUD residual). Feeding gravity forward cancels the velocity the solver is about to
+        // add, so vCmd is truly held and a zero command is a real hover.
         double fx = 0.0, fy = 0.0, fz = 0.0;
         if (vCmd != null && vCmd.length >= 3) {
             double mass = calc.getMass();
             Vector3d v = calc.getLinearVelocity();
-            double ax = (vCmd[0] - v.x) / dt;
-            double ay = (vCmd[1] - v.y) / dt;
-            double az = (vCmd[2] - v.z) / dt;
-            double am = Math.sqrt(ax * ax + ay * ay + az * az);
-            if (am > AR_MAX_LINEAR_ACCEL && am > 1e-9) {
-                double s = AR_MAX_LINEAR_ACCEL / am;
-                ax *= s; ay *= s; az *= s;
+            double gx = 0.0, gy = 0.0, gz = 0.0;
+            if (VSConfig.doGravity) {
+                Vector3dc g = VSConfig.gravity();
+                gx = g.x(); gy = g.y(); gz = g.z();
             }
-            fx = ax * mass; fy = ay * mass; fz = az * mass;
+            double[] a = FreeFlightPhysics.shipControlAccel(vCmd[0], vCmd[1], vCmd[2],
+                    v.x, v.y, v.z, dt, gx, gy, gz, AR_MAX_LINEAR_ACCEL);
+            fx = a[0] * mass; fy = a[1] * mass; fz = a[2] * mass;
         }
 
         // Angular: a PD law. An attitude-hold target wins — read the ship's current orientation, turn

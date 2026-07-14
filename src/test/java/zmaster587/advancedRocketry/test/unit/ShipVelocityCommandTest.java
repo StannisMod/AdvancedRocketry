@@ -169,4 +169,96 @@ public class ShipVelocityCommandTest {
         assertArrayEquals(new double[]{0.0, 0.0, 0.0},
                 FreeFlightPhysics.shipVelocityCommand(FreeFlightInput.zero(), LEVEL, true, null, MAX), DELTA);
     }
+
+    // ---- Force realization: gravity feed-forward (station-keeping hold) -------------------
+    // shipVelocityCommand yields the world VELOCITY a ship should hold; shipControlAccel turns that
+    // into the ACCELERATION the force controller applies. It must cancel the constant gravity the
+    // physics solver adds the same tick, or a ship told to hover sinks forever at -g*dt (the HUD
+    // ~-0.01/tick residual a station-keeping ship showed). The closed-loop sims below model the VS
+    // integrator order verified from the shipped bytecode: v_{n+1} = v_n + gravity*dt + a*dt (gravity
+    // is applied and the velocity is read BEFORE the controller's force lands).
+
+    private static final double G = 9.8;              // VS default |gravity| (Gravity Vector Y = -9.8)
+    private static final double PHYS_DT = 1.0 / 60.0; // VS physSpeedMultiplier / targetTps = 1/60
+    private static final double AUTHORITY = 40.0;     // AR_MAX_LINEAR_ACCEL
+
+    /** One VS physics step under gravity: both the solver's gravity and the controller's accel are
+     *  added to the velocity in the same tick, exactly as PhysicsCalculations does. */
+    private static double[] vsStep(double[] v, double[] cmd) {
+        double[] a = FreeFlightPhysics.shipControlAccel(cmd[0], cmd[1], cmd[2],
+                v[0], v[1], v[2], PHYS_DT, 0.0, -G, 0.0, AUTHORITY);
+        return new double[]{
+                v[0] + a[0] * PHYS_DT,
+                v[1] - G * PHYS_DT + a[1] * PHYS_DT,
+                v[2] + a[2] * PHYS_DT};
+    }
+
+    @Test
+    public void hoverCommandHoldsAltitudeInsteadOfSinking() {
+        // vCmd = 0 (station-keeping / cut / brake). Under gravity the ship must settle at REST, not sink.
+        double[] v = REST.clone();
+        for (int i = 0; i < 20; i++) {
+            v = vsStep(v, new double[]{0.0, 0.0, 0.0});
+        }
+        assertArrayEquals("a hovering ship holds zero velocity under gravity", REST, v, DELTA);
+    }
+
+    @Test
+    public void withoutFeedForwardAHoverSinksAtExactlyMinusGDt() {
+        // Documents the bug the feed-forward fixes: hide gravity from the law (pass zero) while the
+        // solver still applies it, and the deadbeat settles at exactly -g*dt - the reported residual.
+        double[] v = REST.clone();
+        for (int i = 0; i < 50; i++) {
+            double[] a = FreeFlightPhysics.shipControlAccel(0, 0, 0, v[0], v[1], v[2], PHYS_DT,
+                    0, 0, 0, AUTHORITY); // gravity hidden from the control law
+            v = new double[]{v[0] + a[0] * PHYS_DT, v[1] - G * PHYS_DT + a[1] * PHYS_DT,
+                    v[2] + a[2] * PHYS_DT};
+        }
+        assertEquals("the un-compensated residual is exactly -g*dt", -G * PHYS_DT, v[1], DELTA);
+    }
+
+    @Test
+    public void commandedClimbVelocityIsHeldExactly() {
+        // A non-zero vertical command must be reached and held: the fix must not break climb/descend.
+        double[] v = REST.clone();
+        for (int i = 0; i < 30; i++) {
+            v = vsStep(v, new double[]{0.0, 2.0, 0.0});
+        }
+        assertArrayEquals("commanded climb velocity is held exactly",
+                new double[]{0.0, 2.0, 0.0}, v, DELTA);
+    }
+
+    @Test
+    public void gravityOffLeavesAPureDeadbeat() {
+        // No solver gravity -> the law is a plain deadbeat, cancelling the current velocity in one tick
+        // (byte-for-byte what the controller did before the fix, so a no-gravity world is unregressed).
+        double[] a = FreeFlightPhysics.shipControlAccel(0, 0, 0, 0, -0.5, 0, PHYS_DT, 0, 0, 0, AUTHORITY);
+        assertArrayEquals(new double[]{0.0, 0.5 / PHYS_DT, 0.0}, a, DELTA);
+    }
+
+    @Test
+    public void accelerationIsClampedToAuthority() {
+        // A huge instantaneous error clamps to the thrust authority, not an unbounded impulse.
+        double[] a = FreeFlightPhysics.shipControlAccel(100, 0, 0, 0, 0, 0, PHYS_DT, 0, -G, 0, AUTHORITY);
+        double mag = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        assertEquals("clamped to AR_MAX_LINEAR_ACCEL", AUTHORITY, mag, 1e-6);
+    }
+
+    @Test
+    public void underPoweredShipCannotFullyCancelGravity() {
+        // Authority below gravity: at rest the law WANTS +g (9.8) to hold, but can only command maxAccel,
+        // so it sags honestly instead of cheating physics. (maxAccel 5 < g 9.8.)
+        double[] a = FreeFlightPhysics.shipControlAccel(0, 0, 0, 0, 0, 0, PHYS_DT, 0, -G, 0, 5.0);
+        assertEquals("clamped up-thrust equals the authority", 5.0, a[1], DELTA);
+        assertTrue("so it cannot fully cancel gravity (honest sag)", a[1] < G);
+    }
+
+    @Test
+    public void nonPositiveDtOrNaNInputIsSafe() {
+        assertArrayEquals("dt <= 0 -> no force",
+                new double[]{0, 0, 0},
+                FreeFlightPhysics.shipControlAccel(0, 0, 0, 1, 1, 1, 0.0, 0, -G, 0, AUTHORITY), 0.0);
+        double[] a = FreeFlightPhysics.shipControlAccel(Double.NaN, 0, 0, 0, 0, 0, PHYS_DT, 0, 0, 0, AUTHORITY);
+        assertTrue("a NaN command is sanitised, not propagated", !Double.isNaN(a[0]));
+    }
 }
