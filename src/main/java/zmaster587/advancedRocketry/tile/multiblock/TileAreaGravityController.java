@@ -202,6 +202,13 @@ public class TileAreaGravityController extends TileMultiPowerConsumer implements
 
 
             for (Entity e : entities) {
+                // A body whose movement ShipFrameTravel is resolving on a ship deck has its motion, fall
+                // and collision handled entirely in the ship's frame; a world-axis shove and a zeroed
+                // fallDistance here would fight that capture and drag it off the deck. Leave it alone.
+                if (e instanceof EntityLivingBase
+                        && zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(e)) {
+                    continue;
+                }
                 boolean additive = true;
                 boolean allowApply = false;
                 e.fallDistance = 0;

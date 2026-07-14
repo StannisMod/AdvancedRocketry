@@ -13,7 +13,6 @@ import net.minecraft.init.MobEffects;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
@@ -123,6 +122,18 @@ public final class ShipFrameTravel {
      */
     public static boolean handles(EntityLivingBase entity) {
         if (entity == null || entity.world == null || !VSIntegration.isAvailable()) {
+            return false;
+        }
+        // Crew movement is CLIENT-authoritative: the client's own player object owns the ship-frame
+        // resolution (see the class javadoc; PacketDeckCapture is how the server ASKS the client to
+        // capture). The SERVER must NOT run a second, competing ShipFrameTravel for a real remote player -
+        // it would commit a slightly different world position every tick, which vanilla's server-side
+        // movement validation reads as the client "moving wrongly" and corrects with an S08 PosLook,
+        // snapping the client body roughly every tick (the external shove that drops the deck capture and,
+        // at steep tilt, ratchets the body through the deck). A FakePlayer/AI has no controlling client, so
+        // it is genuinely server-simulated and must still resolve.
+        if (!entity.world.isRemote && entity instanceof EntityPlayer
+                && !(entity instanceof net.minecraftforge.common.util.FakePlayer)) {
             return false;
         }
         // Vanilla's own gate on travel(): an entity whose movement this side does not simulate (a mob
@@ -583,10 +594,18 @@ public final class ShipFrameTravel {
         }
     }
 
-    /** The entity's facing, as a yaw in the ship frame: his world look, rotated into that frame. */
+    /** The entity's facing, as a yaw in the ship frame: his world heading, rotated into that frame.
+     *  YAW-ONLY (look pitch zeroed), exactly as the render body-yaw path does
+     *  ({@code ShipFrameCamera.deckYawDeg}). A walk basis must not swing with look pitch: on a tilted deck
+     *  the FULL look vector's ship-frame XZ heading DOES depend on pitch (world {@code +Y} leaks into ship
+     *  X/Z under the rotation), so using {@code getLookVec()} the basis swung as the crew looked up/down and
+     *  collapsed to one fixed heading when he looked along the deck normal - the natural pose walking an
+     *  inverted deck, which read as inverted/rotated WASD. Vanilla walks by yaw alone for the same reason. */
     private static float deckYawDeg(EntityLivingBase entity) {
-        Vec3d look = entity.getLookVec();
-        double[] deckLook = VSIntegration.rotateToShipFrame(entity, look.x, look.y, look.z);
+        float yawRad = entity.rotationYaw * 0.017453292F;
+        double fx = -MathHelper.sin(yawRad);
+        double fz = MathHelper.cos(yawRad);
+        double[] deckLook = VSIntegration.rotateToShipFrame(entity, fx, 0.0, fz);
         if (deckLook == null) {
             return entity.rotationYaw;
         }
