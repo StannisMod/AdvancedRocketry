@@ -7,10 +7,16 @@ def run_hwyla = false
 // Core API); this toggle only adds the runtime jars (Core + World + Control) so a
 // dev boot — AND the testServer harness, whose child JVM inherits runServer's
 // classpath — actually has a functional VS able to assemble and move ships.
-// Enabled by `-PwithVS` so the VS-gated tests (and a hands-on runServer/runClient)
-// can opt in without editing this file; default OFF keeps the normal build/suite
-// VS-free.
-def run_valkyrien_skies = project.hasProperty('withVS')
+//
+// Default ON for hands-on dev boots (runClient / runServer) so a regenerated IDE
+// run config never needs -PwithVS re-added by hand. The normal build and the test
+// suite stay VS-FREE (they must prove the VS-ABSENT path — e.g. the mixin-gating
+// and flight-computer-without-VS tests) unless -PwithVS is passed explicitly, which
+// is still how the VS-gated test tasks opt in.
+def vsDevRun = gradle.startParameter.taskNames.any {
+    it == 'runClient' || it == 'runServer' || it.endsWith(':runClient') || it.endsWith(':runServer')
+}
+def run_valkyrien_skies = project.hasProperty('withVS') || vsDevRun
 
 repositories {
     maven {
