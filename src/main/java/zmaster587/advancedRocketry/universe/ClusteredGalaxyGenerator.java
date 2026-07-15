@@ -1,9 +1,13 @@
 package zmaster587.advancedRocketry.universe;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
@@ -41,6 +45,16 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final long SALT_ID = 0x8L;
 
     private static final long SYNTHETIC_ID_RANGE = 2_000_000_000L; // ids in [-2_000_000_000, -1]
+
+    // Procedural in-system content (bodiesFor). All tunable; bodies stay within the cell (radius < HALF_CELL).
+    private static final long SALT_BODYCOUNT = 0x11L;
+    private static final long SALT_BODYANG = 0x12L;
+    private static final long SALT_BODYRAD = 0x13L;
+    private static final long SALT_BODYY = 0x14L;
+    private static final long SALT_BELT = 0x15L;
+    private static final int MAX_PROC_PLANETS = 6;
+    private static final double PROC_MAX_RADIUS = 1_500_000d; // in-system orbit radius cap, well under HALF_CELL
+    private static final double PROC_MAX_Y = 200_000d;        // thin disk half-thickness
 
     private final GalaxyGenConfig config;
     private final long totalStarWeight;
@@ -106,6 +120,44 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             }
         }
         return out;
+    }
+
+    @Override
+    public List<SystemBody> bodiesFor(long seed, GalacticCoord systemCoord) {
+        Optional<StarSystem> sys = systemAt(seed, systemCoord);
+        if (!sys.isPresent()) {
+            return Collections.emptyList();
+        }
+        int starId = sys.get().starId();
+        GalacticCoord cell = systemCoord.cellCentre();
+        List<SystemBody> bodies = new ArrayList<>();
+        // The star sits at the cell centre (in-system local 0,0,0).
+        bodies.add(new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+
+        int count = 1 + (int) Math.floorMod(
+                hash(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ(), SALT_BODYCOUNT), MAX_PROC_PLANETS);
+        for (int i = 0; i < count; i++) {
+            double angle = norm(hashBody(seed, cell, i, SALT_BODYANG)) * 2d * Math.PI;
+            double radius = (0.1d + 0.85d * norm(hashBody(seed, cell, i, SALT_BODYRAD))) * PROC_MAX_RADIUS;
+            long lx = (long) (radius * Math.cos(angle));
+            long lz = (long) (radius * Math.sin(angle));
+            long ly = (long) ((norm(hashBody(seed, cell, i, SALT_BODYY)) - 0.5d) * PROC_MAX_Y);
+            GalacticCoord addr = GalacticCoord.ofSectorLocal(
+                    cell.sectorX(), cell.sectorY(), cell.sectorZ(), lx, ly, lz);
+            // Roughly a third of systems' outermost body is an asteroid belt rather than a planet.
+            SystemBodyKind kind = (i == count - 1 && norm(hashBody(seed, cell, i, SALT_BELT)) < 0.3d)
+                    ? SystemBodyKind.ASTEROID_BELT
+                    : SystemBodyKind.PLANET;
+            // Procedural bodies have no realized dimension yet — a descent (Layer 2) realizes one.
+            bodies.add(new SystemBody(addr, kind, Constants.INVALID_PLANET, starId));
+        }
+        return bodies;
+    }
+
+    private static long hashBody(long seed, GalacticCoord cell, int i, long field) {
+        // XOR the body index in with a DIFFERENT multiplier than hash() uses for the field salt, so the two
+        // don't merge into (i + field)*G and correlate neighbouring bodies' draws.
+        return hash(seed ^ (i * 0xD1B54A32D192ED03L), cell.sectorX(), cell.sectorY(), cell.sectorZ(), field);
     }
 
     /** The single system a super-cell hosts (its cell coordinate + fabricated system), or empty. */

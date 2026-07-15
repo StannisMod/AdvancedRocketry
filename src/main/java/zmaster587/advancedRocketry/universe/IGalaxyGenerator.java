@@ -1,5 +1,7 @@
 package zmaster587.advancedRocketry.universe;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -34,4 +36,14 @@ public interface IGalaxyGenerator {
      * @return a map from each occupied cell-centre coordinate to its system (empty when the region is void)
      */
     Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max);
+
+    /**
+     * The procedural CONTENT of the system at {@code systemCoord}'s cell — its star plus planets/moons/POIs
+     * as addressable {@link SystemBody} data (universe-model.md &sect;4). Must be deterministic in
+     * {@code (seed, systemCoord)}. The default is empty (a system with no derivable content); a real
+     * generator overrides it. Callers should only invoke this for a cell where {@link #systemAt} is present.
+     */
+    default List<SystemBody> bodiesFor(long seed, GalacticCoord systemCoord) {
+        return Collections.emptyList();
+    }
 }

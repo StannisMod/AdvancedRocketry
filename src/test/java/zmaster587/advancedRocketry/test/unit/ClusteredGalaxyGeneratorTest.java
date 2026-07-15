@@ -14,6 +14,8 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -279,6 +281,38 @@ public class ClusteredGalaxyGeneratorTest {
         }
         assertTrue("both equally-weighted archetypes must appear (weights summed in long)",
                 seenTemps.contains("50") && seenTemps.contains("250"));
+    }
+
+    @Test
+    public void proceduralBodiesAreDeterministicAndInsideTheSystemCell() {
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
+                new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null));
+        boolean checkedAny = false;
+        for (long x = -6; x <= 6; x++) {
+            GalacticCoord c = cell(x, 0, 0);
+            List<SystemBody> a = gen.bodiesFor(SEED, c);
+            List<SystemBody> b = gen.bodiesFor(SEED, c);
+            if (gen.systemAt(SEED, c).isPresent()) {
+                checkedAny = true;
+                assertFalse("an occupied system must have bodies", a.isEmpty());
+                assertEquals("bodiesFor must be deterministic", a, b);
+                // First body is the star, at the cell centre.
+                assertEquals(SystemBodyKind.STAR, a.get(0).kind());
+                assertEquals(0, a.get(0).address().localX());
+                assertEquals(0, a.get(0).address().localY());
+                assertEquals(0, a.get(0).address().localZ());
+                for (SystemBody body : a) {
+                    assertTrue("every body's address must share the system's cell",
+                            body.address().sameCell(c));
+                    assertEquals("every body belongs to the system's star", a.get(0).starId(), body.starId());
+                    // procedural bodies carry no realized dimension
+                    assertFalse("procedural bodies are not descend targets yet", body.isDescendTarget());
+                }
+            } else {
+                assertTrue("a void cell yields no bodies", a.isEmpty());
+            }
+        }
+        assertTrue(checkedAny);
     }
 
     // ─── helpers ───────────────────────────────────────────────────────────────

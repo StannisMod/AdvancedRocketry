@@ -5,15 +5,20 @@ import org.junit.After;
 import org.junit.Test;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.StarSystem;
+import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 
 import static org.junit.Assert.assertEquals;
@@ -305,6 +310,66 @@ public class UniverseRegistryTest {
         UniverseRegistry round = new UniverseRegistry();
         round.readFromNBT(tag);
         assertEquals("the seed is re-derived on load, never persisted", 0L, round.worldSeed());
+    }
+
+    @Test
+    public void poiStoreRoundTripsThroughNbt() {
+        UniverseRegistry source = new UniverseRegistry();
+        GalacticCoord sys = GalacticCoord.ofSectorLocal(3, 3, 3, 0, 0, 0);
+        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, 50_000, 0, 0),
+                SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 7));
+        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, -20_000, 10_000, 0),
+                SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7));
+        assertTrue("adding a POI must mark dirty", source.isDirty());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        source.writeToNBT(tag);
+        UniverseRegistry round = new UniverseRegistry();
+        round.readFromNBT(tag);
+
+        List<SystemBody> pois = round.poisAt(sys);
+        assertEquals("both POIs must round-trip, keyed by their system cell", 2, pois.size());
+        assertTrue(round.removePois(sys));
+        assertTrue(round.poisAt(sys).isEmpty());
+    }
+
+    @Test
+    public void bodiesAtIsEmptyOnVoidCellWithDefaultGenerator() {
+        UniverseRegistry reg = new UniverseRegistry();
+        assertTrue(reg.bodiesAt(GalacticCoord.ofSectorLocal(9, 9, 9, 0, 0, 0)).isEmpty());
+    }
+
+    @Test
+    public void bodiesAtMergesProceduralBodiesAndPois() {
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.bindWorldSeed(0xABCDEFL);
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null)));
+
+        GalacticCoord found = null;
+        for (long x = 0; x < 300 && found == null; x++) {
+            GalacticCoord c = GalacticCoord.ofSectorLocal(x, 0, 0, 0, 0, 0);
+            if (reg.systemForCoord(c).isPresent() && !reg.hasOverrideAt(c)) {
+                found = c;
+            }
+        }
+        assertNotNull("a procedural system must exist to test against", found);
+
+        List<SystemBody> procedural = reg.bodiesAt(found);
+        assertFalse("a procedural system must have bodies", procedural.isEmpty());
+        int before = procedural.size();
+
+        reg.addPoi(new SystemBody(
+                GalacticCoord.ofSectorLocal(found.sectorX(), found.sectorY(), found.sectorZ(), 100_000, 0, 0),
+                SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, -5));
+        List<SystemBody> merged = reg.bodiesAt(found);
+        assertEquals("bodiesAt must merge the added POI", before + 1, merged.size());
+        boolean sawStation = false;
+        for (SystemBody b : merged) {
+            if (b.kind() == SystemBodyKind.STATION_SLOT) {
+                sawStation = true;
+            }
+        }
+        assertTrue("the player POI must appear in bodiesAt", sawStation);
     }
 
     /** A test generator that claims every cell with one fixed system — to prove stored placements win. */

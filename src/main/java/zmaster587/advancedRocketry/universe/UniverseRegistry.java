@@ -62,6 +62,8 @@ public final class UniverseRegistry extends WorldSavedData {
     private final Map<String, Integer> byCell = new HashMap<>();
     /** system star-id -> its cell-centre coordinate. Reverse index. */
     private final Map<Integer, GalacticCoord> byStar = new HashMap<>();
+    /** Authored / player-built POIs (station slots, …) keyed by their system's cell key. */
+    private final Map<String, List<SystemBody>> poiOverrides = new HashMap<>();
     /** Latch: authored anchors drain into the store exactly once (unless a config XML reset is forced). */
     private boolean anchorsSeeded = false;
 
@@ -176,6 +178,61 @@ public final class UniverseRegistry extends WorldSavedData {
             }
         }
         return out;
+    }
+
+    // ─── System content (bodies + POIs) ────────────────────────────────────────
+
+    /**
+     * The addressable bodies of the system at {@code systemCoord}'s cell (universe-model.md &sect;4): the star,
+     * planets and moons, plus any authored/player POIs. Authored systems derive their bodies from the
+     * catalogued {@link StellarBody} ({@link SystemContent}); procedural systems from the generator. Each
+     * body's {@link SystemBody#address() address} shares the system's sector (in-system position = local
+     * offset). Empty for a void cell with no POIs.
+     */
+    public List<SystemBody> bodiesAt(GalacticCoord systemCoord) {
+        GalacticCoord cell = systemCoord.cellCentre();
+        List<SystemBody> bodies = new ArrayList<>();
+        Integer id = byCell.get(cell.cellKey());
+        if (id != null) {
+            StellarBody star = starLookup.apply(id);
+            if (star != null) {
+                bodies.addAll(SystemContent.bodiesOf(star, cell));
+            }
+        } else {
+            bodies.addAll(generator.bodiesFor(worldSeed, cell));
+        }
+        List<SystemBody> pois = poiOverrides.get(cell.cellKey());
+        if (pois != null) {
+            bodies.addAll(pois);
+        }
+        return bodies;
+    }
+
+    /** Add an authored/player POI, keyed by its own system cell (the sector of its address). */
+    public void addPoi(SystemBody poi) {
+        String key = poi.address().cellCentre().cellKey();
+        List<SystemBody> list = poiOverrides.get(key);
+        if (list == null) {
+            list = new ArrayList<>();
+            poiOverrides.put(key, list);
+        }
+        list.add(poi);
+        markDirty();
+    }
+
+    /** The POIs at a system's cell (a copy), excluding the derived star/planet/moon bodies. */
+    public List<SystemBody> poisAt(GalacticCoord systemCoord) {
+        List<SystemBody> list = poiOverrides.get(systemCoord.cellCentre().cellKey());
+        return list == null ? Collections.<SystemBody>emptyList() : new ArrayList<>(list);
+    }
+
+    /** Drop every POI at a system's cell. Returns whether any existed. */
+    public boolean removePois(GalacticCoord systemCoord) {
+        boolean removed = poiOverrides.remove(systemCoord.cellCentre().cellKey()) != null;
+        if (removed) {
+            markDirty();
+        }
+        return removed;
     }
 
     // ─── Reverse lookups (system / planet -> coord) ────────────────────────────
@@ -413,6 +470,7 @@ public final class UniverseRegistry extends WorldSavedData {
     public void readFromNBT(NBTTagCompound nbt) {
         byCell.clear();
         byStar.clear();
+        poiOverrides.clear();
         anchorsSeeded = nbt.getBoolean("anchorsSeeded");
         NBTTagList list = nbt.getTagList("placements", 10 /* NBTTagCompound */);
         for (int i = 0; i < list.tagCount(); i++) {
@@ -421,6 +479,17 @@ public final class UniverseRegistry extends WorldSavedData {
             GalacticCoord cell = GalacticCoord.readFromNBT(e).cellCentre();
             byCell.put(cell.cellKey(), id);
             byStar.put(id, cell);
+        }
+        NBTTagList pois = nbt.getTagList("pois", 10);
+        for (int i = 0; i < pois.tagCount(); i++) {
+            SystemBody poi = SystemBody.readFromNBT(pois.getCompoundTagAt(i));
+            String key = poi.address().cellCentre().cellKey();
+            List<SystemBody> l = poiOverrides.get(key);
+            if (l == null) {
+                l = new ArrayList<>();
+                poiOverrides.put(key, l);
+            }
+            l.add(poi);
         }
     }
 
@@ -436,6 +505,15 @@ public final class UniverseRegistry extends WorldSavedData {
             list.appendTag(entry);
         }
         nbt.setTag("placements", list);
+        NBTTagList pois = new NBTTagList();
+        for (List<SystemBody> cellPois : poiOverrides.values()) {
+            for (SystemBody poi : cellPois) {
+                NBTTagCompound entry = new NBTTagCompound();
+                poi.writeToNBT(entry);
+                pois.appendTag(entry);
+            }
+        }
+        nbt.setTag("pois", pois);
         return nbt;
     }
 }
