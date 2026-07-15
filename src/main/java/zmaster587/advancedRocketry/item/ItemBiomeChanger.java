@@ -38,19 +38,27 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> list = new LinkedList<>();
 
-        SatelliteBiomeChanger sat = (SatelliteBiomeChanger) getSatellite(player.getHeldItem(EnumHand.MAIN_HAND));
+        // getModules runs server-side too (GuiHandler.getServerGuiElement builds the
+        // ContainerModular from it), so an unguarded cast NPEs the server when the bound
+        // satellite is gone. Guard the cast; with no satellite the discovered-biome list
+        // is empty and the satellite-dependent (slot-less) power module is omitted.
+        SatelliteBase base = getSatellite(player.getHeldItem(EnumHand.MAIN_HAND));
+        SatelliteBiomeChanger sat = base instanceof SatelliteBiomeChanger
+                ? (SatelliteBiomeChanger) base : null;
         if (player.world.isRemote) {
             list.add(new ModuleImage(24, 14, zmaster587.advancedRocketry.inventory.TextureResources.earthCandyIcon));
         }
 
         List<ModuleBase> list2 = new LinkedList<>();
-        int j = 0;
-        for (byte biomeByte : sat.discoveredBiomes()) {
-            Biome biome = Biome.getBiome(biomeByte);
+        if (sat != null) {
+            int j = 0;
+            for (byte biomeByte : sat.discoveredBiomes()) {
+                Biome biome = Biome.getBiome(biomeByte);
 
-            if (biome != null) {
-                String biomeName = AdvancedRocketry.proxy.getNameFromBiome(biome);
-                list2.add(new ModuleButton(32, 16 + 24 * (j++), Biome.getIdForBiome(biome), biomeName, this, TextureResources.buttonBuild));
+                if (biome != null) {
+                    String biomeName = AdvancedRocketry.proxy.getNameFromBiome(biome);
+                    list2.add(new ModuleButton(32, 16 + 24 * (j++), Biome.getIdForBiome(biome), biomeName, this, TextureResources.buttonBuild));
+                }
             }
         }
         //Relying on a bug, is this safe?
@@ -58,7 +66,8 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
 
         list.add(pan);
         list.add(new ModuleButton(120, 124, -1, LibVulpes.proxy.getLocalizedString("msg.biomechanger.scan"), this, TextureResources.buttonScan));
-        list.add(new ModulePower(16, 48, sat.getBattery()));
+        if (sat != null)
+            list.add(new ModulePower(16, 48, sat.getBattery()));
 
         return list;
     }
@@ -175,7 +184,9 @@ public class ItemBiomeChanger extends ItemSatelliteIdentificationChip implements
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt, @Nonnull ItemStack stack) {
         if (id == -1) {
             //If -1 then discover current biome
-            ((SatelliteBiomeChanger) getSatellite(stack)).addBiome(player.world.getBiome(new BlockPos((int) player.posX, 0, (int) player.posZ)));
+            SatelliteBase sat = getSatellite(stack);
+            if (sat instanceof SatelliteBiomeChanger)
+                ((SatelliteBiomeChanger) sat).addBiome(player.world.getBiome(new BlockPos((int) player.posX, 0, (int) player.posZ)));
             player.closeScreen();
         }
         if (id == 0) {

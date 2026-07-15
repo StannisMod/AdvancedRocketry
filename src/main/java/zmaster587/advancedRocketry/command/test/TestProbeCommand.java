@@ -2316,12 +2316,138 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"stationAtPos\":" + (at == null ? "null" : at.getId()) + "}");
             return;
         }
+        if ("controller-set-redstone".equalsIgnoreCase(args[0]) && args.length >= 6) {
+            // /artest station controller-set-redstone <dim> <x> <y> <z> <ON|OFF|INVERTED>
+            //
+            // C142 repro helper. Reflects a station controller's private
+            // `redstoneControl` module and sets its RedstoneState so a force-tick
+            // exercises the redstone branch of update() (the GUI toggle path is
+            // client-only). With the altitude controller in ON and no redstone wiring
+            // (power 0), the redstone branch writes targetOrbitalDistance = f(0): the
+            // buggy Math.max floored it to 190, the fixed Math.min gives 4.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            String stateName = args[5];
+            net.minecraft.world.WorldServer world =
+                    net.minecraftforge.fml.common.FMLCommonHandler.instance()
+                            .getMinecraftServerInstance().getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (tile == null) {
+                send(sender, "{\"error\":\"no tile at pos\"}");
+                return;
+            }
+            try {
+                java.lang.reflect.Field field = null;
+                for (Class<?> c = tile.getClass(); c != null && field == null; c = c.getSuperclass()) {
+                    try {
+                        field = c.getDeclaredField("redstoneControl");
+                    } catch (NoSuchFieldException ignored) {
+                    }
+                }
+                if (field == null) {
+                    send(sender, "{\"error\":\"no redstoneControl field\",\"tile\":\""
+                            + escapeJson(tile.getClass().getName()) + "\"}");
+                    return;
+                }
+                field.setAccessible(true);
+                Object module = field.get(tile);
+                zmaster587.libVulpes.util.ZUtils.RedstoneState st =
+                        zmaster587.libVulpes.util.ZUtils.RedstoneState.valueOf(
+                                stateName.toUpperCase(java.util.Locale.ROOT));
+                java.lang.reflect.Method setter = null;
+                for (Class<?> c = module.getClass(); c != null && setter == null; c = c.getSuperclass()) {
+                    try {
+                        setter = c.getDeclaredMethod("setRedstoneState",
+                                zmaster587.libVulpes.util.ZUtils.RedstoneState.class);
+                    } catch (NoSuchMethodException ignored) {
+                    }
+                }
+                if (setter == null) {
+                    send(sender, "{\"error\":\"no setRedstoneState method\"}");
+                    return;
+                }
+                setter.setAccessible(true);
+                setter.invoke(module, st);
+                send(sender, "{\"ok\":true,\"tile\":\"" + escapeJson(tile.getClass().getName())
+                        + "\",\"state\":\"" + escapeJson(st.name()) + "\"}");
+            } catch (Exception e) {
+                send(sender, "{\"error\":\"reflection: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+            }
+            return;
+        }
+        if ("warp-collision".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest station warp-collision <destDim> [count] — C066 repro. Creates
+            // `count` stations (default 3), puts ALL into the warp orbit (WARPDIMID) with
+            // an already-elapsed transition, forces the "arrived" entry branch, then
+            // invokes SpaceObjectManager.onServerTick(null) directly and catches
+            // (onServerTick never dereferences its event arg). On the buggy live for-each
+            // (moveStationToBody removes the arriving station from the same list being
+            // iterated) 3+ same-tick arrivals throw a ConcurrentModificationException (with
+            // exactly 2 the LinkedList silently drops the 2nd instead — 3 exercises the
+            // real CME). The fix iterates a snapshot copy: no throw, all stations arrive.
+            int destDim = parseIntOr(args[1], 0);
+            int count = args.length >= 3 ? Math.max(2, parseIntOr(args[2], 3)) : 3;
+            SpaceObjectManager mgr = SpaceObjectManager.getSpaceManager();
+            int[] ids = new int[count];
+            try {
+                for (int i = 0; i < count; i++) {
+                    SpaceStationObject st = new SpaceStationObject();
+                    st.setOrbitingBody(destDim);
+                    java.lang.reflect.Field createdField =
+                            SpaceStationObject.class.getDeclaredField("created");
+                    createdField.setAccessible(true);
+                    createdField.setBoolean(st, true);
+                    mgr.registerSpaceObject(st, destDim);
+                    ids[i] = st.getId();
+                    st.setDestOrbitingBody(destDim);
+                    mgr.moveStationToBody(st, destDim, 0); // → WARP orbit, transition = now
+                }
+                // Force the simplest entry branch (nextStationTransitionTick == -1 &&
+                // warp list non-empty) so the loop runs deterministically.
+                java.lang.reflect.Field nt =
+                        SpaceObjectManager.class.getDeclaredField("nextStationTransitionTick");
+                nt.setAccessible(true);
+                nt.setLong(mgr, -1L);
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"setup reflection: "
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+                return;
+            }
+            boolean threw = false;
+            String exClass = "";
+            try {
+                mgr.onServerTick(null);
+            } catch (Throwable t) {
+                threw = true;
+                exClass = t.getClass().getSimpleName();
+            }
+            int arrived = 0;
+            for (int id : ids) {
+                ISpaceObject s = mgr.getSpaceStation(id);
+                if (s != null && s.getOrbitingPlanetId() == destDim) arrived++;
+            }
+            send(sender, "{\"ok\":true,\"threw\":" + threw
+                    + ",\"exception\":\"" + escapeJson(exClass) + "\""
+                    + ",\"count\":" + count + ",\"arrived\":" + arrived
+                    + ",\"destDim\":" + destDim
+                    + ",\"warpDimId\":" + SpaceObjectManager.WARPDIMID + "}");
+            return;
+        }
         send(sender, "{\"error\":\"unknown station subcommand — try list|info <id>|"
                 + "at <x> <y> <z>|"
                 + "fuel <id> set|add|use <amount>|add-pad <id> <x> <z> [name]|"
                 + "remove-pad <id> <x> <z>|pads <id>|dock <id> [commit]|"
                 + "undock <id> <x> <z>|set-autoland <id> <x> <z> <bool>|"
-                + "controller-set-target <dim> <x> <y> <z> <id> <value>\"}");
+                + "controller-set-target <dim> <x> <y> <z> <id> <value>|"
+                + "controller-set-redstone <dim> <x> <y> <z> <ON|OFF|INVERTED>|"
+                + "warp-collision <destDim>\"}");
     }
 
     // §5.6 Satellite probes ---------------------------------------------------

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraftforge.fml.relauncher.Side;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import zmaster587.advancedRocketry.item.ItemBiomeChanger;
@@ -161,5 +162,39 @@ public class SpecialPurposeItemContractTest {
                 63, nbt.getInteger("floodlevel"));
         assertEquals("third int → NBT 'last_mode_id'",
                 1, nbt.getInteger("last_mode_id"));
+    }
+
+    // ── C047: null-safe network callbacks when the bound satellite is gone ──
+
+    @Test
+    public void weatherControllerWriteDataToNetworkIsNullSafeWhenSatelliteMissing() {
+        // C047: an unbound stack (no tag) resolves getSatellite → null. The former
+        // body cast that null to SatelliteWeatherController and derefed sat.mode_id →
+        // server NPE (the satellite was removed while the GUI was open). The fix writes
+        // three zero defaults so readDataFromNetwork (which reads three ints
+        // unconditionally) stays in sync. Pins: no throw + the 3-int payload is emitted.
+        ItemWeatherController item = new ItemWeatherController();
+        ItemStack unbound = new ItemStack(item, 1); // no satellite bound → getSatellite null
+        ByteBuf buf = Unpooled.buffer();
+        item.writeDataToNetwork(buf, (byte) 0, unbound);
+        assertEquals("writeDataToNetwork must still emit the 3-int weather payload "
+                        + "(defaults) for a missing satellite so readDataFromNetwork stays in sync",
+                12, buf.readableBytes()); // 3 * 4 bytes
+    }
+
+    @Test
+    public void weatherControllerUseNetworkDataIsNullSafeWhenSatelliteMissing() {
+        // C047: the server-side useNetworkData formerly cast getSatellite → null to
+        // SatelliteWeatherController and wrote sat.mode_id/... → NPE. The fix early-
+        // returns when the satellite is missing/wrong type. Pins: no throw (the weather
+        // useNetworkData ignores its player arg, so null player is fine here).
+        ItemWeatherController item = new ItemWeatherController();
+        ItemStack unbound = new ItemStack(item, 1);
+        NBTTagCompound nbt = new NBTTagCompound();
+        nbt.setInteger("mode_id", 1);
+        nbt.setInteger("floodlevel", 2);
+        nbt.setInteger("last_mode_id", 3);
+        item.useNetworkData(null, Side.SERVER, (byte) 0, nbt, unbound);
+        // Reaching here without a NullPointerException is the contract.
     }
 }

@@ -314,7 +314,10 @@ public class SpaceObjectManager implements ISpaceObjectManager {
         //If no dim undergoing transition then nextTransitionTick = -1
         if ((nextStationTransitionTick != -1 && worldTime >= nextStationTransitionTick && spaceStationOrbitMap.get(WARPDIMID) != null) || (nextStationTransitionTick == -1 && spaceStationOrbitMap.get(WARPDIMID) != null && !spaceStationOrbitMap.get(WARPDIMID).isEmpty())) {
             long newNextTransitionTick = -1;
-            for (ISpaceObject spaceObject : spaceStationOrbitMap.get(WARPDIMID)) {
+            // Iterate a snapshot: moveStationToBody mutates the WARPDIMID orbit list
+            // (removes the arriving station), so a live for-each over it throws
+            // ConcurrentModificationException when two stations arrive on the same tick.
+            for (ISpaceObject spaceObject : new ArrayList<>(spaceStationOrbitMap.get(WARPDIMID))) {
                 if (spaceObject.getTransitionTime() <= AdvancedRocketry.proxy.getWorldTimeUniversal(0)) {
                     moveStationToBody(spaceObject, spaceObject.getDestOrbitingBody());
                     spaceStationOrbitMap.get(WARPDIMID).remove(spaceObject);

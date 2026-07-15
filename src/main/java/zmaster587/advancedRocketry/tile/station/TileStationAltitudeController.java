@@ -167,11 +167,13 @@ public class TileStationAltitudeController extends TileEntity implements IModula
         if (so == null) return;
         SpaceStationObject sso = (SpaceStationObject) so;
 
-        // Redstone → target
+        // Redstone → target. Cap at the GUI's max (getTotalProgress == 190) with
+        // Math.min so lower redstone signals select lower altitudes; Math.max floored
+        // every signal 0..14 to 190, leaving only 190/199 reachable by redstone.
         if (redstoneControl.getState() == RedstoneState.ON) {
-            sso.targetOrbitalDistance = Math.max((world.getStrongPower(pos) * 13) + 4, 190);
+            sso.targetOrbitalDistance = Math.min((world.getStrongPower(pos) * 13) + 4, 190);
         } else if (redstoneControl.getState() == RedstoneState.INVERTED) {
-            sso.targetOrbitalDistance = Math.max(Math.abs(15 - world.getStrongPower(pos)) * 13 + 4, 190);
+            sso.targetOrbitalDistance = Math.min(Math.abs(15 - world.getStrongPower(pos)) * 13 + 4, 190);
         }
 
         progress = sso.targetOrbitalDistance;

@@ -39,7 +39,14 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> list = new LinkedList<>();
 
-        SatelliteWeatherController sat = (SatelliteWeatherController) getSatellite(player.getHeldItem(EnumHand.MAIN_HAND));
+        // getModules runs server-side too (GuiHandler.getServerGuiElement builds the
+        // ContainerModular from it), so an unguarded cast NPEs the server when the bound
+        // satellite is gone (e.g. opening the GUI with an unprogrammed/removed-satellite
+        // chip in the main hand). Guard the cast; the satellite-dependent (slot-less)
+        // modules are simply omitted when there is no satellite.
+        SatelliteBase base = getSatellite(player.getHeldItem(EnumHand.MAIN_HAND));
+        SatelliteWeatherController sat = base instanceof SatelliteWeatherController
+                ? (SatelliteWeatherController) base : null;
         if (player.world.isRemote) {
             //list.add(new ModuleImage(24, 14, zmaster587.advancedRocketry.inventory.TextureResources.earthCandyIcon));
         }
@@ -48,9 +55,11 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
         list.add(new ModuleButton(32, 16 + 24 * (2), 0, "rain", this, TextureResources.buttonBuild));
         list.add(new ModuleButton(32, 16 + 24 * (3), 2, "flood", this, TextureResources.buttonBuild));
         list.add(new ModuleButton(90, 19+24*3, 3, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonLeft, 5, 8));
-        list.add(new ModuleText(100, 19+24*3, "y="+sat.getFloodlevel(),0x2d2d2d));
+        if (sat != null)
+            list.add(new ModuleText(100, 19+24*3, "y="+sat.getFloodlevel(),0x2d2d2d));
         list.add(new ModuleButton(130, 19+24*3, 4, "", this, TextureResources.buttonRight, 5, 8));
-        list.add(new ModulePower(16, 48, sat.getBattery()));
+        if (sat != null)
+            list.add(new ModulePower(16, 48, sat.getBattery()));
 
         return list;
     }
@@ -158,10 +167,19 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
 
     @Override
     public void writeDataToNetwork(ByteBuf byteBuf, byte b, @Nonnull ItemStack itemStack) {
-        SatelliteWeatherController sat = (SatelliteWeatherController) getSatellite(itemStack);
-        byteBuf.writeInt(sat.mode_id);
-        byteBuf.writeInt(sat.floodlevel);
-        byteBuf.writeInt(sat.last_mode_id);
+        SatelliteBase base = getSatellite(itemStack);
+        if (base instanceof SatelliteWeatherController) {
+            SatelliteWeatherController sat = (SatelliteWeatherController) base;
+            byteBuf.writeInt(sat.mode_id);
+            byteBuf.writeInt(sat.floodlevel);
+            byteBuf.writeInt(sat.last_mode_id);
+        } else {
+            // Bound satellite gone/wrong type — write defaults so readDataFromNetwork
+            // (which reads three ints unconditionally) stays in sync instead of NPEing.
+            byteBuf.writeInt(0);
+            byteBuf.writeInt(0);
+            byteBuf.writeInt(0);
+        }
     }
 
     @Override
@@ -173,7 +191,10 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
 
     @Override
     public void useNetworkData(EntityPlayer entityPlayer, Side side, byte b, NBTTagCompound nbtTagCompound, @Nonnull ItemStack itemStack) {
-        SatelliteWeatherController sat = (SatelliteWeatherController) getSatellite(itemStack);
+        SatelliteBase base = getSatellite(itemStack);
+        if (!(base instanceof SatelliteWeatherController))
+            return;
+        SatelliteWeatherController sat = (SatelliteWeatherController) base;
         sat.mode_id = nbtTagCompound.getInteger("mode_id");
         sat.floodlevel = nbtTagCompound.getInteger("floodlevel");
         sat.last_mode_id = nbtTagCompound.getInteger("last_mode_id");
