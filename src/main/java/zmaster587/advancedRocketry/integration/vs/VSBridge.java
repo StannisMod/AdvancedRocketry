@@ -579,6 +579,183 @@ final class VSBridge {
         }
     }
 
+    // ---- Anchored (by-ship-id) frame access -------------------------------------------------
+    // A capture EPISODE must keep talking to the ship it was captured on. Resolving the ship by
+    // world-AABB containment every call re-picks it, and with several loaded ships whose grown
+    // boxes overlap, first-match can flip mid-episode (ledger #36/#45). These variants take the
+    // ship's UUID string (its ShipData identity) and answer for THAT ship or not at all.
+
+    /** The loaded ship whose {@code ShipData} UUID string equals {@code shipId}, or null. */
+    private static PhysicsObject physoById(World world, String shipId) {
+        if (shipId == null) {
+            return null;
+        }
+        try {
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                if (shipId.equals(physo.getShipData().getUuid().toString())) {
+                    return physo;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * UUID string of the ship whose SUBSPACE claim manages the block at {@code pos}, or {@code null}.
+     * Subspace claims of distinct ships never overlap ({@code ShipChunkAllocator} spaces them), so —
+     * unlike world-AABB containment — this resolution is unambiguous. The seed/anchor resolver for a
+     * capture that starts from a ship block (the pilot seat).
+     */
+    static String shipIdManagingBlock(World world, BlockPos pos) {
+        try {
+            Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+            return managing.isPresent()
+                    ? managing.get().getShipData().getUuid().toString() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * UUID strings of EVERY loaded ship whose grown world AABB contains {@code (x,y,z)} — the
+     * first-contact CANDIDATE list. The caller disambiguates by testing deck support in each
+     * candidate's own frame; returning all matches (not first-match) is what makes that possible.
+     */
+    static java.util.List<String> shipIdsAt(World world, double x, double y, double z) {
+        java.util.List<String> ids = new java.util.ArrayList<>(2);
+        try {
+            Vec3d point = new Vec3d(x, y, z);
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                AxisAlignedBB bb = physo.getShipBB();
+                if (bb != null && bb.grow(ABOARD_MARGIN).contains(point)) {
+                    ids.add(physo.getShipData().getUuid().toString());
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return ids;
+    }
+
+    /** World point -> ship-frame point, for the ship {@code shipId}. Null when it is not loaded. */
+    static double[] toShipFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .transform(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame point -> world point, for the ship {@code shipId}. Null when it is not loaded. */
+    static double[] toWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** World direction -> ship-frame direction (rotation only), for the ship {@code shipId}. */
+    static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .rotate(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame direction -> world direction (rotation only), for the ship {@code shipId}. */
+    static double[] rotateToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .rotate(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** {@link #shipVelocityAtPoint}, but for the anchored ship {@code shipId} instead of a
+     *  containment lookup — the guard of an anchored capture must widen by ITS ship's carry. */
+    static double[] shipVelocityAtPointFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            Vector3dc vLin = physo.getPhysicsData().getLinearVelocity();
+            Vector3dc w = physo.getPhysicsData().getAngularVelocity();
+            Vec3d c = physo.getShipData().getShipTransform().getShipPositionVec3d();
+            double rx = x - c.x, ry = y - c.y, rz = z - c.z;
+            return new double[]{
+                    vLin.x() + (w.y() * rz - w.z() * ry),
+                    vLin.y() + (w.z() * rx - w.x() * rz),
+                    vLin.z() + (w.x() * ry - w.y() * rx)
+            };
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * The ship's STAY region, in SUBSPACE coordinates, grown by {@code margin}: the region an
+     * anchored aboard body may occupy without being released. Derived from the subspace image of the
+     * ship's world AABB corners — the world box bounds the hull in world space, so its subspace image
+     * bounds the hull in subspace (over-including by at most the hull diagonal, acceptable for a
+     * release-hysteresis bound whose only contract is "boundary at least {@code margin} away from
+     * every hull block"). Deliberately NOT built from the chunk claim: the claim is a server-side
+     * allocation detail and this region must resolve identically on the CLIENT, which owns a
+     * player's movement. Measured in subspace so a jump/fall above the deck NEVER exits it sideways
+     * through a grown WORLD box the way the old {@code leftShipBox} gate did. Null when unloaded.
+     */
+    static AxisAlignedBB subspaceStayRegion(World world, String shipId, double margin) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            AxisAlignedBB worldBB = physo.getShipBB();
+            if (worldBB == null) {
+                return null;
+            }
+            ShipTransform t = physo.getShipData().getShipTransform();
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+            for (int i = 0; i < 8; i++) {
+                Vec3d corner = new Vec3d(
+                        (i & 1) == 0 ? worldBB.minX : worldBB.maxX,
+                        (i & 2) == 0 ? worldBB.minY : worldBB.maxY,
+                        (i & 4) == 0 ? worldBB.minZ : worldBB.maxZ);
+                Vec3d s = t.transform(corner, TransformType.GLOBAL_TO_SUBSPACE);
+                if (s.x < minX) minX = s.x;
+                if (s.y < minY) minY = s.y;
+                if (s.z < minZ) minZ = s.z;
+                if (s.x > maxX) maxX = s.x;
+                if (s.y > maxY) maxY = s.y;
+                if (s.z > maxZ) maxZ = s.z;
+            }
+            return new AxisAlignedBB(
+                    minX - margin, minY - margin, minZ - margin,
+                    maxX + margin, maxY + margin, maxZ + margin);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** The loaded ship in {@code world} whose data matches {@code target}, or null. */
     private static PhysicsObject loadedPhysoByUuid(World world, ShipData target) {
         for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {

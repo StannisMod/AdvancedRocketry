@@ -103,6 +103,12 @@ public final class ShipFrameTravel {
      *  derived from it every tick and is not stored: the held/external-move check is done in the ship frame
      *  ({@link #heldShipFramePos}), where a body carried by a moving deck does not drift. */
     private static final class ShipFrameState {
+        /** UUID string of the ANCHOR ship — the ship this capture episode was established on. Every
+         *  transform of the episode resolves through it (any-attitude crew contract C2). Re-picking the
+         *  ship by world-AABB containment mid-episode is forbidden: with several loaded ships whose
+         *  grown boxes overlap, first-match flips between ships tick to tick and the held subspace
+         *  anchor is then read through the WRONG transform. */
+        String shipId;
         double localX, localY, localZ;
         /** The exact WORLD position this class last committed for the body (the value handed to
          *  {@code setPosition} / {@code setPositionAndUpdate}). Diagnostic-only input for the #32
@@ -139,6 +145,14 @@ public final class ShipFrameTravel {
      *  fall-through). Generous, because the discrepancy can span a couple of ticks; a genuine teleport is
      *  far larger AND not explained by the deck's rotation, so it still trips. */
     private static final double DECK_CARRY_MARGIN = 3.0;
+    /** How far (blocks) beyond the anchored ship's subspace claim/hull an aboard body may travel before
+     *  the capture is released (contract C3/C4). Measured in SUBSPACE, so it is attitude-invariant and a
+     *  jump/fall ABOVE the deck never exits it the way the old grown-world-AABB gate (`leftShipBox`)
+     *  released a jumping body mid-air; and because a rigid transform preserves distances, a region-exit
+     *  release always happens at least this far from every hull block, so vanilla never inherits a body
+     *  overlapping subspace geometry it cannot see (the fall-through tunnel). Comfortably above a jump
+     *  apex (~1.25) and ordinary knockback. */
+    private static final double STAY_REGION_MARGIN = 4.0;
 
     /**
      * Whether this entity's movement should be resolved in its ship's frame this tick. Kept as one
@@ -154,57 +168,121 @@ public final class ShipFrameTravel {
         // the client only interpolates) must be left alone. The gravity hook consults this method too,
         // so it has to know - otherwise gravity is handed over for a tick that never resolves.
         if (!entity.isServerWorld() && !entity.canPassengerSteer()) {
+            release(entity, "notSimulated");
             return false;
         }
+        // Excluded states keep world-frame semantics (contract C4). Each RELEASES an existing capture
+        // explicitly: the old silent `return false` left stale STATE behind, so isResolving (the gate
+        // for the deck camera, the FF HUD and DeckMouseInput) kept answering true through a whole
+        // creative-flight/riding episode, and the capture eventually died mid-air far from where the
+        // gate first disengaged.
         if (entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()) {
+            release(entity, "excludedState");
             return false;
         }
         if (entity.isInWater() || entity.isInLava() || entity.isOnLadder()) {
+            release(entity, "excludedMedium");
             return false;
         }
         if (entity.isPotionActive(MobEffects.LEVITATION)) {
+            release(entity, "excludedLevitation");
             return false;
         }
         if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
+            release(entity, "creativeFlight");
             return false;
         }
-        if (VSIntegration.shipAttitudeAt(entity.world, entity.posX, entity.posY, entity.posZ) == null) {
-            if (STATE.remove(entity) != null) { // left every ship's box - definitely not aboard any more
-                logDrop(entity, "leftShipBox");
+        ShipFrameState state = STATE.get(entity);
+        if (state != null) {
+            // Anchored stay/release (contract C2-C4): the episode keeps talking to ITS ship. A body
+            // mid-jump or mid-fall over the deck is momentarily unsupported yet has NOT left the ship -
+            // the stay region is the ship's own subspace block region grown by STAY_REGION_MARGIN, so
+            // vertical excursions above the deck never release the way the old grown-world-AABB
+            // containment gate did.
+            double[] local = VSIntegration.toShipFrameFor(
+                    entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
+            if (local == null) {
+                release(entity, "shipUnloaded");
+                return false;
             }
-            return false;
-        }
-        // Aboard by containment - but "inside the ship's box" and "standing ON the ship" are different.
-        // A ship's world bounding box is axis-aligned and, for a ship resting on the ground, it OVERLAPS
-        // the terrain around AND beneath it, and even its own deck sits close above that terrain. The
-        // question is not "is there world ground nearby" - near a grounded ship there always is, both
-        // under the deck and beside it. The question is what the entity is standing ON:
-        //
-        //   - on a SHIP block (the deck): resolve in the ship frame, where that deck is axis-aligned;
-        //   - on WORLD terrain (the ground beside/under the ship): leave it to vanilla, which collides
-        //     that terrain correctly;
-        //   - in the air over the ship: keep whichever frame already owns it.
-        //
-        // The earlier "decline if world ground is under the feet" got the grounded case exactly wrong:
-        // a body on the deck of a ship sitting on the ground has world ground close below, so it was
-        // handed to vanilla, which does not see the subspace deck and dropped the body through it (the
-        // playtest report: "fell through the deck I'm standing on"). Test support against the SHIP, not
-        // the absence of world ground.
-        if (STATE.containsKey(entity)) {
-            // Already resolving in the ship frame. Stay - a body mid-jump or mid-step is momentarily
-            // unsupported yet has not left the ship - UNLESS it is now standing on real world ground and
-            // not on the ship: it stepped off the deck onto terrain, so hand it straight back to vanilla.
-            if (isSupportedByWorldTerrain(entity) && !isSupportedByShip(entity)) {
-                if (STATE.remove(entity) != null) {
-                    logDrop(entity, "steppedOntoTerrain");
-                }
+            AxisAlignedBB stay = VSIntegration.subspaceStayRegion(
+                    entity.world, state.shipId, STAY_REGION_MARGIN);
+            if (stay == null
+                    || !stay.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]))) {
+                // Genuinely left the ship. By the margin, this release point is at least
+                // STAY_REGION_MARGIN from every hull block (a rigid transform preserves distances), so
+                // vanilla inherits a body clear of the subspace geometry it cannot see.
+                release(entity, "leftShipRegion");
+                return false;
+            }
+            // Stepped off the deck onto real world ground: hand it straight back to vanilla, which
+            // collides that terrain correctly. (Deliberate world-frame release-to-vanilla test.)
+            if (isSupportedByWorldTerrain(entity) && !isSupportedByShipFor(entity, state.shipId)) {
+                release(entity, "steppedOntoTerrain");
                 return false;
             }
             return true;
         }
-        // First contact: capture only a body actually standing on the ship - a ship block directly under
-        // its feet in the ship's own frame.
-        return isSupportedByShip(entity);
+        // First contact (contract C1b): capture only a body actually standing on a ship's deck in that
+        // ship's OWN frame - and NEVER one standing on world terrain. A ground position mapped through
+        // a parked ship's transform can alias onto a subspace block (a walker beside a docked hull was
+        // captured into a tilted derelict's frame in the round-9 playtest), so ship-support alone is
+        // not a boarding test. The terrain veto costs only the sliver of a deck lying within the 0.3
+        // probe of real ground (a carpet-thin grounded hull), where VS's own world collision holds the
+        // body anyway.
+        if (isSupportedByWorldTerrain(entity)) {
+            return false;
+        }
+        String candidate = firstContactCandidate(entity);
+        if (candidate == null) {
+            return false;
+        }
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, candidate, entity.posX, entity.posY, entity.posZ);
+        double[] world = local == null ? null : VSIntegration.toWorldFrameFor(
+                entity.world, candidate, local[0], local[1], local[2]);
+        if (local == null || world == null) {
+            return false;
+        }
+        captureState(entity, candidate, local[0], local[1], local[2], world[0], world[1], world[2]);
+        logCapture(entity, candidate, local[0], local[1], local[2]);
+        return true;
+    }
+
+    /** The ship this body is standing on RIGHT NOW, chosen among every loaded ship whose grown world
+     *  box contains it by testing deck support in each candidate's OWN frame - not by first-match
+     *  containment, which flips between overlapping parked ships. Null when no candidate supports it. */
+    private static String firstContactCandidate(EntityLivingBase entity) {
+        for (String shipId : VSIntegration.shipIdsAt(
+                entity.world, entity.posX, entity.posY, entity.posZ)) {
+            if (shipSupportObstacleCountFor(entity, shipId) > 0) {
+                return shipId;
+            }
+        }
+        return null;
+    }
+
+    /** Install a fresh anchored capture for {@code entity} on ship {@code shipId}. */
+    private static void captureState(Entity entity, String shipId, double localX, double localY,
+                                     double localZ, double worldX, double worldY, double worldZ) {
+        ShipFrameState state = new ShipFrameState();
+        state.shipId = shipId;
+        state.localX = localX;
+        state.localY = localY;
+        state.localZ = localZ;
+        state.worldX = worldX;
+        state.worldY = worldY;
+        state.worldZ = worldZ;
+        STATE.put(entity, state);
+    }
+
+    /** Remove the capture with an explicit, logged reason (contract C4). Every path that stops
+     *  resolving a tracked body goes through here - a silent gate leaves stale STATE behind and the
+     *  camera/HUD keep acting on it. No-op for an untracked body. */
+    private static void release(Entity entity, String reason) {
+        if (STATE.remove(entity) != null) {
+            logDrop(entity, reason);
+        }
     }
 
     /**
@@ -220,34 +298,30 @@ public final class ShipFrameTravel {
      * ship. Idempotent enough to re-send: pair with an {@link #isResolving} check at the call site so a
      * re-seed after the capture already took is skipped (no repeated teleport).
      */
-    public static boolean seedShipFrameCapture(Entity entity, double subX, double subY, double subZ) {
-        if (entity == null) {
+    public static boolean seedShipFrameCapture(Entity entity, String shipId,
+                                               double subX, double subY, double subZ) {
+        if (entity == null || shipId == null) {
             return false;
         }
-        double[] world = VSIntegration.toWorldFrame(entity, subX, subY, subZ);
+        // Anchored (contract C2): the seed names its ship explicitly - the server resolved it
+        // unambiguously from the SUBSPACE seat block (claims of distinct ships never overlap), so the
+        // client never has to guess by containment among overlapping world boxes.
+        double[] world = VSIntegration.toWorldFrameFor(entity.world, shipId, subX, subY, subZ);
         if (world == null) {
-            // Playtest trace ([FF-TRACE/CAP], -Dadvancedrocketry.tests=true): the deck point could not be
-            // mapped to the world because the entity is aboard no loaded ship by containment - i.e. it was
-            // ejected off the ship's world AABB (the inverted-deck fall-through). No-op in normal play.
+            // Playtest trace ([FF-TRACE/CAP], -Dadvancedrocketry.tests=true): the anchor ship is not
+            // loaded on this side (yet). No-op; the dismount window re-sends.
             if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
                 zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed FAILED "
-                        + "(toWorldFrame null - not aboard a loaded ship) sub=(" + subX + "," + subY + ","
+                        + "(anchor ship not loaded) ship=" + shipId + " sub=(" + subX + "," + subY + ","
                         + subZ + ") entityPos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")");
             }
             return false;
         }
         if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
-            zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK world=("
-                    + world[0] + "," + world[1] + "," + world[2] + ")");
+            zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK ship="
+                    + shipId + " world=(" + world[0] + "," + world[1] + "," + world[2] + ")");
         }
-        ShipFrameState state = new ShipFrameState();
-        state.localX = subX;
-        state.localY = subY;
-        state.localZ = subZ;
-        state.worldX = world[0];
-        state.worldY = world[1];
-        state.worldZ = world[2];
-        STATE.put(entity, state);
+        captureState(entity, shipId, subX, subY, subZ, world[0], world[1], world[2]);
         entity.setPositionAndUpdate(world[0], world[1], world[2]);
         entity.motionX = 0.0;
         entity.motionY = 0.0;
@@ -296,44 +370,90 @@ public final class ShipFrameTravel {
         boolean aboard = VSIntegration.shipAttitudeAt(
                 entity.world, entity.posX, entity.posY, entity.posZ) != null;
         m.put("aboardByContainment", aboard);
-        boolean tracked = STATE.containsKey(entity);
+        ShipFrameState state = STATE.get(entity);
+        boolean tracked = state != null;
         m.put("alreadyTracked", tracked);
-        int shipObstacles = shipSupportObstacleCount(entity);
-        m.put("shipFrameResolved", shipObstacles >= 0);
-        m.put("shipSupportObstacles", shipObstacles);
-        m.put("supportedByShip", shipObstacles > 0);
-        m.put("supportedByWorldTerrain", isSupportedByWorldTerrain(entity));
-        // The handles() verdict, replicated WITHOUT its STATE.remove side effects.
-        boolean verdict;
-        if (!available || (!entity.isServerWorld() && !entity.canPassengerSteer())
+        m.put("anchorShipId", tracked ? state.shipId : null);
+        boolean terrain = isSupportedByWorldTerrain(entity);
+        m.put("supportedByWorldTerrain", terrain);
+        // The handles() verdict, replicated WITHOUT its capture/release side effects.
+        boolean gated = !available || (!entity.isServerWorld() && !entity.canPassengerSteer())
                 || entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()
                 || entity.isInWater() || entity.isInLava() || entity.isOnLadder()
                 || entity.isPotionActive(MobEffects.LEVITATION)
-                || (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying)
-                || !aboard) {
+                || (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying);
+        boolean verdict;
+        if (gated) {
+            int shipObstacles = shipSupportObstacleCount(entity);
+            m.put("shipFrameResolved", shipObstacles >= 0);
+            m.put("shipSupportObstacles", shipObstacles);
+            m.put("supportedByShip", shipObstacles > 0);
             verdict = false;
         } else if (tracked) {
-            verdict = !(isSupportedByWorldTerrain(entity) && shipObstacles <= 0);
+            int shipObstacles = shipSupportObstacleCountFor(entity, state.shipId);
+            m.put("shipFrameResolved", shipObstacles >= 0);
+            m.put("shipSupportObstacles", shipObstacles);
+            m.put("supportedByShip", shipObstacles > 0);
+            double[] local = VSIntegration.toShipFrameFor(
+                    entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
+            AxisAlignedBB stay = VSIntegration.subspaceStayRegion(
+                    entity.world, state.shipId, STAY_REGION_MARGIN);
+            boolean inRegion = local != null && stay != null
+                    && stay.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]));
+            m.put("inStayRegion", inRegion);
+            verdict = inRegion && !(terrain && shipObstacles <= 0);
         } else {
-            verdict = shipObstacles > 0;
+            String candidate = terrain ? null : firstContactCandidate(entity);
+            m.put("firstContactCandidate", candidate);
+            int shipObstacles = candidate != null
+                    ? shipSupportObstacleCountFor(entity, candidate)
+                    : shipSupportObstacleCount(entity);
+            m.put("shipFrameResolved", shipObstacles >= 0);
+            m.put("shipSupportObstacles", shipObstacles);
+            m.put("supportedByShip", shipObstacles > 0);
+            verdict = candidate != null;
         }
         m.put("verdict", verdict);
         return m;
     }
 
-    /** Whether a SHIP block sits directly beneath the entity's feet, tested in the ship's frame (where
-     *  the deck is axis-aligned). The probe reaches further for a fast faller so it is caught before it
-     *  can tunnel through a thin deck in one tick. Ship blocks live in a subspace never at the entity's
-     *  world position, so this is what tells "standing on the deck" from "standing on the ground". */
-    private static boolean isSupportedByShip(Entity entity) {
-        return shipSupportObstacleCount(entity) > 0;
+    /** Whether a SHIP block sits directly beneath the entity's feet, tested in the ANCHORED ship
+     *  {@code shipId}'s frame (where the deck is axis-aligned) — the form every decision about a
+     *  tracked body uses (contract C2). The probe reaches further for a fast faller so it is caught
+     *  before it can tunnel through a thin deck in one tick. Ship blocks live in a subspace never at
+     *  the entity's world position, so this is what tells "standing on the deck" from "standing on
+     *  the ground". */
+    private static boolean isSupportedByShipFor(Entity entity, String shipId) {
+        return shipSupportObstacleCountFor(entity, shipId) > 0;
     }
 
-    /** How many SHIP-frame collision boxes sit directly beneath the entity's feet - the exact query
-     *  {@link #isSupportedByShip} decides on - or {@code -1} when the entity maps to no loaded ship
-     *  frame at all. Read-only. Split out so the deck-capture diagnostic can tell "no ship here"
-     *  ({@code -1}) from "ship here but nothing solid under the feet" ({@code 0}, a partial capture
-     *  that would drop the body through the deck) from "supported" ({@code > 0}). */
+    /** {@link #shipSupportObstacleCount}, resolved through the ship {@code shipId} instead of a
+     *  containment lookup. {@code -1} when that ship is not loaded on this side. */
+    private static int shipSupportObstacleCountFor(Entity entity, String shipId) {
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            return -1;
+        }
+        double reach = SUPPORT_PROBE;
+        double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
+                entity.motionX, entity.motionY, entity.motionZ);
+        if (motion != null && motion[1] < 0.0) {
+            reach += -motion[1];
+        }
+        double half = entity.width / 2.0;
+        AxisAlignedBB underFeet = new AxisAlignedBB(
+                local[0] - half, local[1] - reach, local[2] - half,
+                local[0] + half, local[1], local[2] + half);
+        return entity.world.getCollisionBoxes(entity, underFeet).size();
+    }
+
+    /** How many SHIP-frame collision boxes sit directly beneath the entity's feet, resolved by
+     *  world-AABB CONTAINMENT (first match) - or {@code -1} when the entity maps to no loaded ship
+     *  frame at all. DIAGNOSTIC-ONLY since the anchored rework: every real decision goes through
+     *  {@link #shipSupportObstacleCountFor}; this remains for the deck-capture probe and drop logs,
+     *  where "no ship here" ({@code -1}) vs "ship here but nothing under the feet" ({@code 0}) vs
+     *  "supported" ({@code > 0}) localises a failure. */
     private static int shipSupportObstacleCount(Entity entity) {
         double[] local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
         if (local == null) {
@@ -384,14 +504,16 @@ public final class ShipFrameTravel {
      * path is untraced, so "seeded then lost" reads identically to "never seeded" in the log - the gap the
      * camera-while-walking symptom needs closed. Test-gated ({@code -Dadvancedrocketry.tests=true}).
      */
-    private static void logCapture(Entity entity, double localX, double localY, double localZ) {
+    private static void logCapture(Entity entity, String shipId, double localX, double localY,
+                                   double localZ) {
         if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
                 || entity == null || entity.world == null) {
             return;
         }
         zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] auto-capture"
                 + " remote=" + entity.world.isRemote
-                + " shipObstacles=" + shipSupportObstacleCount(entity)
+                + " ship=" + shipId
+                + " shipObstacles=" + shipSupportObstacleCountFor(entity, shipId)
                 + " tiltDeg=" + tiltFrom(VSIntegration.shipAttitudeAt(
                         entity.world, entity.posX, entity.posY, entity.posZ))
                 + " local=(" + localX + "," + localY + "," + localZ + ")"
@@ -437,14 +559,20 @@ public final class ShipFrameTravel {
             return false;
         }
         World world = entity.world;
+        ShipFrameState anchored = STATE.get(entity);
+        if (anchored == null) {
+            declinedTicks++;
+            return false; // heldShipFramePos may release below; the anchor itself must exist here
+        }
+        String shipId = anchored.shipId;
 
         // The deck frame. Held across ticks, so the ship can rotate under a body that is standing
         // still ON it; re-seeded from the world whenever anything else has moved the entity there.
         double[] local = heldShipFramePos(entity);
         if (local == null) {
-            local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
+            local = VSIntegration.toShipFrameFor(world, shipId, entity.posX, entity.posY, entity.posZ);
         }
-        double[] motion = VSIntegration.rotateToShipFrame(entity,
+        double[] motion = VSIntegration.rotateToShipFrameFor(world, shipId,
                 entity.motionX, entity.motionY, entity.motionZ);
         if (local == null || motion == null) {
             declinedTicks++;
@@ -467,7 +595,7 @@ public final class ShipFrameTravel {
 
         // Walking input, in the deck plane. The entity's yaw is a WORLD yaw; the direction he is
         // actually facing along the deck is his world look mapped into the ship frame.
-        float deckYaw = deckYawDeg(entity);
+        float deckYaw = deckYawDeg(entity, shipId);
         moveRelative(motion, strafe, vertical, forward, moveFactor, deckYaw);
 
         // Gravity toward the deck: plain -Y here, at vanilla's exact magnitude, BEFORE the sweep. This
@@ -495,9 +623,10 @@ public final class ShipFrameTravel {
         motion[0] *= friction;
         motion[2] *= friction;
 
-        // Commit: the deck-frame result, expressed back on world axes.
-        double[] worldPos = VSIntegration.toWorldFrame(entity, sweep.x, sweep.y, sweep.z);
-        double[] worldMotion = VSIntegration.rotateToWorldFrame(entity, motion[0], motion[1], motion[2]);
+        // Commit: the deck-frame result, expressed back on world axes (through the ANCHOR ship).
+        double[] worldPos = VSIntegration.toWorldFrameFor(world, shipId, sweep.x, sweep.y, sweep.z);
+        double[] worldMotion = VSIntegration.rotateToWorldFrameFor(world, shipId,
+                motion[0], motion[1], motion[2]);
         if (worldPos == null || worldMotion == null) {
             declinedTicks++;
             return false; // the ship went away mid-tick; leave the entity untouched for vanilla
@@ -521,7 +650,7 @@ public final class ShipFrameTravel {
                         ((Number) qz).doubleValue()).rotate(0.0, 1.0, 0.0)[1];
             }
         }
-        remember(entity, sweep.x, sweep.y, sweep.z, worldPos[0], worldPos[1], worldPos[2]);
+        remember(entity, shipId, sweep.x, sweep.y, sweep.z, worldPos[0], worldPos[1], worldPos[2]);
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
@@ -542,19 +671,25 @@ public final class ShipFrameTravel {
         if (!handles(entity)) {
             return false;
         }
+        ShipFrameState anchored = STATE.get(entity);
+        if (anchored == null) {
+            return false;
+        }
+        String shipId = anchored.shipId;
         double up = jumpUpwardsMotion + jumpBoost;
-        double[] motion = VSIntegration.rotateToShipFrame(entity,
+        double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
                 entity.motionX, entity.motionY, entity.motionZ);
         if (motion == null) {
             return false;
         }
         motion[1] = up;
         if (entity.isSprinting()) {
-            float rad = deckYawDeg(entity) * 0.017453292F;
+            float rad = deckYawDeg(entity, shipId) * 0.017453292F;
             motion[0] -= MathHelper.sin(rad) * 0.2F;
             motion[2] += MathHelper.cos(rad) * 0.2F;
         }
-        double[] worldMotion = VSIntegration.rotateToWorldFrame(entity, motion[0], motion[1], motion[2]);
+        double[] worldMotion = VSIntegration.rotateToWorldFrameFor(entity.world, shipId,
+                motion[0], motion[1], motion[2]);
         if (worldMotion == null) {
             return false;
         }
@@ -578,12 +713,12 @@ public final class ShipFrameTravel {
         if (state == null) {
             return null;
         }
-        double[] local = VSIntegration.toShipFrame(entity, entity.posX, entity.posY, entity.posZ);
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
         if (local == null) {
-            // Near-unreachable defensive branch: handles() already dropped and returned false this tick if
-            // the body maps to no loaded ship (shipAttitudeAt uses the SAME containment as toShipFrame), so
-            // handles() - not this - is the ship-unloaded gate. Reached only on an async ship-unload between
-            // handles() and here; hand back the held point and let travel() decline (rotateToShipFrame null).
+            // Near-unreachable defensive branch: handles() already released ("shipUnloaded") and returned
+            // false this tick if the anchor ship is not loaded. Reached only on an async ship-unload
+            // between handles() and here; hand back the held point and let travel() decline.
             return new double[]{state.localX, state.localY, state.localZ};
         }
         double dx = local[0] - state.localX;
@@ -595,46 +730,61 @@ public final class ShipFrameTravel {
         // ~0, so this stays the tight epsilon; a genuine teleport is far beyond the deck's carry, so it
         // still trips.
         double allowed = EXTERNAL_MOVE_EPSILON;
-        double[] shipVel = VSIntegration.shipVelocityAtPoint(
-                entity.world, entity.posX, entity.posY, entity.posZ);
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
         if (shipVel != null) {
             double carry = Math.sqrt(shipVel[0] * shipVel[0] + shipVel[1] * shipVel[1]
                     + shipVel[2] * shipVel[2]) * TICK_SECONDS;
             allowed += DECK_CARRY_MARGIN * carry;
         }
         if (dx * dx + dy * dy + dz * dz > allowed * allowed) {
-            externalMoveDrops++;
-            if (STATE.remove(entity) != null) {
-                // [FF-TRACE/DROP] #32 discriminator: worldMiss = how far an external agent moved the body in
-                // the WORLD since our last commit. worldMiss ~0 while d2 is large => the body sat where we
-                // left it and only AR's own transform lagged a tick (a committed-world guard would absorb
-                // it, no VS-boundary change). worldMiss ~= sqrt(d2) => an external carry (VS / server travel)
-                // moved it off its deck point at a different attitude (candidate C). Diagnostic only.
-                double wmx = entity.posX - state.worldX;
-                double wmy = entity.posY - state.worldY;
-                double wmz = entity.posZ - state.worldZ;
-                double worldMiss = Math.sqrt(wmx * wmx + wmy * wmy + wmz * wmz);
-                logDrop(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz)
-                        + " worldMiss=" + worldMiss);
+            // A REAL player's movement is CLIENT-authoritative: the position the server sees each tick
+            // IS the client's honest resolution arriving by packet, not a foreign teleport. Fighting it
+            // (release + re-capture at the server's own point) locks the two sides' anchors a step apart
+            // and wars over the body - vanilla then reads the server's losing ticks as airborne (the
+            // rolled-deck onGround flap). The server-side resolution must FOLLOW the client: REBASE the
+            // anchor onto the client's point and keep resolving there. Gating the server resolution OFF
+            // entirely was tried and regressed (the server player fell by vanilla and dragged the client
+            // down); following is the middle way - the server still resolves in the ship frame, it just
+            // never argues with the packet stream about WHERE. Genuine leave-the-ship still releases via
+            // the stay region / terrain gates in handles(). Non-player bodies (mobs, stands) keep the
+            // guard: the resolving side OWNS their movement, so a large drift there really is an
+            // external mover.
+            if (!entity.world.isRemote
+                    && entity instanceof net.minecraft.entity.player.EntityPlayerMP
+                    && !(entity instanceof net.minecraftforge.common.util.FakePlayer)) {
+                state.localX = local[0];
+                state.localY = local[1];
+                state.localZ = local[2];
+                state.worldX = entity.posX;
+                state.worldY = entity.posY;
+                state.worldZ = entity.posZ;
+                return local;
             }
+            externalMoveDrops++;
+            // [FF-TRACE/DROP] #32 discriminator: worldMiss = how far an external agent moved the body in
+            // the WORLD since our last commit. Diagnostic only.
+            double wmx = entity.posX - state.worldX;
+            double wmy = entity.posY - state.worldY;
+            double wmz = entity.posZ - state.worldZ;
+            double worldMiss = Math.sqrt(wmx * wmx + wmy * wmy + wmz * wmz);
+            release(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz)
+                    + " dSub=(" + dx + "," + dy + "," + dz + ")"
+                    + " held=(" + state.localX + "," + state.localY + "," + state.localZ + ")"
+                    + " worldMiss=" + worldMiss);
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};
     }
 
-    private static void remember(Entity entity, double localX, double localY, double localZ,
-                                 double worldX, double worldY, double worldZ) {
+    private static void remember(Entity entity, String shipId, double localX, double localY,
+                                 double localZ, double worldX, double worldY, double worldZ) {
         boolean firstContact = !STATE.containsKey(entity);
-        ShipFrameState state = new ShipFrameState();
-        state.localX = localX;
-        state.localY = localY;
-        state.localZ = localZ;
-        state.worldX = worldX;
-        state.worldY = worldY;
-        state.worldZ = worldZ;
-        STATE.put(entity, state);
+        captureState(entity, shipId, localX, localY, localZ, worldX, worldY, worldZ);
         if (firstContact) {
-            logCapture(entity, localX, localY, localZ);
+            // Normally the capture is installed by handles()/seed; reached only when heldShipFramePos
+            // released mid-tick (externalMove) and this commit re-captures on the same anchor.
+            logCapture(entity, shipId, localX, localY, localZ);
         }
     }
 
@@ -645,11 +795,11 @@ public final class ShipFrameTravel {
      *  X/Z under the rotation), so using {@code getLookVec()} the basis swung as the crew looked up/down and
      *  collapsed to one fixed heading when he looked along the deck normal - the natural pose walking an
      *  inverted deck, which read as inverted/rotated WASD. Vanilla walks by yaw alone for the same reason. */
-    private static float deckYawDeg(EntityLivingBase entity) {
+    private static float deckYawDeg(EntityLivingBase entity, String shipId) {
         float yawRad = entity.rotationYaw * 0.017453292F;
         double fx = -MathHelper.sin(yawRad);
         double fz = MathHelper.cos(yawRad);
-        double[] deckLook = VSIntegration.rotateToShipFrame(entity, fx, 0.0, fz);
+        double[] deckLook = VSIntegration.rotateToShipFrameFor(entity.world, shipId, fx, 0.0, fz);
         if (deckLook == null) {
             return entity.rotationYaw;
         }
@@ -697,6 +847,24 @@ public final class ShipFrameTravel {
         AxisAlignedBB box = new AxisAlignedBB(
                 local[0] - halfWidth, local[1], local[2] - halfWidth,
                 local[0] + halfWidth, local[1] + entity.height, local[2] + halfWidth);
+
+        // De-penetrate the START box. The subspace position comes through a world<->subspace round
+        // trip that carries ~1e-8 of float noise, so a captured anchor can land a hair INSIDE the
+        // deck plane. Vanilla's axis sweep only prevents CROSSING a box - it cannot resolve one that
+        // already overlaps - so a sunk-by-epsilon box lets gravity through and the body never reads
+        // on-deck (an onGround coin flip per capture). Lift onto the highest shallowly-overlapping
+        // top first; a deep embed (a real wall/teleport-into-block) is left for the sweep to treat
+        // as it always did.
+        double lift = 0.0;
+        for (AxisAlignedBB startObstacle : world.getCollisionBoxes(entity, box)) {
+            double pen = startObstacle.maxY - box.minY;
+            if (pen > 0.0 && pen <= 0.1 && pen > lift) {
+                lift = pen;
+            }
+        }
+        if (lift > 0.0) {
+            box = box.offset(0.0, lift, 0.0);
+        }
 
         List<AxisAlignedBB> obstacles = world.getCollisionBoxes(entity,
                 box.expand(wantX, wantY, wantZ));

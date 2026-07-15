@@ -151,6 +151,22 @@ public class VSCrewRidesRollingDeckE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(120); // let the controller actually roll the ship
 
         String rolled = exec("artest vs player-ship-data");
+        // Client-observed resolution state (the CLIENT owns a player's movement, so ITS ShipFrameTravel
+        // statics are the honest half; the server's are the competing resolution). Diagnostic printout
+        // for any failure below - which side captured, which side thrashed.
+        System.out.println("[rollingdeck] client resolvedTicks="
+                + bot().readStaticField("zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                        "resolvedTicks").get("value").getAsString()
+                + " externalMoveDrops="
+                + bot().readStaticField("zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                        "externalMoveDrops").get("value").getAsString()
+                + " lastOnDeck="
+                + bot().readStaticField("zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                        "lastOnDeck").get("value").getAsString()
+                + " declinedTicks="
+                + bot().readStaticField("zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                        "declinedTicks").get("value").getAsString()
+                + " || server stats=" + exec("artest vs shipframe-stats"));
         assertTrue("the crew member must still be aboard after the roll: " + rolled,
                 rolled.contains("\"shipLoaded\":true"));
         assertTrue("the crew member must not fall off a rolled deck: " + rolled,

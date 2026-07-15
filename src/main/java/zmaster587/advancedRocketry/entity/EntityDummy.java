@@ -203,10 +203,15 @@ public class EntityDummy extends Entity {
         // holds it. A server-computed world position would differ here by more than the guard and drop
         // instantly. Re-sent each tick of the window; the client seeds once and no-ops the rest.
         if (exit instanceof net.minecraft.entity.player.EntityPlayerMP) {
-            zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
-                    new zmaster587.advancedRocketry.network.PacketDeckCapture(
-                            seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
-                    (net.minecraft.entity.player.EntityPlayerMP) exit);
+            // The anchor ship, resolved from the seat's SUBSPACE block - unambiguous (subspace claims
+            // of distinct ships never overlap), unlike containment among overlapping world boxes.
+            String shipId = VSIntegration.shipIdManagingBlock(world, seatPos);
+            if (shipId != null) {
+                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
+                        new zmaster587.advancedRocketry.network.PacketDeckCapture(
+                                shipId, seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
+                        (net.minecraft.entity.player.EntityPlayerMP) exit);
+            }
         }
     }
 

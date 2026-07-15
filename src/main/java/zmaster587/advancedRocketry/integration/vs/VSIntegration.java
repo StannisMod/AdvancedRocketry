@@ -303,6 +303,60 @@ public final class VSIntegration {
         return (!isAvailable() || e == null) ? null : VSBridge.rotateToWorldFrame(e, x, y, z);
     }
 
+    // ---- Anchored (by-ship-id) frame access. A capture episode resolves every transform through
+    // the ship it was captured on (its ShipData UUID string), never by re-picking a ship from
+    // world-AABB containment mid-episode. Each returns null when VS is absent or THAT ship is not
+    // loaded, so callers release/fall back to vanilla. Only AR-core/MC types cross the gate.
+
+    /** UUID string of the ship whose SUBSPACE claim manages {@code pos} (unambiguous — claims of
+     *  distinct ships never overlap), or {@code null}. The anchor resolver for a seat-based seed. */
+    public static String shipIdManagingBlock(World world, BlockPos pos) {
+        return (!isAvailable() || world == null || pos == null)
+                ? null : VSBridge.shipIdManagingBlock(world, pos);
+    }
+
+    /** UUID strings of every loaded ship whose grown world AABB contains {@code (x,y,z)} — the
+     *  first-contact candidate list (possibly empty; never null). */
+    public static java.util.List<String> shipIdsAt(World world, double x, double y, double z) {
+        return (!isAvailable() || world == null)
+                ? java.util.Collections.<String>emptyList() : VSBridge.shipIdsAt(world, x, y, z);
+    }
+
+    /** World point to ship-frame point, for the anchored ship. See the anchored-access note. */
+    public static double[] toShipFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null) ? null : VSBridge.toShipFrameFor(world, shipId, x, y, z);
+    }
+
+    /** Ship-frame point to world point, for the anchored ship. */
+    public static double[] toWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null) ? null : VSBridge.toWorldFrameFor(world, shipId, x, y, z);
+    }
+
+    /** World direction to ship-frame direction (rotation only), for the anchored ship. */
+    public static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null) ? null : VSBridge.rotateToShipFrameFor(world, shipId, x, y, z);
+    }
+
+    /** Ship-frame direction to world direction (rotation only), for the anchored ship. */
+    public static double[] rotateToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null) ? null : VSBridge.rotateToWorldFrameFor(world, shipId, x, y, z);
+    }
+
+    /** {@link #shipVelocityAtPoint} for the anchored ship — the deck-carry widening of an anchored
+     *  capture's external-move guard must come from ITS ship. */
+    public static double[] shipVelocityAtPointFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null)
+                ? null : VSBridge.shipVelocityAtPointFor(world, shipId, x, y, z);
+    }
+
+    /** The anchored ship's stay region in SUBSPACE, grown by {@code margin} — the release-hysteresis
+     *  bound for an aboard body (attitude-invariant; boundary at least {@code margin} from every hull
+     *  block). Null when VS is absent or the ship is not loaded. */
+    public static net.minecraft.util.math.AxisAlignedBB subspaceStayRegion(World world, String shipId, double margin) {
+        return (!isAvailable() || world == null)
+                ? null : VSBridge.subspaceStayRegion(world, shipId, margin);
+    }
+
     /**
      * Read-only diagnostic of what Valkyrien Skies already knows about {@code entity}'s relationship
      * to a ship: its last-touched ship, whether VS counts it as standing on that ship
