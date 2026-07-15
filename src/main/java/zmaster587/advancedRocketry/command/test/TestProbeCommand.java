@@ -749,6 +749,20 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.worldMoveApplies);
             m.put("lastWorldMove",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastWorldMove);
+            m.put("lastGuardFrameStep",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastGuardFrameStep);
+            m.put("lastGuardAllowed",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastGuardAllowed);
+            m.put("lastGuardCarry",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastGuardCarry);
+            m.put("lastDropFrameMovedY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropFrameMovedY);
+            m.put("lastDropEntityMovedY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropEntityMovedY);
+            m.put("lastDropAllowed",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropAllowed);
+            m.put("dragSuppressions",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.dragSuppressions);
             send(sender, jsonMap(m));
             return;
         }

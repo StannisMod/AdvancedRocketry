@@ -349,6 +349,15 @@ public final class VSIntegration {
                 ? null : VSBridge.shipVelocityAtPointFor(world, shipId, x, y, z);
     }
 
+    /** Clear the physics mod's own entity-to-ship association (its {@code EntityDraggable} drag
+     *  anchor) for a body AR resolves ship-locally — the drag is a second mover that fights the
+     *  ship-frame resolution from a stale anchor the suppressed collision injector can never
+     *  refresh. Called every resolved tick; a no-op (false) when VS is absent, the entity is not
+     *  draggable, or the association is already clear. */
+    public static boolean suppressShipDrag(net.minecraft.entity.Entity entity) {
+        return isAvailable() && entity != null && VSBridge.clearEntityShipAssociation(entity);
+    }
+
     /** The anchored ship's stay region in SUBSPACE, grown by {@code margin} — the release-hysteresis
      *  bound for an aboard body (attitude-invariant; boundary at least {@code margin} from every hull
      *  block). Null when VS is absent or the ship is not loaded. */

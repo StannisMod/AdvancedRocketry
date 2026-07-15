@@ -110,6 +110,26 @@ public final class ShipFrameTravel {
      *  still pushes a resolved body through the world pipeline. */
     public static volatile long worldMoveApplies = 0L;
     public static volatile String lastWorldMove = "";
+    /** Guard discriminators, updated every guard pass and frozen into {@code lastDrop*} at a drop.
+     *  {@code frameMoved} = where the anchor transform NOW maps the held deck point minus where the
+     *  last commit put it: the deck stepping under an UNMOVED body (a client transform snap, a
+     *  hunting/freefalling ship) — drift the carry-widening was supposed to absorb. {@code entityMoved}
+     *  = the body's world position minus the committed point: a genuine external mover (a teleport, a
+     *  packet apply). World-frame VECTORS, so the direction names the writer (world-down = gravity-like;
+     *  rotating = a transform hunt). {@code lastGuardAllowed}/{@code lastGuardCarry} expose what the
+     *  widening actually computed — 0.2 with carry 0 on a visibly-moving ship means the velocity feed
+     *  ({@code shipVelocityAtPointFor}) is blind on this side. */
+    public static volatile double lastGuardFrameStep = 0.0;
+    public static volatile double lastGuardAllowed = -1.0;
+    public static volatile double lastGuardCarry = -1.0;
+    public static volatile double lastDropFrameMovedX, lastDropFrameMovedY, lastDropFrameMovedZ;
+    public static volatile double lastDropEntityMovedX, lastDropEntityMovedY, lastDropEntityMovedZ;
+    public static volatile double lastDropAllowed = -1.0;
+    /** How many times a resolved tick actually CLEARED the physics mod's own entity-to-ship
+     *  association (its drag anchor) on this side. Nonzero proves the drag suppression engaged -
+     *  i.e. the mod HAD armed its own mover on a body AR resolves (a boarding fall, a flight
+     *  contact) and it was disarmed before it could fight the resolution. */
+    public static volatile long dragSuppressions = 0L;
 
     /** Called by the move-suppression hook: a world-frame mover asked to displace a resolved body. */
     public static void noteWorldMove(String type, double x, double y, double z) {
@@ -211,20 +231,9 @@ public final class ShipFrameTravel {
         // for the deck camera, the FF HUD and DeckMouseInput) kept answering true through a whole
         // creative-flight/riding episode, and the capture eventually died mid-air far from where the
         // gate first disengaged.
-        if (entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()) {
-            release(entity, "excludedState");
-            return false;
-        }
-        if (entity.isInWater() || entity.isInLava() || entity.isOnLadder()) {
-            release(entity, "excludedMedium");
-            return false;
-        }
-        if (entity.isPotionActive(MobEffects.LEVITATION)) {
-            release(entity, "excludedLevitation");
-            return false;
-        }
-        if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
-            release(entity, "creativeFlight");
+        String excluded = excludedStateOf(entity);
+        if (excluded != null) {
+            release(entity, excluded);
             return false;
         }
         ShipFrameState state = STATE.get(entity);
@@ -291,6 +300,34 @@ public final class ShipFrameTravel {
         return true;
     }
 
+    /** Whether {@code entity} is in an excluded state (contract C4) — the public face of
+     *  {@link #excludedStateOf} for seed SENDERS (the dismount deck-hold), which should stop
+     *  re-sending a seed the receiving side will refuse. */
+    public static boolean isExcludedFromCapture(EntityLivingBase entity) {
+        return entity == null || excludedStateOf(entity) != null;
+    }
+
+    /** The excluded state keeping this body on world-frame semantics (contract C4), or {@code null}
+     *  when none. ONE predicate for every consumer — {@link #handles} (which releases on it) and
+     *  {@link #seedShipFrameCapture} (which must REFUSE to force-capture an excluded body: a seed
+     *  that ignored creative flight snapped a flying player to the deck point every window tick,
+     *  freezing him mid-air while handles() released him right back each tick — a per-tick war). */
+    private static String excludedStateOf(EntityLivingBase entity) {
+        if (entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()) {
+            return "excludedState";
+        }
+        if (entity.isInWater() || entity.isInLava() || entity.isOnLadder()) {
+            return "excludedMedium";
+        }
+        if (entity.isPotionActive(MobEffects.LEVITATION)) {
+            return "excludedLevitation";
+        }
+        if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
+            return "creativeFlight";
+        }
+        return null;
+    }
+
     /** The ship this body is standing on RIGHT NOW, chosen among every loaded ship whose grown world
      *  box contains it by testing deck support in each candidate's OWN frame - not by first-match
      *  containment, which flips between overlapping parked ships. Null when no candidate supports it. */
@@ -352,6 +389,21 @@ public final class ShipFrameTravel {
         if (entity == null || shipId == null) {
             return false;
         }
+        // NEVER force-capture a body in an excluded state (contract C4): handles() would release it
+        // right back next tick, and the re-sent seed then snaps it to the deck point again - a
+        // per-tick teleport war that froze a creative-FLYING ex-pilot mid-air at the seat column.
+        // Refuse; the sender's window keeps trying and expires harmlessly if the state persists.
+        if (entity instanceof EntityLivingBase) {
+            String excluded = excludedStateOf((EntityLivingBase) entity);
+            if (excluded != null) {
+                if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                    zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed "
+                            + "REFUSED (" + excluded + ") remote=" + entity.world.isRemote
+                            + " id=" + entity.getEntityId() + " ship=" + shipId);
+                }
+                return false;
+            }
+        }
         // Anchored (contract C2): the seed names its ship explicitly - the server resolved it
         // unambiguously from the SUBSPACE seat block (claims of distinct ships never overlap), so the
         // client never has to guess by containment among overlapping world boxes.
@@ -378,6 +430,11 @@ public final class ShipFrameTravel {
         entity.motionY = 0.0;
         entity.motionZ = 0.0;
         entity.fallDistance = 0.0f;
+        // The capture supersedes the physics mod's own drag anchor (often freshly armed by the very
+        // contact that led here); disarm it or it fights the resolution from a stale point.
+        if (VSIntegration.suppressShipDrag(entity)) {
+            dragSuppressions++;
+        }
         return true;
     }
 
@@ -640,6 +697,20 @@ public final class ShipFrameTravel {
                 entity.motionZ - anchored.carryZ);
         if (local == null || motion == null) {
             declinedTicks++;
+            // A declined tick hands this body to VANILLA travel while the capture stays held:
+            // vanilla applies world-frame gravity and moves the body world-down, and the NEXT
+            // tick's guard then reads that as an external move (entityMoved = world-down). Trace
+            // it (test-gated): an externalMove drop right after a DECLINE line names this path,
+            // not a foreign mover, as the writer.
+            if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/DECLINE]"
+                        + " remote=" + world.isRemote
+                        + " id=" + entity.getEntityId()
+                        + " ship=" + shipId
+                        + " local=" + (local != null)
+                        + " motion=" + (motion != null)
+                        + " pos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")");
+            }
             return false;
         }
 
@@ -764,6 +835,14 @@ public final class ShipFrameTravel {
 
         updateFallState(world, entity, sweep, fallenAlongDeck, onDeck);
         updateLimbSwing(entity, sweep.x - local[0], sweep.z - local[2]);
+        // A resolved body must be invisible to the physics mod's own entity-drag: its anchor is fed
+        // by the (suppressed) collision injector, so whatever it holds is stale, and its world-tick
+        // mover otherwise undoes this commit (live: a constant pull toward a stale point, and the
+        // walking thrash whose entityMoved exactly negated this commit's motion). Cleared every
+        // resolved tick; a release hands the body back and the mod re-arms naturally on contact.
+        if (VSIntegration.suppressShipDrag(entity)) {
+            dragSuppressions++;
+        }
         return true;
     }
 
@@ -836,13 +915,31 @@ public final class ShipFrameTravel {
         // ~0, so this stays the tight epsilon; a genuine teleport is far beyond the deck's carry, so it
         // still trips.
         double allowed = EXTERNAL_MOVE_EPSILON;
+        double carrySeen = 0.0;
         double[] shipVel = VSIntegration.shipVelocityAtPointFor(
                 entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
         if (shipVel != null) {
-            double carry = Math.sqrt(shipVel[0] * shipVel[0] + shipVel[1] * shipVel[1]
+            carrySeen = Math.sqrt(shipVel[0] * shipVel[0] + shipVel[1] * shipVel[1]
                     + shipVel[2] * shipVel[2]) * TICK_SECONDS;
-            allowed += DECK_CARRY_MARGIN * carry;
+            allowed += DECK_CARRY_MARGIN * carrySeen;
         }
+        // Discriminators (diagnostic only, no guard effect): split the measured drift into the two
+        // possible writers. frameMoved = the CURRENT transform's image of the held deck point vs the
+        // committed point — the deck stepped under an unmoved body (a network transform snap on the
+        // client, a hunting or freefalling ship) and the widening above should have covered it.
+        // entityMoved = the body's actual world position vs the committed point — someone moved the
+        // BODY (a teleport, a packet apply, a stray world mover). Vectors, so direction names the writer.
+        double[] heldWorldNow = VSIntegration.toWorldFrameFor(
+                entity.world, state.shipId, state.localX, state.localY, state.localZ);
+        double fmx = heldWorldNow == null ? 0.0 : heldWorldNow[0] - state.worldX;
+        double fmy = heldWorldNow == null ? 0.0 : heldWorldNow[1] - state.worldY;
+        double fmz = heldWorldNow == null ? 0.0 : heldWorldNow[2] - state.worldZ;
+        double emx = entity.posX - state.worldX;
+        double emy = entity.posY - state.worldY;
+        double emz = entity.posZ - state.worldZ;
+        lastGuardFrameStep = Math.sqrt(fmx * fmx + fmy * fmy + fmz * fmz);
+        lastGuardAllowed = allowed;
+        lastGuardCarry = carrySeen;
         if (dx * dx + dy * dy + dz * dz > allowed * allowed) {
             // A REAL player's movement is CLIENT-authoritative: the position the server sees each tick
             // IS the client's honest resolution arriving by packet, not a foreign teleport. Fighting it
@@ -868,16 +965,21 @@ public final class ShipFrameTravel {
                 return local;
             }
             externalMoveDrops++;
-            // [FF-TRACE/DROP] #32 discriminator: worldMiss = how far an external agent moved the body in
-            // the WORLD since our last commit. Diagnostic only.
-            double wmx = entity.posX - state.worldX;
-            double wmy = entity.posY - state.worldY;
-            double wmz = entity.posZ - state.worldZ;
-            double worldMiss = Math.sqrt(wmx * wmx + wmy * wmy + wmz * wmz);
+            lastDropFrameMovedX = fmx;
+            lastDropFrameMovedY = fmy;
+            lastDropFrameMovedZ = fmz;
+            lastDropEntityMovedX = emx;
+            lastDropEntityMovedY = emy;
+            lastDropEntityMovedZ = emz;
+            lastDropAllowed = allowed;
+            double worldMiss = Math.sqrt(emx * emx + emy * emy + emz * emz);
             release(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz)
                     + " dSub=(" + dx + "," + dy + "," + dz + ")"
                     + " held=(" + state.localX + "," + state.localY + "," + state.localZ + ")"
-                    + " worldMiss=" + worldMiss);
+                    + " worldMiss=" + worldMiss
+                    + " frameMoved=(" + fmx + "," + fmy + "," + fmz + ")"
+                    + " entityMoved=(" + emx + "," + emy + "," + emz + ")"
+                    + " allowed=" + allowed + " carrySeen=" + carrySeen);
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};

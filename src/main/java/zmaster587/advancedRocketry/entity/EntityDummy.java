@@ -195,6 +195,16 @@ public class EntityDummy extends Entity {
             dismountedPilot = null;
             return;
         }
+        // Pilot in an excluded state (creative flight, riding, water...): the client-side seed
+        // refuses such a capture, so re-sending it every window tick is a packet-per-tick war for
+        // nothing. He is moving under his own (world-frame) power; the deck hold is moot.
+        if (exit instanceof net.minecraft.entity.EntityLivingBase
+                && zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isExcludedFromCapture(
+                        (net.minecraft.entity.EntityLivingBase) exit)) {
+            logHold("pilotExcluded", exit);
+            dismountedPilot = null;
+            return;
+        }
         // Not captured yet. Crew movement is client-authoritative, so we cannot capture him from the
         // server - a server teleport of his body reads on his own client as an external move and drops the
         // client-side capture that actually holds him (ShipFrameTravel's ~1mm external-move guard). Instead

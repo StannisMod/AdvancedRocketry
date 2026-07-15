@@ -432,6 +432,182 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 !lastReason.startsWith("externalMove"));
     }
 
+    // ---- #47 driver isolation: sustained fast ship motion vs the CLIENT external-move guard -----
+
+    @Test
+    public void aStillCrewMemberOnAFastClimbingShipKeepsHisCapture() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5720, by = 64, bz = 5720;
+
+        // The round-13 playtest thrash correlates with INVERSION, but the drop lines' real common
+        // factor is fast per-tick SHIP MOTION (a freefall reaching 0.87 blocks/tick; a hunting
+        // inverted hover stepping 0.2-0.4/tick) - the inverted attitude merely hunts harder. The
+        // driver is reproduced here directly, at level attitude: a sustained full-stick climb. The
+        // guard math says a smooth climb can NEVER trip it while the carry-widening sees the ship's
+        // velocity (allowed grows 3x faster than the step); so any external-move churn in this window
+        // means the CLIENT's velocity feed is blind and the widening never engaged.
+        // Board by WALKING ON, never through the pilot seat: a seat-mount leaves a dismounted (empty)
+        // dummy on the seat, and that dummy overwrites the AFC's pilot input every tick - the
+        // seat-input probe below is then inert and the ship never moves (two voided runs found this).
+        double[] ship = buildShip(bx, by, bz);
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(80);
+        assertTrue("the client player must be captured on the deck before the drive: "
+                + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"verdict\":true"));
+
+        // CONTROL: a quiet parked window. The guard must be quiet here (the still-crew pins), or a
+        // quiet driver window would prove nothing about the driver.
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        bot().waitTicks(60);
+        long controlChurn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+
+        // DRIVER: sustained vertical motion, commanded SERVER-side through the seat->AFC path (the
+        // crew member is standing on the deck, not sitting). The pilot input decays fast, so the
+        // command is re-sent EVERY tick (the seat-drive e2e's cadence). Two phases: full-up first
+        // (gains altitude; the fixture's thrust may or may not reach the guard-relevant rate), then
+        // full-down from that altitude (thrust plus gravity - the fast regime the round-13 freefall
+        // episode lived in), stopped well above the ground. The regime gate below asserts the peak
+        // per-tick rate actually reached the guard's static epsilon, or the run is void.
+        long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        double shipY0 = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double maxFrameStep = 0.0, maxCarry = -1.0, maxRate = 0.0, travelled = 0.0;
+        double yPrev = shipY0;
+        StringBuilder samples = new StringBuilder();
+        int phaseDownFrom = 120;
+        for (int i = 0; i < 200; i++) {
+            boolean up = i < phaseDownFrom;
+            String drive = exec("artest vs seat-input 0 0 " + (up ? "1" : "-1") + " 0 0 0 0");
+            assertTrue("seat-input must resolve the seat's AFC: " + drive,
+                    drive.contains("\"afcResolved\":true"));
+            bot().waitTicks(1);
+            if (i % 5 == 4) {
+                double yNow = readDouble(shipInfo(bx, by, bz), POS_Y);
+                double rate = Math.abs(yNow - yPrev) / 5.0;
+                maxRate = Math.max(maxRate, rate);
+                travelled = Math.max(travelled, Math.abs(yNow - shipY0));
+                yPrev = yNow;
+                double step = clientDouble(SHIP_FRAME_TRAVEL, "lastGuardFrameStep");
+                double carry = clientDouble(SHIP_FRAME_TRAVEL, "lastGuardCarry");
+                long drops = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+                maxFrameStep = Math.max(maxFrameStep, step);
+                maxCarry = Math.max(maxCarry, carry);
+                if (i % 20 == 19) {
+                    samples.append(String.format(java.util.Locale.ROOT,
+                            "[%d y=%.1f rate=%.3f step=%.3f carry=%.4f drops=%d] ",
+                            i, yNow, rate, step, carry, drops));
+                }
+                // Descending: never ride it into the ground - a hull impact drops the capture for
+                // legitimate reasons and would contaminate the churn count.
+                if (!up && yNow - (by + 2) < 6.0) {
+                    samples.append("[abort-descent y=").append(yNow).append("] ");
+                    break;
+                }
+            }
+        }
+        exec("artest vs seat-input 0 0 0 0 0 0 0");
+        double shipY1 = readDouble(shipInfo(bx, by, bz), POS_Y);
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        long resolvedAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        String dropShape = String.format(java.util.Locale.ROOT,
+                "lastDrop frameMoved=(%.3f,%.3f,%.3f) entityMoved=(%.3f,%.3f,%.3f) allowed=%.3f",
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropFrameMovedX"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropFrameMovedY"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropFrameMovedZ"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropEntityMovedX"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropEntityMovedY"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropEntityMovedZ"),
+                clientDouble(SHIP_FRAME_TRAVEL, "lastDropAllowed"));
+        System.out.println("[crewcap] climb-churn shipY=" + shipY0 + "->" + shipY1 + " travelled="
+                + travelled + " maxRate=" + maxRate + " churn=" + churn
+                + " control=" + controlChurn + " maxFrameStep=" + maxFrameStep + " maxCarry="
+                + maxCarry + " resolved=" + resolvedBefore + "->" + resolvedAfter + " " + dropShape
+                + " :: " + samples);
+
+        // Instrument-fires guards: the ship really moved, fast enough to matter to the guard, the
+        // client really resolved the body, and the control window was quiet - otherwise the churn
+        // number below is vacuous.
+        assertTrue("the commanded drive must actually move the ship (travelled=" + travelled
+                + "); a wrong-seat seat-input or dead AFC voids the run", travelled > 4.0);
+        assertTrue("the drive must reach the guard-relevant regime (maxRate=" + maxRate
+                + " blocks/tick vs the 0.2 static epsilon); a slower ship cannot falsify the claim",
+                maxRate > 0.2);
+        assertTrue("the client must be resolving the crew member through the drive (resolvedTicks "
+                + resolvedBefore + " -> " + resolvedAfter + ")", resolvedAfter > resolvedBefore + 40);
+        assertTrue("the control (quiet hover) window must not churn (control=" + controlChurn + ")",
+                controlChurn < 3);
+        // The contract (C6 along the ship-motion axis): smooth sustained ship motion must never
+        // cycle the crew capture through the external-move guard - the deck's own carry is the
+        // guard's to absorb. frameMoved >> entityMoved in the drop shape = the deck stepped under
+        // an unmoved body and the widening was blind (carry ~0 = the client velocity feed is empty).
+        assertTrue("a fast-climbing ship must not churn its still crew member's capture: churn="
+                + churn + " maxFrameStep=" + maxFrameStep + " maxCarry=" + maxCarry + " " + dropShape
+                + " :: " + samples, churn == 0);
+    }
+
+    // ---- C4: the dismount deck-hold must never snap a creative-flying ex-pilot ------------------
+
+    @Test
+    public void aCreativeFlyingExPilotIsNeverSnappedBackByTheDismountHold() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5820, by = 64, bz = 5820;
+
+        // The live war: dismount the pilot seat and start creative-FLYING within the dismount
+        // hold's 20-tick window. The window re-sends the deck-capture seed every tick; a seed that
+        // ignores excluded states snaps the flying player to the seat column and zeroes his motion,
+        // handles() releases him right back (creativeFlight), and the next seed snaps him again -
+        // the player is frozen mid-air, camera gates flickering, for the whole window. The
+        // contract: an ex-pilot in an excluded state keeps world-frame movement - no snap, ever.
+        buildAndBoardShip(bx, by, bz);
+        exec("gamemode creative @a"); // flight needs creative; the harness default is not
+        bot().waitTicks(20);
+        exec("artest player dismount");
+        // Double-tap space IMMEDIATELY - inside the hold window - to start creative flight.
+        bot().holdKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().holdKey(Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(Keyboard.KEY_SPACE);
+
+        // Hold space through the rest of the window: a flying player RISES steadily. The war's
+        // signature is the opposite - position pinned to the seat column, isResolving flickering.
+        double y0 = bot().reportState().get("playerY").getAsDouble();
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        StringBuilder win = new StringBuilder();
+        double yMax = y0;
+        int resolvingSeen = 0;
+        bot().holdKey(Keyboard.KEY_SPACE);
+        try {
+            for (int i = 0; i < 12; i++) {
+                bot().waitTicks(2);
+                double y = bot().reportState().get("playerY").getAsDouble();
+                yMax = Math.max(yMax, y);
+                boolean tracked = exec("artest vs deck-capture").contains("\"alreadyTracked\":true");
+                if (tracked) resolvingSeen++;
+                win.append(String.format(java.util.Locale.ROOT, "[t%d y=%.2f cap=%b] ",
+                        i * 2, y, tracked));
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_SPACE);
+        }
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        exec("gamemode survival @a"); // leave the shared world as the other tests expect it
+        System.out.println("[crewcap] fly-window y0=" + y0 + " yMax=" + yMax + " resolvingSeen="
+                + resolvingSeen + " churn=" + churn + " :: " + win);
+
+        // Instrument-fires: the double-tap really put the client into creative flight - a
+        // non-flying player holding space would jump and land, never rising a full 1.5 blocks.
+        assertTrue("the double-tap must actually start creative flight (y " + y0 + " -> max " + yMax
+                + "): " + win, yMax - y0 > 1.5);
+        // The contract: no seed snap, no capture war - the flying ex-pilot is never re-captured
+        // through the hold window.
+        assertTrue("a creative-flying ex-pilot must never be re-captured/snapped by the dismount "
+                + "hold (captured in " + resolvingSeen + "/12 samples): " + win, resolvingSeen == 0);
+    }
+
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);
