@@ -1202,6 +1202,11 @@ public class AdvancedRocketry {
                 properties.isNativeDimension = true;
             }
         }
+
+        // Layer-1 universe registry: worlds are loaded (seed + map storage reachable) and the star
+        // catalogue is built (createAndLoadDimensions ran at serverAboutToStart), so place every system.
+        zmaster587.advancedRocketry.universe.UniverseRegistry.populate(
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance());
     }
 
     @EventHandler

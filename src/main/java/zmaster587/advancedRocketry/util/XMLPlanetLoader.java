@@ -23,6 +23,10 @@ import zmaster587.advancedRocketry.api.dimension.solar.IGalaxy;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.UniverseRegistry;
+import net.minecraft.server.MinecraftServer;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import javax.annotation.Nonnull;
 import javax.xml.parsers.DocumentBuilder;
@@ -55,6 +59,9 @@ public class XMLPlanetLoader {
     private static final String ATTR_NAME = "name";
     private static final String ATTR_X = "x";
     private static final String ATTR_Y = "y";
+    // Explicit galactic address of an authored anchor system: "sectorX,sectorY,sectorZ" (cell indices).
+    // Absent -> the system falls back to a deterministic cell (Sol -> origin). See UniverseRegistry.
+    private static final String ATTR_GALACTIC_COORD = "galacticCoord";
     private static final String ATTR_SIZE = "size";
     private static final String ATTR_NUMPLANETS = "numPlanets";
     private static final String ATTR_NUMGASPLANETS = "numGasGiants";
@@ -127,6 +134,29 @@ public class XMLPlanetLoader {
         starId = 0;
     }
 
+    /**
+     * Resolve a system's authored galactic coordinate from the live universe registry, or {@code null} when
+     * no server/registry is reachable (so a no-server unit-test export simply omits the attribute).
+     */
+    private static GalacticCoord anchorCoordForWrite(int starId) {
+        MinecraftServer server;
+        try {
+            server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        } catch (Exception e) {
+            // No live server context (e.g. a headless test export where the sided delegate is unset) —
+            // omit the attribute rather than fail the whole XML write.
+            return null;
+        }
+        if (server == null) {
+            return null;
+        }
+        UniverseRegistry registry = UniverseRegistry.get(server);
+        if (registry == null) {
+            return null;
+        }
+        return registry.coordForSystem(starId).orElse(null);
+    }
+
     public static String writeXML(IGalaxy galaxy) {
 
         Document doc;
@@ -150,6 +180,10 @@ public class XMLPlanetLoader {
             nodeStar.setAttribute(ATTR_TEMP, Integer.toString(star.getTemperature()));
             nodeStar.setAttribute(ATTR_X, Integer.toString(star.getPosX()));
             nodeStar.setAttribute(ATTR_Y, Integer.toString(star.getPosZ()));
+            GalacticCoord starCoord = anchorCoordForWrite(star.getId());
+            if (starCoord != null) {
+                nodeStar.setAttribute(ATTR_GALACTIC_COORD, UniverseRegistry.formatAnchor(starCoord));
+            }
             nodeStar.setAttribute(ATTR_SIZE, Float.toString(star.getSize()));
             nodeStar.setAttribute(ATTR_NUMPLANETS, "0");
             nodeStar.setAttribute(ATTR_NUMGASPLANETS, "0");
@@ -1154,6 +1188,15 @@ public class XMLPlanetLoader {
             StellarBody star = readStar(masterNode);
             coupling.stars.add(star);
 
+            // Explicit galactic address for this authored anchor (optional). Staged into the universe
+            // registry after the catalogue is built; absent -> a deterministic fallback cell downstream.
+            if (masterNode.hasAttributes()) {
+                Node coordNode = masterNode.getAttributes().getNamedItem(ATTR_GALACTIC_COORD);
+                if (coordNode != null && !coordNode.getNodeValue().isEmpty()) {
+                    coupling.anchorCoords.put(star.getId(), UniverseRegistry.parseAnchor(coordNode.getNodeValue()));
+                }
+            }
+
             NodeList planetNodeList = masterNode.getChildNodes();
 
             Node planetNode = planetNodeList.item(0);
@@ -1208,6 +1251,9 @@ public class XMLPlanetLoader {
 
         public List<StellarBody> stars = new LinkedList<>();
         public List<DimensionProperties> dims = new LinkedList<>();
+        // Authored galactic addresses, keyed by star id (parse order). Only anchors that declared an
+        // explicit <star galacticCoord> appear here; the rest get a deterministic fallback at population.
+        public Map<Integer, GalacticCoord> anchorCoords = new HashMap<>();
 
     }
 }

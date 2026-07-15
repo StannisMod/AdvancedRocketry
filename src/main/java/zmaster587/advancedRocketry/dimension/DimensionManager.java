@@ -1030,6 +1030,10 @@ public class DimensionManager implements IGalaxy {
                     generateRandomPlanets(star, numRandomGeneratedPlanets, numRandomGeneratedGasGiants);
                 }
             }
+
+            // Buffer authored galactic anchor coords for the Layer-1 universe registry. Worlds are not
+            // loaded yet (this runs at serverAboutToStart), so they are drained once worlds are up.
+            zmaster587.advancedRocketry.universe.UniverseRegistry.stageAnchors(dimCouplingList.anchorCoords, resetFromXml);
         }
 
         // make sure to set dim offset back to original to make things consistant
