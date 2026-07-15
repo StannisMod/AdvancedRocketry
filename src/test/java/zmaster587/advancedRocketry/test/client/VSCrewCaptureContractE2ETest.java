@@ -122,8 +122,20 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         double sx = readDouble(info, POS_X), sz = readDouble(info, POS_Z);
 
         // Put the REAL client player on the GROUND beside the hull, inside the grown world box, and
-        // WALK him along it with the real forward key. He stands on terra firma the whole way.
-        exec("tp @a " + (sx + 4) + " " + (by + 1) + " " + (sz + 4) + " 0 0");
+        // WALK him along it with the real forward key. He stands on terra firma the whole way. The
+        // "ground" is a deterministic flat platform: the assembled ship's world position varies run
+        // to run, and natural terrain at (shipPos + offset) once dropped the walker into a gully -
+        // failing the Y-stability check on scenery, not on the contract under test.
+        int px = (int) Math.floor(sx), pz = (int) Math.floor(sz);
+        assertTrue("walk platform fill failed",
+                exec("artest fill 0 " + (px - 2) + " " + by + " " + (pz - 2) + " " + (px + 12) + " "
+                        + by + " " + (pz + 12) + " minecraft:stone").contains("\"ok\":true"));
+        assertTrue("walk headroom clear failed",
+                exec("artest fill 0 " + (px - 2) + " " + (by + 1) + " " + (pz - 2) + " " + (px + 12)
+                        + " " + (by + 4) + " " + (pz + 12) + " minecraft:air").contains("\"ok\":true"));
+        // Face NORTH (yaw 180 looks along -Z in MC): the walk starts at the platform's south edge
+        // and crosses its full depth without stepping off.
+        exec("tp @a " + (px + 4) + " " + (by + 1) + " " + (pz + 11) + " 180 0");
         bot().waitTicks(30);
         double groundY = bot().reportState().get("playerY").getAsDouble();
 
@@ -155,6 +167,184 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 captured == 0);
         assertTrue("his world-frame walk must stay on the ground - no ship-frame yank (y "
                 + yMin + ".." + yMax + " around " + groundY + ")", yMax - yMin < 2.0);
+    }
+
+    // ---- #47: a still crew member on a steeply-rolled deck is not dragged sideways --------------
+
+    private static final String SHIP_FRAME_TRAVEL =
+            "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel";
+    private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+
+    @Test
+    public void aStillCrewMemberOnASteeplyRolledDeckIsNotDraggedSideways() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5420, by = 64, bz = 5420;
+
+        // Board and stand up on the LEVEL deck (the dismount seed captures the ex-pilot), then roll
+        // the unmanned ship past vertical and HOLD it - the closest headless stand-in for the live
+        // "walking an inverted deck" configuration (the AFC caps commanded rolls near ~160; a true
+        // 180 needs a free spin that VS damps). The playtest symptom: with NO input, the crew member
+        // is dragged sideways while the CLIENT capture thrashes (drop + re-capture every few ticks).
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+        exec("artest player dismount");
+        bot().waitTicks(30);
+
+        assertTrue("attitude hold must accept the past-vertical roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " 0.17365 0.0 0.0 0.98481")
+                        .contains("\"commanded\":true"));
+        bot().waitTicks(200); // slew and settle - stationary, steeply rolled
+
+        // The subject must be in the regime the symptom lives in, and the instrument must fire:
+        // the ship really steeply rolled, and the CLIENT really resolving this body (all-zero
+        // discriminator statics with a non-resolving client would be a vacuous pass).
+        String info = shipInfo(bx, by, bz);
+        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
+        assertTrue("the ship must be steeply rolled for this test to mean anything (upY=" + upY + ")",
+                upY < -0.3);
+        long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+
+        // Stillness window: NO input at all. Sample the client's own drift, capture churn and the
+        // walk discriminators (all CLIENT-JVM statics - the client owns this body's movement).
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        double x0 = bot().reportState().get("playerX").getAsDouble();
+        double z0 = bot().reportState().get("playerZ").getAsDouble();
+        double maxLateral = 0.0;
+        float strafeSeen = 0f, forwardSeen = 0f;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            bot().waitTicks(5);
+            double mx = clientDouble(SHIP_FRAME_TRAVEL, "lastMotionShipX");
+            double mz = clientDouble(SHIP_FRAME_TRAVEL, "lastMotionShipZ");
+            float st = (float) clientDouble(SHIP_FRAME_TRAVEL, "lastInStrafe");
+            float fw = (float) clientDouble(SHIP_FRAME_TRAVEL, "lastInForward");
+            strafeSeen = Math.max(strafeSeen, Math.abs(st));
+            forwardSeen = Math.max(forwardSeen, Math.abs(fw));
+            maxLateral = Math.max(maxLateral, Math.max(Math.abs(mx), Math.abs(mz)));
+            if (i % 4 == 0) {
+                trace.append(String.format("[%d mShip=(%.3f,%.3f) in=(%.2f,%.2f)] ", i, mx, mz, st, fw));
+            }
+        }
+        long dropsAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        long resolvedAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        double x1 = bot().reportState().get("playerX").getAsDouble();
+        double z1 = bot().reportState().get("playerZ").getAsDouble();
+        double drift = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+        long churn = dropsAfter - dropsBefore;
+        System.out.println("[crewcap] still-drift upY=" + upY + " drift=" + drift
+                + " clientDropChurn=" + churn + " clientResolved=" + resolvedBefore + "->"
+                + resolvedAfter + " maxLateralShipMotion=" + maxLateral + " inputsSeen=("
+                + strafeSeen + "," + forwardSeen + ") :: " + trace);
+
+        // Instrument-fires guard: the CLIENT must have been resolving this body through the window,
+        // or every zero above is vacuous.
+        assertTrue("the client must be resolving the crew member through the stillness window "
+                + "(resolvedTicks " + resolvedBefore + " -> " + resolvedAfter + ")",
+                resolvedAfter > resolvedBefore + 50);
+        // Setup sanity: the window really was input-free (the discriminator data is only meaningful
+        // for a still body).
+        assertTrue("the stillness window must be input-free (saw strafe=" + strafeSeen + " forward="
+                + forwardSeen + ")", strafeSeen == 0f && forwardSeen == 0f);
+        // The contract (C6): a still crew member on a held, stationary deck STAYS PUT - no sideways
+        // drag - and his capture does not churn.
+        assertTrue("a still crew member must not be dragged sideways on a held rolled deck: drifted "
+                + drift + " blocks in ~5s (client drop churn=" + churn + ", max lateral ship-frame "
+                + "motion=" + maxLateral + "): " + trace, drift < 0.5);
+        assertTrue("the client capture must not churn on a held rolled deck (drops in window=" + churn
+                + "): " + trace, churn < 5);
+    }
+
+    // ---- #47 on the LIVE configuration: a station-keeping hover (never fully still, ledger #41) --
+
+    @Test
+    public void aStillCrewMemberOnAHoveringShipIsNotDraggedSideways() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5520, by = 64, bz = 5520;
+
+        // The playtest ship is not attitude-HELD by a probe - it HOVERS under station-keeping, which
+        // never brings it fully to rest (a ~-0.01/tick vertical residual plus correction wobble).
+        // The reported no-input sideways drag lives on that configuration, upright included - so the
+        // subject here is a real hover: lift with the pilot's own vertical key, stand up, hold still.
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double liftedY = startY;
+        bot().holdKey(Keyboard.KEY_R);
+        try {
+            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
+                bot().waitTicks(2);
+                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_R);
+        }
+        assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
+                liftedY - startY > 2.0);
+        exec("artest player dismount");
+        bot().waitTicks(40);
+
+        long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        double x0 = bot().reportState().get("playerX").getAsDouble();
+        double z0 = bot().reportState().get("playerZ").getAsDouble();
+        double maxLateral = 0.0;
+        float strafeSeen = 0f, forwardSeen = 0f;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            bot().waitTicks(5);
+            double mx = clientDouble(SHIP_FRAME_TRAVEL, "lastMotionShipX");
+            double mz = clientDouble(SHIP_FRAME_TRAVEL, "lastMotionShipZ");
+            strafeSeen = Math.max(strafeSeen, Math.abs((float) clientDouble(SHIP_FRAME_TRAVEL, "lastInStrafe")));
+            forwardSeen = Math.max(forwardSeen, Math.abs((float) clientDouble(SHIP_FRAME_TRAVEL, "lastInForward")));
+            maxLateral = Math.max(maxLateral, Math.max(Math.abs(mx), Math.abs(mz)));
+            if (i % 4 == 0) {
+                trace.append(String.format(java.util.Locale.ROOT, "[%d mShip=(%.3f,%.3f)] ", i, mx, mz));
+            }
+        }
+        long resolvedAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        double x1 = bot().reportState().get("playerX").getAsDouble();
+        double z1 = bot().reportState().get("playerZ").getAsDouble();
+        double drift = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+        System.out.println("[crewcap] hover-drift drift=" + drift + " clientDropChurn=" + churn
+                + " clientResolved=" + resolvedBefore + "->" + resolvedAfter
+                + " maxLateralShipMotion=" + maxLateral + " inputsSeen=(" + strafeSeen + ","
+                + forwardSeen + ") :: " + trace);
+
+        assertTrue("the client must be resolving the crew member through the window (resolvedTicks "
+                + resolvedBefore + " -> " + resolvedAfter + ")", resolvedAfter > resolvedBefore + 50);
+        assertTrue("the stillness window must be input-free (saw strafe=" + strafeSeen + " forward="
+                + forwardSeen + ")", strafeSeen == 0f && forwardSeen == 0f);
+        assertTrue("a still crew member must not be dragged sideways on a hovering ship: drifted "
+                + drift + " blocks in ~5s (client drop churn=" + churn + ", max lateral ship-frame "
+                + "motion=" + maxLateral + "): " + trace, drift < 0.5);
+        assertTrue("the client capture must not churn on a hovering ship (drops in window=" + churn
+                + "): " + trace, churn < 5);
+    }
+
+    /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
+    private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
+        double[] ship = buildShip(bx, by, bz);
+        String mountInfo = exec("artest vs seat-mount 0");
+        assertTrue("seat-mount must find the pilot seat: " + mountInfo,
+                mountInfo.contains("\"seatFound\":true"));
+        Matcher dm = DUMMY_ID.matcher(mountInfo);
+        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
+        assertTrue("bot must mount the seat dummy",
+                exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
+        bot().waitTicks(10);
+        return ship;
+    }
+
+    private String clientString(String className, String field) throws Exception {
+        return bot().readStaticField(className, field).get("value").getAsString();
+    }
+
+    private double clientDouble(String className, String field) throws Exception {
+        return Double.parseDouble(clientString(className, field));
     }
 
     // ---- helpers (self-contained, mirroring the other tier-2 e2e classes) ----------------------

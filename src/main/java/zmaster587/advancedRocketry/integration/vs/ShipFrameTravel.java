@@ -89,6 +89,18 @@ public final class ShipFrameTravel {
      *  inverted its deck is (+1 upright, 0 on its side, -1 fully inverted). Lets a spin-to-inversion repro
      *  poll the attitude server-side and stop the spin at a target roll. {@code 2} until first measured. */
     public static volatile double lastShipUpY = 2.0;
+    /** Diagnostics for the sideways-drag discriminator: what the last resolved tick received - the
+     *  walk inputs, the deck yaw the walk basis used, and the ship-frame lateral motion BEFORE the
+     *  input was added. Lateral motion at zero input = an external motion writer; correct-magnitude
+     *  motion at nonzero input off the look direction = a wrong walk basis. Read on either side's
+     *  own JVM (a client e2e reads the CLIENT's values via the bot). */
+    public static volatile float lastInStrafe = 0f;
+    public static volatile float lastInForward = 0f;
+    public static volatile float lastDeckYawDeg = 0f;
+    public static volatile double lastMotionShipX = 0.0;
+    public static volatile double lastMotionShipZ = 0.0;
+    /** Throttle for the [FF-TRACE/WALK] line (test mode only). */
+    private static int walkTraceTicks = 0;
 
     /**
      * Each aboard entity's authoritative position in its ship's frame, plus the world position this
@@ -596,6 +608,29 @@ public final class ShipFrameTravel {
         // Walking input, in the deck plane. The entity's yaw is a WORLD yaw; the direction he is
         // actually facing along the deck is his world look mapped into the ship frame.
         float deckYaw = deckYawDeg(entity, shipId);
+        // The sideways-drag discriminator: record what came INTO this tick (the walk inputs, the
+        // deck yaw the walk basis uses, and the ship-frame motion BEFORE the input is added). A
+        // constant lateral ship-frame motion at ZERO input names an external motion writer; a
+        // correct-magnitude motion at NONZERO input pointing off the look direction names a wrong
+        // walk basis. Statics so a client e2e reads them on the CLIENT JVM; the trace line
+        // self-records a live playtest (test-gated, throttled).
+        lastInStrafe = strafe;
+        lastInForward = forward;
+        lastDeckYawDeg = deckYaw;
+        lastMotionShipX = motion[0];
+        lastMotionShipZ = motion[2];
+        if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
+                && (walkTraceTicks++ % 10) == 0
+                && (strafe != 0f || forward != 0f
+                        || Math.abs(motion[0]) > 0.05 || Math.abs(motion[2]) > 0.05)) {
+            zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/WALK]"
+                    + " remote=" + world.isRemote
+                    + " strafe=" + strafe + " forward=" + forward
+                    + " deckYaw=" + deckYaw + " worldYaw=" + entity.rotationYaw
+                    + " motionShip=(" + motion[0] + "," + motion[1] + "," + motion[2] + ")"
+                    + " worldMotion=(" + entity.motionX + "," + entity.motionY + ","
+                    + entity.motionZ + ")");
+        }
         moveRelative(motion, strafe, vertical, forward, moveFactor, deckYaw);
 
         // Gravity toward the deck: plain -Y here, at vanilla's exact magnitude, BEFORE the sweep. This
