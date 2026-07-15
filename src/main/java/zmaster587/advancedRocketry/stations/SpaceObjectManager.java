@@ -129,6 +129,13 @@ public class SpaceObjectManager implements ISpaceObjectManager {
         int z = Math.round((pos.getZ() - stationSize / 2) / (2f * stationSize));
         int radius = Math.max(Math.abs(x), Math.abs(z));
 
+        // Centre grid cell (0,0) is spiral index 0. The general formula below uses
+        // (2*radius-1)^2, which at radius 0 evaluates to (-1)^2 = 1 — colliding with
+        // grid (-1,-1) on index 1 — so special-case the centre. (Station id 0 is never
+        // allocated: getNextStationId starts at 1, so this resolves to no station.)
+        if (radius == 0)
+            return getSpaceStation(0);
+
         int index = (int) Math.pow((2 * radius - 1), 2) + x + radius;
 
         if (Math.abs(z) != radius) {

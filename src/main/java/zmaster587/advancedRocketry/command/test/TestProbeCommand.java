@@ -2302,7 +2302,22 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"readback\":" + readback + "}");
             return;
         }
+        if ("at".equalsIgnoreCase(args[0]) && args.length >= 4) {
+            // /artest station at <x> <y> <z> — report the station (if any) that
+            // SpaceObjectManager.getSpaceStationFromBlockCoords resolves for these
+            // block coords. Used by the L5 repro (centre grid cell must map to no
+            // station, not falsely to station 1 via the radius-0 index quirk).
+            int x = parseIntOr(args[1], 0);
+            int y = parseIntOr(args[2], 0);
+            int z = parseIntOr(args[3], 0);
+            ISpaceObject at = SpaceObjectManager.getSpaceManager()
+                    .getSpaceStationFromBlockCoords(new BlockPos(x, y, z));
+            send(sender, "{\"ok\":true,\"x\":" + x + ",\"y\":" + y + ",\"z\":" + z
+                    + ",\"stationAtPos\":" + (at == null ? "null" : at.getId()) + "}");
+            return;
+        }
         send(sender, "{\"error\":\"unknown station subcommand — try list|info <id>|"
+                + "at <x> <y> <z>|"
                 + "fuel <id> set|add|use <amount>|add-pad <id> <x> <z> [name]|"
                 + "remove-pad <id> <x> <z>|pads <id>|dock <id> [commit]|"
                 + "undock <id> <x> <z>|set-autoland <id> <x> <z> <bool>|"
@@ -3330,6 +3345,69 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"getNewSatelliteNull\":true"
                     + ",\"slot0Loaded\":" + slot0Loaded
                     + ",\"slot0Type\":\"" + escapeJson(slot0Type) + "\""
+                    + ",\"outcome\":\"" + escapeJson(outcome) + "\""
+                    + ",\"topFrame\":\"" + escapeJson(topFrame) + "\"}");
+            return;
+        }
+        if (args.length >= 5 && "assemble-unregistered-direct".equalsIgnoreCase(args[0])) {
+            // /artest satellite-builder assemble-unregistered-direct <dim> <x> <y> <z> [type]
+            // L6 defense-in-depth: call TileSatelliteBuilder.assembleSatellite()
+            // DIRECTLY, bypassing the canAssembleSatellite gate, with an unregistered
+            // core type loaded — proves assembleSatellite is null-safe on its own
+            // (without the guard it NPEs on sat.getControllerItemStack). Server survives.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            String bogusType = args.length >= 6 ? args[5] : "ar:unregistered_addon_type";
+            if (zmaster587.advancedRocketry.api.SatelliteRegistry.getNewSatellite(bogusType) != null) {
+                send(sender, "{\"error\":\"type unexpectedly registered as a class — not a valid L6 repro\",\"type\":\""
+                        + escapeJson(bogusType) + "\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder)) {
+                send(sender, "{\"error\":\"tile not TileSatelliteBuilder\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder builder =
+                    (zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder) tile;
+            // Register the orphaned item property (MAIN, fixed unused meta) via the
+            // real public API — no paired registerSatellite for the class. Idempotent.
+            net.minecraft.item.Item primaryItem =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellitePrimaryFunction;
+            net.minecraft.item.ItemStack carrier = new net.minecraft.item.ItemStack(primaryItem, 1, 30);
+            zmaster587.advancedRocketry.api.satellite.SatelliteProperties existing =
+                    zmaster587.advancedRocketry.api.SatelliteRegistry.getSatelliteProperty(carrier);
+            if (existing == null || !bogusType.equals(existing.getSatelliteType())) {
+                zmaster587.advancedRocketry.api.satellite.SatelliteProperties sp =
+                        new zmaster587.advancedRocketry.api.satellite.SatelliteProperties(100, 1000, bogusType, 100, 1.0f);
+                zmaster587.advancedRocketry.api.SatelliteRegistry.registerSatelliteProperty(carrier, sp);
+            }
+            // Chassis (slot 11) first — slots 0-6 read through the chassis's embedded
+            // inventory — then the bogus MAIN carrier into core slot 0.
+            builder.setInventorySlotContents(11, new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellite, 1, 0));
+            builder.setInventorySlotContents(0, carrier);
+            boolean slot0Loaded = !builder.getStackInSlot(0).isEmpty();
+            String outcome;
+            String topFrame = "";
+            try {
+                builder.assembleSatellite();
+                outcome = "no-throw";
+            } catch (Throwable t) {
+                outcome = t.getClass().getSimpleName();
+                if (t.getStackTrace().length > 0) topFrame = t.getStackTrace()[0].toString();
+            }
+            send(sender, "{\"ok\":true,\"bogusType\":\"" + escapeJson(bogusType) + "\""
+                    + ",\"getNewSatelliteNull\":true"
+                    + ",\"slot0Loaded\":" + slot0Loaded
                     + ",\"outcome\":\"" + escapeJson(outcome) + "\""
                     + ",\"topFrame\":\"" + escapeJson(topFrame) + "\"}");
             return;
