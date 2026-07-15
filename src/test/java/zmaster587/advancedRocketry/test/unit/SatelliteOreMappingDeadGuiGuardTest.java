@@ -1,38 +1,38 @@
 package zmaster587.advancedRocketry.test.unit;
 
 import org.junit.Test;
-import zmaster587.advancedRocketry.satellite.SatelliteData;
 import zmaster587.advancedRocketry.satellite.SatelliteOreMapping;
 
 import static org.junit.Assert.assertFalse;
 
 /**
- * Finding L1 — {@code SatelliteOreMapping.performAction} opens {@code openGui(
- * AdvancedRocketry.instance, 100, …)}, an id no GuiHandler maps
- * ({@code GuiHandler.java:50-52}). It cannot be reproduced through gameplay: no
- * honest path reaches {@code SatelliteOreMapping.performAction}. Its only direct
- * caller ({@code ItemOreScanner.interactSatellite}) has zero callers; the
- * player-reachable {@code TileSatelliteTerminal} invokes {@code performAction}
- * only for satellites that are {@code instanceof SatelliteData}
- * ({@code TileSatelliteTerminal.java:85,228}), and {@code SatelliteOreMapping}
- * extends {@code SatelliteBase} directly, not {@code SatelliteData}.
+ * Regression guard (bug-report-workflow, finding L1) for the neutralised
+ * {@code SatelliteOreMapping.performAction}.
  *
- * <p>So L1 is dead/unreachable code — there is nothing to reproduce (per the
- * repro-first SOP, a "repro" that force-called {@code performAction} would be a
- * forbidden fake). This test instead pins the class-hierarchy invariant that
- * KEEPS it unreachable: if {@code SatelliteOreMapping} ever became a
- * {@code SatelliteData}, the terminal would bind it and the dead id-100 open
- * would go live. The honest remediation is to delete the dead
- * {@code performAction} override; this guard documents why until then.</p>
+ * <p>The override formerly did {@code player.openGui(AdvancedRocketry.instance, 100,
+ * ...)} — GUI id 100 is mapped by no GuiHandler ({@code GuiHandler.java:50-52}), so
+ * the call either no-opped or, on the terminal auto-download path (which passes a
+ * {@code null} player, {@code TileSatelliteTerminal.java:144}), NPE'd. Ore mapping is
+ * driven by the handheld {@code ItemOreScanner} (which opens the real
+ * {@code OreMappingSatellite} GUI), never by a terminal action, so the override had
+ * no legitimate job. The fix makes it a no-op returning {@code false}; the orphaned
+ * {@code ItemOreScanner.interactSatellite} (its only would-be caller) was deleted.</p>
+ *
+ * <p>This pins the corrected contract: invoking {@code performAction} on an
+ * ore-mapping satellite returns {@code false} and does not open the dead GUI — with
+ * a {@code null} player, the former body would have NPE'd on {@code player.openGui}.
+ * Same {@code performAction(null, null, null)}-returns-false shape used by
+ * {@code MissionResourceCollectionContractTest}. Pure unit tier: the no-arg ctor
+ * only runs {@code SatelliteBase()} (no {@code Biome.getBiome} like the biome/weather
+ * satellites), so it needs no Minecraft Bootstrap.</p>
  */
 public class SatelliteOreMappingDeadGuiGuardTest {
 
     @Test
-    public void oreMappingIsNotSatelliteData_soTerminalNeverReachesDeadId100OpenGui() {
-        assertFalse("SatelliteOreMapping must not be a SatelliteData; otherwise "
-                        + "TileSatelliteTerminal would bind it via its `instanceof SatelliteData` "
-                        + "gate and reach the unreachable/no-op id-100 openGui "
-                        + "(SatelliteOreMapping.java:69). If this fails, finding L1 has gone live.",
-                SatelliteData.class.isAssignableFrom(SatelliteOreMapping.class));
+    public void performActionIsNoOpAndDoesNotOpenDeadGui() {
+        assertFalse("SatelliteOreMapping.performAction must be a no-op returning false — it no longer opens the "
+                        + "unmapped GUI id 100. If this throws (e.g. NPE on the null player the terminal passes) or "
+                        + "returns true, finding L1's dead terminal-action path has been reintroduced.",
+                new SatelliteOreMapping().performAction(null, null, null));
     }
 }

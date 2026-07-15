@@ -118,10 +118,15 @@ public class SpaceObjectManager implements ISpaceObjectManager {
      */
     public ISpaceObject getSpaceStationFromBlockCoords(@Nonnull BlockPos pos) {
 
-        int x = pos.getX();
-        int z = pos.getZ();
-        x = Math.round((x) / (2f * ARConfiguration.getCurrentConfig().stationSize));
-        z = Math.round((z) / (2f * ARConfiguration.getCurrentConfig().stationSize));
+        int stationSize = ARConfiguration.getCurrentConfig().stationSize;
+        // Stations spawn at 2*stationSize*grid + stationSize/2 (see registerSpaceObject),
+        // i.e. the grid point plus a half-cell offset. Subtract that same offset before
+        // reverse-mapping so every position on a station's habitable footprint — including
+        // the +X/+Z block-reach sliver just past the confinement wall — maps back to the
+        // owning grid cell instead of the empty neighbour (which returned null -> off-station
+        // NPE/zero-power on tiles a player legitimately built at the perimeter).
+        int x = Math.round((pos.getX() - stationSize / 2) / (2f * stationSize));
+        int z = Math.round((pos.getZ() - stationSize / 2) / (2f * stationSize));
         int radius = Math.max(Math.abs(x), Math.abs(z));
 
         int index = (int) Math.pow((2 * radius - 1), 2) + x + radius;

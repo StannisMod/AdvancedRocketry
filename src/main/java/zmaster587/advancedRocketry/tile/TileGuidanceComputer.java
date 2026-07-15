@@ -290,7 +290,10 @@ public class TileGuidanceComputer extends TileInventoryHatch implements IModular
         ISpaceObject destinationSpaceStation = SpaceObjectManager.getSpaceManager().getSpaceStation(ItemStationChip.getUUID(getStackInSlot(0)));
         destinationDimensionID = ((destinationDimensionID == ARConfiguration.getCurrentConfig().spaceDimId) && (destinationSpaceStation != null)) ? destinationSpaceStation.getOrbitingPlanetId() : destinationDimensionID;
 
-        if (destinationDimensionID == Constants.INVALID_PLANET) {
+        // No origin station at this position (e.g. launching from the empty grid cell
+        // past the station perimeter wall) means there is no orbiting body to inject
+        // from — degrade to no trans-body burn instead of dereferencing a null station.
+        if (destinationDimensionID == Constants.INVALID_PLANET || currentSpaceStation == null) {
             return 0;
         }
         return (PlanetaryTravelHelper.isTravelWithinOrbit(currentSpaceStation.getOrbitingPlanetId(), destinationDimensionID) && !isAsteroidMission()) ? 0 : PlanetaryTravelHelper.getTransbodyInjectionBurn(currentSpaceStation.getOrbitingPlanetId(), destinationDimensionID, isAsteroidMission());

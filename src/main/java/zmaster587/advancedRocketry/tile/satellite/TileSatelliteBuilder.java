@@ -88,6 +88,12 @@ public class TileSatelliteBuilder extends TileMultiPowerConsumer implements IMod
         String satType = SatelliteRegistry.getSatelliteProperty(getStackInSlot(primaryFunctionSlot)).getSatelliteType();
         SatelliteBase sat = SatelliteRegistry.getNewSatellite(satType);
 
+        // Core part's type has an item property but no registered satellite class
+        // (add-on / registration-order gap): reject the build rather than dereference
+        // the null. Mirrors the null guards in createFromNBT / ItemSatellite.
+        if (sat == null)
+            return false;
+
         return sat.isAcceptableControllerItemStack(getStackInSlot(chipSlot));
     }
 

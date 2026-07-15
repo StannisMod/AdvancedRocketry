@@ -6,29 +6,29 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Repro (bug-report-workflow) demonstrating that the committed C076/C045 fix is
- * SYMPTOM-LEVEL: it stopped the crash but left a real functional bug.
+ * Regression guard (bug-report-workflow, finding C076) for the grid-mapping fix in
+ * {@code SpaceObjectManager.getSpaceStationFromBlockCoords}.
  *
- * <p>{@code SpaceObjectManager.getSpaceStationFromBlockCoords} reverse-maps a
- * block position with {@code round(worldX/(2*stationSize))}, but stations spawn
- * at {@code 2*stationSize*gridX + stationSize/2} — an offset of half a cell. The
- * +X/+Z player-confinement wall sits exactly on the grid-cell boundary, so a
- * solar tile built in the block-placement-reach sliver a few blocks past the wall
- * (a position a real player reaches at the station perimeter) mis-maps to the
- * empty neighboring cell → {@code getSpaceStationFromBlockCoords} returns null.
- * Before the fix that NPE-crashed the server; after the fix it silently produces
- * 0 RF — on a solar panel physically sitting on a real, powered station.</p>
+ * <p>Stations spawn at {@code 2*stationSize*gridX + stationSize/2} — a half-cell
+ * offset from the grid point. The reverse lookup formerly reverse-mapped with a bare
+ * {@code round(worldX/(2*stationSize))}, which did NOT subtract that offset, so a
+ * solar tile built in the block-placement-reach sliver a few blocks past the +X/+Z
+ * confinement wall (a position a real player reaches at the station perimeter)
+ * mis-mapped to the empty neighbouring grid cell → {@code
+ * getSpaceStationFromBlockCoords} returned null → 0 RF on a panel physically sitting
+ * on a real, powered station. The fix subtracts the {@code stationSize/2} spawn
+ * offset before rounding, so the whole habitable footprint (plus the reach sliver)
+ * maps back to the owning cell.</p>
  *
- * <p>This pins the current (fix-incomplete) behavior: a control panel at the
- * station spawn center generates &gt; 0, an identical panel on the +X perimeter
- * sliver of the SAME station generates exactly 0. The only difference is worldX
- * (grid cell), isolating the {@code round()}-vs-{@code +stationSize/2} mapping
- * asymmetry as the cause. The real fix is to make the reverse lookup agree with
- * the spawn offset; when that lands, the sliver assertion flips to &gt; 0.</p>
+ * <p>This pins the corrected contract: a control panel at the station spawn center
+ * generates &gt; 0, and an identical panel on the +X perimeter sliver of the SAME
+ * station also generates &gt; 0. The only difference between the two placements is
+ * worldX (grid cell), isolating the reverse-mapping offset as the variable under
+ * test. If the offset correction regresses, the sliver drops back to 0 and this
+ * fails.</p>
  *
  * <p>Fresh server per method (station registration is a global mutation);
  * getInsolationMultiplier's own null-planet guard is exercised separately by
@@ -43,7 +43,7 @@ public class SolarTileStationPerimeterSliverZeroPowerTest extends AbstractHeadle
     private static final Pattern ENERGY = Pattern.compile("\"energyStored\":(-?\\d+)");
 
     @Test
-    public void perimeterSliverSolarOnRealStationGeneratesZeroPower() throws Exception {
+    public void perimeterSliverSolarOnRealStationGeneratesPower() throws Exception {
         ok(exec("artest dim load " + SPACE_DIM));
 
         String create = exec("artest station create 0");
@@ -69,12 +69,12 @@ public class SolarTileStationPerimeterSliverZeroPowerTest extends AbstractHeadle
         assertTrue("control solar at the station center must generate power (>0); got " + controlDelta
                         + " (station=" + stationId + " spawn=" + spawnX + "," + spawnZ + " info=" + info + ")",
                 controlDelta > 0);
-        assertEquals("PIN C076 fix-incompleteness: an identical solar panel on the +X perimeter sliver of "
-                        + "the SAME real, powered station generates 0 RF — worldX=" + sx + " mis-maps to empty "
-                        + "grid cell (round(" + sx + "/2048)=" + Math.round(sx / 2048f) + " != stationGridX="
-                        + gridX + ") → null station → 0 insolation. Only X differs from the control. When the "
-                        + "grid-mapping fix lands, flip this to > 0.",
-                0L, sliverDelta);
+        assertTrue("C076 grid-mapping fix: an identical solar panel on the +X perimeter sliver of the SAME "
+                        + "real, powered station must ALSO generate power (>0). worldX=" + sx + " now maps back to "
+                        + "the owning grid cell (stationGridX=" + gridX + ") because the reverse lookup subtracts "
+                        + "the stationSize/2 spawn offset before rounding. Only X differs from the control; got "
+                        + sliverDelta + " (0 would mean the offset correction regressed → null station → 0 insolation).",
+                sliverDelta > 0);
     }
 
     /** Place a solar generator, force-tick 100, return energyStored delta. */
