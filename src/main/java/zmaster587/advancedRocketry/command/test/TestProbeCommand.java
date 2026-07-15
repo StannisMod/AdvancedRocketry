@@ -5734,7 +5734,71 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown worldgen subcommand — try sample <dim> <chunkX> <chunkZ> | ore-stats <dim> <cx> <cz> <radius> <blockId>\"}");
+        if (args.length >= 2 && "crater-gate".equalsIgnoreCase(args[0])) {
+            // /artest worldgen crater-gate <dim> [small] — C037 repro. Drives the REAL
+            // MapGenCrater (or MapGenCraterSmall with "small") generate on a stone-filled
+            // ChunkPrimer with the dim's
+            // crater-biome gate forced FALSE, and counts EXCAVATED AIR blocks.
+            //
+            // Gate=false setup: shouldCraterSpawn returns true when craterBiomeWeights is
+            // EMPTY, so clearing is wrong. Instead we load a single weight-0 BiomeEntry:
+            // the list is non-empty (skips the empty→true shortcut) and weight 0 never
+            // passes `itemWeight > rand.nextInt(99)` for ANY biome → gate false everywhere.
+            // chancePerChunk=1 makes the chunkX RNG disjunct (A) always true, so:
+            //   fixed  (A||B) && gate  → false → no crater carved → 0 excavated air
+            //   buggy  A || (B && gate) → A → crater carved → excavation drills air holes
+            // The stone pre-fill makes the observable topBlock-independent (excavation
+            // sets AIR into stone). The dim's craterBiomeWeights are restored afterward.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            boolean small = args.length >= 3 && "small".equalsIgnoreCase(args[2]);
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            if (props == null) {
+                send(sender, "{\"error\":\"dim not registered\",\"dim\":" + dim + "}");
+                return;
+            }
+            java.util.List<net.minecraftforge.common.BiomeManager.BiomeEntry> backup =
+                    new java.util.ArrayList<>(props.getCraterBiomeWeights());
+            long airBlocks = 0;
+            String err = "";
+            try {
+                props.getCraterBiomeWeights().clear();
+                props.getCraterBiomeWeights().add(new net.minecraftforge.common.BiomeManager.BiomeEntry(
+                        net.minecraft.init.Biomes.PLAINS, 0));
+                net.minecraft.world.chunk.ChunkPrimer primer = new net.minecraft.world.chunk.ChunkPrimer();
+                net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+                for (int px = 0; px < 16; px++)
+                    for (int pz = 0; pz < 16; pz++)
+                        for (int py = 0; py < 256; py++)
+                            primer.setBlockState(px, py, pz, stone);
+                net.minecraft.world.gen.MapGenBase gen = small
+                        ? new zmaster587.advancedRocketry.world.decoration.MapGenCraterSmall(1)
+                        : new zmaster587.advancedRocketry.world.decoration.MapGenCrater(1, false);
+                gen.generate(world, 0, 0, primer);
+                for (int px = 0; px < 16; px++)
+                    for (int pz = 0; pz < 16; pz++)
+                        for (int py = 0; py < 256; py++)
+                            if (primer.getBlockState(px, py, pz).getBlock() == net.minecraft.init.Blocks.AIR)
+                                airBlocks++;
+            } catch (Throwable t) {
+                err = t.getClass().getSimpleName() + ": " + t.getMessage();
+            } finally {
+                props.getCraterBiomeWeights().clear();
+                props.getCraterBiomeWeights().addAll(backup);
+            }
+            if (!err.isEmpty()) {
+                send(sender, "{\"error\":\"crater generate threw: " + escapeJson(err) + "\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"generator\":\"" + (small ? "small" : "crater")
+                    + "\",\"airBlocks\":" + airBlocks + ",\"chancePerChunk\":1}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown worldgen subcommand — try sample <dim> <chunkX> <chunkZ> | ore-stats <dim> <cx> <cz> <radius> <blockId> | crater-gate <dim>\"}");
     }
 
     // Inventory hatch probe ----------------------------------------------------
