@@ -24,6 +24,9 @@ import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -53,6 +56,16 @@ public class XMLPlanetLoader {
     private static final String GENERATECAVES = "generateCaves";
     private static final String ELEMENT_GALAXY = "galaxy";
     private static final String ELEMENT_STAR = "star";
+    // Optional procedural-galaxy generation (TASK-89). Present -> a clustered generator fills the void
+    // between authored anchors; absent -> authored anchors only. All attrs are balance knobs with defaults.
+    private static final String ELEMENT_GALAXYGEN = "galaxyGen";
+    private static final String ELEMENT_STARTYPE = "starType";
+    private static final String ATTR_DENSITY = "density";
+    private static final String ATTR_MINSPACING = "minSpacing";
+    private static final String ATTR_CLUSTERSCALE = "clusterScale";
+    private static final String ATTR_VOIDFRACTION = "voidFraction";
+    private static final String ATTR_MINSIZE = "minSize";
+    private static final String ATTR_MAXSIZE = "maxSize";
     private static final String ELEMENT_PLANET = "planet";
     private static final String ATTR_BLACKHOLE = "blackHole";
     private static final String ATTR_BLACKHOLE_DISK_ANGLE = "diskAngle";
@@ -157,6 +170,81 @@ public class XMLPlanetLoader {
         return registry.coordForSystem(starId).orElse(null);
     }
 
+    private static String attr(Node node, String name) {
+        if (node == null || !node.hasAttributes()) {
+            return null;
+        }
+        Node a = node.getAttributes().getNamedItem(name);
+        return a == null ? null : a.getNodeValue();
+    }
+
+    private static int attrInt(Node node, String name, int def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            AdvancedRocketry.logger.warn("Invalid " + name + " in <galaxyGen>: " + v);
+            return def;
+        }
+    }
+
+    private static double attrDouble(Node node, String name, double def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            AdvancedRocketry.logger.warn("Invalid " + name + " in <galaxyGen>: " + v);
+            return def;
+        }
+    }
+
+    /** Parse a {@code <galaxyGen>} element (attrs + {@code <starType>} children) into a config. */
+    private GalaxyGenConfig readGalaxyGen(Node node) {
+        GalaxyGenConfig defaults = GalaxyGenConfig.defaults();
+        double density = attrDouble(node, ATTR_DENSITY, defaults.density);
+        int minSpacing = attrInt(node, ATTR_MINSPACING, defaults.minSpacing);
+        int clusterScale = attrInt(node, ATTR_CLUSTERSCALE, defaults.clusterScale);
+        double voidFraction = attrDouble(node, ATTR_VOIDFRACTION, defaults.voidFraction);
+
+        List<GalaxyGenConfig.StarType> types = new ArrayList<>();
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (ELEMENT_STARTYPE.equalsIgnoreCase(child.getNodeName())) {
+                types.add(new GalaxyGenConfig.StarType(
+                        attrInt(child, ATTR_TEMP, 100),
+                        (float) attrDouble(child, ATTR_MINSIZE, 0.8d),
+                        (float) attrDouble(child, ATTR_MAXSIZE, 1.2d),
+                        attrInt(child, ATTR_WEIGHT, 1)));
+            }
+        }
+        // An empty <starType> list falls back to the default archetypes (handled by the config ctor).
+        return new GalaxyGenConfig(density, minSpacing, clusterScale, voidFraction, types);
+    }
+
+    private static Element writeGalaxyGen(Document doc, GalaxyGenConfig cfg) {
+        Element e = doc.createElement(ELEMENT_GALAXYGEN);
+        e.setAttribute(ATTR_DENSITY, Double.toString(cfg.density));
+        e.setAttribute(ATTR_MINSPACING, Integer.toString(cfg.minSpacing));
+        e.setAttribute(ATTR_CLUSTERSCALE, Integer.toString(cfg.clusterScale));
+        e.setAttribute(ATTR_VOIDFRACTION, Double.toString(cfg.voidFraction));
+        for (GalaxyGenConfig.StarType t : cfg.starTypes) {
+            Element st = doc.createElement(ELEMENT_STARTYPE);
+            st.setAttribute(ATTR_TEMP, Integer.toString(t.temperature));
+            st.setAttribute(ATTR_MINSIZE, Float.toString(t.minSize));
+            st.setAttribute(ATTR_MAXSIZE, Float.toString(t.maxSize));
+            st.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
+            e.appendChild(st);
+        }
+        return e;
+    }
+
     public static String writeXML(IGalaxy galaxy) {
 
         Document doc;
@@ -205,6 +293,12 @@ public class XMLPlanetLoader {
             }
 
             galaxyElement.appendChild(nodeStar);
+        }
+
+        // Emit the active procedural generator's config so a re-read (resetFromXml) round-trips it.
+        IGalaxyGenerator activeGenerator = UniverseRegistry.getGenerator();
+        if (activeGenerator instanceof ClusteredGalaxyGenerator) {
+            galaxyElement.appendChild(writeGalaxyGen(doc, ((ClusteredGalaxyGenerator) activeGenerator).config()));
         }
 
         TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -1180,6 +1274,11 @@ public class XMLPlanetLoader {
 
         offset = DimensionManager.dimOffset;
         while (masterNode != null) {
+            if (masterNode.getNodeName().equalsIgnoreCase(ELEMENT_GALAXYGEN)) {
+                coupling.galaxyGenConfig = readGalaxyGen(masterNode);
+                masterNode = masterNode.getNextSibling();
+                continue;
+            }
             if (!masterNode.getNodeName().equals("star")) {
                 masterNode = masterNode.getNextSibling();
                 continue;
@@ -1254,6 +1353,8 @@ public class XMLPlanetLoader {
         // Authored galactic addresses, keyed by star id (parse order). Only anchors that declared an
         // explicit <star galacticCoord> appear here; the rest get a deterministic fallback at population.
         public Map<Integer, GalacticCoord> anchorCoords = new HashMap<>();
+        // Procedural-galaxy generation config from an optional <galaxyGen> element; null = authored-only.
+        public GalaxyGenConfig galaxyGenConfig = null;
 
     }
 }

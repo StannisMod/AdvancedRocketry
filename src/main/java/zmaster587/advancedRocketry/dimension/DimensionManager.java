@@ -1036,6 +1036,15 @@ public class DimensionManager implements IGalaxy {
             zmaster587.advancedRocketry.universe.UniverseRegistry.stageAnchors(dimCouplingList.anchorCoords, resetFromXml);
         }
 
+        // Install the procedural galaxy generator when the pack opts in via <galaxyGen>; otherwise reset to
+        // the authored-anchors-only default. The generator is a JVM-global, so reset every load so a world
+        // without <galaxyGen> never inherits a previous world's generator.
+        zmaster587.advancedRocketry.universe.GalaxyGenConfig galaxyGenConfig =
+                (dimCouplingList != null) ? dimCouplingList.galaxyGenConfig : null;
+        zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(galaxyGenConfig == null
+                ? null
+                : new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(galaxyGenConfig));
+
         // make sure to set dim offset back to original to make things consistant
         DimensionManager.dimOffset = dimOffset;
 

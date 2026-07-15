@@ -11,8 +11,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
+import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.advancedRocketry.util.XMLPlanetLoader;
 import zmaster587.advancedRocketry.util.XMLPlanetLoader.DimensionPropertyCoupling;
 
@@ -26,6 +31,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -501,6 +507,58 @@ public class XMLPlanetLoaderTest {
         assertEquals("maxHeight must round-trip", 60, entry.getMaxHeight());
         assertEquals("clumpSize must round-trip", 8, entry.getClumpSize());
         assertEquals("chancePerChunk must round-trip", 20, entry.getChancePerChunk());
+    }
+
+    @Test
+    public void galaxyGenElementParsesIntoConfig() throws IOException {
+        DimensionPropertyCoupling c = parse(galaxy(
+                "<galaxyGen density=\"0.42\" minSpacing=\"7\" clusterScale=\"9\" voidFraction=\"0.3\">\n"
+                        + "  <starType temp=\"55\" minSize=\"0.7\" maxSize=\"1.1\" weight=\"3\"/>\n"
+                        + "  <starType temp=\"180\" minSize=\"1.5\" maxSize=\"2.2\" weight=\"1\"/>\n"
+                        + "</galaxyGen>\n"));
+        assertNotNull("a <galaxyGen> element must parse into a config", c.galaxyGenConfig);
+        assertEquals(0.42d, c.galaxyGenConfig.density, 1e-9);
+        assertEquals(7, c.galaxyGenConfig.minSpacing);
+        assertEquals(9, c.galaxyGenConfig.clusterScale);
+        assertEquals(0.3d, c.galaxyGenConfig.voidFraction, 1e-9);
+        assertEquals(2, c.galaxyGenConfig.starTypes.size());
+        assertEquals(55, c.galaxyGenConfig.starTypes.get(0).temperature);
+        assertEquals(3, c.galaxyGenConfig.starTypes.get(0).weight);
+    }
+
+    @Test
+    public void absentGalaxyGenLeavesConfigNull() throws IOException {
+        DimensionPropertyCoupling c = parse(galaxy(star("Sol", "")));
+        assertNull("no <galaxyGen> means authored-only (null config)", c.galaxyGenConfig);
+    }
+
+    @Test
+    public void galaxyGenRoundTripsThroughWriteXml() throws IOException {
+        GalaxyGenConfig parsed = parse(galaxy(
+                "<galaxyGen density=\"0.25\" minSpacing=\"5\" clusterScale=\"12\" voidFraction=\"0.45\">\n"
+                        + "  <starType temp=\"60\" minSize=\"0.6\" maxSize=\"1.0\" weight=\"9\"/>\n"
+                        + "</galaxyGen>\n")).galaxyGenConfig;
+
+        try {
+            UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(parsed));
+            String written = XMLPlanetLoader.writeXML(DimensionManager.getInstance());
+
+            File f = tempFolder.newFile();
+            Files.write(f.toPath(), written.getBytes(StandardCharsets.UTF_8));
+            XMLPlanetLoader loader = new XMLPlanetLoader();
+            assertTrue(loader.loadFile(f));
+            GalaxyGenConfig round = loader.readAllPlanets().galaxyGenConfig;
+
+            assertNotNull("the written galaxy must round-trip its <galaxyGen>", round);
+            assertEquals(0.25d, round.density, 1e-9);
+            assertEquals(5, round.minSpacing);
+            assertEquals(12, round.clusterScale);
+            assertEquals(0.45d, round.voidFraction, 1e-9);
+            assertEquals(60, round.starTypes.get(0).temperature);
+            assertEquals(9, round.starTypes.get(0).weight);
+        } finally {
+            UniverseRegistry.setGenerator(null); // restore the authored-only default
+        }
     }
 
     // ---- helpers -------------------------------------------------------------
