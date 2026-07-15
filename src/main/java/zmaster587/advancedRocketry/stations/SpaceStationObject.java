@@ -157,10 +157,19 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     }
 
     /**
-     * @return the insolation relative to Earth ground of the station - returns 0 for warping!
+     * @return the insolation relative to Earth ground of the station — 0 for warping,
+     *         and 0 when the station has no resolved orbiting body (not yet
+     *         {@code created}, or orbiting an invalid/removed planet).
      */
     public double getInsolationMultiplier() {
-        return (isWarping()) ? 0.0 : getOrbitingPlanet().getPeakInsolationMultiplierWithoutAtmosphere();
+        if (isWarping())
+            return 0.0;
+        // getOrbitingPlanet() is null when getOrbitingPlanetId() == INVALID_PLANET
+        // (station not yet created / between planet assignments) or the planet's
+        // DimensionProperties are gone. Guard at the source so every caller — the
+        // solar tiles and TileMicrowaveReciever — is safe from a tick-loop NPE. See C076/C045.
+        DimensionProperties orbiting = getOrbitingPlanet();
+        return (orbiting != null) ? orbiting.getPeakInsolationMultiplierWithoutAtmosphere() : 0.0;
     }
 
     /**

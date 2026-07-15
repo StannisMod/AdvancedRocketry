@@ -2325,7 +2325,15 @@ public class TestProbeCommand extends CommandBase {
             }
             SatelliteBase sat = zmaster587.advancedRocketry.api.SatelliteRegistry.getNewSatellite(typeId);
             if (sat == null) {
-                send(sender, "{\"error\":\"unknown satellite type\",\"type\":\"" + escapeJson(typeId) + "\"}");
+                // getNewSatellite returns null for an unregistered id by design;
+                // the save/wire path (createFromNBT) drops unresolvable types
+                // (C002/C155). `create` needs a real satellite instance to inject
+                // properties into, so an unknown type is a clean reject — reported
+                // honestly, not dressed up.
+                send(sender, "{\"error\":\"unknown satellite type — getNewSatellite "
+                        + "returns null for an unregistered id (createFromNBT drops "
+                        + "unresolvable types on load)\",\"type\":\""
+                        + escapeJson(typeId) + "\"}");
                 return;
             }
             zmaster587.advancedRocketry.api.satellite.SatelliteProperties sp =
@@ -3112,7 +3120,59 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"canTick\":" + sat.canTick() + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown satellite subcommand — try list <dim> | info <dim> <id> | create <dim> <type> [...] | types | imprint-terminal <dim> <x> <y> <z> <satId> | terminal-info <dim> <x> <y> <z> | tick <dim> <id> <ticks> | battery <dim> <id> | data <dim> <id> | can-tick <dim> <id>\"}");
+        if ("create-from-nbt-unknown".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest satellite create-from-nbt-unknown <dim> [bogusType] — drive
+            // the REAL SatelliteRegistry.createFromNBT with a dataType that is not
+            // in the registry, exercising the exact save/wire load contract
+            // (repro for C002/C155). Was (buggy): getNewSatellite returns null and
+            // createFromNBT dereferenced it -> NullPointerException. Fixed:
+            // createFromNBT returns null (the caller drops the satellite), reported
+            // here as "satClass":"null". The <dim> arg is echoed for symmetry with
+            // the other satellite probes; createFromNBT is dim-less.
+            String bogusType = args.length >= 3 ? args[2]
+                    : "advancedrocketry:unregistered.satellite.type.repro";
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            nbt.setString("dataType", bogusType);
+            try {
+                SatelliteBase sat = zmaster587.advancedRocketry.api.SatelliteRegistry.createFromNBT(nbt);
+                send(sender, "{\"ok\":true,\"satClass\":\""
+                        + (sat == null ? "null" : escapeJson(sat.getClass().getName()))
+                        + "\",\"dataType\":\"" + escapeJson(bogusType) + "\"}");
+            } catch (Throwable t) {
+                send(sender, "{\"error\":\"createFromNBT threw\",\"throwable\":\""
+                        + escapeJson(t.getClass().getName()) + "\",\"dataType\":\""
+                        + escapeJson(bogusType) + "\"}");
+            }
+            return;
+        }
+        if ("announce-unknown".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest satellite announce-unknown <dim> [bogusType] — broadcast a
+            // PacketSatellite whose NBT carries an unregistered dataType,
+            // exercising the REAL client PacketSatellite.readClient ->
+            // createFromNBT path (repro for C002/C155: the cross-modpack "unknown
+            // satellite type on the wire" case that disconnects/crashes the
+            // client). The throwaway satellite writes ONLY the bogus dataType, so
+            // the client's getNewSatellite returns null and createFromNBT NPEs.
+            final int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            final String bogusType = args.length >= 3 ? args[2]
+                    : "advancedrocketry:unregistered.satellite.type.repro";
+            SatelliteBase bogus = new SatelliteBase() {
+                @Override public String getInfo(net.minecraft.world.World world) { return "repro"; }
+                @Override public String getName() { return "repro"; }
+                @Override public boolean performAction(net.minecraft.entity.player.EntityPlayer player,
+                        net.minecraft.world.World world, net.minecraft.util.math.BlockPos pos) { return false; }
+                @Override public double failureChance() { return 0d; }
+                @Override public void writeToNBT(net.minecraft.nbt.NBTTagCompound out) {
+                    out.setString("dataType", bogusType);
+                }
+            };
+            zmaster587.libVulpes.network.PacketHandler.sendToAll(
+                    new zmaster587.advancedRocketry.network.PacketSatellite(bogus));
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"dataType\":\""
+                    + escapeJson(bogusType) + "\"}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown satellite subcommand — try list <dim> | info <dim> <id> | create <dim> <type> [...] | types | imprint-terminal <dim> <x> <y> <z> <satId> | terminal-info <dim> <x> <y> <z> | tick <dim> <id> <ticks> | battery <dim> <id> | data <dim> <id> | can-tick <dim> <id> | create-from-nbt-unknown <dim> [type] | announce-unknown <dim> [type]\"}");
     }
 
     /**
@@ -11559,6 +11619,29 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"hadSatelliteId\":" + (satId != -1)
                     + ",\"satelliteId\":" + satId
                     + ",\"registeredOnDim\":" + satRegisterDim + "}");
+            return;
+        }
+        if ("equip-stationchip".equals(sub)) {
+            // /artest player equip-stationchip — arrange-only for the C010 client
+            // e2e: give the player an ItemSpaceStationChip, seed one landing
+            // location for the player's current dim (so the modular GUI renders
+            // content + buttons), and equip it to the main hand. No click — the
+            // real client does the sneak-right-click (open) and the button press
+            // (which triggers the broken re-open at ItemStationChip:210).
+            net.minecraft.item.Item chip =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSpaceStationChip;
+            net.minecraft.item.ItemStack held = new net.minecraft.item.ItemStack(chip);
+            int dimId = player.dimension;
+            zmaster587.advancedRocketry.item.ItemStationChip chipItem =
+                    (zmaster587.advancedRocketry.item.ItemStationChip) chip;
+            java.util.List<zmaster587.advancedRocketry.item.ItemStationChip.LandingLocation> locs =
+                    new java.util.LinkedList<>();
+            locs.add(new zmaster587.advancedRocketry.item.ItemStationChip.LandingLocation(
+                    "repro", 0f, 64f, 0f));
+            chipItem.setLandingLocations(held, dimId, locs);
+            player.setHeldItem(net.minecraft.util.EnumHand.MAIN_HAND, held);
+            send(sender, "{\"ok\":true,\"dim\":" + dimId
+                    + ",\"landingLocations\":" + locs.size() + "}");
             return;
         }
         if ("equip-biomechanger".equals(sub) && args.length >= 2) {

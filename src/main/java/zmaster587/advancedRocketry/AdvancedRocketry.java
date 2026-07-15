@@ -990,8 +990,11 @@ public class AdvancedRocketry {
         MaterialRegistry.registerMixedMaterial(new MixedMaterial(TileElectricArcFurnace.class, "oreRutile", new ItemStack[]{MaterialRegistry.getMaterialFromName("Titanium").getProduct(AllowedProducts.getProductByName("INGOT"))}));
 
 
-        NetworkRegistry.INSTANCE.registerGuiHandler(this, new GuiHandler());
-
+        // One GUI handler on AdvancedRocketry.instance: the AR handler serves
+        // OreMappingSatellite and delegates all other (libVulpes MODULAR*) ids
+        // to the libVulpes handler. A second registration here would be silently
+        // overwritten in Forge's per-container map, which is exactly what broke
+        // the ItemStationChip button re-open. See C010.
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new zmaster587.advancedRocketry.inventory.GuiHandler());
         planetWorldType = new WorldTypePlanetGen("PlanetCold");
         spaceWorldType = new WorldTypeSpace("Space");

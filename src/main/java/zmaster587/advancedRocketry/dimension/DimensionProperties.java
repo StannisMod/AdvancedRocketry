@@ -1462,18 +1462,21 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
                 if (satellites.containsKey(longKey)) {
                     satellites.get(longKey).readFromNBT(satelliteNBT);
                 } else {
-                    //Check for NBT errors
-                    try {
-                        SatelliteBase satellite = SatelliteRegistry.createFromNBT(satelliteNBT);
+                    SatelliteBase satellite = SatelliteRegistry.createFromNBT(satelliteNBT);
 
+                    // Unknown/unresolvable dataType → createFromNBT returns null;
+                    // drop the satellite. Never put a null into the satellites map —
+                    // it would NPE the next world save (writeToNBT iterates the map
+                    // unguarded). See C002/C155.
+                    if (satellite == null) {
+                        AdvancedRocketry.logger.warn("Satellite with unknown/bad dataType detected (key="
+                                + longKey + "), dropping");
+                    } else {
                         satellites.put(longKey, satellite);
 
                         if (satellite.canTick()) {
                             tickingSatellites.put(satellite.getId(), satellite);
                         }
-
-                    } catch (NullPointerException e) {
-                        AdvancedRocketry.logger.warn("Satellite with bad NBT detected, Removing");
                     }
                 }
             }

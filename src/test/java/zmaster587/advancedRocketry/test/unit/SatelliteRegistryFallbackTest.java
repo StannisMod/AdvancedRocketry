@@ -12,39 +12,29 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 /**
- * Coverage-audit gap (post-TASK-26): save-compatibility fallback for an
- * unregistered satellite type.
+ * Save/wire compatibility for an unregistered satellite type (C002/C155).
  *
- * <p>{@link SatelliteRegistry#getNewSatellite(String)} is the dispatch
- * point for "load a satellite from NBT" (called by
- * {@link SatelliteRegistry#createFromNBT(NBTTagCompound)}). Its javadoc
- * promises a {@link zmaster587.advancedRocketry.satellite.SatelliteDefunct}
- * fallback for unknown type ids — that's the documented save-compatibility
- * contract: a save containing a satellite whose type was registered by a
- * companion mod that's been removed from the modpack must still load,
- * producing an inert "Offline Satellite" placeholder.</p>
+ * <p>{@link SatelliteRegistry#getNewSatellite(String)} is the dispatch point
+ * for "load a satellite from NBT" (called by
+ * {@link SatelliteRegistry#createFromNBT(NBTTagCompound)}). When a save/packet
+ * carries a satellite whose type was registered by a companion mod that's been
+ * removed from the modpack, the type can't be reconstructed.</p>
  *
- * <p><b>Current production behaviour (≠ javadoc)</b>: the method
- * returns {@code null} for an unknown type, and
- * {@code createFromNBT} immediately dereferences {@code null} →
- * {@code NullPointerException}. The shipping save-load path
- * ({@link zmaster587.advancedRocketry.dimension.DimensionProperties#readFromNBT})
- * catches the NPE in a {@code try / catch(NullPointerException)} and
- * silently drops the satellite — so the save still loads — but other
- * callers ({@link zmaster587.advancedRocketry.network.PacketSatellite#readClient}
- * and {@link zmaster587.advancedRocketry.entity.EntityRocket#readEntityFromNBT})
- * lack that catch and will propagate the NPE to their callers.</p>
+ * <p><b>Corrected contract (C002/C155 fix, Path B — drop)</b>:
+ * {@code getNewSatellite} returns {@code null} for an unregistered id (by
+ * design — callers such as {@code ItemSatellite} and {@code TileSatelliteHatch}
+ * rely on that null), and {@code createFromNBT} also returns {@code null} for an
+ * unresolvable type so its callers ({@code DimensionProperties.readFromNBT},
+ * {@code PacketSatellite.readClient}, {@code PacketSatellitesUpdate.readClient})
+ * drop the satellite. Previously {@code createFromNBT} dereferenced the null →
+ * {@code NullPointerException}, which {@code PacketSatellite.readClient} and
+ * {@code EntityRocket.readEntityFromNBT} propagated as a client disconnect /
+ * entity-load failure. A placeholder ({@code SatelliteDefunct}) was rejected:
+ * it re-saved as {@code dataType="poo"} (getKey fallback), permanently
+ * destroying the original type, and it ticked while inert.</p>
  *
- * <p>This test pins the <b>current (buggy) contract</b> so a future fix
- * (return {@code SatelliteDefunct} from {@code getNewSatellite}, or add
- * a null-guard in {@code createFromNBT}) flips the assertion and forces
- * a re-evaluation. Ledgered as a known bug — see
+ * <p>These tests pin the corrected contract. Ledgered — see
  * {@code .agent/history/known-bugs-ledger.md} Batch #2.</p>
- *
- * <p><b>Why log this bug</b>: the player-visible scenario is "join a
- * server using a different mod set than the save was created with" →
- * NPE on packet handler → client disconnect or crash. Low-probability
- * (modpack-author hygiene usually prevents this) but real.</p>
  */
 public class SatelliteRegistryFallbackTest {
 
@@ -64,53 +54,40 @@ public class SatelliteRegistryFallbackTest {
     private static final String KNOWN_TYPE_KEY =
             "ar:gap4_known_type_for_positive_control";
 
-    /** Documents the bug: unknown type name returns null, contradicting
-     *  the {@code getNewSatellite} javadoc that promises SatelliteDefunct. */
+    /** getNewSatellite returns null for an unregistered id — by design.
+     *  Callers (ItemSatellite, TileSatelliteHatch, …) rely on the null to
+     *  detect an unresolvable type. */
     @Test
-    public void unknownSatelliteTypeReturnsNullInsteadOfDefunct_documentsKnownBug() {
+    public void getNewSatelliteReturnsNullForUnknownType() {
         SatelliteBase result = SatelliteRegistry.getNewSatellite(
                 "advancedrocketry:nonexistent.satellite.type.for.gap4.test");
-        // Production-currently: null. Expected per javadoc: SatelliteDefunct.
-        // When the bug is fixed, this assertion fires and the test must be
-        // updated to assertNotNull + class check.
-        assertNull("getNewSatellite javadoc promises SatelliteDefunct fallback "
-                        + "but production returns null. Fix candidate: "
-                        + "SatelliteRegistry.java:97 — replace `return null` "
-                        + "with `return new SatelliteDefunct()`.",
-                result);
+        assertNull("getNewSatellite must return null for an unregistered id", result);
     }
 
-    /** Documents the downstream consequence: createFromNBT NPEs on
-     *  unregistered type because it doesn't guard against the null
-     *  returned by getNewSatellite. */
+    /** createFromNBT returns null for an unknown/unregistered dataType (the
+     *  caller drops the satellite) instead of NPEing the load/wire path —
+     *  the C002/C155 fix. No SatelliteBase.readFromNBT runs, so this needs no
+     *  Bootstrap. */
     @Test
-    public void createFromNBTWithUnknownTypeThrowsNPE_documentsKnownBug() {
+    public void createFromNBTWithUnknownTypeReturnsNull() {
         NBTTagCompound nbt = new NBTTagCompound();
         nbt.setString("dataType",
                 "advancedrocketry:nonexistent.satellite.type.for.gap4.test");
-        try {
-            SatelliteRegistry.createFromNBT(nbt);
-            org.junit.Assert.fail("createFromNBT should fall back to "
-                    + "SatelliteDefunct per getNewSatellite's javadoc; "
-                    + "instead it NPEs on the null returned from the "
-                    + "registry. Fix candidate: SatelliteRegistry.java:84 — "
-                    + "guard against null before satellite.readFromNBT(nbt).");
-        } catch (NullPointerException expected) {
-            // Current production behaviour — pinning until the bug is fixed.
-        }
+        SatelliteBase result = SatelliteRegistry.createFromNBT(nbt);
+        assertNull("createFromNBT must return null for an unresolvable dataType "
+                + "(callers drop it) — not NPE, not a placeholder", result);
     }
 
     /** Positive control: a KNOWN satellite type produces a real instance —
      *  pins that the registry dispatch works for the happy path so the
-     *  two _documentsKnownBug tests can't pass by registry-wide breakage.
-     *  Uses a unit-tier-friendly stand-in (no Bootstrap dependency). */
+     *  unknown-type tests can't pass by registry-wide breakage. Uses a
+     *  unit-tier-friendly stand-in (no Bootstrap dependency). */
     @Test
     public void knownSatelliteTypeProducesNonNullInstance() {
         SatelliteRegistry.registerSatellite(KNOWN_TYPE_KEY, TestStandInSatellite.class);
         SatelliteBase result = SatelliteRegistry.getNewSatellite(KNOWN_TYPE_KEY);
         assertNotNull("registered type must resolve via SatelliteRegistry — "
-                        + "if this fails the registry itself is broken "
-                        + "(independent of the SatelliteDefunct gap)",
+                        + "if this fails the registry dispatch itself is broken",
                 result);
     }
 }
