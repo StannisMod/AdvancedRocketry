@@ -109,6 +109,9 @@ public class TestProbeCommand extends CommandBase {
                 case "satellite-terminal":
                     handleSatelliteTerminal(server, sender, tail(args));
                     break;
+                case "guidance":
+                    handleGuidance(server, sender, tail(args));
+                    break;
                 case "atmosphere":
                     handleAtmosphere(server, sender, tail(args));
                     break;
@@ -3175,6 +3178,71 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"unknown satellite subcommand — try list <dim> | info <dim> <id> | create <dim> <type> [...] | types | imprint-terminal <dim> <x> <y> <z> <satId> | terminal-info <dim> <x> <y> <z> | tick <dim> <id> <ticks> | battery <dim> <id> | data <dim> <id> | can-tick <dim> <id> | create-from-nbt-unknown <dim> [type] | announce-unknown <dim> [type]\"}");
     }
 
+    // §L2 — guidance-computer launch-burn probe (off-slot NPE repro) ----------
+    private void handleGuidance(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 6 && "launch-seq".equalsIgnoreCase(args[0])) {
+            // /artest guidance launch-seq <dim> <x> <y> <z> <destDim>
+            // Drives TileGuidanceComputer.getLaunchSequence(dim, pos) on an
+            // already-placed guidance computer (place it via `artest place ...
+            // advancedrocketry:guidanceComputer` first), with a planet-id chip
+            // programmed to <destDim> in slot 0. When <dim> is the space dim and
+            // <pos> is off any station grid cell, getTransBodyInjection derefs a
+            // null currentSpaceStation -> NPE (finding L2). The NPE is caught and
+            // reported so the shared test server survives.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            int destDim = parseIntOr(args[5], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(x, y, z);
+            TileEntity te = world.getTileEntity(pos);
+            if (!(te instanceof zmaster587.advancedRocketry.tile.TileGuidanceComputer)) {
+                send(sender, "{\"error\":\"no TileGuidanceComputer at pos (place advancedrocketry:guidanceComputer first)\",\"te\":\""
+                        + (te == null ? "null" : te.getClass().getName()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileGuidanceComputer gc =
+                    (zmaster587.advancedRocketry.tile.TileGuidanceComputer) te;
+            net.minecraft.item.Item chipItem =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemPlanetIdChip;
+            if (!(chipItem instanceof zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip)) {
+                send(sender, "{\"error\":\"itemPlanetIdChip not registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip chip =
+                    (zmaster587.advancedRocketry.item.ItemPlanetIdentificationChip) chipItem;
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(chip);
+            chip.setDimensionId(stack, destDim);
+            int chipDim = chip.getDimensionId(stack);
+            gc.setInventorySlotContents(0, stack);
+            zmaster587.advancedRocketry.api.stations.ISpaceObject stationAtPos =
+                    zmaster587.advancedRocketry.stations.SpaceObjectManager.getSpaceManager()
+                            .getSpaceStationFromBlockCoords(pos);
+            boolean threw = false;
+            String exClass = "";
+            int burn = Integer.MIN_VALUE;
+            try {
+                burn = gc.getLaunchSequence(dim, pos);
+            } catch (Throwable t) {
+                threw = true;
+                exClass = t.getClass().getSimpleName();
+            }
+            send(sender, "{\"ok\":true,\"threw\":" + threw
+                    + ",\"exception\":\"" + escapeJson(exClass) + "\""
+                    + ",\"burn\":" + burn
+                    + ",\"chipDim\":" + chipDim
+                    + ",\"destDim\":" + destDim
+                    + ",\"stationAtPos\":" + (stationAtPos == null ? "null" : stationAtPos.getId()) + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown guidance subcommand — try launch-seq <dim> <x> <y> <z> <destDim>\"}");
+    }
+
     /**
      * §7.12 — satellite-builder synthesis.
      *
@@ -3189,6 +3257,83 @@ public class TestProbeCommand extends CommandBase {
      * that headless harness can't satisfy.</p>
      */
     private void handleSatelliteBuilder(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 5 && "press-build-unregistered".equalsIgnoreCase(args[0])) {
+            // /artest satellite-builder press-build-unregistered <dim> <x> <y> <z> [type]
+            // Repro for finding L3: a core-slot part whose SatelliteProperties
+            // type is registered as an ITEM PROPERTY but NOT as a satellite CLASS
+            // (the add-on / registration-order gap). Drives the REAL Build button
+            // (onInventoryButtonPressed(0) -> canAssembleSatellite), whose tail
+            // does getNewSatellite(type).isAcceptableControllerItemStack(...) with
+            // no null guard -> NPE. The NPE is caught + reported (server survives).
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            String bogusType = args.length >= 6 ? args[5] : "ar:unregistered_addon_type";
+            // Honesty guard: the finding requires the type to be absent from the
+            // CLASS registry. If some run registered it, this is not a valid repro.
+            if (zmaster587.advancedRocketry.api.SatelliteRegistry.getNewSatellite(bogusType) != null) {
+                send(sender, "{\"error\":\"type unexpectedly registered as a class — not a valid L3 repro\",\"type\":\""
+                        + escapeJson(bogusType) + "\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder)) {
+                send(sender, "{\"error\":\"tile not TileSatelliteBuilder\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder builder =
+                    (zmaster587.advancedRocketry.tile.satellite.TileSatelliteBuilder) tile;
+            // Register an ITEM PROPERTY (MAIN + power gen) for a fixed unused meta
+            // via the SAME public API an add-on uses — WITHOUT a paired
+            // registerSatellite for the class. Idempotent across shared reruns.
+            net.minecraft.item.Item primaryItem =
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellitePrimaryFunction;
+            net.minecraft.item.ItemStack carrier = new net.minecraft.item.ItemStack(primaryItem, 1, 30);
+            zmaster587.advancedRocketry.api.satellite.SatelliteProperties existing =
+                    zmaster587.advancedRocketry.api.SatelliteRegistry.getSatelliteProperty(carrier);
+            if (existing == null || !bogusType.equals(existing.getSatelliteType())) {
+                zmaster587.advancedRocketry.api.satellite.SatelliteProperties sp =
+                        new zmaster587.advancedRocketry.api.satellite.SatelliteProperties(100, 1000, bogusType, 100, 1.0f);
+                zmaster587.advancedRocketry.api.SatelliteRegistry.registerSatelliteProperty(carrier, sp);
+            }
+            // Load the four critical slots (mirror press-build) with the bogus
+            // MAIN carrier in the core/primary slot 0.
+            builder.setInventorySlotContents(11, new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellite, 1, 0));
+            builder.setInventorySlotContents(0, carrier);
+            builder.setInventorySlotContents(1, new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellitePowerSource, 1, 1));
+            builder.setInventorySlotContents(8, new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatelliteIdChip, 1, 0));
+            boolean slot0Loaded = !builder.getStackInSlot(0).isEmpty();
+            zmaster587.advancedRocketry.api.satellite.SatelliteProperties s0 =
+                    builder.getStackInSlot(0).isEmpty() ? null
+                            : zmaster587.advancedRocketry.api.SatelliteRegistry.getSatelliteProperty(builder.getStackInSlot(0));
+            String slot0Type = s0 == null ? "" : s0.getSatelliteType();
+            String outcome;
+            String topFrame = "";
+            try {
+                builder.onInventoryButtonPressed(0);
+                outcome = "no-throw";
+            } catch (Throwable t) {
+                outcome = t.getClass().getSimpleName();
+                if (t.getStackTrace().length > 0) topFrame = t.getStackTrace()[0].toString();
+            }
+            send(sender, "{\"ok\":true,\"bogusType\":\"" + escapeJson(bogusType) + "\""
+                    + ",\"getNewSatelliteNull\":true"
+                    + ",\"slot0Loaded\":" + slot0Loaded
+                    + ",\"slot0Type\":\"" + escapeJson(slot0Type) + "\""
+                    + ",\"outcome\":\"" + escapeJson(outcome) + "\""
+                    + ",\"topFrame\":\"" + escapeJson(topFrame) + "\"}");
+            return;
+        }
         if (args.length >= 6 && "press-build".equalsIgnoreCase(args[0])) {
             // TASK-33 — exercise the REAL TileSatelliteBuilder GUI path:
             // place required items in the four critical slots, then invoke
