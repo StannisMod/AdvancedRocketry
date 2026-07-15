@@ -9,6 +9,7 @@ import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.dimension.DimensionProperties.AtmosphereTypes;
+import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 
 import java.lang.reflect.Field;
@@ -16,6 +17,7 @@ import java.lang.reflect.Field;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -107,6 +109,70 @@ public class DimensionPropertiesTest {
         assertEquals(original.orbitalDist, restored.orbitalDist);
         assertEquals(original.rotationalPeriod, restored.rotationalPeriod);
         assertEquals(original.getAtmosphereDensity(), restored.getAtmosphereDensity());
+    }
+
+    // ---- terrainSource -------------------------------------------------------
+
+    @Test
+    public void terrainSourceDefaultsToNativeAndEmptyParams() {
+        DimensionProperties props = new DimensionProperties(9100);
+        assertSame(TerrainSource.NATIVE, props.getTerrainSource());
+        assertEquals("", props.getTerrainWorldType());
+        assertEquals("", props.getTerrainTemplate());
+    }
+
+    @Test
+    public void terrainSourceSettersNullGuardToDefaults() {
+        DimensionProperties props = new DimensionProperties(9101);
+        props.setTerrainSource(null);
+        props.setTerrainWorldType(null);
+        props.setTerrainTemplate(null);
+        assertSame(TerrainSource.NATIVE, props.getTerrainSource());
+        assertEquals("", props.getTerrainWorldType());
+        assertEquals("", props.getTerrainTemplate());
+    }
+
+    @Test
+    public void nativeTerrainSourceEmitsNoNbtKeys() {
+        // A default (NATIVE) planet must serialise byte-identically to pre-terrainSource saves.
+        DimensionProperties props = new DimensionProperties(9102, "PlainWorld");
+        NBTTagCompound nbt = new NBTTagCompound();
+        props.writeToNBT(nbt);
+        assertFalse("NATIVE must not write terrainSource", nbt.hasKey("terrainSource"));
+        assertFalse("empty worldType must not be written", nbt.hasKey("terrainWorldType"));
+        assertFalse("empty template must not be written", nbt.hasKey("terrainTemplate"));
+    }
+
+    @Test
+    public void nbtRoundTripPreservesModWorldtypeTerrain() {
+        DimensionProperties original = new DimensionProperties(9103, "ForeignWorld");
+        original.setTerrainSource(TerrainSource.MOD_WORLDTYPE);
+        original.setTerrainWorldType("BIOMESOP");
+
+        NBTTagCompound nbt = new NBTTagCompound();
+        original.writeToNBT(nbt);
+        // Persisted by name, so a future enum reorder cannot corrupt the save.
+        assertEquals("MOD_WORLDTYPE", nbt.getString("terrainSource"));
+
+        DimensionProperties restored = DimensionProperties.createFromNBT(9103, nbt);
+        assertSame(TerrainSource.MOD_WORLDTYPE, restored.getTerrainSource());
+        assertEquals("BIOMESOP", restored.getTerrainWorldType());
+        assertEquals("", restored.getTerrainTemplate());
+    }
+
+    @Test
+    public void nbtRoundTripPreservesTemplateTerrain() {
+        DimensionProperties original = new DimensionProperties(9104, "TemplateWorld");
+        original.setTerrainSource(TerrainSource.TEMPLATE);
+        original.setTerrainTemplate("packplanet");
+
+        NBTTagCompound nbt = new NBTTagCompound();
+        original.writeToNBT(nbt);
+
+        DimensionProperties restored = DimensionProperties.createFromNBT(9104, nbt);
+        assertSame(TerrainSource.TEMPLATE, restored.getTerrainSource());
+        assertEquals("packplanet", restored.getTerrainTemplate());
+        assertEquals("", restored.getTerrainWorldType());
     }
 
     @Test

@@ -55,6 +55,7 @@ import zmaster587.advancedRocketry.client.render.planet.RenderPlanetarySky;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.dimension.watersourcelocked;
+import zmaster587.advancedRocketry.world.TemplateImporter;
 import zmaster587.advancedRocketry.entity.EntityRocket;
 import zmaster587.advancedRocketry.network.PacketConfigSync;
 import zmaster587.advancedRocketry.network.PacketDimInfo;
@@ -380,9 +381,13 @@ public class PlanetEventHandler {
 
     @SubscribeEvent
     public void worldLoadEvent(WorldEvent.Load event) {
-        if (!event.getWorld().isRemote)
-            AtmosphereHandler.registerWorld(event.getWorld().provider.getDimension());
-        else if (ARConfiguration.getCurrentConfig().skyOverride)
+        if (!event.getWorld().isRemote) {
+            World world = event.getWorld();
+            int dim = world.provider.getDimension();
+            AtmosphereHandler.registerWorld(dim);
+            // Import a TEMPLATE planet's region files before its chunks are first generated (no-op otherwise).
+            TemplateImporter.importIfNeeded(world, DimensionManager.getInstance().getDimensionProperties(dim));
+        } else if (ARConfiguration.getCurrentConfig().skyOverride)
             event.getWorld().provider.setSkyRenderer(new RenderPlanetarySky());
     }
 

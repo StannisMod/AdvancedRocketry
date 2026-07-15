@@ -1215,6 +1215,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("isARPlanet", DimensionManager.getInstance().isDimensionCreated(dim));
             if (props != null) {
                 info.put("name", props.getName());
+                info.put("terrainSource", props.getTerrainSource().name());
                 info.put("rotationalPeriod", props.rotationalPeriod);
                 info.put("atmosphereDensity", props.getAtmosphereDensity());
                 info.put("gravity", props.getGravitationalMultiplier());
@@ -6109,6 +6110,61 @@ public class TestProbeCommand extends CommandBase {
                         + ",\"hasSurface\":" + props.hasSurface() + "}");
             } catch (Exception e) {
                 send(sender, "{\"error\":\"create-asteroid-dim failed\",\"msg\":\""
+                        + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
+            }
+            return;
+        }
+        if (args.length >= 4 && "create-terrain-dim".equalsIgnoreCase(args[0])) {
+            // worldgen create-terrain-dim <newDimId> <templateDimId> <terrainSource> [param]
+            // Register a new PLANET dimension by cloning an existing AR planet's
+            // DimensionProperties (inheriting star / atmosphere / gravity linkage so
+            // headless worldprovider-init doesn't NPE), re-id'ing it, and setting a
+            // terrainSource (+ an optional worldType/template param). Lets a test load
+            // the dim and confirm which chunk generator each mode dispatches to while
+            // the provider stays WorldProviderPlanet and atmosphere/gravity persist.
+            int newId = parseIntOr(args[1], Integer.MIN_VALUE);
+            int templateId = parseIntOr(args[2], Integer.MIN_VALUE);
+            zmaster587.advancedRocketry.dimension.TerrainSource terrain =
+                    zmaster587.advancedRocketry.dimension.TerrainSource.byName(args[3]);
+            String param = args.length >= 5 ? args[4] : "";
+            zmaster587.advancedRocketry.dimension.DimensionManager dm =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance();
+            if (dm.isDimensionCreated(newId)) {
+                send(sender, "{\"ok\":true,\"alreadyExists\":true,\"dim\":" + newId + "}");
+                return;
+            }
+            zmaster587.advancedRocketry.dimension.DimensionProperties template =
+                    dm.getDimensionProperties(templateId);
+            if (template == null) {
+                send(sender, "{\"error\":\"template dim not registered\",\"templateDim\":" + templateId + "}");
+                return;
+            }
+            try {
+                net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+                template.writeToNBT(nbt);
+                zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                        zmaster587.advancedRocketry.dimension.DimensionProperties.createFromNBT(newId, nbt);
+                props.setId(newId);
+                props.setName("artest-terrain-" + newId);
+                props.setTerrainSource(terrain);
+                if (terrain == zmaster587.advancedRocketry.dimension.TerrainSource.MOD_WORLDTYPE)
+                    props.setTerrainWorldType(param);
+                else if (terrain == zmaster587.advancedRocketry.dimension.TerrainSource.TEMPLATE)
+                    props.setTerrainTemplate(param);
+                boolean registered = dm.registerDim(props, true);
+                // Belt-and-braces: ensure Forge knows the dim under the planet provider
+                // even if registerDim's internal guard skipped it.
+                if (!net.minecraftforge.common.DimensionManager.isDimensionRegistered(newId)) {
+                    net.minecraftforge.common.DimensionManager.registerDimension(newId,
+                            zmaster587.advancedRocketry.dimension.DimensionManager.PlanetDimensionType);
+                }
+                send(sender, "{\"ok\":true,\"dim\":" + newId
+                        + ",\"registered\":" + registered
+                        + ",\"forgeRegistered\":"
+                        + net.minecraftforge.common.DimensionManager.isDimensionRegistered(newId)
+                        + ",\"terrainSource\":\"" + props.getTerrainSource().name() + "\"}");
+            } catch (Exception e) {
+                send(sender, "{\"error\":\"create-terrain-dim failed\",\"msg\":\""
                         + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
             }
             return;

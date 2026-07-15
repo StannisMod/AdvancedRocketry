@@ -165,6 +165,10 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private IBlockState fillerBlock;
     private int seaLevel;
     private int generatorType;
+    // How terrain is produced (orthogonal to generatorType, which stays the NATIVE sub-flavour selector).
+    private TerrainSource terrainSource = TerrainSource.NATIVE;
+    private String terrainWorldType = ""; // foreign WorldType name for MOD_WORLDTYPE
+    private String terrainTemplate = "";  // template folder name for TEMPLATE
     //public int target_sea_level;
 
     @SidedProxy(serverSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.serverlists", clientSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.clientlists")
@@ -224,6 +228,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         beaconLocations = new HashSet<>();
         seaLevel = 63;
         generatorType = 0;
+        terrainSource = TerrainSource.NATIVE;
+        terrainWorldType = "";
+        terrainTemplate = "";
 
         //target_sea_level = seaLevel;
         //water_can_exist = true;
@@ -442,6 +449,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         oceanBlock = null;
         fillerBlock = null;
         generatorType = 0;
+        terrainSource = TerrainSource.NATIVE;
+        terrainWorldType = "";
+        terrainTemplate = "";
         laserDrillOres = new ArrayList<>();
     }
 
@@ -1663,6 +1673,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         seaLevel = nbt.getInteger("sealevel");
         //target_sea_level = nbt.getInteger("target_sea_level");
         generatorType = nbt.getInteger("genType");
+        terrainSource = nbt.hasKey("terrainSource") ? TerrainSource.byName(nbt.getString("terrainSource")) : TerrainSource.NATIVE;
+        terrainWorldType = nbt.getString("terrainWorldType");
+        terrainTemplate = nbt.getString("terrainTemplate");
         canGenerateCraters = nbt.getBoolean("canGenerateCraters");
         canGenerateGeodes = nbt.getBoolean("canGenerateGeodes");
         canGenerateStructures = nbt.getBoolean("canGenerateStructures");
@@ -2028,6 +2041,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         nbt.setInteger("sealevel", seaLevel);
         //nbt.setInteger("target_sea_level", target_sea_level);
         nbt.setInteger("genType", generatorType);
+        // Emit terrain-source keys only when non-default so a NATIVE planet serialises unchanged.
+        if (terrainSource != TerrainSource.NATIVE)
+            nbt.setString("terrainSource", terrainSource.name());
+        if (!terrainWorldType.isEmpty())
+            nbt.setString("terrainWorldType", terrainWorldType);
+        if (!terrainTemplate.isEmpty())
+            nbt.setString("terrainTemplate", terrainTemplate);
         nbt.setBoolean("canGenerateCraters", canGenerateCraters);
         nbt.setBoolean("canGenerateGeodes", canGenerateGeodes);
         nbt.setBoolean("canGenerateStructures", canGenerateStructures);
@@ -2211,6 +2231,30 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
     public void setGenType(int genType) {
         this.generatorType = genType;
+    }
+
+    public TerrainSource getTerrainSource() {
+        return terrainSource;
+    }
+
+    public void setTerrainSource(TerrainSource terrainSource) {
+        this.terrainSource = terrainSource == null ? TerrainSource.NATIVE : terrainSource;
+    }
+
+    public String getTerrainWorldType() {
+        return terrainWorldType;
+    }
+
+    public void setTerrainWorldType(String terrainWorldType) {
+        this.terrainWorldType = terrainWorldType == null ? "" : terrainWorldType;
+    }
+
+    public String getTerrainTemplate() {
+        return terrainTemplate;
+    }
+
+    public void setTerrainTemplate(String terrainTemplate) {
+        this.terrainTemplate = terrainTemplate == null ? "" : terrainTemplate;
     }
 
     public void setGenerateCraters(boolean canGenerateCraters) {

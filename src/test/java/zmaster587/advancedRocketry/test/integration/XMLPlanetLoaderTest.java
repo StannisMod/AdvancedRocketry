@@ -13,6 +13,7 @@ import org.junit.rules.TemporaryFolder;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
@@ -32,6 +33,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -559,6 +561,83 @@ public class XMLPlanetLoaderTest {
         } finally {
             UniverseRegistry.setGenerator(null); // restore the authored-only default
         }
+    }
+
+    // ---- terrainSource -------------------------------------------------------
+
+    @Test
+    public void terrainSourceModWorldtypeParsesFromXml() throws Exception {
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"ForeignWorld\" DIMID=\"7700\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <terrainSource>MOD_WORLDTYPE</terrainSource>\n"
+              + "  <terrainWorldType>BIOMESOP</terrainWorldType>\n"
+              + "</planet>\n")));
+        DimensionProperties props = coupling.dims.get(0);
+        assertSame(TerrainSource.MOD_WORLDTYPE, props.getTerrainSource());
+        assertEquals("BIOMESOP", props.getTerrainWorldType());
+    }
+
+    @Test
+    public void unknownTerrainSourceDegradesToNativeWithoutSkippingPlanet() throws Exception {
+        DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
+                "<planet name=\"TypoWorld\" DIMID=\"7701\">\n"
+              + "  <isKnown>true</isKnown>\n"
+              + "  <terrainSource>NONSENSE</terrainSource>\n"
+              + "</planet>\n")));
+        assertEquals("a bogus terrainSource must not skip the planet", 1, coupling.dims.size());
+        assertSame("a bogus terrainSource must degrade to NATIVE",
+                TerrainSource.NATIVE, coupling.dims.get(0).getTerrainSource());
+    }
+
+    @Test
+    public void terrainSourceRoundTripsThroughWriteXml() throws Exception {
+        StellarBody star = new StellarBody();
+        star.setId(7710);
+        star.setName("TemplateStar");
+        star.setTemperature(120);
+        star.setSize(1.0f);
+        star.setBlackHole(false);
+
+        DimensionProperties planet = new DimensionProperties(7711, "TemplatePlanet");
+        planet.setTerrainSource(TerrainSource.TEMPLATE);
+        planet.setTerrainTemplate("packplanet");
+        planet.setStar(star);
+        star.addPlanet(planet);
+
+        String xml = XMLPlanetLoader.writeXML(new SingleStarGalaxyFixture(star));
+        assertTrue("writeXML must emit terrainSource", xml.contains("terrainSource"));
+        assertTrue("writeXML must emit the template name", xml.contains("packplanet"));
+
+        File out = tempFolder.newFile("terrain-source-planets.xml");
+        Files.write(out.toPath(), xml.getBytes(StandardCharsets.UTF_8));
+        XMLPlanetLoader reader = new XMLPlanetLoader();
+        assertTrue(reader.loadFile(out));
+        DimensionPropertyCoupling restored = reader.readAllPlanets();
+
+        assertEquals(1, restored.dims.size());
+        DimensionProperties rp = restored.dims.get(0);
+        assertSame(TerrainSource.TEMPLATE, rp.getTerrainSource());
+        assertEquals("packplanet", rp.getTerrainTemplate());
+    }
+
+    @Test
+    public void nativeTerrainSourceEmitsNoXmlElements() throws Exception {
+        StellarBody star = new StellarBody();
+        star.setId(7720);
+        star.setName("PlainStar");
+        star.setTemperature(120);
+        star.setSize(1.0f);
+        star.setBlackHole(false);
+
+        DimensionProperties planet = new DimensionProperties(7721, "PlainWorld");
+        planet.setStar(star);
+        star.addPlanet(planet);
+
+        String xml = XMLPlanetLoader.writeXML(new SingleStarGalaxyFixture(star));
+        assertFalse("NATIVE planet XML must not contain a terrainSource element", xml.contains("terrainSource"));
+        assertFalse(xml.contains("terrainWorldType"));
+        assertFalse(xml.contains("terrainTemplate"));
     }
 
     // ---- helpers -------------------------------------------------------------

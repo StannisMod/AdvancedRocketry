@@ -11,6 +11,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.DimensionType;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldType;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraftforge.client.IRenderHandler;
@@ -29,10 +30,12 @@ import zmaster587.advancedRocketry.capability.DimensionCompat;
 import zmaster587.advancedRocketry.client.render.planet.RenderPlanetarySky;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.world.ChunkManagerPlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderCavePlanet;
 import zmaster587.advancedRocketry.world.ChunkProviderPlanet;
+import zmaster587.advancedRocketry.world.ChunkProviderTemplate;
 import zmaster587.advancedRocketry.world.weather.ARDimensionWorldInfo;
 import zmaster587.advancedRocketry.world.weather.PlanetWeatherManager;
 
@@ -54,14 +57,60 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
 		//this.setSkyRenderer(new RenderSkyMoon());
 	}*/
 
+    /** Resolved once in {@link #init()} (or lazily here): the terrain source actually used, after fallbacks. */
+    private TerrainSource effectiveTerrainSource;
+    /** The foreign world type for MOD_WORLDTYPE; null unless {@link #effectiveTerrainSource} is MOD_WORLDTYPE. */
+    private WorldType foreignWorldType;
+
     @Override
     @Nonnull
     public IChunkGenerator createChunkGenerator() {
+        if (effectiveTerrainSource == null)
+            resolveTerrainSource();
+
+        if (effectiveTerrainSource == TerrainSource.MOD_WORLDTYPE)
+            return foreignWorldType.getChunkGenerator(world, world.getWorldInfo().getGeneratorOptions());
+
+        if (effectiveTerrainSource == TerrainSource.TEMPLATE)
+            return new ChunkProviderTemplate(this.world);
+
         int genType = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getGenType();
         if (genType == 1) {
             return new ChunkProviderCavePlanet(this.world, false, this.world.getSeed(), world.getWorldInfo().getGeneratorOptions());
         } else
             return new ChunkProviderPlanet(this.world, this.world.getSeed(), ARConfiguration.getCurrentConfig().generateVanillaStructures, world.getWorldInfo().getGeneratorOptions());
+    }
+
+    /**
+     * Resolves {@link #effectiveTerrainSource} (and {@link #foreignWorldType}) once from this dimension's
+     * {@link DimensionProperties}. A MOD_WORLDTYPE whose name is blank or unregistered, or a TEMPLATE with no
+     * template path, falls back to NATIVE with a warning so a mis-authored planet still generates.
+     */
+    private void resolveTerrainSource() {
+        DimensionProperties props = getDimensionProperties();
+        TerrainSource requested = props.getTerrainSource();
+        if (requested == TerrainSource.MOD_WORLDTYPE) {
+            String name = props.getTerrainWorldType();
+            foreignWorldType = (name == null || name.isEmpty()) ? null : WorldType.parseWorldType(name);
+            if (foreignWorldType == null) {
+                AdvancedRocketry.logger.warn("Planet dimension " + getDimension() + " requests MOD_WORLDTYPE '" + name
+                        + "' which is not registered; falling back to NATIVE terrain");
+                effectiveTerrainSource = TerrainSource.NATIVE;
+            } else {
+                effectiveTerrainSource = TerrainSource.MOD_WORLDTYPE;
+            }
+        } else if (requested == TerrainSource.TEMPLATE) {
+            String template = props.getTerrainTemplate();
+            if (template == null || template.isEmpty()) {
+                AdvancedRocketry.logger.warn("Planet dimension " + getDimension()
+                        + " requests TEMPLATE terrain with no template path; falling back to NATIVE");
+                effectiveTerrainSource = TerrainSource.NATIVE;
+            } else {
+                effectiveTerrainSource = TerrainSource.TEMPLATE;
+            }
+        } else {
+            effectiveTerrainSource = TerrainSource.NATIVE;
+        }
     }
 
     @Override
@@ -97,8 +146,14 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         this.hasSkyLight = true;
         world.getWorldInfo().setTerrainType(AdvancedRocketry.planetWorldType);
 
+        resolveTerrainSource();
 
-        this.biomeProvider = new ChunkManagerPlanet(world, world.getWorldInfo().getGeneratorOptions(), DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getBiomes());
+        // MOD_WORLDTYPE borrows the foreign world type's biome provider; every other mode keeps AR's.
+        // AR planet-ness (atmosphere/gravity/ore) is dim-keyed and unaffected by this choice.
+        if (effectiveTerrainSource == TerrainSource.MOD_WORLDTYPE)
+            this.biomeProvider = foreignWorldType.getBiomeProvider(world);
+        else
+            this.biomeProvider = new ChunkManagerPlanet(world, world.getWorldInfo().getGeneratorOptions(), DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()).getBiomes());
         //AdvancedRocketry.planetWorldType.getChunkManager(worldObj);
     }
 

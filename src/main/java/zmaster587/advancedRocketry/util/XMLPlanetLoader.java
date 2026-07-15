@@ -23,6 +23,7 @@ import zmaster587.advancedRocketry.api.dimension.solar.IGalaxy;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
@@ -102,6 +103,9 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_SEALEVEL = "seaLevel";
     //private static final String ELEMENT_TARGETSEALEVEL = "targetseaLevel";
     private static final String ELEMENT_GENTYPE = "genType";
+    private static final String ELEMENT_TERRAIN_SOURCE = "terrainSource";
+    private static final String ELEMENT_TERRAIN_WORLDTYPE = "terrainWorldType";
+    private static final String ELEMENT_TERRAIN_TEMPLATE = "terrainTemplate";
     private static final String ELEMENT_RIVER_OVERRIDE = "forceRiverGeneration";
     private static final String ELEMENT_OREGEN = "oreGen";
     private static final String ELEMENT_LASER_DRILL_ORES = "laserDrillOres";
@@ -427,6 +431,14 @@ public class XMLPlanetLoader {
 
         if (properties.getGenType() != 0)
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_GENTYPE, properties.getGenType()));
+
+        // Emit terrain-source elements only when non-default so a NATIVE planet's XML is unchanged.
+        if (properties.getTerrainSource() != TerrainSource.NATIVE)
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_SOURCE, properties.getTerrainSource().name()));
+        if (!properties.getTerrainWorldType().isEmpty())
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_WORLDTYPE, properties.getTerrainWorldType()));
+        if (!properties.getTerrainTemplate().isEmpty())
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_TEMPLATE, properties.getTerrainTemplate()));
 
         if (properties.oreProperties != null) {
             nodePlanet.appendChild(XMLOreLoader.writeOreEntryXML(doc, properties.oreProperties));
@@ -1037,6 +1049,12 @@ public class XMLPlanetLoader {
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid generator type specified"); //TODO: more detailed error msg
                 }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_SOURCE)) {
+                properties.setTerrainSource(TerrainSource.byName(planetPropertyNode.getTextContent().trim()));
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_WORLDTYPE)) {
+                properties.setTerrainWorldType(planetPropertyNode.getTextContent().trim());
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_TEMPLATE)) {
+                properties.setTerrainTemplate(planetPropertyNode.getTextContent().trim());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_HASRINGS))
                 properties.hasRings = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_CAN_DECORATE))
