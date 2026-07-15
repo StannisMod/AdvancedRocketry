@@ -98,9 +98,26 @@ public final class ShipFrameTravel {
     public static volatile float lastInForward = 0f;
     public static volatile float lastDeckYawDeg = 0f;
     public static volatile double lastMotionShipX = 0.0;
+    public static volatile double lastMotionShipY = 0.0;
     public static volatile double lastMotionShipZ = 0.0;
     /** Throttle for the [FF-TRACE/WALK] line (test mode only). */
     private static int walkTraceTicks = 0;
+    /** The reason of the most recent capture release on THIS side, or "" — lets a probe/e2e name
+     *  which gate ended an episode without needing the (side-local) log stream. */
+    public static volatile String lastDropReason = "";
+    /** World-frame {@code Entity.move} requests applied raw to a resolved body on THIS side (the
+     *  move-suppression path), and the shape of the most recent one ("type dx,dy,dz") — names who
+     *  still pushes a resolved body through the world pipeline. */
+    public static volatile long worldMoveApplies = 0L;
+    public static volatile String lastWorldMove = "";
+
+    /** Called by the move-suppression hook: a world-frame mover asked to displace a resolved body. */
+    public static void noteWorldMove(String type, double x, double y, double z) {
+        worldMoveApplies++;
+        if (x * x + y * y + z * z > 1.0E-6) {
+            lastWorldMove = type + " " + x + "," + y + "," + z;
+        }
+    }
 
     /**
      * Each aboard entity's authoritative position in its ship's frame, plus the world position this
@@ -129,6 +146,12 @@ public final class ShipFrameTravel {
          *  mismatch, #32 candidate C - or it merely lagged AR's own transform by a tick (a converter-only
          *  residual a committed-world guard would absorb). Not read by the guard decision. */
         double worldX, worldY, worldZ;
+        /** The deck-carry velocity (per tick, world frame) this class ADDED into the body's world
+         *  motion at its last commit. The next tick subtracts EXACTLY this value to recover the
+         *  ship-relative motion - subtracting a freshly-sampled carry instead leaks the frame's
+         *  ACCELERATION (the per-tick carry delta) into the relative motion, and a violently
+         *  slewing deck then slides its crew off by "inertia" the deck-static model must not have. */
+        double carryX, carryY, carryZ;
     }
 
     /** How far (squared, in blocks, IN THE SHIP FRAME) the body may have drifted from the deck point we
@@ -256,7 +279,14 @@ public final class ShipFrameTravel {
         if (local == null || world == null) {
             return false;
         }
-        captureState(entity, candidate, local[0], local[1], local[2], world[0], world[1], world[2]);
+        // A first-contact body arrives with REAL world motion (a fall, a walk-on); its ship-relative
+        // motion is that minus the deck's current carry.
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                entity.world, candidate, entity.posX, entity.posY, entity.posZ);
+        captureState(entity, candidate, local[0], local[1], local[2], world[0], world[1], world[2],
+                shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS,
+                shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS,
+                shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS);
         logCapture(entity, candidate, local[0], local[1], local[2]);
         return true;
     }
@@ -274,9 +304,12 @@ public final class ShipFrameTravel {
         return null;
     }
 
-    /** Install a fresh anchored capture for {@code entity} on ship {@code shipId}. */
+    /** Install a fresh anchored capture for {@code entity} on ship {@code shipId}. The carry triple
+     *  is the per-tick deck velocity the body's CURRENT world motion is considered to contain (0 for
+     *  a seed, whose motion is zeroed; a fresh sample for a first contact, whose motion is real). */
     private static void captureState(Entity entity, String shipId, double localX, double localY,
-                                     double localZ, double worldX, double worldY, double worldZ) {
+                                     double localZ, double worldX, double worldY, double worldZ,
+                                     double carryX, double carryY, double carryZ) {
         ShipFrameState state = new ShipFrameState();
         state.shipId = shipId;
         state.localX = localX;
@@ -285,6 +318,9 @@ public final class ShipFrameTravel {
         state.worldX = worldX;
         state.worldY = worldY;
         state.worldZ = worldZ;
+        state.carryX = carryX;
+        state.carryY = carryY;
+        state.carryZ = carryZ;
         STATE.put(entity, state);
     }
 
@@ -293,6 +329,7 @@ public final class ShipFrameTravel {
      *  camera/HUD keep acting on it. No-op for an untracked body. */
     private static void release(Entity entity, String reason) {
         if (STATE.remove(entity) != null) {
+            lastDropReason = reason;
             logDrop(entity, reason);
         }
     }
@@ -333,7 +370,9 @@ public final class ShipFrameTravel {
             zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK ship="
                     + shipId + " world=(" + world[0] + "," + world[1] + "," + world[2] + ")");
         }
-        captureState(entity, shipId, subX, subY, subZ, world[0], world[1], world[2]);
+        // Motion is zeroed below = "at rest RELATIVE TO THE DECK"; the carry the zeroed motion is
+        // considered to contain is therefore zero too.
+        captureState(entity, shipId, subX, subY, subZ, world[0], world[1], world[2], 0.0, 0.0, 0.0);
         entity.setPositionAndUpdate(world[0], world[1], world[2]);
         entity.motionX = 0.0;
         entity.motionY = 0.0;
@@ -524,6 +563,7 @@ public final class ShipFrameTravel {
         }
         zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] auto-capture"
                 + " remote=" + entity.world.isRemote
+                + " id=" + entity.getEntityId()
                 + " ship=" + shipId
                 + " shipObstacles=" + shipSupportObstacleCountFor(entity, shipId)
                 + " tiltDeg=" + tiltFrom(VSIntegration.shipAttitudeAt(
@@ -551,6 +591,7 @@ public final class ShipFrameTravel {
                 entity.world, entity.posX, entity.posY, entity.posZ);
         zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/DROP] " + reason
                 + " remote=" + entity.world.isRemote
+                + " id=" + entity.getEntityId()
                 + " aboardByContainment=" + (att != null)
                 + " shipObstacles=" + shipSupportObstacleCount(entity)
                 + " tiltDeg=" + tiltFrom(att)
@@ -584,8 +625,19 @@ public final class ShipFrameTravel {
         if (local == null) {
             local = VSIntegration.toShipFrameFor(world, shipId, entity.posX, entity.posY, entity.posZ);
         }
+        // The body's velocity RELATIVE to the ship. The world position of a resolved body is
+        // derived from its ship-frame position every tick, so the ship's own carry is applied by
+        // the transform - a ship-frame velocity that still CONTAINS the carry counts it twice. On a
+        // static ship the two agree and the error is invisible (every early test); on a MOVING ship
+        // an airborne body rockets away at the ship's own velocity (a jump on a climbing ship flung
+        // the crew member out of the stay region), and a station-keeping ship's residual creep is a
+        // constant no-input drag on the crew. Subtract EXACTLY the carry the last commit added
+        // (held in STATE - a fresh sample would leak the frame's acceleration as inertia and slide
+        // crew off a hard-slewing deck), and add a fresh carry back at this tick's commit.
         double[] motion = VSIntegration.rotateToShipFrameFor(world, shipId,
-                entity.motionX, entity.motionY, entity.motionZ);
+                entity.motionX - anchored.carryX,
+                entity.motionY - anchored.carryY,
+                entity.motionZ - anchored.carryZ);
         if (local == null || motion == null) {
             declinedTicks++;
             return false;
@@ -618,6 +670,7 @@ public final class ShipFrameTravel {
         lastInForward = forward;
         lastDeckYawDeg = deckYaw;
         lastMotionShipX = motion[0];
+        lastMotionShipY = motion[1];
         lastMotionShipZ = motion[2];
         if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
                 && (walkTraceTicks++ % 10) == 0
@@ -625,6 +678,7 @@ public final class ShipFrameTravel {
                         || Math.abs(motion[0]) > 0.05 || Math.abs(motion[2]) > 0.05)) {
             zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/WALK]"
                     + " remote=" + world.isRemote
+                    + " id=" + entity.getEntityId()
                     + " strafe=" + strafe + " forward=" + forward
                     + " deckYaw=" + deckYaw + " worldYaw=" + entity.rotationYaw
                     + " motionShip=(" + motion[0] + "," + motion[1] + "," + motion[2] + ")"
@@ -669,6 +723,17 @@ public final class ShipFrameTravel {
         resolvedTicks++;
         lastObstacleCount = sweep.obstacleCount;
         lastOnDeck = onDeck;
+        // Re-add the deck's carry (freshly sampled for THIS commit; the value is remembered so the
+        // next tick can subtract exactly it): entity.motion is a WORLD velocity, and the ship-frame
+        // value above was ship-RELATIVE.
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                world, shipId, worldPos[0], worldPos[1], worldPos[2]);
+        double carryX = shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS;
+        double carryY = shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS;
+        double carryZ = shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS;
+        worldMotion[0] += carryX;
+        worldMotion[1] += carryY;
+        worldMotion[2] += carryZ;
         // Frame-consistency measurement: is the frame this class MOVES in (VS ShipTransform.rotate) the same rotation
         // the camera LEVELS to (the attitude quaternion)? Recorded from a body that is genuinely resolved on
         // the deck, so it is not confounded by "aboard by containment" edge cases. Diagnostic only.
@@ -685,7 +750,8 @@ public final class ShipFrameTravel {
                         ((Number) qz).doubleValue()).rotate(0.0, 1.0, 0.0)[1];
             }
         }
-        remember(entity, shipId, sweep.x, sweep.y, sweep.z, worldPos[0], worldPos[1], worldPos[2]);
+        remember(entity, shipId, sweep.x, sweep.y, sweep.z,
+                worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
@@ -712,8 +778,13 @@ public final class ShipFrameTravel {
         }
         String shipId = anchored.shipId;
         double up = jumpUpwardsMotion + jumpBoost;
+        // Ship-RELATIVE velocity, exactly as travel(): a jump is "up 0.42 relative to the deck".
+        // Subtract and re-add the SAME held carry (state), leaving it for the next travel tick to
+        // subtract again - a fresh sample here would double-book the carry against travel's.
         double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
-                entity.motionX, entity.motionY, entity.motionZ);
+                entity.motionX - anchored.carryX,
+                entity.motionY - anchored.carryY,
+                entity.motionZ - anchored.carryZ);
         if (motion == null) {
             return false;
         }
@@ -728,9 +799,9 @@ public final class ShipFrameTravel {
         if (worldMotion == null) {
             return false;
         }
-        entity.motionX = worldMotion[0];
-        entity.motionY = worldMotion[1];
-        entity.motionZ = worldMotion[2];
+        entity.motionX = worldMotion[0] + anchored.carryX;
+        entity.motionY = worldMotion[1] + anchored.carryY;
+        entity.motionZ = worldMotion[2] + anchored.carryZ;
         entity.isAirBorne = true;
         net.minecraftforge.common.ForgeHooks.onLivingJump(entity);
         return true;
@@ -813,9 +884,11 @@ public final class ShipFrameTravel {
     }
 
     private static void remember(Entity entity, String shipId, double localX, double localY,
-                                 double localZ, double worldX, double worldY, double worldZ) {
+                                 double localZ, double worldX, double worldY, double worldZ,
+                                 double carryX, double carryY, double carryZ) {
         boolean firstContact = !STATE.containsKey(entity);
-        captureState(entity, shipId, localX, localY, localZ, worldX, worldY, worldZ);
+        captureState(entity, shipId, localX, localY, localZ, worldX, worldY, worldZ,
+                carryX, carryY, carryZ);
         if (firstContact) {
             // Normally the capture is installed by handles()/seed; reached only when heldShipFramePos
             // released mid-tick (externalMove) and this commit re-captures on the same anchor.

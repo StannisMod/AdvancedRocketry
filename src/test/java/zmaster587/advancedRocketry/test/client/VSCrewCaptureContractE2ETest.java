@@ -325,6 +325,113 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 + "): " + trace, churn < 5);
     }
 
+    // ---- #47: WALKING and JUMPING on a hovering ship must not churn the capture -----------------
+
+    @Test
+    public void walkingAndJumpingOnAHoveringShipDoesNotChurnTheCapture() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5620, by = 64, bz = 5620;
+
+        // The round-11 playtest drag happens on a NEARLY-LEVEL hovering ship while the crew member
+        // is actively walking and jumping - the still-crew pins stayed green while the live drag
+        // persisted, so ACTIVITY is the missing axis. Same arrangement as the still-hover pin, plus
+        // real W walking and real SPACE jumps through the window.
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double liftedY = startY;
+        bot().holdKey(Keyboard.KEY_R);
+        try {
+            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
+                bot().waitTicks(2);
+                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_R);
+        }
+        assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
+                liftedY - startY > 2.0);
+        exec("artest player dismount");
+        bot().waitTicks(40);
+
+        long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+
+        // Walk in a tight square (short bursts each direction so the crew member stays on the small
+        // deck) and jump twice - real client keys, the real activity of the playtest. Sample the
+        // client's own state after every leg so a mid-window ejection names its leg and gate.
+        // A PURE VERTICAL jump first (no walk key held): on any ship motion the jumper must arc and
+        // land back on the deck, still captured - the kinematics pin (a carry double-count rocketed
+        // him off a climbing hover). Sampled per 2 ticks.
+        String dropBefore = clientString(SHIP_FRAME_TRAVEL, "lastDropReason");
+        bot().holdKey(Keyboard.KEY_SPACE);
+        StringBuilder arc = new StringBuilder();
+        for (int t = 0; t < 3; t++) {
+            bot().waitTicks(2);
+            arc.append(String.format(java.util.Locale.ROOT, "[t%d y=%.2f mShipY=%s] ",
+                    t * 2,
+                    bot().reportState().get("playerY").getAsDouble(),
+                    clientString(SHIP_FRAME_TRAVEL, "lastMotionShipY")));
+        }
+        bot().releaseKey(Keyboard.KEY_SPACE);
+        for (int t = 3; t < 10; t++) {
+            bot().waitTicks(2);
+            arc.append(String.format(java.util.Locale.ROOT, "[t%d y=%.2f mShipY=%s] ",
+                    t * 2,
+                    bot().reportState().get("playerY").getAsDouble(),
+                    clientString(SHIP_FRAME_TRAVEL, "lastMotionShipY")));
+        }
+        System.out.println("[crewcap] jump-arc " + arc);
+        assertTrue("a vertical jump on a hovering ship must land back on the deck, still captured "
+                + "(dropReason before='" + dropBefore + "' after='"
+                + clientString(SHIP_FRAME_TRAVEL, "lastDropReason") + "'): " + arc,
+                clientString(SHIP_FRAME_TRAVEL, "lastDropReason").equals(dropBefore));
+
+        // Then a tight walk square - SHORT legs (3 ticks ≈ 0.65 blocks): the fixture deck is only
+        // ~3x5, and a longer leg walks the crew member clean off its edge, a legitimate release
+        // that says nothing about churn.
+        int[] keys = {Keyboard.KEY_W, Keyboard.KEY_D, Keyboard.KEY_S, Keyboard.KEY_A};
+        StringBuilder legs = new StringBuilder();
+        for (int leg = 0; leg < 4; leg++) {
+            bot().holdKey(keys[leg]);
+            try {
+                bot().waitTicks(3);
+            } finally {
+                bot().releaseKey(keys[leg]);
+            }
+            bot().waitTicks(5);
+            legs.append(String.format(java.util.Locale.ROOT,
+                    "[leg%d pos=(%.1f,%.1f,%.1f) resolved=%s dropReason='%s' worldMove='%s'] ",
+                    leg,
+                    bot().reportState().get("playerX").getAsDouble(),
+                    bot().reportState().get("playerY").getAsDouble(),
+                    bot().reportState().get("playerZ").getAsDouble(),
+                    clientString(SHIP_FRAME_TRAVEL, "resolvedTicks"),
+                    clientString(SHIP_FRAME_TRAVEL, "lastDropReason"),
+                    clientString(SHIP_FRAME_TRAVEL, "lastWorldMove")));
+        }
+        bot().waitTicks(20);
+        System.out.println("[crewcap] active-legs " + legs);
+
+        long resolvedAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        String capture = exec("artest vs deck-capture");
+        System.out.println("[crewcap] active-churn churn=" + churn + " clientResolved="
+                + resolvedBefore + "->" + resolvedAfter + " capture=" + capture);
+
+        assertTrue("the client must be resolving through the activity window (resolvedTicks "
+                + resolvedBefore + " -> " + resolvedAfter + ")", resolvedAfter > resolvedBefore + 20);
+        // The churn contract: activity must never cycle the capture through the external-move guard
+        // (the drag war). A GEOMETRIC release (walked off the tiny fixture deck -> leftShipRegion /
+        // steppedOntoTerrain) is legitimate and not this test's subject.
+        assertTrue("walking and jumping on a hovering ship must not churn the capture (client drops "
+                + "in window=" + churn + ")", churn < 5);
+        String lastReason = clientString(SHIP_FRAME_TRAVEL, "lastDropReason");
+        assertTrue("any release during deck activity must be geometric, never the external-move "
+                + "guard (lastDropReason='" + lastReason + "')",
+                !lastReason.startsWith("externalMove"));
+    }
+
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);
