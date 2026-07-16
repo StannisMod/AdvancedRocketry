@@ -235,9 +235,9 @@ public final class ShipFrameTravel {
         }
         // Excluded states keep world-frame semantics (contract C4). Each RELEASES an existing capture
         // explicitly: the old silent `return false` left stale STATE behind, so isResolving (the gate
-        // for the deck camera, the FF HUD and DeckMouseInput) kept answering true through a whole
-        // creative-flight/riding episode, and the capture eventually died mid-air far from where the
-        // gate first disengaged.
+        // for the deck camera, the FF HUD and the deck-frame mouse look) kept answering true through a
+        // whole creative-flight/riding episode, and the capture eventually died mid-air far from where
+        // the gate first disengaged.
         String excluded = excludedStateOf(entity);
         if (excluded != null) {
             release(entity, excluded);
@@ -536,6 +536,18 @@ public final class ShipFrameTravel {
         }
         ShipFrameState state = STATE.get(entity);
         return state != null && !state.hullStand;
+    }
+
+    /** The ANCHOR ship id this class resolves {@code entity} against in ABOARD (deck) mode, or
+     *  {@code null} when it is not aboard (never captured, or held in HULL-STAND mode). The
+     *  deck-frame look derives the crew member's world aim through THIS ship - the capture
+     *  anchor - never by re-picking a ship from world-AABB containment mid-episode. */
+    public static String aboardShipId(Entity entity) {
+        if (entity == null) {
+            return null;
+        }
+        ShipFrameState state = STATE.get(entity);
+        return state == null || state.hullStand ? null : state.shipId;
     }
 
     /**

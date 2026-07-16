@@ -832,6 +832,176 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 + rayVsCam, rayVsCam < 0.25);
     }
 
+    // ---- Deck-frame look: the walking crew's aim lives in the deck frame ------------------------
+
+    @Test
+    public void theMouseTurnsTheWalkingCrewsAimInTheDeckFrameAndTheAimRidesTheDeck() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6420, by = 64, bz = 6420;
+
+        // The walking-crew look contract, in its two player-visible halves, on a STEEPLY ROLLED
+        // deck (the attitude where the old world-frame aim under a deck-levelled camera diverged
+        // hardest):
+        //   (1) a horizontal REAL-MOUSE move sweeps the aim about the DECK NORMAL - the angle
+        //       between the aim and the ship's up does not change as he turns;
+        //   (2) with the mouse STILL, the aim is glued to the deck - the ship rolling further
+        //       carries the world aim with it.
+        // The stimulus is the real client mouse path (Entity.turn); the observation is the
+        // client's own world look; the ship attitude read server-side is the cross-side oracle.
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+        exec("artest player dismount");
+        bot().waitTicks(40);
+        assertTrue("the ex-pilot must be captured on the deck: " + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        // Roll the ship to ~60 degrees about X and hold it there.
+        double h = Math.toRadians(60.0) / 2.0;
+        assertTrue("attitude hold must accept the roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(150);
+        double[] up = shipUpFromInfo(shipInfo(bx, by, bz));
+        assertTrue("the ship must be steeply rolled for the frames to diverge (upY=" + up[1] + ")",
+                up[1] < 0.7 && up[1] > 0.1);
+        assertTrue("the crew member must still be captured after the roll: "
+                + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        // Baseline aim (a server re-aim, which must RE-SEED the deck look, not fight it).
+        exec("tp @a ~ ~ ~ 20 10");
+        bot().waitTicks(10);
+        assertTrue("the deck-frame look must be engaged for a captured walking crew member "
+                        + "(deckActive=false would make every assertion below vacuous)",
+                Boolean.parseBoolean(clientString(DECK_LOOK, "active")));
+        double[] look0 = clientLook();
+        double cone0 = dot(up, look0);
+
+        // (1) Four 30-degree horizontal REAL-MOUSE turns: each sweeps ~30 degrees about the deck
+        // normal and none of them moves the aim off its cone around the ship's up. The old
+        // world-frame aim fails both ways at this roll (the sweep bends toward the world poles and
+        // the cone angle drifts), whether or not the delta itself is roll-rotated.
+        double swept = 0.0;
+        double[] prev = look0;
+        StringBuilder steps = new StringBuilder();
+        for (int i = 0; i < 4; i++) {
+            bot().turnLook(200f, 0f); // +30 degrees of deck yaw in vanilla mouse units
+            bot().waitTicks(2);
+            double[] look = clientLook();
+            double cone = dot(up, look);
+            double step = planeAngleDeg(up, prev, look);
+            swept += step;
+            steps.append(String.format(java.util.Locale.ROOT,
+                    "[turn%d cone=%.3f step=%.1f] ", i, cone, step));
+            assertTrue("a horizontal mouse move must not move the aim off its cone about the deck "
+                            + "normal (start=" + cone0 + " now=" + cone + ") :: " + steps,
+                    Math.abs(cone - cone0) < 0.05);
+            prev = look;
+        }
+        System.out.println("[crewcap] deck-look sweep=" + swept + " :: " + steps);
+        assertTrue("four 30-degree mouse turns must sweep ~120 degrees about the deck normal, "
+                + "not stall or wrap (swept=" + swept + ") :: " + steps,
+                swept > 100.0 && swept < 140.0);
+
+        // (2) Mouse still: roll the ship 25 degrees further. The aim must RIDE THE DECK - same
+        // cone about the deck normal, and the world look turns WITH the ship instead of staying
+        // world-glued. Pin the aim to world +Z first (perpendicular to the X roll axis), so the
+        // expected world turn of a deck-glued aim is exactly the extra roll angle.
+        exec("tp @a ~ ~ ~ 0 0");
+        bot().waitTicks(10);
+        double[] lookBefore = clientLook();
+        double coneBefore = dot(up, lookBefore);
+        double h2 = Math.toRadians(85.0) / 2.0;
+        assertTrue("attitude hold must accept the second roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h2) + " " + Math.sin(h2) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(150);
+        double[] up2 = shipUpFromInfo(shipInfo(bx, by, bz));
+        double rolledBy = Math.toDegrees(Math.acos(clampUnit(dot(up, up2))));
+        assertTrue("the ship must actually roll further for this leg to prove anything (rolled "
+                + rolledBy + " deg more, upY " + up[1] + " -> " + up2[1] + ")", rolledBy > 15.0);
+        assertTrue("the crew member must still be captured on the further-rolled deck: "
+                + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+        double[] lookAfter = clientLook();
+        double coneAfter = dot(up2, lookAfter);
+        double aimTurned = Math.toDegrees(Math.acos(clampUnit(dot(lookBefore, lookAfter))));
+        System.out.println("[crewcap] deck-glue rolledBy=" + rolledBy + " aimTurned=" + aimTurned
+                + " cone " + coneBefore + " -> " + coneAfter);
+        assertTrue("with the mouse still, the aim must stay on its cone about the deck normal as "
+                + "the ship rolls (cone " + coneBefore + " -> " + coneAfter + ")",
+                Math.abs(coneAfter - coneBefore) < 0.06);
+        assertTrue("with the mouse still, the world aim must TURN WITH the deck by the extra roll, "
+                + "not stay world-glued (ship rolled " + rolledBy + " deg, aim turned "
+                + aimTurned + ")", Math.abs(aimTurned - rolledBy) < 8.0);
+
+        // One transform for the view and the aim: the camera the renderer was handed points where
+        // the derived world look points (two independent code paths on the client).
+        double camYaw = clientDouble(SHIP_CAMERA_CLASS, "shipCamYaw");
+        double camPitch = clientDouble(SHIP_CAMERA_CLASS, "shipCamPitch");
+        double playerYaw = bot().reportState().get("playerYaw").getAsDouble();
+        double playerPitch = bot().reportState().get("playerPitch").getAsDouble();
+        double yawDiff = Math.abs(wrap180(camYaw - playerYaw));
+        System.out.println("[crewcap] cam=(" + camYaw + "," + camPitch + ") player=("
+                + playerYaw + "," + playerPitch + ")");
+        assertTrue("the rendered camera must point along the derived world aim (yaw " + camYaw
+                + " vs " + playerYaw + ", pitch " + camPitch + " vs " + playerPitch + ")",
+                yawDiff < 3.0 && Math.abs(camPitch - playerPitch) < 3.0);
+    }
+
+    private static final String DECK_LOOK = "zmaster587.advancedRocketry.client.DeckLook";
+    private static final String SHIP_CAMERA_CLASS = "zmaster587.advancedRocketry.client.ShipFrameCamera";
+
+    /** The client's own world look direction, from the rotation it reports. */
+    private double[] clientLook() throws Exception {
+        com.google.gson.JsonObject st = bot().reportState();
+        double yaw = Math.toRadians(st.get("playerYaw").getAsDouble());
+        double pitch = Math.toRadians(st.get("playerPitch").getAsDouble());
+        return new double[]{-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch),
+                Math.cos(yaw) * Math.cos(pitch)};
+    }
+
+    /** The ship's up axis in world coordinates, from the server-side ship-info quat (the oracle). */
+    private double[] shipUpFromInfo(String info) {
+        double qw = readDouble(info, Pattern.compile("\"qw\":(-?[0-9.E\\-]+)"));
+        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double qy = readDouble(info, Pattern.compile("\"qy\":(-?[0-9.E\\-]+)"));
+        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        return new double[]{
+                2.0 * (qx * qy - qw * qz),
+                1.0 - 2.0 * (qx * qx + qz * qz),
+                2.0 * (qy * qz + qw * qx)};
+    }
+
+    private static double dot(double[] a, double[] b) {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    }
+
+    private static double clampUnit(double v) {
+        return v < -1.0 ? -1.0 : v > 1.0 ? 1.0 : v;
+    }
+
+    private static double wrap180(double deg) {
+        double d = deg % 360.0;
+        if (d >= 180.0) d -= 360.0;
+        if (d < -180.0) d += 360.0;
+        return d;
+    }
+
+    /** The unsigned angle (degrees) between two directions' projections into the plane
+     *  perpendicular to {@code axis}. */
+    private static double planeAngleDeg(double[] axis, double[] a, double[] b) {
+        double[] pa = {a[0] - axis[0] * dot(axis, a), a[1] - axis[1] * dot(axis, a),
+                a[2] - axis[2] * dot(axis, a)};
+        double[] pb = {b[0] - axis[0] * dot(axis, b), b[1] - axis[1] * dot(axis, b),
+                b[2] - axis[2] * dot(axis, b)};
+        double na = Math.sqrt(dot(pa, pa)), nb = Math.sqrt(dot(pb, pb));
+        if (na < 1.0E-9 || nb < 1.0E-9) {
+            return 0.0;
+        }
+        return Math.toDegrees(Math.acos(clampUnit(dot(pa, pb) / (na * nb))));
+    }
+
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);

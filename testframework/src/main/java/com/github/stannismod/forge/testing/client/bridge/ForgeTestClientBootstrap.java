@@ -483,6 +483,26 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("pitch", pitch);
                     return response;
                 });
+            case "turn_look":
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    float dYaw = request.get("deltaYaw").getAsFloat();
+                    float dPitch = request.get("deltaPitch").getAsFloat();
+                    JsonObject response = ok();
+                    if (mc.player != null) {
+                        // The REAL mouse path: Entity.turn is exactly what the game's own
+                        // mouse handler feeds accumulated deltas into, so mod hooks on the
+                        // turn (frame-relative look transforms) run - unlike set_look,
+                        // which writes the rotation fields directly.
+                        mc.player.turn(dYaw, dPitch);
+                        response.addProperty("applied", true);
+                        response.addProperty("yaw", mc.player.rotationYaw);
+                        response.addProperty("pitch", mc.player.rotationPitch);
+                    } else {
+                        response.addProperty("applied", false);
+                    }
+                    return response;
+                });
             case "set_key":
                 return runOnClientThread(() -> {
                     int keyCode = requireInt(request, "keyCode");

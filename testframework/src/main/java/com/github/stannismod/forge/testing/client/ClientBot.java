@@ -214,6 +214,24 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Turns the client player's look by a RAW mouse delta, through the game's own
+     * {@code Entity.turn} - the exact method the real mouse handler feeds accumulated
+     * movement into. Unlike {@link #setLook} (which writes the rotation fields directly,
+     * like a teleport), this exercises every mod hook installed on the turn path, e.g.
+     * a frame-relative look transform for a player standing on a moving platform.
+     *
+     * <p>Deltas are in vanilla mouse units: {@code rotationYaw += deltaYaw * 0.15},
+     * {@code rotationPitch -= deltaPitch * 0.15} (positive {@code deltaPitch} looks UP),
+     * pitch clamped to +-90.</p>
+     */
+    public void turnLook(float deltaYaw, float deltaPitch) throws IOException {
+        JsonObject command = command("turn_look");
+        command.addProperty("deltaYaw", deltaYaw);
+        command.addProperty("deltaPitch", deltaPitch);
+        assertOk(execute(command));
+    }
+
+    /**
      * Reflectively reads a static field on the client and returns its
      * {@code String.valueOf(...)} as {@code value} (plus {@code isNull},
      * {@code type}). Lets a test assert arbitrary client-side mod state (HUD

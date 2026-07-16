@@ -90,9 +90,13 @@ public final class ShipFrameCamera {
     }
 
     /**
-     * The camera attitude for someone standing on a deck: his own look, levelled to the ship's horizon.
-     * Only the roll degree of freedom is added - yaw and pitch come back unchanged - so
-     * {@code getLook()}, and with it every block interaction, stays exactly as the player aimed it.
+     * The camera attitude for a body standing on a deck whose look this client does NOT hold in the
+     * deck frame (spectating an aboard body): its own world look, levelled to the ship's horizon.
+     * Only the roll degree of freedom is added - yaw and pitch come back unchanged - so the view
+     * still points exactly where that body aims. The LOCAL player's walking camera does not use
+     * this any more: his look is held deck-frame ({@link DeckLook}) and the camera composes the
+     * ship attitude with it directly, which has no singular attitude - this levelling is
+     * undefined when the deck goes vertical (returns {@code null} along the deck normal).
      *
      * @return {yaw, pitch, roll} in degrees, or {@code null} to leave the camera alone
      */

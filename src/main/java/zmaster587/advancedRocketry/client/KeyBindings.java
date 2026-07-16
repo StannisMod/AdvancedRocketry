@@ -378,6 +378,12 @@ public class KeyBindings {
 
         final Minecraft mc = Minecraft.getMinecraft();
         final EntityPlayerSP player = mc.player;
+        // Deck-frame look glue for a walking crew member, BEFORE the GUI gate: the ship keeps
+        // turning under him while he reads a chest, and his world aim must keep following the
+        // deck even when the mouse is captured by a screen.
+        if (player != null) {
+            DeckLook.clientTick(player);
+        }
         // Don't steer while a GUI is open. (We intentionally do NOT require
         // inGameHasFocus — losing window focus shouldn't freeze the controls,
         // and the headless test bot never reports focus.)

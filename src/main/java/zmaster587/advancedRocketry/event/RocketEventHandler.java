@@ -281,18 +281,13 @@ public class RocketEventHandler extends Gui {
                 && zmaster587.advancedRocketry.integration.vs.VSIntegration.shipAttitudeAt(
                         view.world, view.posX, view.posY, view.posZ) != null) {
             boolean resolving = zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view);
-            float inYaw = event.getYaw() - 180f;
-            float inPitch = (float) event.getPitch();
-            double[] up = resolving
-                    ? zmaster587.advancedRocketry.client.ShipFrameCamera.shipUpFor(view, p) : null;
-            float[] lvl = up == null ? null
-                    : zmaster587.advancedRocketry.client.ShipFrameCamera
-                            .deckLevelledCameraEuler(up, inYaw, inPitch);
             zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAM] walking"
                     + " resolving=" + resolving
-                    + " inYaw=" + inYaw + " inPitch=" + inPitch
-                    + (lvl == null ? " levelled=none"
-                            : " outYaw=" + lvl[0] + " outPitch=" + lvl[1] + " roll=" + lvl[2]));
+                    + " deckActive=" + zmaster587.advancedRocketry.client.DeckLook.active
+                    + " deckYaw=" + zmaster587.advancedRocketry.client.DeckLook.deckYawDeg
+                    + " deckPitch=" + zmaster587.advancedRocketry.client.DeckLook.deckPitchDeg
+                    + " worldYaw=" + (event.getYaw() - 180f)
+                    + " worldPitch=" + event.getPitch());
         }
         // ABOARD specifically: a HULL-STAND body (outer hull, contract C11) keeps world semantics -
         // its camera is its own, never levelled to a deck it is not standing on.
@@ -300,21 +295,43 @@ public class RocketEventHandler extends Gui {
             zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
             return;
         }
-        double[] shipUp = zmaster587.advancedRocketry.client.ShipFrameCamera.shipUpFor(view, p);
-        if (shipUp == null) {
+        zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat shipQ =
+                zmaster587.advancedRocketry.client.ShipFrameCamera.viewShipQuat(view, p);
+        if (shipQ == null) {
             zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
             return;
         }
-        float[] levelled = zmaster587.advancedRocketry.client.ShipFrameCamera
-                .deckLevelledCameraEuler(shipUp, event.getYaw() - 180f, (float) event.getPitch());
-        if (levelled == null) {
-            return; // looking straight along the deck normal: roll is undefined, hold the last one
+        double[] shipUp = shipQ.rotate(0.0, 1.0, 0.0);
+        // A walking crew member's aim lives in the DECK frame (DeckLook): his world yaw/pitch are
+        // DERIVED from it through the ship attitude, and the camera is the SAME composition
+        // (ship attitude * deck look) - one transform for the mouse, the aim and the view, at any
+        // attitude. Deriving here, with the exact quat this frame's camera composes, makes the
+        // crosshair ray and the rendered view one rotation by construction. The old roll-only
+        // horizon levelling was singular on a vertical deck (the roll estimate flips with the look
+        // direction there, and the mouse feel flipped with it); a composed look has no such pole.
+        float[] e;
+        if (view == Minecraft.getMinecraft().player) {
+            zmaster587.advancedRocketry.client.DeckLook.frame(view, shipQ);
         }
-        event.setYaw(levelled[0] + 180f);
-        event.setPitch(levelled[1]);
-        event.setRoll(levelled[2]);
+        if (view == Minecraft.getMinecraft().player
+                && zmaster587.advancedRocketry.client.DeckLook.active) {
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat cam =
+                    shipQ.mul(zmaster587.advancedRocketry.client.DeckLook.lookQuat());
+            e = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(cam);
+        } else {
+            // Not this client's own deck look (spectating an aboard body, or the deck look could
+            // not engage this instant): fall back to roll-levelling the body's own world aim.
+            e = zmaster587.advancedRocketry.client.ShipFrameCamera
+                    .deckLevelledCameraEuler(shipUp, event.getYaw() - 180f, (float) event.getPitch());
+            if (e == null) {
+                return; // looking straight along the deck normal: roll is undefined, hold the last one
+            }
+        }
+        event.setYaw(e[0] + 180f);
+        event.setPitch(e[1]);
+        event.setRoll(e[2]);
         zmaster587.advancedRocketry.client.ShipFrameCamera.recordCamera(true,
-                levelled[0], levelled[1], levelled[2], shipUp,
+                e[0], e[1], e[2], shipUp,
                 zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeX,
                 zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeY,
                 zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamEyeZ);

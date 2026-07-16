@@ -991,6 +991,21 @@ public final class FreeFlightPhysics {
     }
 
     /**
+     * The roll-free quaternion for a Minecraft look pair: it carries body {@code +Z} to the look
+     * direction of {@code (yawDeg, pitchDeg)} and {@link #eulerFromQuat} gives back exactly
+     * {@code {yawDeg, pitchDeg, 0}}. The building block of a FRAME-relative look: a yaw/pitch held
+     * in some frame (a ship's deck) becomes a world aim - or a world camera - by composing the
+     * frame's attitude with this ({@code frameQuat.mul(lookQuat(...))}), with no singular attitude
+     * anywhere: unlike roll-only horizon levelling, the composition stays well-defined when the
+     * frame's up is perpendicular to (or along) the view.
+     */
+    public static Quat lookQuat(double yawDeg, double pitchDeg) {
+        return Quat.fromAxisAngle(0, 1, 0, -yawDeg)
+                .mul(Quat.fromAxisAngle(1, 0, 0, pitchDeg))
+                .normalized();
+    }
+
+    /**
      * Minecraft yaw (degrees) of a look direction, in whatever frame the direction is expressed.
      * Handed a ship-frame look vector it yields the yaw to walk by on the deck, exactly as
      * {@code moveRelative} uses {@code rotationYaw} in the world frame.
