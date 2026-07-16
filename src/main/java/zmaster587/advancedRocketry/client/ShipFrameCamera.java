@@ -61,6 +61,16 @@ public final class ShipFrameCamera {
         if (seat != null && seat.isLinked() && view == mc.player) {
             return FreeFlightPhysics.slerp(KeyBindings.shipPrevQuat(), KeyBindings.shipQuat(), partialTicks);
         }
+        // The LOCAL player's eye/camera/model gate on the MOVEMENT truth - resolved ABOARD a deck -
+        // never on containment (contract C7). Containment overlaps a large air volume around the
+        // hull (the fly-through hijack), and a HULL-STAND body (outer hull, C11) is inside it too
+        // while owning a world-frame view. Remote bodies keep the containment gate for now: their
+        // movement is never resolved on this side, and un-rotating a remote crew member's model on
+        // a rolled deck is the worse artefact until the spatial deck gate lands.
+        if (view == mc.player
+                && !zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
+            return null;
+        }
         return VSIntegration.shipAttitudeFor(view);
     }
 

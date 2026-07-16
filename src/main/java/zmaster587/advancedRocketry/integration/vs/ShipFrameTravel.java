@@ -172,6 +172,13 @@ public final class ShipFrameTravel {
          *  ACCELERATION (the per-tick carry delta) into the relative motion, and a violently
          *  slewing deck then slides its crew off by "inertia" the deck-static model must not have. */
         double carryX, carryY, carryZ;
+        /** Capture mode (contract C11). {@code false} = ABOARD: deck semantics - gravity along the
+         *  ship's down, the walk basis in the deck plane, the deck-levelled camera. {@code true} =
+         *  HULL-STAND: the body is on the ship's OUTER (world-facing) surface, where no subspace
+         *  floor exists beneath it - WORLD semantics (world gravity, world walk basis, own camera),
+         *  with only the COLLISION resolved against the ship's subspace geometry so it stands on
+         *  the hull as on terrain, rides the moving ship, and never tunnels. */
+        boolean hullStand;
     }
 
     /** How far (squared, in blocks, IN THE SHIP FRAME) the body may have drifted from the deck point we
@@ -265,6 +272,38 @@ public final class ShipFrameTravel {
                 release(entity, "steppedOntoTerrain");
                 return false;
             }
+            if (state.hullStand) {
+                // HULL-STAND liveness (C11). A standing deck below means the body reached a surface
+                // that IS a deck in the ship frame (a hatch entry, or a hull region that reads as a
+                // subspace top face at this attitude): hand over to ABOARD semantics - deck gravity,
+                // deck camera. Losing hull contact (walked off the hull edge, the ship rotated away)
+                // hands the body back to vanilla mid-air.
+                if (shipSupportObstacleCountFor(entity, state.shipId) > 0) {
+                    state.hullStand = false;
+                    logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
+                    return true;
+                }
+                if (!hullContactFor(entity, state.shipId)) {
+                    release(entity, "noHullContact");
+                    return false;
+                }
+                return true;
+            }
+            // C11: no subspace floor within reach below the body means ship-frame gravity can never
+            // seat it on a deck - it is on the OUTER hull (the world-facing surface of a
+            // non-upright ship) or past the underside. World semantics own it there: transition to
+            // HULL-STAND while the body still touches the hull, or release to vanilla when it does
+            // not. A jump/fall over a deck always keeps its floor within reach and never trips
+            // this; a hatch entry re-captures by first contact the moment a real deck is below.
+            if (!hasDeckBelowFor(entity, state.shipId)) {
+                if (hullContactFor(entity, state.shipId)) {
+                    state.hullStand = true;
+                    logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
+                    return true;
+                }
+                release(entity, "noDeckBelow");
+                return false;
+            }
             return true;
         }
         // First contact (contract C1b): capture only a body actually standing on a ship's deck in that
@@ -278,6 +317,22 @@ public final class ShipFrameTravel {
             return false;
         }
         String candidate = firstContactCandidate(entity);
+        boolean hullStand = false;
+        if (candidate == null) {
+            // No deck under the body in any candidate's frame - but its box may still be meeting a
+            // ship's OUTER hull (contract C11: the world-facing surface of a non-upright ship, or
+            // any hull face a falling body is about to hit). Capture in HULL-STAND mode: world
+            // kinematics, ship-geometry collision - the body lands on the hull instead of the
+            // physics mod bouncing it off and dropping it through the skin.
+            for (String shipId : VSIntegration.shipIdsAt(
+                    entity.world, entity.posX, entity.posY, entity.posZ)) {
+                if (hullContactFor(entity, shipId)) {
+                    candidate = shipId;
+                    hullStand = true;
+                    break;
+                }
+            }
+        }
         if (candidate == null) {
             return false;
         }
@@ -296,6 +351,7 @@ public final class ShipFrameTravel {
                 shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS,
                 shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS,
                 shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS);
+        STATE.get(entity).hullStand = hullStand;
         logCapture(entity, candidate, local[0], local[1], local[2]);
         return true;
     }
@@ -452,6 +508,19 @@ public final class ShipFrameTravel {
         return entity != null && STATE.containsKey(entity);
     }
 
+    /** Whether this class resolves {@code entity} in ABOARD (deck) mode specifically. The
+     *  deck-levelled camera, the deck mouse basis and every other "this body lives in the deck's
+     *  frame" consumer gate on THIS - a HULL-STAND body (contract C11) keeps its own world-frame
+     *  view and look while only its collision is resolved against the ship. Movement-ownership
+     *  consumers (the move-suppression hook, gravity) keep gating on {@link #isResolving}. */
+    public static boolean isResolvingAboard(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        ShipFrameState state = STATE.get(entity);
+        return state != null && !state.hullStand;
+    }
+
     /**
      * A read-only breakdown of the {@link #handles} decision for {@code entity} - every gate, the
      * ship-frame support obstacle count under the feet, and the final verdict - WITHOUT the state
@@ -482,6 +551,7 @@ public final class ShipFrameTravel {
         boolean tracked = state != null;
         m.put("alreadyTracked", tracked);
         m.put("anchorShipId", tracked ? state.shipId : null);
+        m.put("hullStand", tracked && state.hullStand);
         boolean terrain = isSupportedByWorldTerrain(entity);
         m.put("supportedByWorldTerrain", terrain);
         // The handles() verdict, replicated WITHOUT its capture/release side effects.
@@ -536,7 +606,13 @@ public final class ShipFrameTravel {
     }
 
     /** {@link #shipSupportObstacleCount}, resolved through the ship {@code shipId} instead of a
-     *  containment lookup. {@code -1} when that ship is not loaded on this side. */
+     *  containment lookup. {@code -1} when that ship is not loaded on this side.
+     *
+     *  <p>Counts only STANDING support - boxes whose TOP face is at/below the feet. A body that
+     *  punched INTO the hull from outside (the world-top of an inverted ship, contract C11)
+     *  intersects the probe with boxes whose top is ABOVE its feet; counting those as "support"
+     *  captured the hull-top stander into a frame that can never seat him (no floor under him in
+     *  subspace), and ship-frame gravity then flung him world-up off the hull - the #49 thrash. */
     private static int shipSupportObstacleCountFor(Entity entity, String shipId) {
         double[] local = VSIntegration.toShipFrameFor(
                 entity.world, shipId, entity.posX, entity.posY, entity.posZ);
@@ -553,7 +629,81 @@ public final class ShipFrameTravel {
         AxisAlignedBB underFeet = new AxisAlignedBB(
                 local[0] - half, local[1] - reach, local[2] - half,
                 local[0] + half, local[1], local[2] + half);
-        return entity.world.getCollisionBoxes(entity, underFeet).size();
+        int standing = 0;
+        for (AxisAlignedBB box : entity.world.getCollisionBoxes(entity, underFeet)) {
+            if (box.maxY <= local[1] + STANDING_TOLERANCE) {
+                standing++;
+            }
+        }
+        return standing;
+    }
+
+    /** A support box's top may sit this far above the mapped feet and still count as STANDING on it
+     *  - absorbs the ~1e-8 world<->subspace round-trip noise plus a de-penetration hair. Anything
+     *  higher is the body INTERSECTING geometry, not standing on it. */
+    private static final double STANDING_TOLERANCE = 0.05;
+    /** How far below the feet (in the ship frame) a floor must exist for a capture to make sense.
+     *  Comfortably above a jump apex (~1.25) and interior drops; a body with NO floor within this
+     *  reach can never be seated on a deck by ship-frame gravity - it is on the outer hull or past
+     *  the underside, where world-frame semantics own it (contract C11). */
+    private static final double FLOOR_PROBE_DEPTH = 6.0;
+
+    /** WORLD-down expressed in ship {@code shipId}'s frame, unit length - the gravity direction a
+     *  HULL-STAND body falls along inside the subspace. Null when the transform is unavailable. */
+    private static double[] worldDownInShipFrame(World world, String shipId) {
+        double[] g = VSIntegration.rotateToShipFrameFor(world, shipId, 0.0, -1.0, 0.0);
+        if (g == null) {
+            return null;
+        }
+        double m = Math.sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+        if (m < 1.0E-9) {
+            return null;
+        }
+        return new double[]{g[0] / m, g[1] / m, g[2] / m};
+    }
+
+    /** Whether the body's box, moved by its RELATIVE motion this tick (plus a hair of slack),
+     *  touches ship {@code shipId}'s subspace geometry - the world-frame analogue of the deck
+     *  support probe: "is world gravity about to seat this body on the hull". Penetrating overlap
+     *  counts: a fast faller a face deep into the hull is exactly who must be caught (the sweep
+     *  then resolves the contact instead of the physics mod's bounce-and-tunnel). */
+    private static boolean hullContactFor(Entity entity, String shipId) {
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            return false;
+        }
+        double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
+                entity.motionX, entity.motionY, entity.motionZ);
+        double half = entity.width / 2.0;
+        AxisAlignedBB box = new AxisAlignedBB(
+                local[0] - half, local[1], local[2] - half,
+                local[0] + half, local[1] + entity.height, local[2] + half);
+        if (motion != null) {
+            box = box.expand(motion[0], motion[1], motion[2]);
+        }
+        return !entity.world.getCollisionBoxes(entity, box.grow(0.05)).isEmpty();
+    }
+
+    /** Whether ANY standing floor exists within {@link #FLOOR_PROBE_DEPTH} below the body's feet in
+     *  the anchored ship's frame. Returns true on a failed lookup - the unloaded-ship release is
+     *  {@code handles()}'s own gate, not this one's. */
+    private static boolean hasDeckBelowFor(Entity entity, String shipId) {
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            return true;
+        }
+        double half = entity.width / 2.0;
+        AxisAlignedBB column = new AxisAlignedBB(
+                local[0] - half, local[1] - FLOOR_PROBE_DEPTH, local[2] - half,
+                local[0] + half, local[1] + STANDING_TOLERANCE, local[2] + half);
+        for (AxisAlignedBB box : entity.world.getCollisionBoxes(entity, column)) {
+            if (box.maxY <= local[1] + STANDING_TOLERANCE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** How many SHIP-frame collision boxes sit directly beneath the entity's feet, resolved by
@@ -675,6 +825,10 @@ public final class ShipFrameTravel {
             return false; // heldShipFramePos may release below; the anchor itself must exist here
         }
         String shipId = anchored.shipId;
+
+        if (anchored.hullStand) {
+            return hullStandTravel(entity, anchored, strafe, vertical, forward, jumpMovementFactor);
+        }
 
         // The deck frame. Held across ticks, so the ship can rotate under a body that is standing
         // still ON it; re-seeded from the world whenever anything else has moved the entity there.
@@ -846,6 +1000,123 @@ public final class ShipFrameTravel {
         return true;
     }
 
+    /**
+     * One tick of HULL-STAND movement (contract C11): vanilla's OWN kinematics on world axes -
+     * world gravity, world walk basis (the entity's own yaw), vanilla's drag constants on the
+     * world's axes - with only the COLLISION resolved by the ship-frame sweep against the ship's
+     * subspace geometry. The position stays subspace-authoritative (the body rides the moving
+     * ship); the velocity follows the same held-carry rule as the aboard path, applied to the
+     * world-frame relative motion.
+     */
+    private static boolean hullStandTravel(EntityLivingBase entity, ShipFrameState anchored,
+                                           float strafe, float vertical, float forward,
+                                           float jumpMovementFactor) {
+        World world = entity.world;
+        String shipId = anchored.shipId;
+        double[] local = heldShipFramePos(entity);
+        if (local == null) {
+            local = VSIntegration.toShipFrameFor(world, shipId, entity.posX, entity.posY, entity.posZ);
+        }
+        double[] g = worldDownInShipFrame(world, shipId);
+        if (local == null || g == null) {
+            declinedTicks++;
+            return false;
+        }
+        boolean wasGrounded = entity.onGround;
+
+        // Friction of the block the body stands on - sampled one step along WORLD-down from the
+        // feet, in the ship frame, because that is where its supporting hull block sits.
+        float friction = AIR_FRICTION;
+        if (wasGrounded) {
+            BlockPos under = new BlockPos(local[0] + g[0] * 0.5, local[1] + g[1] * 0.5 - 0.5,
+                    local[2] + g[2] * 0.5);
+            IBlockState underState = world.getBlockState(under);
+            friction = underState.getBlock().getSlipperiness(underState, world, under, entity)
+                    * AIR_FRICTION;
+        }
+        float speedFactor = SPEED_NORMALISER / (friction * friction * friction);
+        float moveFactor = wasGrounded ? entity.getAIMoveSpeed() * speedFactor : jumpMovementFactor;
+
+        // World-frame RELATIVE kinematics: vanilla's own math on world axes (walk basis from the
+        // entity's own world yaw), on the motion minus the HELD carry.
+        double[] vWorld = {
+                entity.motionX - anchored.carryX,
+                entity.motionY - anchored.carryY,
+                entity.motionZ - anchored.carryZ};
+        moveRelative(vWorld, strafe, vertical, forward, moveFactor, entity.rotationYaw);
+        vWorld[1] -= LIVING_GRAVITY; // world gravity, before the sweep (same ordering as aboard)
+
+        double[] want = VSIntegration.rotateToShipFrameFor(world, shipId,
+                vWorld[0], vWorld[1], vWorld[2]);
+        if (want == null) {
+            declinedTicks++;
+            return false;
+        }
+        Sweep sweep = sweepShipFrame(world, entity, local, want[0], want[1], want[2], wasGrounded);
+        double gotX = sweep.x - local[0], gotY = sweep.y - local[1], gotZ = sweep.z - local[2];
+        // Grounded = the body wanted to move INTO world gravity and the hull clipped that component.
+        double wantAlongG = want[0] * g[0] + want[1] * g[1] + want[2] * g[2];
+        double gotAlongG = gotX * g[0] + gotY * g[1] + gotZ * g[2];
+        boolean grounded = wantAlongG > 1.0E-7 && gotAlongG < wantAlongG - 1.0E-7;
+
+        double[] clipped = {want[0], want[1], want[2]};
+        if (sweep.collidedX) clipped[0] = 0.0;
+        if (sweep.collidedY) clipped[1] = 0.0;
+        if (sweep.collidedZ) clipped[2] = 0.0;
+        double[] worldMotion = VSIntegration.rotateToWorldFrameFor(world, shipId,
+                clipped[0], clipped[1], clipped[2]);
+        double[] worldPos = VSIntegration.toWorldFrameFor(world, shipId, sweep.x, sweep.y, sweep.z);
+        if (worldMotion == null || worldPos == null) {
+            declinedTicks++;
+            return false;
+        }
+        // Vanilla's drag, on the axes it was written for - the world's.
+        worldMotion[1] *= GRAVITY_AXIS_DRAG;
+        worldMotion[0] *= friction;
+        worldMotion[2] *= friction;
+
+        resolvedTicks++;
+        lastObstacleCount = sweep.obstacleCount;
+        lastOnDeck = grounded;
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                world, shipId, worldPos[0], worldPos[1], worldPos[2]);
+        double carryX = shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS;
+        double carryY = shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS;
+        double carryZ = shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS;
+        remember(entity, shipId, sweep.x, sweep.y, sweep.z,
+                worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
+        ShipFrameState refreshed = STATE.get(entity);
+        if (refreshed != null) {
+            refreshed.hullStand = true; // remember() rebuilds the state; keep the mode
+        }
+        entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
+        entity.motionX = worldMotion[0] + carryX;
+        entity.motionY = worldMotion[1] + carryY;
+        entity.motionZ = worldMotion[2] + carryZ;
+        entity.onGround = grounded;
+        entity.collidedHorizontally = sweep.collidedX || sweep.collidedZ;
+        entity.collidedVertically = sweep.collidedY;
+        entity.collided = entity.collidedHorizontally || entity.collidedVertically;
+
+        // Fall accounting along WORLD-down; the landed-on block sits one step along it.
+        if (grounded) {
+            if (entity.fallDistance > 0.0F) {
+                BlockPos landedOn = new BlockPos(
+                        sweep.x + g[0] * 0.2, sweep.y + g[1] * 0.2 - 0.2, sweep.z + g[2] * 0.2);
+                world.getBlockState(landedOn).getBlock()
+                        .onFallenUpon(world, landedOn, entity, entity.fallDistance);
+            }
+            entity.fallDistance = 0.0F;
+        } else if (gotAlongG > 0.0) {
+            entity.fallDistance += (float) gotAlongG;
+        }
+        updateLimbSwing(entity, gotX, gotZ);
+        if (VSIntegration.suppressShipDrag(entity)) {
+            dragSuppressions++;
+        }
+        return true;
+    }
+
     /** One tick of jump, along the deck's up rather than the world's. */
     public static boolean jump(EntityLivingBase entity, double jumpUpwardsMotion, double jumpBoost) {
         if (!handles(entity)) {
@@ -857,6 +1128,23 @@ public final class ShipFrameTravel {
         }
         String shipId = anchored.shipId;
         double up = jumpUpwardsMotion + jumpBoost;
+        if (anchored.hullStand) {
+            // HULL-STAND (C11): the jump is vanilla's own - WORLD-up, sprint boost along the WORLD
+            // yaw - applied to the relative motion under the same held-carry rule.
+            double relX = entity.motionX - anchored.carryX;
+            double relZ = entity.motionZ - anchored.carryZ;
+            if (entity.isSprinting()) {
+                float rad = entity.rotationYaw * 0.017453292F;
+                relX -= MathHelper.sin(rad) * 0.2F;
+                relZ += MathHelper.cos(rad) * 0.2F;
+            }
+            entity.motionX = relX + anchored.carryX;
+            entity.motionY = up + anchored.carryY;
+            entity.motionZ = relZ + anchored.carryZ;
+            entity.isAirBorne = true;
+            net.minecraftforge.common.ForgeHooks.onLivingJump(entity);
+            return true;
+        }
         // Ship-RELATIVE velocity, exactly as travel(): a jump is "up 0.42 relative to the deck".
         // Subtract and re-add the SAME held carry (state), leaving it for the next travel tick to
         // subtract again - a fresh sample here would double-book the carry against travel's.

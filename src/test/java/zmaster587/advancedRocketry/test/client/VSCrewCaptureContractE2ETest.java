@@ -608,6 +608,154 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 + "hold (captured in " + resolvingSeen + "/12 samples): " + win, resolvingSeen == 0);
     }
 
+    // ---- C11: the OUTER hull of an inverted ship is walkable with WORLD-frame semantics ---------
+
+    @Test
+    public void standingOnTheWorldTopOfAnInvertedShipKeepsWorldFrameSemantics() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 5920, by = 64, bz = 5920;
+
+        // The round-15 playtest residue: standing on the world-facing top of an inverted hull (its
+        // former belly), the capture cycle chews - in subspace that surface has NO floor beneath
+        // the body (shipObstacles=0), ship-frame capture is structurally impossible there (C1b),
+        // yet the post-drop re-capture takes unconditionally and ship-frame gravity fights the
+        // world's hull collision every tick. Contract C11: that body is NOT ABOARD - it keeps
+        // world gravity and movement and stands on the hull as on terrain, never tunneling.
+        double[] ship = buildShip(bx, by, bz);
+        double h = Math.toRadians(160.0) / 2.0;
+        assertTrue("attitude hold must accept the past-vertical roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(200);
+        String info = shipInfo(bx, by, bz);
+        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
+        assertTrue("the ship must be steeply inverted for the hull-top to exist (upY=" + upY + ")",
+                upY < -0.3);
+        double sx = readDouble(info, POS_X), sy = readDouble(info, POS_Y), sz = readDouble(info, POS_Z);
+
+        // Fall onto the world-top of the inverted hull from a few blocks up.
+        exec("tp @a " + sx + " " + (sy + 7) + " " + sz + " 0 0");
+        // The freshly-teleported client may not tick until its destination chunks stream in (the
+        // whole encounter would then sample a frozen body and prove nothing). Gate the window on
+        // the fall actually beginning.
+        double preY = bot().reportState().get("playerY").getAsDouble();
+        boolean falling = false;
+        for (int i = 0; i < 60 && !falling; i++) {
+            bot().waitTicks(2);
+            falling = Math.abs(bot().reportState().get("playerY").getAsDouble() - preY) > 0.4;
+        }
+        assertTrue("the teleported client must start falling before the encounter window "
+                + "(client tick/chunk-stream stall)", falling);
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        StringBuilder land = new StringBuilder();
+        double settledY = Double.NaN;
+        long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        for (int i = 0; i < 30; i++) {
+            bot().waitTicks(3);
+            double py = bot().reportState().get("playerY").getAsDouble();
+            if (i % 3 == 0) {
+                land.append(String.format(java.util.Locale.ROOT,
+                        "[t%d y=%.2f res=%d drop='%s'] ", i * 3, py,
+                        (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks") - resolvedBefore,
+                        clientString(SHIP_FRAME_TRAVEL, "lastDropReason")));
+            }
+            settledY = py;
+        }
+
+        // (a) Never tunnels: he stands ON the hull-top, above the ship centre - not fallen through
+        // to the terrain far below (by+1) and not inside the hull volume oscillating.
+        assertTrue("the body must stand on the world-top of the inverted hull, not tunnel through "
+                + "(settledY=" + settledY + " shipY=" + sy + " terrainY~" + (by + 1) + "): " + land,
+                settledY > sy - 0.5);
+        // (b) NOT ABOARD (C11): the hull-top stander is held in HULL-STAND mode - world semantics,
+        // ship-geometry collision - never in the deck frame.
+        String cap = exec("artest vs deck-capture");
+        assertTrue("a body on the OUTER hull must keep world-frame semantics - held as HULL-STAND, "
+                + "never ABOARD (C11): " + cap,
+                !cap.contains("\"alreadyTracked\":true") || cap.contains("\"hullStand\":true"));
+        // (c) His camera stays his own - the deck-levelled view never engages for a hull stander.
+        boolean camActive = Boolean.parseBoolean(
+                clientString("zmaster587.advancedRocketry.client.ShipFrameCamera", "shipCamActive"));
+        assertTrue("the deck camera must never engage for a hull-top stander (C11)", !camActive);
+        // (d) And the capture machinery must not churn against him.
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        System.out.println("[crewcap] hull-top settledY=" + settledY + " shipY=" + sy + " churn="
+                + churn + " camActive=" + camActive + " :: " + land);
+        assertTrue("the capture must not churn against a hull-top stander (drops=" + churn + "): "
+                + land, churn < 3);
+    }
+
+    @Test
+    public void aHullTopEncounterNeverEntersTheShipFrame() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6020, by = 64, bz = 6020;
+
+        // The verified C11 half (the round-15 residue): a body meeting the world-facing surface of
+        // an inverted hull - where in subspace there is NO floor beneath it - must NEVER be
+        // captured into the ship frame. The old support probe counted PENETRATING boxes (top above
+        // the feet) as standing support, so a faller who punched slightly into the hull was
+        // captured, ship-frame gravity (world-up at inversion) flung him off, and the post-drop
+        // re-capture re-entered every tick: the round-15 log's obstacles=0 capture bursts.
+        double[] ship = buildShip(bx, by, bz);
+        double h = Math.toRadians(160.0) / 2.0;
+        assertTrue("attitude hold must accept the past-vertical roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(200);
+        String info = shipInfo(bx, by, bz);
+        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
+        assertTrue("the ship must be steeply inverted for the hull-top to exist (upY=" + upY + ")",
+                upY < -0.3);
+        double sx = readDouble(info, POS_X), sy = readDouble(info, POS_Y), sz = readDouble(info, POS_Z);
+
+        exec("tp @a " + sx + " " + (sy + 7) + " " + sz + " 0 0");
+        // The freshly-teleported client may not tick until its destination chunks stream in (the
+        // whole encounter would then sample a frozen body and prove nothing). Gate the window on
+        // the fall actually beginning.
+        double preY = bot().reportState().get("playerY").getAsDouble();
+        boolean falling = false;
+        for (int i = 0; i < 60 && !falling; i++) {
+            bot().waitTicks(2);
+            falling = Math.abs(bot().reportState().get("playerY").getAsDouble() - preY) > 0.4;
+        }
+        assertTrue("the teleported client must start falling before the encounter window "
+                + "(client tick/chunk-stream stall)", falling);
+        long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
+        int aboardSeen = 0, hullSeen = 0, samples = 0;
+        StringBuilder enc = new StringBuilder();
+        for (int i = 0; i < 30; i++) {
+            bot().waitTicks(3);
+            samples++;
+            String cap = exec("artest vs deck-capture");
+            boolean tracked = cap.contains("\"alreadyTracked\":true");
+            boolean hull = cap.contains("\"hullStand\":true");
+            if (tracked && !hull) aboardSeen++;
+            if (tracked && hull) hullSeen++;
+            if (i % 5 == 0) {
+                enc.append(String.format(java.util.Locale.ROOT, "[t%d y=%.2f cap=%b hull=%b] ",
+                        i * 3, bot().reportState().get("playerY").getAsDouble(), tracked, hull));
+            }
+        }
+        long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
+        System.out.println("[crewcap] hull-top-mode aboard=" + aboardSeen + " hull=" + hullSeen
+                + "/" + samples + " churn=" + churn + " :: " + enc);
+
+        // The C11 mode contract: the hull encounter may be HELD (hull-stand), but it must NEVER
+        // read as ABOARD - no deck frame, no deck camera, no deck mouse for a hull stander.
+        assertTrue("a body meeting the OUTER hull of an inverted ship must never enter ABOARD/deck "
+                + "mode (C11): aboard " + aboardSeen + "/" + samples + " (hull-stand " + hullSeen
+                + ") :: " + enc, aboardSeen == 0);
+        // The encounter must actually exercise the hull-stand hold, or this run proved nothing.
+        assertTrue("the encounter must engage the HULL-STAND hold (hull-stand seen " + hullSeen
+                + "/" + samples + "): " + enc, hullSeen > 0);
+        assertTrue("and the capture machinery must not churn against it (drops=" + churn + ")",
+                churn == 0);
+    }
+
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);

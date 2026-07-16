@@ -266,7 +266,7 @@ public class RocketEventHandler extends Gui {
                 && (ffCamTraceFrames++ % 20) == 0
                 && zmaster587.advancedRocketry.integration.vs.VSIntegration.shipAttitudeAt(
                         view.world, view.posX, view.posY, view.posZ) != null) {
-            boolean resolving = zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(view);
+            boolean resolving = zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view);
             float inYaw = event.getYaw() - 180f;
             float inPitch = (float) event.getPitch();
             double[] up = resolving
@@ -280,7 +280,9 @@ public class RocketEventHandler extends Gui {
                     + (lvl == null ? " levelled=none"
                             : " outYaw=" + lvl[0] + " outPitch=" + lvl[1] + " roll=" + lvl[2]));
         }
-        if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(view)) {
+        // ABOARD specifically: a HULL-STAND body (outer hull, contract C11) keeps world semantics -
+        // its camera is its own, never levelled to a deck it is not standing on.
+        if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
             zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
             return;
         }

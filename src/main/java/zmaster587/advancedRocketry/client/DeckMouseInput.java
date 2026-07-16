@@ -40,8 +40,11 @@ public final class DeckMouseInput {
      */
     public static boolean applyDeckRelativeTurn(Entity self, float yawDelta, float pitchDelta) {
         Minecraft mc = Minecraft.getMinecraft();
+        // Gates on ABOARD specifically: a HULL-STAND body (outer hull, contract C11) keeps its own
+        // world-frame look - rotating its mouse by a deck roll it does not live in would be the
+        // old containment-hijack bug in a new coat.
         if (self != mc.player || !ShipFrameCamera.shipCamActive
-                || !ShipFrameTravel.isResolving(self)) {
+                || !ShipFrameTravel.isResolvingAboard(self)) {
             return false;
         }
         double roll = Math.toRadians(ShipFrameCamera.shipCamRoll);
