@@ -311,6 +311,19 @@ public class ClientProxy extends CommonProxy {
     public static volatile float testClientMasterVolume = Float.NaN;
 
     /**
+     * The dimension id of the world the CLIENT is currently in, or {@link Integer#MIN_VALUE} when no
+     * world is loaded. Published for client e2e tests (the harness's static-invoke surface passes int
+     * args, hence the unused parameter) to observe that the client GENUINELY entered a dimension —
+     * e.g. a space-subsystem slot dim synced by
+     * {@link zmaster587.advancedRocketry.network.PacketSlotDimSync} — rather than that a server-side
+     * transfer merely ran.
+     */
+    public static int currentClientDimension(int ignored) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getMinecraft();
+        return mc.world == null ? Integer.MIN_VALUE : mc.world.provider.getDimension();
+    }
+
+    /**
      * Silence a harness-spawned test client. Automated client e2e ({@code RealClientHarness})
      * boots a REAL client with REAL audio on the dev box, marked by {@code -Dforge.test.client=true}
      * (the same flag {@link #bootstrapTestClientBridge()} keys on); this mutes the master sound

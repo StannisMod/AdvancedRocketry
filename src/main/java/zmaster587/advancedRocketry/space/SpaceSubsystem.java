@@ -153,6 +153,27 @@ public final class SpaceSubsystem {
 
     /** Registered once per JVM; runs the periodic + pressure-triggered GC while a controller is live. */
     public static final class Ticker {
+
+        /**
+         * Slot-dim client sync at login: a joining player's client learns the slot {@code DimensionType}
+         * + dim ids BEFORE anything (login restore, entry, docking) can relocate him into a slot world —
+         * the sequencing contract of the slot-dim registration sync. Independent of the production
+         * controller so a probe-registered pool (test harness) syncs too; a no-op while no pool exists.
+         */
+        @SubscribeEvent
+        public void onPlayerLoggedIn(net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedInEvent event) {
+            if (!(event.player instanceof net.minecraft.entity.player.EntityPlayerMP)
+                    || SpaceSlotPool.slotDims().isEmpty()) {
+                return;
+            }
+            zmaster587.advancedRocketry.network.PacketSlotDimSync sync =
+                    zmaster587.advancedRocketry.network.PacketSlotDimSync.current();
+            if (!sync.isEmpty()) {
+                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
+                        sync, (net.minecraft.entity.player.EntityPlayerMP) event.player);
+            }
+        }
+
         @SubscribeEvent
         public void onServerTick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) {

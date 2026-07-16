@@ -95,7 +95,32 @@ public final class SpaceSlotPool {
             SLOT_DIMS.add(id);
             ids[i] = id;
         }
+        // Sync the (grown) pool to every online client BEFORE anything can move a player into a fresh
+        // slot — the client half of slot-dim registration. Registration at server start broadcasts to
+        // nobody (no players yet); late joiners are covered by the login sync in SpaceSubsystem.
+        broadcastSlotDims();
         return ids;
+    }
+
+    /** Send the current slot-dim snapshot to every online player. Safe no-op with no server/players. */
+    public static void broadcastSlotDims() {
+        try {
+            net.minecraft.server.MinecraftServer server =
+                    net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+            if (server == null) {
+                return;
+            }
+            zmaster587.advancedRocketry.network.PacketSlotDimSync sync =
+                    zmaster587.advancedRocketry.network.PacketSlotDimSync.current();
+            if (sync.isEmpty()) {
+                return;
+            }
+            for (net.minecraft.entity.player.EntityPlayerMP p : server.getPlayerList().getPlayers()) {
+                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(sync, p);
+            }
+        } catch (Throwable t) {
+            AdvancedRocketry.logger.warn("[SPACE] slot-dim client sync failed", t);
+        }
     }
 
     /**
