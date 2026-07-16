@@ -57,7 +57,7 @@ public class XMLPlanetLoader {
     private static final String GENERATECAVES = "generateCaves";
     private static final String ELEMENT_GALAXY = "galaxy";
     private static final String ELEMENT_STAR = "star";
-    // Optional procedural-galaxy generation (TASK-89). Present -> a clustered generator fills the void
+    // Optional procedural-galaxy generation. Present -> a clustered generator fills the void
     // between authored anchors; absent -> authored anchors only. All attrs are balance knobs with defaults.
     private static final String ELEMENT_GALAXYGEN = "galaxyGen";
     private static final String ELEMENT_STARTYPE = "starType";

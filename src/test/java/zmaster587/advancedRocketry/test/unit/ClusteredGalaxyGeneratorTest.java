@@ -22,7 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Contract tests for the deterministic clustered galaxy generator (TASK-89). Pure-JUnit; no MC bootstrap.
+ * Contract tests for the deterministic clustered galaxy generator. Pure-JUnit; no MC bootstrap.
  *
  * <p>Pins the generation CONTRACTS: pure determinism over {@code (seed, cell)}, the minimum-spacing
  * guarantee, that the distribution actually clusters (void + dense regions), that {@code systemsInRegion}

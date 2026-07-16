@@ -28,7 +28,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Contract tests for the Layer-1 universe registry (TASK-88): the cell-keyed coord&harr;system placement
+ * Contract tests for the Layer-1 universe registry: the cell-keyed coord&harr;system placement
  * index, its NBT override store, the planet&rarr;coord seam, the anchor-drain lifecycle, and the pluggable
  * generator. Pure-JUnit — no MC bootstrap. The forward coord&rarr;system path resolves stars through the
  * injectable {@link UniverseRegistry#setStarLookup} seam so it never boots the legacy catalogue.
