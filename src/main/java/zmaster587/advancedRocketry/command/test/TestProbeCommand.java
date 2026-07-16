@@ -1703,6 +1703,87 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"fuelFilled\":" + fuelFill + "}");
             return;
         }
+        if ("strip-guidance".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket strip-guidance <entityId> — remove every
+            // TileGuidanceComputer from the rocket's StorageChunk so
+            // storage.getGuidanceComputer() returns null. Reproduces the
+            // runtime state of a satellite-only rocket (which legitimately has
+            // no guidance computer) for the SENDPLANETDATA null-deref repro.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            if (rocket.storage == null) {
+                send(sender, "{\"error\":\"rocket has null storage chunk\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            int removed = stripGuidanceComputers(rocket.storage);
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"removed\":" + removed
+                    + ",\"hasGuidanceComputer\":" + (rocket.storage.getGuidanceComputer() != null) + "}");
+            return;
+        }
+        if ("send-planet-data".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket send-planet-data <entityId> [selection]
+            //
+            // Repro for the SENDPLANETDATA finding (Bug A): drive the REAL
+            // server-side EntityRocket.useNetworkData for a SENDPLANETDATA
+            // packet. The handler dereferences storage.getGuidanceComputer()
+            // with no null guard, so a guidance-computer-less rocket (see
+            // strip-guidance) NPEs. Reported as {"thrown":"<SimpleName|null>"}.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            int selection = args.length >= 3 ? parseIntOr(args[2], 0) : 0;
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            nbt.setInteger("selection", selection);
+            String thrown = "null";
+            try {
+                rocket.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER,
+                        (byte) EntityRocket.PacketType.SENDPLANETDATA.ordinal(), nbt);
+            } catch (Throwable t) {
+                thrown = t.getClass().getSimpleName();
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId + ",\"selection\":" + selection
+                    + ",\"hasGuidanceComputer\":"
+                    + (rocket.storage != null && rocket.storage.getGuidanceComputer() != null)
+                    + ",\"thrown\":\"" + thrown + "\"}");
+            return;
+        }
+        if ("planet-data-read-empty".equalsIgnoreCase(args[0]) && args.length >= 2) {
+            // /artest rocket planet-data-read-empty <entityId>
+            //
+            // Repro for the SENDPLANETDATA finding (Bug B): the server writer
+            // emits its planet-id int only when a chip is present, while the
+            // reader unconditionally readInt()s — a short/empty payload
+            // underflows the buffer. Drive the REAL readDataFromNetwork with an
+            // empty ByteBuf (per-packet FML slice framing makes it throw rather
+            // than read adjacent bytes). Pre-fix: IndexOutOfBoundsException;
+            // post-fix (reader length guard): no read, no throw.
+            int entityId = parseIntOr(args[1], Integer.MIN_VALUE);
+            EntityRocket rocket = findRocket(server, entityId);
+            if (rocket == null) {
+                send(sender, "{\"error\":\"rocket not found\",\"entityId\":" + entityId + "}");
+                return;
+            }
+            io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            String thrown = "null";
+            try {
+                rocket.readDataFromNetwork(buf,
+                        (byte) EntityRocket.PacketType.SENDPLANETDATA.ordinal(), nbt);
+            } catch (Throwable t) {
+                thrown = t.getClass().getSimpleName();
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + entityId
+                    + ",\"readableBytes\":" + buf.readableBytes()
+                    + ",\"thrown\":\"" + thrown + "\"}");
+            return;
+        }
         if (args.length >= 1 && "wire-symmetry".equalsIgnoreCase(args[0])) {
             // wire-symmetry [PacketTypeName] — construct a throwaway
             // EntityStationDeployedRocket (never spawned; the serialization
@@ -1899,7 +1980,63 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown assembler subcommand — try pad-bounds <dim> <x> <y> <z>\"}");
+        if (args.length >= 5 && "nbt-roundtrip".equalsIgnoreCase(args[0])) {
+            // /artest assembler nbt-roundtrip <dim> <x> <y> <z> [dropStatus|setStatus=<int>]
+            //
+            // Repro for C033: TileRocketAssemblingMachine persists its scan/build
+            // status as a bare ErrorCodes.ordinal() and decodes it with
+            // ErrorCodes.values()[nbt.getInteger("status")] — no missing-key
+            // default (absent key -> 0 -> SUCCESS) and no bounds check
+            // (out-of-range ordinal -> ArrayIndexOutOfBoundsException on load).
+            // Write the live tile to NBT, optionally mutate the "status" tag to
+            // simulate a legacy/corrupt/downgraded save, then read it back into a
+            // fresh peer tile and report what status it decoded / whether it threw.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0), y = parseIntOr(args[3], 0), z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine)) {
+                send(sender, "{\"error\":\"not a rocket assembling machine\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine builder =
+                    (zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine) tile;
+            String mutation = args.length >= 6 ? args[5] : "";
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            builder.writeToNBT(nbt);
+            boolean hadStatus = nbt.hasKey("status");
+            int writtenOrdinal = nbt.getInteger("status");
+            if ("dropStatus".equalsIgnoreCase(mutation)) {
+                nbt.removeTag("status");
+            } else if (mutation.toLowerCase(java.util.Locale.ROOT).startsWith("setstatus=")) {
+                nbt.setInteger("status", parseIntOr(mutation.substring("setStatus=".length()), 0));
+            }
+            zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine peer =
+                    new zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine();
+            String threw = "null";
+            String peerStatus = "";
+            try {
+                peer.readFromNBT(nbt);
+                peerStatus = ((Enum<?>) peer.getClass().getMethod("getStatus").invoke(peer)).name();
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause() == null ? e : e.getCause();
+                threw = cause.getClass().getSimpleName();
+            } catch (Throwable t) {
+                threw = t.getClass().getSimpleName();
+            }
+            send(sender, "{\"ok\":true,\"mutation\":\"" + escapeJson(mutation) + "\""
+                    + ",\"hadStatus\":" + hadStatus
+                    + ",\"writtenOrdinal\":" + writtenOrdinal
+                    + ",\"threw\":\"" + threw + "\""
+                    + ",\"peerStatus\":\"" + peerStatus + "\"}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown assembler subcommand — try pad-bounds <dim> <x> <y> <z> | nbt-roundtrip <dim> <x> <y> <z> [dropStatus|setStatus=<int>]\"}");
     }
 
     /**
@@ -2057,6 +2194,26 @@ public class TestProbeCommand extends CommandBase {
             }
         }
         return null;
+    }
+
+    /** Remove every {@link zmaster587.advancedRocketry.tile.TileGuidanceComputer}
+     *  from a {@link zmaster587.advancedRocketry.util.StorageChunk}'s tile list so
+     *  {@code getGuidanceComputer()} returns null — reproduces the runtime state of
+     *  a satellite-only rocket (or a reload that dropped the guidance-computer tile)
+     *  for the guidance-computer null-deref repros (C049 mission path, SENDPLANETDATA
+     *  rocket path). getGuidanceComputer() iterates getTileEntityList(), which
+     *  returns the backing list, so removing from it is sufficient. Returns the
+     *  count removed. */
+    private static int stripGuidanceComputers(zmaster587.advancedRocketry.util.StorageChunk sc) {
+        java.util.List<TileEntity> tiles = sc.getTileEntityList();
+        int before = tiles.size();
+        java.util.Iterator<TileEntity> it = tiles.iterator();
+        while (it.hasNext()) {
+            if (it.next() instanceof zmaster587.advancedRocketry.tile.TileGuidanceComputer) {
+                it.remove();
+            }
+        }
+        return before - tiles.size();
     }
 
     // §5.6 Station probes -----------------------------------------------------
@@ -3244,6 +3401,140 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"reflection failed\",\"msg\":\""
                         + escapeJson(e.getMessage()) + "\"}");
             }
+            return;
+        }
+        if ("weather-info".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest satellite weather-info <dim> <satId> — read the live
+            // SatelliteWeatherController's server-authoritative fields. Used to
+            // assert the outcome of weather-apply (C048): the server must have
+            // clamped the client-supplied values.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            long satId = parseLongOr(args[2], Long.MIN_VALUE);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            SatelliteBase sat = props == null ? null : props.getSatellite(satId);
+            if (!(sat instanceof zmaster587.advancedRocketry.satellite.SatelliteWeatherController)) {
+                send(sender, "{\"error\":\"not a SatelliteWeatherController\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.satellite.SatelliteWeatherController wc =
+                    (zmaster587.advancedRocketry.satellite.SatelliteWeatherController) sat;
+            send(sender, "{\"ok\":true,\"id\":" + satId + ",\"mode_id\":" + wc.mode_id
+                    + ",\"floodlevel\":" + wc.floodlevel
+                    + ",\"last_mode_id\":" + wc.last_mode_id + "}");
+            return;
+        }
+        if ("weather-apply".equalsIgnoreCase(args[0]) && args.length >= 5) {
+            // /artest satellite weather-apply <dim> <satId> <mode_id> <floodlevel> [last_mode_id]
+            //
+            // Repro for C048: drive the REAL server-side receive path of a
+            // PacketItemModifcation for an ItemWeatherController — encode the
+            // three ints into a ByteBuf exactly as a (possibly hacked) client
+            // would, then run the item's readDataFromNetwork -> useNetworkData.
+            // A well-behaved client clamps mode_id to {0,1,2} and floodlevel to
+            // 1..180 on the button path; this probe writes arbitrary values to
+            // prove the SERVER applies them without re-validating.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            long satId = parseLongOr(args[2], Long.MIN_VALUE);
+            int mode = parseIntOr(args[3], 0);
+            int flood = parseIntOr(args[4], 0);
+            int lastMode = args.length >= 6 ? parseIntOr(args[5], 0) : 0;
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            SatelliteBase sat = props == null ? null : props.getSatellite(satId);
+            if (!(sat instanceof zmaster587.advancedRocketry.satellite.SatelliteWeatherController)) {
+                send(sender, "{\"error\":\"not a SatelliteWeatherController\"}");
+                return;
+            }
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemWeatherController);
+            zmaster587.advancedRocketry.item.ItemWeatherController item =
+                    (zmaster587.advancedRocketry.item.ItemWeatherController)
+                            zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemWeatherController;
+            item.setSatellite(stack, sat);
+            io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+            buf.writeInt(mode);
+            buf.writeInt(flood);
+            buf.writeInt(lastMode);
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            // Server receive path: decode the wire bytes, then apply to the
+            // authoritative satellite. This is exactly what the packet handler
+            // does when a PacketItemModifcation arrives on the server.
+            item.readDataFromNetwork(buf, (byte) 0, nbt, stack);
+            item.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER,
+                    (byte) 0, nbt, stack);
+            zmaster587.advancedRocketry.satellite.SatelliteWeatherController wc =
+                    (zmaster587.advancedRocketry.satellite.SatelliteWeatherController) sat;
+            send(sender, "{\"ok\":true,\"id\":" + satId
+                    + ",\"sentMode\":" + mode + ",\"sentFlood\":" + flood
+                    + ",\"mode_id\":" + wc.mode_id
+                    + ",\"floodlevel\":" + wc.floodlevel
+                    + ",\"last_mode_id\":" + wc.last_mode_id + "}");
+            return;
+        }
+        if ("weather-tick-unloaded".equalsIgnoreCase(args[0]) && args.length >= 3) {
+            // /artest satellite weather-tick-unloaded <dim> <satId>
+            //
+            // Repro for C062: drive the REAL SatelliteWeatherController.tickEntity
+            // against a null world. getWorld(dimId) returns null for an unloaded
+            // dimension, and the natural tick loop (DimensionManager.tickDimensions
+            // iterates getLoadedDimensions()==getRegisteredDimensions(), so it
+            // ticks satellites of unloaded dims too) has NO try/catch — an NPE
+            // here crashes the server tick. We point the satellite at a
+            // definitely-unloaded dim id and invoke tickEntity() directly; any
+            // NPE propagates to the top-level execute() catch as an error JSON
+            // (production would crash instead).
+            //
+            // ATOMICITY (mirrors weather-discard-test): the queue setup and the
+            // tick MUST run inside this single command dispatch. If the caller
+            // seeded viable_positions via a separate command, the background
+            // DimensionManager tick (dim 0 is loaded, world != null) drains the
+            // queue first and the null-world deref path is never reached. So we
+            // set mode 0 (that branch derefs ONLY world, not AR props),
+            // last_mode_id==mode_id (skip the clear-on-change branch) and queue
+            // one fresh position here, all on the server thread with no yield.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            long satId = parseLongOr(args[2], Long.MIN_VALUE);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            SatelliteBase sat = props == null ? null : props.getSatellite(satId);
+            if (!(sat instanceof zmaster587.advancedRocketry.satellite.SatelliteWeatherController)) {
+                send(sender, "{\"error\":\"not a SatelliteWeatherController\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.satellite.SatelliteWeatherController wc =
+                    (zmaster587.advancedRocketry.satellite.SatelliteWeatherController) sat;
+            // Find a dim id whose Forge WorldServer is genuinely not loaded.
+            int unloaded = 0x40000000;
+            while (net.minecraftforge.common.DimensionManager.getWorld(unloaded) != null) unloaded++;
+            int origDim = sat.getDimensionId();
+            int listSizeBefore;
+            int listSizeAfter;
+            try {
+                java.lang.reflect.Field vf = zmaster587.advancedRocketry.satellite.SatelliteWeatherController
+                        .class.getDeclaredField("viable_positions");
+                vf.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                java.util.List<BlockPos> list = (java.util.List<BlockPos>) vf.get(wc);
+                list.clear();
+                wc.mode_id = 0;
+                wc.last_mode_id = 0;
+                list.add(new BlockPos(100, 64, 100));
+                listSizeBefore = list.size();
+                try {
+                    sat.setDimensionId(unloaded);
+                    sat.tickEntity(); // real production method — NPE here on the buggy build
+                } finally {
+                    sat.setDimensionId(origDim);
+                }
+                // Reached only when tickEntity did NOT throw (post-fix null guard):
+                // the guard returns before consuming any viable_positions entry.
+                listSizeAfter = list.size();
+            } catch (ReflectiveOperationException e) {
+                send(sender, "{\"error\":\"reflection failed\",\"msg\":\""
+                        + escapeJson(e.getMessage()) + "\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"id\":" + satId + ",\"unloadedDim\":" + unloaded
+                    + ",\"listSizeBefore\":" + listSizeBefore
+                    + ",\"listSizeAfter\":" + listSizeAfter + "}");
             return;
         }
         if ("biome-null".equalsIgnoreCase(args[0]) && args.length >= 3) {
@@ -13463,6 +13754,30 @@ public class TestProbeCommand extends CommandBase {
                         + ",\"duration\":" + duration
                         + ",\"drillingPower\":" + drillingPower
                         + ",\"type\":\"ore\"}");
+                return;
+            }
+            if ("strip-guidance".equals(sub) && args.length >= 2) {
+                // /artest mission strip-guidance <missionId> — null the guidance
+                // computer in the mission's rocketStorage (C049 repro). Mirrors
+                // the runtime state a reload can produce when StorageChunk drops
+                // a guidance-computer tile; onMissionComplete then NPEs at the
+                // unconditional chip-refill when drillingPower==0.
+                long missionId = (long) parseDoubleOr(args[1], -1);
+                zmaster587.advancedRocketry.mission.MissionResourceCollection m = findMission(missionId);
+                if (m == null) {
+                    send(sender, "{\"error\":\"mission not found\",\"missionId\":" + missionId + "}");
+                    return;
+                }
+                Object rs = readObjectFieldOrNull(m, "rocketStorage");
+                if (!(rs instanceof zmaster587.advancedRocketry.util.StorageChunk)) {
+                    send(sender, "{\"error\":\"rocketStorage null or not a StorageChunk\",\"missionId\":" + missionId + "}");
+                    return;
+                }
+                zmaster587.advancedRocketry.util.StorageChunk sc =
+                        (zmaster587.advancedRocketry.util.StorageChunk) rs;
+                int removed = stripGuidanceComputers(sc);
+                send(sender, "{\"ok\":true,\"missionId\":" + missionId + ",\"removed\":" + removed
+                        + ",\"hasGuidanceComputer\":" + (sc.getGuidanceComputer() != null) + "}");
                 return;
             }
             if ("state".equals(sub) && args.length >= 2) {

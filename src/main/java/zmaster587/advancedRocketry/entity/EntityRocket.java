@@ -3168,7 +3168,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             storage.setEntity(this);
             storage.readFromNetwork(in);
         } else if (packetId == PacketType.SENDPLANETDATA.ordinal()) {
-            nbt.setInteger("selection", in.readInt());
+            // The server writer emits this int only when a planet-id chip is
+            // present; tolerate a short/empty payload rather than underflowing
+            // the buffer (per-packet FML slice framing makes a bare readInt throw).
+            if (in.readableBytes() >= 4)
+                nbt.setInteger("selection", in.readInt());
         } else if (packetId == PacketType.TURNUPDATE.ordinal()) {
             nbt.setBoolean("left", in.readBoolean());
             nbt.setBoolean("right", in.readBoolean());
@@ -3309,13 +3313,19 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         } else if (id == PacketType.OPENPLANETSELECTION.ordinal()) {
             player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARFULLSCREEN.ordinal(), player.world, this.getEntityId(), -1, 0);
         } else if (id == PacketType.SENDPLANETDATA.ordinal()) {
-            ItemStack stack = storage.getGuidanceComputer().getStackInSlot(0);
-            if (!stack.isEmpty() && stack.getItem() == AdvancedRocketryItems.itemPlanetIdChip) {
-                ((ItemPlanetIdentificationChip) AdvancedRocketryItems.itemPlanetIdChip).setDimensionId(stack, nbt.getInteger("selection"));
+            // A satellite-only rocket has no guidance computer; guard the deref
+            // so confirming a destination on it no-ops instead of NPEing the
+            // server (mirrors the null check the writer branch already has).
+            TileGuidanceComputer guidance = storage.getGuidanceComputer();
+            if (guidance != null) {
+                ItemStack stack = guidance.getStackInSlot(0);
+                if (!stack.isEmpty() && stack.getItem() == AdvancedRocketryItems.itemPlanetIdChip) {
+                    ((ItemPlanetIdentificationChip) AdvancedRocketryItems.itemPlanetIdChip).setDimensionId(stack, nbt.getInteger("selection"));
 
-                //Send data back to sync destination dims
-                if (!world.isRemote) {
-                    PacketHandler.sendToPlayersTrackingEntity(new PacketEntity(this, (byte) PacketType.SENDPLANETDATA.ordinal()), this);
+                    //Send data back to sync destination dims
+                    if (!world.isRemote) {
+                        PacketHandler.sendToPlayersTrackingEntity(new PacketEntity(this, (byte) PacketType.SENDPLANETDATA.ordinal()), this);
+                    }
                 }
             }
         } else if (id == PacketType.DISCONNECTINFRASTRUCTURE.ordinal()) {

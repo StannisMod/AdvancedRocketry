@@ -195,8 +195,15 @@ public class ItemWeatherController extends ItemSatelliteIdentificationChip imple
         if (!(base instanceof SatelliteWeatherController))
             return;
         SatelliteWeatherController sat = (SatelliteWeatherController) base;
-        sat.mode_id = nbtTagCompound.getInteger("mode_id");
-        sat.floodlevel = nbtTagCompound.getInteger("floodlevel");
+        // Server-authoritative validation: the 1..180 flood and {0,1,2} mode
+        // clamps exist only on the client button path, so a modified client can
+        // send anything. Re-clamp here before applying to the live satellite —
+        // an out-of-range flood level otherwise drives the unbounded flood loop
+        // in performAction (a main-thread hang / OOM DoS) and corrupts saved state.
+        int mode = nbtTagCompound.getInteger("mode_id");
+        int flood = nbtTagCompound.getInteger("floodlevel");
+        sat.mode_id = (mode == 0 || mode == 1 || mode == 2) ? mode : 0;
+        sat.floodlevel = Math.max(1, Math.min(180, flood));
         sat.last_mode_id = nbtTagCompound.getInteger("last_mode_id");
     }
 }
