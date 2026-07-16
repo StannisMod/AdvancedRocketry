@@ -16,6 +16,15 @@ import java.util.List;
  */
 public final class GalaxyGenConfig {
 
+    /**
+     * Default super-cell edge in cells. Sized so a system's per-body-cell NEIGHBOURHOOD (planets at their
+     * own cells, ~1M blocks per orbit-unit — universe-model &sect;2 amendment A#1a) fits inside half a
+     * super-cell: neighbourhoods of two neighbouring systems can never interleave. Deliberately a FIXED
+     * constant, never derived from the planet catalog — {@code minSpacing} partitions procedural space, and
+     * deriving it from XML content would silently relocate the whole procedural galaxy on any catalog edit.
+     */
+    public static final int DEFAULT_MIN_SPACING = 512;
+
     /** A weighted star archetype: a temperature (drives colour) and a size range. */
     public static final class StarType {
         public final int temperature;
@@ -55,7 +64,7 @@ public final class GalaxyGenConfig {
 
     /** A sparse, strongly-clustered default galaxy. */
     public static GalaxyGenConfig defaults() {
-        return new GalaxyGenConfig(0.35d, 4, 16, 0.6d, defaultStarTypes());
+        return new GalaxyGenConfig(0.35d, DEFAULT_MIN_SPACING, 16, 0.6d, defaultStarTypes());
     }
 
     private static List<StarType> defaultStarTypes() {

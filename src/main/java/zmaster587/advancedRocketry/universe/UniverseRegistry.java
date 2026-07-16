@@ -36,11 +36,13 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * system and answering coord&harr;system both ways. Systems therefore stay LOCATION-AGNOSTIC — the coordinate
  * lives here, never on the star.</p>
  *
- * <p>Placement is keyed by CELL (one system per {@link GalacticCoord#CELL 4&nbsp;M} cell): every coord is
- * snapped to its {@link GalacticCoord#cellCentre() cell centre} before use, so two positions in the same cell
- * resolve to the same system. The persistent override store holds only authored (XML anchor) and
- * player-modified placements; procedural cells are re-derived on demand from {@code (seed, coord)} through the
- * {@link IGalaxyGenerator} seam (which ships as {@link EmptyGalaxyGenerator} here).</p>
+ * <p>Placement is keyed by the ANCHOR cell (one system per anchor; every coord snaps to its
+ * {@link GalacticCoord#cellCentre() cell centre} before use). Per amendment A#1a a system is an anchored
+ * NEIGHBOURHOOD: the star holds the anchor cell, every planet/belt its own cell — a MEMBER cell attributes
+ * back to its system via {@link #anchorForCell} (super-cell partition; derive-don't-store). The persistent
+ * override store holds authored (XML anchor) placements, player POIs and {@code pin-on-touch} snapshots of
+ * touched procedural systems; untouched procedural space is re-derived on demand from {@code (seed, coord)}
+ * through the {@link IGalaxyGenerator} seam (which ships as {@link EmptyGalaxyGenerator} here).</p>
  *
  * <p>A {@link WorldSavedData} on the overworld's global {@code MapStorage} (reachable from any dimension since
  * the overworld is always loaded). Server-side only; the world seed is re-derived on load rather than
@@ -51,7 +53,7 @@ public final class UniverseRegistry extends WorldSavedData {
     /** The persisted identifier == the {@code .dat} filename in the world save. A save-schema constant. */
     public static final String STORAGE_KEY = "advancedrocketry_universe";
 
-    private static final int NBT_VERSION = 1;
+    private static final int NBT_VERSION = 2; // v2: + pinned procedural systems (A#1a pin-on-touch)
 
     // A self-contained logger rather than AdvancedRocketry.logger: loading the mod class triggers Forge
     // bootstrap (FluidRegistry.enableUniversalBucket), which would break pure unit tests of this registry.
@@ -62,14 +64,26 @@ public final class UniverseRegistry extends WorldSavedData {
     private final Map<String, Integer> byCell = new HashMap<>();
     /** system star-id -> its cell-centre coordinate. Reverse index. */
     private final Map<Integer, GalacticCoord> byStar = new HashMap<>();
-    /** Authored / player-built POIs (station slots, …) keyed by their system's cell key. */
+    /** Authored / player-built POIs (station slots, …) keyed by their OWN cell key. */
     private final Map<String, List<SystemBody>> poiOverrides = new HashMap<>();
+    /**
+     * Pin-on-touch store (A#1a sub-decision b): a touched PROCEDURAL system's fabricated star + body list,
+     * keyed by its anchor cell. A pinned system reads from the save forever after — immune to
+     * config/seed/XML edits. Authored systems never pin (they are already in the store).
+     */
+    private final Map<String, PinnedSystem> pinnedSystems = new HashMap<>();
     /** Latch: authored anchors drain into the store exactly once (unless a config XML reset is forced). */
     private boolean anchorsSeeded = false;
 
     // ─── Transient, re-derived per load ───────────────────────────────────────
     /** The world seed fed to the generator; set by {@link #bindWorldSeed}, never persisted. */
     private long worldSeed = 0L;
+    /**
+     * Derived super-cell → authored/pinned anchor index for member-cell attribution (A#1a). Rebuilt lazily
+     * from {@code byStar} — never persisted, so it cannot drift (derive-don't-store).
+     */
+    private transient Map<String, GalacticCoord> anchorsBySuper = null;
+    private transient int anchorsBySuperSpacing = -1;
 
     // ─── JVM-global seams / staging ───────────────────────────────────────────
     private static volatile IGalaxyGenerator generator = new EmptyGalaxyGenerator();
@@ -125,17 +139,79 @@ public final class UniverseRegistry extends WorldSavedData {
     // ─── Forward lookups (coord -> system) ─────────────────────────────────────
 
     /**
-     * The system occupying {@code coord}'s cell: the override store first, else the procedural generator.
-     * Empty means void space.
+     * The system whose NEIGHBOURHOOD contains {@code coord}'s cell (A#1a member semantics): a member cell —
+     * a planet's own zone cell, or the void between bodies of one system — resolves to its owning system.
+     * Resolution order: pinned → authored store → the procedural generator. Empty means void space.
      */
     public Optional<StarSystem> systemForCoord(GalacticCoord coord) {
+        Optional<GalacticCoord> anchor = anchorForCell(coord);
+        if (!anchor.isPresent()) {
+            return Optional.empty();
+        }
+        return systemAtAnchor(anchor.get());
+    }
+
+    /**
+     * The ANCHOR cell of the system whose neighbourhood contains {@code coord}'s cell, or empty for void
+     * space. This is the member→anchor attribution every system-semantics read goes through (A#1a
+     * sub-decision d): authored/pinned anchors win over the procedural generator inside one super-cell.
+     */
+    public Optional<GalacticCoord> anchorForCell(GalacticCoord coord) {
         GalacticCoord cell = coord.cellCentre();
-        Integer id = byCell.get(cell.cellKey());
+        if (byCell.containsKey(cell.cellKey())) {
+            return Optional.of(cell);
+        }
+        GalacticCoord stored = anchorsBySuperIndex().get(superKey(cell, generator.minSpacingCells()));
+        if (stored != null) {
+            return Optional.of(stored);
+        }
+        return generator.anchorAt(worldSeed, cell);
+    }
+
+    /** The system AT a known anchor cell: pinned content → catalogued star → procedural generator. */
+    private Optional<StarSystem> systemAtAnchor(GalacticCoord anchor) {
+        String key = anchor.cellKey();
+        PinnedSystem pinned = pinnedSystems.get(key);
+        if (pinned != null) {
+            return Optional.of(new StarSystem(pinned.toStar()));
+        }
+        Integer id = byCell.get(key);
         if (id != null) {
             StellarBody star = starLookup.apply(id);
             return star == null ? Optional.<StarSystem>empty() : Optional.of(new StarSystem(star));
         }
-        return generator.systemAt(worldSeed, cell);
+        return generator.systemAt(worldSeed, anchor);
+    }
+
+    /** Lazily (re)build the super-cell → stored-anchor index; invalidated on store change / spacing change. */
+    private Map<String, GalacticCoord> anchorsBySuperIndex() {
+        int s = generator.minSpacingCells();
+        if (anchorsBySuper == null || anchorsBySuperSpacing != s) {
+            Map<String, GalacticCoord> index = new HashMap<>();
+            List<Integer> ids = new ArrayList<>(byStar.keySet());
+            Collections.sort(ids); // deterministic winner on collision
+            for (Integer id : ids) {
+                GalacticCoord anchor = byStar.get(id);
+                String key = superKey(anchor, s);
+                GalacticCoord prev = index.get(key);
+                if (prev == null) {
+                    index.put(key, anchor);
+                } else if (!prev.sameCell(anchor)) {
+                    LOGGER.warn("authored anchors {} and {} share one {}-cell super-cell — closer than the "
+                            + "spacing guarantee; member cells attribute to the first (fix the XML anchors)",
+                            prev, anchor, s);
+                }
+            }
+            anchorsBySuper = index;
+            anchorsBySuperSpacing = s;
+        }
+        return anchorsBySuper;
+    }
+
+    private static String superKey(GalacticCoord cell, int spacing) {
+        long s = Math.max(1, spacing);
+        return Math.floorDiv(cell.sectorX(), s) + "_" + Math.floorDiv(cell.sectorY(), s) + "_"
+                + Math.floorDiv(cell.sectorZ(), s);
     }
 
     /** The stored (registered) system's star-id at this cell, or empty. Ignores the procedural generator. */
@@ -183,23 +259,21 @@ public final class UniverseRegistry extends WorldSavedData {
     // ─── System content (bodies + POIs) ────────────────────────────────────────
 
     /**
-     * The addressable bodies of the system at {@code systemCoord}'s cell (universe-model.md &sect;4): the star,
-     * planets and moons, plus any authored/player POIs. Authored systems derive their bodies from the
-     * catalogued {@link StellarBody} ({@link SystemContent}); procedural systems from the generator. Each
-     * body's {@link SystemBody#address() address} shares the system's sector (in-system position = local
-     * offset). Empty for a void cell with no POIs.
+     * The ZONE read (A#1a sub-decision c): the bodies whose own cell IS {@code coord}'s cell — the one
+     * body whose orbital zone this cell hosts (or none: an inter-body void cell), any moons sharing the
+     * parent's cell, plus the POIs keyed at this cell. Consumers: the descent trigger, the wells query,
+     * entry placement. For the whole system, use {@link #systemBodiesAt}.
      */
     public List<SystemBody> bodiesAt(GalacticCoord systemCoord) {
         GalacticCoord cell = systemCoord.cellCentre();
         List<SystemBody> bodies = new ArrayList<>();
-        Integer id = byCell.get(cell.cellKey());
-        if (id != null) {
-            StellarBody star = starLookup.apply(id);
-            if (star != null) {
-                bodies.addAll(SystemContent.bodiesOf(star, cell));
+        Optional<GalacticCoord> anchor = anchorForCell(cell);
+        if (anchor.isPresent()) {
+            for (SystemBody b : allSystemBodies(anchor.get())) {
+                if (b.address().sameCell(cell)) {
+                    bodies.add(b);
+                }
             }
-        } else {
-            bodies.addAll(generator.bodiesFor(worldSeed, cell));
         }
         List<SystemBody> pois = poiOverrides.get(cell.cellKey());
         if (pois != null) {
@@ -208,8 +282,61 @@ public final class UniverseRegistry extends WorldSavedData {
         return bodies;
     }
 
-    /** Add an authored/player POI, keyed by its own system cell (the sector of its address). */
+    /**
+     * The SYSTEM read (A#1a sub-decision c): ALL bodies of the system whose neighbourhood contains
+     * {@code coord}'s cell — star, every planet/belt at its own cell, moons — plus the POIs of the member
+     * cells that host bodies. Consumers: the nav-GUI body list, the telescope, info tiers. Empty for void
+     * space (a void cell's own POIs are readable via {@link #bodiesAt}/{@link #poisAt}).
+     */
+    public List<SystemBody> systemBodiesAt(GalacticCoord coord) {
+        Optional<GalacticCoord> anchor = anchorForCell(coord);
+        if (!anchor.isPresent()) {
+            return new ArrayList<>();
+        }
+        List<SystemBody> bodies = allSystemBodies(anchor.get());
+        // Aggregate POIs of the anchor + every body cell (deduped) — the member cells that host content.
+        List<String> seenCells = new ArrayList<>();
+        seenCells.add(anchor.get().cellKey());
+        List<SystemBody> out = new ArrayList<>(bodies);
+        for (SystemBody b : bodies) {
+            String key = b.address().cellCentre().cellKey();
+            if (!seenCells.contains(key)) {
+                seenCells.add(key);
+            }
+        }
+        for (String key : seenCells) {
+            List<SystemBody> pois = poiOverrides.get(key);
+            if (pois != null) {
+                out.addAll(pois);
+            }
+        }
+        return out;
+    }
+
+    /** The full body list of the system anchored at {@code anchor}: pinned → authored → generator. */
+    private List<SystemBody> allSystemBodies(GalacticCoord anchor) {
+        String key = anchor.cellKey();
+        PinnedSystem pinned = pinnedSystems.get(key);
+        if (pinned != null) {
+            return new ArrayList<>(pinned.bodies);
+        }
+        Integer id = byCell.get(key);
+        if (id != null) {
+            StellarBody star = starLookup.apply(id);
+            return star == null
+                    ? new ArrayList<SystemBody>()
+                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells());
+        }
+        return new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
+    }
+
+    /**
+     * Add an authored/player POI, keyed by its OWN cell (the sector of its address). A POI is a TOUCH: the
+     * owning procedural system (if any) is pinned first, so the POI's surroundings can never drift away
+     * from under it (A#1a pin-on-touch).
+     */
     public void addPoi(SystemBody poi) {
+        pinSystem(poi.address());
         String key = poi.address().cellCentre().cellKey();
         List<SystemBody> list = poiOverrides.get(key);
         if (list == null) {
@@ -218,6 +345,35 @@ public final class UniverseRegistry extends WorldSavedData {
         }
         list.add(poi);
         markDirty();
+    }
+
+    /**
+     * Pin the PROCEDURAL system whose neighbourhood contains {@code coord} into the persisted override
+     * store (A#1a sub-decision b, pin-on-touch): its fabricated star + full body list are snapshotted, so a
+     * later config/seed/XML change cannot move or reshape a system the player has touched. Authored or
+     * already-pinned systems are a no-op. Returns whether a pin was written.
+     */
+    public boolean pinSystem(GalacticCoord coord) {
+        Optional<GalacticCoord> anchorOpt = anchorForCell(coord);
+        if (!anchorOpt.isPresent()) {
+            return false;
+        }
+        GalacticCoord anchor = anchorOpt.get();
+        String key = anchor.cellKey();
+        if (byCell.containsKey(key)) {
+            return false; // authored, or pinned already (pin places into byCell below)
+        }
+        Optional<StarSystem> sys = generator.systemAt(worldSeed, anchor);
+        if (!sys.isPresent()) {
+            return false;
+        }
+        List<SystemBody> bodies = new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
+        place(anchor, sys.get().starId());
+        StellarBody star = sys.get().star();
+        pinnedSystems.put(key, new PinnedSystem(sys.get().starId(), star.getTemperature(), star.getSize(),
+                star.getName(), bodies));
+        markDirty();
+        return true;
     }
 
     /** The POIs at a system's cell (a copy), excluding the derived star/planet/moon bodies. */
@@ -246,9 +402,10 @@ public final class UniverseRegistry extends WorldSavedData {
     }
 
     /**
-     * The galactic coordinate of the system a planet/moon/star-proxy dimension belongs to. This is the
-     * planet&rarr;coord seam the tier-2 entry/descent handlers use. A moon resolves through its mirrored
-     * {@code starId}; a star-proxy dim id ({@code >= STAR_ID_OFFSET}) resolves to its own system.
+     * The galactic coordinate of a planet/moon/star-proxy dimension. This is the planet&rarr;coord seam the
+     * tier-2 entry/descent handlers use. Per A#1a this is the body's OWN cell — a planet resolves to its
+     * zone cell (NOT the system anchor), a moon to its parent planet's cell (moons are local), a star-proxy
+     * dim to the system's anchor. Falls back to the anchor when the body is not derivable.
      */
     public Optional<GalacticCoord> coordForPlanet(DimensionProperties props) {
         if (props == null) {
@@ -257,17 +414,22 @@ public final class UniverseRegistry extends WorldSavedData {
         if (props.isStar()) {
             return coordForSystem(props.getId() - Constants.STAR_ID_OFFSET);
         }
-        Optional<GalacticCoord> byStarId = coordForSystem(props.getStarId());
-        if (byStarId.isPresent()) {
-            return byStarId;
-        }
-        if (props.isMoon()) {
+        Optional<GalacticCoord> anchor = coordForSystem(props.getStarId());
+        if (!anchor.isPresent() && props.isMoon()) {
             DimensionProperties parent = props.getParentProperties();
             if (parent != null) {
-                return coordForSystem(parent.getStarId());
+                anchor = coordForSystem(parent.getStarId());
             }
         }
-        return Optional.empty();
+        if (!anchor.isPresent()) {
+            return Optional.empty();
+        }
+        for (SystemBody body : allSystemBodies(anchor.get())) {
+            if (body.dimId() == props.getId()) {
+                return Optional.of(body.address().cellCentre()); // the body's OWN cell (moon: the parent's)
+            }
+        }
+        return anchor; // body not derivable from content — lenient anchor fallback
     }
 
     /** Server-side convenience: resolves the dimension via {@link DimensionManager} then delegates. */
@@ -286,7 +448,9 @@ public final class UniverseRegistry extends WorldSavedData {
      * body is discovered. Graded-discovery axis-E, universe half.
      */
     public boolean isSystemKnown(GalacticCoord coord) {
-        for (SystemBody body : bodiesAt(coord)) {
+        // SYSTEM semantics (A#1a sub-decision d): resolve from ANY member cell — a ship parked in a
+        // planet's zone is "in a known system" iff the system is known, not iff its own cell is the anchor.
+        for (SystemBody body : systemBodiesAt(coord)) {
             if (body.dimId() != Constants.INVALID_PLANET
                     && DimensionManager.getInstance().isPlanetKnown(body.dimId())) {
                 return true;
@@ -318,10 +482,11 @@ public final class UniverseRegistry extends WorldSavedData {
         }
         byCell.put(key, starId);
         byStar.put(starId, cell);
+        anchorsBySuper = null; // derived index follows the store
         markDirty();
     }
 
-    /** Remove the placement at a cell. Returns whether one existed. */
+    /** Remove the placement at a cell (and any pinned content snapshot). Returns whether one existed. */
     public boolean remove(GalacticCoord coord) {
         String key = coord.cellCentre().cellKey();
         Integer id = byCell.remove(key);
@@ -329,6 +494,8 @@ public final class UniverseRegistry extends WorldSavedData {
             return false;
         }
         byStar.remove(id);
+        pinnedSystems.remove(key);
+        anchorsBySuper = null;
         markDirty();
         return true;
     }
@@ -386,7 +553,10 @@ public final class UniverseRegistry extends WorldSavedData {
         if (starId == 0) {
             return GalacticCoord.ORIGIN; // Sol
         }
-        return GalacticCoord.ofSectorLocal(starId, 0L, 0L, 0L, 0L, 0L);
+        // Stride fallback anchors one DEFAULT super-cell apart (A#1a): each legacy star's per-body-cell
+        // neighbourhood gets its own super-cell, keeping member attribution exact for the fallback galaxy.
+        return GalacticCoord.ofSectorLocal((long) starId * GalaxyGenConfig.DEFAULT_MIN_SPACING, 0L, 0L,
+                0L, 0L, 0L);
     }
 
     public void bindWorldSeed(long seed) {
@@ -488,6 +658,8 @@ public final class UniverseRegistry extends WorldSavedData {
         byCell.clear();
         byStar.clear();
         poiOverrides.clear();
+        pinnedSystems.clear();
+        anchorsBySuper = null;
         anchorsSeeded = nbt.getBoolean("anchorsSeeded");
         NBTTagList list = nbt.getTagList("placements", 10 /* NBTTagCompound */);
         for (int i = 0; i < list.tagCount(); i++) {
@@ -507,6 +679,18 @@ public final class UniverseRegistry extends WorldSavedData {
                 poiOverrides.put(key, l);
             }
             l.add(poi);
+        }
+        NBTTagList pinned = nbt.getTagList("pinnedSystems", 10);
+        for (int i = 0; i < pinned.tagCount(); i++) {
+            NBTTagCompound e = pinned.getCompoundTagAt(i);
+            GalacticCoord anchor = GalacticCoord.readFromNBT(e).cellCentre();
+            List<SystemBody> bodies = new ArrayList<>();
+            NBTTagList bodyList = e.getTagList("bodies", 10);
+            for (int j = 0; j < bodyList.tagCount(); j++) {
+                bodies.add(SystemBody.readFromNBT(bodyList.getCompoundTagAt(j)));
+            }
+            pinnedSystems.put(anchor.cellKey(), new PinnedSystem(e.getInteger("starId"),
+                    e.getInteger("temperature"), e.getFloat("size"), e.getString("name"), bodies));
         }
     }
 
@@ -531,6 +715,55 @@ public final class UniverseRegistry extends WorldSavedData {
             }
         }
         nbt.setTag("pois", pois);
+        NBTTagList pinned = new NBTTagList();
+        for (Map.Entry<String, PinnedSystem> e : pinnedSystems.entrySet()) {
+            PinnedSystem p = e.getValue();
+            GalacticCoord anchor = byStar.get(p.starId);
+            if (anchor == null) {
+                continue; // placement removed — the snapshot is orphaned, drop it
+            }
+            NBTTagCompound entry = new NBTTagCompound();
+            anchor.writeToNBT(entry);
+            entry.setInteger("starId", p.starId);
+            entry.setInteger("temperature", p.temperature);
+            entry.setFloat("size", p.size);
+            entry.setString("name", p.name == null ? "" : p.name);
+            NBTTagList bodyList = new NBTTagList();
+            for (SystemBody b : p.bodies) {
+                NBTTagCompound bodyTag = new NBTTagCompound();
+                b.writeToNBT(bodyTag);
+                bodyList.appendTag(bodyTag);
+            }
+            entry.setTag("bodies", bodyList);
+            pinned.appendTag(entry);
+        }
+        nbt.setTag("pinnedSystems", pinned);
         return nbt;
+    }
+
+    /** A pinned procedural system's content snapshot (A#1a pin-on-touch): fabricated star + body list. */
+    private static final class PinnedSystem {
+        final int starId;
+        final int temperature;
+        final float size;
+        final String name;
+        final List<SystemBody> bodies;
+
+        PinnedSystem(int starId, int temperature, float size, String name, List<SystemBody> bodies) {
+            this.starId = starId;
+            this.temperature = temperature;
+            this.size = size;
+            this.name = name;
+            this.bodies = bodies;
+        }
+
+        StellarBody toStar() {
+            StellarBody star = new StellarBody();
+            star.setId(starId);
+            star.setTemperature(temperature);
+            star.setSize(size);
+            star.setName(name);
+            return star;
+        }
     }
 }

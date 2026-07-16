@@ -10,9 +10,10 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * (asteroid belt, station slot). It is pure DATA — its walkable realization is Layer 2 (the ship branch),
  * never here.
  *
- * <p>Its full address is a single {@link GalacticCoord}: the <b>sector triple</b> is the system's cell and
- * the <b>local offset</b> is the in-system position (the star sits at the cell centre; other bodies within
- * &plusmn;2M blocks of it). One address type spans inter- AND intra-system placement.</p>
+ * <p>Its full address is a single {@link GalacticCoord}: the <b>sector triple</b> is the body's OWN cell
+ * (amendment A#1a: a system is an anchored neighbourhood — the star holds the anchor cell, every
+ * planet/belt its own cell at that cell's centre, moons a small local offset inside their parent's cell).
+ * One address type spans inter- AND intra-system placement.</p>
  *
  * <p>A {@link SystemBodyKind#PLANET planet}/{@link SystemBodyKind#MOON moon} carries the {@code dimId} of its
  * {@code DimensionProperties} — the dimension a descent drops into; other kinds carry

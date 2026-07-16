@@ -37,6 +37,14 @@ public class ClusteredGalaxyGeneratorTest {
         return GalacticCoord.ofSectorLocal(sx, sy, sz, 0L, 0L, 0L);
     }
 
+    /**
+     * A compact galaxy for sampling tests: the production DEFAULT spacing (a balance number, never pinned)
+     * is far too sparse to sample in a unit-test-sized volume.
+     */
+    private static GalaxyGenConfig smallCfg() {
+        return new GalaxyGenConfig(0.35d, 4, 16, 0.6d, null);
+    }
+
     /** Iterate an inclusive sector box, calling the visitor with each cell coordinate. */
     private interface CellVisitor {
         void visit(GalacticCoord c);
@@ -54,7 +62,7 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void systemAtIsDeterministic() {
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(GalaxyGenConfig.defaults());
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(smallCfg());
         forEachCell(6, c -> {
             Optional<StarSystem> a = gen.systemAt(SEED, c);
             Optional<StarSystem> b = gen.systemAt(SEED, c);
@@ -70,7 +78,7 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void differentSeedsProduceDifferentGalaxies() {
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(GalaxyGenConfig.defaults());
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(smallCfg());
         Set<String> occupiedA = occupiedCellKeys(gen, SEED, 8);
         Set<String> occupiedB = occupiedCellKeys(gen, SEED + 1, 8);
         assertFalse("a different seed must not reproduce the same galaxy", occupiedA.equals(occupiedB));
@@ -130,7 +138,7 @@ public class ClusteredGalaxyGeneratorTest {
     public void systemsInRegionAgreesWithSystemAt() {
         // The single most important consistency contract: the region enumeration and the point query must
         // never diverge, or a telescope scan would show systems a jump can't reach (or vice versa).
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(GalaxyGenConfig.defaults());
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(smallCfg());
         long r = 9;
 
         Set<String> byPointQuery = new HashSet<>();
@@ -155,7 +163,7 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void systemsInRegionHandlesSwappedBounds() {
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(GalaxyGenConfig.defaults());
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(smallCfg());
         Map<GalacticCoord, StarSystem> ordered = gen.systemsInRegion(SEED, cell(-4, -4, -4), cell(4, 4, 4));
         Map<GalacticCoord, StarSystem> swapped = gen.systemsInRegion(SEED, cell(4, 4, 4), cell(-4, -4, -4));
         assertEquals("swapped min/max must enumerate the same box", ordered.keySet(), swapped.keySet());
@@ -284,33 +292,95 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void proceduralBodiesAreDeterministicAndInsideTheSystemCell() {
+    public void proceduralBodiesGetTheirOwnCellsInsideTheSuperCell() {
+        // A#1a: a system is an anchored NEIGHBOURHOOD — the star holds the anchor cell, each planet/belt
+        // its own cell (snapped to that cell's centre), all inside the anchor's minSpacing super-cell.
+        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 16, 8, 0.0d, null);
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg);
+        long s = cfg.minSpacing;
+        boolean checkedAny = false;
+        for (long sup = -3; sup <= 3; sup++) {
+            GalacticCoord probe = cell(sup * s, 0, 0);
+            java.util.Optional<GalacticCoord> anchorOpt = gen.anchorAt(SEED, probe);
+            if (!anchorOpt.isPresent()) {
+                continue;
+            }
+            checkedAny = true;
+            GalacticCoord anchor = anchorOpt.get();
+            List<SystemBody> a = gen.bodiesFor(SEED, anchor);
+            assertEquals("bodiesFor must be deterministic", a, gen.bodiesFor(SEED, anchor));
+            assertEquals("bodiesFor must accept a member cell and answer for the whole system",
+                    a, gen.bodiesFor(SEED, probe));
+            assertFalse("an occupied system must have bodies", a.isEmpty());
+
+            assertEquals("first body is the star at the anchor", SystemBodyKind.STAR, a.get(0).kind());
+            assertTrue(a.get(0).address().sameCell(anchor));
+            assertEquals(0, a.get(0).address().localX());
+
+            boolean sawOwnCell = false;
+            for (SystemBody body : a) {
+                assertEquals("every body belongs to the system's star", a.get(0).starId(), body.starId());
+                assertFalse("procedural bodies are not descend targets yet", body.isDescendTarget());
+                // Snapped to its own cell's centre.
+                assertEquals(0, body.address().localX());
+                assertEquals(0, body.address().localY());
+                assertEquals(0, body.address().localZ());
+                // Inside the anchor's super-cell (member attribution by floorDiv stays exact).
+                assertEquals(Math.floorDiv(anchor.sectorX(), s), Math.floorDiv(body.address().sectorX(), s));
+                assertEquals(Math.floorDiv(anchor.sectorY(), s), Math.floorDiv(body.address().sectorY(), s));
+                assertEquals(Math.floorDiv(anchor.sectorZ(), s), Math.floorDiv(body.address().sectorZ(), s));
+                if (body.kind() != SystemBodyKind.STAR && !body.address().sameCell(anchor)) {
+                    sawOwnCell = true;
+                }
+            }
+            assertTrue("planets/belts must sit in their OWN cells, not the anchor's", sawOwnCell);
+        }
+        assertTrue(checkedAny);
+    }
+
+    @Test
+    public void tinySpacingDegeneratesConsistentlyIntoTheAnchorCell() {
+        // minSpacing=1: the super-cell IS one cell, so every body clamps into the anchor cell — degenerate
+        // but consistent (attribution still exact, nothing escapes the box).
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
                 new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null));
         boolean checkedAny = false;
         for (long x = -6; x <= 6; x++) {
             GalacticCoord c = cell(x, 0, 0);
-            List<SystemBody> a = gen.bodiesFor(SEED, c);
-            List<SystemBody> b = gen.bodiesFor(SEED, c);
-            if (gen.systemAt(SEED, c).isPresent()) {
-                checkedAny = true;
-                assertFalse("an occupied system must have bodies", a.isEmpty());
-                assertEquals("bodiesFor must be deterministic", a, b);
-                // First body is the star, at the cell centre.
-                assertEquals(SystemBodyKind.STAR, a.get(0).kind());
-                assertEquals(0, a.get(0).address().localX());
-                assertEquals(0, a.get(0).address().localY());
-                assertEquals(0, a.get(0).address().localZ());
-                for (SystemBody body : a) {
-                    assertTrue("every body's address must share the system's cell",
-                            body.address().sameCell(c));
-                    assertEquals("every body belongs to the system's star", a.get(0).starId(), body.starId());
-                    // procedural bodies carry no realized dimension
-                    assertFalse("procedural bodies are not descend targets yet", body.isDescendTarget());
-                }
-            } else {
-                assertTrue("a void cell yields no bodies", a.isEmpty());
+            if (!gen.systemAt(SEED, c).isPresent()) {
+                assertTrue("a void cell yields no bodies", gen.bodiesFor(SEED, c).isEmpty());
+                continue;
             }
+            checkedAny = true;
+            for (SystemBody body : gen.bodiesFor(SEED, c)) {
+                assertTrue("with s=1 every body stays in the anchor cell", body.address().sameCell(c));
+            }
+        }
+        assertTrue(checkedAny);
+    }
+
+    @Test
+    public void anchorAtAttributesEveryCellOfAnOccupiedSuperCell() {
+        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 8, 8, 0.0d, null);
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg);
+        long s = cfg.minSpacing;
+        boolean checkedAny = false;
+        for (long sup = -2; sup <= 2; sup++) {
+            java.util.Optional<GalacticCoord> anchor = gen.anchorAt(SEED, cell(sup * s, 0, 0));
+            if (!anchor.isPresent()) {
+                continue;
+            }
+            checkedAny = true;
+            // Every cell of the super-cell attributes to the SAME anchor (corners included).
+            for (long dx : new long[] {0, s - 1}) {
+                for (long dy : new long[] {0, s - 1}) {
+                    GalacticCoord member = cell(sup * s + dx, dy, 0);
+                    assertEquals("member " + member + " must attribute to the super-cell's anchor",
+                            java.util.Optional.of(anchor.get()), gen.anchorAt(SEED, member));
+                }
+            }
+            // The anchor itself point-resolves to the system.
+            assertTrue(gen.systemAt(SEED, anchor.get()).isPresent());
         }
         assertTrue(checkedAny);
     }

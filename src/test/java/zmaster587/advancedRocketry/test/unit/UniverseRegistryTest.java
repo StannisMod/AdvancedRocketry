@@ -201,10 +201,111 @@ public class UniverseRegistryTest {
         assertSame("stored placement must win over the generator", stored, atPlaced.get().star());
         assertEquals(42, atPlaced.get().starId());
 
-        // An unplaced cell falls through to the generator.
-        Optional<StarSystem> atVoid = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
-        assertTrue(atVoid.isPresent());
-        assertEquals(777, atVoid.get().starId());
+        // A member cell of the stored anchor's super-cell attributes to the STORED system, not the
+        // generator (A#1a: authored anchors win inside their super-cell).
+        Optional<StarSystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
+        assertTrue(nearStored.isPresent());
+        assertEquals(42, nearStored.get().starId());
+
+        // A cell in a DIFFERENT super-cell falls through to the generator.
+        Optional<StarSystem> farAway = reg.systemForCoord(
+                GalacticCoord.ofSectorLocal(4_000, 4_000, 4_000, 0, 0, 0));
+        assertTrue(farAway.isPresent());
+        assertEquals(777, farAway.get().starId());
+    }
+
+    @Test
+    public void memberCellResolvesToItsOwningProceduralSystem() {
+        // A#1a member semantics end-to-end through the registry: a planet's own zone cell (and the void
+        // between bodies) resolves to the owning system; the zone read returns exactly that cell's body.
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.bindWorldSeed(0xBEEF);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 16, 8, 0.0d, null);
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
+
+        // Find an occupied super-cell and a non-star body of its system.
+        GalacticCoord anchor = null;
+        SystemBody planet = null;
+        for (long sup = 0; sup < 8 && planet == null; sup++) {
+            Optional<StarSystem> sys = reg.systemForCoord(
+                    GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0));
+            if (!sys.isPresent()) {
+                continue;
+            }
+            for (SystemBody b : reg.systemBodiesAt(
+                    GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0))) {
+                if (b.kind() == SystemBodyKind.STAR) {
+                    anchor = b.address();
+                } else if (planet == null) {
+                    planet = b;
+                }
+            }
+        }
+        assertNotNull("need a procedural system with a non-star body", planet);
+        assertNotNull(anchor);
+        assertFalse("the sampled body must sit in its OWN cell", planet.address().sameCell(anchor));
+
+        // The body's cell resolves to the same system (member attribution).
+        Optional<StarSystem> atBody = reg.systemForCoord(planet.address());
+        assertTrue(atBody.isPresent());
+        assertEquals(planet.starId(), atBody.get().starId());
+
+        // Zone read at the body's cell returns the body; at the anchor it returns the star, not the body.
+        List<SystemBody> zone = reg.bodiesAt(planet.address());
+        assertTrue("the zone read must contain the cell's own body", zone.contains(planet));
+        for (SystemBody b : reg.bodiesAt(anchor)) {
+            assertTrue("the anchor's zone holds only anchor-cell bodies", b.address().sameCell(anchor));
+        }
+
+        // System read from the member cell returns the whole neighbourhood (star included).
+        boolean sawStar = false;
+        for (SystemBody b : reg.systemBodiesAt(planet.address())) {
+            if (b.kind() == SystemBodyKind.STAR) {
+                sawStar = true;
+            }
+        }
+        assertTrue("the system read from a member cell must include the star", sawStar);
+    }
+
+    @Test
+    public void pinOnTouchSnapshotsAProceduralSystemAgainstSeedChange() {
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.bindWorldSeed(1234L);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 8, 8, 0.0d, null);
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
+
+        GalacticCoord anchor = null;
+        for (long sup = 0; sup < 8 && anchor == null; sup++) {
+            GalacticCoord probe = GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0);
+            Optional<GalacticCoord> a = reg.anchorForCell(probe);
+            if (a.isPresent()) {
+                anchor = a.get();
+            }
+        }
+        assertNotNull("need an occupied procedural super-cell", anchor);
+
+        int starIdBefore = reg.systemForCoord(anchor).get().starId();
+        List<SystemBody> bodiesBefore = reg.systemBodiesAt(anchor);
+
+        // TOUCH: pin the system (addPoi would do the same implicitly).
+        assertTrue("first touch must write a pin", reg.pinSystem(anchor));
+        assertFalse("a second touch is a no-op", reg.pinSystem(anchor));
+
+        // A config/seed change (the drift scenario) must NOT move or reshape the pinned system…
+        reg.bindWorldSeed(999_999L);
+        assertEquals("pinned system survives a seed change", starIdBefore,
+                reg.systemForCoord(anchor).get().starId());
+        assertEquals("pinned bodies survive a seed change", bodiesBefore, reg.systemBodiesAt(anchor));
+
+        // …and the pin round-trips through NBT (reads from the save, not the generator or catalogue).
+        NBTTagCompound tag = new NBTTagCompound();
+        reg.writeToNBT(tag);
+        UniverseRegistry round = new UniverseRegistry();
+        round.readFromNBT(tag);
+        round.bindWorldSeed(999_999L);
+        assertTrue(round.systemForCoord(anchor).isPresent());
+        assertEquals(starIdBefore, round.systemForCoord(anchor).get().starId());
+        assertEquals(bodiesBefore, round.systemBodiesAt(anchor));
     }
 
     @Test

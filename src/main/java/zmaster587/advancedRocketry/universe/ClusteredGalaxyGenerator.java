@@ -46,15 +46,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     private static final long SYNTHETIC_ID_RANGE = 2_000_000_000L; // ids in [-2_000_000_000, -1]
 
-    // Procedural in-system content (bodiesFor). All tunable; bodies stay within the cell (radius < HALF_CELL).
+    // Procedural in-system content (bodiesFor). All tunable. Per amendment A#1a each body gets its OWN cell
+    // at a sector offset from the anchor (snapped to that cell's centre); the neighbourhood radius is bounded
+    // by the super-cell partition (minSpacing/2 - margin) so two systems' neighbourhoods never interleave.
     private static final long SALT_BODYCOUNT = 0x11L;
     private static final long SALT_BODYANG = 0x12L;
     private static final long SALT_BODYRAD = 0x13L;
     private static final long SALT_BODYY = 0x14L;
     private static final long SALT_BELT = 0x15L;
     private static final int MAX_PROC_PLANETS = 6;
-    private static final double PROC_MAX_RADIUS = 1_500_000d; // in-system orbit radius cap, well under HALF_CELL
-    private static final double PROC_MAX_Y = 200_000d;        // thin disk half-thickness
+    /** Neighbourhood margin (cells) kept clear of the super-cell boundary. */
+    private static final int NEIGHBOURHOOD_MARGIN_CELLS = 2;
+    /** Thin-disk half-thickness as a fraction of the orbit radius (bodies keep honest 3D Y — A#1a e1). */
+    private static final double PROC_DISK_FRACTION = 0.1d;
 
     private final GalaxyGenConfig config;
     private final long totalStarWeight;
@@ -124,26 +128,43 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     @Override
     public List<SystemBody> bodiesFor(long seed, GalacticCoord systemCoord) {
-        Optional<StarSystem> sys = systemAt(seed, systemCoord);
+        // Accept any member cell: resolve the owning anchor first (A#1a).
+        Optional<GalacticCoord> anchorOpt = anchorAt(seed, systemCoord);
+        if (!anchorOpt.isPresent()) {
+            return Collections.emptyList();
+        }
+        GalacticCoord cell = anchorOpt.get();
+        Optional<StarSystem> sys = systemAt(seed, cell);
         if (!sys.isPresent()) {
             return Collections.emptyList();
         }
         int starId = sys.get().starId();
-        GalacticCoord cell = systemCoord.cellCentre();
         List<SystemBody> bodies = new ArrayList<>();
-        // The star sits at the cell centre (in-system local 0,0,0).
+        // The star sits at the anchor cell's centre.
         bodies.add(new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+
+        // Bodies orbit at cell-scale radii: min 1 cell out (never the anchor cell), max = the bounded
+        // neighbourhood radius. The anchor sits in the middle band of its super-cell (>= 3s/8 from every
+        // face), so a radius <= 3s/8 - margin keeps every body inside the anchor's super-cell — member-cell
+        // attribution by floorDiv stays exact. (The per-body box clamp below covers the tiny-spacing floor.)
+        long s = config.minSpacing;
+        long maxRadiusCells = Math.max(1L, 3L * s / 8L - NEIGHBOURHOOD_MARGIN_CELLS);
+        double maxRadiusBlocks = (double) maxRadiusCells * GalacticCoord.CELL;
+        double minRadiusBlocks = GalacticCoord.CELL;
 
         int count = 1 + (int) Math.floorMod(
                 hash(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ(), SALT_BODYCOUNT), MAX_PROC_PLANETS);
         for (int i = 0; i < count; i++) {
             double angle = norm(hashBody(seed, cell, i, SALT_BODYANG)) * 2d * Math.PI;
-            double radius = (0.1d + 0.85d * norm(hashBody(seed, cell, i, SALT_BODYRAD))) * PROC_MAX_RADIUS;
+            double radius = minRadiusBlocks
+                    + norm(hashBody(seed, cell, i, SALT_BODYRAD)) * Math.max(0d, maxRadiusBlocks - minRadiusBlocks);
             long lx = (long) (radius * Math.cos(angle));
             long lz = (long) (radius * Math.sin(angle));
-            long ly = (long) ((norm(hashBody(seed, cell, i, SALT_BODYY)) - 0.5d) * PROC_MAX_Y);
-            GalacticCoord addr = GalacticCoord.ofSectorLocal(
-                    cell.sectorX(), cell.sectorY(), cell.sectorZ(), lx, ly, lz);
+            long ly = (long) ((norm(hashBody(seed, cell, i, SALT_BODYY)) - 0.5d) * radius * PROC_DISK_FRACTION);
+            // The body's address is its OWN cell's centre (zone content sits near the cell centre — A#1a),
+            // box-clamped into the anchor's super-cell so member attribution stays exact at ANY minSpacing
+            // (at tiny spacings the floor above can otherwise push a body across the super-cell face).
+            GalacticCoord addr = clampIntoSuperCell(cell.plusLocal(lx, ly, lz).cellCentre(), cell, s);
             // Roughly a third of systems' outermost body is an asteroid belt rather than a planet.
             SystemBodyKind kind = (i == count - 1 && norm(hashBody(seed, cell, i, SALT_BELT)) < 0.3d)
                     ? SystemBodyKind.ASTEROID_BELT
@@ -152,6 +173,42 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             bodies.add(new SystemBody(addr, kind, Constants.INVALID_PLANET, starId));
         }
         return bodies;
+    }
+
+    @Override
+    public Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
+        long s = config.minSpacing;
+        Optional<Generated> g = systemForSuperCell(seed,
+                Math.floorDiv(cell.sectorX(), s), Math.floorDiv(cell.sectorY(), s),
+                Math.floorDiv(cell.sectorZ(), s));
+        return g.isPresent() ? Optional.of(g.get().cell) : Optional.<GalacticCoord>empty();
+    }
+
+    @Override
+    public int minSpacingCells() {
+        return config.minSpacing;
+    }
+
+    /** Per-axis clamp of a body's cell into its anchor's super-cell box (margin when the box allows it). */
+    private static GalacticCoord clampIntoSuperCell(GalacticCoord bodyCell, GalacticCoord anchor, long s) {
+        long margin = (s > 2L * NEIGHBOURHOOD_MARGIN_CELLS) ? NEIGHBOURHOOD_MARGIN_CELLS : 0L;
+        long cx = clampAxis(bodyCell.sectorX(), anchor.sectorX(), s, margin);
+        long cy = clampAxis(bodyCell.sectorY(), anchor.sectorY(), s, margin);
+        long cz = clampAxis(bodyCell.sectorZ(), anchor.sectorZ(), s, margin);
+        if (cx == bodyCell.sectorX() && cy == bodyCell.sectorY() && cz == bodyCell.sectorZ()) {
+            return bodyCell;
+        }
+        return GalacticCoord.ofSectorLocal(cx, cy, cz, 0L, 0L, 0L);
+    }
+
+    private static long clampAxis(long sector, long anchorSector, long s, long margin) {
+        long sup = Math.floorDiv(anchorSector, s);
+        long lo = sup * s + margin;
+        long hi = sup * s + s - 1L - margin;
+        if (sector < lo) {
+            return lo;
+        }
+        return sector > hi ? hi : sector;
     }
 
     private static long hashBody(long seed, GalacticCoord cell, int i, long field) {
@@ -173,9 +230,14 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return Optional.empty();
         }
         long s = config.minSpacing;
-        long ox = Math.floorMod(hash(seed, supX, supY, supZ, SALT_OX), s);
-        long oy = Math.floorMod(hash(seed, supX, supY, supZ, SALT_OY), s);
-        long oz = Math.floorMod(hash(seed, supX, supY, supZ, SALT_OZ), s);
+        // Seat the anchor in the middle band of the super-cell ([3s/8, 5s/8)): every face stays >= 3s/8
+        // cells away, so a body neighbourhood of radius <= 3s/8 - margin can never cross into the
+        // neighbouring super-cell (A#1a attribution guarantee).
+        long band = Math.max(1L, s / 4L);
+        long base = 3L * s / 8L;
+        long ox = base + Math.floorMod(hash(seed, supX, supY, supZ, SALT_OX), band);
+        long oy = base + Math.floorMod(hash(seed, supX, supY, supZ, SALT_OY), band);
+        long oz = base + Math.floorMod(hash(seed, supX, supY, supZ, SALT_OZ), band);
         GalacticCoord cell = GalacticCoord.ofSectorLocal(supX * s + ox, supY * s + oy, supZ * s + oz,
                 0L, 0L, 0L);
         return Optional.of(new Generated(cell, fabricate(seed, supX, supY, supZ)));

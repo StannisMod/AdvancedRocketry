@@ -41,9 +41,29 @@ public interface IGalaxyGenerator {
      * The procedural CONTENT of the system at {@code systemCoord}'s cell — its star plus planets/moons/POIs
      * as addressable {@link SystemBody} data (universe-model.md &sect;4). Must be deterministic in
      * {@code (seed, systemCoord)}. The default is empty (a system with no derivable content); a real
-     * generator overrides it. Callers should only invoke this for a cell where {@link #systemAt} is present.
+     * generator overrides it. Implementations should accept ANY cell of the system's neighbourhood
+     * (resolving the anchor via {@link #anchorAt}) and return the FULL body list.
      */
     default List<SystemBody> bodiesFor(long seed, GalacticCoord systemCoord) {
         return Collections.emptyList();
+    }
+
+    /**
+     * The ANCHOR cell of the system whose neighbourhood contains {@code cell}, or empty for void space.
+     * Under amendment A#1a a system spans many cells (star at the anchor, each planet in its own cell);
+     * this is how a member cell is attributed back to its owning system. Must be deterministic in
+     * {@code (seed, cell)}. The default treats a system as single-cell (pre-A#1a behaviour).
+     */
+    default Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
+        return systemAt(seed, cell).isPresent() ? Optional.of(cell.cellCentre()) : Optional.<GalacticCoord>empty();
+    }
+
+    /**
+     * The super-cell edge (in cells) this generator partitions space by — at most one system per
+     * {@code minSpacingCells}-cube. The registry uses it to attribute member cells of AUTHORED systems and
+     * to bound body-offset clamping ({@code radius <= minSpacingCells/2 - margin}).
+     */
+    default int minSpacingCells() {
+        return GalaxyGenConfig.DEFAULT_MIN_SPACING;
     }
 }
