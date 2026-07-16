@@ -379,6 +379,46 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
+        // teleport-ship <dim> <x> <y> <z> <dstX> <dstY> <dstZ> — rigid-teleport the ship nearest to
+        // (x,y,z): the world-frame POSE moves (subspace blocks stay), VS Y-limits widen as needed, and
+        // any aboard EntityDummy (+its rider) is carried. Park→write→unpark around the transform write.
+        if (args.length >= 8 && "teleport-ship".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double sx = parseDoubleOr(args[2], 0), sy = parseDoubleOr(args[3], 0), sz = parseDoubleOr(args[4], 0);
+            double dstX = parseDoubleOr(args[5], 0), dstY = parseDoubleOr(args[6], 0), dstZ = parseDoubleOr(args[7], 0);
+            java.util.List<zmaster587.advancedRocketry.entity.EntityDummy> riders =
+                    world.getEntitiesWithinAABB(zmaster587.advancedRocketry.entity.EntityDummy.class,
+                            new net.minecraft.util.math.AxisAlignedBB(
+                                    sx - 8, sy - 8, sz - 8, sx + 8, sy + 8, sz + 8));
+            // teleportShipTo mirrors VS's own recipe: the ship comes out PARKED (physics off); re-enable
+            // with "vs unpark" once the transform adoption has propagated (a tick later).
+            boolean ok = zmaster587.advancedRocketry.integration.vs.VSIntegration.teleportShipTo(
+                    world, sx, sy, sz, dstX, dstY, dstZ);
+            if (ok) {
+                for (zmaster587.advancedRocketry.entity.EntityDummy d : riders) {
+                    d.setPositionAndUpdate(d.posX + (dstX - sx), d.posY + (dstY - sy), d.posZ + (dstZ - sz));
+                }
+            }
+            send(sender, "{\"ok\":" + ok + ",\"ridersCarried\":" + riders.size() + "}");
+            return;
+        }
+        // unpark <dim> <x> <y> <z> — re-enable physics on the ship nearest to (x,y,z) (after a
+        // teleport-ship, which leaves the ship parked per the VS teleport recipe).
+        if (args.length >= 5 && "unpark".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            boolean ok = zmaster587.advancedRocketry.integration.vs.VSIntegration.unparkShipAt(world,
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            send(sender, "{\"ok\":" + ok + "}");
+            return;
+        }
         // push-ship <dim> <x> <y> <z> <vx> <vy> <vz> — set the linear-velocity setpoint
         // (blocks/second) of the loaded ship nearest to (x,y,z).
         if (args.length >= 8 && "push-ship".equalsIgnoreCase(args[0])) {
@@ -1063,6 +1103,36 @@ public class TestProbeCommand extends CommandBase {
             boolean support = zmaster587.advancedRocketry.integration.vs.VSIntegration.hasShipSupport(w);
             zmaster587.advancedRocketry.space.SpaceSlotPool.unload(slot);
             send(sender, "{\"ok\":true,\"slot\":" + slot + ",\"vsShipSupport\":" + support + "}");
+            return;
+        }
+        if (args.length >= 6 && "enter".equalsIgnoreCase(args[0])) {
+            // space enter <playerName> <dim> <x> <y> <z> — transfer a REAL connected player into a slot
+            // dim through the production PlayerList path (SPacketRespawn), the exact moment the
+            // client-side slot-dim registration sync must already have landed.
+            net.minecraft.entity.player.EntityPlayerMP target =
+                    sender.getServer().getPlayerList().getPlayerByUsername(args[1]);
+            if (target == null) {
+                send(sender, "{\"error\":\"player not found\"}");
+                return;
+            }
+            int dim = parseIntOr(args[2], Integer.MIN_VALUE);
+            final double x = Double.parseDouble(args[3]);
+            final double y = Double.parseDouble(args[4]);
+            final double z = Double.parseDouble(args[5]);
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                net.minecraftforge.common.DimensionManager.initDimension(dim);
+            }
+            if (net.minecraftforge.common.DimensionManager.getWorld(dim) == null) {
+                send(sender, "{\"error\":\"dimension did not init\"}");
+                return;
+            }
+            if (target.dimension == dim) {
+                target.setPositionAndUpdate(x, y, z);
+            } else {
+                sender.getServer().getPlayerList().transferPlayerToDimension(target, dim,
+                        (world, entity, yaw) -> entity.setLocationAndAngles(x, y, z, yaw, 0f));
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"player\":\"" + target.getName() + "\"}");
             return;
         }
         if (args.length >= 1 && "pool-register".equalsIgnoreCase(args[0])) {

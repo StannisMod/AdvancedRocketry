@@ -129,6 +129,21 @@ public final class VSIntegration {
     }
 
     /**
+     * RIGID-TELEPORT the VS ship nearest to {@code (x,y,z)} to {@code (dstX,dstY,dstZ)}: the world-frame
+     * pose moves (rotation kept, VS Y-limits widened as needed), the subspace blocks stay put. Entities
+     * are not capped by the 256 build height, so extreme-Y poses are legal — this is the realization
+     * lever for honest galactic local-Y and the arrange step of the extreme-coordinate spikes. Park the
+     * ship first ({@link #parkShipAt}), teleport, then unpark. Safe no-op (false) when VS is absent.
+     */
+    public static boolean teleportShipTo(World world, double x, double y, double z,
+                                         double dstX, double dstY, double dstZ) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.teleportShipTo(world, x, y, z, dstX, dstY, dstZ);
+    }
+
+    /**
      * Result of a {@link #crossShip} per-ship crossing: the destination anchor block the re-assembly was
      * seeded on ({@code null} = the crossing failed and no ship was created), whether the source ship was
      * deregistered, and the ship's actual Y band in the source shipyard (diagnostics).

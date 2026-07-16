@@ -297,6 +297,63 @@ final class VSBridge {
     }
 
     /**
+     * RIGID-TELEPORT the ship nearest to {@code (x,y,z)}: rewrite its transform position to
+     * {@code (dstX,dstY,dstZ)} — rotation and subspace centre kept — shift its world AABB by the same
+     * delta, and mirror the transform into the loaded physics object when there is one. The subspace
+     * shipyard blocks do not move; only the world-frame pose does (entities are NOT capped by the 256
+     * build height — vanilla's only hard Y line is the void-kill below −64). VS's per-tick world-Y
+     * clamps ({@code VSConfig.shipUpperLimit}/{@code shipLowerLimit}) are widened when the destination
+     * lies outside them, or the physics tick would immediately drag the ship back. The ship should be
+     * PARKED across the write ({@link #parkShipAt}) so the physics thread is not concurrently
+     * rewriting the transform; unpark after. Returns false when no ship is near the source.
+     */
+    static boolean teleportShipTo(World world, double x, double y, double z,
+                                  double dstX, double dstY, double dstZ) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return false;
+        }
+        if (dstY + 100d > org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit) {
+            org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit = dstY + 1_000d;
+        }
+        if (dstY - 100d < org.valkyrienskies.mod.common.config.VSConfig.shipLowerLimit) {
+            org.valkyrienskies.mod.common.config.VSConfig.shipLowerLimit = dstY - 1_000d;
+        }
+        ShipTransform old = ship.getShipTransform();
+        // Rotation-preserving variant of VS's own teleport recipe (its /vs teleport command resets the
+        // rotation to identity via the 2-arg ShipTransform ctor; a production relocation must not).
+        ShipTransform moved = new ShipTransform(dstX, dstY, dstZ,
+                old.rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL), old.getCenterCoord());
+        double dx = dstX - old.getPosX();
+        double dy = dstY - old.getPosY();
+        double dz = dstZ - old.getPosZ();
+        try {
+            PhysicsObject physo = ValkyrienUtils.getServerShipManager(world)
+                    .getPhysObjectFromUUID(ship.getUuid());
+            if (physo != null) {
+                // The loaded physics pipeline re-integrates the pose from its OWN state each tick and
+                // overwrites plain transform writes. These are the three flags VS's teleport uses to
+                // make both sides ADOPT the game-side transform written below.
+                physo.getPhysicsCalculations().setForceToUseGameTransform(true);
+                physo.setForceToUseShipDataTransform(true);
+                physo.setTicksSinceShipTeleport(0);
+            }
+        } catch (Exception ignored) {
+            // unloaded physo: the ShipData transform is the durable truth already
+        }
+        // Mirror VS's teleport: the ship comes out PARKED (physics disabled) — the caller re-enables
+        // once the adoption has propagated (a tick later), or keeps it parked (transit semantics).
+        ship.setPhysicsEnabled(false);
+        ship.setPrevTickShipTransform(moved);
+        ship.setShipTransform(moved);
+        AxisAlignedBB bb = ship.getShipBB();
+        if (bb != null) {
+            ship.setShipBB(bb.offset(dx, dy, dz));
+        }
+        return true;
+    }
+
+    /**
      * State of the loaded ship whose world position is nearest to {@code (x,y,z)}, as a
      * flat array {@code [posX, posY, posZ, qw, qx, qy, qz, velX, velY, velZ]} (world-frame
      * position + body&rarr;world attitude + linear velocity), or {@code null} if no ship is
