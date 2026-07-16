@@ -508,6 +508,23 @@ public final class ShipFrameTravel {
         return entity != null && STATE.containsKey(entity);
     }
 
+    /** The anchored ship's UP axis in world coordinates for an ABOARD body, or {@code null} when
+     *  the body is not aboard (never captured, or held in HULL-STAND mode - whose semantics,
+     *  including the eye, are the world's). This is the axis the aboard EYE sits along: the
+     *  renderer already offsets the camera along it ({@code MixinEntityRendererShipEye}), and the
+     *  raytrace must originate from the SAME point or the crosshair picks a block the camera is
+     *  not looking at (contract C10). */
+    public static double[] aboardShipUpWorld(Entity entity) {
+        if (entity == null) {
+            return null;
+        }
+        ShipFrameState state = STATE.get(entity);
+        if (state == null || state.hullStand) {
+            return null;
+        }
+        return VSIntegration.rotateToWorldFrameFor(entity.world, state.shipId, 0.0, 1.0, 0.0);
+    }
+
     /** Whether this class resolves {@code entity} in ABOARD (deck) mode specifically. The
      *  deck-levelled camera, the deck mouse basis and every other "this body lives in the deck's
      *  frame" consumer gate on THIS - a HULL-STAND body (contract C11) keeps its own world-frame

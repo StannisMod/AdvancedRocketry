@@ -756,6 +756,82 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 churn == 0);
     }
 
+    // ---- C10: the crosshair picks the block the camera looks at, at any attitude ----------------
+
+    @Test
+    public void theCrosshairPicksTheSameDeckBlockAtAnyAttitude() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6120, by = 64, bz = 6120;
+
+        // The raytrace origin (getPositionEyes) ran along WORLD up while the camera renders the eye
+        // along the SHIP's up; on a rolled deck the two diverge by up to an eye height, so the
+        // crosshair picked a block ~1.4 blocks beside the one the camera centred (the round-10
+        // "crosshair does not match the look-HUD"). Contract C10, attitude-invariance form: a crew
+        // member held at the SAME deck point, looking straight down, must see the crosshair resolve
+        // the SAME subspace deck block whatever the ship's roll - the deck under his feet does not
+        // move in the ship frame when the ship rolls.
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+        exec("artest player dismount");
+        bot().waitTicks(40);
+        assertTrue("the ex-pilot must be captured on the deck: " + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        exec("tp @a ~ ~ ~ 0 90"); // look straight down at the deck underfoot
+        bot().waitTicks(10);
+        String level = clientString(
+                "zmaster587.advancedRocketry.client.ShipFrameCamera", "lastMouseOverBlock");
+        assertTrue("looking straight down on the LEVEL deck must resolve a block (got '" + level
+                + "')", !level.isEmpty());
+
+        double h = Math.toRadians(60.0) / 2.0;
+        assertTrue("attitude hold must accept the roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(150);
+        String info = shipInfo(bx, by, bz);
+        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
+        assertTrue("the ship must be steeply rolled for the eyes to diverge (upY=" + upY + ")",
+                upY < 0.7 && upY > 0.1);
+        String capNow = exec("artest vs deck-capture");
+        assertTrue("the crew member must still be captured after the roll: " + capNow,
+                capNow.contains("\"alreadyTracked\":true"));
+
+        exec("tp @a ~ ~ ~ 0 90");
+        bot().waitTicks(10);
+        String rolled = clientString(
+                "zmaster587.advancedRocketry.client.ShipFrameCamera", "lastMouseOverBlock");
+        String cam = "zmaster587.advancedRocketry.client.ShipFrameCamera";
+        double rx = clientDouble(cam, "lastRayEyeX");
+        double ry = clientDouble(cam, "lastRayEyeY");
+        double rz = clientDouble(cam, "lastRayEyeZ");
+        double cx = clientDouble(cam, "shipCamEyeX");
+        double cy = clientDouble(cam, "shipCamEyeY");
+        double cz = clientDouble(cam, "shipCamEyeZ");
+        double px = bot().reportState().get("playerX").getAsDouble();
+        double py = bot().reportState().get("playerY").getAsDouble();
+        double pz = bot().reportState().get("playerZ").getAsDouble();
+        double rayVsCam = Math.sqrt((rx - cx) * (rx - cx) + (ry - cy) * (ry - cy)
+                + (rz - cz) * (rz - cz));
+        double worldEyeVsCam = Math.sqrt((px - cx) * (px - cx)
+                + (py + 1.62 - cy) * (py + 1.62 - cy) + (pz - cz) * (pz - cz));
+        System.out.println("[crewcap] crosshair level='" + level + "' rolled='" + rolled
+                + "' upY=" + upY + " rayVsCam=" + rayVsCam + " worldEyeVsCam=" + worldEyeVsCam);
+        assertTrue("looking straight down on the ROLLED deck must still resolve a block (got '"
+                + rolled + "')", !rolled.isEmpty());
+        // Instrument-fires: at this roll the OLD world-up eye really diverges from the rendered
+        // camera eye - otherwise agreement below would be vacuous.
+        assertTrue("the world-up eye must diverge from the camera eye at this roll (worldEyeVsCam="
+                + worldEyeVsCam + ", upY=" + upY + "); a level-ship run cannot falsify C10",
+                worldEyeVsCam > 0.6);
+        // The C10 contract: the crosshair ray originates from the SAME eye the camera renders.
+        assertTrue("the crosshair ray must originate from the rendered camera eye (C10): ray=("
+                + rx + "," + ry + "," + rz + ") cam=(" + cx + "," + cy + "," + cz + ") dist="
+                + rayVsCam, rayVsCam < 0.25);
+    }
+
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);

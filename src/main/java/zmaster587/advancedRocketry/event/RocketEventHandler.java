@@ -262,6 +262,20 @@ public class RocketEventHandler extends Gui {
         // pitch (only roll added)? A walking crew member whose view "goes where the mouse isn't" is either
         // not resolved on the deck (isResolving=false, the branch below returns his own view) or the
         // levelling is leaking into yaw/pitch. Self-records both cases, with no command to time by hand.
+        // NOT test-gated: the harness child JVMs run without test mode, and this static is their
+        // only window onto what the crosshair actually resolves (same pattern as the
+        // ShipFrameTravel discriminator statics). One short string per frame.
+        {
+            net.minecraft.util.math.RayTraceResult over = Minecraft.getMinecraft().objectMouseOver;
+            zmaster587.advancedRocketry.client.ShipFrameCamera.lastMouseOverBlock =
+                    over == null || over.typeOfHit != net.minecraft.util.math.RayTraceResult.Type.BLOCK
+                            ? "" : over.getBlockPos().getX() + "," + over.getBlockPos().getY() + ","
+                                    + over.getBlockPos().getZ();
+            net.minecraft.util.math.Vec3d rayEye = view.getPositionEyes(p);
+            zmaster587.advancedRocketry.client.ShipFrameCamera.lastRayEyeX = rayEye.x;
+            zmaster587.advancedRocketry.client.ShipFrameCamera.lastRayEyeY = rayEye.y;
+            zmaster587.advancedRocketry.client.ShipFrameCamera.lastRayEyeZ = rayEye.z;
+        }
         if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()
                 && (ffCamTraceFrames++ % 20) == 0
                 && zmaster587.advancedRocketry.integration.vs.VSIntegration.shipAttitudeAt(
