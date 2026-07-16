@@ -327,6 +327,28 @@ public final class ClientBot implements Closeable {
         return assertOk(execute(command("report_weather")));
     }
 
+    /**
+     * Sound locations the client {@code SoundManager} was asked to play since
+     * the last {@link #clearSounds()} — recorded via the client-side
+     * {@code PlaySoundEvent}. The event fires BEFORE asset resolution, so this
+     * observes the play request reaching the SoundManager, not asset
+     * existence / audibility. Returns {@code sounds} (array of
+     * {@code namespace:path} strings, oldest first, capped), {@code total}
+     * (monotonic count since client start) and {@code managerLoaded}
+     * ({@code false} = the sound system never initialised, e.g. no audio
+     * device — nothing will ever be recorded; tests should
+     * {@code Assume.assumeTrue(managerLoaded)} instead of misdiagnosing).
+     * Includes vanilla ambience/music — filter on the caller side.
+     */
+    public JsonObject reportSounds() throws IOException {
+        return assertOk(execute(command("report_sounds")));
+    }
+
+    /** Resets the played-sound log consumed by {@link #reportSounds()}. */
+    public void clearSounds() throws IOException {
+        assertOk(execute(command("clear_sounds")));
+    }
+
     public JsonObject blockState(int x, int y, int z) throws IOException {
         JsonObject command = command("block_state");
         command.addProperty("x", x);

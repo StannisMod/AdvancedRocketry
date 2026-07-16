@@ -223,6 +223,9 @@ public class TestProbeCommand extends CommandBase {
                 case "star":
                     handleStar(sender, tail(args));
                     break;
+                case "sound":
+                    handleSound(server, sender, tail(args));
+                    break;
                 default:
                     send(sender, "{\"error\":\"unknown subcommand\",\"sub\":\"" + args[0] + "\"}");
             }
@@ -246,11 +249,101 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(counts));
             return;
         }
-        send(sender, "{\"error\":\"unknown registry subcommand\",\"sub\":\"" + args[0] + "\"}");
+        if (args.length >= 2 && "sounds".equalsIgnoreCase(args[0])) {
+            // sounds <namespace> — the SoundEvent registry paths of one
+            // namespace from the LIVE Forge registry after a real mod boot.
+            // Guards the full FML wiring (@Mod.EventBusSubscriber →
+            // RegistryEvent.Register<SoundEvent> → registry), which a direct
+            // handler-invocation test cannot see.
+            String namespace = args[1];
+            StringBuilder list = new StringBuilder();
+            int n = 0;
+            for (net.minecraft.util.ResourceLocation key : ForgeRegistries.SOUND_EVENTS.getKeys()) {
+                if (key.getResourceDomain().equals(namespace)) {
+                    if (n++ > 0) {
+                        list.append(',');
+                    }
+                    list.append('"').append(escapeJson(key.getResourcePath())).append('"');
+                }
+            }
+            send(sender, "{\"ok\":true,\"namespace\":\"" + escapeJson(namespace)
+                    + "\",\"count\":" + n + ",\"sounds\":[" + list + "]}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown registry subcommand — try summary | sounds <namespace>\",\"sub\":\"" + args[0] + "\"}");
     }
 
     private static long count(net.minecraftforge.registries.IForgeRegistry<?> registry) {
         return registry == null ? -1L : registry.getKeys().size();
+    }
+
+    // §5.1b Sound probes -------------------------------------------------------
+
+    /**
+     * {@code sound play <dim> <x> <y> <z> <registryPath>} — server-side
+     * {@code world.playSound} of the {@link zmaster587.advancedRocketry.util.AudioRegistry}
+     * SoundEvent whose registry path equals {@code <registryPath>}, exactly as
+     * the production call sites do (static field reference, NOT a registry
+     * lookup — an unregistered event must stay observable end-to-end on the
+     * client, not be muffled here). {@code registered} reports whether the
+     * event is present in {@code ForgeRegistries.SOUND_EVENTS} at send time
+     * (diagnostic only; the client-side observation is the contract).
+     */
+    private void handleSound(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 6 && "play".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0), y = parseIntOr(args[3], 0), z = parseIntOr(args[4], 0);
+            String name = args[5];
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.util.SoundEvent sound = null;
+            StringBuilder candidates = new StringBuilder();
+            for (java.lang.reflect.Field field
+                    : zmaster587.advancedRocketry.util.AudioRegistry.class.getDeclaredFields()) {
+                if (!net.minecraft.util.SoundEvent.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+                try {
+                    net.minecraft.util.SoundEvent candidate =
+                            (net.minecraft.util.SoundEvent) field.get(null);
+                    if (candidates.length() > 0) {
+                        candidates.append(',');
+                    }
+                    candidates.append(candidate == null ? "null"
+                            : String.valueOf(candidate.getRegistryName()));
+                    // ResourceLocation lowercases the path in this MC build, so
+                    // registry name and sound name are the same lowercased
+                    // instance; match case-insensitively so callers may pass the
+                    // declared field casing.
+                    if (candidate != null && candidate.getRegistryName() != null
+                            && candidate.getRegistryName().getResourcePath().equalsIgnoreCase(name)) {
+                        sound = candidate;
+                        break;
+                    }
+                } catch (IllegalAccessException e) {
+                    if (candidates.length() > 0) {
+                        candidates.append(',');
+                    }
+                    candidates.append("IAE:").append(field.getName());
+                }
+            }
+            if (sound == null) {
+                send(sender, "{\"error\":\"no AudioRegistry SoundEvent with registry path\",\"name\":\""
+                        + escapeJson(name) + "\",\"candidates\":\"" + escapeJson(candidates.toString()) + "\"}");
+                return;
+            }
+            world.playSound(null, new BlockPos(x, y, z), sound,
+                    net.minecraft.util.SoundCategory.BLOCKS, 1.0F, 1.0F);
+            send(sender, "{\"ok\":true"
+                    + ",\"sound\":\"" + escapeJson(String.valueOf(sound.getRegistryName())) + "\""
+                    + ",\"registered\":" + ForgeRegistries.SOUND_EVENTS.containsKey(sound.getRegistryName())
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown sound subcommand — try play <dim> <x> <y> <z> <registryPath>\"}");
     }
 
     // §5.2 Dimension probes ----------------------------------------------------
@@ -1610,7 +1703,38 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"fuelFilled\":" + fuelFill + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full | set-flight-mode <id> MODE | free-flight-input <id> fwd vert yaw pitch brake | free-flight-tick <id> [n] | start-free-flight <id>\"}");
+        if (args.length >= 1 && "wire-symmetry".equalsIgnoreCase(args[0])) {
+            // wire-symmetry [PacketTypeName] — construct a throwaway
+            // EntityStationDeployedRocket (never spawned; the serialization
+            // methods need no world lifecycle) and round-trip
+            // writeDataToNetwork → readDataFromNetwork for the given
+            // PacketType (default TURNUPDATE — 4 plain booleans, no external
+            // state). Contract under test: the reader consumes exactly what
+            // the writer emitted (written == read, trailing == 0).
+            String typeName = args.length >= 2 ? args[1] : "TURNUPDATE";
+            EntityRocket.PacketType type;
+            try {
+                type = EntityRocket.PacketType.valueOf(typeName.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                send(sender, "{\"error\":\"unknown PacketType\",\"name\":\"" + escapeJson(typeName) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.entity.EntityStationDeployedRocket rocket =
+                    new zmaster587.advancedRocketry.entity.EntityStationDeployedRocket(server.getWorld(0));
+            io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+            byte packetId = (byte) type.ordinal();
+            rocket.writeDataToNetwork(buf, packetId);
+            int written = buf.writerIndex();
+            net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+            rocket.readDataFromNetwork(buf, packetId, nbt);
+            int read = buf.readerIndex();
+            send(sender, "{\"ok\":true,\"packetType\":\"" + type.name() + "\""
+                    + ",\"written\":" + written
+                    + ",\"read\":" + read
+                    + ",\"trailing\":" + (written - read) + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown rocket subcommand — try list|info <id> | storage-inventory <id> | storage-fluid <id> | find-by-uuid <uuid> | force-dest-dim <id> <dim> | tick <id> [n] | set-state <id> k=v... | explode <id> | drain-fuel <id> | event-counts-full | set-flight-mode <id> MODE | free-flight-input <id> fwd vert yaw pitch brake | free-flight-tick <id> [n] | start-free-flight <id> | wire-symmetry [PacketType]\"}");
     }
 
     /** {@code /artest rocket assemble <dim> <x> <y> <z>} — synchronously assembles
@@ -4878,6 +5002,52 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
+        if (args.length >= 5 && "deconstruct".equalsIgnoreCase(args[0])) {
+            // deconstruct <dim> <x> <y> <z> — invoke libVulpes'
+            // deconstructMultiBlock on the controller tile: the same method the
+            // production block-break teardown invokes (in-world that path is
+            // completion-gated — BlockMultiblockMachine.breakBlock fires it only
+            // when isComplete(); the probe drives the method directly). Reports
+            // honestly: a throw comes back as ok:false + the throwable and its
+            // top frame, so a production teardown crash is observable, never
+            // muffled.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0), y = parseIntOr(args[3], 0), z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(x, y, z);
+            TileEntity tile = world.getTileEntity(pos);
+            if (tile == null) {
+                send(sender, "{\"error\":\"no tile entity\",\"pos\":[" + x + "," + y + "," + z + "]}");
+                return;
+            }
+            try {
+                java.lang.reflect.Method m = tile.getClass().getMethod("deconstructMultiBlock",
+                        net.minecraft.world.World.class, BlockPos.class, boolean.class,
+                        net.minecraft.block.state.IBlockState.class);
+                m.invoke(tile, world, pos, true, world.getBlockState(pos));
+                send(sender, "{\"ok\":true,\"threw\":false,\"tileClass\":\""
+                        + tile.getClass().getName() + "\"}");
+            } catch (NoSuchMethodException e) {
+                send(sender, "{\"error\":\"tile lacks deconstructMultiBlock — not a libVulpes multiblock\",\"tileClass\":\""
+                        + tile.getClass().getName() + "\"}");
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause() == null ? e : e.getCause();
+                StackTraceElement top = cause.getStackTrace().length > 0
+                        ? cause.getStackTrace()[0] : null;
+                send(sender, "{\"ok\":false,\"threw\":true"
+                        + ",\"throwable\":\"" + escapeJson(cause.getClass().getName()
+                                + ": " + cause.getMessage()) + "\""
+                        + ",\"frame\":\"" + escapeJson(top == null ? "" : top.toString()) + "\"}");
+            } catch (IllegalAccessException e) {
+                send(sender, "{\"error\":\"reflection failed\",\"msg\":\""
+                        + escapeJson(e.getMessage()) + "\"}");
+            }
+            return;
+        }
         if (args.length >= 2 && "recipe-info".equalsIgnoreCase(args[0])) {
             // recipe-info <machineShortClassName> [recipeIndex]
             String shortName = args[1];
@@ -5092,7 +5262,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(recipes));
             return;
         }
-        send(sender, "{\"error\":\"unknown machine subcommand — try info [dim] <x> <y> <z> | try-complete <dim> <x> <y> <z> | recipes-summary\"}");
+        send(sender, "{\"error\":\"unknown machine subcommand — try info [dim] <x> <y> <z> | try-complete <dim> <x> <y> <z> | deconstruct <dim> <x> <y> <z> | recipes-summary\"}");
     }
 
     /**

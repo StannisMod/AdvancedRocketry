@@ -42,6 +42,18 @@ public final class ForgeTestClientBootstrap {
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static final AtomicLong CLIENT_TICKS = new AtomicLong(0L);
 
+    /**
+     * Ring buffer of sound locations the client {@code SoundManager} was asked
+     * to play ({@code PlaySoundEvent} fires once per {@code playSound(ISound)}
+     * on the real client). Read via {@code report_sounds}, reset via
+     * {@code clear_sounds}. Capped so a long-running client can't grow it
+     * unbounded; the cap only matters for tests that never clear.
+     */
+    private static final Object SOUND_LOG_LOCK = new Object();
+    private static final java.util.ArrayDeque<String> PLAYED_SOUNDS = new java.util.ArrayDeque<>();
+    private static final int PLAYED_SOUNDS_CAP = 256;
+    private static final AtomicLong SOUNDS_TOTAL = new AtomicLong(0L);
+
     private ForgeTestClientBootstrap() {
     }
 
@@ -52,6 +64,7 @@ public final class ForgeTestClientBootstrap {
 
         installClientLogFile();
         FMLCommonHandler.instance().bus().register(new TickCounter());
+        FMLCommonHandler.instance().bus().register(new SoundRecorder());
         Thread bridgeThread = new Thread(ForgeTestClientBootstrap::runBridge, "forge-test-client-bridge");
         bridgeThread.setDaemon(true);
         bridgeThread.start();
@@ -696,6 +709,47 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("thunderStrength", mc.world.getThunderStrength(1.0f));
                     return response;
                 });
+            case "report_sounds": {
+                // Sound locations the client SoundManager was asked to play
+                // since the last clear_sounds — PlaySoundEvent fires per
+                // playSound(ISound) on the real client. NOTE: the event fires
+                // BEFORE asset resolution, so this observes the play REQUEST
+                // reaching the SoundManager, not asset existence / audibility.
+                // Includes vanilla ambience/music; the caller filters.
+                // managerLoaded=false means the sound system never initialised
+                // (no audio device) and NOTHING will ever be recorded — callers
+                // should Assume on it instead of misdiagnosing.
+                JsonObject response = ok();
+                JsonArray sounds = new JsonArray();
+                synchronized (SOUND_LOG_LOCK) {
+                    for (String sound : PLAYED_SOUNDS) {
+                        sounds.add(sound);
+                    }
+                }
+                response.add("sounds", sounds);
+                response.addProperty("total", SOUNDS_TOTAL.get());
+                boolean managerLoaded = false;
+                try {
+                    Object handler = Minecraft.getMinecraft().getSoundHandler();
+                    java.lang.reflect.Field sndManager = findField(handler.getClass(), "sndManager");
+                    sndManager.setAccessible(true);
+                    Object manager = sndManager.get(handler);
+                    java.lang.reflect.Field loaded = findField(manager.getClass(), "loaded");
+                    loaded.setAccessible(true);
+                    managerLoaded = loaded.getBoolean(manager);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    response.addProperty("managerLoadedError", String.valueOf(e));
+                }
+                response.addProperty("managerLoaded", managerLoaded);
+                return response;
+            }
+            case "clear_sounds":
+                // Reset the played-sound log (see report_sounds) so a test can
+                // scope its assertion to sounds triggered after this point.
+                synchronized (SOUND_LOG_LOCK) {
+                    PLAYED_SOUNDS.clear();
+                }
+                return ok();
             case "block_state":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
@@ -1005,6 +1059,24 @@ public final class ForgeTestClientBootstrap {
             }
         }
         throw new NoSuchFieldException(fieldName);
+    }
+
+    private static final class SoundRecorder {
+        @SubscribeEvent
+        public void onPlaySound(net.minecraftforge.client.event.sound.PlaySoundEvent event) {
+            net.minecraft.client.audio.ISound sound = event.getSound();
+            if (sound == null || sound.getSoundLocation() == null) {
+                return;
+            }
+            String location = sound.getSoundLocation().toString();
+            synchronized (SOUND_LOG_LOCK) {
+                PLAYED_SOUNDS.addLast(location);
+                while (PLAYED_SOUNDS.size() > PLAYED_SOUNDS_CAP) {
+                    PLAYED_SOUNDS.removeFirst();
+                }
+                SOUNDS_TOTAL.incrementAndGet();
+            }
+        }
     }
 
     private static final class TickCounter {

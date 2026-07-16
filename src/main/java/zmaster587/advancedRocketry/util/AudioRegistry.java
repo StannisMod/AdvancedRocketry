@@ -32,7 +32,22 @@ public class AudioRegistry {
     public static class RegistrationHandler {
         @SubscribeEvent
         public static void registerSoundEvents(RegistryEvent.Register<SoundEvent> event) {
-            event.getRegistry().registerAll(electricShockSmall);
+            event.getRegistry().registerAll(
+                    electricShockSmall,
+                    laserDrill,
+                    airHissLoop,
+                    railgunFire,
+                    machineLarge,
+                    rollingMachine,
+                    basicLaser,
+                    combustionRocket,
+                    crystallizer,
+                    lathe,
+                    cuttingMachine,
+                    electrolyser,
+                    precAss,
+                    electricArcFurnace,
+                    gravityOhhh);
         }
     }
 }
