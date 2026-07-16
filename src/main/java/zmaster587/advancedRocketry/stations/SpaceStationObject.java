@@ -873,7 +873,7 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
 
     @Override
     public boolean isPlanetKnown(IDimensionProperties properties) {
-        return !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered || knownPlanetList.contains(properties.getId()) || zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().knownPlanets.contains(properties.getId());
+        return !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered || knownPlanetList.contains(properties.getId()) || zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().isPlanetKnown(properties.getId());
     }
 
     @Override

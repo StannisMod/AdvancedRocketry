@@ -714,6 +714,17 @@ public class DimensionManager implements IGalaxy {
         return dimensionList.containsKey(dimId) || dimId == ARConfiguration.getCurrentConfig().spaceDimId;
     }
 
+    /**
+     * Raw membership in the GLOBAL known-planet set (seeded from {@code initiallyKnownPlanets} / the
+     * {@code <isKnown>} XML flag, plus runtime discovery such as beacons and warp-controller finds). This is
+     * the universe layer's from-start visibility source of truth; unlike
+     * {@link zmaster587.advancedRocketry.inventory.IPlanetDefiner#isPlanetKnown} it applies NO
+     * {@code planetsMustBeDiscovered} gate and no per-station discovery list.
+     */
+    public boolean isPlanetKnown(int dimId) {
+        return knownPlanets != null && knownPlanets.contains(dimId);
+    }
+
     private List<DimensionProperties> generateRandomPlanets(StellarBody star, int numRandomGeneratedPlanets, int numRandomGeneratedGasGiants) {
         List<DimensionProperties> dimPropList = new LinkedList<>();
 

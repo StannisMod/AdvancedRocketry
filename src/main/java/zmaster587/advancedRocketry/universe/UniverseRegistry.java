@@ -278,6 +278,23 @@ public final class UniverseRegistry extends WorldSavedData {
         return coordForPlanet(DimensionManager.getInstance().getDimensionProperties(dimId));
     }
 
+    /**
+     * Whether the system at {@code coord} is known. DERIVED, never stored: a system is known iff any of its
+     * member bodies with a real dimension is in the global known set ({@link DimensionManager#isPlanetKnown}).
+     * Non-dimension bodies (the star proxy, belts) carry {@link Constants#INVALID_PLANET} and are excluded.
+     * Procedural (synthetic-negative-id) systems have no dimensioned bodies, so they are never known until a
+     * body is discovered. Graded-discovery axis-E, universe half.
+     */
+    public boolean isSystemKnown(GalacticCoord coord) {
+        for (SystemBody body : bodiesAt(coord)) {
+            if (body.dimId() != Constants.INVALID_PLANET
+                    && DimensionManager.getInstance().isPlanetKnown(body.dimId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ─── Mutators ──────────────────────────────────────────────────────────────
 
     /**

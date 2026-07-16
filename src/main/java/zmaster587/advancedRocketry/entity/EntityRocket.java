@@ -3796,7 +3796,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
     @Override
     public boolean isPlanetKnown(IDimensionProperties properties) {
-        return !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered || DimensionManager.getInstance().knownPlanets.contains(properties.getId());
+        return !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered || DimensionManager.getInstance().isPlanetKnown(properties.getId());
     }
 
     @Override
