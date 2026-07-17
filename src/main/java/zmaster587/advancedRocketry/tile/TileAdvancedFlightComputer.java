@@ -37,6 +37,25 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
 
     private static final String NBT_FLIGHT_ASSIST = "faEnabled";
     private static final String NBT_STATION_KEEPING = "stationKeeping";
+    private static final String NBT_SHIP_ID = "shipId";
+
+    /**
+     * The ship's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
+     * use for a pre-existing computer) and persisted in this tile's NBT. Crossings carry tile
+     * NBT verbatim, so this id survives every jump/re-assembly — unlike the physics mod's own
+     * ship UUID, which is re-minted on every re-assembly and must never key durable state
+     * (ledger, transit, persistence all key on THIS id).
+     */
+    private java.util.UUID shipId = null;
+
+    /**
+     * Whether the AUTO-TAKEOFF autopilot is engaged: a diagonal climb to orbit, driven from this
+     * computer instead of a held throttle. Live state, never persisted (an autopilot must not
+     * survive a reload and resume climbing an unattended ship). Counts as "a pilot is flying" for
+     * the entry ceiling check; self-disengages when the corridor is blocked (a surfaced decline —
+     * fall back to manual) or once the ship enters space.
+     */
+    private volatile boolean autoTakeoffEngaged = false;
 
     /**
      * Whether this ship holds station (hover + attitude) while unmanned. Set true the first time a pilot
@@ -209,8 +228,81 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // velocity while he holds no key at all, which is exactly when the input channel is idle.
         publishHudTelemetry(attitude);
 
+        // Parked in hyperspace: FLIGHT input is ignored for the whole transit — the pilot must not
+        // fight the park (the transit integrator owns the ship's coordinate; its physics is off).
+        // The single source of this gate is the ship's presence in the shared hyperspace world:
+        // ships exist there exactly while parked mid-transit. Deliberate-exit and the exit-warning
+        // channel stay OUTSIDE this gate when they land — they are the survival path mid-transit.
+        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
+        if (hyperDim != Integer.MIN_VALUE && world.provider.getDimension() == hyperDim) {
+            commandedVelocity = null;
+            commandedAngVel = null;
+            targetAttitude = null;
+            return;
+        }
+
+        // Settled in a cell: self-report the ship's galactic coordinate to the ledger each tick
+        // (the inverse honest-3D pose mapping). The descent proximity check reads the ledger, so
+        // no per-tick VS ship enumeration is ever needed — symmetric with the ascent ceiling read.
+        if (world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot
+                && shipId != null) {
+            zmaster587.advancedRocketry.space.ShipLedger ledger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            String cellKey = zmaster587.advancedRocketry.space.SpaceSlotPool
+                    .cellKeyFor(world.provider.getDimension());
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.fromCellKey(cellKey);
+            if (ledger != null && cell != null) {
+                double[] pose = VSIntegration.getShipWorldPosition(world, getPos());
+                if (pose != null) {
+                    ledger.updatePosition(shipId, zmaster587.advancedRocketry.space.CellWorldMapper
+                            .coordOfPose(cell, pose[0], pose[1], pose[2]));
+                }
+            }
+        }
+
         // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
         FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
+        // "Flying" for the entry ceiling check = a held input OR the auto-takeoff autopilot driving.
+        boolean flying = in != null || autoTakeoffEngaged;
+
+        // Entry on-ramp: a ship climbing past the launch dimension's orbit ceiling enters space.
+        // Never from a space-subsystem world (slot cells and hyperspace share the void provider),
+        // and only while a pilot is flying (manual throttle or the autopilot) — a station-keeping
+        // hulk drifting high stays put.
+        boolean onPlanetSide =
+                !(world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
+        if (flying && onPlanetSide) {
+            zmaster587.advancedRocketry.space.ShipEntryController entryCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
+            double[] shipPos = VSIntegration.getShipWorldPosition(world, getPos());
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(world.provider.getDimension());
+            int ceiling = props != null ? props.getOrbitHeight()
+                    : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit;
+            if (entryCtl != null && shipPos != null
+                    && zmaster587.advancedRocketry.space.ShipEntryController
+                            .shouldTriggerEntry(false, true, shipPos[1], ceiling)
+                    && entryCtl.requestEntry(world.provider.getDimension(), getPos(),
+                            getOrCreateShipId())) {
+                // The crossing started: this tile has just been cut out of the world - do not
+                // publish commands from a stale tick. The re-assembled ship's own computer
+                // resumes in the cell. (A REFUSED entry falls through: the pilot keeps full control
+                // to fly back below the ceiling; the autopilot keeps climbing for the next retry.)
+                autoTakeoffEngaged = false; // entry took over; the climb is done
+                return;
+            }
+            // AUTO-TAKEOFF autopilot: drive a diagonal climb toward orbit while engaged and below the
+            // ceiling. A blocked corridor is a NORMAL surfaced decline (disengage, fall back to manual).
+            if (autoTakeoffEngaged && shipPos != null && in == null) {
+                if (driveAutoTakeoff(attitude, shipPos, ceiling)) {
+                    return; // the autopilot published this tick's command
+                }
+                // else: corridor blocked — disengaged inside driveAutoTakeoff; fall through to
+                // station-keeping so the ship holds instead of coasting.
+            }
+        }
         // Playtest trace ([FF-TRACE/AFC], -Dadvancedrocketry.tests=true): log each null<->set flip of
         // the seated pilot's input. If it flips to null while the pilot holds a key, the ship falls into
         // the station-keeping branch below and reads as "unresponsive"; a stable SET means the input
@@ -350,6 +442,109 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         return hudSetpoint;
     }
 
+    /**
+     * Toggle the auto-takeoff autopilot (server-side; the pilot seat forwards its packet here). A
+     * safe idempotent flip: engaging arms the diagonal climb, disengaging returns full manual
+     * control. Re-engaging after a decline lets the pilot retry once he has repositioned.
+     */
+    public void toggleAutoTakeoff() {
+        autoTakeoffEngaged = !autoTakeoffEngaged;
+    }
+
+    /** Whether the auto-takeoff autopilot is currently engaged (server truth; test/HUD observable). */
+    public boolean isAutoTakeoffEngaged() {
+        return autoTakeoffEngaged;
+    }
+
+    /**
+     * Drive one tick of the auto-takeoff climb. Raycasts the diagonal corridor from the ship toward
+     * the ceiling; on obstruction it DISENGAGES, messages the pilot, and returns {@code false} (the
+     * caller falls back to station-keeping). On a clear corridor it publishes the diagonal climb
+     * velocity + holds the ship's current heading and returns {@code true}. The ship's own blocks
+     * live in a far subspace, so the ray tests only world terrain/structures in the climb path.
+     */
+    private boolean driveAutoTakeoff(FreeFlightPhysics.Quat attitude, double[] shipPos, int ceiling) {
+        // Heading = the ship's nose (+Z) projected onto the world XZ plane.
+        double[] nose = attitude.rotate(0.0, 0.0, 1.0);
+        double[] dir = zmaster587.advancedRocketry.space.AutoTakeoffPlanner
+                .climbDirection(nose[0], nose[2]);
+        double length = zmaster587.advancedRocketry.space.AutoTakeoffPlanner
+                .corridorLength(shipPos[1], ceiling);
+        boolean clear = zmaster587.advancedRocketry.space.AutoTakeoffPlanner.corridorClear(
+                shipPos[0], shipPos[1], shipPos[2], dir, length,
+                p -> {
+                    net.minecraft.util.math.BlockPos bp =
+                            new net.minecraft.util.math.BlockPos(p[0], p[1], p[2]);
+                    return world.getBlockState(bp).getMaterial().isSolid();
+                });
+        if (!clear) {
+            autoTakeoffEngaged = false;
+            messageSeatedPilot("msg.shipentry.autotakeoff.blocked");
+            return false;
+        }
+        VSIntegration.ensureShipPhysicsEnabled(world, getPos());
+        // Hold the current attitude while climbing (no rotation commanded); drive the diagonal velocity.
+        if (attitudeReference == null) {
+            attitudeReference = attitude;
+        }
+        commandedVelocity = zmaster587.advancedRocketry.space.AutoTakeoffPlanner
+                .climbVelocity(nose[0], nose[2]);
+        commandedAngVel = new double[]{0.0, 0.0, 0.0};
+        targetAttitude = new double[]{attitudeReference.w, attitudeReference.x,
+                attitudeReference.y, attitudeReference.z};
+        if (!stationKeeping) {
+            stationKeeping = true;
+            markDirty();
+        }
+        return true;
+    }
+
+    /**
+     * Send a translation-key message to the pilot seated on THIS ship, if any. The AFC has no
+     * stored back-link to its seat, so it locates the seated rider by the seat&harr;AFC offset that
+     * survives relocation: find a bound pilot dummy whose seat's flight computer is this tile.
+     * One-shot events only (a decline), so the small enumeration cost is acceptable.
+     */
+    private void messageSeatedPilot(String langKey) {
+        if (!(world instanceof net.minecraft.world.WorldServer)) {
+            return;
+        }
+        for (Object obj : ((net.minecraft.world.WorldServer) world).loadedEntityList) {
+            if (!(obj instanceof zmaster587.advancedRocketry.entity.EntityDummy)) {
+                continue;
+            }
+            zmaster587.advancedRocketry.entity.EntityDummy dummy =
+                    (zmaster587.advancedRocketry.entity.EntityDummy) obj;
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat =
+                    zmaster587.advancedRocketry.tile.TilePilotSeat.forRider(dummy, world);
+            if (seat == null || !getPos().equals(seat.getFlightComputerPos())) {
+                continue;
+            }
+            for (net.minecraft.entity.Entity rider : dummy.getPassengers()) {
+                if (rider instanceof net.minecraft.entity.player.EntityPlayerMP) {
+                    rider.sendMessage(new net.minecraft.util.text.TextComponentTranslation(langKey));
+                }
+            }
+        }
+    }
+
+    /**
+     * The ship's durable id, minting one if this computer has none yet (see {@link #shipId}).
+     * Server-side; the mint is persisted immediately.
+     */
+    public java.util.UUID getOrCreateShipId() {
+        if (shipId == null) {
+            shipId = java.util.UUID.randomUUID();
+            markDirty();
+        }
+        return shipId;
+    }
+
+    /** The ship's durable id, or {@code null} if none has been minted yet. */
+    public java.util.UUID shipIdOrNull() {
+        return shipId;
+    }
+
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
      *  Defaults ON, matching Free Flight's default. */
     private boolean flightAssistEnabled = true;
@@ -372,6 +567,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         super.writeToNBT(nbt);
         nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
         nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
+        if (shipId != null) {
+            nbt.setString(NBT_SHIP_ID, shipId.toString());
+        }
         return nbt;
     }
 
@@ -382,6 +580,15 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         flightAssistEnabled = !nbt.hasKey(NBT_FLIGHT_ASSIST) || nbt.getBoolean(NBT_FLIGHT_ASSIST);
         // Absent key → not station-keeping (a fresh, never-flown ship stays inert).
         stationKeeping = nbt.getBoolean(NBT_STATION_KEEPING);
+        // Absent/malformed key → no id yet (minted on first use); never re-mint over a valid one.
+        shipId = null;
+        if (nbt.hasKey(NBT_SHIP_ID)) {
+            try {
+                shipId = java.util.UUID.fromString(nbt.getString(NBT_SHIP_ID));
+            } catch (IllegalArgumentException ignored) {
+                // corrupt id: treat as unminted rather than crash the tile load
+            }
+        }
     }
 
     @Override

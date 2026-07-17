@@ -101,6 +101,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_HASOXYGEN = "hasOxygen";
     private static final String ELEMENT_ATMDENSITY = "atmosphereDensity";
     private static final String ELEMENT_SEALEVEL = "seaLevel";
+    private static final String ELEMENT_ORBIT_HEIGHT = "orbitHeight";
     //private static final String ELEMENT_TARGETSEALEVEL = "targetseaLevel";
     private static final String ELEMENT_GENTYPE = "genType";
     private static final String ELEMENT_TERRAIN_SOURCE = "terrainSource";
@@ -426,6 +427,10 @@ public class XMLPlanetLoader {
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_GEODE_MULTIPLIER, properties.getGeodeMultiplier()));
 
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_SEALEVEL, properties.getSeaLevel()));
+
+        // Emit only when overridden so a default planet's XML is unchanged (terrain-source pattern).
+        if (properties.hasCustomOrbitHeight())
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_ORBIT_HEIGHT, properties.getOrbitHeight()));
 
 //        nodePlanet.appendChild(createTextNode(doc, ELEMENT_TARGETSEALEVEL, properties.getTargetSeaLevel()));
 
@@ -803,6 +808,13 @@ public class XMLPlanetLoader {
                     properties.setSeaLevel(Integer.parseInt(planetPropertyNode.getTextContent()));
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid sealeve specified"); //TODO: more detailed error msg
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_ORBIT_HEIGHT)) {
+                try {
+                    properties.setOrbitHeight(Integer.parseInt(planetPropertyNode.getTextContent()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid orbitHeight specified for dimension "
+                            + properties.getId() + "; keeping the global default");
                 }
             }
             /*

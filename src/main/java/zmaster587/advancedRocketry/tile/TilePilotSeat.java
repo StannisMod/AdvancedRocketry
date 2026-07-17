@@ -48,6 +48,8 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     public static final byte PACKET_PILOT_INPUT = 0;
     /** Control-packet id: toggle the linked flight computer's Flight Assist on/off (no payload). */
     public static final byte PACKET_FLIGHT_ASSIST_TOGGLE = 1;
+    /** Control-packet id: toggle the linked flight computer's AUTO-TAKEOFF autopilot (no payload). */
+    public static final byte PACKET_AUTO_TAKEOFF_TOGGLE = 2;
 
     /** World-frame fallback range (blocks²) for accepting a control packet, used only when the
      *  rider's block position does not already match the seat (see {@link #isPilotOf}). */
@@ -218,6 +220,12 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
             if (world != null && !world.isRemote) {
                 IBlockState state = world.getBlockState(pos);
                 world.notifyBlockUpdate(pos, state, state, 3);
+            }
+        } else if (id == PACKET_AUTO_TAKEOFF_TOGGLE) {
+            // Only the seated pilot may engage the auto-takeoff autopilot.
+            TileAdvancedFlightComputer afc = isPilotOf(player) ? getFlightComputer() : null;
+            if (afc != null) {
+                afc.toggleAutoTakeoff();
             }
         }
     }

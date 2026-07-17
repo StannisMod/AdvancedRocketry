@@ -84,6 +84,23 @@ final class VSBridge {
     }
 
     /**
+     * The world-frame POSITION {@code [x,y,z]} of the ship managing the block at {@code pos}
+     * (its transform position — where the ship's pose actually is right now), or {@code null}
+     * if no ship manages it. Managed-block-keyed like {@link #getShipAttitude}, so on a shared
+     * server each flight computer reads its OWN ship's position — a nearest-ship read could
+     * answer for a neighbour's craft. The entry ceiling check compares this against the launch
+     * dimension's orbit height each tick.
+     */
+    static double[] shipWorldPosition(World world, BlockPos pos) {
+        Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+        if (!managing.isPresent()) {
+            return null;
+        }
+        Vec3d p = managing.get().getShipData().getShipTransform().getShipPositionVec3d();
+        return new double[]{p.x, p.y, p.z};
+    }
+
+    /**
      * The WORLD position of the seat block at ship-subspace {@code seatPos}, as
      * {@code [x, y, z]}, or {@code null} if no ship manages it. The seat block lives in the
      * ship's subspace (a fixed shipyard region) but is rendered — and must be occupied by its

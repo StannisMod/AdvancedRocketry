@@ -347,6 +347,20 @@ public final class VSIntegration {
     }
 
     /**
+     * The world-frame position {@code [x,y,z]} of the ship managing the block at {@code pos} (its
+     * transform position), or {@code null} when VS is absent or no ship manages it. Managed-block
+     * keyed like {@link #getShipAttitude} — on a shared server each flight computer reads its OWN
+     * ship, never a neighbour's. The tier-2 entry ceiling check reads this each pilot tick. Only
+     * AR-core/MC types cross the gate.
+     */
+    public static double[] getShipWorldPosition(World world, BlockPos pos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipWorldPosition(world, pos);
+    }
+
+    /**
      * The world-frame linear velocity {@code [x,y,z]} (blocks/second) of the ship managing the block
      * at {@code pos}, or {@code null} when VS is absent or no ship manages it. Used to capture the
      * live velocity as a Flight-Assist setpoint on re-enable. Only AR-core/MC types cross the gate.

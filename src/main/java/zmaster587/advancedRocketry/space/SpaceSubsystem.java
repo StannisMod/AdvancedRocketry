@@ -34,6 +34,8 @@ public final class SpaceSubsystem {
 
     private static SpaceManager instance;
     private static ShipTransitManager transitManager;
+    private static ShipLedger shipLedger;
+    private static ShipEntryController entryController;
     private static int gcTickCounter;
     /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
     private static boolean pressureGcRequested;
@@ -48,6 +50,29 @@ public final class SpaceSubsystem {
     /** The live production transit manager, or {@code null} before server start / in test mode. */
     public static ShipTransitManager transit() {
         return transitManager;
+    }
+
+    /** The live ship ledger, or {@code null} before server start / in test mode. */
+    public static ShipLedger ledger() {
+        return shipLedger;
+    }
+
+    /** The live entry controller, or {@code null} before server start / in test mode. */
+    public static ShipEntryController entry() {
+        return entryController;
+    }
+
+    /**
+     * TEST/HEADLESS: install a probe-built stack so the production trigger path (flight-computer
+     * tick &rarr; {@link #entry()}) is exercisable under the test harness, where
+     * {@link #onServerStarting()} deliberately stands down. Pass nulls to clear.
+     */
+    public static void installProbeStack(SpaceManager manager, ShipLedger ledger,
+                                         ShipEntryController entry, ShipTransitManager transit) {
+        instance = manager;
+        shipLedger = ledger;
+        entryController = entry;
+        transitManager = transit;
     }
 
     /**
@@ -108,17 +133,49 @@ public final class SpaceSubsystem {
                 cfg.spaceMaxStoredCells);
         instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::serverTickCount, mgrConfig,
                 SpaceSubsystem::onForcedTier1Eviction);
+        shipLedger = new ShipLedger();
         transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser());
+        entryController = new ShipEntryController(instance, shipLedger, new VSShipEntryOps(),
+                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::serverTickCount);
         gcTickCounter = 0;
         pressureGcRequested = false;
         AdvancedRocketry.logger.info("[SPACE] subsystem online: pool={} gcPolicy={} maxStored={} maxAgeTicks={}",
                 SpaceSlotPool.slotDims().size(), mgrConfig.gcPolicy, mgrConfig.maxStoredCells, mgrConfig.maxAgeTicks);
     }
 
+    /**
+     * The launch BODY's full galactic address for a planet dimension: its zone cell via the
+     * universe registry (the C-1 lookup), refined to the body's own local offset when the zone
+     * content lists it. {@code null} (no placement / registry unreachable) makes the entry fall
+     * back to the configured home-system anchor. Public: the production resolver is also what a
+     * probe-built entry stack wires, so tests exercise the real lookup chain.
+     */
+    public static GalacticCoord launchBodyAddress(int dimId) {
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg != null) {
+            java.util.Optional<GalacticCoord> cell = reg.coordForPlanet(dimId);
+            if (cell.isPresent()) {
+                for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(cell.get())) {
+                    if (body.dimId() == dimId) {
+                        return body.address(); // the body's own local offset inside its zone cell
+                    }
+                }
+                return cell.get();
+            }
+        }
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        return cfg == null ? null
+                : zmaster587.advancedRocketry.universe.UniverseRegistry.parseAnchor(cfg.spaceHomeSystemCoord);
+    }
+
     /** Server-stop teardown. The slot dimensions stay registered (JVM-global); only the controller resets. */
     public static void onServerStopped() {
         instance = null;
         transitManager = null;
+        shipLedger = null;
+        entryController = null;
         gcTickCounter = 0;
         pressureGcRequested = false;
         HyperspaceWorld.reset();
@@ -187,6 +244,10 @@ public final class SpaceSubsystem {
             // perform the second crossing). Cheap when nothing is in transit.
             if (transitManager != null) {
                 transitManager.tick();
+            }
+            // Advance in-flight ENTRIES (crossed, waiting on async re-assembly to re-seat + settle).
+            if (entryController != null) {
+                entryController.tick();
             }
             boolean run = false;
             if (pressureGcRequested) {

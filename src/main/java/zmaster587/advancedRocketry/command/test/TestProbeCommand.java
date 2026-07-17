@@ -891,6 +891,12 @@ public class TestProbeCommand extends CommandBase {
     private static zmaster587.advancedRocketry.space.GalacticCoord transitOrigin;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitTarget;
 
+    // --- Entry e2e state (the entry-on-ramp probe stack; installed into SpaceSubsystem so the
+    //     PRODUCTION trigger path runs; cleared by entry-clear).
+    private static zmaster587.advancedRocketry.space.SpaceManager entryMgr;
+    private static zmaster587.advancedRocketry.space.ShipLedger entryLedger;
+    private static int[] entrySlotDims;
+
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
         // transit-setup: build an isolated transit stack (pool of 2 + hyperspace) and assemble a ship in a
         // fresh origin cell. The test then waits for the origin ship to load, calls transit-begin, and
@@ -961,6 +967,128 @@ public class TestProbeCommand extends CommandBase {
                 transitMgr.dematerialize(transitTarget);
             }
             send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim + "}");
+            return;
+        }
+        // entry-setup [poolN]: build the entry-on-ramp stack — a probe-local SpaceManager over a fresh
+        // pool + the PRODUCTION ops/resolver — and INSTALL it into SpaceSubsystem, so the production
+        // trigger path (flight-computer tick -> SpaceSubsystem.entry()) runs under the harness. The
+        // subsystem's own onServerStarting stands down in test mode, so nothing is double-installed.
+        if (args.length >= 1 && "entry-setup".equalsIgnoreCase(args[0])) {
+            int n = args.length >= 2 ? parseIntOr(args[1], 2) : 2;
+            entrySlotDims = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(n);
+            entryMgr = new zmaster587.advancedRocketry.space.SpaceManager(
+                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                    () -> (long) server.getTickCounter(),
+                    new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                            zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
+            entryLedger = new zmaster587.advancedRocketry.space.ShipLedger();
+            zmaster587.advancedRocketry.space.ShipEntryController ctl =
+                    new zmaster587.advancedRocketry.space.ShipEntryController(
+                            entryMgr, entryLedger,
+                            new zmaster587.advancedRocketry.space.VSShipEntryOps(),
+                            zmaster587.advancedRocketry.space.SpaceSubsystem::launchBodyAddress,
+                            () -> (long) server.getTickCounter());
+            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
+                    entryMgr, entryLedger, ctl, null);
+            // Start from a clean pilot channel: a stale static FF input from a prior test would make the
+            // AFC read "a pilot is flying" (in != null) and suppress the auto-takeoff autopilot branch.
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"dims\":[");
+            for (int i = 0; i < entrySlotDims.length; i++) {
+                if (i > 0) sb.append(',');
+                sb.append(entrySlotDims[i]);
+            }
+            send(sender, sb.append("]}").toString());
+            return;
+        }
+        // auto-takeoff <dim> [toggle|status]: drive/read the auto-takeoff autopilot on the loaded pilot
+        // seat's AFC (the production seat->AFC path server-side) — the client keybind's server effect,
+        // bisected from the keybind/packet layer. `toggle` (default) flips it; `status` reads only.
+        // Reports afcResolved + engaged.
+        if (args.length >= 2 && "auto-takeoff".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            boolean read = args.length >= 3 && "status".equalsIgnoreCase(args[2]);
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            for (TileEntity te : world.loadedTileEntityList) {
+                if (te instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
+                    seat = (zmaster587.advancedRocketry.tile.TilePilotSeat) te;
+                    break;
+                }
+            }
+            if (seat == null) {
+                send(sender, "{\"seatFound\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc = seat.getFlightComputer();
+            if (afc != null && !read) {
+                afc.toggleAutoTakeoff();
+            }
+            send(sender, "{\"seatFound\":true,\"afcResolved\":" + (afc != null) + ",\"engaged\":"
+                    + (afc != null && afc.isAutoTakeoffEngaged()) + "}");
+            return;
+        }
+        // entry-status: the entry stack's observable state — pending entries + the first ledgered
+        // ship's record (single-ship tests). Coordinates are reported as cellKey + local offsets.
+        if (args.length >= 1 && "entry-status".equalsIgnoreCase(args[0])) {
+            if (entryLedger == null) {
+                send(sender, "{\"error\":\"entry not set up\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.ShipEntryController ctl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
+            StringBuilder sb = new StringBuilder("{\"ok\":true");
+            sb.append(",\"pending\":").append(ctl == null ? -1 : ctl.enteringCount());
+            sb.append(",\"ships\":").append(entryLedger.size());
+            java.util.Map<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> snap =
+                    entryLedger.snapshot();
+            if (!snap.isEmpty()) {
+                java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> first =
+                        snap.entrySet().iterator().next();
+                zmaster587.advancedRocketry.space.ShipLedger.Entry e = first.getValue();
+                sb.append(",\"shipId\":\"").append(first.getKey()).append('"');
+                sb.append(",\"state\":\"").append(e.state).append('"');
+                sb.append(",\"cellKey\":\"").append(e.cellKey()).append('"');
+                sb.append(",\"lx\":").append(e.coord.localX());
+                sb.append(",\"ly\":").append(e.coord.localY());
+                sb.append(",\"lz\":").append(e.coord.localZ());
+                sb.append(",\"slotDim\":").append(e.slotDim);
+            }
+            send(sender, sb.append('}').toString());
+            return;
+        }
+        // launch-cell <dim>: the production launch-coord resolution for a dimension (the C-1 chain +
+        // zone-body refinement), so a test asserts the entry landed in the SAME cell the resolver
+        // answers — gen-agnostic, no pinned coordinates.
+        if (args.length >= 2 && "launch-cell".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.GalacticCoord c =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.launchBodyAddress(
+                            parseIntOr(args[1], 0));
+            if (c == null) {
+                send(sender, "{\"ok\":true,\"cellKey\":null}");
+            } else {
+                send(sender, "{\"ok\":true,\"cellKey\":\"" + c.cellKey() + "\",\"lx\":" + c.localX()
+                        + ",\"ly\":" + c.localY() + ",\"lz\":" + c.localZ() + "}");
+            }
+            return;
+        }
+        // entry-clear: uninstall the probe entry stack and unload its slots (shared-harness
+        // state-leak contract). Also clears the static flight-input channel the e2e used as pilot.
+        if (args.length >= 1 && "entry-clear".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(null, null, null, null);
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
+            if (entrySlotDims != null) {
+                for (int dim : entrySlotDims) {
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.unload(dim);
+                }
+            }
+            entryMgr = null;
+            entryLedger = null;
+            entrySlotDims = null;
+            send(sender, "{\"ok\":true}");
             return;
         }
         if (args.length >= 1 && "roundtrip".equalsIgnoreCase(args[0])) {

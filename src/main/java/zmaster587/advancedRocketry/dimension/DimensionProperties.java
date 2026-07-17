@@ -164,7 +164,19 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private IBlockState oceanBlock;
     private IBlockState fillerBlock;
     private int seaLevel;
+    /**
+     * Per-dim atmosphere&harr;orbit line (blocks): the world-Y a tier-2 ship must climb past to
+     * enter space, and the reference the descent/gravity-well side reads. The SINGLE owner of the
+     * ceiling — nothing else may hard-code an orbit line. Sentinel {@link #ORBIT_HEIGHT_UNSET}
+     * (the default) falls back to the global {@code ARConfiguration.orbit}; XML-overridable per
+     * planet. Value is {@code tunable}. The hardcoded 256..456 atmosphere-density taper
+     * ({@link #getAtmosphereDensityAtHeight}) is visual-only and never a gate.
+     */
+    private int orbitHeight;
     private int generatorType;
+
+    /** Sentinel for {@link #orbitHeight}: no per-dim override — use the global config value. */
+    public static final int ORBIT_HEIGHT_UNSET = -1;
     // How terrain is produced (orthogonal to generatorType, which stays the NATIVE sub-flavour selector).
     private TerrainSource terrainSource = TerrainSource.NATIVE;
     private String terrainWorldType = ""; // foreign WorldType name for MOD_WORLDTYPE
@@ -446,6 +458,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         spawnableEntities = new LinkedList<>();
         beaconLocations = new HashSet<>();
         seaLevel = 63;
+        orbitHeight = ORBIT_HEIGHT_UNSET;
         oceanBlock = null;
         fillerBlock = null;
         generatorType = 0;
@@ -1671,6 +1684,10 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         hasRings = nbt.getBoolean("hasRings");
         ringAngle = nbt.getInteger("ringAngle");
         seaLevel = nbt.getInteger("sealevel");
+        // Absent key -> no per-dim override (fall back to the global config), so default planets
+        // round-trip unchanged (the originalAtmosphereDensity guarded-read pattern).
+        orbitHeight = nbt.hasKey("orbitHeight", NBT.TAG_INT)
+                ? nbt.getInteger("orbitHeight") : ORBIT_HEIGHT_UNSET;
         //target_sea_level = nbt.getInteger("target_sea_level");
         generatorType = nbt.getInteger("genType");
         terrainSource = nbt.hasKey("terrainSource") ? TerrainSource.byName(nbt.getString("terrainSource")) : TerrainSource.NATIVE;
@@ -2040,6 +2057,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         nbt.setBoolean("hasRings", hasRings);
         nbt.setInteger("sealevel", seaLevel);
         //nbt.setInteger("target_sea_level", target_sea_level);
+        // Emit only when overridden so a default planet serialises unchanged (terrainSource pattern).
+        if (orbitHeight != ORBIT_HEIGHT_UNSET)
+            nbt.setInteger("orbitHeight", orbitHeight);
         nbt.setInteger("genType", generatorType);
         // Emit terrain-source keys only when non-default so a NATIVE planet serialises unchanged.
         if (terrainSource != TerrainSource.NATIVE)
@@ -2200,6 +2220,29 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
     public void setSeaLevel(int sealevel) {
         this.seaLevel = MathHelper.clamp(sealevel, 0, 255);
+    }
+
+    /**
+     * The atmosphere&harr;orbit line of this dimension (blocks of world Y): per-dim override when
+     * set, else the global {@code ARConfiguration.orbit}. Single owner of the ceiling for the
+     * tier-2 entry check and the descent/gravity-well reads.
+     */
+    public int getOrbitHeight() {
+        if (orbitHeight != ORBIT_HEIGHT_UNSET) {
+            return orbitHeight;
+        }
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        return cfg != null ? cfg.orbit : 1000;
+    }
+
+    /** Set the per-dim orbit height, or {@link #ORBIT_HEIGHT_UNSET} to fall back to the config. */
+    public void setOrbitHeight(int height) {
+        this.orbitHeight = height < 0 ? ORBIT_HEIGHT_UNSET : Math.max(255, height);
+    }
+
+    /** Whether an explicit per-dim orbit height is set (drives conditional XML/NBT export). */
+    public boolean hasCustomOrbitHeight() {
+        return orbitHeight != ORBIT_HEIGHT_UNSET;
     }
 /*
     public int getTargetSeaLevel() {

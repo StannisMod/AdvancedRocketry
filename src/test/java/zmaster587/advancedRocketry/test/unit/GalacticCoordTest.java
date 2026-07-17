@@ -7,6 +7,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -96,6 +97,17 @@ public class GalacticCoordTest {
         assertEquals(a.cellKey(), b.cellKey());
         assertFalse(a.sameCell(other));
         assertNotEquals(a.cellKey(), other.cellKey());
+    }
+
+    @Test
+    public void cellKeyRoundTripsThroughFromCellKey() {
+        GalacticCoord cell = GalacticCoord.ofSectorLocal(-3L, 1L, 7L, 0L, 0L, 0L);
+        GalacticCoord back = GalacticCoord.fromCellKey(cell.cellKey());
+        assertEquals(cell, back);
+        // Malformed keys answer null instead of throwing (a slot may be unbound).
+        assertNull(GalacticCoord.fromCellKey(null));
+        assertNull(GalacticCoord.fromCellKey("scratch"));
+        assertNull(GalacticCoord.fromCellKey("1_2"));
     }
 
     @Test

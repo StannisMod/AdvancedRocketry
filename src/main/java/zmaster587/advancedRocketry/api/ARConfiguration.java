@@ -85,6 +85,9 @@ public class ARConfiguration {
     public String spaceCellGcPolicy = "both";
     public int spaceCellMaxAgeTicks = 1728000;
     public int spaceMaxStoredCells = 4096;
+    /** Fallback home-system anchor ("sectorX,sectorY,sectorZ") a tier-2 entry uses when the launch
+     *  planet has no galactic placement in the universe registry. */
+    public String spaceHomeSystemCoord = "0,0,0";
     @ConfigProperty
     public int fuelPointsPer10Mb = 10;
     @ConfigProperty(needsSync = true)
@@ -525,6 +528,7 @@ public class ARConfiguration {
         arConfig.spaceCellGcPolicy = config.getString("spaceCellGcPolicy", PERFORMANCE, "both", "Garbage-collection policy for the on-disk store of modified space cells: age | count | both | never.", new String[]{"age", "count", "both", "never"});
         arConfig.spaceCellMaxAgeTicks = config.getInt("spaceCellMaxAgeTicks", PERFORMANCE, 1728000, 0, Integer.MAX_VALUE, "Ticks since last visit before an age/both GC deletes a stored space cell (1728000 = 24h at 20 tps).");
         arConfig.spaceMaxStoredCells = config.getInt("spaceMaxStoredCells", PERFORMANCE, 4096, 0, Integer.MAX_VALUE, "Max modified space cells kept on disk before a count/both GC trims the oldest.");
+        arConfig.spaceHomeSystemCoord = config.getString("spaceHomeSystemCoord", PERFORMANCE, "0,0,0", "Fallback home-system galactic anchor 'sectorX,sectorY,sectorZ' used when a tier-2 ship enters space from a planet that has no placement in the universe registry.");
 
         //Rockets
         arConfig.rocketRequireFuel = config.get(ROCKET, "rocketsRequireFuel", true, "Require fuel for rockets to fly.").getBoolean();

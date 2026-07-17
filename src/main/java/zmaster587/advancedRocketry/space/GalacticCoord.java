@@ -132,6 +132,27 @@ public final class GalacticCoord {
         return sectorX + "_" + sectorY + "_" + sectorZ;
     }
 
+    /**
+     * The cell-centre coordinate of a {@link #cellKey()} string, or {@code null} if malformed. The
+     * inverse of {@code cellKey()}: lets a slot world recover the cell it is bound to (the pool binds
+     * slots by key) so world-frame poses can be mapped back to absolute galactic coordinates.
+     */
+    public static GalacticCoord fromCellKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        String[] parts = key.split("_");
+        if (parts.length != 3) {
+            return null;
+        }
+        try {
+            return new GalacticCoord(Long.parseLong(parts[0]), Long.parseLong(parts[1]),
+                    Long.parseLong(parts[2]), 0, 0, 0);
+        } catch (NumberFormatException bad) {
+            return null;
+        }
+    }
+
     /** Write this coordinate into {@code nbt} under the {@code "galacticCoord"} sub-tag. */
     public void writeToNBT(NBTTagCompound nbt) {
         NBTTagCompound sub = new NBTTagCompound();

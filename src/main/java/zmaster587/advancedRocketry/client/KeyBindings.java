@@ -54,6 +54,8 @@ public class KeyBindings {
     static KeyBinding flightVerticalUp   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightVerticalUp"),   Keyboard.KEY_R, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding flightVerticalDown = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightVerticalDown"), Keyboard.KEY_F, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     static KeyBinding flightAssistToggle  = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightAssistToggle"),  Keyboard.KEY_N, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    // Tier-2 auto-takeoff autopilot (diagonal climb to orbit). K — unbound in vanilla, so no conflict.
+    static KeyBinding autoTakeoffToggle   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.autoTakeoffToggle"),   Keyboard.KEY_K, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
@@ -243,6 +245,7 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(flightVerticalUp);
         ClientRegistry.registerKeyBinding(flightVerticalDown);
         ClientRegistry.registerKeyBinding(flightAssistToggle);
+        ClientRegistry.registerKeyBinding(autoTakeoffToggle);
         scopeSteeringKeysToCockpit();
     }
 
@@ -697,6 +700,11 @@ public class KeyBindings {
         if (pilotSeat != null && pilotSeat.isLinked() && flightAssistToggle.isPressed()) {
             PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_FLIGHT_ASSIST_TOGGLE));
             kbTrace("SHIP flight-assist toggle -> seat " + pilotSeat.getPos());
+        }
+        // Edge-triggered auto-takeoff toggle (K), same seat-gated dispatch as the FA toggle.
+        if (pilotSeat != null && pilotSeat.isLinked() && autoTakeoffToggle.isPressed()) {
+            PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_AUTO_TAKEOFF_TOGGLE));
+            kbTrace("SHIP auto-takeoff toggle -> seat " + pilotSeat.getPos());
         }
 
         if (player.getRidingEntity() != null && player.getRidingEntity() instanceof EntityRocket) {

@@ -706,6 +706,14 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                     ((TilePilotSeat) seatTe).linkToFlightComputer(shipAnchor);
                 }
             }
+            // Mint the ship's durable identity at assembly (before the physics mod relocates the
+            // craft): tile NBT rides the relocation and every later crossing verbatim, so this id
+            // is the one stable key for the ship (the physics mod's own UUID is re-minted per
+            // re-assembly and must never key durable state).
+            TileEntity afcTe = world.getTileEntity(shipAnchor);
+            if (afcTe instanceof TileAdvancedFlightComputer) {
+                ((TileAdvancedFlightComputer) afcTe).getOrCreateShipId();
+            }
             VSIntegration.assembleTier2Ship(world, shipAnchor);
             stats.reset();
             this.status = ErrorCodes.FINISHED;
