@@ -189,6 +189,7 @@ public final class SpaceSubsystem {
         descentController = null;
         gcTickCounter = 0;
         pressureGcRequested = false;
+        SystemBodiesProducer.reset();
         HyperspaceWorld.reset();
     }
 
@@ -240,6 +241,9 @@ public final class SpaceSubsystem {
                 zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
                         sync, (net.minecraft.entity.player.EntityPlayerMP) event.player);
             }
+            // After the slot dims are registered client-side, seed the joining player's render bodies
+            // (the BoundarySky feed) so a login restore into a settled cell draws them immediately.
+            SystemBodiesProducer.sendToPlayer((net.minecraft.entity.player.EntityPlayerMP) event.player);
         }
 
         @SubscribeEvent
@@ -264,6 +268,9 @@ public final class SpaceSubsystem {
             if (descentController != null) {
                 descentController.tick();
             }
+            // Rebroadcast the per-slot render bodies (throttled) so the slot-world sky (BoundarySky)
+            // tracks each settled ship's direction to the bodies of its cell.
+            SystemBodiesProducer.onBroadcastTick(FMLCommonHandler.instance().getMinecraftServerInstance());
             boolean run = false;
             if (pressureGcRequested) {
                 pressureGcRequested = false;

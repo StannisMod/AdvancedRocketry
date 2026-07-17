@@ -23,8 +23,10 @@ import java.util.Map;
  *
  * <p>Presence is the gate: a body only appears here if the server chose to send it, so there is NO
  * discovery / {@code isSystemKnown} check on this channel &mdash; every field is render-facing. The
- * {@code localX/Y/Z} triple is the body's in-cell offset, giving the client a direction to draw toward;
- * {@code kindOrdinal} selects the render style; {@code descendTarget} drives the boundary highlight.</p>
+ * {@code localX/Y/Z} triple is the ship&rarr;body direction (the body's absolute position minus the
+ * settled ship's, component-wise) &mdash; a body at its own cell centre still points away from a ship
+ * parked off-centre; the client normalises it. {@code kindOrdinal} selects the render style;
+ * {@code descendTarget} drives the boundary highlight.</p>
  *
  * <p>Wire contract (same-version, client-bound): {@code writeInt(dimCount)} then, per dim,
  * {@code writeInt(slotDimId)}, {@code writeInt(bodyCount)} and, per body,
