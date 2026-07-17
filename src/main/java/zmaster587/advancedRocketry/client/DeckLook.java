@@ -124,6 +124,29 @@ public final class DeckLook {
         return FreeFlightPhysics.slerp(prev, cur, partialTicks);
     }
 
+    /** A fixed SUBSPACE reference point of the current capture episode (the deck spot the episode
+     *  engaged at) and its per-tick world images - the "where the deck is" oracle the smoothness
+     *  discriminators measure the body's RELATIVE motion against. Snapshotted once per episode so
+     *  the reference itself never moves in the ship frame. */
+    private static boolean refSet = false;
+    private static double refSubX, refSubY, refSubZ;
+    private static volatile double[] refWorldPrev = null;
+    private static volatile double[] refWorldCur = null;
+
+    /** The reference deck point's world position this frame (lerped between the tick samples), or
+     *  {@code null} while not aboard / not warmed up. */
+    public static double[] refWorldAt(float partialTicks) {
+        double[] cur = refWorldCur;
+        double[] prev = refWorldPrev;
+        if (cur == null || prev == null) {
+            return null;
+        }
+        return new double[]{
+                prev[0] + (cur[0] - prev[0]) * partialTicks,
+                prev[1] + (cur[1] - prev[1]) * partialTicks,
+                prev[2] + (cur[2] - prev[2]) * partialTicks};
+    }
+
     /**
      * Once per client tick: keep the world aim glued to the deck as the ship turns under a crew
      * member whose mouse is still. Runs with a GUI open too - the ship does not stop rolling while
@@ -136,10 +159,32 @@ public final class DeckLook {
                 shipQuatPrev = shipQuatCur == null ? sampled : shipQuatCur;
                 shipQuatCur = sampled;
             }
+            String shipId = ShipFrameTravel.aboardShipId(player);
+            if (!refSet) {
+                double[] sub = VSIntegration.toShipFrameFor(
+                        player.world, shipId, player.posX, player.posY, player.posZ);
+                if (sub != null) {
+                    refSubX = sub[0];
+                    refSubY = sub[1];
+                    refSubZ = sub[2];
+                    refSet = true;
+                }
+            }
+            if (refSet) {
+                double[] refWorld = VSIntegration.toWorldFrameFor(
+                        player.world, shipId, refSubX, refSubY, refSubZ);
+                if (refWorld != null) {
+                    refWorldPrev = refWorldCur == null ? refWorld : refWorldCur;
+                    refWorldCur = refWorld;
+                }
+            }
             derive(player, null);
         } else {
             shipQuatPrev = null;
             shipQuatCur = null;
+            refSet = false;
+            refWorldPrev = null;
+            refWorldCur = null;
         }
     }
 

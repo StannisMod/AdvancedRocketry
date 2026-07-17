@@ -70,15 +70,63 @@ public final class ShipFrameCamera {
     public static volatile long posLookApplies = 0;
     private static double lastFrameX = Double.NaN, lastFrameY = Double.NaN, lastFrameZ = Double.NaN;
 
+    // Per-frame STEP statistics over a resettable window, for the ABSOLUTE body position and for
+    // the body position RELATIVE to a fixed deck point (DeckLook's episode reference, itself
+    // frame-lerped). Discriminates where a felt stutter lives: a smooth path has near-uniform
+    // per-frame steps (max ~ mean); a tick-stepped path has zero steps within a tick and spikes
+    // at tick boundaries (max >> mean). Relative-vs-absolute splits "the body jitters in the
+    // world" from "the body jitters against the deck it rides".
+    public static volatile double absStepMax = 0.0, absStepSum = 0.0;
+    public static volatile long absStepCount = 0;
+    public static volatile double relStepMax = 0.0, relStepSum = 0.0;
+    public static volatile long relStepCount = 0;
+    private static double lastRelX = Double.NaN, lastRelY = Double.NaN, lastRelZ = Double.NaN;
+
+    /** Reset the step-statistics window (invoked reflectively by the smoothness e2e). */
+    public static int resetStepWindow() {
+        absStepMax = 0.0;
+        absStepSum = 0.0;
+        absStepCount = 0;
+        relStepMax = 0.0;
+        relStepSum = 0.0;
+        relStepCount = 0;
+        lastFrameX = Double.NaN;
+        lastRelX = Double.NaN;
+        return 0;
+    }
+
     /** Called once per aboard frame with the camera's interpolated base position. */
-    public static void recordFrameInterp(double x, double y, double z) {
+    public static void recordFrameInterp(double x, double y, double z, float partialTicks) {
         aboardFramesRendered++;
         if (x == lastFrameX && y == lastFrameY && z == lastFrameZ) {
             aboardFramesSamePos++;
         }
+        if (!Double.isNaN(lastFrameX)) {
+            double step = Math.sqrt((x - lastFrameX) * (x - lastFrameX)
+                    + (y - lastFrameY) * (y - lastFrameY) + (z - lastFrameZ) * (z - lastFrameZ));
+            if (step > absStepMax) absStepMax = step;
+            absStepSum += step;
+            absStepCount++;
+        }
         lastFrameX = x;
         lastFrameY = y;
         lastFrameZ = z;
+        double[] ref = DeckLook.refWorldAt(partialTicks);
+        if (ref != null) {
+            double rx = x - ref[0], ry = y - ref[1], rz = z - ref[2];
+            if (!Double.isNaN(lastRelX)) {
+                double step = Math.sqrt((rx - lastRelX) * (rx - lastRelX)
+                        + (ry - lastRelY) * (ry - lastRelY) + (rz - lastRelZ) * (rz - lastRelZ));
+                if (step > relStepMax) relStepMax = step;
+                relStepSum += step;
+                relStepCount++;
+            }
+            lastRelX = rx;
+            lastRelY = ry;
+            lastRelZ = rz;
+        } else {
+            lastRelX = Double.NaN;
+        }
     }
 
     /**

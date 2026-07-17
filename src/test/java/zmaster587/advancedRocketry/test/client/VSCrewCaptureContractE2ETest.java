@@ -1042,6 +1042,36 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("on a ~90-degree deck the walk direction must match the deck heading the "
                 + "mouse steers (walked " + bestWalkedYaw + " deg, held " + bestHeldYaw
                 + " deg) :: " + legs, Math.abs(wrap180(bestWalkedYaw - bestHeldYaw)) < 30.0);
+
+        // (diag, print-only) Jump-smoothness discriminators on THIS actively attitude-holding
+        // (hunting) ship: per-frame step statistics of the ABSOLUTE body path vs the path
+        // RELATIVE to a fixed deck point. A smooth path has max ~ mean step; a tick-stepped one
+        // has max >> mean. Feeds the open jump-stutter residual; no contract asserted here.
+        exec("tp @a " + anchor[0] + " " + anchor[1] + " " + anchor[2] + " 0 0");
+        bot().waitTicks(15);
+        bot().invokeStaticInt(SHIP_CAMERA_CLASS, "resetStepWindow");
+        try {
+            for (int i = 0; i < 20; i++) {
+                bot().holdKey(Keyboard.KEY_SPACE);
+                bot().waitTicks(1);
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_SPACE);
+        }
+        bot().waitTicks(5);
+        double absMax = clientDouble(SHIP_CAMERA_CLASS, "absStepMax");
+        double absSum = clientDouble(SHIP_CAMERA_CLASS, "absStepSum");
+        long absN = (long) clientDouble(SHIP_CAMERA_CLASS, "absStepCount");
+        double relMax = clientDouble(SHIP_CAMERA_CLASS, "relStepMax");
+        double relSum = clientDouble(SHIP_CAMERA_CLASS, "relStepSum");
+        long relN = (long) clientDouble(SHIP_CAMERA_CLASS, "relStepCount");
+        System.out.println(String.format(java.util.Locale.ROOT,
+                "[crewcap] jump-steps abs(max=%.4f mean=%.4f n=%d ratio=%.1f) rel(max=%.4f "
+                        + "mean=%.4f n=%d ratio=%.1f)",
+                absMax, absN > 0 ? absSum / absN : -1, absN,
+                absN > 0 && absSum > 0 ? absMax / (absSum / absN) : -1,
+                relMax, relN > 0 ? relSum / relN : -1, relN,
+                relN > 0 && relSum > 0 ? relMax / (relSum / relN) : -1));
     }
 
     private static final String DECK_LOOK = "zmaster587.advancedRocketry.client.DeckLook";
