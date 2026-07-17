@@ -65,6 +65,14 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // A REAL jump: the space key on the real client. Sample the capture through the whole arc -
         // the failure mode is a release at the apex, which a single after-the-fact read can miss if
         // a fresh first-contact re-captured on landing.
+        // Smoothness diagnostics (print-only): frames whose interpolated camera position repeats
+        // name a dead prev->pos interpolation; PosLook applies name the server echo as its writer.
+        long frames0 = (long) clientDouble(SHIP_CAMERA_CLASS, "aboardFramesRendered");
+        long same0 = (long) clientDouble(SHIP_CAMERA_CLASS, "aboardFramesSamePos");
+        long posLook0 = (long) clientDouble(SHIP_CAMERA_CLASS, "posLookApplies");
+        long resolved0 = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
+        long declined0 = (long) clientDouble(SHIP_FRAME_TRAVEL, "declinedTicks");
+        long jdrops0 = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
         int tracked = 0, samples = 0;
         double apex = deckY;
         StringBuilder trace = new StringBuilder();
@@ -86,6 +94,16 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(40); // land and settle
         String capture = exec("artest vs deck-capture");
         double settledY = bot().reportState().get("playerY").getAsDouble();
+        long framesD = (long) clientDouble(SHIP_CAMERA_CLASS, "aboardFramesRendered") - frames0;
+        long sameD = (long) clientDouble(SHIP_CAMERA_CLASS, "aboardFramesSamePos") - same0;
+        long posLookD = (long) clientDouble(SHIP_CAMERA_CLASS, "posLookApplies") - posLook0;
+        System.out.println("[crewcap] jump smoothness frames=" + framesD + " samePos=" + sameD
+                + " (" + (framesD > 0 ? (100L * sameD / framesD) : -1) + "%) posLookApplies="
+                + posLookD
+                + " resolvedDelta=" + ((long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks") - resolved0)
+                + " declinedDelta=" + ((long) clientDouble(SHIP_FRAME_TRAVEL, "declinedTicks") - declined0)
+                + " dropsDelta=" + ((long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - jdrops0)
+                + " windowTicks=60");
         System.out.println("[crewcap] jump deckY=" + deckY + " apex=" + apex + " settledY=" + settledY
                 + " tracked=" + tracked + "/" + samples + " :: " + trace);
         System.out.println("[crewcap] jump capture=" + capture);
@@ -961,18 +979,23 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // steers. This is the exact attitude where a walk basis built from the world-yaw
         // projection of a deck-glued aim degenerates (the world look sits near the pole) and
         // walking decouples from the keys.
-        // Where the body stands on the deck varies run to run (the dismount landing spot follows
-        // physics timing), so any single fixed heading can face a wall 0.1 blocks away and the
-        // displacement guard goes vacuous (seen live: input fine, travel resolving, ~0.10 blocks
-        // and a horizontal collision). Walk all FOUR deck headings - turned between legs by the
-        // REAL mouse, which re-exercises the deck-relative turn - and judge the heading contract
-        // on the leg with the most runway; at least one of four must be open on a walkable deck.
+        // Where the body stands on the deck varies run to run, so any single fixed heading can
+        // face a wall 0.1 blocks away (seen live: ~0.10 blocks and a horizontal collision), and
+        // legs walked in sequence drift the body toward an edge until it walks OFF the deck (seen
+        // live: an 8.7-block "leg" that was really a fall after the capture released). So: anchor
+        // at the settled open-deck spot, tp BACK to the anchor before every leg, turn to the
+        // leg's heading with the REAL mouse (re-exercising the deck-relative turn after the tp's
+        // re-seed), walk briefly, and count a leg only if the capture held through it and the
+        // displacement is walking-sized. Judge the heading contract on the best VALID leg.
         double[] q85 = shipQuatFromInfo(shipInfo(bx, by, bz));
+        double[] anchor = clientPos();
         double bestMag = -1.0, bestWalkedYaw = 0.0, bestHeldYaw = 0.0;
         StringBuilder legs = new StringBuilder();
         for (int dir = 0; dir < 4; dir++) {
+            exec("tp @a " + anchor[0] + " " + anchor[1] + " " + anchor[2] + " 0 0");
+            bot().waitTicks(10); // settle + deck-look re-seed from the tp's world aim
             if (dir > 0) {
-                bot().turnLook(600f, 0f); // +90 degrees of deck yaw
+                bot().turnLook(600f * dir, 0f); // dir * 90 degrees of deck yaw
                 bot().waitTicks(2);
             }
             double heldDeckYaw = clientDouble(DECK_LOOK, "deckYawDeg");
@@ -981,7 +1004,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
             double[] s0 = {readDouble(infoW0, POS_X), readDouble(infoW0, POS_Y),
                     readDouble(infoW0, POS_Z)};
             try {
-                for (int i = 0; i < 12; i++) {
+                for (int i = 0; i < 8; i++) {
                     bot().holdKey(Keyboard.KEY_W); // re-asserted per tick against key-state churn
                     bot().waitTicks(1);
                 }
@@ -993,16 +1016,20 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
             String infoW1 = shipInfo(bx, by, bz);
             double[] s1 = {readDouble(infoW1, POS_X), readDouble(infoW1, POS_Y),
                     readDouble(infoW1, POS_Z)};
+            boolean stillAboard = Boolean.parseBoolean(clientString(DECK_LOOK, "active"));
             // The walk displacement, with the ship's own drift removed, in the DECK frame.
             double[] walkWorld = {p1[0] - p0[0] - (s1[0] - s0[0]), p1[1] - p0[1] - (s1[1] - s0[1]),
                     p1[2] - p0[2] - (s1[2] - s0[2])};
             double[] walkDeck = rotateByConjugate(q85, walkWorld);
             double planeMag = Math.sqrt(walkDeck[0] * walkDeck[0] + walkDeck[2] * walkDeck[2]);
             double walkedYaw = Math.toDegrees(Math.atan2(-walkDeck[0], walkDeck[2]));
+            // Walking-sized displacement only: a sub-walk leg hit a wall, an over-walk leg fell
+            // off the deck - neither can falsify the HEADING contract.
+            boolean valid = stillAboard && planeMag > 0.3 && planeMag < 2.5;
             legs.append(String.format(java.util.Locale.ROOT,
-                    "[dir%d held=%.1f walked=%.1f mag=%.2f onDeck=%s] ", dir, heldDeckYaw,
-                    walkedYaw, planeMag, clientString(SHIP_FRAME_TRAVEL, "lastOnDeck")));
-            if (planeMag > bestMag) {
+                    "[dir%d held=%.1f walked=%.1f mag=%.2f aboard=%b valid=%b] ", dir, heldDeckYaw,
+                    walkedYaw, planeMag, stillAboard, valid));
+            if (valid && planeMag > bestMag) {
                 bestMag = planeMag;
                 bestWalkedYaw = walkedYaw;
                 bestHeldYaw = heldDeckYaw;
@@ -1010,8 +1037,8 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         }
         System.out.println("[crewcap] deck-walk best mag=" + bestMag + " walked=" + bestWalkedYaw
                 + " held=" + bestHeldYaw + " :: " + legs);
-        assertTrue("holding W must actually walk the body along the deck in at least one of four "
-                + "deck headings (best " + bestMag + " blocks) :: " + legs, bestMag > 0.4);
+        assertTrue("holding W must walk the body a walking-sized distance along the deck, still "
+                + "captured, in at least one of four headings :: " + legs, bestMag > 0.3);
         assertTrue("on a ~90-degree deck the walk direction must match the deck heading the "
                 + "mouse steers (walked " + bestWalkedYaw + " deg, held " + bestHeldYaw
                 + " deg) :: " + legs, Math.abs(wrap180(bestWalkedYaw - bestHeldYaw)) < 30.0);

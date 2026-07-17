@@ -33,5 +33,13 @@ public class MixinNetHandlerFFCameraRepin {
     @Inject(method = "handlePlayerPosLook", at = @At("RETURN"))
     private void advancedrocketry$repinFreeFlightCamera(SPacketPlayerPosLook packet, CallbackInfo ci) {
         KeyBindings.repinCameraAfterTeleport();
+        // Smoothness discriminator: an actual main-thread apply of a server PosLook collapses the
+        // client's prev->pos render interpolation for that tick (the handler writes prev = pos).
+        // A steadily climbing count while walking/jumping a deck names the server echo as the
+        // stepping's writer. (The RETURN also fires on the netty-thread early-return; count only
+        // the real apply.)
+        if (net.minecraft.client.Minecraft.getMinecraft().isCallingFromMinecraftThread()) {
+            zmaster587.advancedRocketry.client.ShipFrameCamera.posLookApplies++;
+        }
     }
 }

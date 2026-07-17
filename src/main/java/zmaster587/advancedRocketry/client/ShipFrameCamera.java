@@ -56,6 +56,31 @@ public final class ShipFrameCamera {
     public static volatile double shipUpY = 1.0;
     public static volatile double shipUpZ = 0.0;
 
+    // ---- Smoothness discriminators (ledger: "6-8 discrete points per jump"). A dead prev->pos
+    // interpolation shows as consecutive frames sharing one interpolated camera position: at
+    // 120 FPS / 20 TPS a healthy ratio is ~0 same-pos frames; ~5/6 of them means the camera is
+    // stepping at tick rate. posLookApplies names the classic prev-collapsing writer (a server
+    // PosLook echo per tick). Ungated statics - harness child JVMs have no test mode. ----
+
+    /** Frames rendered with the aboard camera engaged. */
+    public static volatile long aboardFramesRendered = 0;
+    /** Of those, frames whose interpolated camera position equalled the previous frame's. */
+    public static volatile long aboardFramesSamePos = 0;
+    /** Server PosLook packets actually applied on the client main thread. */
+    public static volatile long posLookApplies = 0;
+    private static double lastFrameX = Double.NaN, lastFrameY = Double.NaN, lastFrameZ = Double.NaN;
+
+    /** Called once per aboard frame with the camera's interpolated base position. */
+    public static void recordFrameInterp(double x, double y, double z) {
+        aboardFramesRendered++;
+        if (x == lastFrameX && y == lastFrameY && z == lastFrameZ) {
+            aboardFramesSamePos++;
+        }
+        lastFrameX = x;
+        lastFrameY = y;
+        lastFrameZ = z;
+    }
+
     /**
      * The attitude of the ship {@code view} is aboard, smoothed across the frame, or {@code null} when
      * it is aboard none. A piloting local player uses the per-tick attitude samples the input path
@@ -76,9 +101,17 @@ public final class ShipFrameCamera {
         // while owning a world-frame view. Remote bodies keep the containment gate for now: their
         // movement is never resolved on this side, and un-rotating a remote crew member's model on
         // a rolled deck is the worse artefact until the spatial deck gate lands.
-        if (view == mc.player
-                && !zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
-            return null;
+        if (view == mc.player) {
+            if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
+                return null;
+            }
+            // Slerp the per-tick attitude samples across the frame, exactly as the pilot path
+            // above does - the raw attitude steps at 20 Hz and a station-keeping ship's hunting
+            // then shows as jitter at any frame rate.
+            FreeFlightPhysics.Quat slerped = DeckLook.slerpedShipQuat(partialTicks);
+            if (slerped != null) {
+                return slerped;
+            }
         }
         return VSIntegration.shipAttitudeFor(view);
     }

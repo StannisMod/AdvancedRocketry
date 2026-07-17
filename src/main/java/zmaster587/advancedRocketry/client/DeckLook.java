@@ -105,14 +105,41 @@ public final class DeckLook {
         return true;
     }
 
+    /** The anchor ship's attitude sampled this / previous client tick, for the render camera's
+     *  per-frame slerp - the walking-crew analogue of the pilot's shipQuat/shipPrevQuat pair.
+     *  Stepping the crew camera at the raw 20 Hz attitude instead is the tier-2 jitter (the
+     *  ledgered "not smooth at 120 FPS" feel): a station-keeping ship always hunts a little, and
+     *  an uninterpolated attitude shows at any frame rate. Null while not aboard. */
+    private static volatile FreeFlightPhysics.Quat shipQuatCur = null;
+    private static volatile FreeFlightPhysics.Quat shipQuatPrev = null;
+
+    /** The sampled anchor attitude, slerped across the frame, or {@code null} when not aboard or
+     *  not yet warmed up (first aboard tick). */
+    public static FreeFlightPhysics.Quat slerpedShipQuat(float partialTicks) {
+        FreeFlightPhysics.Quat cur = shipQuatCur;
+        FreeFlightPhysics.Quat prev = shipQuatPrev;
+        if (cur == null || prev == null) {
+            return null;
+        }
+        return FreeFlightPhysics.slerp(prev, cur, partialTicks);
+    }
+
     /**
      * Once per client tick: keep the world aim glued to the deck as the ship turns under a crew
      * member whose mouse is still. Runs with a GUI open too - the ship does not stop rolling while
-     * he reads a chest.
+     * he reads a chest. Also samples the anchor attitude for the camera's per-frame slerp.
      */
     public static void clientTick(Entity player) {
         if (sync(player)) {
+            FreeFlightPhysics.Quat sampled = VSIntegration.shipAttitudeFor(player);
+            if (sampled != null) {
+                shipQuatPrev = shipQuatCur == null ? sampled : shipQuatCur;
+                shipQuatCur = sampled;
+            }
             derive(player, null);
+        } else {
+            shipQuatPrev = null;
+            shipQuatCur = null;
         }
     }
 
