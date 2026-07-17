@@ -45,6 +45,23 @@ public final class DeckLook {
 
     private DeckLook() {}
 
+    static {
+        // The movement half of the one-transform rule: the walk basis consumes the SAME deck
+        // heading the mouse turns, instead of re-deriving it from the world-yaw projection
+        // (which skews on a rolled ship and degenerates when the deck goes vertical). Installed
+        // here so a dedicated server, which never loads this client class, keeps the fallback.
+        ShipFrameTravel.clientDeckLookYaw = DeckLook::heldDeckYawFor;
+    }
+
+    /** The held deck heading for {@code entity}, or {@code null} when this client does not own
+     *  its look (not the local player, or the deck look is not engaged). */
+    private static Float heldDeckYawFor(net.minecraft.entity.EntityLivingBase entity) {
+        if (!active || entity == null || entity != Minecraft.getMinecraft().player) {
+            return null;
+        }
+        return (float) deckYawDeg;
+    }
+
     // ---- Client-observable state (read by the deck-look e2e through readStaticField). NOT
     // test-gated: harness child JVMs run without test mode, so a gated static is invisible to
     // the tests that pin this contract. ----

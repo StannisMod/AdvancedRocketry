@@ -1315,7 +1315,16 @@ public final class ShipFrameTravel {
         }
     }
 
-    /** The entity's facing, as a yaw in the ship frame: his world heading, rotated into that frame.
+    /** Client-installed provider of the LOCAL player's held deck-frame heading (degrees), or
+     *  {@code null} for a body whose look this client does not hold. A real player's aboard
+     *  movement is client-authoritative, so the walk basis may consume the client's deck look
+     *  directly; everything else (mobs, a missing deck look) falls back to the world->deck
+     *  mapping below. Installed once from the client (the deck-look class); stays {@code null}
+     *  on a dedicated server. */
+    public static volatile java.util.function.Function<EntityLivingBase, Float> clientDeckLookYaw = null;
+
+    /** The entity's facing, as a yaw in the ship frame: the held deck heading when this client
+     *  owns the look, else his world heading rotated into that frame.
      *  YAW-ONLY (look pitch zeroed), exactly as the render body-yaw path does
      *  ({@code ShipFrameCamera.deckYawDeg}). A walk basis must not swing with look pitch: on a tilted deck
      *  the FULL look vector's ship-frame XZ heading DOES depend on pitch (world {@code +Y} leaks into ship
@@ -1323,6 +1332,18 @@ public final class ShipFrameTravel {
      *  collapsed to one fixed heading when he looked along the deck normal - the natural pose walking an
      *  inverted deck, which read as inverted/rotated WASD. Vanilla walks by yaw alone for the same reason. */
     private static float deckYawDeg(EntityLivingBase entity, String shipId) {
+        // One transform for input, aim and movement: when this client HOLDS the body's look in
+        // the deck frame, that stored deck yaw IS the heading the player steers by. The derived
+        // world yaw is only a projection of it - skewed on a rolled ship, and DEGENERATE when
+        // the deck goes vertical (the world look is near the pole, its yaw frozen or swinging),
+        // where mapping it back decoupled walking from the keys entirely.
+        java.util.function.Function<EntityLivingBase, Float> held = clientDeckLookYaw;
+        if (held != null) {
+            Float deckYaw = held.apply(entity);
+            if (deckYaw != null) {
+                return deckYaw;
+            }
+        }
         float yawRad = entity.rotationYaw * 0.017453292F;
         double fx = -MathHelper.sin(yawRad);
         double fz = MathHelper.cos(yawRad);

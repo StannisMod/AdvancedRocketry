@@ -848,11 +848,19 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         //       carries the world aim with it.
         // The stimulus is the real client mouse path (Entity.turn); the observation is the
         // client's own world look; the ship attitude read server-side is the cross-side oracle.
-        buildAndBoardShip(bx, by, bz);
+        double[] ship = buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
         exec("artest player dismount");
         bot().waitTicks(40);
         assertTrue("the ex-pilot must be captured on the deck: " + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+        // Out of the cockpit pocket onto the OPEN top deck while the ship is still upright (the
+        // dismount leaves the body beside the seat, walled in on all four sides - the walk legs
+        // below need runway). The capture then carries this open-deck spot through the rolls.
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(40);
+        assertTrue("the crew member must be captured on the OPEN deck before the roll: "
+                + exec("artest vs deck-capture"),
                 exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
 
         // Roll the ship to ~60 degrees about X and hold it there.
@@ -947,6 +955,66 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("the rendered camera must point along the derived world aim (yaw " + camYaw
                 + " vs " + playerYaw + ", pitch " + camPitch + " vs " + playerPitch + ")",
                 yawDiff < 3.0 && Math.abs(camPitch - playerPitch) < 3.0);
+
+        // (3) The MOVEMENT half of the same transform: on this near-vertical (~85 degree) deck,
+        // holding the REAL forward key must walk the body along the deck heading the mouse
+        // steers. This is the exact attitude where a walk basis built from the world-yaw
+        // projection of a deck-glued aim degenerates (the world look sits near the pole) and
+        // walking decouples from the keys.
+        // Where the body stands on the deck varies run to run (the dismount landing spot follows
+        // physics timing), so any single fixed heading can face a wall 0.1 blocks away and the
+        // displacement guard goes vacuous (seen live: input fine, travel resolving, ~0.10 blocks
+        // and a horizontal collision). Walk all FOUR deck headings - turned between legs by the
+        // REAL mouse, which re-exercises the deck-relative turn - and judge the heading contract
+        // on the leg with the most runway; at least one of four must be open on a walkable deck.
+        double[] q85 = shipQuatFromInfo(shipInfo(bx, by, bz));
+        double bestMag = -1.0, bestWalkedYaw = 0.0, bestHeldYaw = 0.0;
+        StringBuilder legs = new StringBuilder();
+        for (int dir = 0; dir < 4; dir++) {
+            if (dir > 0) {
+                bot().turnLook(600f, 0f); // +90 degrees of deck yaw
+                bot().waitTicks(2);
+            }
+            double heldDeckYaw = clientDouble(DECK_LOOK, "deckYawDeg");
+            String infoW0 = shipInfo(bx, by, bz);
+            double[] p0 = clientPos();
+            double[] s0 = {readDouble(infoW0, POS_X), readDouble(infoW0, POS_Y),
+                    readDouble(infoW0, POS_Z)};
+            try {
+                for (int i = 0; i < 12; i++) {
+                    bot().holdKey(Keyboard.KEY_W); // re-asserted per tick against key-state churn
+                    bot().waitTicks(1);
+                }
+            } finally {
+                bot().releaseKey(Keyboard.KEY_W);
+            }
+            bot().waitTicks(4);
+            double[] p1 = clientPos();
+            String infoW1 = shipInfo(bx, by, bz);
+            double[] s1 = {readDouble(infoW1, POS_X), readDouble(infoW1, POS_Y),
+                    readDouble(infoW1, POS_Z)};
+            // The walk displacement, with the ship's own drift removed, in the DECK frame.
+            double[] walkWorld = {p1[0] - p0[0] - (s1[0] - s0[0]), p1[1] - p0[1] - (s1[1] - s0[1]),
+                    p1[2] - p0[2] - (s1[2] - s0[2])};
+            double[] walkDeck = rotateByConjugate(q85, walkWorld);
+            double planeMag = Math.sqrt(walkDeck[0] * walkDeck[0] + walkDeck[2] * walkDeck[2]);
+            double walkedYaw = Math.toDegrees(Math.atan2(-walkDeck[0], walkDeck[2]));
+            legs.append(String.format(java.util.Locale.ROOT,
+                    "[dir%d held=%.1f walked=%.1f mag=%.2f onDeck=%s] ", dir, heldDeckYaw,
+                    walkedYaw, planeMag, clientString(SHIP_FRAME_TRAVEL, "lastOnDeck")));
+            if (planeMag > bestMag) {
+                bestMag = planeMag;
+                bestWalkedYaw = walkedYaw;
+                bestHeldYaw = heldDeckYaw;
+            }
+        }
+        System.out.println("[crewcap] deck-walk best mag=" + bestMag + " walked=" + bestWalkedYaw
+                + " held=" + bestHeldYaw + " :: " + legs);
+        assertTrue("holding W must actually walk the body along the deck in at least one of four "
+                + "deck headings (best " + bestMag + " blocks) :: " + legs, bestMag > 0.4);
+        assertTrue("on a ~90-degree deck the walk direction must match the deck heading the "
+                + "mouse steers (walked " + bestWalkedYaw + " deg, held " + bestHeldYaw
+                + " deg) :: " + legs, Math.abs(wrap180(bestWalkedYaw - bestHeldYaw)) < 30.0);
     }
 
     private static final String DECK_LOOK = "zmaster587.advancedRocketry.client.DeckLook";
@@ -961,16 +1029,42 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 Math.cos(yaw) * Math.cos(pitch)};
     }
 
+    /** The ship's attitude quat {w,x,y,z} from the server-side ship-info (the cross-side oracle). */
+    private double[] shipQuatFromInfo(String info) {
+        return new double[]{
+                readDouble(info, Pattern.compile("\"qw\":(-?[0-9.E\\-]+)")),
+                readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)")),
+                readDouble(info, Pattern.compile("\"qy\":(-?[0-9.E\\-]+)")),
+                readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"))};
+    }
+
     /** The ship's up axis in world coordinates, from the server-side ship-info quat (the oracle). */
     private double[] shipUpFromInfo(String info) {
-        double qw = readDouble(info, Pattern.compile("\"qw\":(-?[0-9.E\\-]+)"));
-        double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
-        double qy = readDouble(info, Pattern.compile("\"qy\":(-?[0-9.E\\-]+)"));
-        double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
+        double[] q = shipQuatFromInfo(info);
+        double qw = q[0], qx = q[1], qy = q[2], qz = q[3];
         return new double[]{
                 2.0 * (qx * qy - qw * qz),
                 1.0 - 2.0 * (qx * qx + qz * qz),
                 2.0 * (qy * qz + qw * qx)};
+    }
+
+    /** Rotate {@code v} by the CONJUGATE of quat {@code q} (world direction into the ship frame). */
+    private static double[] rotateByConjugate(double[] q, double[] v) {
+        double w = q[0], x = -q[1], y = -q[2], z = -q[3];
+        double xx = x * x, yy = y * y, zz = z * z;
+        double xy = x * y, xz = x * z, yz = y * z;
+        double wx = w * x, wy = w * y, wz = w * z;
+        return new double[]{
+                v[0] * (1 - 2 * (yy + zz)) + v[1] * 2 * (xy - wz) + v[2] * 2 * (xz + wy),
+                v[0] * 2 * (xy + wz) + v[1] * (1 - 2 * (xx + zz)) + v[2] * 2 * (yz - wx),
+                v[0] * 2 * (xz - wy) + v[1] * 2 * (yz + wx) + v[2] * (1 - 2 * (xx + yy))};
+    }
+
+    /** The client's own position, from what it reports. */
+    private double[] clientPos() throws Exception {
+        com.google.gson.JsonObject st = bot().reportState();
+        return new double[]{st.get("playerX").getAsDouble(), st.get("playerY").getAsDouble(),
+                st.get("playerZ").getAsDouble()};
     }
 
     private static double dot(double[] a, double[] b) {
