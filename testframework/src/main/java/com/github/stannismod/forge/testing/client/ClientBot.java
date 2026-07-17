@@ -34,6 +34,16 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command("wait_world")));
     }
 
+    /**
+     * A REAL relog: quits the current server connection and reconnects to the same address,
+     * exactly as the player's disconnect + rejoin would. The server performs a full logout
+     * (player data saved to disk) and a fresh login; the client rebuilds its world and player
+     * entity. Follow with {@link #waitForWorld()} - the reconnect is asynchronous.
+     */
+    public void reconnect() throws IOException {
+        assertOk(execute(command("reconnect")));
+    }
+
     public void waitTicks(int ticks) throws IOException {
         JsonObject command = command("wait_ticks");
         command.addProperty("ticks", ticks);

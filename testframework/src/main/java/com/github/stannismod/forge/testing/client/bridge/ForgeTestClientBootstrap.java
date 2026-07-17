@@ -483,6 +483,37 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("pitch", pitch);
                     return response;
                 });
+            case "reconnect":
+                return runOnClientThread(() -> {
+                    // A REAL relog: quit the server connection and reconnect to the same
+                    // address, exactly as the disconnect button + server rejoin would. The
+                    // server sees a full player logout (data saved) and a fresh login; the
+                    // client rebuilds its world and player entity. The control bridge lives
+                    // at JVM level and survives. Callers follow with wait_world.
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.getConnection() == null || mc.world == null) {
+                        response.addProperty("applied", false);
+                        return response;
+                    }
+                    java.net.SocketAddress remote =
+                            mc.getConnection().getNetworkManager().getRemoteAddress();
+                    if (!(remote instanceof java.net.InetSocketAddress)) {
+                        response.addProperty("applied", false);
+                        return response;
+                    }
+                    java.net.InetSocketAddress addr = (java.net.InetSocketAddress) remote;
+                    String host = addr.getAddress().getHostAddress();
+                    int port = addr.getPort();
+                    mc.world.sendQuittingDisconnectingPacket();
+                    mc.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
+                    mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(
+                            new net.minecraft.client.gui.GuiMainMenu(), mc, host, port));
+                    response.addProperty("applied", true);
+                    response.addProperty("host", host);
+                    response.addProperty("port", port);
+                    return response;
+                });
             case "turn_look":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
