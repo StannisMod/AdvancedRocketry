@@ -150,6 +150,12 @@ public final class SpaceManager {
         metaOf(coord.cellKey()).dirty = true;
     }
 
+    /** {@code true} iff {@code coord}'s cell has diverged from its seed (an eviction will flush it). */
+    public boolean isDirty(GalacticCoord coord) {
+        CellMeta m = meta.get(coord.cellKey());
+        return m != null && m.dirty;
+    }
+
     /** Set/clear the player-protected flag on {@code coord}'s cell (protected cells are never GC'd). */
     public void setClaimed(GalacticCoord coord, boolean claimed) {
         metaOf(coord.cellKey()).claimed = claimed;

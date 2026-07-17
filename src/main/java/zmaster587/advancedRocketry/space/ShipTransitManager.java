@@ -3,6 +3,8 @@ package zmaster587.advancedRocketry.space;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
+import java.util.function.LongSupplier;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -63,21 +65,27 @@ public final class ShipTransitManager {
 
     /** Per-ship in-flight state. */
     private static final class Transit {
+        final GalacticCoord origin;
         final GalacticCoord target;
         final HyperspaceTiles.Tile tile;
         final BlockPos hyperAnchor;
         final long speed;
+        final long arrivalTick;     // world-time tick the flight is expected to complete (linear estimate)
+        long lastTicked;            // world-time of the last advance (drives the offline-progress Δ)
         ShipTransit integrator;
         boolean targetMaterialized; // the target cell has been loaded (refcount handoff, half 2, done once)
         int targetSlotDim;          // the slot the target cell is bound to (valid once targetMaterialized)
         int arrivalAttempts;        // retries of a stalled arrival crossing (async VS assembly)
 
-        Transit(GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor, long speed,
-                ShipTransit integrator) {
+        Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
+                long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
+            this.origin = origin;
             this.target = target;
             this.tile = tile;
             this.hyperAnchor = hyperAnchor;
             this.speed = speed;
+            this.arrivalTick = arrivalTick;
+            this.lastTicked = nowTick;
             this.integrator = integrator;
         }
     }
@@ -85,12 +93,24 @@ public final class ShipTransitManager {
     private final SpaceManager space;
     private final HyperspaceTiles tiles;
     private final Crosser crosser;
+    /** The durable ledger to keep in sync (IN_TRANSIT on depart, SETTLED on arrival). Null in state-machine unit tests. */
+    private final ShipLedger ledger;
+    /** Persist-safe world-time clock, stamping {@code arrivalTick}/{@code lastTicked}. */
+    private final LongSupplier clock;
     private final Map<String, Transit> transits = new LinkedHashMap<>();
 
+    /** State-machine only: no ledger sync, a zero clock. Used by the transit-wiring unit tests. */
     public ShipTransitManager(SpaceManager space, HyperspaceTiles tiles, Crosser crosser) {
+        this(space, tiles, crosser, null, () -> 0L);
+    }
+
+    public ShipTransitManager(SpaceManager space, HyperspaceTiles tiles, Crosser crosser,
+                              ShipLedger ledger, LongSupplier clock) {
         this.space = space;
         this.tiles = tiles;
         this.crosser = crosser;
+        this.ledger = ledger;
+        this.clock = clock;
     }
 
     /**
@@ -115,8 +135,13 @@ public final class ShipTransitManager {
         }
         // Refcount handoff, half 1: the ship has left the origin cell.
         space.dematerialize(origin);
-        transits.put(shipId, new Transit(target, tile, hyperAnchor, Math.max(1L, speedBlocksPerTick),
+        long speed = Math.max(1L, speedBlocksPerTick);
+        long now = clock.getAsLong();
+        // Linear ETA: the integrator steps `speed` blocks/tick until the final within-reach snap.
+        long arrivalTick = now + (long) Math.ceil(origin.distanceTo(target) / (double) speed);
+        transits.put(shipId, new Transit(origin, target, tile, hyperAnchor, speed, arrivalTick, now,
                 new ShipTransit(origin, target)));
+        ledgerBeginTransit(shipId, target);
         return true;
     }
 
@@ -129,11 +154,13 @@ public final class ShipTransitManager {
         if (transits.isEmpty()) {
             return;
         }
+        long now = clock.getAsLong();
         Iterator<Map.Entry<String, Transit>> it = transits.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, Transit> entry = it.next();
             Transit t = entry.getValue();
             t.integrator = t.integrator.advance(t.speed);
+            t.lastTicked = now;
             if (!t.integrator.arrived()) {
                 continue; // still en route - parked, coordinate advanced logically
             }
@@ -146,6 +173,10 @@ public final class ShipTransitManager {
             if (arrivedAt != null) {
                 tiles.free(t.tile);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
+                // Record the arrival in the durable ledger (no longer amnesiac) and mark the arrived cell
+                // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #46).
+                ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
+                space.markDirty(t.target);
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // The hyperspace ship never became crossable (should not happen - assembly is async but
                 // completes in a few ticks). Give up: undo the target materialization, free the lane.
@@ -173,5 +204,42 @@ public final class ShipTransitManager {
     public double remainingDistance(String shipId) {
         Transit t = transits.get(shipId);
         return t == null ? -1.0 : t.integrator.remainingDistance();
+    }
+
+    /** Estimated arrival tick (world-time) for {@code shipId}, or {@code -1} if not in transit. Tunable ETA. */
+    public long arrivalTick(String shipId) {
+        Transit t = transits.get(shipId);
+        return t == null ? -1L : t.arrivalTick;
+    }
+
+    // ── Durable-ledger sync (a no-op when no ledger is wired, e.g. the state-machine unit tests) ──
+
+    private void ledgerBeginTransit(String shipId, GalacticCoord target) {
+        if (ledger == null) {
+            return;
+        }
+        UUID id = toUuid(shipId);
+        if (id != null) {
+            ledger.beginTransit(id, target);
+        }
+    }
+
+    private void ledgerSettle(String shipId, GalacticCoord coord, int slotDim) {
+        if (ledger == null) {
+            return;
+        }
+        UUID id = toUuid(shipId);
+        if (id != null) {
+            ledger.settle(id, coord, slotDim);
+        }
+    }
+
+    /** The transit map is keyed by the AR ship UUID string; a non-UUID key (test fixtures) skips the sync. */
+    private static UUID toUuid(String shipId) {
+        try {
+            return UUID.fromString(shipId);
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
     }
 }

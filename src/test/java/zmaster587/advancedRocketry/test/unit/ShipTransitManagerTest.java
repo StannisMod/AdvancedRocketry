@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.test.unit;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.Test;
 
@@ -9,12 +10,14 @@ import net.minecraft.util.math.BlockPos;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.HyperspaceTiles;
+import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.ShipTransitManager;
 import zmaster587.advancedRocketry.space.SlotBinder;
 import zmaster587.advancedRocketry.space.SpaceManager;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -172,6 +175,46 @@ public class ShipTransitManagerTest {
         assertFalse(mgr.isInTransit("s"));
         assertEquals("lane returned", 0, tiles.inUseCount());
         assertTrue("origin NOT released on a failed depart", space.isLoaded(cell(1)));
+    }
+
+    @Test
+    public void beginTransitRecordsInTransitInTheLedger() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipLedger ledger = new ShipLedger();
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                ledger, () -> 1000L);
+        UUID ship = UUID.randomUUID();
+
+        int originDim = space.materialize(cell(1));
+        assertTrue(mgr.beginTransit(ship.toString(), cell(1), originDim, new BlockPos(0, 64, 0),
+                cell(2), ARRIVE_IN_ONE_TICK));
+
+        ShipLedger.Entry e = ledger.get(ship);
+        assertNotNull("the ledger now records the in-flight ship (no depart amnesia)", e);
+        assertEquals(ShipLedger.State.IN_TRANSIT, e.state);
+        assertEquals("ledger holds the transit TARGET", cell(2), e.coord);
+        assertTrue("an ETA (arrivalTick) is computed from now", mgr.arrivalTick(ship.toString()) > 1000L);
+    }
+
+    @Test
+    public void arrivalSettlesTheLedgerAndMarksTheCellDirty() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipLedger ledger = new ShipLedger();
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                ledger, () -> 0L);
+        UUID ship = UUID.randomUUID();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship.toString(), cell(1), originDim, new BlockPos(0, 64, 0),
+                cell(2), ARRIVE_IN_ONE_TICK);
+        mgr.tick(); // distance 4,000,000 < speed 5,000,000 => arrives this tick
+
+        ShipLedger.Entry e = ledger.get(ship);
+        assertNotNull(e);
+        assertEquals("arrival settles the ledger (no longer amnesiac)", ShipLedger.State.SETTLED, e.state);
+        assertEquals("settled at the target cell", cell(2), e.coord);
+        assertTrue("the arrived cell is marked dirty so an eviction flushes it (closes ledger #46)",
+                space.isDirty(cell(2)));
     }
 
     @Test

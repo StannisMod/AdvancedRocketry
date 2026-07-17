@@ -139,14 +139,15 @@ public final class SpaceSubsystem {
                 parseGcPolicy(cfg.spaceCellGcPolicy),
                 cfg.spaceCellMaxAgeTicks,
                 cfg.spaceMaxStoredCells);
-        instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::serverTickCount, mgrConfig,
+        instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::worldTime, mgrConfig,
                 SpaceSubsystem::onForcedTier1Eviction);
         shipLedger = new ShipLedger();
-        transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser());
+        transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser(),
+                shipLedger, SpaceSubsystem::worldTime);
         entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
-                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::serverTickCount);
+                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::worldTime);
         descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
-                new VSDescentPasteResolver(), SpaceSubsystem::serverTickCount);
+                new VSDescentPasteResolver(), SpaceSubsystem::worldTime);
         gcTickCounter = 0;
         pressureGcRequested = false;
         AdvancedRocketry.logger.info("[SPACE] subsystem online: pool={} gcPolicy={} maxStored={} maxAgeTicks={}",
@@ -223,10 +224,18 @@ public final class SpaceSubsystem {
         }
     }
 
-    /** Server tick count, the {@link SpaceManager} clock (drives last-visit / GC age). */
-    private static long serverTickCount() {
+    /**
+     * The overworld's total world time — the persist-safe clock for the space subsystem (last-visit /
+     * GC age, transit {@code arrivalTick}/{@code lastTicked}). Unlike {@code getTickCounter()} it survives
+     * a restart, so a persisted age/ETA stays meaningful across reboots (universe-model §7 lazy-catch-up).
+     */
+    private static long worldTime() {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
-        return server != null ? server.getTickCounter() : 0L;
+        if (server == null) {
+            return 0L;
+        }
+        net.minecraft.world.WorldServer overworld = server.getWorld(0);
+        return overworld != null ? overworld.getTotalWorldTime() : 0L;
     }
 
     /** Pool-pressure signal: a live bubble slot was force-evicted because the working set is saturated. */
