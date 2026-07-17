@@ -6,7 +6,9 @@ import org.junit.Test;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.ShipLedgerData;
+import zmaster587.advancedRocketry.space.TransitRecord;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -102,5 +104,36 @@ public class ShipLedgerDataTest {
         assertEquals(11, en.slotDim);
         assertEquals(ShipLedger.State.SETTLED, en.state);
         assertFalse("live ledger snapshot is a copy", live.snapshot() == restored.snapshot());
+    }
+
+    @Test
+    public void transitRecordsSurviveWriteReadRoundTrip() {
+        GalacticCoord pos = coord(1, 0, 0, 500, 0, 0);
+        GalacticCoord tgt = coord(2, 0, 0, 0, 0, 0);
+        NBTTagCompound snapshot = new NBTTagCompound();
+        snapshot.setInteger("blocks", 27); // stands in for the StorageChunk NBT (its own round-trip = TransitRecordTest)
+        UUID crew = UUID.randomUUID();
+        TransitRecord rec = new TransitRecord(UUID.randomUUID().toString(), pos, tgt, 4242L, 100L, 9L,
+                java.util.Collections.singletonList(crew), snapshot);
+
+        ShipLedgerData src = new ShipLedgerData();
+        src.saveTransits(java.util.Collections.singletonList(rec));
+
+        // Round-trip through the store's own NBT (the same write/read that hits disk on a world save).
+        ShipLedgerData dst = new ShipLedgerData();
+        dst.readFromNBT(src.writeToNBT(new NBTTagCompound()));
+
+        List<TransitRecord> read = dst.loadTransits();
+        assertEquals("the in-flight transit survives the store's 'transits' NBT round-trip", 1, read.size());
+        TransitRecord r = read.get(0);
+        assertEquals("shipId survives", rec.shipId, r.shipId);
+        assertEquals("position survives", pos, r.position);
+        assertEquals("target survives", tgt, r.target);
+        assertEquals("arrivalTick survives", 4242L, r.arrivalTick);
+        assertEquals("speed survives", 9L, r.speed);
+        assertEquals("crew survives", 1, r.crew.size());
+        assertEquals(crew, r.crew.get(0));
+        assertNotNull("the block snapshot survives (so the persisted transit can rematerialize)", r.snapshot);
+        assertEquals("snapshot payload survives", 27, r.snapshot.getInteger("blocks"));
     }
 }

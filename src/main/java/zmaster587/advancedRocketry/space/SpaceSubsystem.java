@@ -170,6 +170,19 @@ public final class SpaceSubsystem {
         if (data != null) {
             data.loadInto(shipLedger);
             AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", shipLedger.size());
+            // Recreate any in-flight jump so a transit survives a restart: each record advances logically
+            // and, on arrival, pastes its persisted block snapshot into the target cell (the hyperspace
+            // world it was parked in is ephemeral). The ledger is re-marked IN_TRANSIT inside importTransit.
+            if (transitManager != null) {
+                java.util.List<TransitRecord> records = data.loadTransits();
+                for (TransitRecord r : records) {
+                    transitManager.importTransit(r);
+                }
+                if (!records.isEmpty()) {
+                    AdvancedRocketry.logger.info("[SPACE] restored {} in-flight transit(s) from disk",
+                            records.size());
+                }
+            }
         }
     }
 

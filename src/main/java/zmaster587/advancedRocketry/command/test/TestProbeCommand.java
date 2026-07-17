@@ -890,6 +890,8 @@ public class TestProbeCommand extends CommandBase {
     private static zmaster587.advancedRocketry.space.ShipTransitManager transitTm;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitOrigin;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitTarget;
+    /** The last exported transit records (the persist e2e simulates a restart by rebuilding from these). */
+    private static java.util.List<zmaster587.advancedRocketry.space.TransitRecord> transitExport;
 
     // --- Entry e2e state (the entry-on-ramp probe stack; installed into SpaceSubsystem so the
     //     PRODUCTION trigger path runs; cleared by entry-clear).
@@ -967,6 +969,39 @@ public class TestProbeCommand extends CommandBase {
                 transitMgr.dematerialize(transitTarget);
             }
             send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim + "}");
+            return;
+        }
+        // transit-export: re-cut every in-flight transit's block snapshot from hyperspace and stash the
+        // durable records (exactly what onWorldSave persists). Polled until hasSnapshot=true, so the test
+        // waits for the parked hyperspace ship's async assembly to finish before it simulates a restart.
+        if (args.length >= 1 && "transit-export".equalsIgnoreCase(args[0])) {
+            if (transitTm == null) {
+                send(sender, "{\"error\":\"transit not set up\"}");
+                return;
+            }
+            transitExport = transitTm.exportTransits();
+            boolean hasSnapshot = !transitExport.isEmpty() && transitExport.get(0).snapshot != null;
+            send(sender, "{\"ok\":true,\"count\":" + transitExport.size()
+                    + ",\"hasSnapshot\":" + hasSnapshot + "}");
+            return;
+        }
+        // transit-restore: simulate a restart. THROW AWAY the live transit manager (its parked hyperspace
+        // ship is orphaned and can never arrive) and rebuild it from the persisted records ALONE. A restored
+        // transit holds no hyperspace ship, so its arrival can only PASTE the persisted snapshot into the
+        // target cell (completeRestored) - the honest proof that an in-flight jump survives a restart.
+        if (args.length >= 1 && "transit-restore".equalsIgnoreCase(args[0])) {
+            if (transitMgr == null || transitExport == null) {
+                send(sender, "{\"error\":\"nothing exported to restore\"}");
+                return;
+            }
+            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
+                    transitMgr,
+                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                    new zmaster587.advancedRocketry.space.VSShipCrosser());
+            for (zmaster587.advancedRocketry.space.TransitRecord r : transitExport) {
+                transitTm.importTransit(r);
+            }
+            send(sender, "{\"ok\":true,\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
         // entry-setup [poolN]: build the entry-on-ramp stack — a probe-local SpaceManager over a fresh

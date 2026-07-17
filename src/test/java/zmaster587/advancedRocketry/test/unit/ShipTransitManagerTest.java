@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.junit.Test;
 
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.math.BlockPos;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
@@ -50,8 +51,12 @@ public class ShipTransitManagerTest {
     private static final class FakeCrosser implements ShipTransitManager.Crosser {
         final List<String> departs = new ArrayList<>();
         final List<String> arrivals = new ArrayList<>();
+        final List<String> restoredCompletions = new ArrayList<>();
         boolean failDepart;
         int arriveFailCount; // fail the arrival crossing this many times (async-assembly retry), then succeed
+        int completeRestoredFailCount; // fail the restored paste this many times, then succeed
+        NBTTagCompound snapshotToReturn; // what snapshotParked hands back (the re-cut stub)
+        NBTTagCompound sourceSnapshotToReturn; // what snapshotSource hands back (the depart-time floor)
 
         @Override
         public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
@@ -67,6 +72,26 @@ public class ShipTransitManagerTest {
                 return null; // ship not yet crossable in hyperspace (async assembly) - retry next tick
             }
             return new BlockPos(0, 128, 0);
+        }
+
+        @Override
+        public NBTTagCompound snapshotParked(HyperspaceTiles.Tile tile, BlockPos hyperAnchor) {
+            return snapshotToReturn;
+        }
+
+        @Override
+        public NBTTagCompound snapshotSource(int srcSlotDim, BlockPos srcAnchor) {
+            return sourceSnapshotToReturn;
+        }
+
+        @Override
+        public BlockPos completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
+            restoredCompletions.add(targetSlotDim + ":" + (snapshot != null));
+            if (completeRestoredFailCount > 0) {
+                completeRestoredFailCount--;
+                return null; // paste/assembly not up yet - retry next tick
+            }
+            return new BlockPos(0, 200, 0);
         }
     }
 
@@ -270,5 +295,159 @@ public class ShipTransitManagerTest {
         assertFalse("already in transit", mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0),
                 cell(3), 1L));
         assertEquals(1, mgr.inTransitCount());
+    }
+
+    // ── Restored transits (survive a restart): imported from a persisted TransitRecord ──────────────
+
+    @Test
+    public void importedTransitCompletesByPastingItsSnapshotNotCrossingHyperspace() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        ShipLedger ledger = new ShipLedger();
+        FakeCrosser crosser = new FakeCrosser();
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, ledger, () -> 0L);
+        UUID ship = UUID.randomUUID();
+
+        // A record as if persisted before a restart; arrives in one tick (distance < speed).
+        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 10L, 0L,
+                ARRIVE_IN_ONE_TICK, new ArrayList<UUID>(), new NBTTagCompound()));
+
+        assertTrue("the imported record is in transit", mgr.isInTransit(ship.toString()));
+        assertEquals("a restored transit holds no hyperspace lane", 0, tiles.inUseCount());
+        assertEquals("import re-marks the ledger IN_TRANSIT (it persists SETTLED only)",
+                ShipLedger.State.IN_TRANSIT, ledger.get(ship).state);
+
+        mgr.tick(); // arrives -> completeRestored (paste the snapshot), NOT arriveFromHyperspace
+
+        assertFalse(mgr.isInTransit(ship.toString()));
+        assertEquals("a restored arrival pastes its snapshot", 1, crosser.restoredCompletions.size());
+        assertTrue("the persisted snapshot was handed to completeRestored",
+                crosser.restoredCompletions.get(0).endsWith(":true"));
+        assertTrue("no live hyperspace crossing was attempted for a restored transit",
+                crosser.arrivals.isEmpty());
+        assertEquals("no lane to free (restored held none)", 0, tiles.inUseCount());
+        ShipLedger.Entry e = ledger.get(ship);
+        assertEquals("a restored transit settles the ledger on arrival", ShipLedger.State.SETTLED, e.state);
+        assertEquals("settled at the target cell", cell(2), e.coord);
+        assertTrue("the arrived cell is marked dirty so an eviction flushes it", space.isDirty(cell(2)));
+    }
+
+    @Test
+    public void importTransitIsANoOpForAShipAlreadyInTransit() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, new FakeCrosser(), new ShipLedger(),
+                () -> 0L);
+        UUID ship = UUID.randomUUID();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship.toString(), cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 1L);
+        assertEquals(1, tiles.inUseCount());
+
+        // A stray restore of a ship already flying must not spawn a second (restored) transit.
+        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 10L, 0L, 1L,
+                new ArrayList<UUID>(), new NBTTagCompound()));
+
+        assertEquals("still exactly one transit", 1, mgr.inTransitCount());
+        assertEquals("the live lane is untouched", 1, tiles.inUseCount());
+    }
+
+    @Test
+    public void exportRecutsALiveShipSnapshotFromHyperspace() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        NBTTagCompound cut = new NBTTagCompound();
+        cut.setInteger("marker", 42);
+        crosser.snapshotToReturn = cut;
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 7L);
+
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertNotNull("export re-cut the parked ship's block snapshot", r.snapshot);
+        assertEquals("the freshly re-cut snapshot is what gets persisted", 42, r.snapshot.getInteger("marker"));
+    }
+
+    @Test
+    public void exportDoesNotRecutARestoredTransitButKeepsItsImportedSnapshot() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.snapshotToReturn = new NBTTagCompound(); // a would-be re-cut that MUST NOT be used
+        crosser.snapshotToReturn.setInteger("recut", 1);
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        NBTTagCompound imported = new NBTTagCompound();
+        imported.setInteger("imported", 7);
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 10L, 0L, 7L, new ArrayList<UUID>(),
+                imported));
+
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertFalse("a restored transit has no live hyperspace ship to re-cut", r.snapshot.hasKey("recut"));
+        assertEquals("it keeps the snapshot it was imported with", 7, r.snapshot.getInteger("imported"));
+    }
+
+    @Test
+    public void restoredTransitRespectsTheCrewOnlineGate() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                new ShipLedger(), () -> 0L);
+        mgr.setOfflineProgress(new OfflineProgress(OfflineProgress.Mode.CREW_ONLINE, id -> false));
+        String ship = UUID.randomUUID().toString();
+
+        // A restored MANNED transit (crew persisted in the record) with nobody online -> paused.
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 10L, 0L, 1L,
+                java.util.Collections.singletonList(UUID.randomUUID()), new NBTTagCompound()));
+
+        double before = mgr.remainingDistance(ship);
+        mgr.tick();
+        assertEquals("a restored manned crew-online transit is paused while no crew is online",
+                before, mgr.remainingDistance(ship), 0.0);
+        assertTrue("it stays in transit (paused, not dropped)", mgr.isInTransit(ship));
+    }
+
+    @Test
+    public void departCapturesAFloorSnapshotSoAPreAssemblySaveIsNeverSnapshotless() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        NBTTagCompound floor = new NBTTagCompound();
+        floor.setInteger("floor", 1);
+        crosser.sourceSnapshotToReturn = floor; // captured at depart, before the crossing cuts the ship
+        crosser.snapshotToReturn = null;         // hyperspace ship not assembled yet -> re-cut unavailable
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 7L);
+
+        // A save fired NOW (before the hyperspace ship assembled) must still carry a block snapshot, or the
+        // ship is deleted on restart. The depart-time floor guarantees it even though the re-cut returned null.
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertNotNull("a just-departed ship carries its depart-time floor snapshot", r.snapshot);
+        assertEquals("the floor snapshot is what gets persisted before the first re-cut", 1,
+                r.snapshot.getInteger("floor"));
+    }
+
+    @Test
+    public void importTransitDropsASnapshotlessOrBlankRecordInsteadOfCreatingADoomedTransit() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                new ShipLedger(), () -> 0L);
+
+        // Snapshot-less record: the ship's blocks are unrecoverable, so a restored transit would only spin to
+        // MAX_ARRIVAL_ATTEMPTS then silently delete it. Drop it instead.
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 10L, 0L, 1L,
+                new ArrayList<UUID>(), null));
+        assertEquals("a snapshot-less record is not imported as a doomed transit", 0, mgr.inTransitCount());
+
+        // Blank/corrupt id (an absent NBT "shipId" reads as "") is likewise dropped.
+        mgr.importTransit(new TransitRecord("", cell(1), cell(2), 10L, 0L, 1L, new ArrayList<UUID>(),
+                new NBTTagCompound()));
+        assertEquals("a blank-id record is dropped", 0, mgr.inTransitCount());
     }
 }

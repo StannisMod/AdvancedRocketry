@@ -245,6 +245,86 @@ public final class VSIntegration {
     }
 
     /**
+     * Non-destructively snapshot the VS ship whose world BB contains {@code (x,y,z)} as a
+     * {@code StorageChunk} NBT: the same subspace shipyard + Y-band scan {@link #crossShip} cuts, but via a
+     * non-destructive {@code copyWorldBB} (the ship stays parked, unlike the {@code cutWorldBB} in a
+     * crossing). The transit persistence re-cuts a parked hyperspace ship this way at each save point so an
+     * in-flight jump survives a restart. Returns {@code null} when VS is absent or the shipyard is empty.
+     */
+    public static net.minecraft.nbt.NBTTagCompound snapshotShipAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        AxisAlignedBB yard = shipyardBoundsAt(world, x, y, z);
+        if (yard == null) {
+            return null;
+        }
+        int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
+        int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
+        // Scan (and force-load) the shipyard for the ship's actual Y band, then copy a TIGHT box - a
+        // full-height column would carry 256 layers of void into the snapshot NBT.
+        int[] band = scanShipBlockYBand(world, yMinX, yMaxX, yMinZ, yMaxZ);
+        if (band == null) {
+            return null; // shipyard empty (no ship there)
+        }
+        AxisAlignedBB tight = new AxisAlignedBB(yMinX, band[0], yMinZ, yMaxX, band[1] + 1, yMaxZ);
+        zmaster587.advancedRocketry.util.StorageChunk snap =
+                zmaster587.advancedRocketry.util.StorageChunk.copyWorldBB(world, tight);
+        net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+        snap.writeToNBT(nbt);
+        return nbt;
+    }
+
+    /**
+     * Paste a {@code StorageChunk} snapshot NBT (from {@link #snapshotShipAt}) into clear sky at
+     * {@code (dstX,dstY,dstZ)} in {@code dstWorld} and re-assemble it into a VS ship - the block half of a
+     * RESTORED transit's arrival, which has no live source ship to {@link #crossShip}. Mirrors crossShip's
+     * paste tail (force-load the footprint, paste, anchor on the first non-air block, assemble); keep the
+     * two in step. Returns the ship's anchor, or {@code null} when VS is absent or the snapshot is empty.
+     */
+    public static BlockPos pasteAndAssemble(World dstWorld, net.minecraft.nbt.NBTTagCompound snapshot,
+                                            int dstX, int dstY, int dstZ) {
+        if (!isAvailable() || snapshot == null) {
+            return null;
+        }
+        zmaster587.advancedRocketry.util.StorageChunk snap =
+                new zmaster587.advancedRocketry.util.StorageChunk();
+        snap.readFromNBT(snapshot);
+        int width = snap.getSizeX(), depth = snap.getSizeZ(), height = snap.getSizeY() + 2;
+        if (width <= 0 || snap.getSizeY() <= 0 || depth <= 0) {
+            return null; // empty snapshot
+        }
+        // Force-load the destination paste footprint's chunks first (a freshly-materialized cell world may
+        // not have them loaded, in which case setBlockState/isAirBlock see an unloaded all-air region).
+        int dstCxMin = dstX >> 4, dstCxMax = (dstX + width) >> 4;
+        int dstCzMin = dstZ >> 4, dstCzMax = (dstZ + depth) >> 4;
+        for (int cx = dstCxMin; cx <= dstCxMax; cx++) {
+            for (int cz = dstCzMin; cz <= dstCzMax; cz++) {
+                dstWorld.getChunkProvider().provideChunk(cx, cz);
+            }
+        }
+        snap.pasteInWorld(dstWorld, dstX, dstY, dstZ);
+        // The paste landed in clear sky, so the first non-air block in the footprint IS a ship block.
+        BlockPos anchor = null;
+        outer:
+        for (int ey = 0; ey < height; ey++) {
+            for (int ex = 0; ex < width; ex++) {
+                for (int ez = 0; ez < depth; ez++) {
+                    BlockPos p = new BlockPos(dstX + ex, dstY + ey, dstZ + ez);
+                    if (!dstWorld.isAirBlock(p)) {
+                        anchor = p;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (anchor != null) {
+            assembleTier2Ship(dstWorld, anchor);
+        }
+        return anchor;
+    }
+
+    /**
      * The block-space height (Y span, in blocks) of the VS ship whose world BB contains {@code (x,y,z)},
      * or {@code -1} when VS is absent, no ship is there, or its shipyard is empty. A descent paste-height
      * finder needs this BEFORE the crossing to keep the pasted ship under the destination build height

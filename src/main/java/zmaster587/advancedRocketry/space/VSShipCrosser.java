@@ -20,6 +20,10 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     /** Per-lane X offset for arrivals, so ships arriving into one cell from different lanes never overlap. */
     private static final int ARRIVAL_LANE_STRIDE = 64;
 
+    /** Monotonic per-boot counter for RESTORED arrivals (imported only at server start), spreading them
+     *  across the NEGATIVE-X paste band so they never overlap each other or a live arrival. */
+    private int restoredLane;
+
     @Override
     public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
         WorldServer src = DimensionManager.getWorld(srcSlotDim);
@@ -59,5 +63,47 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // Unpark: hand the ship back to free VS physics now that it is in the destination bubble.
         VSIntegration.unparkShipAt(dst, res.anchor.getX() + 0.5, res.anchor.getY() + 0.5, res.anchor.getZ() + 0.5);
         return res.anchor;
+    }
+
+    @Override
+    public net.minecraft.nbt.NBTTagCompound snapshotParked(HyperspaceTiles.Tile tile, BlockPos hyperAnchor) {
+        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        if (hyper == null || hyperAnchor == null) {
+            return null;
+        }
+        // Non-destructive re-cut of the parked ship from its subspace shipyard (the ship stays in flight).
+        return VSIntegration.snapshotShipAt(hyper,
+                hyperAnchor.getX() + 0.5, hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5);
+    }
+
+    @Override
+    public net.minecraft.nbt.NBTTagCompound snapshotSource(int srcSlotDim, BlockPos srcAnchor) {
+        WorldServer src = DimensionManager.getWorld(srcSlotDim);
+        if (src == null || srcAnchor == null) {
+            return null;
+        }
+        // The depart-time floor: snapshot the ship in its origin cell, non-destructively, BEFORE the depart
+        // crossing cuts it. Same subspace-shipyard cut as snapshotParked, just against the source world.
+        return VSIntegration.snapshotShipAt(src,
+                srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5);
+    }
+
+    @Override
+    public BlockPos completeRestored(net.minecraft.nbt.NBTTagCompound snapshot, int targetSlotDim) {
+        WorldServer dst = DimensionManager.getWorld(targetSlotDim);
+        if (dst == null || snapshot == null) {
+            return null;
+        }
+        // Pin the target cell world loaded across the paste + async assembly (same reason as an arrival):
+        // a freshly-materialized pool slot with no occupant would auto-unload at tick end.
+        DimensionManager.keepDimensionLoaded(targetSlotDim, true);
+        // A restored transit holds no hyperspace lane. Paste it in the NEGATIVE-X band, DISJOINT from live
+        // arrivals (which use tile.index*STRIDE, always >= 0), so a restored ship can never collide with a
+        // live-crossing ship pasting into the same cell. Monotonic per boot (restored transits are imported
+        // only at server start, a small set) so restored ships never overlap each other either - no wrap.
+        // The snapshot source is always present (no async wait), so this pastes exactly once - a non-null
+        // anchor on the first call, no retry - never a duplicate paste.
+        int dstX = -ARRIVAL_LANE_STRIDE * (restoredLane++ + 1);
+        return VSIntegration.pasteAndAssemble(dst, snapshot, dstX, ARRIVAL_Y, 0);
     }
 }
