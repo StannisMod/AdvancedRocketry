@@ -36,6 +36,7 @@ public final class SpaceSubsystem {
     private static ShipTransitManager transitManager;
     private static ShipLedger shipLedger;
     private static ShipEntryController entryController;
+    private static DescentController descentController;
     private static int gcTickCounter;
     /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
     private static boolean pressureGcRequested;
@@ -62,17 +63,24 @@ public final class SpaceSubsystem {
         return entryController;
     }
 
+    /** The live descent controller, or {@code null} before server start / in test mode. */
+    public static DescentController descent() {
+        return descentController;
+    }
+
     /**
      * TEST/HEADLESS: install a probe-built stack so the production trigger path (flight-computer
      * tick &rarr; {@link #entry()}) is exercisable under the test harness, where
      * {@link #onServerStarting()} deliberately stands down. Pass nulls to clear.
      */
     public static void installProbeStack(SpaceManager manager, ShipLedger ledger,
-                                         ShipEntryController entry, ShipTransitManager transit) {
+                                         ShipEntryController entry, ShipTransitManager transit,
+                                         DescentController descent) {
         instance = manager;
         shipLedger = ledger;
         entryController = entry;
         transitManager = transit;
+        descentController = descent;
     }
 
     /**
@@ -135,8 +143,10 @@ public final class SpaceSubsystem {
                 SpaceSubsystem::onForcedTier1Eviction);
         shipLedger = new ShipLedger();
         transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser());
-        entryController = new ShipEntryController(instance, shipLedger, new VSShipEntryOps(),
+        entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
                 SpaceSubsystem::launchBodyAddress, SpaceSubsystem::serverTickCount);
+        descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
+                new VSDescentPasteResolver(), SpaceSubsystem::serverTickCount);
         gcTickCounter = 0;
         pressureGcRequested = false;
         AdvancedRocketry.logger.info("[SPACE] subsystem online: pool={} gcPolicy={} maxStored={} maxAgeTicks={}",
@@ -176,6 +186,7 @@ public final class SpaceSubsystem {
         transitManager = null;
         shipLedger = null;
         entryController = null;
+        descentController = null;
         gcTickCounter = 0;
         pressureGcRequested = false;
         HyperspaceWorld.reset();
@@ -248,6 +259,10 @@ public final class SpaceSubsystem {
             // Advance in-flight ENTRIES (crossed, waiting on async re-assembly to re-seat + settle).
             if (entryController != null) {
                 entryController.tick();
+            }
+            // Advance in-flight DESCENTS (the inverse crossing, same async re-seat + settle).
+            if (descentController != null) {
+                descentController.tick();
             }
             boolean run = false;
             if (pressureGcRequested) {

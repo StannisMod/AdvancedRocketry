@@ -1,5 +1,9 @@
 package zmaster587.advancedRocketry.space;
 
+import net.minecraftforge.client.IRenderHandler;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import zmaster587.advancedRocketry.client.render.planet.BoundarySky;
 import zmaster587.advancedRocketry.world.provider.WorldProviderSpace;
 
 /**
@@ -15,6 +19,19 @@ import zmaster587.advancedRocketry.world.provider.WorldProviderSpace;
  * {@link WorldProviderSpace} (void by default).</p>
  */
 public class WorldProviderSpaceSlot extends WorldProviderSpace {
+
+    // Lazily-built descent-boundary sky renderer for this slot (client-only; cached per provider
+    // instance, never rebuilt per frame). Mirrors the private-field lazy pattern of the parent
+    // WorldProviderSpace, since super.getSkyRenderer() runs the rocket/station sky logic we replace.
+    private IRenderHandler boundarySky;
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public IRenderHandler getSkyRenderer() {
+        if (boundarySky == null)
+            boundarySky = new BoundarySky();
+        return boundarySky;
+    }
 
     @Override
     public String getSaveFolder() {

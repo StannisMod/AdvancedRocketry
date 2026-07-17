@@ -12,6 +12,7 @@ import net.minecraft.util.math.BlockPos;
 import zmaster587.advancedRocketry.space.CellWorldMapper;
 import zmaster587.advancedRocketry.space.CrewTransfer;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.space.ShipCrossingService;
 import zmaster587.advancedRocketry.space.ShipEntryController;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.SlotBinder;
@@ -25,7 +26,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Contract tests for the entry on-ramp state machine, driven against the real {@link SpaceManager}
- * with a recording fake {@link ShipEntryController.Ops} (the transit-manager test discipline).
+ * with a recording fake {@link ShipCrossingService.Ops} (the transit-manager test discipline).
  * Pins the decisions: an exhausted pool REFUSES entry as a normal surfaced outcome (message +
  * cooldown, cell not leaked); a started entry settles the ship in the ledger at a ring coordinate
  * OUTSIDE the descent radius (the entry&harr;descent hysteresis contract); the crossed cell is
@@ -53,7 +54,7 @@ public class ShipEntryControllerTest {
     }
 
     /** Recording ops: a ship exists at the launch pad; knobs force each failure mode. */
-    private static final class FakeOps implements ShipEntryController.Ops {
+    private static final class FakeOps implements ShipCrossingService.Ops {
         boolean shipPresent = true;
         boolean failCross;
         int reseatFailCount;

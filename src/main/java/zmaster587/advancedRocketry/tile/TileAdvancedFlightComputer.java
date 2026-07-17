@@ -272,6 +272,45 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // hulk drifting high stays put.
         boolean onPlanetSide =
                 !(world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
+
+        // Descent trigger (the inverse of the entry ceiling check): a SETTLED slot-world ship whose
+        // pilot is flying, closed within the descent radius of a descend-target body, drops into that
+        // body's planet dim. Proximity reads the ledger coord (self-reported above) + the body POIs of
+        // the ship's own cell — no VS enumeration. Only planets/moons with a real dim are targets.
+        if (flying && !onPlanetSide && shipId != null) {
+            zmaster587.advancedRocketry.space.DescentController descentCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
+            zmaster587.advancedRocketry.space.ShipLedger descentLedger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            net.minecraft.server.MinecraftServer server = world.getMinecraftServer();
+            if (descentCtl != null && descentLedger != null && server != null) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry settled = descentLedger.get(shipId);
+                if (settled != null
+                        && settled.state == zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED) {
+                    zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                            zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+                    if (reg != null) {
+                        zmaster587.advancedRocketry.space.GalacticCoord shipCoord = settled.coord;
+                        long radius = zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS;
+                        for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(shipCoord)) {
+                            if (!body.isDescendTarget()) {
+                                continue;
+                            }
+                            double distance = Math.sqrt(shipCoord.distanceSqTo(body.address()));
+                            if (zmaster587.advancedRocketry.space.DescentController
+                                        .shouldTriggerDescent(true, true, distance, radius)
+                                    && descentCtl.requestDescent(world.provider.getDimension(),
+                                            getPos(), shipId, body.dimId())) {
+                                // The crossing started: this tile was cut out of the slot world - stop
+                                // publishing from a stale tick. The re-assembled ship resumes planet-side.
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (flying && onPlanetSide) {
             zmaster587.advancedRocketry.space.ShipEntryController entryCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.entry();

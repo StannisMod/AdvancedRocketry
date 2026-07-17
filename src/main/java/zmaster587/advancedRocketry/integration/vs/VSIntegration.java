@@ -200,20 +200,11 @@ public final class VSIntegration {
         int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
         // The shipyard region holds only this ship, so any non-air block in it is a ship block. Find the
         // ship's real Y band (the claim gives only XZ; the full-height column would clip on paste).
-        int minShipY = Integer.MAX_VALUE, maxShipY = Integer.MIN_VALUE;
-        for (int wx = yMinX; wx < yMaxX; wx++) {
-            for (int wy = 0; wy < 256; wy++) {
-                for (int wz = yMinZ; wz < yMaxZ; wz++) {
-                    if (!srcWorld.isAirBlock(new BlockPos(wx, wy, wz))) {
-                        if (wy < minShipY) minShipY = wy;
-                        if (wy > maxShipY) maxShipY = wy;
-                    }
-                }
-            }
-        }
-        if (minShipY == Integer.MAX_VALUE) {
+        int[] band = scanShipBlockYBand(srcWorld, yMinX, yMaxX, yMinZ, yMaxZ);
+        if (band == null) {
             return new CrossResult(null, false, 0, 0); // source shipyard empty
         }
+        int minShipY = band[0], maxShipY = band[1];
         boolean removed = removeShipRegistrationAt(srcWorld, sx, sy, sz);
         // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
         // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
@@ -251,6 +242,97 @@ public final class VSIntegration {
             assembleTier2Ship(dstWorld, anchor);
         }
         return new CrossResult(anchor, removed, minShipY, maxShipY);
+    }
+
+    /**
+     * The block-space height (Y span, in blocks) of the VS ship whose world BB contains {@code (x,y,z)},
+     * or {@code -1} when VS is absent, no ship is there, or its shipyard is empty. A descent paste-height
+     * finder needs this BEFORE the crossing to keep the pasted ship under the destination build height
+     * (a paste that clips at Y=256 breaks the {@code FIND_ALL_BLOCKS} flood-fill). Same subspace scan
+     * {@link #crossShip} runs internally. A safe no-op ({@code -1}) when VS is absent.
+     */
+    public static int shipBlockHeight(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return -1;
+        }
+        AxisAlignedBB yard = shipyardBoundsAt(world, x, y, z);
+        if (yard == null) {
+            return -1;
+        }
+        int[] band = scanShipBlockYBand(world, (int) yard.minX, (int) yard.maxX,
+                (int) yard.minZ, (int) yard.maxZ);
+        return band == null ? -1 : (band[1] - band[0]) + 1;
+    }
+
+    /**
+     * Scan the subspace shipyard XZ footprint over the full {@code 0..256} column for the ship's actual
+     * Y band ({@code {minY, maxY}}), or {@code null} when the region holds no blocks. The shipyard holds
+     * only this one ship, so any non-air block is a ship block. Shared by {@link #crossShip} (tight cut)
+     * and {@link #shipBlockHeight}.
+     */
+    /**
+     * A single subspace block position of the VS ship whose world BB contains {@code (x,y,z)}, or
+     * {@code null} when VS is absent / no ship is there / its shipyard is empty. Located through the
+     * queryable ship registry (headless-reliable, unlike a loaded-TE scan), so a test harness can hand
+     * a ship-managing block to a controller that addresses a ship by one of its blocks.
+     */
+    public static net.minecraft.util.math.BlockPos shipBlockAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        AxisAlignedBB yard = shipyardBoundsAt(world, x, y, z);
+        if (yard == null) {
+            return null;
+        }
+        int minX = (int) yard.minX, maxX = (int) yard.maxX;
+        int minZ = (int) yard.minZ, maxZ = (int) yard.maxZ;
+        // Force-load the shipyard chunks first: a headless server holds the ship's physo loaded but its
+        // far subspace chunks may not be chunk-loaded, so an un-loaded scan reads all-air.
+        if (world instanceof net.minecraft.world.WorldServer) {
+            net.minecraft.world.WorldServer ws = (net.minecraft.world.WorldServer) world;
+            for (int cx = minX >> 4; cx <= (maxX >> 4); cx++) {
+                for (int cz = minZ >> 4; cz <= (maxZ >> 4); cz++) {
+                    ws.getChunkProvider().provideChunk(cx, cz);
+                }
+            }
+        }
+        for (int wx = minX; wx < maxX; wx++) {
+            for (int wy = 0; wy < 256; wy++) {
+                for (int wz = minZ; wz < maxZ; wz++) {
+                    BlockPos p = new BlockPos(wx, wy, wz);
+                    if (!world.isAirBlock(p)) {
+                        return p;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int[] scanShipBlockYBand(World world, int minX, int maxX, int minZ, int maxZ) {
+        // Force-load the shipyard chunks first so the scan reads the ship's real blocks, not an
+        // unloaded all-air region (a headless server may hold the physo loaded but not chunk-load its
+        // far subspace shipyard). A no-op for chunks already loaded (e.g. an active planet-side ship).
+        if (world instanceof net.minecraft.world.WorldServer) {
+            net.minecraft.world.WorldServer ws = (net.minecraft.world.WorldServer) world;
+            for (int cx = minX >> 4; cx <= (maxX >> 4); cx++) {
+                for (int cz = minZ >> 4; cz <= (maxZ >> 4); cz++) {
+                    ws.getChunkProvider().provideChunk(cx, cz);
+                }
+            }
+        }
+        int minShipY = Integer.MAX_VALUE, maxShipY = Integer.MIN_VALUE;
+        for (int wx = minX; wx < maxX; wx++) {
+            for (int wy = 0; wy < 256; wy++) {
+                for (int wz = minZ; wz < maxZ; wz++) {
+                    if (!world.isAirBlock(new BlockPos(wx, wy, wz))) {
+                        if (wy < minShipY) minShipY = wy;
+                        if (wy > maxShipY) maxShipY = wy;
+                    }
+                }
+            }
+        }
+        return minShipY == Integer.MAX_VALUE ? null : new int[]{minShipY, maxShipY};
     }
 
     /**

@@ -12,12 +12,14 @@ import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 /**
- * Production {@link ShipEntryController.Ops}: carries the entry state machine's decisions out
+ * Production {@link ShipCrossingService.Ops}: carries a crossing state machine's decisions out
  * against live worlds — the proven per-ship crossing, the rider-carrying rigid pose teleport, and
- * the crew re-seat. Mirrors {@link VSShipCrosser}'s role for the transit state machine. Safe
- * no-ops (nulls/false) when VS is absent or a world is missing, so an entry aborts cleanly.
+ * the crew re-seat. Shared by the entry on-ramp ({@link ShipEntryController}) and the planet
+ * descent ({@link DescentController}); mirrors {@link VSShipCrosser}'s role for the transit state
+ * machine. Safe no-ops (nulls/false) when VS is absent or a world is missing, so a crossing aborts
+ * cleanly.
  */
-public final class VSShipEntryOps implements ShipEntryController.Ops {
+public final class VSShipCrossingOps implements ShipCrossingService.Ops {
 
     /** Rider-carry box half-width around a ship pose — the proven probe recipe's range. */
     private static final double RIDER_RANGE = 8.0;
@@ -37,10 +39,10 @@ public final class VSShipEntryOps implements ShipEntryController.Ops {
     }
 
     @Override
-    public BlockPos cross(int srcDimId, double[] srcShipPos, int slotDim,
+    public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
                           int pasteX, int pasteY, int pasteZ) {
         WorldServer src = DimensionManager.getWorld(srcDimId);
-        WorldServer dst = DimensionManager.getWorld(slotDim);
+        WorldServer dst = DimensionManager.getWorld(destDim);
         if (src == null || dst == null || srcShipPos == null) {
             return null;
         }
@@ -55,22 +57,22 @@ public final class VSShipEntryOps implements ShipEntryController.Ops {
     }
 
     @Override
-    public void loadShips(int slotDim) {
-        WorldServer world = DimensionManager.getWorld(slotDim);
+    public void loadShips(int destDim) {
+        WorldServer world = DimensionManager.getWorld(destDim);
         if (world != null) {
             VSIntegration.loadAllShips(world);
         }
     }
 
     @Override
-    public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew) {
-        WorldServer world = DimensionManager.getWorld(slotDim);
+    public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew) {
+        WorldServer world = DimensionManager.getWorld(destDim);
         return world != null && CrewTransfer.reseat(world, anchor, crew);
     }
 
     @Override
-    public boolean teleportPoseWithRiders(int slotDim, BlockPos anchor, double px, double py, double pz) {
-        WorldServer world = DimensionManager.getWorld(slotDim);
+    public boolean teleportPoseWithRiders(int destDim, BlockPos anchor, double px, double py, double pz) {
+        WorldServer world = DimensionManager.getWorld(destDim);
         if (world == null) {
             return false;
         }
@@ -95,8 +97,8 @@ public final class VSShipEntryOps implements ShipEntryController.Ops {
     }
 
     @Override
-    public void unparkAt(int slotDim, double px, double py, double pz) {
-        WorldServer world = DimensionManager.getWorld(slotDim);
+    public void unparkAt(int destDim, double px, double py, double pz) {
+        WorldServer world = DimensionManager.getWorld(destDim);
         if (world != null) {
             VSIntegration.unparkShipAt(world, px, py, pz);
         }

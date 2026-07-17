@@ -877,6 +877,9 @@ msg.shipentry.refused=§cSpace is saturated - the ship cannot enter orbit right 
 msg.shipentry.failed=§cThe ascent failed - the ship could not cross into space.
 msg.shipentry.arrived=§aOrbit reached - the ship has entered space.
 msg.shipentry.autotakeoff.blocked=§eAuto-takeoff aborted - the path to orbit is blocked. Reposition and climb manually.
+msg.shipdescent.refused=§cNo clear landing on the surface below - the ship is too tall to fit there. Move and try again.
+msg.shipdescent.failed=§cThe descent failed - the ship could not cross onto the planet.
+msg.shipdescent.arrived=§aDescent complete - the ship has dropped to the surface.
 
 #########################
 ##### TOOLTIP STUFF #####

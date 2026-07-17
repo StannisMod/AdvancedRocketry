@@ -985,11 +985,19 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.ShipEntryController ctl =
                     new zmaster587.advancedRocketry.space.ShipEntryController(
                             entryMgr, entryLedger,
-                            new zmaster587.advancedRocketry.space.VSShipEntryOps(),
+                            new zmaster587.advancedRocketry.space.VSShipCrossingOps(),
                             zmaster587.advancedRocketry.space.SpaceSubsystem::launchBodyAddress,
                             () -> (long) server.getTickCounter());
+            // A descent controller on the SAME manager + ledger, so a descent e2e can enter a ship
+            // through this stack and then descend it back onto a planet dim.
+            zmaster587.advancedRocketry.space.DescentController dctl =
+                    new zmaster587.advancedRocketry.space.DescentController(
+                            entryMgr, entryLedger,
+                            new zmaster587.advancedRocketry.space.VSShipCrossingOps(),
+                            new zmaster587.advancedRocketry.space.VSDescentPasteResolver(),
+                            () -> (long) server.getTickCounter());
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
-                    entryMgr, entryLedger, ctl, null);
+                    entryMgr, entryLedger, ctl, null, dctl);
             // Start from a clean pilot channel: a stale static FF input from a prior test would make the
             // AFC read "a pilot is flying" (in != null) and suppress the auto-takeoff autopilot branch.
             zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
@@ -1078,7 +1086,7 @@ public class TestProbeCommand extends CommandBase {
         // entry-clear: uninstall the probe entry stack and unload its slots (shared-harness
         // state-leak contract). Also clears the static flight-input channel the e2e used as pilot.
         if (args.length >= 1 && "entry-clear".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(null, null, null, null);
+            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(null, null, null, null, null);
             zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
             if (entrySlotDims != null) {
                 for (int dim : entrySlotDims) {
@@ -1089,6 +1097,64 @@ public class TestProbeCommand extends CommandBase {
             entryLedger = null;
             entrySlotDims = null;
             send(sender, "{\"ok\":true}");
+            return;
+        }
+        // descent-begin <slotDim> <ax> <ay> <az> <shipIdStr> <planetDim>: drive requestDescent for a
+        // SETTLED ship, so a descent e2e crosses it from its slot cell into a planet dim.
+        if (args.length >= 7 && "descent-begin".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.DescentController d =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
+            if (d == null) {
+                send(sender, "{\"error\":\"descent not set up\"}");
+                return;
+            }
+            int slotDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.util.math.BlockPos afc = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            java.util.UUID shipId = java.util.UUID.fromString(args[5]);
+            int planetDim = parseIntOr(args[6], Integer.MIN_VALUE);
+            boolean started = d.requestDescent(slotDim, afc, shipId, planetDim);
+            send(sender, "{\"ok\":true,\"started\":" + started + ",\"pending\":" + d.descendingCount() + "}");
+            return;
+        }
+        // descent-status: the in-flight descent count (settle progress).
+        if (args.length >= 1 && "descent-status".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.DescentController d =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
+            send(sender, "{\"ok\":true,\"pending\":" + (d == null ? -1 : d.descendingCount()) + "}");
+            return;
+        }
+        // find-afc <dim>: report a subspace block position + durable ship id of the settled ship in slot
+        // <dim>, so a descent e2e can drive requestDescent for it. Located via the ledger coord (headless
+        // the AFC does not tick, so the coord stays the settle coord) -> world pose -> the queryable ship
+        // registry, NOT a loaded-TE scan (a headless slot ship's blocks are not in loadedTileEntityList).
+        if (args.length >= 2 && "find-afc".equalsIgnoreCase(args[0])) {
+            int slotDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer w = net.minecraftforge.common.DimensionManager.getWorld(slotDim);
+            zmaster587.advancedRocketry.space.ShipLedger ledger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (w == null || ledger == null) {
+                send(sender, "{\"error\":\"world or ledger not ready\"}");
+                return;
+            }
+            for (java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> e
+                    : ledger.snapshot().entrySet()) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
+                if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
+                        || entry.slotDim != slotDim) {
+                    continue;
+                }
+                double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
+                net.minecraft.util.math.BlockPos block =
+                        zmaster587.advancedRocketry.integration.vs.VSIntegration
+                                .shipBlockAt(w, pose[0], pose[1], pose[2]);
+                if (block != null) {
+                    send(sender, "{\"ok\":true,\"found\":true,\"x\":" + block.getX() + ",\"y\":"
+                            + block.getY() + ",\"z\":" + block.getZ() + ",\"shipId\":\"" + e.getKey() + "\"}");
+                    return;
+                }
+            }
+            send(sender, "{\"ok\":true,\"found\":false}");
             return;
         }
         if (args.length >= 1 && "roundtrip".equalsIgnoreCase(args[0])) {
