@@ -154,6 +154,23 @@ public final class SpaceSubsystem {
     }
 
     /**
+     * Server-STARTED hook (worlds are up, MapStorage reachable): restore the persisted ship ledger so
+     * the server's knowledge of every settled ship survives a restart. Runs before any player login.
+     * A no-op when the subsystem stood down (test harness / disabled / no VS -> {@code shipLedger} null).
+     */
+    public static void onServerStarted() {
+        if (shipLedger == null) {
+            return;
+        }
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        ShipLedgerData data = ShipLedgerData.get(server);
+        if (data != null) {
+            data.loadInto(shipLedger);
+            AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", shipLedger.size());
+        }
+    }
+
+    /**
      * The launch BODY's full galactic address for a planet dimension: its zone cell via the
      * universe registry (the C-1 lookup), refined to the body's own local offset when the zone
      * content lists it. {@code null} (no placement / registry unreachable) makes the entry fall
@@ -282,6 +299,22 @@ public final class SpaceSubsystem {
             }
             if (run) {
                 mgr.gc();
+            }
+        }
+
+        /**
+         * Persist the ship ledger on the overworld save cadence (autosave + shutdown both fire this on
+         * dim 0). {@link ShipLedgerData#saveFrom} marks the store dirty so MC writes it in the same save
+         * pass — the {@code UniverseRegistry} persistence idiom. A no-op while the subsystem is down.
+         */
+        @SubscribeEvent
+        public void onWorldSave(net.minecraftforge.event.world.WorldEvent.Save event) {
+            if (shipLedger == null || event.getWorld().provider.getDimension() != 0) {
+                return;
+            }
+            ShipLedgerData data = ShipLedgerData.get(event.getWorld());
+            if (data != null) {
+                data.saveFrom(shipLedger);
             }
         }
     }

@@ -1209,6 +1209,9 @@ public class AdvancedRocketry {
         // catalogue is built (createAndLoadDimensions ran at serverAboutToStart), so place every system.
         zmaster587.advancedRocketry.universe.UniverseRegistry.populate(
                 net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance());
+        // Layer-2: restore the persisted ship ledger (settled positions survive a restart) now that the
+        // overworld MapStorage is reachable, before any player logs in.
+        zmaster587.advancedRocketry.space.SpaceSubsystem.onServerStarted();
     }
 
     @EventHandler
