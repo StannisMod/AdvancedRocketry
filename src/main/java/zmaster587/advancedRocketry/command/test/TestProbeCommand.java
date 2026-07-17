@@ -480,6 +480,18 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
+        if ("planetdefs-path".equalsIgnoreCase(args[0])) {
+            // /artest dim planetdefs-path — absolute path of the world's
+            // advRocketry/planetDefs.xml, so a multi-boot test can edit it
+            // between boots (C129: delete a <planet> node; C130: bump a star's
+            // numPlanets) to simulate a hand-edited / restored / reset config.
+            java.io.File saveRoot = net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory();
+            java.io.File xml = new java.io.File(saveRoot,
+                    zmaster587.advancedRocketry.dimension.DimensionManager.workingPath + "/planetDefs.xml");
+            send(sender, "{\"ok\":true,\"path\":\"" + escapeJson(xml.getAbsolutePath())
+                    + "\",\"exists\":" + xml.exists() + "}");
+            return;
+        }
         send(sender, "{\"error\":\"unknown dim subcommand\"}");
     }
 
@@ -518,6 +530,48 @@ public class TestProbeCommand extends CommandBase {
             info.put("skyColor", floatArrayToList(props.skyColor));
             info.put("sunriseSunsetColors", floatArrayToList(props.sunriseSunsetColors));
             send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 2 && "moon-generate-catch".equalsIgnoreCase(args[0])) {
+            // /artest planet moon-generate-catch <planetDim>
+            //
+            // Repro for C072: run the REAL PlanetGenerateCommand moon path against
+            // a planet whose star id resolves to no star, and report what it
+            // throws. Temporarily orphans the planet's star (setStar to an id with
+            // no StellarBody), invokes execute(...), and restores the original star
+            // in a finally. Pre-fix the command NPEs (getStar dereferenced inside
+            // generateRandom); post-fix a star-existence guard on the moon branch
+            // throws a clean CommandException before any generation. No dimension
+            // is registered in either case (the throw precedes registerDim), so the
+            // registered-dim count must be unchanged both pre and post.
+            int planetDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(planetDim);
+            if (props == null) {
+                send(sender, "{\"error\":\"unknown planet\",\"dim\":" + planetDim + "}");
+                return;
+            }
+            // Find a star id genuinely absent from the star table.
+            int bogusStar = 0x40000000;
+            while (DimensionManager.getInstance().getStar(bogusStar) != null) bogusStar++;
+            int origStar = props.getStarId();
+            int dimsBefore = DimensionManager.getInstance().getRegisteredDimensions().length;
+            String thrown = "null";
+            try {
+                props.setStar(bogusStar);
+                new zmaster587.advancedRocketry.command.sub.planet.PlanetGenerateCommand().execute(
+                        sender.getServer(), sender,
+                        new String[]{String.valueOf(planetDim), "moon", "C072Moon", "10", "10", "10"});
+            } catch (Throwable t) {
+                thrown = t.getClass().getSimpleName();
+            } finally {
+                props.setStar(origStar);
+            }
+            int dimsAfter = DimensionManager.getInstance().getRegisteredDimensions().length;
+            send(sender, "{\"ok\":true,\"planetDim\":" + planetDim
+                    + ",\"bogusStar\":" + bogusStar
+                    + ",\"thrown\":\"" + thrown + "\""
+                    + ",\"dimsBefore\":" + dimsBefore
+                    + ",\"dimsAfter\":" + dimsAfter + "}");
             return;
         }
         send(sender, "{\"error\":\"unknown planet subcommand\"}");
@@ -14755,7 +14809,26 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks>\"}");
+        if (args.length >= 1 && "save-dimensions".equalsIgnoreCase(args[0])) {
+            // /artest server save-dimensions — force the AR galaxy save (writes
+            // advRocketry/temp.dat + advRocketry/planetDefs.xml) so a multi-boot
+            // test can read/edit the world XML deterministically without waiting
+            // for a WorldSaveEvent autosave or relying on shutdown timing.
+            try {
+                DimensionManager.getInstance().saveDimensions(
+                        zmaster587.advancedRocketry.dimension.DimensionManager.workingPath);
+                java.io.File saveRoot = net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory();
+                java.io.File xml = new java.io.File(saveRoot,
+                        zmaster587.advancedRocketry.dimension.DimensionManager.workingPath + "/planetDefs.xml");
+                send(sender, "{\"ok\":true,\"xmlPath\":\"" + escapeJson(xml.getAbsolutePath())
+                        + "\",\"xmlExists\":" + xml.exists() + "}");
+            } catch (Exception e) {
+                send(sender, "{\"error\":\"saveDimensions threw\",\"msg\":\""
+                        + escapeJson(String.valueOf(e.getMessage())) + "\"}");
+            }
+            return;
+        }
+        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | save-dimensions\"}");
     }
 
     /** True if the {@code <slashed>.class} resource is reachable via the

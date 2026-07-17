@@ -356,22 +356,27 @@ public class ARConfiguration {
         fieldList.sort(Comparator.comparing(Field::getName));
 
 
-        // do a Shallow copy
+        // Structural (container-level) copy of every @ConfigProperty field.
+        // Collection/Map fields get a fresh container so the copy never aliases
+        // the source config's Map/List/Set — the old `field.getClass()` test was
+        // always false (getClass() is java.lang.reflect.Field), so every
+        // collection used to be shallow-copied by reference. Element references
+        // are shared, which is fine because config data is treated as immutable.
         for (Field field : fieldList) {
             try {
-                field.getClass().isAssignableFrom(List.class);
-                if (field.getClass().isAssignableFrom(Map.class)) {
-                    Map otherMap = (Map) field.get(config);
-                    Map map = otherMap.getClass().newInstance();
-
-                    for (Object key : otherMap.keySet()) {
-                        Object value = otherMap.get(key);
-                        map.put(key, value);
-                    }
-
-                    field.set(this, map);
-                } else
-                    field.set(this, field.get(config));
+                Class<?> type = field.getType();
+                Object value = field.get(config);
+                if (value != null && Map.class.isAssignableFrom(type)) {
+                    Map copy = (Map) value.getClass().newInstance();
+                    copy.putAll((Map) value);
+                    field.set(this, copy);
+                } else if (value != null && Collection.class.isAssignableFrom(type)) {
+                    Collection copy = (Collection) value.getClass().newInstance();
+                    copy.addAll((Collection) value);
+                    field.set(this, copy);
+                } else {
+                    field.set(this, value);
+                }
             } catch (IllegalArgumentException | InstantiationException | IllegalAccessException e) {
                 e.printStackTrace();
             }

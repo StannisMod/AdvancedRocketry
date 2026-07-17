@@ -1022,7 +1022,12 @@ public class DimensionManager implements IGalaxy {
 
             //Don't load random planets twice on initial load
             //TODO: rework the logic, low priority because low time cost and one time run per world
-            if (!loadedFromXML) {
+            // C130: loadedFromXML is only set on the fresh-world (loadedPlanets
+            // empty) branch, so on a reload where a numPlanets>0 XML is present
+            // (resetFromXml, or a re-copied config) this loop re-ran and accreted
+            // duplicate random planets every load. Gate on the true first-run
+            // discriminator: only generate randoms when no persisted dims exist.
+            if (!loadedFromXML && loadedPlanets.isEmpty()) {
                 //Add planets
                 for (StellarBody star : dimCouplingList.stars) {
                     int numRandomGeneratedPlanets = loader.getMaxNumPlanets(star);
@@ -1030,6 +1035,22 @@ public class DimensionManager implements IGalaxy {
                     generateRandomPlanets(star, numRandomGeneratedPlanets, numRandomGeneratedGasGiants);
                 }
             }
+        }
+
+        // C129: registration authority on load was planetDefs.xml only (the loop
+        // above), while per-dim persisted state lives in temp.dat (loadedPlanets).
+        // A dim present in temp.dat but absent from a hand-edited / restored /
+        // reset XML was therefore never registered and became unreachable (its
+        // DIM<n> save data orphaned). Reconcile: register any persisted dim the
+        // XML pass did not. Idempotent via isDimensionCreated, so normal reloads
+        // (XML and temp.dat in sync) and fresh worlds (loadedPlanets empty) are
+        // no-ops; also heals the missing-XML case where the loop above is skipped.
+        for (Map.Entry<Integer, IDimensionProperties> entry : loadedPlanets.entrySet()) {
+            DimensionProperties props = (DimensionProperties) entry.getValue();
+            if (props == null || DimensionManager.getInstance().isDimensionCreated(entry.getKey()))
+                continue;
+            DimensionManager.getInstance().registerDimNoUpdate(props, props.isNativeDimension);
+            props.setStar(props.getStarId());
         }
 
         // make sure to set dim offset back to original to make things consistant
