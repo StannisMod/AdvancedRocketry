@@ -88,6 +88,10 @@ public class ARConfiguration {
     /** Fallback home-system anchor ("sectorX,sectorY,sectorZ") a tier-2 entry uses when the launch
      *  planet has no galactic placement in the universe registry. */
     public String spaceHomeSystemCoord = "0,0,0";
+    /** Whether an in-flight hyperspace transit advances while its aboard crew are offline: "always"
+     *  (advance whenever the server is up) or "crew-online" (pause while every aboard crew member is
+     *  disconnected). Unmanned transits always advance. */
+    public String spaceTransitOfflineProgress = "always";
     @ConfigProperty
     public int fuelPointsPer10Mb = 10;
     @ConfigProperty(needsSync = true)
@@ -529,6 +533,7 @@ public class ARConfiguration {
         arConfig.spaceCellMaxAgeTicks = config.getInt("spaceCellMaxAgeTicks", PERFORMANCE, 1728000, 0, Integer.MAX_VALUE, "Ticks since last visit before an age/both GC deletes a stored space cell (1728000 = 24h at 20 tps).");
         arConfig.spaceMaxStoredCells = config.getInt("spaceMaxStoredCells", PERFORMANCE, 4096, 0, Integer.MAX_VALUE, "Max modified space cells kept on disk before a count/both GC trims the oldest.");
         arConfig.spaceHomeSystemCoord = config.getString("spaceHomeSystemCoord", PERFORMANCE, "0,0,0", "Fallback home-system galactic anchor 'sectorX,sectorY,sectorZ' used when a tier-2 ship enters space from a planet that has no placement in the universe registry.");
+        arConfig.spaceTransitOfflineProgress = config.getString("spaceTransitOfflineProgress", PERFORMANCE, "always", "Whether an in-flight tier-2 hyperspace transit keeps advancing while its aboard crew are offline: always | crew-online. 'crew-online' pauses a jump while every aboard crew member is disconnected (gate by ANY crew). Unmanned transits always advance.", new String[]{"always", "crew-online"});
 
         //Rockets
         arConfig.rocketRequireFuel = config.get(ROCKET, "rocketsRequireFuel", true, "Require fuel for rockets to fly.").getBoolean();

@@ -1,7 +1,9 @@
 package zmaster587.advancedRocketry.space;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.LongSupplier;
@@ -9,6 +11,7 @@ import java.util.function.LongSupplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.math.BlockPos;
 
 /**
@@ -76,6 +79,8 @@ public final class ShipTransitManager {
         boolean targetMaterialized; // the target cell has been loaded (refcount handoff, half 2, done once)
         int targetSlotDim;          // the slot the target cell is bound to (valid once targetMaterialized)
         int arrivalAttempts;        // retries of a stalled arrival crossing (async VS assembly)
+        final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
+        NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace at save points
 
         Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
                 long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
@@ -97,6 +102,8 @@ public final class ShipTransitManager {
     private final ShipLedger ledger;
     /** Persist-safe world-time clock, stamping {@code arrivalTick}/{@code lastTicked}. */
     private final LongSupplier clock;
+    /** Offline-progress gate; {@code null} = always advance (state-machine unit tests). */
+    private OfflineProgress offlineProgress;
     private final Map<String, Transit> transits = new LinkedHashMap<>();
 
     /** State-machine only: no ledger sync, a zero clock. Used by the transit-wiring unit tests. */
@@ -159,6 +166,9 @@ public final class ShipTransitManager {
         while (it.hasNext()) {
             Map.Entry<String, Transit> entry = it.next();
             Transit t = entry.getValue();
+            if (offlineProgress != null && !offlineProgress.advances(t.crew)) {
+                continue; // crew-online mode, no aboard crew online: the flight is paused this tick
+            }
             t.integrator = t.integrator.advance(t.speed);
             t.lastTicked = now;
             if (!t.integrator.arrived()) {
@@ -210,6 +220,33 @@ public final class ShipTransitManager {
     public long arrivalTick(String shipId) {
         Transit t = transits.get(shipId);
         return t == null ? -1L : t.arrivalTick;
+    }
+
+    /** Install the offline-progress gate (config mode + online check). {@code null} restores always-advance. */
+    public void setOfflineProgress(OfflineProgress policy) {
+        this.offlineProgress = policy;
+    }
+
+    /** Record the aboard crew captured at depart (option A) on an in-flight ship — for the gate + reseat. */
+    public void setTransitCrew(String shipId, List<UUID> crew) {
+        Transit t = transits.get(shipId);
+        if (t != null) {
+            t.crew.clear();
+            if (crew != null) {
+                t.crew.addAll(crew);
+            }
+        }
+    }
+
+    /** Snapshot every in-flight transit as a durable {@link TransitRecord} (for the save point). */
+    public List<TransitRecord> exportTransits() {
+        List<TransitRecord> out = new ArrayList<>();
+        for (Map.Entry<String, Transit> e : transits.entrySet()) {
+            Transit t = e.getValue();
+            out.add(new TransitRecord(e.getKey(), t.integrator.position(), t.target, t.arrivalTick,
+                    t.lastTicked, t.speed, t.crew, t.snapshot));
+        }
+        return out;
     }
 
     // ── Durable-ledger sync (a no-op when no ledger is wired, e.g. the state-machine unit tests) ──

@@ -144,6 +144,8 @@ public final class SpaceSubsystem {
         shipLedger = new ShipLedger();
         transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser(),
                 shipLedger, SpaceSubsystem::worldTime);
+        transitManager.setOfflineProgress(new OfflineProgress(
+                OfflineProgress.parseMode(cfg.spaceTransitOfflineProgress), SpaceSubsystem::isPlayerOnline));
         entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
                 SpaceSubsystem::launchBodyAddress, SpaceSubsystem::worldTime);
         descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
@@ -238,6 +240,12 @@ public final class SpaceSubsystem {
         return overworld != null ? overworld.getTotalWorldTime() : 0L;
     }
 
+    /** Whether {@code player} is currently connected — the offline-progress crew-online check. */
+    private static boolean isPlayerOnline(java.util.UUID player) {
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        return server != null && server.getPlayerList().getPlayerByUUID(player) != null;
+    }
+
     /** Pool-pressure signal: a live bubble slot was force-evicted because the working set is saturated. */
     private static void onForcedTier1Eviction(String cellKey, boolean wasDirty) {
         AdvancedRocketry.logger.warn("[SPACE] pool pressure - force-evicted live cell {} ({}); "
@@ -324,6 +332,9 @@ public final class SpaceSubsystem {
             ShipLedgerData data = ShipLedgerData.get(event.getWorld());
             if (data != null) {
                 data.saveFrom(shipLedger);
+                if (transitManager != null) {
+                    data.saveTransits(transitManager.exportTransits());
+                }
             }
         }
     }

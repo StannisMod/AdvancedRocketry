@@ -10,10 +10,12 @@ import net.minecraft.util.math.BlockPos;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.HyperspaceTiles;
+import zmaster587.advancedRocketry.space.OfflineProgress;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.ShipTransitManager;
 import zmaster587.advancedRocketry.space.SlotBinder;
 import zmaster587.advancedRocketry.space.SpaceManager;
+import zmaster587.advancedRocketry.space.TransitRecord;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -215,6 +217,46 @@ public class ShipTransitManagerTest {
         assertEquals("settled at the target cell", cell(2), e.coord);
         assertTrue("the arrived cell is marked dirty so an eviction flushes it (closes ledger #46)",
                 space.isDirty(cell(2)));
+    }
+
+    @Test
+    public void crewOnlineGatePausesAdvanceWhileNoCrewOnline() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                new ShipLedger(), () -> 0L);
+        // crew-online mode, nobody online -> a MANNED transit is paused.
+        mgr.setOfflineProgress(new OfflineProgress(OfflineProgress.Mode.CREW_ONLINE, id -> false));
+        String ship = UUID.randomUUID().toString();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 1L);
+        mgr.setTransitCrew(ship, java.util.Collections.singletonList(UUID.randomUUID()));
+
+        double before = mgr.remainingDistance(ship);
+        mgr.tick();
+        assertEquals("a manned crew-online transit does not advance while no crew is online",
+                before, mgr.remainingDistance(ship), 0.0);
+        assertTrue("it stays in transit (paused, not dropped)", mgr.isInTransit(ship));
+    }
+
+    @Test
+    public void exportTransitsSnapshotsInFlightShips() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                new ShipLedger(), () -> 500L);
+        String ship = UUID.randomUUID().toString();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 7L);
+
+        List<TransitRecord> records = mgr.exportTransits();
+        assertEquals(1, records.size());
+        TransitRecord r = records.get(0);
+        assertEquals(ship, r.shipId);
+        assertEquals("position starts at origin (not yet ticked)", cell(1), r.position);
+        assertEquals(cell(2), r.target);
+        assertEquals(7L, r.speed);
+        assertTrue("no crew captured yet (option-A capture is the VS layer)", r.crew.isEmpty());
     }
 
     @Test

@@ -9,7 +9,9 @@ import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldSavedData;
 import net.minecraftforge.common.DimensionManager;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +38,8 @@ public final class ShipLedgerData extends WorldSavedData {
 
     /** The persisted snapshot: ship UUID -> its settled ledger entry. */
     private final Map<UUID, ShipLedger.Entry> entries = new HashMap<>();
+    /** The persisted in-flight transit records (a jump survives a restart). */
+    private final List<TransitRecord> transits = new ArrayList<>();
 
     public ShipLedgerData() {
         super(STORAGE_KEY);
@@ -99,6 +103,20 @@ public final class ShipLedgerData extends WorldSavedData {
         }
     }
 
+    /** Replace the persisted transit records (called at the same save point as {@link #saveFrom}). */
+    public void saveTransits(List<TransitRecord> records) {
+        transits.clear();
+        if (records != null) {
+            transits.addAll(records);
+        }
+        markDirty();
+    }
+
+    /** The persisted in-flight transit records (a copy). Empty until a jump is in flight at a save point. */
+    public List<TransitRecord> loadTransits() {
+        return new ArrayList<>(transits);
+    }
+
     /** Test/diagnostic view of the persisted snapshot. */
     public Map<UUID, ShipLedger.Entry> snapshot() {
         return new HashMap<>(entries);
@@ -120,6 +138,11 @@ public final class ShipLedgerData extends WorldSavedData {
             int slotDim = c.getInteger("slotDim");
             entries.put(id, new ShipLedger.Entry(coord, ShipLedger.State.SETTLED, slotDim));
         }
+        transits.clear();
+        NBTTagList transitList = nbt.getTagList("transits", 10);
+        for (int i = 0; i < transitList.tagCount(); i++) {
+            transits.add(TransitRecord.readFromNBT(transitList.getCompoundTagAt(i)));
+        }
     }
 
     @Override
@@ -134,6 +157,12 @@ public final class ShipLedgerData extends WorldSavedData {
             list.appendTag(c);
         }
         nbt.setTag("ships", list);
+
+        NBTTagList transitList = new NBTTagList();
+        for (TransitRecord r : transits) {
+            transitList.appendTag(r.writeToNBT());
+        }
+        nbt.setTag("transits", transitList);
         return nbt;
     }
 }
