@@ -54,6 +54,12 @@ public final class PacketSystemBodiesSync extends BasePacket {
             this.dimId = dimId;
             this.descendTarget = descendTarget;
         }
+
+        @Override
+        public String toString() {
+            return "RenderBody{kind=" + kindOrdinal + ",dir=" + localX + "," + localY + "," + localZ
+                    + ",dim=" + dimId + ",descend=" + descendTarget + "}";
+        }
     }
 
     /** Client-side render store: slot dim id -> bodies to draw. Read by the sky renderer via {@link #bodiesForDim}. */

@@ -1124,6 +1124,63 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"pending\":" + (d == null ? -1 : d.descendingCount()) + "}");
             return;
         }
+        // ledger-settle <sx> <sy> <sz> <slotDim> [shipUuid]: inject a SETTLED ledger entry at the CENTRE of
+        // cell (sx,sy,sz) bound to <slotDim>, bypassing the crossing - so a render/producer e2e has a
+        // settled ship without a real VS entry. Requires an installed ledger (entry-setup).
+        if (args.length >= 5 && "ledger-settle".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"ledger not set up\"}");
+                return;
+            }
+            long sx = parseIntOr(args[1], 0);
+            long sy = parseIntOr(args[2], 0);
+            long sz = parseIntOr(args[3], 0);
+            int slotDim = parseIntOr(args[4], Integer.MIN_VALUE);
+            java.util.UUID shipId = args.length >= 6
+                    ? java.util.UUID.fromString(args[5]) : java.util.UUID.randomUUID();
+            zmaster587.advancedRocketry.space.GalacticCoord coord =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, 0L, 0L, 0L);
+            led.settle(shipId, coord, slotDim);
+            send(sender, "{\"ok\":true,\"shipId\":\"" + shipId + "\",\"cellKey\":\"" + coord.cellKey() + "\"}");
+            return;
+        }
+        // add-poi <sx> <sy> <sz> <lx> <ly> <lz> <kind> <dimId> <starId>: register a POI SystemBody at cell
+        // (sx,sy,sz) local (lx,ly,lz) so UniverseRegistry.bodiesAt returns it (the producer's render feed).
+        // kind = STAR|PLANET|MOON|ASTEROID_BELT|STATION_SLOT; dimId=-1 (INVALID_PLANET) for a non-descend body.
+        if (args.length >= 10 && "add-poi".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.SystemBodyKind kind;
+            try {
+                kind = zmaster587.advancedRocketry.universe.SystemBodyKind.valueOf(
+                        args[7].toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException bad) {
+                send(sender, "{\"error\":\"bad kind\"}");
+                return;
+            }
+            long sx = parseIntOr(args[1], 0);
+            long sy = parseIntOr(args[2], 0);
+            long sz = parseIntOr(args[3], 0);
+            long lx = parseIntOr(args[4], 0);
+            long ly = parseIntOr(args[5], 0);
+            long lz = parseIntOr(args[6], 0);
+            int dimId = parseIntOr(args[8], zmaster587.advancedRocketry.api.Constants.INVALID_PLANET);
+            int starId = parseIntOr(args[9], 0);
+            zmaster587.advancedRocketry.space.GalacticCoord coord =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
+            zmaster587.advancedRocketry.universe.SystemBody body =
+                    new zmaster587.advancedRocketry.universe.SystemBody(coord, kind, dimId, starId);
+            reg.addPoi(body);
+            send(sender, "{\"ok\":true,\"cellKey\":\"" + coord.cellKey() + "\",\"descendTarget\":"
+                    + body.isDescendTarget() + "}");
+            return;
+        }
         // find-afc <dim>: report a subspace block position + durable ship id of the settled ship in slot
         // <dim>, so a descent e2e can drive requestDescent for it. Located via the ledger coord (headless
         // the AFC does not tick, so the coord stays the settle coord) -> world pose -> the queryable ship
