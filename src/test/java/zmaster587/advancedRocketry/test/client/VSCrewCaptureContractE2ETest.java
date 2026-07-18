@@ -802,7 +802,15 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("looking straight down on the LEVEL deck must resolve a block (got '" + level
                 + "')", !level.isEmpty());
 
-        double h = Math.toRadians(60.0) / 2.0;
+        // Roll choice is MEASURED against the stand geometry, not arbitrary: the dismounted crew
+        // member stands at the SEAT column - the exact centre of the 5x5 deck, 2.5 blocks from
+        // every deck face. A world-down ray from the 1.62-high eye leaves the deck's footprint
+        // once 1.62*tan(roll) exceeds that half-width, i.e. past ~57 degrees the ray can only
+        // miss REGARDLESS of the contract under test (at 60 deg it grazed past the far face by
+        // ~0.2 and resolved nothing). 50 deg keeps ~0.6 blocks of landing margin while still
+        // satisfying both instrument-fire gates below (upY = cos50 = 0.64 < 0.7; eye divergence
+        // = 1.62*sin50 = 1.24 > 0.6).
+        double h = Math.toRadians(50.0) / 2.0;
         assertTrue("attitude hold must accept the roll",
                 exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));

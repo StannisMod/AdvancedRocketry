@@ -190,11 +190,13 @@ public class EntityDummy extends Entity {
             dismountedPilot = null; // a plain seat, or off a loaded ship: leave vanilla's dismount alone
             return;
         }
-        // Captured on the deck by ShipFrameTravel already? Stop holding so he can walk freely.
-        if (zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(exit)) {
-            dismountedPilot = null;
-            return;
-        }
+        // Deliberately NOT stopped by ShipFrameTravel.isResolving(exit): that reads THIS side's
+        // (the server's) capture state, which the server-held fallback satisfies within a tick or
+        // two of the dismount - long before the CLIENT (the side that owns a player's movement)
+        // has seeded anything. Stopping there starved the client of re-sends and the dismount
+        // degenerated to vanilla's world-frame spot. The seed packet is idempotent on the client
+        // (a taken seed no-ops, a pending one just refreshes), so re-sending the whole short
+        // window is harmless and is what actually delivers the deck point.
         // Pilot in an excluded state (creative flight, riding, water...): the client-side seed
         // refuses such a capture, so re-sending it every window tick is a packet-per-tick war for
         // nothing. He is moving under his own (world-frame) power; the deck hold is moot.

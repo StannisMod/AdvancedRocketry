@@ -179,7 +179,18 @@ public final class ShipFrameTravel {
          *  with only the COLLISION resolved against the ship's subspace geometry so it stands on
          *  the hull as on terrain, rides the moving ship, and never tunnels. */
         boolean hullStand;
+        /** Monotonic install stamp ({@link #CAPTURE_EPOCH}) - lets a pending dismount seed tell a
+         *  capture installed DURING its window (which it supersedes) from one that predates it. */
+        long installEpoch;
+        /** Whether this capture came from a seat-dismount/relog SEED (an explicit deck point)
+         *  rather than first contact - a re-sent seed no-ops against it instead of re-snapping. */
+        boolean seedAnchored;
     }
+
+    /** Monotonic stamp for every capture install, both sides. Comparisons are only ever made
+     *  between installs on the SAME side, so one shared counter serves both. */
+    private static final java.util.concurrent.atomic.AtomicLong CAPTURE_EPOCH =
+            new java.util.concurrent.atomic.AtomicLong();
 
     /** How far (squared, in blocks, IN THE SHIP FRAME) the body may have drifted from the deck point we
      *  hold before we treat it as moved by someone ELSE - a real teleport - and re-derive. The comparison
@@ -304,7 +315,11 @@ public final class ShipFrameTravel {
             if (!hasDeckBelowFor(entity, state.shipId)) {
                 AxisAlignedBB own = VSIntegration.subspaceStayRegion(entity.world, state.shipId, 0.0);
                 boolean interior = own != null
-                        && own.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]));
+                        && own.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]))
+                        // Same enclosure test as the capture gate: only a ROOFED body (a hull
+                        // cavity) is held past the deck probe's reach; open air over the deck
+                        // keeps the normal release semantics.
+                        && hasRoofAboveFor(entity, state.shipId);
                 if (!interior) {
                     if (hullContactFor(entity, state.shipId)) {
                         state.hullStand = true;
@@ -352,7 +367,11 @@ public final class ShipFrameTravel {
                 AxisAlignedBB region = VSIntegration.subspaceStayRegion(entity.world, shipId, 0.0);
                 if (region != null
                         && region.contains(new net.minecraft.util.math.Vec3d(sub[0], sub[1], sub[2]))
-                        && hasDeckBelowFor(entity, shipId)) {
+                        && hasDeckBelowFor(entity, shipId)
+                        // Enclosure, not just containment: the block-bounds region includes the
+                        // OPEN air over a deck, and claiming that hijacked a body merely flying
+                        // through the ship's airspace. A roof overhead is what makes "inside".
+                        && hasRoofAboveFor(entity, shipId)) {
                     candidate = shipId;
                     break;
                 }
@@ -454,6 +473,7 @@ public final class ShipFrameTravel {
         state.carryX = carryX;
         state.carryY = carryY;
         state.carryZ = carryZ;
+        state.installEpoch = CAPTURE_EPOCH.incrementAndGet();
         STATE.put(entity, state);
     }
 
@@ -558,9 +578,21 @@ public final class ShipFrameTravel {
             zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK ship="
                     + shipId + " world=(" + world[0] + "," + world[1] + "," + world[2] + ")");
         }
+        applySeedCapture(entity, shipId, subX, subY, subZ, world);
+        return true;
+    }
+
+    /** The seed's apply body: install the capture on the explicit deck point, snap the body there,
+     *  zero its motion. Shared by the direct seed and the pending-seed path. */
+    private static void applySeedCapture(Entity entity, String shipId,
+                                         double subX, double subY, double subZ, double[] world) {
         // Motion is zeroed below = "at rest RELATIVE TO THE DECK"; the carry the zeroed motion is
         // considered to contain is therefore zero too.
         captureState(entity, shipId, subX, subY, subZ, world[0], world[1], world[2], 0.0, 0.0, 0.0);
+        ShipFrameState installed = STATE.get(entity);
+        if (installed != null) {
+            installed.seedAnchored = true;
+        }
         entity.setPositionAndUpdate(world[0], world[1], world[2]);
         entity.motionX = 0.0;
         entity.motionY = 0.0;
@@ -571,7 +603,180 @@ public final class ShipFrameTravel {
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }
-        return true;
+    }
+
+    // ---- Pending dismount seed (client main thread only). --------------------------------------
+    //
+    // A seat-dismount deck capture is a BOARDING INTENT, not a fire-and-forget packet. Applied
+    // directly it loses two races it must not be racing: (1) the client's isRiding lingers a few
+    // ticks after the dismount, so an immediate seed is refused as an excluded state; (2) by the
+    // time the exclusion clears, the client's own FIRST-CONTACT path has usually captured the body
+    // at vanilla's world-frame dismount spot - which on a non-upright ship can be off the deck
+    // entirely - and an "already resolving" gate then no-ops every re-sent seed forever. The
+    // pending slot removes both races by construction: the seed waits for the exclusion to clear
+    // and then applies EXACTLY ONCE, superseding any capture installed during its window (within
+    // the dismount window the seat's deck point is the contractual boarding spot; a vanilla-spot
+    // first contact there is a mis-boarding). A capture that PREDATES the slot is respected and
+    // the slot dissolves. If the exclusion outlives the TTL (a pilot who dismounted straight into
+    // creative flight and left), the slot expires silently and the body is never snapped - the
+    // one-shot application is what keeps the old per-tick teleport war impossible.
+
+    /** How long a pending seed waits for the body to become capturable. Comfortably above the
+     *  riding-flag tail and a ship's client-side streaming delay; re-sent packets refresh it. */
+    private static final int PENDING_SEED_TTL_TICKS = 40;
+
+    private static final class PendingSeed {
+        final java.lang.ref.WeakReference<Entity> body;
+        final String shipId;
+        final double subX, subY, subZ;
+        /** {@link #CAPTURE_EPOCH} at slot creation: captures with a LARGER stamp were installed
+         *  during this seed's window and are superseded by it. */
+        final long epoch;
+        int ticksLeft;
+
+        PendingSeed(Entity body, String shipId, double subX, double subY, double subZ) {
+            this.body = new java.lang.ref.WeakReference<Entity>(body);
+            this.shipId = shipId;
+            this.subX = subX;
+            this.subY = subY;
+            this.subZ = subZ;
+            this.epoch = CAPTURE_EPOCH.get();
+            this.ticksLeft = PENDING_SEED_TTL_TICKS;
+        }
+    }
+
+    /** The (single) pending seed. Client main thread only. */
+    private static PendingSeed pendingSeed = null;
+
+    /** Diagnostics for the pending pipeline (read by tests via the bot). */
+    public static volatile long pendingSeedApplies = 0L;
+    public static volatile long pendingSeedExpiries = 0L;
+    public static volatile long pendingSeedSupersedes = 0L;
+    public static volatile String lastSeedOutcome = "";
+
+    /** What a pending seed should do this tick. Pure - pinned by unit tests. */
+    public enum PendingSeedDecision { WAIT, EXPIRE, ALREADY_SEEDED, KEEP_PREEXISTING, APPLY }
+
+    /**
+     * The pending seed's state machine, as a pure function of the observable facts: a seed that
+     * already took is done; a capture that predates the slot wins over the seed; an expired slot
+     * dissolves without ever snapping; an excluded body is waited for; otherwise the seed applies
+     * (superseding a window-installed capture, if any).
+     */
+    public static PendingSeedDecision pendingSeedDecision(boolean excluded, int ticksLeft,
+                                                          boolean captureExists,
+                                                          boolean captureIsThisSeed,
+                                                          boolean capturePredatesSlot) {
+        if (captureExists && captureIsThisSeed) {
+            return PendingSeedDecision.ALREADY_SEEDED;
+        }
+        if (captureExists && capturePredatesSlot) {
+            return PendingSeedDecision.KEEP_PREEXISTING;
+        }
+        if (ticksLeft <= 0) {
+            return PendingSeedDecision.EXPIRE;
+        }
+        if (excluded) {
+            return PendingSeedDecision.WAIT;
+        }
+        return PendingSeedDecision.APPLY;
+    }
+
+    /**
+     * Install (or refresh) the pending seed for {@code entity} - the client half of
+     * {@code PacketDeckCapture}. A re-send for the same target refreshes the TTL and keeps the
+     * ORIGINAL epoch (the window is one logical dismount); a seed that has already taken no-ops.
+     */
+    public static void installPendingSeed(Entity entity, String shipId,
+                                          double subX, double subY, double subZ) {
+        if (entity == null || shipId == null || entity.world == null || !entity.world.isRemote) {
+            return;
+        }
+        seedAttempts++;
+        ShipFrameState st = STATE.get(entity);
+        if (st != null && st.seedAnchored && shipId.equals(st.shipId)) {
+            lastSeedOutcome = "alreadySeeded";
+            return; // the seed already took; a re-send must not teleport the body again
+        }
+        PendingSeed slot = pendingSeed;
+        if (slot != null && slot.body.get() == entity && slot.shipId.equals(shipId)) {
+            slot.ticksLeft = PENDING_SEED_TTL_TICKS;
+        } else {
+            pendingSeed = new PendingSeed(entity, shipId, subX, subY, subZ);
+        }
+        tryApplyPendingSeed(); // zero-tick fast path when nothing blocks
+    }
+
+    /** Per-client-tick driver for the pending seed; a no-op when no seed is pending. */
+    public static void clientTickPendingSeed(Entity player) {
+        PendingSeed slot = pendingSeed;
+        if (slot == null) {
+            return;
+        }
+        Entity body = slot.body.get();
+        if (body == null || body.isDead || body != player) {
+            pendingSeed = null; // the seed's target is gone (a relog recreates the player object)
+            return;
+        }
+        slot.ticksLeft--;
+        tryApplyPendingSeed();
+    }
+
+    private static void tryApplyPendingSeed() {
+        PendingSeed slot = pendingSeed;
+        if (slot == null) {
+            return;
+        }
+        Entity body = slot.body.get();
+        if (body == null || body.isDead || body.world == null) {
+            pendingSeed = null;
+            return;
+        }
+        ShipFrameState st = STATE.get(body);
+        boolean excluded = body instanceof EntityLivingBase
+                && excludedStateOf((EntityLivingBase) body) != null;
+        PendingSeedDecision decision = pendingSeedDecision(excluded, slot.ticksLeft,
+                st != null,
+                st != null && st.seedAnchored && slot.shipId.equals(st.shipId),
+                st != null && st.installEpoch <= slot.epoch);
+        switch (decision) {
+            case WAIT:
+                return;
+            case EXPIRE:
+                pendingSeedExpiries++;
+                lastSeedOutcome = "expired";
+                pendingSeed = null;
+                return;
+            case ALREADY_SEEDED:
+                lastSeedOutcome = "alreadySeeded";
+                pendingSeed = null;
+                return;
+            case KEEP_PREEXISTING:
+                lastSeedOutcome = "keptPreexisting";
+                pendingSeed = null;
+                return;
+            case APPLY:
+            default:
+                double[] world = VSIntegration.toWorldFrameFor(
+                        body.world, slot.shipId, slot.subX, slot.subY, slot.subZ);
+                if (world == null) {
+                    seedNotLoaded++;
+                    return; // the ship is not on this side yet: stay pending, retry next tick
+                }
+                if (st != null) {
+                    pendingSeedSupersedes++;
+                }
+                if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                    zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] pending "
+                            + "seed applied ship=" + slot.shipId + " superseded=" + (st != null)
+                            + " world=(" + world[0] + "," + world[1] + "," + world[2] + ")");
+                }
+                applySeedCapture(body, slot.shipId, slot.subX, slot.subY, slot.subZ, world);
+                seedOks++;
+                pendingSeedApplies++;
+                lastSeedOutcome = "applied";
+                pendingSeed = null;
+        }
     }
 
     /**
@@ -988,6 +1193,34 @@ public final class ShipFrameTravel {
             }
         }
         return false;
+    }
+
+    /** Whether SHIP blocks sit anywhere ABOVE the body's head in {@code shipId}'s frame, up to the
+     *  top of the ship's block region - the "enclosed" half of the interior test. A ship's margin-0
+     *  block-bounds region over-covers: it includes the OPEN air between a deck and the ship's
+     *  topmost blocks, and "inside the region + deck below" alone therefore captured a body merely
+     *  flying through that airspace (the fly-through hijack the airspace contract forbids). A roof
+     *  overhead is what distinguishes a hull CAVITY - a hatch entry, an inverted cockpit - from
+     *  open air over a deck. */
+    private static boolean hasRoofAboveFor(Entity entity, String shipId) {
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            return false;
+        }
+        AxisAlignedBB region = VSIntegration.subspaceStayRegion(entity.world, shipId, 0.0);
+        if (region == null) {
+            return false;
+        }
+        double top = local[1] + entity.height;
+        if (top >= region.maxY) {
+            return false;
+        }
+        double half = entity.width / 2.0;
+        AxisAlignedBB column = new AxisAlignedBB(
+                local[0] - half, top, local[2] - half,
+                local[0] + half, region.maxY, local[2] + half);
+        return !entity.world.getCollisionBoxes(entity, column).isEmpty();
     }
 
     /** How many SHIP-frame collision boxes sit directly beneath the entity's feet, resolved by

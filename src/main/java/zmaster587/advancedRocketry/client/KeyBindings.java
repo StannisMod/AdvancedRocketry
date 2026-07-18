@@ -383,6 +383,10 @@ public class KeyBindings {
         // deck even when the mouse is captured by a screen.
         if (player != null) {
             DeckLook.clientTick(player);
+            // Pending dismount seed: apply the queued deck capture the moment the body's transient
+            // exclusion (the post-dismount riding tail) clears. Driven here, per client tick, so
+            // the seed does not depend on packet timing.
+            zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.clientTickPendingSeed(player);
             // Subspace census: record every tick what the CLIENT world holds at the nearby ship's
             // subspace coordinates. Sampled here, not in the travel hook, so it keeps reporting
             // through the phases where the client is NOT resolving (server-held fallback) - which

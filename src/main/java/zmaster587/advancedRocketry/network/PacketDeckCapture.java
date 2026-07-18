@@ -69,10 +69,14 @@ public class PacketDeckCapture extends BasePacket {
     @Override
     @SideOnly(Side.CLIENT)
     public void executeClient(EntityPlayer thePlayer) {
-        // Only if not already resolved on a deck - a re-send after the capture took must not teleport him
-        // again. seedShipFrameCapture no-ops when the anchor ship is not loaded on the client (yet).
-        if (thePlayer != null && !ShipFrameTravel.isResolving(thePlayer)) {
-            ShipFrameTravel.seedShipFrameCapture(thePlayer, shipId, subX, subY, subZ);
+        // The seed is a BOARDING INTENT, not a one-shot: it is queued as a pending seed that waits
+        // for the body's transient exclusion (the riding flag lingers a few ticks after dismount)
+        // to clear and then applies exactly once - superseding a first-contact capture the client
+        // installed at vanilla's dismount spot in the meantime. A seed that already took no-ops;
+        // an exclusion that persists (a pilot who flew away in creative) lets the seed expire
+        // without ever snapping him.
+        if (thePlayer != null) {
+            ShipFrameTravel.installPendingSeed(thePlayer, shipId, subX, subY, subZ);
         }
     }
 
