@@ -74,10 +74,41 @@ public final class SpaceSlotPool {
     }
 
     /**
-     * Register the slot {@link DimensionType} (once) and {@code n} fresh slot dimensions (not yet
-     * initialised). Returns the new dimension ids. Server thread only.
+     * Register the slot {@link DimensionType} (once) and ensure the pool holds at least {@code n}
+     * slot dimensions, returning the pool's dimension ids. <b>Idempotent:</b> a pool already
+     * registered in this JVM is REUSED — a second call mints nothing and returns the existing ids.
+     *
+     * <p>Idempotence is what makes this safe to call from more than one place in a single JVM (the
+     * production server-start hook and, in a harness run, a test that drives that hook itself).
+     * {@code DimensionManager} registration is JVM-global, so minting a second pool would not merely
+     * waste ids — it would shift the slot ids out from under everything already bound to the first.
+     * A caller that genuinely wants {@code n} ADDITIONAL scratch dimensions must say so explicitly
+     * via {@link #registerAdditionalSlots(int)}.</p>
      */
     public static synchronized int[] registerPool(int n) {
+        if (!SLOT_DIMS.isEmpty()) {
+            int[] existing = new int[SLOT_DIMS.size()];
+            for (int i = 0; i < existing.length; i++) {
+                existing[i] = SLOT_DIMS.get(i);
+            }
+            // Re-broadcast anyway: the caller's contract is "after this returns, the pool is
+            // registered AND every online client knows it", and a late second call may be the first
+            // one with players online.
+            broadcastSlotDims();
+            return existing;
+        }
+        return registerAdditionalSlots(n);
+    }
+
+    /**
+     * Register the slot {@link DimensionType} (once) and {@code n} FRESH slot dimensions (not yet
+     * initialised), appending them to the pool. Returns the newly minted dimension ids — never
+     * previously registered ones. Server thread only.
+     *
+     * <p>This is the non-idempotent primitive: each call grows the pool. Use {@link #registerPool}
+     * unless you specifically need dimensions disjoint from whatever is already registered.</p>
+     */
+    public static synchronized int[] registerAdditionalSlots(int n) {
         if (slotType == null) {
             // keepLoaded = false: no spawn-chunk force-load (which lagged the server). Lifecycle is
             // controlled EXPLICITLY (load / synchronous unload); callers must not leave a slot loaded
@@ -189,6 +220,76 @@ public final class SpaceSlotPool {
         if (server != null && cellKey != null) {
             deleteDir(cellDir(server, cellKey));
         }
+    }
+
+    /**
+     * Whether {@code cellKey} has content in the on-disk cell store — i.e. its folder exists.
+     *
+     * <p>This is the DERIVED answer to "has this cell ever been persisted", and it is deliberately
+     * read from the filesystem rather than from an in-memory flag: an in-memory flag is empty after
+     * a restart, which would make a cell a player has BUILT IN look regenerable and get its folder
+     * deleted on the first eviction of the new session. The folder is the durable truth, so it is
+     * the thing to ask. Same derive-don't-store discipline as the world seed.</p>
+     */
+    public static boolean hasStoredCell(String cellKey) {
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server == null || cellKey == null) {
+            return false;
+        }
+        return hasRegionData(cellDir(server, cellKey));
+    }
+
+    /**
+     * Whether a cell folder actually holds saved chunks, rather than merely existing.
+     *
+     * <p>The distinction is the whole point: Minecraft's save handler {@code mkdirs()} a dimension's
+     * chunk folder the moment it builds a chunk loader for it, so the folder springs into existence on
+     * the first LOAD — before anything has been written and even for a cell that turns out to be empty
+     * void. Treating "the folder is there" as "there is content here" would make every cell ever
+     * visited look permanently worth keeping, which quietly disables the eviction of regenerable
+     * cells. Region files are only written by an actual save, so they are the honest witness.</p>
+     */
+    private static boolean hasRegionData(java.io.File cellFolder) {
+        java.io.File[] regions = new java.io.File(cellFolder, "region").listFiles();
+        if (regions == null) {
+            return false;
+        }
+        for (java.io.File f : regions) {
+            if (f.isFile() && f.length() > 0L) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Every cell key with content in the on-disk store, recovered by scanning the store folder for
+     * {@code cell_<key>} entries. Lets garbage collection see cells that were persisted by an
+     * EARLIER session and have not been visited yet in this one — without this the store grows
+     * without bound across restarts, because the in-memory metadata only knows cells seen since
+     * startup. Empty when the server or the store folder is absent.
+     */
+    public static java.util.List<String> storedCellKeys() {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server == null) {
+            return keys;
+        }
+        java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
+        java.io.File[] entries = new java.io.File(worldDir, "advRocketry/spacepool").listFiles();
+        if (entries == null) {
+            return keys;
+        }
+        for (java.io.File f : entries) {
+            // Same "region files, not a bare folder" test as hasStoredCell - an empty folder left by a
+            // load is not a stored cell and must not be reported as one.
+            if (f.isDirectory() && f.getName().startsWith("cell_") && hasRegionData(f)) {
+                keys.add(f.getName().substring("cell_".length()));
+            }
+        }
+        return keys;
     }
 
     /**

@@ -39,4 +39,26 @@ public interface SlotBinder {
      * must not be currently loaded.
      */
     void deleteStore(String cellKey);
+
+    /**
+     * Whether {@code cellKey} already has persisted content in the store. The controller asks the
+     * STORE rather than remembering a flag, so the answer survives a restart: a cell built in during
+     * an earlier session must not look regenerable and get discarded on its first eviction of the
+     * new session.
+     *
+     * <p>Defaults to {@code false} so a recording test fake that models no store keeps its existing
+     * behaviour (nothing persisted ⇒ everything regenerable).</p>
+     */
+    default boolean hasStored(String cellKey) {
+        return false;
+    }
+
+    /**
+     * Every cell key with persisted content in the store, including cells not yet visited in this
+     * session. Lets GC reach an earlier session's leftovers instead of only what has been touched
+     * since startup. Defaults to empty for the same reason as {@link #hasStored}.
+     */
+    default java.util.List<String> storedCells() {
+        return java.util.Collections.emptyList();
+    }
 }

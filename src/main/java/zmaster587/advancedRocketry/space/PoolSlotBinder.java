@@ -38,4 +38,14 @@ public final class PoolSlotBinder implements SlotBinder {
     public void deleteStore(String cellKey) {
         SpaceSlotPool.deleteStore(cellKey);
     }
+
+    @Override
+    public boolean hasStored(String cellKey) {
+        return SpaceSlotPool.hasStoredCell(cellKey);
+    }
+
+    @Override
+    public List<String> storedCells() {
+        return SpaceSlotPool.storedCellKeys();
+    }
 }

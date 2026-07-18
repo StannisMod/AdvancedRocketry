@@ -90,7 +90,10 @@ public final class SpaceSubsystem {
      *
      * <ul>
      *   <li>{@code testMode} — the spike/probe tests register their OWN pool via {@code /artest space
-     *       manager}; the production register must stand down or it stacks pools and shifts slot ids.</li>
+     *       manager}; the production register must stand down or it stacks pools and shifts slot ids.
+     *       {@code forceUnderTestHarness} overrides exactly this one gate, so a test that wants to
+     *       drive the REAL server-start path can opt in; it changes nothing on a normal server, where
+     *       no harness is ever detected.</li>
      *   <li>{@code enabled} — the {@code enableSpaceSubsystem} config flag; when off the subsystem is fully
      *       disabled, registering no dimensions at all (a config toggle must return the vanilla baseline).</li>
      *   <li>{@code vsAvailable} — the subsystem only hosts tier-2 Valkyrien Skies ships; without VS there
@@ -100,7 +103,12 @@ public final class SpaceSubsystem {
      */
     public static boolean shouldRegister(boolean testMode, boolean enabled, boolean vsAvailable,
                                          boolean alreadyBuilt) {
-        return !testMode && enabled && vsAvailable && !alreadyBuilt;
+        return shouldRegister(testMode, enabled, vsAvailable, alreadyBuilt, false);
+    }
+
+    public static boolean shouldRegister(boolean testMode, boolean enabled, boolean vsAvailable,
+                                         boolean alreadyBuilt, boolean forceUnderTestHarness) {
+        return (!testMode || forceUnderTestHarness) && enabled && vsAvailable && !alreadyBuilt;
     }
 
     /**
@@ -112,7 +120,8 @@ public final class SpaceSubsystem {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
         boolean testMode = TestProbeCommandRegistration.isTestMode();
         boolean vsAvailable = VSIntegration.isAvailable();
-        if (!shouldRegister(testMode, cfg.enableSpaceSubsystem, vsAvailable, instance != null)) {
+        boolean forced = cfg.spaceRegisterUnderTestHarness;
+        if (!shouldRegister(testMode, cfg.enableSpaceSubsystem, vsAvailable, instance != null, forced)) {
             // Log the operator-facing reason for the two config/environment gates only (test mode and
             // already-built are internal, expected no-ops that must stay quiet).
             if (!testMode && instance == null) {
@@ -142,6 +151,9 @@ public final class SpaceSubsystem {
         instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::worldTime, mgrConfig,
                 SpaceSubsystem::onForcedTier1Eviction);
         shipLedger = new ShipLedger();
+        // A cell is protected from garbage collection while a ship is parked in it. That fact already
+        // lives in the ledger, so the manager asks it rather than keeping a second flag of its own.
+        instance.setClaimedCells(cellKey -> shipLedger != null && shipLedger.holdsShipIn(cellKey));
         transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser(),
                 shipLedger, SpaceSubsystem::worldTime);
         transitManager.setOfflineProgress(new OfflineProgress(
@@ -170,6 +182,11 @@ public final class SpaceSubsystem {
         if (data != null) {
             data.loadInto(shipLedger);
             AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", shipLedger.size());
+            // Restore when each cell was last visited, or every stored cell looks freshly visited on
+            // this boot and age-based collection can never reach an earlier session's leftovers.
+            if (instance != null) {
+                instance.importVisits(data.loadVisits());
+            }
             // Recreate any in-flight jump so a transit survives a restart: each record advances logically
             // and, on arrival, pastes its persisted block snapshot into the target cell (the hyperspace
             // world it was parked in is ephemeral). The ledger is re-marked IN_TRANSIT inside importTransit.
@@ -334,8 +351,15 @@ public final class SpaceSubsystem {
 
         /**
          * Persist the ship ledger on the overworld save cadence (autosave + shutdown both fire this on
-         * dim 0). {@link ShipLedgerData#saveFrom} marks the store dirty so MC writes it in the same save
-         * pass — the {@code UniverseRegistry} persistence idiom. A no-op while the subsystem is down.
+         * dim 0). A no-op while the subsystem is down.
+         *
+         * <p>The snapshot is written out EXPLICITLY at the end rather than merely marked dirty. This
+         * looks redundant and is not: the world's save routine writes its map storage and only then
+         * posts the save event, so anything dirtied from inside this handler has already missed that
+         * pass. On an autosave that would just make the stored ledger one cycle stale — but the
+         * shutdown save is the last one there is, and nothing writes map storage after it, so the
+         * final state of every ship would be silently dropped on a clean server stop. For a subsystem
+         * whose entire purpose is surviving a restart, that is the one save that must not be lost.</p>
          */
         @SubscribeEvent
         public void onWorldSave(net.minecraftforge.event.world.WorldEvent.Save event) {
@@ -347,6 +371,13 @@ public final class SpaceSubsystem {
                 data.saveFrom(shipLedger);
                 if (transitManager != null) {
                     data.saveTransits(transitManager.exportTransits());
+                }
+                if (instance != null) {
+                    data.saveVisits(instance.exportVisits());
+                }
+                net.minecraft.world.storage.MapStorage storage = event.getWorld().getMapStorage();
+                if (storage != null) {
+                    storage.saveAllData();
                 }
             }
         }

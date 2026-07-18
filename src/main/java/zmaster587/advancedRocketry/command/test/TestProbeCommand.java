@@ -974,11 +974,104 @@ public class TestProbeCommand extends CommandBase {
     private static int[] entrySlotDims;
 
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        // --- PRODUCTION-wiring probes. Unlike every other verb here these deliberately touch the real
+        //     SpaceSubsystem rather than a probe-local stack, so a restart test can prove the shipped
+        //     server-start / world-save path actually persists and restores. They are only useful when
+        //     the subsystem registered (config spaceRegisterUnderTestHarness).
+
+        // subsystem-status: is the production subsystem live, and what does it hold?
+        if (args.length >= 1 && "subsystem-status".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            zmaster587.advancedRocketry.space.ShipTransitManager tm =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.transit();
+            send(sender, "{\"registered\":"
+                    + (zmaster587.advancedRocketry.space.SpaceSubsystem.get() != null)
+                    + ",\"pool\":" + zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().size()
+                    + ",\"ledger\":" + (led == null ? -1 : led.size())
+                    + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount()) + "}");
+            return;
+        }
+        // ledger-settle <shipUuid> <sx> <sy> <sz> <lx> <ly> <lz>: record a settled ship in the
+        // PRODUCTION ledger, so a save + reboot can be asserted to bring it back.
+        if (args.length >= 8 && "ledger-settle".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"production ledger not live\"}");
+                return;
+            }
+            try {
+                led.settle(java.util.UUID.fromString(args[1]),
+                        zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                Long.parseLong(args[2]), Long.parseLong(args[3]), Long.parseLong(args[4]),
+                                Long.parseLong(args[5]), Long.parseLong(args[6]), Long.parseLong(args[7])),
+                        0);
+            } catch (IllegalArgumentException bad) {
+                send(sender, "{\"error\":\"bad arguments\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"ledger\":" + led.size() + "}");
+            return;
+        }
+        // ledger-get <shipUuid>: read the PRODUCTION ledger back.
+        if (args.length >= 2 && "ledger-get".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"production ledger not live\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.ShipLedger.Entry e;
+            try {
+                e = led.get(java.util.UUID.fromString(args[1]));
+            } catch (IllegalArgumentException bad) {
+                send(sender, "{\"error\":\"bad uuid\"}");
+                return;
+            }
+            send(sender, e == null ? "{\"found\":false}"
+                    : "{\"found\":true,\"cell\":\"" + e.cellKey() + "\",\"state\":\"" + e.state + "\"}");
+            return;
+        }
+        // pool-idempotence: call the PRODUCTION registerPool entry point again and report whether the
+        // pool changed. Registering a second pool would not merely waste dimension ids, it would shift
+        // the slot ids out from under everything already bound to the first one.
+        if (args.length >= 1 && "pool-idempotence".equalsIgnoreCase(args[0])) {
+            java.util.List<Integer> before = zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims();
+            int[] returned = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(
+                    Math.max(1, before.size()));
+            java.util.List<Integer> after = zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims();
+            boolean sameIds = returned.length == before.size();
+            for (int i = 0; sameIds && i < returned.length; i++) {
+                sameIds = returned[i] == before.get(i);
+            }
+            send(sender, "{\"grew\":" + (after.size() != before.size())
+                    + ",\"before\":" + before.size() + ",\"after\":" + after.size()
+                    + ",\"returnedExisting\":" + sameIds + "}");
+            return;
+        }
+        // save-now: force an overworld save, which is what drives the production persistence hook.
+        if (args.length >= 1 && "save-now".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            if (overworld == null) {
+                send(sender, "{\"error\":\"no overworld\"}");
+                return;
+            }
+            try {
+                overworld.saveAllChunks(true, null);
+            } catch (Exception e) {
+                send(sender, "{\"error\":\"save failed\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+
         // transit-setup: build an isolated transit stack (pool of 2 + hyperspace) and assemble a ship in a
         // fresh origin cell. The test then waits for the origin ship to load, calls transit-begin, and
         // polls transit-tick until arrival.
         if (args.length >= 1 && "transit-setup".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(2);
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
             // Register hyperspace upfront too (SpaceSubsystem no-ops in test mode, so mirror its order).
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
             transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
@@ -1018,7 +1111,7 @@ public class TestProbeCommand extends CommandBase {
         // a bot and carry it through the jump. Returns the ship anchor, the ship's world position (for
         // `space enter`), and the pilot seat's post-assembly subspace position (for `seat-mount-at`).
         if (args.length >= 1 && "transit-setup-piloted".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(2);
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
             transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
                     new zmaster587.advancedRocketry.space.PoolSlotBinder(),
@@ -1144,7 +1237,7 @@ public class TestProbeCommand extends CommandBase {
         // subsystem's own onServerStarting stands down in test mode, so nothing is double-installed.
         if (args.length >= 1 && "entry-setup".equalsIgnoreCase(args[0])) {
             int n = args.length >= 2 ? parseIntOr(args[1], 2) : 2;
-            entrySlotDims = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(n);
+            entrySlotDims = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(n);
             entryMgr = new zmaster587.advancedRocketry.space.SpaceManager(
                     new zmaster587.advancedRocketry.space.PoolSlotBinder(),
                     () -> (long) server.getTickCounter(),
@@ -1388,7 +1481,7 @@ public class TestProbeCommand extends CommandBase {
             // auto-unload and no lag-corrupted response capture): place a marker in cell A, rebind
             // through cell B (which must not see A's marker), place a marker in B, rebind back to A.
             // Pass iff A's marker persisted and B's marker did not bleed into A (folder isolation).
-            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1)[0];
             net.minecraft.util.math.BlockPos p1 = new net.minecraft.util.math.BlockPos(0, 64, 0);
             net.minecraft.util.math.BlockPos p2 = new net.minecraft.util.math.BlockPos(1, 64, 1);
             net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
@@ -1419,7 +1512,7 @@ public class TestProbeCommand extends CommandBase {
             // dirty-cell flush + reload (store round-trip through the manager), clean-cell isolation,
             // and GC deletion of an idle stored cell's on-disk folder. Pool of 1 forces an eviction
             // on every fresh materialize, so a single slot cycles A -> B -> A -> B.
-            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1);
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1);
             zmaster587.advancedRocketry.space.SpaceManager mgr =
                     new zmaster587.advancedRocketry.space.SpaceManager(
                             new zmaster587.advancedRocketry.space.PoolSlotBinder(),
@@ -1473,7 +1566,7 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 1 && "vs-assemble".equalsIgnoreCase(args[0])) {
             // Assemble a small VS ship in a fresh pool slot (a 3x3x3 stone cube floating in void).
             String cell = args.length >= 2 ? args[1] : "deep";
-            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1)[0];
             net.minecraft.world.WorldServer w =
                     zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, cell);
             net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
@@ -1517,7 +1610,7 @@ public class TestProbeCommand extends CommandBase {
             // Does Valkyrien Skies' per-world ship manager attach to a dynamically-created pool
             // world? (Layer-1 gate: VS ships can only live in a slot if VS lights up there.)
             String cell = args.length >= 2 ? args[1] : "vscap";
-            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(1)[0];
+            int slot = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1)[0];
             net.minecraft.world.WorldServer w =
                     zmaster587.advancedRocketry.space.SpaceSlotPool.load(slot, cell);
             boolean support = zmaster587.advancedRocketry.integration.vs.VSIntegration.hasShipSupport(w);
@@ -1557,7 +1650,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 1 && "pool-register".equalsIgnoreCase(args[0])) {
             int n = args.length >= 2 ? parseIntOr(args[1], 1) : 1;
-            int[] ids = zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(n);
+            int[] ids = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(n);
             StringBuilder sb = new StringBuilder("{\"ok\":true,\"dims\":[");
             for (int i = 0; i < ids.length; i++) {
                 if (i > 0) sb.append(',');

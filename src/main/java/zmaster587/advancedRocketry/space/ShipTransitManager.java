@@ -319,6 +319,41 @@ public final class ShipTransitManager {
         return transits.containsKey(shipId);
     }
 
+    /**
+     * The dimension a crew member of {@code shipId} belongs in while his ship is mid-jump, or
+     * {@code -1} if there is nowhere to put him. Used by the login restore when a player returns
+     * while his ship is still in flight.
+     *
+     * <p>A LIVE transit's ship is parked in the shared hyperspace world, so its crew belongs there.
+     * A RESTORED transit is a different animal: it survived a restart that wiped hyperspace, so it
+     * carries only a block snapshot and no physical ship exists anywhere until it arrives. There is
+     * therefore no world that contains the ship, and the honest answer is "nowhere" — the caller
+     * falls back to an ordinary spawn rather than dropping the player into empty hyperspace beside a
+     * ship that is not there.</p>
+     */
+    public int crewDimensionOf(String shipId) {
+        Transit t = transits.get(shipId);
+        if (t == null) {
+            return -1;
+        }
+        if (t.restored) {
+            LOGGER.warn("[SPACE] crew of {} returned while its jump is mid-flight from a "
+                    + "restart - no physical ship exists until arrival; placing the player at spawn", shipId);
+            return -1;
+        }
+        return HyperspaceWorld.dimId();
+    }
+
+    /**
+     * Where {@code shipId} is physically parked in the shared hyperspace world, or {@code null} when
+     * it is not in flight or has no physical ship there (a restored transit carries only a snapshot).
+     * Lets a crew member who returns mid-jump be placed at his ship rather than at the world origin.
+     */
+    public BlockPos hyperspaceAnchorOf(String shipId) {
+        Transit t = transits.get(shipId);
+        return t == null || t.restored ? null : t.hyperAnchor;
+    }
+
     /** Number of ships currently in transit (hyperspace lanes in use). */
     public int inTransitCount() {
         return transits.size();

@@ -97,6 +97,23 @@ public final class ShipLedger {
         return ships.size();
     }
 
+    /**
+     * Whether any settled ship occupies the cell {@code cellKey}. This is what makes a cell
+     * "claimed": the protection follows the thing the player actually owns, so it needs no separate
+     * flag of its own that could drift out of step with the ledger or fail to survive a restart.
+     */
+    public boolean holdsShipIn(String cellKey) {
+        if (cellKey == null) {
+            return false;
+        }
+        for (Entry e : ships.values()) {
+            if (e.state == State.SETTLED && cellKey.equals(e.cellKey())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** A read-only copy of the ledger (probe/diagnostic surface). */
     public Map<UUID, Entry> snapshot() {
         return new HashMap<>(ships);

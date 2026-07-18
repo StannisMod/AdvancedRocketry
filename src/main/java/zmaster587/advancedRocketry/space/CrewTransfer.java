@@ -58,6 +58,18 @@ public final class CrewTransfer {
     private CrewTransfer() { }
 
     /**
+     * True while {@link #capture} is dismounting riders as part of a crossing, so listeners can tell
+     * a crossing's mechanical dismount apart from a player choosing to stand up.
+     *
+     * <p>The two look identical to Minecraft — both fire a dismount — but they mean opposite things:
+     * standing up ends a player's association with the ship, whereas being lifted out of a seat so
+     * the seat block can be cut and rebuilt somewhere else preserves it. Anything that records "this
+     * player is aboard that ship" must not be torn down by the second kind. Server main thread only,
+     * which is what makes a plain flag sufficient.</p>
+     */
+    static boolean crossingCapture;
+
+    /**
      * Enumerate the seated crew of the ship whose flight computer sits at subspace {@code afcPos},
      * with the ship's live world position {@code shipWorldPos}. Records each seated player against
      * its seat's link offset, dismounts it, and retires the now-orphaned dummy. Call BEFORE the
@@ -71,6 +83,8 @@ public final class CrewTransfer {
         AxisAlignedBB box = new AxisAlignedBB(
                 shipWorldPos[0], shipWorldPos[1], shipWorldPos[2],
                 shipWorldPos[0], shipWorldPos[1], shipWorldPos[2]).grow(RIDER_RANGE);
+        crossingCapture = true;
+        try {
         for (EntityDummy dummy : world.getEntitiesWithinAABB(EntityDummy.class, box)) {
             BlockPos seatPos = dummy.getSeatPos();
             if (seatPos == null) {
@@ -97,6 +111,9 @@ public final class CrewTransfer {
             // The seat block this dummy is bound to is about to be cut; a stale dummy would
             // otherwise linger and clear the (re-assembled) ship's pilot input every tick.
             dummy.setDead();
+        }
+        } finally {
+            crossingCapture = false;
         }
         return crew;
     }

@@ -40,6 +40,8 @@ public final class ShipLedgerData extends WorldSavedData {
     private final Map<UUID, ShipLedger.Entry> entries = new HashMap<>();
     /** The persisted in-flight transit records (a jump survives a restart). */
     private final List<TransitRecord> transits = new ArrayList<>();
+    /** cell key -> the world time it was last visited; drives age-based store GC across restarts. */
+    private final Map<String, Long> cellVisits = new HashMap<>();
 
     public ShipLedgerData() {
         super(STORAGE_KEY);
@@ -117,6 +119,23 @@ public final class ShipLedgerData extends WorldSavedData {
         return new ArrayList<>(transits);
     }
 
+    /**
+     * Replace the persisted per-cell last-visit times (same save point as {@link #saveFrom}). Without
+     * these every cell looks freshly visited after a restart and age-based GC never fires.
+     */
+    public void saveVisits(Map<String, Long> visits) {
+        cellVisits.clear();
+        if (visits != null) {
+            cellVisits.putAll(visits);
+        }
+        markDirty();
+    }
+
+    /** The persisted per-cell last-visit times (a copy). */
+    public Map<String, Long> loadVisits() {
+        return new HashMap<>(cellVisits);
+    }
+
     /** Test/diagnostic view of the persisted snapshot. */
     public Map<UUID, ShipLedger.Entry> snapshot() {
         return new HashMap<>(entries);
@@ -143,6 +162,15 @@ public final class ShipLedgerData extends WorldSavedData {
         for (int i = 0; i < transitList.tagCount(); i++) {
             transits.add(TransitRecord.readFromNBT(transitList.getCompoundTagAt(i)));
         }
+        cellVisits.clear();
+        NBTTagList visitList = nbt.getTagList("cellVisits", 10);
+        for (int i = 0; i < visitList.tagCount(); i++) {
+            NBTTagCompound c = visitList.getCompoundTagAt(i);
+            String key = c.getString("cell");
+            if (!key.isEmpty()) {
+                cellVisits.put(key, c.getLong("visit"));
+            }
+        }
     }
 
     @Override
@@ -163,6 +191,15 @@ public final class ShipLedgerData extends WorldSavedData {
             transitList.appendTag(r.writeToNBT());
         }
         nbt.setTag("transits", transitList);
+
+        NBTTagList visitList = new NBTTagList();
+        for (Map.Entry<String, Long> e : cellVisits.entrySet()) {
+            NBTTagCompound c = new NBTTagCompound();
+            c.setString("cell", e.getKey());
+            c.setLong("visit", e.getValue());
+            visitList.appendTag(c);
+        }
+        nbt.setTag("cellVisits", visitList);
         return nbt;
     }
 }

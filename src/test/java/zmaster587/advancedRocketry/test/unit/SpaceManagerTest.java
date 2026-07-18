@@ -28,21 +28,54 @@ public class SpaceManagerTest {
         return GalacticCoord.ofSectorLocal(s, 0L, 0L, 0L, 0L, 0L);
     }
 
-    /** Recording binder: captures every world-lifecycle call so tests can assert on the decisions. */
-    private static final class FakeBinder implements SlotBinder {
+    /**
+     * Recording binder: captures every world-lifecycle call so tests can assert on the decisions,
+     * and MODELS the on-disk cell store the way the real pool does — a flush (unload) leaves content
+     * behind, a discard does not, and a store delete removes it. The controller derives "has this
+     * cell been persisted" from the store rather than remembering a flag, so a fake that did not
+     * model the store would answer "nothing is persisted" and hide the very branch under test.
+     */
+    private static class FakeBinder implements SlotBinder {
         final int[] dims;
         final List<String> loads = new ArrayList<>();      // "dimId:cellKey"
         final List<Integer> unloads = new ArrayList<>();
         final List<Integer> discards = new ArrayList<>();
         final List<String> deletes = new ArrayList<>();
+        /** dimId -> the cell key currently bound to it (what a flush would persist). */
+        final java.util.Map<Integer, String> bound = new java.util.HashMap<>();
+        /** Cell keys with content in the modelled store. */
+        final java.util.Set<String> stored = new java.util.LinkedHashSet<>();
 
         FakeBinder(int... dims) { this.dims = dims; }
 
         @Override public int[] slotDims() { return dims; }
-        @Override public void load(int dimId, String cellKey) { loads.add(dimId + ":" + cellKey); }
-        @Override public void unload(int dimId) { unloads.add(dimId); }
-        @Override public void discard(int dimId) { discards.add(dimId); }
-        @Override public void deleteStore(String cellKey) { deletes.add(cellKey); }
+
+        @Override public void load(int dimId, String cellKey) {
+            loads.add(dimId + ":" + cellKey);
+            bound.put(dimId, cellKey);
+        }
+
+        @Override public void unload(int dimId) {
+            unloads.add(dimId);
+            String cellKey = bound.remove(dimId);
+            if (cellKey != null) {
+                stored.add(cellKey); // a flush writes the cell's chunks to its store folder
+            }
+        }
+
+        @Override public void discard(int dimId) {
+            discards.add(dimId);
+            bound.remove(dimId); // nothing persisted: the scratch world is dropped
+        }
+
+        @Override public void deleteStore(String cellKey) {
+            deletes.add(cellKey);
+            stored.remove(cellKey);
+        }
+
+        @Override public boolean hasStored(String cellKey) { return stored.contains(cellKey); }
+
+        @Override public List<String> storedCells() { return new ArrayList<>(stored); }
     }
 
     /** Mutable tick source. */
@@ -253,6 +286,49 @@ public class SpaceManagerTest {
         m.dematerialize(cell(1000));
     }
 
+    @Test(timeout = 5000)
+    public void garbageCollectionGivesUpInsteadOfSpinningWhenTheStoreWillNotShrink() {
+        // A store delete can fail for reasons the controller cannot fix (a file still held open, a
+        // permission problem). Since "how many cells are stored" is answered by the store itself, a
+        // failed delete leaves the count unchanged and the same victim chosen again. This must end,
+        // because it runs on the server main thread: a spin here is a hung server, not a slow GC.
+        FakeBinder binder = new FakeBinder(10) {
+            @Override
+            public void deleteStore(String cellKey) {
+                deletes.add(cellKey); // record the attempt, but the content refuses to go away
+            }
+        };
+        Clock clock = new Clock();
+        SpaceManager m = mgr(binder, clock, new SpaceManager.Config(SpaceManager.GcPolicy.COUNT, 0, 0));
+
+        storeDirtyCells(m, binder, clock, 2);
+        clock.tick = 100;
+
+        m.gc(); // must return rather than loop forever
+
+        assertTrue("it must still have TRIED to collect, not simply skipped the sweep",
+                !binder.deletes.isEmpty());
+    }
+
+    @Test
+    public void aStoredCellFirstSeenThisSessionIsNotImmediatelyAgedOut() {
+        // After a restart the controller has no memory of when a cell was last visited. Treating that
+        // absence as "last visited at tick zero" would make every surviving cell infinitely old, so
+        // the first age sweep would delete a player's content purely because we had forgotten it.
+        FakeBinder binder = new FakeBinder(10);
+        Clock clock = new Clock();
+        clock.tick = 1_000_000L; // a long-running world
+        SpaceManager m = mgr(binder, clock, new SpaceManager.Config(SpaceManager.GcPolicy.AGE, 100, 99));
+
+        // A cell that exists in the store but that this session has never touched.
+        binder.stored.add(cell(7).cellKey());
+
+        List<String> deleted = m.gc();
+
+        assertFalse("a cell we merely have no visit record for must not be treated as ancient: "
+                + deleted, deleted.contains(cell(7).cellKey()));
+    }
+
     @Test
     public void gcNeverDeletesNothing() {
         FakeBinder binder = new FakeBinder(10);
@@ -340,7 +416,10 @@ public class SpaceManagerTest {
         SpaceManager m = mgr(binder, clock, new SpaceManager.Config(SpaceManager.GcPolicy.AGE, 1, 0));
 
         storeDirtyCells(m, binder, clock, 2);
-        m.setClaimed(cell(1), true); // protect cell1
+        // Protection is derived from whoever owns the cell (in production, the ship ledger), not
+        // from a flag the manager keeps for itself.
+        final String protectedCell = cell(1).cellKey();
+        m.setClaimedCells(protectedCell::equals);
         clock.tick = 100;
         List<String> deleted = m.gc();
 
