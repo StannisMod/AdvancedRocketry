@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
  * production contracts:</p>
  *
  * <ul>
- *   <li><b>Base power accrual</b> — pure {@code SatelliteBase} (oreScanner →
+ *   <li><b>Base power accrual</b> — pure {@code SatelliteBase} (oreScanner &rarr;
  *       {@code SatelliteOreMapping}) accepts {@code powerGen - 1} into the
  *       battery per tick.</li>
  *   <li><b>Battery cap</b> — battery never exceeds the configured
@@ -102,7 +102,7 @@ public class SatelliteTickBehaviourTest extends AbstractSharedServerTest {
     /** Pin: a {@code SatelliteData} subclass (composition) accumulates
      *  data over multiple ticks. With powerGen=1000 collectionTime ≈ 20,
      *  so within 100 ticks of monotonically-advancing worldTime the gate
-     *  fires at worldTime ∈ {20, 40, 60, 80, 100} → 5 data points. */
+     *  fires at worldTime ∈ {20, 40, 60, 80, 100} &rarr; 5 data points. */
     @Test
     public void dataSatelliteAccumulatesDataOverTime() throws Exception {
         long satId = createSat("composition", 1000, 100_000, 1000);
@@ -127,7 +127,7 @@ public class SatelliteTickBehaviourTest extends AbstractSharedServerTest {
     /** Pin: {@code DataStorage.addData} caps at {@code maxData}. */
     @Test
     public void dataSatelliteRespectsMaxDataCap() throws Exception {
-        // maxData=2, powerGen=1000 → collectionTime=20; 500 ticks would
+        // maxData=2, powerGen=1000 -> collectionTime=20; 500 ticks would
         // otherwise produce ~25 fires.
         long satId = createSat("composition", 1000, 100_000, 2);
 

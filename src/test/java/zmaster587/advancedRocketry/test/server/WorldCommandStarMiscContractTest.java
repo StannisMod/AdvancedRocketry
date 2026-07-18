@@ -113,9 +113,9 @@ public class WorldCommandStarMiscContractTest extends AbstractSharedServerTest {
 
     /** Stronger pin: not just "chat envelope says success" but
      *  "the recipe registry actually has recipes afterwards". The reload
-     *  pipeline is {@code clearAllMachineRecipes} →
+     *  pipeline is {@code clearAllMachineRecipes} &rarr;
      *  {@code registerAllMachineRecipes} (re-adds programmatic recipes)
-     *  → {@code registerXMLRecipes} (re-loads XML from
+     *  &rarr; {@code registerXMLRecipes} (re-loads XML from
      *  {@code config/<machine>.xml}). The {@code TileCuttingMachine} has
      *  several recipes registered at init via both paths; if reload
      *  silently drops them (e.g. clear without successful re-register),

@@ -20,8 +20,8 @@ import static org.junit.Assert.assertTrue;
  * and vice versa.
  *
  * Complementary to {@link WeatherBaselineTest}, which only checks the
- * "overworld → planets" direction. This test exercises the "planet ↔ planet"
- * and "planet → overworld" directions, which the B1 wrapper has to handle
+ * "overworld &rarr; planets" direction. This test exercises the "planet &harr; planet"
+ * and "planet &rarr; overworld" directions, which the B1 wrapper has to handle
  * symmetrically.
  *
  * Setup pattern mirrors {@code WeatherBaselineTest}: pre-stage a 2-planet

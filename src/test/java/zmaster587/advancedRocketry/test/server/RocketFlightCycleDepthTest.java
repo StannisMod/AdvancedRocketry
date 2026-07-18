@@ -150,7 +150,7 @@ public class RocketFlightCycleDepthTest extends AbstractSharedServerTest {
         String after = ok(client().execute("artest rocket event-counts"));
         int dismantleAfter = parseGroup(DISMANTLE_COUNT, after, "dismantle after");
         assertTrue("global dismantle counter must advance: " + dismantleBefore
-                + " → " + dismantleAfter, dismantleAfter > dismantleBefore);
+                + " -> " + dismantleAfter, dismantleAfter > dismantleBefore);
     }
 
     @Test
@@ -242,7 +242,7 @@ public class RocketFlightCycleDepthTest extends AbstractSharedServerTest {
     public void orbitReachedEventChainHandlesAbsentSatelliteHatch() throws Exception {
         // Defensive: the production onOrbitReached has 3 dispatch branches
         // (satellite chip / asteroid chip / has-seat / no-seat). The
-        // "simple" rocket fixture has guidance computer + seat → the
+        // "simple" rocket fixture has guidance computer + seat -> the
         // reachSpaceManned branch fires. Pin that this branch doesn't
         // crash on a rocket with no programmed chip.
         int id = buildAndAssemble(3500, 64, 500);

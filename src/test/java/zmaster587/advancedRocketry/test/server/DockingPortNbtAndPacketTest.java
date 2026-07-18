@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  * <ol>
  *   <li><b>NBT save format</b> — non-empty {@code myIdStr} /
  *       {@code targetIdStr} round-trip through
- *       {@code writeToNBT → readFromNBT}.</li>
+ *       {@code writeToNBT -> readFromNBT}.</li>
  *   <li><b>NBT empty-string handling</b> — empty strings are NOT
  *       written ({@code if (!.isEmpty())} gates in production lines
  *       110-113), but a peer reading the partial NBT recovers

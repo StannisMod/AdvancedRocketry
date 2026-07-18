@@ -52,7 +52,7 @@ public class OrbitalLaserDrillMultiblockTest extends AbstractSharedServerTest {
         // Forge's IEnergyStorage capability on one of its 'P' power-input
         // plugs (energy injection goes through the plug, not the controller),
         // and (b) survive several ITickable ticks without throwing. The full
-        // energy-in → output-produced cycle requires a configured drill
+        // energy-in -> output-produced cycle requires a configured drill
         // target and chunk-survey scaffolding — out of scope for this test.
         // The capability + tick path is the necessary precondition for any
         // future end-to-end laser-drill behavioural test.
@@ -67,7 +67,7 @@ public class OrbitalLaserDrillMultiblockTest extends AbstractSharedServerTest {
                 tryComplete.contains("\"isComplete\":true"));
 
         // (a) Energy flows through a 'P' power-input plug. structure[1][2][10]
-        // → for NORTH-facing controller (offset x=1, y=2, z=2) global
+        // -> for NORTH-facing controller (offset x=1, y=2, z=2) global
         // (cx-9, cy+1, cz). The plug exposes IEnergyStorage; once assembled
         // and bound to controller batteries, its `getMaxEnergyStored` reports
         // the controller's pooled max (134_217_727 RF by default).

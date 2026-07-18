@@ -172,10 +172,10 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
 
         if (!world.isRemote) {
             if (ok) {
-                // Formation succeeded → push snapshot into placeholders (alive state)
+                // Formation succeeded -> push snapshot into placeholders (alive state)
                 writeSnapshotIntoPlaceholders();
             } else {
-                // Formation failed → discard
+                // Formation failed -> discard
                 savedHatchInv.clear();
             }
         }
@@ -683,7 +683,7 @@ public class TileMicrowaveReciever extends TileMultiPowerProducer implements ITi
                 }
                 inv.markDirty();
             } else {
-                // no inventory to restore into → drop all
+                // no inventory to restore into -> drop all
                 for (ItemStack s : e.getValue()) {
                     if (!s.isEmpty()) {
                         world.spawnEntity(new EntityItem(world, bp.getX() + 0.5, bp.getY() + 0.5, bp.getZ() + 0.5, s.copy()));

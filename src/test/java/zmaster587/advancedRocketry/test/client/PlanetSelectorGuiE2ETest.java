@@ -15,11 +15,11 @@ import static zmaster587.advancedRocketry.test.client.ClientGuiTestSupport.openG
  * modular GUI, introspects its buttons via {@code report_buttons}, then clicks a
  * planet button <em>by its stable mod-assigned id</em> ({@code GuiButton.id} ==
  * the planet's dimension id; see {@code ModulePlanetSelector}). Clicking a
- * planet fires {@code TilePlanetSelector.onSelected} → {@code PacketMachine} →
- * server {@code useNetworkData} → {@code dimCache}, which the
+ * planet fires {@code TilePlanetSelector.onSelected} &rarr; {@code PacketMachine} &rarr;
+ * server {@code useNetworkData} &rarr; {@code dimCache}, which the
  * {@code /artest selector info} probe then confirms.</p>
  *
- * <p>This drives the whole client→server selection round-trip rather than just
+ * <p>This drives the whole client&rarr;server selection round-trip rather than just
  * asserting the GUI opened. Static control buttons (Up / Select / PlanetList)
  * and star buttons carry ids outside {@code [0, STAR_ID_OFFSET)}, so a planet
  * is picked by id range.</p>

@@ -14,9 +14,9 @@ import static org.junit.Assert.assertTrue;
  *
  * <ul>
  *   <li>meta = {@code legUpgradeDamage} (2) or
- *       {@code speedUpgradeDamage} (1) → LEGS only.</li>
- *   <li>meta = {@code bootsUpgradeDamage} (3) → FEET only.</li>
- *   <li>any other meta (0, 4, 5, ...) → HEAD only.</li>
+ *       {@code speedUpgradeDamage} (1) &rarr; LEGS only.</li>
+ *   <li>meta = {@code bootsUpgradeDamage} (3) &rarr; FEET only.</li>
+ *   <li>any other meta (0, 4, 5, ...) &rarr; HEAD only.</li>
  * </ul>
  *
  * <p>Player-visible: armor crafting / module-slot acceptance —

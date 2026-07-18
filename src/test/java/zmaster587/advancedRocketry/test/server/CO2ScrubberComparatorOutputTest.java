@@ -20,8 +20,8 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Pinned (loose-bound, contract-not-formula):</p>
  * <ul>
- *   <li>Empty slot → comparator output = 0.</li>
- *   <li>Fresh cartridge (damage = 0) → comparator output &gt; 0
+ *   <li>Empty slot &rarr; comparator output = 0.</li>
+ *   <li>Fresh cartridge (damage = 0) &rarr; comparator output &gt; 0
  *       (the player-visible "scrubber has fuel" signal).</li>
  * </ul>
  *

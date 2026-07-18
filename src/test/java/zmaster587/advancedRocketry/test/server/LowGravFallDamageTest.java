@@ -88,7 +88,7 @@ public class LowGravFallDamageTest {
         Thread.sleep(1000L);
     }
 
-    /** Overworld: not an IPlanetaryProvider → distance untouched. */
+    /** Overworld: not an IPlanetaryProvider &rarr; distance untouched. */
     @Test
     public void overworldDoesNotScaleFallDistance() throws Exception {
         stationFake(0);
@@ -99,7 +99,7 @@ public class LowGravFallDamageTest {
                 doubleField(INPUT_DIST, resp), doubleField(RESULT_DIST, resp), 0.001);
     }
 
-    /** Low-grav AR dim: distance × multiplier (17 → 0.17). */
+    /** Low-grav AR dim: distance × multiplier (17 &rarr; 0.17). */
     @Test
     public void lowGravDimScalesFallDistanceByGravityMultiplier() throws Exception {
         stationFake(DIM_LOW_GRAV);

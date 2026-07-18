@@ -14,7 +14,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *
  * <p>{@link StationControllersSmokeTest} already pins "block places, tile
  * ticks without crashing" for the three station controllers. This suite
- * pins the next layer: the player-visible "set target → station walks
+ * pins the next layer: the player-visible "set target &rarr; station walks
  * toward target" loop.</p>
  *
  * <p>Setup per test:</p>
@@ -108,7 +108,7 @@ public class StationControllersTickContractTest extends AbstractSharedServerTest
                 actualTarget == target);
 
         // Force-tick the controller. Production walks 0.02 per tick, so
-        // 200 ticks → ≤4.0 movement. Generous budget so even a slow
+        // 200 ticks -> ≤4.0 movement. Generous budget so even a slow
         // harness sees a non-zero delta.
         exec("artest tile force-tick " + SPACE_DIM + " " + cx + " " + cy + " " + cz
                 + " 200");
@@ -122,7 +122,7 @@ public class StationControllersTickContractTest extends AbstractSharedServerTest
                         + "something' contract); preDist=" + preDist
                         + " postDist=" + postDist + " target=" + target,
                 preDist, postDist, 1e-9);
-        // Direction check: post moved TOWARD target (preDist < target →
+        // Direction check: post moved TOWARD target (preDist < target ->
         // postDist > preDist).
         assertTrue("station's orbitalDistance must move toward the target "
                         + "(not away from it); preDist=" + preDist
@@ -233,8 +233,8 @@ public class StationControllersTickContractTest extends AbstractSharedServerTest
         String preInfo = exec("artest station info " + stationId);
         double preRotEast = extractDouble(preInfo, ROT_EAST);
 
-        // setProgress(0, 100) → targetRotationsPerHour[0] = 100 - 60 = 40
-        // → angular velocity target = 40/72000 ~ 5.5e-4. Default ~0 →
+        // setProgress(0, 100) -> targetRotationsPerHour[0] = 100 - 60 = 40
+        // -> angular velocity target = 40/72000 ~ 5.5e-4. Default ~0 ->
         // walk at acc per tick.
         int progress = 100;
         String setTarget = exec("artest station controller-set-target "

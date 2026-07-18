@@ -102,14 +102,14 @@ public class ARConfigurationTest {
     public void performanceConfigDefaultsStable() {
         ARConfiguration cfg = new ARConfiguration();
 
-        // Raw defaults: no field initializer → JVM zero.
+        // Raw defaults: no field initializer -> JVM zero.
         assertEquals("atmosphereHandleBitMask must default to 0 pre-loadPreInit",
                 0, cfg.atmosphereHandleBitMask);
         assertEquals("oxygenVentSize must default to 0 pre-loadPreInit",
                 0, cfg.oxygenVentSize);
 
         // Clone must carry performance fields end-to-end (they're @ConfigProperty
-        // tagged so loadPreInit→sync→clone is the production path).
+        // tagged so loadPreInit->sync->clone is the production path).
         cfg.atmosphereHandleBitMask = 3;
         cfg.oxygenVentSize = 32;
         ARConfiguration copy = new ARConfiguration(cfg);

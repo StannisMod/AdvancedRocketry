@@ -47,7 +47,7 @@ public final class MinecraftBootstrap {
             // 2. AR proxy. AdvancedRocketry.proxy is null in tests because
             // @SidedProxy is wired by the Forge classloader. Inject a plain
             // CommonProxy so anything that calls AdvancedRocketry.proxy.getXxx()
-            // (most notably DimensionProperties.readFromNBT → DimensionManager
+            // (most notably DimensionProperties.readFromNBT -> DimensionManager
             // .getInstance()) has a working dispatch target.
             try {
                 Field proxyField = AdvancedRocketry.class.getDeclaredField("proxy");

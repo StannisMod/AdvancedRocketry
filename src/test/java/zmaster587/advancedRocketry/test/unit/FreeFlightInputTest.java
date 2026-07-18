@@ -18,7 +18,7 @@ import static org.junit.Assert.assertTrue;
  *  - Per-channel clamp to [-1, +1].
  *  - NaN / Infinity collapse to 0 (defensive against client cheats).
  *  - Wire size is fixed: WIRE_SIZE = 29 bytes (7 floats × 4 + 1 flag byte).
- *  - Round-trip via write→read preserves all channels exactly.
+ *  - Round-trip via write&rarr;read preserves all channels exactly.
  *  - Out-of-range values from the wire are re-clamped on read (server is source of truth).
  *  - isIdle() true only when every channel ≈ 0.
  */
@@ -115,20 +115,20 @@ public class FreeFlightInputTest {
         // A malicious / buggy client could write floats > 1.0 directly. Server-side
         // read must re-clamp because clients are not authoritative.
         ByteBuf buf = Unpooled.buffer();
-        buf.writeFloat(5.0f);                      // fwd   → 1
-        buf.writeFloat(-5.0f);                     // vert  → -1
-        buf.writeFloat(3.0f);                      // strafe → 1
-        buf.writeFloat(Float.NaN);                 // yaw   → 0
-        buf.writeFloat(Float.POSITIVE_INFINITY);   // pitch → 0
-        buf.writeFloat(-4.0f);                     // roll  → -1
-        buf.writeFloat(2.0f);                      // brake → 1
+        buf.writeFloat(5.0f);                      // fwd   -> 1
+        buf.writeFloat(-5.0f);                     // vert  -> -1
+        buf.writeFloat(3.0f);                      // strafe -> 1
+        buf.writeFloat(Float.NaN);                 // yaw   -> 0
+        buf.writeFloat(Float.POSITIVE_INFINITY);   // pitch -> 0
+        buf.writeFloat(-4.0f);                     // roll  -> -1
+        buf.writeFloat(2.0f);                      // brake -> 1
         buf.writeByte(0);                          // flag byte (no assists active)
         FreeFlightInput in = FreeFlightInput.read(buf);
         assertEquals( 1f, in.throttleForward,  EPS);
         assertEquals(-1f, in.throttleVertical, EPS);
         assertEquals( 1f, in.strafeInput,      EPS);
-        assertEquals( 0f, in.yawInput,         EPS); // NaN → 0
-        assertEquals( 0f, in.pitchInput,       EPS); // Inf → 0
+        assertEquals( 0f, in.yawInput,         EPS); // NaN -> 0
+        assertEquals( 0f, in.pitchInput,       EPS); // Inf -> 0
         assertEquals(-1f, in.rollInput,        EPS);
         assertEquals( 1f, in.brakeInput,       EPS);
     }

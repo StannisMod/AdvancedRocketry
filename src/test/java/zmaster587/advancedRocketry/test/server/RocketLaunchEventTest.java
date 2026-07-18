@@ -120,7 +120,7 @@ public class RocketLaunchEventTest extends AbstractSharedServerTest {
 
     @Test
     public void doubleLaunchKeepsIsInFlightSet() throws Exception {
-        // Sequence: launch → already-in-flight → launch again. Idempotency
+        // Sequence: launch -> already-in-flight -> launch again. Idempotency
         // contract: the second call must not flip the flag back off, must
         // not crash. (In production, the rocket is briefly in 'in flight'
         // before takeoff finishes; a second launch button-press is a

@@ -150,7 +150,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
 
     @Test
     public void cutEasesTheCraftIntoAGravityCancelledHover() throws Exception {
-        // X (cut): zero the setpoint → FA damps motion to zero AND holds
+        // X (cut): zero the setpoint -> FA damps motion to zero AND holds
         // altitude (gravity cancelled) — brake-to-hover, not brake-to-fall.
         int id = buildAndAssemble(4200, 64, 500);
         ok(client().execute("artest rocket set-flight-mode " + id + " FREE_FLIGHT"));
@@ -230,7 +230,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
                 Pattern.compile("\"motionZ\":(-?[0-9.E\\-]+)"), "motionZ");
         assertTrue("precondition: must be coasting (+Z), got " + mzBefore, mzBefore > 0.2);
 
-        // FA back on → setpoint captured → cruise continues, no jerk.
+        // FA back on -> setpoint captured -> cruise continues, no jerk.
         ok(client().execute("artest rocket set-flight-assist " + id + " on"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 20"));
         double mzAfter = parseDouble(ok(client().execute("artest rocket info " + id)),
@@ -277,7 +277,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         // being produced — exactly the case the old motionY>0 gate silenced.
         ok(client().execute("artest rocket free-flight-input " + id + " 0 1 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 30"));
-        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1")); // cut → hover
+        ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0 1")); // cut -> hover
         ok(client().execute("artest rocket free-flight-tick " + id + " 25"));
         String hover = ok(client().execute("artest rocket info " + id));
         double myHover  = parseDouble(hover, MOTION_Y, "motionY");
@@ -285,7 +285,7 @@ public class FreeFlightAssistsE2ETest extends AbstractSharedServerTest {
         assertTrue("hover thrust (no climb) must still register engine power for the sound "
                 + "(motionY=" + myHover + " enginePower=" + powHover + ")", powHover > 0.0);
 
-        // FA off + no input: pure coast under gravity, no thrust → engines silent.
+        // FA off + no input: pure coast under gravity, no thrust -> engines silent.
         ok(client().execute("artest rocket set-flight-assist " + id + " off"));
         ok(client().execute("artest rocket free-flight-input " + id + " 0 0 0 0 0"));
         ok(client().execute("artest rocket free-flight-tick " + id + " 3"));

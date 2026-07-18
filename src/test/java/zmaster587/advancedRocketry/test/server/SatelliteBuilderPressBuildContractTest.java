@@ -35,7 +35,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *       (holding) contains an ItemSatellite whose NBT has a fresh
  *       {@code satelliteId} from
  *       {@code DimensionManager.getNextSatelliteId()}. The output slot
- *       (7) stays empty — processComplete moves holding→output only
+ *       (7) stays empty — processComplete moves holding&rarr;output only
  *       once libVulpes' completionTime countdown finishes.</li>
  *   <li><b>ID chip carries matching satelliteId.</b> Slot 8 (chipSlot)
  *       gets rewritten via {@code sat.getControllerItemStack(...)} which
@@ -51,7 +51,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * </ul>
  *
  * <p><b>Out of scope</b>: the libVulpes-side completionTime countdown
- * (holding → output transition). That's libVulpes plumbing, not
+ * (holding &rarr; output transition). That's libVulpes plumbing, not
  * TileSatelliteBuilder's contract, and is implicitly exercised by every
  * other multiblock machine test in the suite.</p>
  */

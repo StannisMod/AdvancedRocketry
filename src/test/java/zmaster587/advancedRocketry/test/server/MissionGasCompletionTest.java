@@ -20,7 +20,7 @@ import static org.junit.Assert.assertTrue;
  *       NOT a plain {@code EntityRocket} — distinguishes the gas
  *       completion path from the ore path.</li>
  *   <li>Production guard {@code (int)getStatTag("intakePower") > 0}
- *       short-circuits the fluid fill — no intakePower set → no fill,
+ *       short-circuits the fluid fill — no intakePower set &rarr; no fill,
  *       even if the rocket otherwise has fluid tiles.</li>
  * </ul>
  *
@@ -80,7 +80,7 @@ public class MissionGasCompletionTest extends AbstractSharedServerTest {
     /** With intakePower > 0 the gas mission completes WITHOUT crashing
      *  even when the rocket's storage chunk has no fluid-tile entities
      *  (BlockFuelTank in the `simple` fixture is a pure block — no
-     *  TileEntity → not added to StorageChunk.liquidTiles → the fill
+     *  TileEntity &rarr; not added to StorageChunk.liquidTiles &rarr; the fill
      *  loop iterates zero times). The strong "64000 mB of oxygen
      *  appears in cargo" assertion needs a fluid-cargo rocket fixture
      *  variant that doesn't exist yet.
@@ -111,7 +111,7 @@ public class MissionGasCompletionTest extends AbstractSharedServerTest {
         // Either no rocket re-spawned, or no fluid entries — both
         // represent the no-fill branch (production also spawns the
         // rocket entity in this path; we pin the empty-fluid invariant).
-        assertTrue("intakePower=0 → no fluid entries: " + cargo,
+        assertTrue("intakePower=0 -> no fluid entries: " + cargo,
                 cargo.contains("\"fluidEntries\":0"));
     }
 

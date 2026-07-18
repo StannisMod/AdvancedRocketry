@@ -38,7 +38,7 @@ public class PipeNetworkMultiBlockTest extends AbstractHeadlessServerTest {
         int gx = 1110, gy = 100, gz = 1110;     // solar generator (needs sky access)
         int hx = gx + 1;                          // forge-power-input adjacent east
 
-        // Daytime + clear weather → solar must produce.
+        // Daytime + clear weather -> solar must produce.
         client().execute("time set day");
         client().execute("weather clear 100000");
 

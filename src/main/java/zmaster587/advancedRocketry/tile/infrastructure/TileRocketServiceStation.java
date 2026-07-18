@@ -301,7 +301,7 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
                 if (hasValidAssembler()) {
                     giveWorkToAssemblers();
                 } else {
-                    // No assembler nearby → repair one part from the station's own
+                    // No assembler nearby -> repair one part from the station's own
                     // input slots at the configured resource penalty.
                     tryStandaloneRepair();
                 }
@@ -523,7 +523,7 @@ public class TileRocketServiceStation extends TileEntityRFConsumer implements IM
         super.readFromNBT(nbt);
         was_powered = nbt.getBoolean("was_powered");
         initialPartToRepairCount = nbt.getInteger("initialPartToRepairCount");
-        // Backward compatible: old saves lack these keys → empty inventory.
+        // Backward compatible: old saves lack these keys -> empty inventory.
         if (nbt.hasKey("repairInv")) {
             repairInventory.readFromNBT(nbt.getCompoundTag("repairInv"));
         }

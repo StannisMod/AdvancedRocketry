@@ -72,7 +72,7 @@ public class ForceFieldProjectionSmokeTest extends AbstractHeadlessServerTest {
         assertTrue("projector must not be powered yet: " + pre,
                 "false".equals(group(POWERED, pre)));
 
-        // Place redstone block BELOW projector → projector powered.
+        // Place redstone block BELOW projector -> projector powered.
         // We avoid adjacent horizontal placement because the projector's
         // private facing direction may point at that block, making nextPos
         // non-replaceable and stalling extensionRange at 1 with no field
@@ -138,7 +138,7 @@ public class ForceFieldProjectionSmokeTest extends AbstractHeadlessServerTest {
                         + "extensionRange=" + rangeAfter + " neighbours:" + dump,
                 fieldX != Integer.MIN_VALUE);
 
-        // Remove redstone → projector unpowered.
+        // Remove redstone -> projector unpowered.
         client().execute("artest place 0 " + px + " " + (py - 1) + " " + pz + " minecraft:stone");
 
         // Drive collapse directly via `field tick` (same rationale as above

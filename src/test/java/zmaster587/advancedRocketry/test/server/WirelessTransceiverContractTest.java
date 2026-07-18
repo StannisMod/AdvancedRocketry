@@ -25,10 +25,10 @@ import static org.junit.Assert.assertTrue;
  *   <li>Pairing branch — only B paired: A inherits B's id.</li>
  *   <li>Pairing branch — both paired, different: ids merge to one.</li>
  *   <li>Pairing branch — both paired, same: re-pair is a no-op.</li>
- *   <li>Mode toggle: extract → tile is source on network.</li>
- *   <li>Mode toggle: inject → tile is sink on network.</li>
+ *   <li>Mode toggle: extract &rarr; tile is source on network.</li>
+ *   <li>Mode toggle: inject &rarr; tile is sink on network.</li>
  *   <li>Enabled toggle round-trip surfaces via wireless-info.</li>
- *   <li>Mode flip swaps source ↔ sink registration on the live network.</li>
+ *   <li>Mode flip swaps source &harr; sink registration on the live network.</li>
  * </ol>
  *
  * <p>Out of scope here: NBT round-trip across server
@@ -66,7 +66,7 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         assertEquals("both endpoints share the new id", shared, netIdAt(baseX + 25));
 
         // wireless-role-on-network surfaces networkExists=true once paired
-        // (each tile defaults to inject mode → sink on the live network).
+        // (each tile defaults to inject mode -> sink on the live network).
         String role = roleAt(baseX);
         assertTrue("network must exist after pairing: " + role,
                 extractBool(NETWORK_EXISTS, role));
@@ -76,11 +76,11 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
     public void pairingOnlyFirstPairedSpreadsIdToSecond() throws Exception {
         int baseX = 2100;
         placeAt(baseX, baseX + 25, baseX + 50);
-        // Pair A↔B to give A a non-sentinel id; C remains unpaired.
+        // Pair A<->B to give A a non-sentinel id; C remains unpaired.
         int sharedAB = pair(baseX, baseX + 25);
         assertEquals(-1, netIdAt(baseX + 50));
 
-        // Pair A↔C: only A is paired → C inherits A's id (no new id).
+        // Pair A<->C: only A is paired -> C inherits A's id (no new id).
         int sharedAC = pair(baseX, baseX + 50);
         assertEquals("C must inherit A's id, not get a new one",
                 sharedAB, sharedAC);
@@ -91,7 +91,7 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
     public void pairingOnlySecondPairedSpreadsIdToFirst() throws Exception {
         int baseX = 2200;
         placeAt(baseX, baseX + 25, baseX + 50);
-        // Pair B↔C first → B has an id, A is unpaired.
+        // Pair B<->C first -> B has an id, A is unpaired.
         int sharedBC = pair(baseX + 25, baseX + 50);
         assertEquals(-1, netIdAt(baseX));
 
@@ -105,13 +105,13 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
     public void pairingBothPairedDifferentIdsMergesIntoOne() throws Exception {
         int baseX = 2300;
         placeAt(baseX, baseX + 25, baseX + 50, baseX + 75);
-        // Two disjoint networks: A↔B and C↔D.
+        // Two disjoint networks: A<->B and C<->D.
         int idAB = pair(baseX, baseX + 25);
         int idCD = pair(baseX + 50, baseX + 75);
         assertNotEquals("the two networks must start distinct", idAB, idCD);
 
-        // Bridge them via pairing B↔C: both already-paired with different
-        // ids → mergeNetworks fires. The post-merge id must replace at
+        // Bridge them via pairing B<->C: both already-paired with different
+        // ids -> mergeNetworks fires. The post-merge id must replace at
         // least one of (idAB, idCD); both tiles end up on the merged net.
         int merged = pair(baseX + 25, baseX + 50);
         int postIdB = netIdAt(baseX + 25);
@@ -141,11 +141,11 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         placeAt(baseX, baseX + 25);
         pair(baseX, baseX + 25);
 
-        // Default mode is inject (extractMode=false → sink).
+        // Default mode is inject (extractMode=false -> sink).
         String preInfo = info(baseX);
         assertEquals("default mode is inject (sink)", "inject", extractMode(preInfo));
 
-        // Flip to extract → tile becomes a source on its network.
+        // Flip to extract -> tile becomes a source on its network.
         setMode(baseX, "extract");
         String postInfo = info(baseX);
         assertEquals("mode field flipped to extract", "extract", extractMode(postInfo));
@@ -191,13 +191,13 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
 
         setMode(baseX, "extract");
         String r1 = roleAt(baseX);
-        assertTrue("flip to extract → source", extractBool(IS_SOURCE, r1));
+        assertTrue("flip to extract -> source", extractBool(IS_SOURCE, r1));
         assertFalse("must clear sink registration on flip",
                 extractBool(IS_SINK, r1));
 
         setMode(baseX, "inject");
         String r2 = roleAt(baseX);
-        assertTrue("flip back to inject → sink",
+        assertTrue("flip back to inject -> sink",
                 extractBool(IS_SINK, r2));
         assertFalse("must clear source registration on flip back",
                 extractBool(IS_SOURCE, r2));

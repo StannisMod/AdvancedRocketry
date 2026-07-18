@@ -28,7 +28,7 @@ import static org.junit.Assert.assertTrue;
  *       terraforming production path depends on.</li>
  * </ol>
  *
- * <p>The atmosphere mutation path (set-density → real density change with
+ * <p>The atmosphere mutation path (set-density &rarr; real density change with
  * original preserved) is exercised by {@link TerraformingSmokeTest}; this
  * scenario verifies the production controller doesn't blow up before the
  * mutation gets to run.</p>

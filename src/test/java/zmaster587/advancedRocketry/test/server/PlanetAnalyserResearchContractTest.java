@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
  * Planet Analyser (TileAstrobodyDataProcessor) research
  * increment contract.
  *
- * <p>Phase-0 reshape: the audit framed this as "planet-id chip → SatelliteData
+ * <p>Phase-0 reshape: the audit framed this as "planet-id chip &rarr; SatelliteData
  * scan output". Production
  * ({@link zmaster587.advancedRocketry.tile.multiblock.TileAstrobodyDataProcessor})
  * is actually an ASTEROID research pipeline: when a {@link
@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  * increments the chip's stored data field by 1.</p>
  *
  * <p>Contract pinned: <i>"powered + AsteroidChip in slot 0 + DataBus
- * with COMPOSITION data + researchingAtmosphere=true → after a research
+ * with COMPOSITION data + researchingAtmosphere=true &rarr; after a research
  * cycle the chip's COMPOSITION value rises by &ge; 1."</i> Litmus passes
  * — the chip's data fields are what the player sees on the chip's
  * tooltip and what feeds onward into the rest of the data flow.</p>
@@ -79,7 +79,7 @@ public class PlanetAnalyserResearchContractTest extends AbstractSharedServerTest
         }
 
         // 3) Inject 100k RF into the power-input plug at (cx+1, cy-1, cz).
-        // requiredPowerPerTick = 100 → 100k buys 1000 ticks of headroom
+        // requiredPowerPerTick = 100 -> 100k buys 1000 ticks of headroom
         // (~50 research cycles, well above the 1 we need).
         String energy = exec("artest energy inject 0 "
                 + (CX + 1) + " " + (CY - 1) + " " + CZ + " 100000");

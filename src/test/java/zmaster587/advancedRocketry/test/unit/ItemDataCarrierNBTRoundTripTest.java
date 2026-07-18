@@ -210,11 +210,11 @@ public class ItemDataCarrierNBTRoundTripTest {
         // every other damage value yields 0. Production uses this to gate
         // "this stick variant carries data" vs "this is the inert variant".
         ItemData item = new ItemData();
-        assertEquals("damage 0 → max data 1000",
+        assertEquals("damage 0 -> max data 1000",
                 1000, item.getMaxData(0));
-        assertEquals("damage 1 → max data 0 (inert variant)",
+        assertEquals("damage 1 -> max data 0 (inert variant)",
                 0, item.getMaxData(1));
-        assertEquals("any non-zero damage → max data 0",
+        assertEquals("any non-zero damage -> max data 0",
                 0, item.getMaxData(99));
     }
 

@@ -316,7 +316,7 @@ public class DimensionPropertiesTest {
      */
     @Test
     public void atmosphereTypeFromDensityAndTemperature() {
-        // Boundary rule: value > type.value → that type, walked top-down.
+        // Boundary rule: value > type.value -> that type, walked top-down.
         // SUPERHIGHPRESSURE(800), HIGHPRESSURE(200), NORMAL(75), LOW(25), NONE(0).
 
         assertEquals(AtmosphereTypes.SUPERHIGHPRESSURE,

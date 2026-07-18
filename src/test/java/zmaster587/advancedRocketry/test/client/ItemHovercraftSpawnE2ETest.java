@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
  * player-visible side of
  * {@link zmaster587.advancedRocketry.item.ItemHovercraft#onItemRightClick},
  * driven the way the player drives it: a REAL item right-click
- * ({@code ClientBot.useItem} → {@code CPacketPlayerTryUseItem}) with the look
+ * ({@code ClientBot.useItem} &rarr; {@code CPacketPlayerTryUseItem}) with the look
  * aimed via {@code setLook}, observed at the layer the player sees —
  * the CLIENT world's entity list ({@code reportEntities}) and the
  * CLIENT-rendered held stack ({@code reportPlayerItems}).

@@ -164,9 +164,9 @@ public class SatelliteWeatherController extends SatelliteBase {
     /**
      * Drive the planet's rain marker from the controller mode:
      * <ul>
-     *   <li>rain (0) → marker 1: the planet rains continuously,</li>
-     *   <li>dry (1) → marker -1: the sky is forced clear,</li>
-     *   <li>flood (2) → weather left untouched (purely hydrological).</li>
+     *   <li>rain (0) &rarr; marker 1: the planet rains continuously,</li>
+     *   <li>dry (1) &rarr; marker -1: the sky is forced clear,</li>
+     *   <li>flood (2) &rarr; weather left untouched (purely hydrological).</li>
      * </ul>
      * The marker is re-read every tick by {@code WorldProviderPlanet#updateWeather},
      * which still keeps a thin-atmosphere planet clear even in rain mode.

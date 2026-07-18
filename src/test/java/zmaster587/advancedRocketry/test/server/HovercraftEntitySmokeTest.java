@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  * {@code EntityRegistry.registerModEntity(new ResourceLocation(modId, "ARHoverCraft"), ...)}
  * with the runtime registry name {@code advancedrocketry:ARHoverCraft}.
  * We cover the server-side
- * lifecycle: spawn → entity alive → tick → still alive (no NPE during the
+ * lifecycle: spawn &rarr; entity alive &rarr; tick &rarr; still alive (no NPE during the
  * physics update path).</p>
  *
  * <p>Real player-riding gameplay (mount, throttle, fuel burn, fan

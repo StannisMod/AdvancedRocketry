@@ -28,7 +28,7 @@ import static org.junit.Assert.assertTrue;
  *     for both subcommands, not two parallel providers handing out
  *     different biome lookups).
  *
- * Cross-session determinism (same seed → identical histogram across server
+ * Cross-session determinism (same seed &rarr; identical histogram across server
  * restarts) is intentionally deferred to a later phase — it doubles the
  * harness boot time and the within-session check already catches the
  * majority of regenerator bugs.
@@ -173,7 +173,7 @@ public class WorldgenDeterminismAndSamplingTest extends AbstractSharedServerTest
                 stats.contains("\"count\":"));
         assertTrue("ore-stats reply missing 'chunksScanned' field: " + stats,
                 stats.contains("\"chunksScanned\":"));
-        // radius=1 → 3×3 = 9 chunks
+        // radius=1 -> 3×3 = 9 chunks
         assertTrue("ore-stats with radius=1 must have scanned >=1 chunk: " + stats,
                 !stats.contains("\"chunksScanned\":0"));
     }

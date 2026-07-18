@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
  * dim 0 reports {@code isARPlanet=true}).</p>
  *
  * <p>The full beacon-enable cycle (place 3×5×3 multiblock, redstone power,
- * setMachineEnabled true → list grows) needs a dedicated
+ * setMachineEnabled true &rarr; list grows) needs a dedicated
  * {@code /artest fixture beacon} probe — left as follow-up for the same
  * reason terraformer / BHG full cycles are deferred. The
  * {@code SpecialInfrastructureSmokeTest} already proves the beacon block

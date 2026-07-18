@@ -26,9 +26,9 @@ import static org.junit.Assert.assertTrue;
  * <ul>
  *   <li>{@link ItemThermite} — furnace burn-time contract.</li>
  *   <li>{@link ItemBiomeChanger} — IModularInventory metadata +
- *       wire→NBT round-trip for the satellite-modification packet.</li>
+ *       wire&rarr;NBT round-trip for the satellite-modification packet.</li>
  *   <li>{@link ItemWeatherController} — IModularInventory metadata +
- *       wire→NBT round-trip for the weather-state packet (3 fields).</li>
+ *       wire&rarr;NBT round-trip for the weather-state packet (3 fields).</li>
  * </ul>
  *
  * <p>{@link zmaster587.advancedRocketry.item.ItemData} and
@@ -94,7 +94,7 @@ public class SpecialPurposeItemContractTest {
     @Test
     public void biomeChangerReadDataFromNetworkPersistsBiomeIdToNbt() {
         // Wire-format contract: packet id 0 carries a single int payload
-        // → write into NBT key "biome". This pins both the packet schema
+        // -> write into NBT key "biome". This pins both the packet schema
         // AND the NBT key name used by the production useNetworkData
         // path (line 180: `nbt.getInteger("biome")`).
         ItemBiomeChanger item = new ItemBiomeChanger();
@@ -154,11 +154,11 @@ public class SpecialPurposeItemContractTest {
 
         item.readDataFromNetwork(wire, (byte) 0, nbt, stack);
 
-        assertEquals("first int → NBT 'mode_id'",
+        assertEquals("first int -> NBT 'mode_id'",
                 2, nbt.getInteger("mode_id"));
-        assertEquals("second int → NBT 'floodlevel'",
+        assertEquals("second int -> NBT 'floodlevel'",
                 63, nbt.getInteger("floodlevel"));
-        assertEquals("third int → NBT 'last_mode_id'",
+        assertEquals("third int -> NBT 'last_mode_id'",
                 1, nbt.getInteger("last_mode_id"));
     }
 }

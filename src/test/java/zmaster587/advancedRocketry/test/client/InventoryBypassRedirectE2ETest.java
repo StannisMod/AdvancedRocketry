@@ -97,7 +97,7 @@ public class InventoryBypassRedirectE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(40);
 
         // Open the chest container GUI SERVER-SIDE (mirrors
-        // BlockChest.onBlockActivated → player.displayGUIChest) instead of via
+        // BlockChest.onBlockActivated -> player.displayGUIChest) instead of via
         // bot.rightClickBlock. The right-click packet was dropped before the
         // chunk/player settled (the prior @Ignore reason, a settle-timing race),
         // which is orthogonal to the mixin contract under test. The S2C
@@ -135,7 +135,7 @@ public class InventoryBypassRedirectE2ETest extends AbstractClientE2ETest {
                 "artest player inv-bypass status"));
         assertEquals("with inv-bypass active, the chest GUI must remain open "
                 + "across a 200-block teleport (mixin redirect should force "
-                + "canInteractWith → true on every EntityPlayerMP.onUpdate "
+                + "canInteractWith -> true on every EntityPlayerMP.onUpdate "
                 + "tick); reportState=" + afterTpWithBypass
                 + " bypassStatus=" + statusAfterTp,
                 GUI_CHEST, screenAfterTp);
@@ -148,8 +148,8 @@ public class InventoryBypassRedirectE2ETest extends AbstractClientE2ETest {
         assertTrue("inv-bypass remove must report inBypass:false: " + removeResp,
                 removeResp.contains("\"inBypass\":false"));
 
-        // Without bypass, vanilla's canInteractWith returns false → the
-        // next EntityPlayerMP.onUpdate tick runs closeScreen → the S2C
+        // Without bypass, vanilla's canInteractWith returns false -> the
+        // next EntityPlayerMP.onUpdate tick runs closeScreen -> the S2C
         // packet closes the GUI on the client.
         String finalScreen = waitForNoScreen(bot(), 200);
         assertEquals("after removing inv-bypass, vanilla distance check "

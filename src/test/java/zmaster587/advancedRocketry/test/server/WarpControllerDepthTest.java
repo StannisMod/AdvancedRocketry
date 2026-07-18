@@ -129,7 +129,7 @@ public class WarpControllerDepthTest extends AbstractSharedServerTest {
     @Test
     public void warpTriggerWithoutFuelDoesNotMoveStation() throws Exception {
         // Production gate: station.useFuel(getTravelCost()) != 0 is one
-        // of the AND conditions. With fuel=0, useFuel returns 0 → no warp.
+        // of the AND conditions. With fuel=0, useFuel returns 0 -> no warp.
         int stationId = createStationOrbiting(0);
         int[] xz = stationSpawnCoords(stationId);
         placeAndReadWarpState(SPACE_DIM, xz[0], 128, xz[1]);
@@ -137,7 +137,7 @@ public class WarpControllerDepthTest extends AbstractSharedServerTest {
         // Force fuel=0 (set-then-use 0 leaves it empty).
         ok(client().execute("artest station fuel " + stationId + " set 0"));
         // Program a different destination so the dest-not-current gate passes.
-        // Use overworld→ destination = an AR dim other than 0. To keep this
+        // Use overworld-> destination = an AR dim other than 0. To keep this
         // test cheap we just verify "station did not move" — regardless of
         // dest, the fuel gate denies the warp.
         String before = ok(client().execute("artest station info " + stationId));
@@ -220,8 +220,8 @@ public class WarpControllerDepthTest extends AbstractSharedServerTest {
         ok(client().execute("artest station set-dest " + stationId + " 1"));
         // Wire the station's properties.parentPlanet to overworld. Without
         // this, station.properties.getParentProperties() is null and
-        // TileWarpController.getTravelCost returns Integer.MAX_VALUE →
-        // useFuel(MAX_VALUE) returns 0 (capped at fuelAmount) → warp refused.
+        // TileWarpController.getTravelCost returns Integer.MAX_VALUE ->
+        // useFuel(MAX_VALUE) returns 0 (capped at fuelAmount) -> warp refused.
         ok(client().execute("artest station set-parent " + stationId + " 0"));
         // Register a warp core. Position is arbitrary — it just needs to be
         // in the station's tracked warp-core list. The hasUsableWarpCore
@@ -302,7 +302,7 @@ public class WarpControllerDepthTest extends AbstractSharedServerTest {
     public void warpTriggerWithoutWarpCoreDoesNotMoveStation() throws Exception {
         // Production gate: hasUsableWarpCore() requires hasWarpCores=true.
         // Everything else green (fuel + dest != current, not anchored) but
-        // no warp core registered → warp refused.
+        // no warp core registered -> warp refused.
         int stationId = createStationOrbiting(0);
         int[] xz = stationSpawnCoords(stationId);
 
@@ -329,7 +329,7 @@ public class WarpControllerDepthTest extends AbstractSharedServerTest {
         // Two stations created in succession must produce two controllers
         // (placed at each station's spawn coords) that resolve to two
         // DIFFERENT station ids. Pins the per-station-coord isolation of
-        // the SpaceObjectManager coord→station mapping — a regression
+        // the SpaceObjectManager coord->station mapping — a regression
         // that collapsed it would let one monitor control multiple
         // stations.
         int a = createStationOrbiting(0);

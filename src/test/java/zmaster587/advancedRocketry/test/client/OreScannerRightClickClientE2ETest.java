@@ -9,7 +9,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@code ItemOreScanner}
  * right-click, driven through the REAL client item-use path
- * ({@code ClientBot.useItem} → {@code CPacketPlayerTryUseItem}) with the
+ * ({@code ClientBot.useItem} &rarr; {@code CPacketPlayerTryUseItem}) with the
  * outcome read from the CLIENT screen state.
  *
  * <p>Arrange uses the arrange-only {@code artest player equip-orescanner}
@@ -17,10 +17,10 @@ import static org.junit.Assert.assertTrue;
  * is the client's.</p>
  *
  * <ul>
- *   <li><b>Empty satellite-ID branch</b> — held OreScanner has no NBT →
+ *   <li><b>Empty satellite-ID branch</b> — held OreScanner has no NBT &rarr;
  *       early-out: no GUI opens on the client, no crash.</li>
  *   <li><b>Resolved satellite-ID branch</b> — a registered
- *       SatelliteOreMapping on dim 0 → the OreMapping GUI must actually
+ *       SatelliteOreMapping on dim 0 &rarr; the OreMapping GUI must actually
  *       OPEN on the client. (The old probe-driven test only pinned
  *       "no crash" — it could not see whether the GUI opened.)</li>
  * </ul>

@@ -18,7 +18,7 @@ import static org.junit.Assert.assertTrue;
  * observable effect was the vanilla main-menu line "N mods loaded, M mods
  * active" disagreeing by one: the phantom container counted as loaded but
  * never became active. The {@code report_mods} probe reads the exact two
- * lists that menu line renders ({@code FMLCommonHandler.getBrandings} →
+ * lists that menu line renders ({@code FMLCommonHandler.getBrandings} &rarr;
  * {@code Loader.getModList()} / {@code getActiveModList()}), on the real
  * client — so this is the player-visible layer of the report.</p>
  */

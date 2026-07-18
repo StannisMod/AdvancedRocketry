@@ -108,7 +108,7 @@ public class MissionOreCompletionTest extends AbstractSharedServerTest {
         Matcher m = Pattern.compile("\"itemEntries\":(\\d+)").matcher(cargo);
         assertTrue("itemEntries field missing in cargo: " + cargo, m.find());
         int entries = Integer.parseInt(m.group(1));
-        assertTrue("drillingPower=0 → only the refill chip (≤ 2 entries to allow "
+        assertTrue("drillingPower=0 -> only the refill chip (≤ 2 entries to allow "
                         + "a duplicate from a sibling test rocket); got " + entries
                         + "; resp=" + cargo,
                 entries >= 1 && entries <= 2);

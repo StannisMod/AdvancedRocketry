@@ -9,13 +9,13 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * REAL rocket→station cause-effect for pad state.
+ * REAL rocket&rarr;station cause-effect for pad state.
  *
  * <p>{@link SpaceStationDockUndockTest} exercises the production
  * state-machine methods directly via thin probes (addLandingPad,
  * getNextLandingPad, setPadStatus). What it does NOT cover is the
  * production CALL-SITES of those methods — i.e. the CHAIN "a rocket
- * does X" → "station-side pad state flips". A regression that severed
+ * does X" &rarr; "station-side pad state flips". A regression that severed
  * one of those chains (e.g. a refactor that drops the setOccupied call
  * inside TileGuidanceComputer.getStationLocation) is invisible to the
  * dock/undock tests.</p>
@@ -110,9 +110,9 @@ public class RocketStationCauseEffectTest extends AbstractSharedServerTest {
 
         // Production cause-effect under test:
         //   gc.overrideLandingStation(station)
-        //     → setFallbackDestination(spaceDim, getStationLocation(station, true))
-        //     → getStationLocation calls station.getNextLandingPad(true)
-        //     → next free auto-land pad gets setOccupied(true).
+        //     -> setFallbackDestination(spaceDim, getStationLocation(station, true))
+        //     -> getStationLocation calls station.getNextLandingPad(true)
+        //     -> next free auto-land pad gets setOccupied(true).
         String override = ok(client().execute(
                 "artest rocket override-landing " + rocketId + " " + stationId));
         assertTrue("override-landing probe must succeed: " + override,
@@ -132,8 +132,8 @@ public class RocketStationCauseEffectTest extends AbstractSharedServerTest {
     public void overrideLandingStationWithNoAutoLandPadIsNoOp() throws Exception {
         // Counter-test: station with a pad but auto-land NOT enabled.
         // getStationLocation falls into the `landingLoc.get == null` branch
-        // → calls getNextLandingPad(true) which filters by allowedForAutoLand.
-        // No pad qualifies → returns null → setOccupied is NEVER reached.
+        // -> calls getNextLandingPad(true) which filters by allowedForAutoLand.
+        // No pad qualifies -> returns null -> setOccupied is NEVER reached.
         int stationId = createStation();
         ok(client().execute("artest station add-pad " + stationId + " 60 60 beta"));
         // intentionally NOT calling set-autoland — pad stays opt-out.

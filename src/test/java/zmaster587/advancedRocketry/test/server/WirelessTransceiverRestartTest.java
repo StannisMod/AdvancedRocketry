@@ -28,7 +28,7 @@ import static org.junit.Assert.assertTrue;
  *   <li>{@code mode}, {@code enabled}, {@code networkID} survived
  *       {@code TileWirelessTransciever.writeToNBT / readFromNBT}.</li>
  *   <li>{@code onLoad} re-registered the tile on its dataNetwork with
- *       the saved role (extract → source). Without this side, a player
+ *       the saved role (extract &rarr; source). Without this side, a player
  *       configuring a transceiver before restart would find it silently
  *       absent from its network on restart.</li>
  * </ul>

@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>{@code ItemPackedStructure} is the storage shell for assembler-built
  * structures (the {@code itemSpaceStation} item is an instance of this
- * class). The full setStructure → getStructure round-trip pin requires
+ * class). The full setStructure &rarr; getStructure round-trip pin requires
  * a runtime profiler — {@link zmaster587.advancedRocketry.util.StorageChunk}'s
  * constructor reaches {@code FMLCommonHandler.getMinecraftServerInstance().profiler}
  * via {@link zmaster587.advancedRocketry.common.CommonProxy#getProfiler}.
@@ -38,7 +38,7 @@ import static org.junit.Assert.assertTrue;
  *       variants.</li>
  * </ul>
  *
- * <p>The capture path (player → assembler → ItemPackedStructure) is
+ * <p>The capture path (player &rarr; assembler &rarr; ItemPackedStructure) is
  * out of scope per the TASK ticket — that's tested by the rocket /
  * station assembler suites.</p>
  */

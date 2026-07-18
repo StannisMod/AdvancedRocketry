@@ -39,7 +39,7 @@ import org.valkyrienskies.mod.common.ships.ship_world.WorldServerShipManager;
 @Mixin(value = WorldServerShipManager.class, remap = false)
 public abstract class MixinWorldServerShipManager {
 
-    /** VS: UUID → loaded ship. A ship present here is already loaded. */
+    /** VS: UUID &rarr; loaded ship. A ship present here is already loaded. */
     @Shadow @Final private Map loadedShips;
 
     /** VS: UUIDs queued to load next physics tick. */

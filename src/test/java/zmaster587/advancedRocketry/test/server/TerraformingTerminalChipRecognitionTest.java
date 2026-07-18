@@ -34,14 +34,14 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * <p>Contract pinned:</p>
  *
  * <ul>
- *   <li><b>Valid chip + redstone → enabled.</b> After force-ticking
+ *   <li><b>Valid chip + redstone &rarr; enabled.</b> After force-ticking
  *       a terminal loaded with a properly-programmed chip and powered
  *       by an adjacent redstone block, {@code was_enabled_last_tick}
  *       and the block STATE property are both true.</li>
- *   <li><b>Valid chip, no redstone → idle.</b> Same chip without
+ *   <li><b>Valid chip, no redstone &rarr; idle.</b> Same chip without
  *       redstone keeps {@code was_enabled_last_tick} false. Pins that
  *       the chip-recognition gate doesn't auto-enable the loop.</li>
- *   <li><b>Empty slot → invalid chip.</b> An unloaded terminal reports
+ *   <li><b>Empty slot &rarr; invalid chip.</b> An unloaded terminal reports
  *       {@code hasValidBiomeChanger() == false}. Pins the early-out
  *       guard so a tick with no chip is safely a no-op.</li>
  * </ul>
@@ -70,7 +70,7 @@ public class TerraformingTerminalChipRecognitionTest extends AbstractSharedServe
     private static final int CX_NO_RS = 12000;
     private static final int CX_EMPTY = 12500;
 
-    /** Happy path — chip loaded + redstone applied → enabled. */
+    /** Happy path — chip loaded + redstone applied &rarr; enabled. */
     @Test
     public void validChipPlusRedstoneEnablesTheTerminal() throws Exception {
         int x = CX_VALID, y = CY, z = CZ;
@@ -100,7 +100,7 @@ public class TerraformingTerminalChipRecognitionTest extends AbstractSharedServe
                 "true", extract(info, BLOCK_ON));
     }
 
-    /** Chip valid but no redstone → recognition passes but power gate
+    /** Chip valid but no redstone &rarr; recognition passes but power gate
      *  keeps the terminal idle. */
     @Test
     public void validChipWithoutRedstoneStaysIdle() throws Exception {
@@ -122,7 +122,7 @@ public class TerraformingTerminalChipRecognitionTest extends AbstractSharedServe
                 "false", extract(info, BLOCK_ON));
     }
 
-    /** Empty slot → chip-recognition rejects, terminal idles even with
+    /** Empty slot &rarr; chip-recognition rejects, terminal idles even with
      *  redstone. Pins the safe early-out branch. */
     @Test
     public void emptySlotReportsInvalidChipAndIdle() throws Exception {

@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
  * internal counters or specific impl constants.</p>
  *
  * <ul>
- *   <li>WeatherController mode 1 (water → air) and mode 2 (air →
+ *   <li>WeatherController mode 1 (water &rarr; air) and mode 2 (air &rarr;
  *       water) — pinning the visible block-state outcomes of each
  *       mode (the prior suite only covered mode 0).</li>
  *   <li>Mode-change discards old-mode queued work — switching modes
@@ -76,7 +76,7 @@ public class SatelliteCoverageGapsTest extends AbstractSharedServerTest {
                 "minecraft:air", b);
     }
 
-    /** Pin: WeatherController mode 2 (alt rain) — air → water like
+    /** Pin: WeatherController mode 2 (alt rain) — air &rarr; water like
      *  mode 0 but via the independent mode-2 code branch. */
     @Test
     public void weatherControllerMode2ReplacesAirWithWater() throws Exception {

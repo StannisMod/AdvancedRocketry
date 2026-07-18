@@ -24,18 +24,18 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>This test pins the <b>ride contracts</b>:</p>
  * <ol>
- *   <li>Player mounts via {@code startRiding} → ridingEntity matches.</li>
- *   <li>Player dismounts → ridingEntity is null.</li>
- *   <li>Player input {@code moveForward > 0} → hovercraft accelerates
+ *   <li>Player mounts via {@code startRiding} &rarr; ridingEntity matches.</li>
+ *   <li>Player dismounts &rarr; ridingEntity is null.</li>
+ *   <li>Player input {@code moveForward > 0} &rarr; hovercraft accelerates
  *       forward.</li>
- *   <li>No input → hovercraft hovers (lateral position stable).</li>
+ *   <li>No input &rarr; hovercraft hovers (lateral position stable).</li>
  * </ol>
  *
  * <p><b>Honest-e2e shape</b>: mounting stays a
  * server probe — an honest client e2e allows "mount" as arrange. The RIDE
  * contracts are then driven through the real client input surface: the
- * forward key (W) feeds {@code MovementInput} → {@code CPacketInput} →
- * server {@code player.moveForward} → {@code getPassengerMovingForward()},
+ * forward key (W) feeds {@code MovementInput} &rarr; {@code CPacketInput} &rarr;
+ * server {@code player.moveForward} &rarr; {@code getPassengerMovingForward()},
  * and sneak (LSHIFT) drives the vanilla wants-to-stop-riding dismount.
  * Observations read the CLIENT view via {@code reportRidingEntity}, with
  * server probes kept as cross-side oracles.</p>
@@ -156,8 +156,8 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
         double xBefore = pre.get("posX").getAsDouble();
         double zBefore = pre.get("posZ").getAsDouble();
 
-        // Drive forward with the REAL forward key: W feeds MovementInput →
-        // CPacketInput → server player.moveForward, which EntityHoverCraft's
+        // Drive forward with the REAL forward key: W feeds MovementInput ->
+        // CPacketInput -> server player.moveForward, which EntityHoverCraft's
         // getPassengerMovingForward() reads each tick.
         bot().setKey(KEY_W, true);
         try {
@@ -193,8 +193,8 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void unmountedHovercraftDoesNotMoveLaterally() throws Exception {
-        // Counter-test: an unmounted hovercraft has no passenger →
-        // getPassengerMovingForward returns 0 → no lateral acceleration.
+        // Counter-test: an unmounted hovercraft has no passenger ->
+        // getPassengerMovingForward returns 0 -> no lateral acceleration.
         // The Y position may drift (gravity/hover), but X+Z should
         // stay stable.
         exec("artest place 0 68 78 8 minecraft:stone");

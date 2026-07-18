@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /**
  * The authoritative server-side record of every tier-2 ship known to the space subsystem:
- * {@code shipId → (galactic coordinate, cell, lifecycle state, slot dim)}.
+ * {@code shipId -> (galactic coordinate, cell, lifecycle state, slot dim)}.
  *
  * <p><b>Key discipline:</b> the key is the ship's DURABLE id — the UUID minted at tier-2 assembly
  * and persisted in the Advanced Flight Computer's tile NBT (crossings carry tile NBT verbatim, so

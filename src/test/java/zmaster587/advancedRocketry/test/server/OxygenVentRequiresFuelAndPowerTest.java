@@ -15,7 +15,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * {@code TileOxygenVent} functional cycle.
  *
  * <p>{@link zmaster587.advancedRocketry.test.server.MachineDomainSmokeSuite#sealedRoomBecomesBreathableThenLeaks}
- * already pins the happy path: vent + oxygen + energy + sealed room →
+ * already pins the happy path: vent + oxygen + energy + sealed room &rarr;
  * blob populates, atmosphere becomes pressurised. This test covers
  * the <b>counter-branches</b> — what happens when one of the two
  * required inputs is missing.</p>
@@ -36,8 +36,8 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * atmosphere reverts to the dim's baseline. Pins three contracts:</p>
  *
  * <ul>
- *   <li>energy-required: no power → no seal regardless of fluid.</li>
- *   <li>fluid-required: no oxygen → no seal regardless of power.</li>
+ *   <li>energy-required: no power &rarr; no seal regardless of fluid.</li>
+ *   <li>fluid-required: no oxygen &rarr; no seal regardless of power.</li>
  *   <li>active-cycle drain: with both inputs and sealed state, energy
  *       buffer decreases over ticks (the {@code extractEnergy} call
  *       isn't a no-op).</li>
@@ -57,8 +57,8 @@ public class OxygenVentRequiresFuelAndPowerTest extends AbstractSharedServerTest
     private static final int CX_NO_POWER  = 2200;
     private static final int CX_DRAIN     = 2400;
 
-    /** Vent + energy, NO oxygen → fluid drain at {@code performFunction:258}
-     *  fails the "drainedFluid != null && >= amtToDrain" guard → vent's
+    /** Vent + energy, NO oxygen &rarr; fluid drain at {@code performFunction:258}
+     *  fails the "drainedFluid != null && >= amtToDrain" guard &rarr; vent's
      *  {@code hasFluid} flag flips false AND the atmosphere type reverts
      *  from {@code PRESSURIZEDAIR} to the dim baseline.
      *
@@ -90,8 +90,8 @@ public class OxygenVentRequiresFuelAndPowerTest extends AbstractSharedServerTest
                 info.contains("\"blobAtmosphere\":\"PRESSURIZEDAIR\""));
     }
 
-    /** Vent + oxygen, NO energy → {@code hasEnoughEnergy} guard fails at
-     *  {@code update:288} → {@code performFunction} never invoked →
+    /** Vent + oxygen, NO energy &rarr; {@code hasEnoughEnergy} guard fails at
+     *  {@code update:288} &rarr; {@code performFunction} never invoked &rarr;
      *  vent never seals. */
     @Test
     public void ventWithoutPowerDoesNotSealEvenWhenFueled() throws Exception {
@@ -108,7 +108,7 @@ public class OxygenVentRequiresFuelAndPowerTest extends AbstractSharedServerTest
                 0, extract(info, VENT_BLOB_SIZE));
     }
 
-    /** Vent + oxygen + energy + sealed → active cycle drains the energy
+    /** Vent + oxygen + energy + sealed &rarr; active cycle drains the energy
      *  buffer per tick. The drain is the observable side-effect that
      *  proves {@code energy.extractEnergy} actually runs (and that the
      *  {@code if (!world.isRemote && isSealed)} guard isn't silently

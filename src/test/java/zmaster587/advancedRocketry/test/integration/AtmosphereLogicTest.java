@@ -111,7 +111,7 @@ public class AtmosphereLogicTest {
      * Space-suit "capability" NBT round-trip.
      *
      * The suit's worn state is persisted on the ItemStack itself: ItemSpaceChest
-     * stores its modular slot inventory (which holds fluid tanks → capability
+     * stores its modular slot inventory (which holds fluid tanks &rarr; capability
      * adapters) into {@code stack.getTagCompound()} via
      * {@code EmbeddedInventory.writeToNBT}, and reloads it the same way.
      * That mechanism is just an {@link ItemStack}-with-NBT round-trip; the
@@ -128,7 +128,7 @@ public class AtmosphereLogicTest {
     public void spaceSuitCapabilityNbtRoundTrip() {
         ItemStack suit = new ItemStack(Items.IRON_HELMET);
 
-        // Mirror the EmbeddedInventory.writeToNBT(parent) → parent.setTag("Items", list)
+        // Mirror the EmbeddedInventory.writeToNBT(parent) -> parent.setTag("Items", list)
         // layout used by the production suit. The inner fluid tank is represented
         // by a sub-tag with Damage/Count/Fluid keys (the same shape libVulpes'
         // FluidContainerItem writes via writeShareTag).
@@ -205,12 +205,12 @@ public class AtmosphereLogicTest {
         // Replay the exact parsing loop from ARConfiguration.loadPreInit lines
         // 714–733 against a representative input set.
         String[] entityList = {
-                "minecraft:armor_stand",                              // vanilla RL → EntityArmorStand
-                "minecraft:doesnotexist_entity",                      // vanilla namespace, unknown name → null
-                "net.minecraft.entity.item.EntityArmorStand",         // FQCN fallback → same class
-                "java.lang.String",                                   // FQCN but NOT an Entity → must be filtered
-                "totally::garbage::value::with::wrong::syntax",       // malformed → must NOT throw
-                "minecraft:zombie",                                   // vanilla RL → EntityZombie
+                "minecraft:armor_stand",                              // vanilla RL -> EntityArmorStand
+                "minecraft:doesnotexist_entity",                      // vanilla namespace, unknown name -> null
+                "net.minecraft.entity.item.EntityArmorStand",         // FQCN fallback -> same class
+                "java.lang.String",                                   // FQCN but NOT an Entity -> must be filtered
+                "totally::garbage::value::with::wrong::syntax",       // malformed -> must NOT throw
+                "minecraft:zombie",                                   // vanilla RL -> EntityZombie
         };
 
         List<Class<?>> resolved = new LinkedList<>();
@@ -242,7 +242,7 @@ public class AtmosphereLogicTest {
         assertTrue("EntityArmorStand must resolve via minecraft:armor_stand",
                 resolved.contains(EntityArmorStand.class));
 
-        // Branch 2 (unknown registry name): null → skipped, no exception.
+        // Branch 2 (unknown registry name): null -> skipped, no exception.
         // (Implicit — if it threw, we'd never reach branch 3.)
 
         // Branch 3a (FQCN fallback): EntityArmorStand via class-name fallback —
@@ -254,7 +254,7 @@ public class AtmosphereLogicTest {
         assertTrue("FQCN fallback must also resolve armor stand",
                 armorStandHits >= 1L);
 
-        // Branch 3b (FQCN but non-Entity): java.lang.String → filtered out.
+        // Branch 3b (FQCN but non-Entity): java.lang.String -> filtered out.
         assertFalse("non-Entity class must be filtered",
                 resolved.contains(String.class));
 

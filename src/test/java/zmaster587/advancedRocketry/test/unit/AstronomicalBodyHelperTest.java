@@ -72,7 +72,7 @@ public class AstronomicalBodyHelperTest {
 
     @Test
     public void stellarBrightnessAtEarthBaselineEqualsOne() {
-        // sunLike: size=1.0, temperature=100 → normalized=1.0, distance=100 → AU=1.
+        // sunLike: size=1.0, temperature=100 -> normalized=1.0, distance=100 -> AU=1.
         // Formula reduces to (1.0 * (1 * 1) / 1) = 1.0.
         assertEquals(1.0, AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100), 1e-9);
     }

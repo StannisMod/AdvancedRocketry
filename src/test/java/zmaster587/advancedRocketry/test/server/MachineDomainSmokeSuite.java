@@ -25,14 +25,14 @@ import static org.junit.Assert.assertTrue;
  *
  * <h2>Consolidated from</h2>
  * <ul>
- *   <li>{@code MultiMachineControllerSmokeTest} → {@link #allMachineControllersPlaceTickAndHaveRecipes()}</li>
- *   <li>{@code MultiblockValidationSmokeTest}  → {@link #cuttingMachineMultiblockValidatesAndInvalidates()}</li>
- *   <li>{@code EnergySystemsSmokeTest}         → {@link #solarPanelAccumulatesEnergyOverTicks()}</li>
- *   <li>{@code SealedRoomOxygenVentTest}       → {@link #sealedRoomBecomesBreathableThenLeaks()}</li>
- *   <li>{@code SuitVacuumSubsystemSmokeTest}   → {@link #suitItemsAndEnchantAreWiredUp()}</li>
- *   <li>{@code SpecialInfrastructureSmokeTest} → {@link #allSpecialBlocksPlaceAndTickWithoutException()}</li>
- *   <li>{@code MicrowaveReceiverSmokeTest}     → {@link #multiblockValidatesAndTicksWithoutCrash()}</li>
- *   <li>{@code BlackHoleGeneratorSmokeTest}    → {@link #controllerWithoutStructureTicksWithoutCrash()}</li>
+ *   <li>{@code MultiMachineControllerSmokeTest} &rarr; {@link #allMachineControllersPlaceTickAndHaveRecipes()}</li>
+ *   <li>{@code MultiblockValidationSmokeTest}  &rarr; {@link #cuttingMachineMultiblockValidatesAndInvalidates()}</li>
+ *   <li>{@code EnergySystemsSmokeTest}         &rarr; {@link #solarPanelAccumulatesEnergyOverTicks()}</li>
+ *   <li>{@code SealedRoomOxygenVentTest}       &rarr; {@link #sealedRoomBecomesBreathableThenLeaks()}</li>
+ *   <li>{@code SuitVacuumSubsystemSmokeTest}   &rarr; {@link #suitItemsAndEnchantAreWiredUp()}</li>
+ *   <li>{@code SpecialInfrastructureSmokeTest} &rarr; {@link #allSpecialBlocksPlaceAndTickWithoutException()}</li>
+ *   <li>{@code MicrowaveReceiverSmokeTest}     &rarr; {@link #multiblockValidatesAndTicksWithoutCrash()}</li>
+ *   <li>{@code BlackHoleGeneratorSmokeTest}    &rarr; {@link #controllerWithoutStructureTicksWithoutCrash()}</li>
  * </ul>
  *
  * <h2>NOT consolidated: {@code ForceFieldProjectionSmokeTest}</h2>
@@ -83,9 +83,9 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     private static final Pattern VENT_BREATHABLE = Pattern.compile("\"breathable\":(true|false)");
     private static final Pattern PLANET_DENSITY = Pattern.compile("\"atmosphereDensity\":(-?\\d+)");
 
-    // ── Machine block-id → expected Tile* short class name ─
+    // ── Machine block-id -> expected Tile* short class name ─
 
-    /** Machine block id → expected Tile* class short name. */
+    /** Machine block id &rarr; expected Tile* class short name. */
     private static final Map<String, String> MACHINES = new LinkedHashMap<>();
     static {
         MACHINES.put("advancedrocketry:rollingMachine",             "TileRollingMachine");
@@ -210,14 +210,14 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
                 sy = Integer.parseInt(m.group(2)),
                 sz = Integer.parseInt(m.group(3));
 
-        // Step 2 — try-complete on the controller → isComplete=true.
+        // Step 2 — try-complete on the controller -> isComplete=true.
         String complete = join(client().execute(
                 "artest machine try-complete 0 " + cx + " " + cy + " " + cz));
         assertTrue("try-complete errored: " + complete, complete.contains("\"ok\":true"));
         assertTrue("structure didn't validate (isComplete=false): " + complete,
                 complete.contains("\"isComplete\":true"));
 
-        // Step 3 — break the sawblade → re-validate → isComplete=false.
+        // Step 3 — break the sawblade -> re-validate -> isComplete=false.
         String breakBlock = join(client().execute(
                 "artest place 0 " + sx + " " + sy + " " + sz + " minecraft:air"));
         assertTrue("could not replace sawBlade with air: " + breakBlock,
@@ -229,7 +229,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
         assertTrue("structure stayed complete after sawBlade removal — validator broken: " + broken,
                 broken.contains("\"isComplete\":false"));
 
-        // Step 4 — restore the sawblade → re-validate → isComplete=true again.
+        // Step 4 — restore the sawblade -> re-validate -> isComplete=true again.
         String restore = join(client().execute(
                 "artest place 0 " + sx + " " + sy + " " + sz + " advancedrocketry:sawBlade"));
         assertTrue("could not restore sawBlade: " + restore,
@@ -406,7 +406,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
         assertTrue("spacebreathing enchant missing: " + ench,
                 ench.contains("\"registered\":true"));
 
-        // 3. Vacuum precondition: Earth → density 0 → non-breathable.
+        // 3. Vacuum precondition: Earth -> density 0 -> non-breathable.
         // Snapshot original so we restore it after.
         String planet = join(client().execute("artest planet info 0"));
         Matcher dm = PLANET_DENSITY.matcher(planet);
@@ -431,7 +431,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
     // From SpecialInfrastructureSmokeTest
     // Position patch: 5 devices at x=700,710,720,730,740, y=64, z=700.
     // Note: forceFieldProjector at (720,64,700) is never powered (no redstone)
-    // → no field blocks projected. Powered/collapse cycle for the projector
+    // -> no field blocks projected. Powered/collapse cycle for the projector
     // lives in ForceFieldProjectionSmokeTest (own JVM).
     // ─────────────────────────────────────────────────────────────────────
 

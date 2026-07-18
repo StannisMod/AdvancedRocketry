@@ -32,7 +32,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *       the rocket's {@code posY} strictly raises the comparator output.
  *       The exact numeric mapping (depends on {@code getTopBlock} and
  *       {@code getEntryHeight}) is impl; what the player sees is "higher
- *       rocket → stronger signal".</li>
+ *       rocket &rarr; stronger signal".</li>
  * </ul>
  */
 public class MonitoringStationComparatorOverrideTest extends AbstractSharedServerTest {
@@ -125,8 +125,8 @@ public class MonitoringStationComparatorOverrideTest extends AbstractSharedServe
                         + "the linked rocket's posY rises — that's the "
                         + "player-visible 'higher rocket, stronger signal' "
                         + "contract for any redstone circuit gated off the "
-                        + "monitor; lowPosY=68 → comparator=" + lowComparator
-                        + "  highPosY=5000 → comparator=" + highComparator,
+                        + "monitor; lowPosY=68 -> comparator=" + lowComparator
+                        + "  highPosY=5000 -> comparator=" + highComparator,
                 highComparator > lowComparator);
     }
 

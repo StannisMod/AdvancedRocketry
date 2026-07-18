@@ -156,8 +156,8 @@ public class SpaceStationPadPersistenceTest {
         //                                  || tag.getBoolean("occupied"));
         //    This collapses allowAutoLand to "is the pad occupied?" plus
         //    a weird hasKey defaults-to-true fallback. The result:
-        //    - padB (occupied=true) → allowAutoLand reads as true (lucky)
-        //    - padA / padC (occupied=false) → allowAutoLand reads as
+        //    - padB (occupied=true) -> allowAutoLand reads as true (lucky)
+        //    - padA / padC (occupied=false) -> allowAutoLand reads as
         //                                     false ALWAYS, regardless of
         //                                     what was written.
         // Our boot1 set padB autoLand=true and padA/C never opted in
@@ -177,7 +177,7 @@ public class SpaceStationPadPersistenceTest {
                         + padAObj,
                 padAObj.contains("\"allowAutoLand\":false"));
 
-        // Behavioural check: undock B → next dock must reclaim B again.
+        // Behavioural check: undock B -> next dock must reclaim B again.
         String undock = String.join("\n", secondBoot.client().execute(
                 "artest station undock " + stationId + " 200 200"));
         assertTrue("post-restart undock must succeed: " + undock,

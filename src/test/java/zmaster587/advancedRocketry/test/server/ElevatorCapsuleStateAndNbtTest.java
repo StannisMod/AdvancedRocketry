@@ -24,8 +24,8 @@ import static org.junit.Assert.assertTrue;
  *       {@code RenderElevatorCapsule} (client-side render) and
  *       {@code TileSpaceElevator} (controller gating). The contract is
  *       that the boolean flags are consistent with the byte stored via
- *       {@code setCapsuleMotion}: {@code +1 → ascending},
- *       {@code -1 → descending}, {@code 0 → none}.</li>
+ *       {@code setCapsuleMotion}: {@code +1 -> ascending},
+ *       {@code -1 -> descending}, {@code 0 -> none}.</li>
  *   <li><b>NBT round-trip preserves motionDir, dst, src.</b> The save
  *       format pins keys {@code motionDir}, {@code dstDimid + dstLoc},
  *       {@code srcDimid + srcLoc}. Both populated and empty

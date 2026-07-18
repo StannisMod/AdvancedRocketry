@@ -38,7 +38,7 @@ public class RailgunCargoTransitE2ETest extends AbstractClientE2ETest {
     private static final int DY = 64;
     private static final int DZ = 100;
 
-    /** Not registered on the harness server → production cannot load it. */
+    /** Not registered on the harness server &rarr; production cannot load it. */
     private static final int UNREGISTERED_DIM = 31337;
 
     private static final int CARGO = 16;
@@ -110,7 +110,7 @@ public class RailgunCargoTransitE2ETest extends AbstractClientE2ETest {
         assertTrue("railgun must NOT fire at an unloadable (unregistered) "
                         + "destination; fire=" + fire,
                 "false".equals(extractStr(fire, FIRED)));
-        assertTrue("unregistered dim cannot be loaded → destLoaded:false; "
+        assertTrue("unregistered dim cannot be loaded -> destLoaded:false; "
                         + "fire=" + fire, "false".equals(extractStr(fire, DEST_LOADED)));
         assertTrue("status must report TARGET_UNAVAILABLE (not a silent no-op); "
                         + "fire=" + fire,

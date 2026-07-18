@@ -222,7 +222,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                             if (eligible) {
                                 // Worn motors produce less thrust (partsWearSystem): a
                                 // motor at max wear keeps (1 - wearThrustPenaltyMax) of
-                                // its rated thrust. Feeds TWR → may fail the launch gate.
+                                // its rated thrust. Feeds TWR -> may fail the launch gate.
                                 float wear = wearThrustFactor(currBlockPos);
                                 if (block instanceof BlockNuclearRocketMotor) {
                                     nuclearWorkingFluidUseMax += ((IRocketEngine) block).getFuelConsumptionRate(world, xCurr, yCurr, zCurr);

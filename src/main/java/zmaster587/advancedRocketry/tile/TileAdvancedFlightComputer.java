@@ -80,19 +80,19 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
 
     /**
      * Bring-up command for the force controller's ANGULAR channel: the desired world-frame
-     * angular velocity {@code {x,y,z}} (rad/s), or {@code null} when none. Same game→physics
+     * angular velocity {@code {x,y,z}} (rad/s), or {@code null} when none. Same game&rarr;physics
      * thread hand-off + AR-core-only contract as {@link #debugCommandedVelocity}; the mixin
      * turns it into torque. TODO: fold into per-tile pilot state with the linear channel.
      */
     public static volatile double[] debugCommandedAngVel = null;
 
     /**
-     * Bring-up command for ATTITUDE HOLD: the target body→world orientation as a quaternion
+     * Bring-up command for ATTITUDE HOLD: the target body&rarr;world orientation as a quaternion
      * {@code {w,x,y,z}}, or {@code null} when not holding an attitude. When set it supersedes
      * {@link #debugCommandedAngVel} — the controller reads the ship's current orientation on
      * the physics thread and turns the error into the angular velocity it drives toward. This
      * is the interface Free Flight feeds: its per-tick target quaternion (from
-     * {@code integrateBodyRates} over the held pilot rates) is published here. Same game→physics
+     * {@code integrateBodyRates} over the held pilot rates) is published here. Same game&rarr;physics
      * hand-off + AR-core-only contract as the other channels.
      */
     public static volatile double[] debugTargetAttitude = null;
@@ -615,11 +615,11 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
-        // Absent key → default ON (a freshly-placed computer, or a pre-FA save).
+        // Absent key -> default ON (a freshly-placed computer, or a pre-FA save).
         flightAssistEnabled = !nbt.hasKey(NBT_FLIGHT_ASSIST) || nbt.getBoolean(NBT_FLIGHT_ASSIST);
-        // Absent key → not station-keeping (a fresh, never-flown ship stays inert).
+        // Absent key -> not station-keeping (a fresh, never-flown ship stays inert).
         stationKeeping = nbt.getBoolean(NBT_STATION_KEEPING);
-        // Absent/malformed key → no id yet (minted on first use); never re-mint over a valid one.
+        // Absent/malformed key -> no id yet (minted on first use); never re-mint over a valid one.
         shipId = null;
         if (nbt.hasKey(NBT_SHIP_ID)) {
             try {

@@ -28,11 +28,11 @@ import static org.junit.Assert.assertTrue;
  * deterministic.</p>
  *
  * <ul>
- *   <li><b>OFF → vanilla.</b> With {@code perDimWorldInfo=false}, a freshly
+ *   <li><b>OFF &rarr; vanilla.</b> With {@code perDimWorldInfo=false}, a freshly
  *       loaded planet must keep the vanilla shared-overworld WorldInfo — NO
  *       {@code ARDimensionWorldInfo} wrapper. Fails if the master gate in
  *       {@code PlanetWeatherManager.shouldWrap} is reverted.</li>
- *   <li><b>Weather sub-toggle OFF, master ON → wrapper survives (the leak fix).</b>
+ *   <li><b>Weather sub-toggle OFF, master ON &rarr; wrapper survives (the leak fix).</b>
  *       With {@code perDimWorldInfo=true} but {@code enableCustomPlanetWeather=false},
  *       the wrapper — which owns per-dimension TIME, not just weather — must STILL
  *       install. Fails if {@code shouldWrap}/{@code isWeatherManaged} are
@@ -106,7 +106,7 @@ public class PerDimWorldInfoMasterToggleTest {
         harness = RealDedicatedServerHarness.startWith(workDir, /*cleanupOnClose=*/true);
         assertDimRegistered();
 
-        // Master OFF before the dim is EVER loaded → shouldWrap runtime-gates it
+        // Master OFF before the dim is EVER loaded -> shouldWrap runtime-gates it
         // out, so the first load keeps the vanilla DerivedWorldInfo.
         assertTrue(cmd("artest config set perDimWorldInfo false").contains("\"ok\":true"));
 

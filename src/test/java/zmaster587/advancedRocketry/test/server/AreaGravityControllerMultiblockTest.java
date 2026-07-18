@@ -51,7 +51,7 @@ public class AreaGravityControllerMultiblockTest extends AbstractSharedServerTes
         assertTrue("baseline must validate: " + first,
                 first.contains("\"isComplete\":true"));
 
-        // Power-input plug directly under controller → globalY = cy - 1, globalX = cx, globalZ = cz.
+        // Power-input plug directly under controller -> globalY = cy - 1, globalX = cx, globalZ = cz.
         String breakPlug = join(client().execute(
                 "artest place 0 " + cx + " " + (cy - 1) + " " + cz + " minecraft:stone"));
         assertTrue("could not replace plug: " + breakPlug,

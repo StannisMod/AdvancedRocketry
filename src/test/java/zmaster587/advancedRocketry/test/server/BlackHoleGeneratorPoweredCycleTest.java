@@ -101,7 +101,7 @@ public class BlackHoleGeneratorPoweredCycleTest extends AbstractSharedServerTest
 
     /** Happy path: station orbits a black-hole Sol, BHG is on the space
      *  dim, input hatch has an item, force-ticks ≥ defaultItemTimeBlackHole
-     *  → output energy buffer accumulates a non-zero amount. */
+     *  &rarr; output energy buffer accumulates a non-zero amount. */
     @Test
     public void bhgOnStationAroundBlackHoleProducesEnergy() throws Exception {
         flipSolBlackHole(true);
@@ -120,8 +120,8 @@ public class BlackHoleGeneratorPoweredCycleTest extends AbstractSharedServerTest
                 outputAfter > outputBefore);
     }
 
-    /** Counter-test: Sol not a black hole → isAroundBlackHole() false →
-     *  attemptFire skips → producePower never called → no energy. */
+    /** Counter-test: Sol not a black hole &rarr; isAroundBlackHole() false &rarr;
+     *  attemptFire skips &rarr; producePower never called &rarr; no energy. */
     @Test
     public void bhgWithoutBlackHoleStarDoesNotProduce() throws Exception {
         flipSolBlackHole(false);
@@ -140,7 +140,7 @@ public class BlackHoleGeneratorPoweredCycleTest extends AbstractSharedServerTest
                 outputBefore, outputAfter);
     }
 
-    /** Counter-test: BHG placed on overworld (dim 0, not spaceDimId) →
+    /** Counter-test: BHG placed on overworld (dim 0, not spaceDimId) &rarr;
      *  isAroundBlackHole() short-circuits to false on the first guard
      *  ({@code world.provider.getDimension() == spaceDimId}). Pins the
      *  dim-gate even when a black-hole star exists. */

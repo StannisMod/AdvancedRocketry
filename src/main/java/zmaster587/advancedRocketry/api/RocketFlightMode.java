@@ -20,7 +20,7 @@ public enum RocketFlightMode {
     public static final RocketFlightMode DEFAULT = CLASSIC_LAUNCH;
 
     /**
-     * Read mode from NBT; missing or unparseable value → {@link #DEFAULT}.
+     * Read mode from NBT; missing or unparseable value &rarr; {@link #DEFAULT}.
      * Tolerant of forward-compat: unknown enum names fall back to default
      * instead of throwing, so a save written by a newer mod version still
      * loads (degrades to classic).

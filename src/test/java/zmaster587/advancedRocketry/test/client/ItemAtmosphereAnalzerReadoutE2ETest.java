@@ -13,7 +13,7 @@ import static org.junit.Assert.assertTrue;
  * client chat overlay ({@code reportChat}) — i18n already resolved, exactly
  * the two lines the player reads.
  *
- * <p>Dim 0 has no AtmosphereHandler → production falls back to
+ * <p>Dim 0 has no AtmosphereHandler &rarr; production falls back to
  * {@code AtmosphereType.AIR}. Both lines must reach the player's screen:
  * "Atmosphere Type: …air…" and "Breathable: yes".</p>
  */
@@ -48,8 +48,8 @@ public class ItemAtmosphereAnalzerReadoutE2ETest extends AbstractClientE2ETest {
         bot().useItem();
 
         // Both readout lines must land on the CLIENT chat overlay, with the
-        // lang keys resolved (msg.atmanal.atmtype → "Atmosphere Type: ",
-        // msg.atmanal.canbreathe → "Breathable: " + msg.yes → "yes").
+        // lang keys resolved (msg.atmanal.atmtype -> "Atmosphere Type: ",
+        // msg.atmanal.canbreathe -> "Breathable: " + msg.yes -> "yes").
         boolean sawType = false;
         boolean sawBreathableYes = false;
         for (int waited = 0; waited < 100 && !(sawType && sawBreathableYes); waited += 10) {

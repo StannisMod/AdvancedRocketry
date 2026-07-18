@@ -16,10 +16,10 @@ import static org.junit.Assert.assertTrue;
  * NullPointerException in production — not a test failure.
  *
  * Each test below uses the existing
- *   {@code /artest place <dim> <x> <y> <z> <blockId>} → place a tile
- *   {@code /artest tile force-tick <dim> <x> <y> <z> <ticks>} → drive it
- *   {@code /artest energy stored / inject <dim> <x> <y> <z>} → cap probe
- *   {@code /artest tile state <dim> <x> <y> <z>} → state probe (where present)
+ *   {@code /artest place <dim> <x> <y> <z> <blockId>} &rarr; place a tile
+ *   {@code /artest tile force-tick <dim> <x> <y> <z> <ticks>} &rarr; drive it
+ *   {@code /artest energy stored / inject <dim> <x> <y> <z>} &rarr; cap probe
+ *   {@code /artest tile state <dim> <x> <y> <z>} &rarr; state probe (where present)
  * The tests pin the *contract surface* (tile class FQN, capability
  * presence, force-tick survives without crashing). They do NOT assert
  * gameplay numbers (production has no canonical "solar panel produces
@@ -83,7 +83,7 @@ public class TileMachineDepthTest extends AbstractSharedServerTest {
         int x = BASE_X + 4, z = BASE_Z;
         place("advancedrocketry:liquidTank", x, Y, z);
 
-        // No /artest fluid info → use the energy probe just to confirm tile
+        // No /artest fluid info -> use the energy probe just to confirm tile
         // class via tileClass field (probe reports it on every call).
         // Capability check via /artest fluid (existing probe) is the
         // strongest evidence the tank actually exposes IFluidHandler.
@@ -194,7 +194,7 @@ public class TileMachineDepthTest extends AbstractSharedServerTest {
         // Sanity: the test setup itself is honest — a virgin position
         // (no place call) must report "no tile entity" rather than
         // accidentally finding a leftover tile from a previous test.
-        // Skip the place() helper because setBlockState(air→air) returns
+        // Skip the place() helper because setBlockState(air->air) returns
         // false, which would trip the helper's placed=true assertion;
         // here we just want to assert the *initial* state.
         int x = BASE_X + 100, z = BASE_Z + 100;

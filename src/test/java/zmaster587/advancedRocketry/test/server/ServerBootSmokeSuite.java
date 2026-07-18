@@ -15,8 +15,8 @@ import static org.junit.Assert.assertTrue;
  *
  * <h2>Consolidated from</h2>
  * <ul>
- *   <li>{@code ServerStartupSmokeTest} → {@link #serverBootsAndCommandsRoundTrip()}</li>
- *   <li>{@code RegistrySmokeTest}      → {@link #arRegistriesArePopulated()}</li>
+ *   <li>{@code ServerStartupSmokeTest} &rarr; {@link #serverBootsAndCommandsRoundTrip()}</li>
+ *   <li>{@code RegistrySmokeTest}      &rarr; {@link #arRegistriesArePopulated()}</li>
  * </ul>
  *
  * <h2>Not folded in</h2>

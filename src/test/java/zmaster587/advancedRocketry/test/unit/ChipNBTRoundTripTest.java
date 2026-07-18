@@ -54,7 +54,7 @@ public class ChipNBTRoundTripTest {
     public void planetChipDimIdReadDefaultsToInvalidPlanetWithoutNbt() {
         // Production contract (getDimensionId, lines 99-103): a stack with
         // no NBT compound returns Constants.INVALID_PLANET. Programmed-chip
-        // gameplay relies on this sentinel to decide "unprogrammed → show
+        // gameplay relies on this sentinel to decide "unprogrammed -> show
         // unprogrammed tooltip".
         ItemPlanetIdentificationChip chip = new ItemPlanetIdentificationChip();
         ItemStack s = freshStack();
@@ -126,7 +126,7 @@ public class ChipNBTRoundTripTest {
     @Test
     public void stationChipUuidDefaultsToZero() {
         // Static methods, no instance needed. Production contract: no NBT
-        // → getUUID returns 0 (not -1, not Integer.MIN_VALUE). 0 is also a
+        // -> getUUID returns 0 (not -1, not Integer.MIN_VALUE). 0 is also a
         // valid station UUID for an existing station, so callers must not
         // disambiguate "unprogrammed" from "station 0" by this method
         // alone.
@@ -209,7 +209,7 @@ public class ChipNBTRoundTripTest {
         // unit test. For the NBT-format pin, directly seed the keys that
         // production reads: satelliteId, dimId, satelliteName. The
         // ItemSatelliteIdentificationChip.getSatellite static method
-        // routes through DimensionManager → FMLCommonHandler.getSide(),
+        // routes through DimensionManager -> FMLCommonHandler.getSide(),
         // which requires Forge's FML to be initialised; that's a
         // server-tier integration concern, not unit-tier. We pin the
         // NBT key shape here; the server-tier round-trip is implicitly

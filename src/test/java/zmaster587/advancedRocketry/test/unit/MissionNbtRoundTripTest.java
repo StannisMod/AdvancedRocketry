@@ -167,7 +167,7 @@ public class MissionNbtRoundTripTest {
      *  NPE on the parent path (needs non-null rocketStats /
      *  rocketStorage). This test reads the source code's expected
      *  NBT key as a constant pin — a future refactor that renames
-     *  "gas" → "fluid" would have to update this string to keep
+     *  "gas" &rarr; "fluid" would have to update this string to keep
      *  saves loadable. */
     @Test
     public void gasCollectionNbtKeyIsTheStringGas() {

@@ -123,7 +123,7 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
         }
     }
 
-    /** Vacuum + full enchanted suit → atmosphere onTick fires (every
+    /** Vacuum + full enchanted suit &rarr; atmosphere onTick fires (every
      *  10 game ticks), each fire decrements the chest "air" NBT by 1.
      *  Health holds because the four enchanted slots make
      *  {@code isImmune} return true (no {@code attackEntityFrom}). */
@@ -167,7 +167,7 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
         }
     }
 
-    /** Counter: same suit in breathable atmosphere → chest air stays
+    /** Counter: same suit in breathable atmosphere &rarr; chest air stays
      *  at the configured initial value. The breathable atmosphere
      *  type's {@code onTick} is a no-op (only {@code AtmosphereVacuum}
      *  / pressure variants drive drain) so the protectsFrom branch

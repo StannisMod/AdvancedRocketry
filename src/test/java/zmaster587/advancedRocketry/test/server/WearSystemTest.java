@@ -113,7 +113,7 @@ public class WearSystemTest extends AbstractSharedServerTest {
         assertEquals("pristine rocket must have zero breaking probability",
                 0.0, breakingProbOf(pristine), 1e-6);
 
-        // Max out one engine's wear before assembly → breaking probability rises.
+        // Max out one engine's wear before assembly -> breaking probability rises.
         int bx = 2960, by = 64, bz = 3020;
         int[] builder = buildFixture(bx, by, bz);
         int rocketX = bx + 3, rocketY = by + 1, rocketZ = bz + 3;
@@ -128,7 +128,7 @@ public class WearSystemTest extends AbstractSharedServerTest {
         int bx = 2900, by = 64, bz = 3080;
         int[] builder = buildFixture(bx, by, bz);
         int rocketId = assembleAndGetId(builder);
-        // Wear one motor to stage 5 (no PrecisionAssembler nearby → standalone path).
+        // Wear one motor to stage 5 (no PrecisionAssembler nearby -> standalone path).
         String inject = String.join("\n", client().execute("artest infra inject-broken-part " + rocketId + " 5"));
         assertTrue("inject-broken-part failed: " + inject, inject.contains("\"ok\":true"));
         assertTrue("worn motor must give a non-zero breaking probability",
@@ -157,7 +157,7 @@ public class WearSystemTest extends AbstractSharedServerTest {
                 "artest wear station-load 0 " + sx + " " + sy + " " + sz + " 1 ore:plateTitaniumAluminide 16"));
         assertTrue("station-load plate failed: " + load1, load1.contains("\"ok\":true"));
 
-        // Drive performFunction directly (no assembler → standalone repair branch).
+        // Drive performFunction directly (no assembler -> standalone repair branch).
         client().execute("artest infra service-perform-function 0 " + sx + " " + sy + " " + sz);
         client().execute("artest infra service-perform-function 0 " + sx + " " + sy + " " + sz);
 

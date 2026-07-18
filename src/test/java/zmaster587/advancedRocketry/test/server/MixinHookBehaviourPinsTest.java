@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * behavioural pins for the surviving hooks after the
- * ASM-coremod → Mixin rewrite.
+ * ASM-coremod &rarr; Mixin rewrite.
  *
  * <h2>Coverage matrix</h2>
  *
@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  * server that's past startup-init by the time they wait on ticks.</p>
  *
  * <table>
- *   <caption>Mixin → pin mapping</caption>
+ *   <caption>Mixin &rarr; pin mapping</caption>
  *   <tr><th>Mixin</th><th>Pinned by</th></tr>
  *   <tr>
  *     <td>{@code MixinWorldSetBlockState}</td>
@@ -214,7 +214,7 @@ public class MixinHookBehaviourPinsTest extends AbstractSharedServerTest {
      * paths point the same direction so the test is robust to specific
      * gravity multipliers.</p>
      *
-     * <p>Fuse is 80 ticks by default → 10-tick wait stays well clear of
+     * <p>Fuse is 80 ticks by default &rarr; 10-tick wait stays well clear of
      * the explode threshold.</p>
      */
     @Test

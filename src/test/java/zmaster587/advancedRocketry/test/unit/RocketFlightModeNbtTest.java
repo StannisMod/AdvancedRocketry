@@ -13,7 +13,7 @@ import static org.junit.Assert.assertSame;
  * Contract for {@link RocketFlightMode} NBT round-trip and back-compat.
  *
  * Verified contracts:
- *  1. Missing NBT key → default (CLASSIC_LAUNCH).
+ *  1. Missing NBT key &rarr; default (CLASSIC_LAUNCH).
  *  2. Round-trip: writeToNBT then readFromNBT recovers the original.
  *  3. Forward-compat: unknown name in NBT degrades to default (does NOT throw).
  *  4. Null arguments are tolerated and produce default behaviour.

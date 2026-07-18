@@ -60,7 +60,7 @@ public class JackHammerContractTest {
         ItemJackHammer h = hammer();
         ItemStack stack = new ItemStack(h, 1);
         float speed = h.getDestroySpeed(stack, stateOf(Blocks.STONE));
-        // Pin the contract shape: "rock material → significantly faster
+        // Pin the contract shape: "rock material -> significantly faster
         // than vanilla pickaxe baseline". Vanilla iron pickaxe on stone
         // returns 6.0f; the jackhammer must noticeably exceed that.
         assertTrue("jackhammer must mine ROCK noticeably faster than "

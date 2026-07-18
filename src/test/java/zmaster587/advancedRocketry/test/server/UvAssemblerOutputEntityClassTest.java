@@ -17,9 +17,9 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *
  * <ul>
  *   <li>{@link zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine#assembleRocket}
- *       → {@code new EntityRocket(...)} (ascending, crewed, orbit-capable).</li>
+ *       &rarr; {@code new EntityRocket(...)} (ascending, crewed, orbit-capable).</li>
  *   <li>{@link zmaster587.advancedRocketry.tile.TileUnmannedVehicleAssembler#assembleRocket}
- *       → {@code new EntityStationDeployedRocket(...)} (descending, station-
+ *       &rarr; {@code new EntityStationDeployedRocket(...)} (descending, station-
  *       deployed, cargo-only).</li>
  * </ul>
  *

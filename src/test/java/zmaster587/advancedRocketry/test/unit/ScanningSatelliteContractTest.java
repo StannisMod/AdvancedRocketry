@@ -35,7 +35,7 @@ import static org.junit.Assert.assertTrue;
  *       random-failure logic.</li>
  *   <li><b>OreMapping ore-filter gate</b> — {@code canFilterOre()}
  *       requires {@code maxDataStorage == 3000}. Default-constructed
- *       satellite has 0 → can't filter. {@code setSelectedSlot} is
+ *       satellite has 0 &rarr; can't filter. {@code setSelectedSlot} is
  *       silently ignored when can't filter.</li>
  * </ul>
  *
@@ -78,7 +78,7 @@ public class ScanningSatelliteContractTest {
     public void oreMappingCanFilterOreRequires3000MaxDataStorage() {
         // canFilterOre gate per SatelliteOreMapping:220-222 — only the
         // top-tier chip (maxDataStorage == 3000) gets ore-filter ability.
-        // Default-constructed satellite has 0 maxDataStorage → can't filter.
+        // Default-constructed satellite has 0 maxDataStorage -> can't filter.
         SatelliteOreMapping sat = new SatelliteOreMapping();
         assertFalse("default-constructed OreMapping cannot filter ore — "
                         + "satelliteProperties.getMaxDataStorage() == 0 != 3000",

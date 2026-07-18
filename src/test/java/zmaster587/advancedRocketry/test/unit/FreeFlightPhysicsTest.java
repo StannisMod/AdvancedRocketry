@@ -22,12 +22,12 @@ import static org.junit.Assert.assertTrue;
  * wires to the classic TWR via getAcceleration.
  *
  * Pins:
- *  - Idle input + no gravity + no motion → no motion change.
+ *  - Idle input + no gravity + no motion &rarr; no motion change.
  *  - Forward thrust moves along the yaw vector by exactly thrustMag.
  *  - Vertical thrust at level flight raises motionY by exactly thrustMag (no gravity).
  *  - Climb gate: full vertical climbs iff thrustMag &gt; gravity.
  *  - Yaw/pitch rotate at MAX_*_RATE; pitch clamps to PITCH_MAX.
- *  - canThrust=false → no thrust applied; gravity + rotation still act.
+ *  - canThrust=false &rarr; no thrust applied; gravity + rotation still act.
  *  - Brake attenuates motion; hard speed cap clamps to MAX_SPEED.
  *  - Translation is body-relative: forward along the nose, strafe along the
  *    horizontal right axis, vertical along the nose's up axis (tilts with pitch).
@@ -70,7 +70,7 @@ public class FreeFlightPhysicsTest {
 
     @Test
     public void forwardThrustMovesAlongYawByThrustMag() {
-        // yaw=0 → forward vector = (-sin 0, cos 0) = (0, 1) → +Z by exactly thrustMag.
+        // yaw=0 -> forward vector = (-sin 0, cos 0) = (0, 1) -> +Z by exactly thrustMag.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(1f, 0f, 0f, 0f, 0f),
                 THRUST, 0.0, true);
@@ -100,14 +100,14 @@ public class FreeFlightPhysicsTest {
 
     @Test
     public void climbGateFullVerticalClimbsWhenThrustExceedsGravity() {
-        // thrustMag (0.10) > gravity (0.04) → net positive climb.
+        // thrustMag (0.10) > gravity (0.04) -> net positive climb.
         Step climb = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
                 0.10, 0.04, true);
         assertTrue("net climb expected, got motionY=" + climb.motionY, climb.motionY > 0);
         assertEquals(0.10 - 0.04, climb.motionY, DELTA);
 
-        // thrustMag (0.02) < gravity (0.04) → underpowered, sinks even at full vertical.
+        // thrustMag (0.02) < gravity (0.04) -> underpowered, sinks even at full vertical.
         Step sink = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 1f, 0f, 0f, 0f),
                 0.02, 0.04, true);
@@ -240,11 +240,11 @@ public class FreeFlightPhysicsTest {
 
     @Test
     public void strafeThrustPushesAlongHorizontalRightAxis() {
-        // yaw=0 → right axis is +X. Strafe is the 3rd float in the full constructor.
+        // yaw=0 -> right axis is +X. Strafe is the 3rd float in the full constructor.
         Step s = FreeFlightPhysics.step(0, 0, 0, 0f, 0f,
                 new FreeFlightInput(0f, 0f, 1f, 0f, 0f, 0f, false),
                 THRUST, 0.0, true);
-        assertEquals("strafe+ at yaw=0 → +X", THRUST, s.motionX, DELTA);
+        assertEquals("strafe+ at yaw=0 -> +X", THRUST, s.motionX, DELTA);
         assertEquals("strafe adds no Z at yaw=0", 0.0, s.motionZ, DELTA);
         assertEquals("strafe adds no Y", 0.0, s.motionY, DELTA);
     }

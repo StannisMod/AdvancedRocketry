@@ -18,9 +18,9 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Pinned (loose-bound):</p>
  * <ul>
- *   <li>Powered + 1 tick → block in front of projector is
+ *   <li>Powered + 1 tick &rarr; block in front of projector is
  *       {@code advancedrocketry:forcefield} (replaces previous air).</li>
- *   <li>After un-power + 1 retract tick → same cell reverts to
+ *   <li>After un-power + 1 retract tick &rarr; same cell reverts to
  *       {@code minecraft:air}.</li>
  * </ul>
  *
@@ -42,7 +42,7 @@ public class ForceFieldProjectorProjectsAndRetractsTest extends AbstractSharedSe
         // condition (isReplaceable) is satisfied.
         ok("artest place 0 " + x + " " + y + " " + (z - 1) + " minecraft:air");
 
-        // Place projector at (x, y, z) facing NORTH (meta 2 → EnumFacing.NORTH
+        // Place projector at (x, y, z) facing NORTH (meta 2 -> EnumFacing.NORTH
         // per BlockFullyRotatable.getStateFromMeta).
         ok("artest place 0 " + x + " " + y + " " + z
                 + " advancedrocketry:forcefieldProjector 2");

@@ -29,7 +29,7 @@ import static org.junit.Assert.assertTrue;
  * (2) a VS collision mixin ({@code preGetCollisionBoxes}) prints a console line EVERY TICK for an
  * entity at extreme Y — log flood, and it races probe replies;
  * (3) after a SECOND relocation the ship's physics goes inert (neither pilot key nor push-ship
- * moves it) and the pilot-key path dies after a dismount→re-seat across the map — both are
+ * moves it) and the pilot-key path dies after a dismount&rarr;re-seat across the map — both are
  * relocation-SEQUENCE findings needing their own ordinary-coordinates control; the extreme-|X|
  * precision leg stays an open follow-up until they are resolved.</p>
  */
@@ -116,7 +116,7 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
 
         // The extreme-|X| leg is NOT automated yet — see the class javadoc: after a SECOND
         // relocation the ship's physics goes inert (neither the pilot key nor the push-ship
-        // velocity setpoint moves it) and the pilot-key path dies after a dismount→re-seat across
+        // velocity setpoint moves it) and the pilot-key path dies after a dismount->re-seat across
         // the map. Both are relocation-sequence findings, not coordinate-regime ones; the XZ
         // precision leg stays an open follow-up until they are resolved.
 

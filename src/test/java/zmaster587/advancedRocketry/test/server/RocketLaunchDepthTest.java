@@ -27,8 +27,8 @@ import static org.junit.Assert.assertTrue;
  *
  * <ul>
  *   <li><b>{@code launchInstantWithDestinationActuallyTakesOff}</b> — the
- *       real happy path. Build → assemble → program chip → launch with
- *       fuel → assert {@code isInFlight=true} on the production
+ *       real happy path. Build &rarr; assemble &rarr; program chip &rarr; launch with
+ *       fuel &rarr; assert {@code isInFlight=true} on the production
  *       {@code rocket.launch()} path (NOT the force bypass).</li>
  *   <li><b>{@code launchWithoutDestinationReportsCannotGetThereError}</b>
  *       — the {@code error.rocket.cannotGetThere} branch of production
@@ -43,7 +43,7 @@ import static org.junit.Assert.assertTrue;
  *       counter-test: the system-coherence gate
  *       ({@code !PlanetaryTravelHelper.isTravelAnywhereInPlanetarySystem})
  *       must refuse launches that don't change planetary system. For our
- *       fixture set, dim 0 → dim 0 should NOT be a valid travel.</li>
+ *       fixture set, dim 0 &rarr; dim 0 should NOT be a valid travel.</li>
  * </ul>
  */
 public class RocketLaunchDepthTest extends AbstractSharedServerTest {
@@ -125,7 +125,7 @@ public class RocketLaunchDepthTest extends AbstractSharedServerTest {
         assertTrue("set-destination must round-trip the chip's stored dim: " + prog,
                 prog.contains("\"chipDim\":" + destDim));
 
-        // Launch with fuelFill=true + mode=instant → real rocket.launch().
+        // Launch with fuelFill=true + mode=instant -> real rocket.launch().
         // This MUST flip isInFlight to true and NOT report an error.
         String launch = ok(client().execute(
                 "artest rocket launch " + id + " true instant"));
@@ -148,8 +148,8 @@ public class RocketLaunchDepthTest extends AbstractSharedServerTest {
 
     @Test
     public void launchWithoutDestinationReportsCannotGetThereError() throws Exception {
-        // No set-destination call → guidance computer slot 0 is empty →
-        // getDestinationDimId returns Constants.INVALID_PLANET → launch
+        // No set-destination call -> guidance computer slot 0 is empty ->
+        // getDestinationDimId returns Constants.INVALID_PLANET -> launch
         // bails with "error.rocket.cannotGetThere".
         int id = buildAndAssemble(1100, 64, 500);
 
@@ -224,7 +224,7 @@ public class RocketLaunchDepthTest extends AbstractSharedServerTest {
         // (sane: a same-dim flight is sub-orbital), so isInFlight=true.
         // This is essentially a sanity check that "obviously valid"
         // configurations work. If a regression broke it, every
-        // overworld→overworld flight would silently fail.
+        // overworld->overworld flight would silently fail.
         int id = buildAndAssemble(1300, 64, 500);
         ok(client().execute("artest rocket set-destination " + id + " 0"));
 
@@ -260,7 +260,7 @@ public class RocketLaunchDepthTest extends AbstractSharedServerTest {
         String info = ok(client().execute("artest rocket info " + id));
         assertTrue("rocket info must expose errorMessage field: " + info,
                 info.contains("\"errorMessage\":"));
-        // Freshly assembled rocket → no error yet.
+        // Freshly assembled rocket -> no error yet.
         assertTrue("freshly assembled rocket must have empty errorMessage: " + info,
                 info.contains("\"errorMessage\":\"\""));
     }

@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
  * zmaster587.advancedRocketry.armor.ItemSpaceChest#decrementAir}):</p>
  *
  * <ol>
- *   <li>vacuum atmosphere → {@code AtmosphereNeedsSuit.onTick}</li>
+ *   <li>vacuum atmosphere &rarr; {@code AtmosphereNeedsSuit.onTick}</li>
  *   <li>{@code isImmune} returns true only if helm + legs + feet + chest
  *       all {@code protectsFrom}; chest's {@code protectsFrom} calls
  *       {@code decrementAir(stack, 1)}.</li>
@@ -111,7 +111,7 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
     }
 
     /** Vacuum + full suit (chest carries oxygen-charged pressure tank in
-     *  slot 0) → atmosphere onTick fires every 10 game ticks; each fire
+     *  slot 0) &rarr; atmosphere onTick fires every 10 game ticks; each fire
      *  drains 1 mB of oxygen from the pressure tank's FluidStack via
      *  {@code ItemSpaceChest.decrementAir}. Player takes no damage —
      *  {@code isImmune} returns true while the chain holds. */
@@ -125,8 +125,8 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
                     equip.contains("\"ok\":true"));
             assertTrue("equip-space-chest must report oxygen filled in tank: " + equip,
                     equip.contains("\"tankFilled\":1000"));
-            assertEquals("baseline chestAir read via ItemAirUtils → "
-                            + "ItemSpaceChest.getAirRemaining → sum of "
+            assertEquals("baseline chestAir read via ItemAirUtils -> "
+                            + "ItemSpaceChest.getAirRemaining -> sum of "
                             + "FluidStack amounts must equal 1000",
                     1000, readChestAir());
 
@@ -156,9 +156,9 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
         }
     }
 
-    /** Counter-test: same suit + tank, breathable atmosphere → the
+    /** Counter-test: same suit + tank, breathable atmosphere &rarr; the
      *  {@code AtmosphereType.onTick} for the breathable type is a no-op,
-     *  so {@code protectsFrom} → {@code decrementAir} is never called.
+     *  so {@code protectsFrom} &rarr; {@code decrementAir} is never called.
      *  Tank's oxygen stays at its initial value. */
     @Test
     public void breathableAtmosphereDoesNotDrainChestTank() throws Exception {
@@ -185,9 +185,9 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
 
     /** A nearly-drained chest tank transitions the player from suit-
      *  protected to suit-fails-isImmune: once the tank's last mB is
-     *  drained, {@code decrementAir(stack, 1)} returns 0 →
-     *  {@code chest.protectsFromSubstance} returns false →
-     *  {@code isImmune} returns false → vacuum damage applies. Pins the
+     *  drained, {@code decrementAir(stack, 1)} returns 0 &rarr;
+     *  {@code chest.protectsFromSubstance} returns false &rarr;
+     *  {@code isImmune} returns false &rarr; vacuum damage applies. Pins the
      *  "drained chest no longer protects" transition. */
     @Test
     public void drainedChestTankTransitionsToVacuumDamage() throws Exception {

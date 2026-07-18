@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>The vanilla packet codes themselves are correct (a careful read of
  * {@link net.minecraft.client.network.NetHandlerPlayClient#handleChangeGameState}
- * shows code 1 → {@code setRaining(true)} and code 2 → {@code setRaining(false)};
+ * shows code 1 &rarr; {@code setRaining(true)} and code 2 &rarr; {@code setRaining(false)};
  * the wiki/MCP docstrings have the labels swapped, but server + client are
  * consistent with each other). What vanilla DOES get wrong is the gate:
  *
@@ -60,7 +60,7 @@ public abstract class MixinPlayerList {
         // Check the WorldInfo flag directly (not getRainStrength), so a
         // freshly-set raining dim syncs even when the lerped strength is
         // still 0. Packet codes match vanilla's NetHandlerPlayClient
-        // dispatch:  code 1 → setRaining(true);  code 2 → setRaining(false).
+        // dispatch:  code 1 -> setRaining(true);  code 2 -> setRaining(false).
         net.minecraft.world.storage.WorldInfo info = worldIn.getWorldInfo();
         if (info.isRaining()) {
             playerIn.connection.sendPacket(new SPacketChangeGameState(1, 0.0F));

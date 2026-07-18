@@ -453,7 +453,7 @@ final class VSBridge {
     }
 
     /**
-     * Command the loaded ship nearest to {@code (x,y,z)} to HOLD a target body→world attitude
+     * Command the loaded ship nearest to {@code (x,y,z)} to HOLD a target body&rarr;world attitude
      * (quaternion {@code w,x,y,z}) — the controller turns the orientation error into torque —
      * while hovering (linear velocity commanded to zero). Returns false if no ship is loaded.
      */

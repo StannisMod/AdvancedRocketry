@@ -459,7 +459,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         String langKey = "msg.orbitalregistry.sat.name." + baseKey;
         String localized = LibVulpes.proxy.getLocalizedString(langKey);
 
-        // If missing, LibVulpes usually returns the key itself → then we just show the registryKey as text.
+        // If missing, LibVulpes usually returns the key itself -> then we just show the registryKey as text.
         if (localized == null || localized.isEmpty() || localized.equals(langKey)) {
             return baseKey;
         }
@@ -1090,7 +1090,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         String dimText;
         if (selected.orbitingBodyId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET
                 || selected.orbitingBodyId == SpaceObjectManager.WARPDIMID) {
-            // No real body below → None
+            // No real body below -> None
             dimText = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.dimid.none");
         } else {
             dimText = Integer.toString(selected.dimId);
@@ -1164,7 +1164,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
 
     @Override
     public void onInventoryButtonPressed(int buttonId) {
-        // Client → server via PacketMachine
+        // Client -> server via PacketMachine
         if (world != null && world.isRemote) {
             if (buttonId == GUI_BUTTON_SCAN) {
                 AdvancedRocketry.proxy.clearScrollCache();

@@ -13,7 +13,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <ol>
  *   <li>{@code /artest fixture machine cutting} builds the multiblock fixture.</li>
- *   <li>{@code /artest machine try-complete} → asserts {@code isComplete=true}.</li>
+ *   <li>{@code /artest machine try-complete} &rarr; asserts {@code isComplete=true}.</li>
  *   <li>{@code /artest machine recipe-info TileCuttingMachine 0} returns the
  *       first registered recipe's first ingredient + first output.</li>
  *   <li>{@code /artest hatch fill <inputPos> 0 <ingredient.item> <count>} —
@@ -41,7 +41,7 @@ public class MachineRecipeIntegrationTest extends AbstractHeadlessServerTest {
 
     @Test
     public void probeWiringStillHealthy() throws Exception {
-        // tick-until on empty pos → controlled error.
+        // tick-until on empty pos -> controlled error.
         String empty = String.join("\n",
                 client().execute("artest machine tick-until 0 100 64 100 complete 5"));
         assertTrue("tick-until on empty pos didn't error: " + empty,

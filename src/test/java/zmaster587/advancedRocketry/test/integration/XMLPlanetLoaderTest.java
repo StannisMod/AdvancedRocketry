@@ -119,7 +119,7 @@ public class XMLPlanetLoaderTest {
 
     @Test
     public void nestedPlanetBecomesChildOfParent() throws Exception {
-        // Moon → child of Earth via nested <planet>.
+        // Moon -> child of Earth via nested <planet>.
         DimensionPropertyCoupling coupling = parse(galaxy(star("Sol",
                 "<planet name=\"Earth\" DIMID=\"7001\">\n"
               + "  <isKnown>true</isKnown>\n"
@@ -163,8 +163,8 @@ public class XMLPlanetLoaderTest {
         assertEquals(4000, props.getRainProlongationLength());
         assertEquals(5000, props.getThunderStartLength());
         assertEquals(6000, props.getThunderProlongationLength());
-        assertEquals("rainMarker=1 → always rain", 1, props.getRainMarker());
-        assertEquals("thunderMarker=-1 → never thunder", -1, props.getThunderMarker());
+        assertEquals("rainMarker=1 -> always rain", 1, props.getRainMarker());
+        assertEquals("thunderMarker=-1 -> never thunder", -1, props.getThunderMarker());
         assertTrue("acidicRain=true must be parsed from the planet XML", props.isAcidicRain());
     }
 
@@ -238,7 +238,7 @@ public class XMLPlanetLoaderTest {
                 props.getGravitationalMultiplier(), 1e-6);
     }
 
-    // ---- Write → read full round-trip ---------------------------------------
+    // ---- Write -> read full round-trip ---------------------------------------
 
     /**
      * writeXML produces XML that readAllPlanets parses back into a
@@ -293,7 +293,7 @@ public class XMLPlanetLoaderTest {
         DimensionProperties restoredPlanet = restored.dims.get(0);
         assertEquals("WriteRtPlanet", restoredPlanet.getName());
 
-        // Critical numeric fields — anything off-by-one here means a writeXML →
+        // Critical numeric fields — anything off-by-one here means a writeXML ->
         // loadFile divergence that corrupts saves.
         assertEquals("gravity must round-trip",
                 1.5f, restoredPlanet.getGravitationalMultiplier(), 1e-3);
@@ -355,7 +355,7 @@ public class XMLPlanetLoaderTest {
      * name that has merely been <em>reserved</em> in the dictionary, even when no
      * items are registered under it (the mod that would provide them isn't
      * installed). The old code did {@code getOres(name).get(0)} on that empty
-     * list → crash that killed the server via {@code FMLCommonHandler.exitJava}.
+     * list &rarr; crash that killed the server via {@code FMLCommonHandler.exitJava}.
      * The parser must now skip the entry and keep loading.</p>
      */
     @Test
@@ -460,7 +460,7 @@ public class XMLPlanetLoaderTest {
      * Issue #73 — per-planet {@code <oreGen>} must survive the planetDefs.xml
      * write/read round-trip. AR persists a planet's ore generation config only
      * through the per-world planetDefs.xml (it is NOT written to the per-dimension
-     * NBT), so {@code writeXML} → {@code readAllPlanets} losing the {@code <oreGen>}
+     * NBT), so {@code writeXML} &rarr; {@code readAllPlanets} losing the {@code <oreGen>}
      * block is exactly the "oregen doesn't stick to the worldsave" bug kaduvill
      * traced back to 2019. This pins the round-trip so it can't regress.
      */

@@ -41,7 +41,7 @@ import static org.junit.Assert.assertTrue;
  *   <li>{@code getColor} default — no NBT compound must yield the
  *       white sentinel 0xFFFFFF (used by the renderer / dyeing path).</li>
  *   <li>{@link ItemSpaceChest#getAirRemaining} contract — no fluid
- *       components → 0 air, never negative.</li>
+ *       components &rarr; 0 air, never negative.</li>
  * </ol>
  */
 public class SpaceArmorContractTest {
@@ -141,7 +141,7 @@ public class SpaceArmorContractTest {
         ItemSpaceArmor armor = chest();
         ItemStack stack = stackOf(armor);
         assertFalse("precondition: empty stack has no NBT", stack.hasTagCompound());
-        // No NBT → loadEmbeddedInventory builds a fresh inv of size numModules.
+        // No NBT -> loadEmbeddedInventory builds a fresh inv of size numModules.
         assertEquals("empty stack must report configured numModules (6)",
                 6, armor.getNumSlots(stack));
     }
@@ -195,7 +195,7 @@ public class SpaceArmorContractTest {
     public void chestAirRemainingOnEmptyStackIsZero() {
         ItemSpaceChest chest = chestWithFluid();
         ItemStack stack = new ItemStack(chest, 1);
-        // No components → no oxygen-containing pressure tank → 0 air.
+        // No components -> no oxygen-containing pressure tank -> 0 air.
         // Crucially: must not throw on the "no NBT, no components" path.
         assertEquals(0, chest.getAirRemaining(stack));
     }
@@ -203,8 +203,8 @@ public class SpaceArmorContractTest {
     @Test
     public void chestSlotsAtIndexTwoAndAboveAcceptAnyItem() {
         // Production contract (isItemValidForSlot, lines 29-36):
-        //   slot >= 2 → return true unconditionally.
-        //   slot 0/1 → only oxygen-fluid items.
+        //   slot >= 2 -> return true unconditionally.
+        //   slot 0/1 -> only oxygen-fluid items.
         // The "unconditional true for slot >= 2" branch is the surface
         // GUI-side player relies on for inserting modules into the chest's
         // generic module slots. A regression here makes those slots refuse

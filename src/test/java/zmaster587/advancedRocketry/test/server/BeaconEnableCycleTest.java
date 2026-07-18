@@ -90,7 +90,7 @@ public class BeaconEnableCycleTest extends AbstractSharedServerTest {
         }
     }
 
-    /** Powered + enabled beacon on an AR-created dim → controller pos
+    /** Powered + enabled beacon on an AR-created dim &rarr; controller pos
      *  appears in {@code DimensionProperties.beaconLocations}. */
     @Test
     public void enabledBeaconRegistersLocation() throws Exception {
@@ -122,7 +122,7 @@ public class BeaconEnableCycleTest extends AbstractSharedServerTest {
 
     /** After enabling + verifying registration, breaking the controller
      *  block must unregister via the
-     *  {@code BlockBeacon.breakBlock → removeBeaconLocation} path. */
+     *  {@code BlockBeacon.breakBlock -> removeBeaconLocation} path. */
     @Test
     public void breakingControllerBlockUnregisters() throws Exception {
         buildFixture(CX_BREAK);

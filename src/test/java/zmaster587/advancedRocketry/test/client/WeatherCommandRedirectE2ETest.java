@@ -18,7 +18,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * E2e regression guard for the vanilla {@code /weather} → per-dim
+ * E2e regression guard for the vanilla {@code /weather} &rarr; per-dim
  * {@code /advancedrocketry weather} redirect
  * ({@code PlanetWeatherEventHandler.redirectWeatherCommand}).
  *
@@ -201,7 +201,7 @@ public class WeatherCommandRedirectE2ETest {
 
     /**
      * Polls the SERVER-side wrapped weather flag of {@code dim} until it equals
-     * {@code raining} (~10 s cap) — the chat command travels client → server and
+     * {@code raining} (~10 s cap) — the chat command travels client &rarr; server and
      * lands on the next tick, so a one-shot read would race it. Returns a JSON
      * object with the final raw probe output under {@code raw}.
      */

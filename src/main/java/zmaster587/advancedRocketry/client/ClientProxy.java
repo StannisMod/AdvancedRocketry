@@ -279,7 +279,7 @@ public class ClientProxy extends CommonProxy {
      * {@code RealClientHarness}-spawned clients), reflectively load and start
      * the framework's bridge so {@code ClientBot} can drive this client.
      *
-     * <p>Inert in normal gameplay (flag absent → returns immediately). The
+     * <p>Inert in normal gameplay (flag absent &rarr; returns immediately). The
      * bridge class lives in the test-only framework jar and is NOT on the
      * production runtime classpath; the {@link ClassNotFoundException} branch
      * handles that gracefully.</p>
@@ -330,7 +330,7 @@ public class ClientProxy extends CommonProxy {
      * level so those runs are quiet. Runs on the first client tick where the sound handler is up —
      * done on a tick rather than in {@code preinit} because {@code GameSettings.setSoundLevel}
      * pushes to the sound handler, which is not yet constructed that early. Inert in normal
-     * gameplay and in a manual {@code runClient} playtest (flag absent → latches without muting),
+     * gameplay and in a manual {@code runClient} playtest (flag absent &rarr; latches without muting),
      * so a human playtester still hears sound.
      */
     @SubscribeEvent

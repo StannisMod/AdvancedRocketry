@@ -114,13 +114,13 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
             return;
         }
 
-        // Buffer full → just schedule next check
+        // Buffer full -> just schedule next check
         if (data.getData() >= data.getMaxData()) {
             nextAutoDlTick = now + autoDlInterval;
             return;
         }
 
-        // No eligible plug → back off (unless forced)
+        // No eligible plug -> back off (unless forced)
         if (!hasExtractPlugAdjacent()) {
             if (!force) autoDlInterval = Math.min(autoDlInterval << 1, AUTO_DL_MAX_INTERVAL_TICKS);
             nextAutoDlTick = now + autoDlInterval;
@@ -144,7 +144,7 @@ public class TileSatelliteTerminal extends TileInventoriedRFConsumer
         sat.performAction(null, world, pos);
         this.energy.extractEnergy(getPowerPerOperation(), false);
 
-        // Success → reset interval
+        // Success -> reset interval
         autoDlInterval = AUTO_DL_BASE_INTERVAL_TICKS;
         nextAutoDlTick = now + autoDlInterval;
     }

@@ -78,7 +78,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     protected AxisAlignedBB bbCache;
     /**
      * World position of an Advanced Flight Computer found in the last scan, or
-     * {@code null} if none. Transient build-routing state (scan → assemble within
+     * {@code null} if none. Transient build-routing state (scan &rarr; assemble within
      * one tick): its presence makes the build a tier-2 ship instead of a rocket.
      */
     private BlockPos scannedFlightComputerPos;

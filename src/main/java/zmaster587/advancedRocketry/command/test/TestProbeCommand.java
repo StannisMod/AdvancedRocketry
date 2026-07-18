@@ -381,7 +381,7 @@ public class TestProbeCommand extends CommandBase {
         }
         // teleport-ship <dim> <x> <y> <z> <dstX> <dstY> <dstZ> — rigid-teleport the ship nearest to
         // (x,y,z): the world-frame POSE moves (subspace blocks stay), VS Y-limits widen as needed, and
-        // any aboard EntityDummy (+its rider) is carried. Park→write→unpark around the transform write.
+        // any aboard EntityDummy (+its rider) is carried. Park->write->unpark around the transform write.
         if (args.length >= 8 && "teleport-ship".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
@@ -504,7 +504,7 @@ public class TestProbeCommand extends CommandBase {
         }
         // ff-input <fwd> <vert> <strafe> <yaw> <pitch> <roll> — set the held Free Flight input
         // that the Advanced Flight Computer tile's tick runs through the FF decision layer and
-        // publishes to the controller. Drives the FULL flight path (FF → force), no seat yet.
+        // publishes to the controller. Drives the FULL flight path (FF -> force), no seat yet.
         if (args.length >= 7 && "ff-input".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput =
                     new zmaster587.advancedRocketry.api.FreeFlightInput(
@@ -517,7 +517,7 @@ public class TestProbeCommand extends CommandBase {
         }
         // seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll> — drive the ship through the
         // PILOT SEAT path server-side: find the loaded pilot seat, resolve its linked AFC via the
-        // stored offset, and set that AFC's per-tile pilot input. Bisects the seat→AFC→force
+        // stored offset, and set that AFC's per-tile pilot input. Bisects the seat->AFC->force
         // pipeline from the client packet/keybind path — if the ship moves under this but not under
         // a real seated pilot, the break is client-side. Reports whether the seat + its AFC resolved.
         if (args.length >= 8 && "seat-input".equalsIgnoreCase(args[0])) {
@@ -1960,7 +1960,7 @@ public class TestProbeCommand extends CommandBase {
                 case "rain":
                     // Resetting cleanWeatherTime is mandatory — otherwise the
                     // server's updateWeatherBody() forces isRaining=false next
-                    // tick (cleanWeatherTime > 0 ⇒ forced clear).
+                    // tick (cleanWeatherTime > 0 => forced clear).
                     info.setCleanWeatherTime(0);
                     info.setRaining(true);
                     info.setThundering(false);
@@ -2097,7 +2097,7 @@ public class TestProbeCommand extends CommandBase {
         if ("override-landing".equalsIgnoreCase(args[0]) && args.length >= 3) {
             // /artest rocket override-landing <rocketId> <stationId> —
             // production cause-effect: TileGuidanceComputer.overrideLandingStation
-            // → getStationLocation(commit=true) → either marks an existing
+            // -> getStationLocation(commit=true) -> either marks an existing
             // chosen pad as occupied OR calls getNextLandingPad(true). Used
             // by the A5 dock cause-effect tests: assert that this production
             // method's side effect actually reaches station-side state.
@@ -3097,11 +3097,11 @@ public class TestProbeCommand extends CommandBase {
      *  a rocket at the {@link zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine}
      *  position, bypassing the tick/power scan loop. Steps:
      *  <ol>
-     *    <li>{@code getRocketPadBounds(world, pos)} → BB (or null if pad/tower invalid).</li>
+     *    <li>{@code getRocketPadBounds(world, pos)} &rarr; BB (or null if pad/tower invalid).</li>
      *    <li>Inject the BB into the tile's protected {@code bbCache} field via reflection.</li>
      *    <li>{@code scanRocket(world, pos, bbCache)} — populates {@code stats} +
      *        sets {@code status} to {@code SUCCESS} or an error code.</li>
-     *    <li>If {@code SUCCESS}: {@code assembleRocket()} → spawns the
+     *    <li>If {@code SUCCESS}: {@code assembleRocket()} &rarr; spawns the
      *        {@link EntityRocket} immediately.</li>
      *    <li>Find the spawned rocket in the BB and return its entity id.</li>
      *  </ol>
@@ -3319,7 +3319,7 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.tile.TileRocketAssemblingMachine.class.getDeclaredField("bbCache");
             bbField.setAccessible(true);
             bbField.set(builder, bb);
-            // 3. Scan rocket → sets status. (UNSCANNED → SUCCESS or specific error.)
+            // 3. Scan rocket -> sets status. (UNSCANNED -> SUCCESS or specific error.)
             //    ErrorCodes is a protected nested enum, so getStatus() can't be
             //    assigned to a typed variable here — reflectively read .name().
             builder.scanRocket(world, builderPos, bb);
@@ -3576,7 +3576,7 @@ public class TestProbeCommand extends CommandBase {
             // parentPlanet = INVALID_PLANET (clone of
             // defaultSpaceDimensionProperties), which makes
             // TileWarpController.getTravelCost return Integer.MAX_VALUE
-            // and useFuel(...) return 0 → warp refused.
+            // and useFuel(...) return 0 -> warp refused.
             int id = parseIntOr(args[1], Integer.MIN_VALUE);
             int parentDim = parseIntOr(args[2], 0);
             ISpaceObject station = SpaceObjectManager.getSpaceManager().getSpaceStation(id);
@@ -3853,7 +3853,7 @@ public class TestProbeCommand extends CommandBase {
                 sd.data.setMaxData(maxData);
                 // SatelliteData's constructor pre-computes powerConsumption +
                 // collectionTime off the empty satelliteProperties (powerGen=0
-                // → collectionTime = 200/sqrt(0) = Integer.MAX_VALUE on int
+                // -> collectionTime = 200/sqrt(0) = Integer.MAX_VALUE on int
                 // cast). Mirror what setProperties(ItemStack) does so the
                 // worldTime % collectionTime data gate fires within a
                 // reasonable tick budget.
@@ -4058,7 +4058,7 @@ public class TestProbeCommand extends CommandBase {
             long startTime = overworld == null ? -1 : overworld.getTotalWorldTime();
             // Capture pre-tick battery/data snapshots BEFORE the loop, then
             // post-tick AFTER, both on the same server thread call. Tests
-            // can assert on the delta (preStored→postStored, preData→postData)
+            // can assert on the delta (preStored->postStored, preData->postData)
             // to nail down the per-tick contract without contamination from
             // background DimensionManager.tickDimensions ticks that fire
             // between probe invocations.
@@ -4336,7 +4336,7 @@ public class TestProbeCommand extends CommandBase {
         if ("weather-mode".equalsIgnoreCase(args[0]) && args.length >= 4) {
             // /artest satellite weather-mode <dim> <satId> <mode> [update-last]
             //
-            // update-last defaults to true → also bumps last_mode_id so the
+            // update-last defaults to true -> also bumps last_mode_id so the
             // next tick does NOT enter the "mode changed, clear list"
             // branch. Set to false when the test wants to pin exactly
             // that branch.
@@ -4640,7 +4640,7 @@ public class TestProbeCommand extends CommandBase {
             //   - moves the chassis (now an ItemSatellite with NBT) into
             //     holdingSlot (10)
             //   - sets completionTime=100 (libVulpes-side; processComplete
-            //     later moves holdingSlot → outputSlot once tick countdown
+            //     later moves holdingSlot -> outputSlot once tick countdown
             //     finishes)
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
@@ -5059,7 +5059,7 @@ public class TestProbeCommand extends CommandBase {
             initFieldIfNull(sat, "rocketStorage", new zmaster587.advancedRocketry.util.StorageChunk());
             initFieldIfNull(sat, "infrastructureCoords", new java.util.LinkedList<>());
             // tickEntity fires onMissionComplete when getProgress() ≥ 1.
-            // Default duration=0 + non-zero worldTime → progress=+inf →
+            // Default duration=0 + non-zero worldTime -> progress=+inf ->
             // mission instantly "completes" and crashes (the synthetic
             // mission has no real rocket to land). Push duration into the
             // far future so the tick gate stays closed for the test run.
@@ -5386,7 +5386,7 @@ public class TestProbeCommand extends CommandBase {
             info.put("dim", dim);
             info.put("pos", new int[]{x, y, z});
             if (handler == null) {
-                // No per-dim handler → fall back to the planet's default atmosphere.
+                // No per-dim handler -> fall back to the planet's default atmosphere.
                 DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
                 if (props == null) {
                     send(sender, "{\"error\":\"dim not registered\",\"dim\":" + dim + "}");
@@ -5601,7 +5601,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 5 && "extinguish-at".equalsIgnoreCase(args[0])) {
             // Drives AtmosphereBlob.runEffectOnWorldBlocks's per-block branch
-            // (vanilla TORCH → blockUnlitTorch; torchBlocks-listed block →
+            // (vanilla TORCH -> blockUnlitTorch; torchBlocks-listed block ->
             // dropped as item + cleared to air) for a SINGLE position. Bypasses
             // the blob/flood-fill so tests can verify the conversion logic
             // deterministically without constructing a non-combustion dim.
@@ -6651,7 +6651,7 @@ public class TestProbeCommand extends CommandBase {
             // atmosphere / gravity linkage is inherited, avoiding headless
             // worldprovider-init NPEs), re-id'ing it, and flipping its
             // generator type to GENTYPE_ASTEROID. registerDim() then wires it
-            // to AsteroidDimensionType → WorldProviderAsteroid →
+            // to AsteroidDimensionType -> WorldProviderAsteroid ->
             // ChunkProviderAsteroids on first load. Lets a test load the dim
             // and ore-stats its fill block to pin "the asteroid dimension
             // actually generates asteroids".
@@ -6830,7 +6830,7 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
                 return;
             }
-            // Soft cap: (2r+1)^2 chunks, 16x16x256 blocks each → (2r+1)^2 * 65536
+            // Soft cap: (2r+1)^2 chunks, 16x16x256 blocks each -> (2r+1)^2 * 65536
             // Refuse r > 4 (9x9 = 81 chunks ~5.3M blocks scan).
             if (radius > 4) {
                 send(sender, "{\"error\":\"radius too large\",\"radius\":" + radius + ",\"cap\":4}");
@@ -6936,7 +6936,7 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             net.minecraft.inventory.IInventory inv = (net.minecraft.inventory.IInventory) tile;
-            // Optional trailing "nbt" flag → include each slot's stack NBT
+            // Optional trailing "nbt" flag -> include each slot's stack NBT
             // as a Mojangson string (NBTTagCompound.toString()). Used by
             // tests that need to verify a stack's tag-compound shape (e.g.
             // suit component lists) without adding a per-tile probe verb.
@@ -6981,7 +6981,7 @@ public class TestProbeCommand extends CommandBase {
      *       — sets {@code dimCache} on the tile to the resolved
      *       {@link zmaster587.advancedRocketry.dimension.DimensionProperties}.
      *       Mimics the end-state produced by the {@code PacketMachine} path
-     *       (client GUI click → server {@code useNetworkData} → {@code selectSystem})
+     *       (client GUI click &rarr; server {@code useNetworkData} &rarr; {@code selectSystem})
      *       without needing a client.</li>
      * </ul>
      */
@@ -7234,7 +7234,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("stationFuelMax", station.getMaxFuelAmount());
                 info.put("stationAnchored", station.isAnchored());
                 info.put("hasUsableWarpCore", station.hasUsableWarpCore());
-                // getTravelCost is protected → reflect.
+                // getTravelCost is protected -> reflect.
                 try {
                     java.lang.reflect.Method tc =
                             zmaster587.advancedRocketry.tile.station.TileWarpController
@@ -7322,8 +7322,8 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.tile.station.TileWarpController controller =
                     (zmaster587.advancedRocketry.tile.station.TileWarpController) tile;
             try {
-                // Production GUI flow: GUI button → PacketMachine(controller, (byte)2)
-                // → server's useNetworkData(player=null on dedicated-test path,
+                // Production GUI flow: GUI button -> PacketMachine(controller, (byte)2)
+                // -> server's useNetworkData(player=null on dedicated-test path,
                 // Side.SERVER, packetId=2, empty nbt). onInventoryButtonPressed
                 // is the CLIENT-side dispatcher and does NOT contain the warp
                 // gate code — useNetworkData on the server does.
@@ -7798,7 +7798,7 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 3 && "inject-broken-part".equalsIgnoreCase(args[0])) {
             // mark a TileBrokenPart inside a rocket's StorageChunk
             // as worn (stage > 0). Production grows TileBrokenPart#stage via
-            // wear-on-use (StorageChunk.shouldBreak → block-specific wear
+            // wear-on-use (StorageChunk.shouldBreak -> block-specific wear
             // path); this probe is the test-only fast-path equivalent.
             //
             // Behaviour: locate rocket by entityId, walk
@@ -8010,7 +8010,7 @@ public class TestProbeCommand extends CommandBase {
             // read IComparatorOverride.getComparatorOverride
             // on a placed tile (libVulpes interface). Used for tiles whose
             // comparator output mirrors an inventory state (e.g. CO2Scrubber
-            // damage → 0..15 bands), without depending on a vanilla
+            // damage -> 0..15 bands), without depending on a vanilla
             // BlockRedstoneEmitter relay.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
@@ -8329,7 +8329,7 @@ public class TestProbeCommand extends CommandBase {
 
             // Was the destination dimension loaded BEFORE firing? Issue #61's
             // fix makes attemptCargoTransfer initDimension a registered-but-
-            // unloaded destination, so a false→true transition here proves the
+            // unloaded destination, so a false->true transition here proves the
             // load branch ran.
             boolean destLoadedBefore =
                     net.minecraftforge.common.DimensionManager.getWorld(dDim) != null;
@@ -8488,7 +8488,7 @@ public class TestProbeCommand extends CommandBase {
                             zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemAsteroidChip;
             net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(chip, 1);
             chip.setUUID(stack, 1L);
-            // maxData starts at 0 → isFull(stack, *) returns true → research
+            // maxData starts at 0 -> isFull(stack, *) returns true -> research
             // path is blocked in attemptAllResearchStart. Production sets it
             // via the scanning-satellite output flow; tests set it directly
             // to a generous 30 (≥ 3 research cycles worth of headroom).
@@ -8753,16 +8753,16 @@ public class TestProbeCommand extends CommandBase {
             // Optional variant — defaults to "simple" (full happy-path rocket).
             // Recognised variants:
             //   simple              — full rocket: 2 engines, 6 fuel tanks, guidance, seat
-            //   invalid-no-engine   — same minus engines       → expects NOENGINES on scan
-            //   invalid-no-fuel-tank — same minus fuel tanks   → expects NOFUEL on scan
-            //   invalid-no-seat     — same minus seat          → assembles (seat not enforced;
+            //   invalid-no-engine   — same minus engines       -> expects NOENGINES on scan
+            //   invalid-no-fuel-tank — same minus fuel tanks   -> expects NOFUEL on scan
+            //   invalid-no-seat     — same minus seat          -> assembles (seat not enforced;
             //                                                    documents production behaviour)
-            //   invalid-no-guidance — same minus guidance comp → expects NOGUIDANCE on scan
+            //   invalid-no-guidance — same minus guidance comp -> expects NOGUIDANCE on scan
             //   with-advanced-flight-computer — simple + 1 advancedFlightComputer block
             //                                   (tier-2 gate; inert without Valkyrien Skies)
             //   advanced-flight-computer-only — simple minus guidance + 1 advancedFlightComputer
-            //                                   (AFC is the tier-2 brain; with VS → ship, without
-            //                                    VS → NOGUIDANCE, the fallback still needs guidance)
+            //                                   (AFC is the tier-2 brain; with VS -> ship, without
+            //                                    VS -> NOGUIDANCE, the fallback still needs guidance)
             String variant = args.length >= 6 ? args[5].toLowerCase(java.util.Locale.ROOT) : "simple";
             boolean includeEngines = !"invalid-no-engine".equals(variant);
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
@@ -8787,11 +8787,11 @@ public class TestProbeCommand extends CommandBase {
             // IRocketEngine or IRocketNuclearCore for its getMaxThrust() to
             // count toward thrustNuclearReactorLimit).
             //   with-nuclear-stack    — 2 nuclear cores placed directly above
-            //                           the 2 nuclear motors → both contribute,
+            //                           the 2 nuclear motors -> both contribute,
             //                           stats.thrust > 0 (a positive 35 floor
             //                           per BlockNuclearRocketMotor.getThrust).
             //   with-nuclear-misplaced — 1 nuclear core placed center-column
-            //                           where below = air → does NOT contribute,
+            //                           where below = air -> does NOT contribute,
             //                           thrustNuclearReactorLimit = 0,
             //                           min(nozzle, 0) = 0, stats.thrust = 0.
             boolean includeNuclearStack = "with-nuclear-stack".equals(variant);
@@ -8813,7 +8813,7 @@ public class TestProbeCommand extends CommandBase {
             // "with-pilot-seat" — AFC + a PILOT SEAT (the tier-2 control block), NO guidance and
             // NO generic seat: the tier-2 ship a player builds to actually fly. The pilot seat is
             // linked to the AFC at assembly, so `vs seat-input` can drive the ship through the
-            // seat→AFC path server-side (bisecting the seat pipeline from the client packet path).
+            // seat->AFC path server-side (bisecting the seat pipeline from the client packet path).
             // "with-pilot-deck" — like with-pilot-seat, but the seat sits on a real 5x5 walkable DECK
             // (a bare rocket seat sits over air, so a dismounted pilot has nowhere to stand — not
             // representative of a ship with a deck). Used by the crew/dismount e2e.
@@ -8947,7 +8947,7 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includeNuclearStack) {
                 // Place nuclear cores DIRECTLY above each nuclear motor —
-                // below = IRocketEngine → cohesion check at
+                // below = IRocketEngine -> cohesion check at
                 // StorageChunk:222 passes, reactorLimit > 0.
                 world.setBlockState(new BlockPos(rocketX - 1, rocketY + 1, rocketZ),
                         nuclearCore.getDefaultState());
@@ -8958,7 +8958,7 @@ public class TestProbeCommand extends CommandBase {
                 // Place a single nuclear core at the CENTER column (rocketX, …)
                 // where below = (rocketX, rocketY, rocketZ) which the simple
                 // layout leaves AIR (engines occupy ±1 only). Cohesion check
-                // fails → reactorLimit stays 0 → final thrust = 0.
+                // fails -> reactorLimit stays 0 -> final thrust = 0.
                 world.setBlockState(new BlockPos(rocketX, rocketY + 1, rocketZ),
                         nuclearCore.getDefaultState());
             }
@@ -8967,7 +8967,7 @@ public class TestProbeCommand extends CommandBase {
                 // The simple layout leaves that cell air (guidance is at the
                 // center column only); columns above stay air, so
                 // BlockMiningDrill.getMiningSpeed sees sky-exposure and
-                // returns 0.02f. stats.drillingPower flips from 0 → 0.02.
+                // returns 0.02f. stats.drillingPower flips from 0 -> 0.02.
                 world.setBlockState(new BlockPos(rocketX + 1, rocketY + 3, rocketZ),
                         miningDrill.getDefaultState());
             }
@@ -8996,7 +8996,7 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includePilotSeat) {
                 // Pilot seat in the centre column (where the generic seat would go). Linked to the
-                // AFC at assembly; drives the ship via the seat→AFC path.
+                // AFC at assembly; drives the ship via the seat->AFC path.
                 world.setBlockState(new BlockPos(rocketX, rocketY + 4, rocketZ), pilotSeat.getDefaultState());
             }
             if (includePilotDeck) {
@@ -9014,7 +9014,7 @@ public class TestProbeCommand extends CommandBase {
                 // Vanilla chest above the seat — gives the rocket an IInventory
                 // tile in its storage chunk for rocket-loader / unloader
                 // transfer tests. The block above the seat goes from "passable
-                // air" to "solid chest" → scanRocket's "passable above" check
+                // air" to "solid chest" -> scanRocket's "passable above" check
                 // for seat detection fails, so the cargo variant reports
                 // seatCount=0 in addition to engineCount=2.
                 world.setBlockState(new BlockPos(rocketX, rocketY + 5, rocketZ),
@@ -9297,7 +9297,7 @@ public class TestProbeCommand extends CommandBase {
      *   globalZ = cz + z
      * </pre>
      *
-     * <p>Layout (top → bottom):</p>
+     * <p>Layout (top &rarr; bottom):</p>
      * <ul>
      *   <li>y=0 (globalY = cy+3): 3×3 cap of {@code blockStructureBlock}
      *       at z=1..3, x=1..3, with a {@code Blocks.GLASS} lens cell at z=1, x=2.</li>
@@ -9542,9 +9542,9 @@ public class TestProbeCommand extends CommandBase {
 
         // y=0..8 — coil cross around structureBlock core (top 9 layers; y=9 is
         // a special transition layer, see below). structure[y][z=3..5][x=3..5]:
-        //   z=3 → only x=4 is coilCopper
-        //   z=4 → x=3 coil, x=4 STRUCT (core), x=5 coil
-        //   z=5 → only x=4 is coilCopper
+        //   z=3 -> only x=4 is coilCopper
+        //   z=4 -> x=3 coil, x=4 STRUCT (core), x=5 coil
+        //   z=5 -> only x=4 is coilCopper
         for (int y = 0; y <= 8; y++) {
             int globalY = cy - y + 10;
             // z=3 (globalZ = cz - 1 + 3 = cz + 2)
@@ -10262,12 +10262,12 @@ public class TestProbeCommand extends CommandBase {
      * <ul>
      *   <li>{@code deployableRocketBuilder} controller at (cx, cy, cz),
      *       NORTH-facing.</li>
-     *   <li>{@code structureTower} column UP from builder, 6 tall →
+     *   <li>{@code structureTower} column UP from builder, 6 tall &rarr;
      *       {@code yMax = 6} (well under UV's {@code MAX_SIZE_Y = 17}).</li>
      *   <li>{@code structureTower} row SOUTH at the top of the column
-     *       (cx, cy+6, cz+1..cz+3) → {@code zSize = 3}.</li>
+     *       (cx, cy+6, cz+1..cz+3) &rarr; {@code zSize = 3}.</li>
      *   <li>{@code structureTower} row WEST + EAST at builder Y
-     *       (cx-2..cx-1, cy, cz) + (cx+1..cx+2, cy, cz) → {@code xSize = 5}.</li>
+     *       (cx-2..cx-1, cy, cz) + (cx+1..cx+2, cy, cz) &rarr; {@code xSize = 5}.</li>
      *   <li>Rocket components (engines + fuel tanks + guidance + seat)
      *       placed inside the resulting BB
      *       (cx-2..cx+2, cy..cy+5, cz+1..cz+4).</li>
@@ -10275,7 +10275,7 @@ public class TestProbeCommand extends CommandBase {
      *
      * <p>Returns the builder pos so the test can call
      * {@code artest rocket assemble} on the controller (which polymorphically
-     * fires UV's {@code assembleRocket} → spawns {@code EntityStationDeployedRocket}).</p>
+     * fires UV's {@code assembleRocket} &rarr; spawns {@code EntityStationDeployedRocket}).</p>
      */
     private void handleFixtureUvRocket(MinecraftServer server, ICommandSender sender,
                                        int dim, int cx, int cy, int cz) {
@@ -10402,7 +10402,7 @@ public class TestProbeCommand extends CommandBase {
      *   <li>{@code (cx-1, cy, cz+1)} — item-input hatch ('*' at y=1, z=1, x=2;
      *       BHG consumes "fuel" through I)</li>
      *   <li>{@code (cx, cy,   cz+2)} — advStructureBlock ('*' at y=1, z=2, x=1)</li>
-     *   <li>{@code (cx, cy-1, cz)}   — advStructureBlock (lower-1 front, y=2, z=0) ← easy to miss</li>
+     *   <li>{@code (cx, cy-1, cz)}   — advStructureBlock (lower-1 front, y=2, z=0) &larr; easy to miss</li>
      *   <li>{@code (cx, cy-1, cz+1)} — advStructureBlock (lower-1 mid, y=2, z=1)</li>
      *   <li>{@code (cx, cy-2, cz+1)} — advStructureBlock (lower-2, y=3, z=1)</li>
      *   <li>{@code (cx, cy-3, cz+1)} — advStructureBlock (lower-3, y=4, z=1)</li>
@@ -10618,21 +10618,21 @@ public class TestProbeCommand extends CommandBase {
      * {@code null} for an unresolved cell (e.g. unknown char mapping or an
      * empty OreDictionary lookup). Handles:
      * <ul>
-     *   <li>{@code null} → {@code null} (caller skips).</li>
-     *   <li>{@code Blocks.AIR} → AIR state (caller may pre-clear instead).</li>
-     *   <li>{@code Block} instance → {@code getDefaultState}.</li>
-     *   <li>{@code BlockMeta(block, meta)} → {@code block.getStateFromMeta(meta)}.</li>
-     *   <li>{@code Block[]} → first element's default state.</li>
-     *   <li>{@code String} → {@link #firstOreDictBlockState}.</li>
-     *   <li>{@code Character 'c'} → caller-supplied {@code controllerState}.</li>
+     *   <li>{@code null} &rarr; {@code null} (caller skips).</li>
+     *   <li>{@code Blocks.AIR} &rarr; AIR state (caller may pre-clear instead).</li>
+     *   <li>{@code Block} instance &rarr; {@code getDefaultState}.</li>
+     *   <li>{@code BlockMeta(block, meta)} &rarr; {@code block.getStateFromMeta(meta)}.</li>
+     *   <li>{@code Block[]} &rarr; first element's default state.</li>
+     *   <li>{@code String} &rarr; {@link #firstOreDictBlockState}.</li>
+     *   <li>{@code Character 'c'} &rarr; caller-supplied {@code controllerState}.</li>
      *   <li>{@code Character} in libVulpes/AR charMapping
-     *       ({@code 'I','O','P','p','L','l','D'}) → first {@code BlockMeta}
+     *       ({@code 'I','O','P','p','L','l','D'}) &rarr; first {@code BlockMeta}
      *       from the mapping (which is the canonical Forge variant).</li>
      * </ul>
      */
     @SuppressWarnings("deprecation")
     /**
-     * Lookup table: kebab-case machine key → {controller namespace,
+     * Lookup table: kebab-case machine key &rarr; {controller namespace,
      * controller registry path, tile-class FQN}. Used by
      * {@code /artest fixture machine <key>} dispatch. All 9 multiblock
      * industrial machines use the libVulpes character mappings
@@ -11086,7 +11086,7 @@ public class TestProbeCommand extends CommandBase {
         // rejects for these machines.
         Map<Character, java.util.List<int[]>> overrideHatchPositions = new LinkedHashMap<>();
         if (wildcardConfig != null) {
-            // Build a quick lookup: structure-space cell → hatch role.
+            // Build a quick lookup: structure-space cell -> hatch role.
             Map<Long, Character> hatchByCell = new java.util.HashMap<>();
             for (HatchOverride ov : wildcardConfig.hatches) {
                 hatchByCell.put(packCell(ov.y, ov.z, ov.x), ov.role);
@@ -11576,7 +11576,7 @@ public class TestProbeCommand extends CommandBase {
             // with the AR space-protection enchant ("spacebreathing"), and
             // reports whether ItemAirUtils.isStackValidAirContainer accepts it.
             // The acceptance branch is the production gateway for vacuum-damage
-            // bypass via AtmosphereNeedsSuit.protectsFrom → ItemAirWrapper.
+            // bypass via AtmosphereNeedsSuit.protectsFrom -> ItemAirWrapper.
             String itemId = args[1];
             boolean withEnchant = args.length >= 3 && Boolean.parseBoolean(args[2]);
             net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(itemId));
@@ -12344,7 +12344,7 @@ public class TestProbeCommand extends CommandBase {
         // RenderElevatorCapsule (client) and TileSpaceElevator (controller):
         // isAscending / isDescending / isInMotion / getStandTime. These
         // probes let testServer pin the contract that setCapsuleMotion(N)
-        // → flags reflect, plus that NBT round-trip preserves motionDir +
+        // -> flags reflect, plus that NBT round-trip preserves motionDir +
         // dst/src tile coordinates. Bridges what entity spawn + tick +
         // info already provide.
         if (args.length >= 3 && "capsule-state".equalsIgnoreCase(args[0])) {
@@ -12733,7 +12733,7 @@ public class TestProbeCommand extends CommandBase {
                                 "ARTestFakePlayer"),
                         new net.minecraft.server.management.PlayerInteractionManager(world));
                 // Invulnerable like a FakePlayer: damage paths (vacuum
-                // suffocation etc.) end in connection.sendPacket → NPE on a
+                // suffocation etc.) end in connection.sendPacket -> NPE on a
                 // connectionless player and crash the server tick loop.
                 fakePlayer.capabilities.disableDamage = true;
                 fakePlayer.setLocationAndAngles(x, y, z, 0, 0);
@@ -12814,7 +12814,7 @@ public class TestProbeCommand extends CommandBase {
         if ("open-chest".equals(sub) && args.length >= 5) {
             // player open-chest <dim> <x> <y> <z>
             // open a chest's container GUI for the player
-            // SERVER-SIDE (mirrors BlockChest.onBlockActivated →
+            // SERVER-SIDE (mirrors BlockChest.onBlockActivated ->
             // player.displayGUIChest), bypassing the flaky bot.rightClickBlock
             // packet path that left InventoryBypassRedirectE2ETest @Ignore'd.
             // Sends the S2C open-window packet so the real client renders
@@ -13052,7 +13052,7 @@ public class TestProbeCommand extends CommandBase {
             // Returns the most-recently observed outbound SPacketChat
             // translation key (or unformatted text) sent to this player,
             // captured by the Netty-pipeline chat-tap installed on first
-            // use. Empty deque → "key" reports null.
+            // use. Empty deque -> "key" reports null.
             installChatTap(player);
             String head = chatLog.peekFirst();
             int size = chatLog.size();
@@ -13458,8 +13458,8 @@ public class TestProbeCommand extends CommandBase {
             // Equips four vanilla iron-armor pieces, each enchanted with
             // AdvancedRocketryAPI.enchantmentSpaceProtection — this is
             // the "Path 1" branch of AtmosphereNeedsSuit.protectsFrom
-            // (ItemAirUtils.isStackValidAirContainer → enchant-tag check
-            // → ItemAirWrapper.protectsFromSubstance), which drains the
+            // (ItemAirUtils.isStackValidAirContainer -> enchant-tag check
+            // -> ItemAirWrapper.protectsFromSubstance), which drains the
             // chest's static "air" NBT key by 1 per AtmosphereVacuum
             // tick (every 10 game ticks). The held-air probe reads
             // that same "air" NBT.
@@ -14065,7 +14065,7 @@ public class TestProbeCommand extends CommandBase {
         }
     }
 
-    /** {@code msg.sealdetector.notsealmat} → {@code notsealmat}. Returns
+    /** {@code msg.sealdetector.notsealmat} &rarr; {@code notsealmat}. Returns
      *  null when the key doesn't carry the SealDetector prefix. Lets
      *  tests assert on a clean branch name without re-parsing the key. */
     private static String stripBranchPrefix(String key) {
@@ -15017,7 +15017,7 @@ public class TestProbeCommand extends CommandBase {
 
     // Event handler probes -------------------------------------------------
     //
-    // No real player in headless dedicated server tests → we can't assert
+    // No real player in headless dedicated server tests -> we can't assert
     // player-dimension-change side effects directly. What we CAN assert is:
     //   1. {@link zmaster587.advancedRocketry.event.PlanetEventHandler} is
     //      actually subscribed to the Forge event bus (its tick counter must
@@ -15505,7 +15505,7 @@ public class TestProbeCommand extends CommandBase {
     // TileDockingPort stores two strings (myIdStr, targetIdStr) that
     // identify the local port + the dock-target it pairs with. The
     // strings are persisted via writeToNBT and shipped to/from the
-    // client via writeDataToNetwork (id=0 → myId, id=1 → targetId).
+    // client via writeDataToNetwork (id=0 -> myId, id=1 -> targetId).
     // None of the production setters is server-callable from a
     // testServer probe without going through GUI events, so we drive
     // the fields reflectively here and observe the persistence /
@@ -15581,7 +15581,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 6 && "packet-roundtrip".equalsIgnoreCase(args[0])) {
-            // Drive writeDataToNetwork → readDataFromNetwork → observe
+            // Drive writeDataToNetwork -> readDataFromNetwork -> observe
             // the decoded "id" string. Packet id 0 carries myIdStr,
             // packet id 1 carries targetIdStr.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);

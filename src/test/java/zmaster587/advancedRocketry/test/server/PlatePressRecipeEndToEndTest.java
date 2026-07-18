@@ -78,7 +78,7 @@ public class PlatePressRecipeEndToEndTest extends AbstractSharedServerTest {
 
         // Activate: place a redstone block on top of the press. The press's
         // neighborChanged handler fires synchronously on setBlockState, runs
-        // checkForMove → shouldBeExtended=true → setBlockToAir(below) +
+        // checkForMove -> shouldBeExtended=true -> setBlockToAir(below) +
         // spawnEntity(EntityItem with recipe output). Adjacent (not above) is
         // also valid; using ABOVE because shouldBeExtended explicitly
         // re-checks pos.up() neighbours and that path is unambiguous.

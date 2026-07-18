@@ -113,7 +113,7 @@ public class TileStationGravityController extends TileEntity implements IModular
 
             @Override
             public void renderBackground(GuiContainer gui, int x, int y, int mouseX, int mouseY, FontRenderer font) {
-                // Only runs while GUI is visible → zero idle cost when closed.
+                // Only runs while GUI is visible -> zero idle cost when closed.
                 if (!ensureStation()) return;
 
                 // Pull current (client-synced) values

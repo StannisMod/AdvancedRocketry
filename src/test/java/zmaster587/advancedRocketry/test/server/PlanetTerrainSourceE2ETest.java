@@ -80,7 +80,7 @@ public class PlanetTerrainSourceE2ETest extends AbstractSharedServerTest {
         assertTrue("TEMPLATE must dispatch to ChunkProviderTemplate: " + info,
                 info.contains("zmaster587.advancedRocketry.world.ChunkProviderTemplate"));
 
-        // No source region files → void: the scanned region has no fill (stone) blocks.
+        // No source region files -> void: the scanned region has no fill (stone) blocks.
         String stats = exec("artest worldgen ore-stats " + TEMPLATE_DIM + " 0 0 2 minecraft:stone");
         Matcher m = COUNT.matcher(stats);
         assertTrue("ore-stats must report a count: " + stats, m.find());

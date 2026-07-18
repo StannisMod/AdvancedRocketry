@@ -42,15 +42,15 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *
  * <p>Contracts pinned:
  * <ul>
- *   <li><b>Chip + power → status 3.</b> A SatelliteOptical (a SatelliteData
+ *   <li><b>Chip + power &rarr; status 3.</b> A SatelliteOptical (a SatelliteData
  *       subclass) chip in slot 0 of a powered terminal on its dim reaches
  *       status 3 and surfaces non-negative powerPerTick + maxData fields.</li>
- *   <li><b>No chip → status 0.</b> Empty terminal reports no link even with
+ *   <li><b>No chip &rarr; status 0.</b> Empty terminal reports no link even with
  *       power.</li>
- *   <li><b>Chip, no power → status 1.</b> Chip recognised but energy
+ *   <li><b>Chip, no power &rarr; status 1.</b> Chip recognised but energy
  *       starvation gates the surface — pins that the GUI doesn't show
  *       stale data on an unpowered terminal.</li>
- *   <li><b>Erase button → satellite removed from dim + chip blank.</b>
+ *   <li><b>Erase button &rarr; satellite removed from dim + chip blank.</b>
  *       After pressing button 1, the linked satellite is no longer in
  *       {@code DimensionProperties.getSatellite(id)}, and the chip's NBT
  *       compound is cleared.</li>
@@ -81,7 +81,7 @@ public class SatelliteTerminalChipRecognitionTest extends AbstractSharedServerTe
     private static final int CX_NO_POWER = 14500;
     private static final int CX_ERASE = 15000;
 
-    /** Happy path — chip in slot + energy injected → status 3. */
+    /** Happy path — chip in slot + energy injected &rarr; status 3. */
     @Test
     public void chippedTerminalWithPowerReachesStatus3() throws Exception {
         int x = CX_STATUS3, y = CY, z = CZ;
@@ -106,7 +106,7 @@ public class SatelliteTerminalChipRecognitionTest extends AbstractSharedServerTe
         assertTrue("maxData must be non-negative: " + info, maxData >= 0);
     }
 
-    /** Empty slot → status 0 even with power present. */
+    /** Empty slot &rarr; status 0 even with power present. */
     @Test
     public void unchippedTerminalReportsNoLink() throws Exception {
         int x = CX_NO_CHIP, y = CY, z = CZ;
@@ -119,7 +119,7 @@ public class SatelliteTerminalChipRecognitionTest extends AbstractSharedServerTe
                 "0", extract(info, STATUS));
     }
 
-    /** Chip loaded but zero energy → status 1. */
+    /** Chip loaded but zero energy &rarr; status 1. */
     @Test
     public void chippedTerminalWithoutPowerReportsNoPower() throws Exception {
         int x = CX_NO_POWER, y = CY, z = CZ;

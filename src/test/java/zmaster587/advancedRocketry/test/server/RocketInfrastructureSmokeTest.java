@@ -184,14 +184,14 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
      * placed by the player after launch — out of headless scope.</p>
      *
      * <p>What we lock down here is the loader's tile lifecycle:
-     * placement → IInfrastructure surface → link accepts a rocket →
+     * placement &rarr; IInfrastructure surface &rarr; link accepts a rocket &rarr;
      * 30 ticks of update() do NOT crash even when no fluid-handler
      * tiles exist in the rocket's storage.</p>
      */
     @Test
     public void fluidLoaderTransfersFluidAfterLanding() throws Exception {
         int lx = 1050, ly = 65, lz = 1050;
-        // Loader meta=5 → TileRocketFluidLoader.
+        // Loader meta=5 -> TileRocketFluidLoader.
         ok(client().execute("artest place 0 " + lx + " " + ly + " " + lz
                 + " advancedrocketry:loader 5"));
         int rocketId = assembleFixture(lx + 20, 64, lz, "simple");
@@ -221,7 +221,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     @Test
     public void fluidUnloaderTransfersFluidAfterLanding() throws Exception {
         int ux = 1100, uy = 65, uz = 1100;
-        // Loader meta=4 → TileRocketFluidUnloader.
+        // Loader meta=4 -> TileRocketFluidUnloader.
         ok(client().execute("artest place 0 " + ux + " " + uy + " " + uz
                 + " advancedrocketry:loader 4"));
         int rocketId = assembleFixture(ux + 20, 64, uz, "simple");
@@ -260,7 +260,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
     @Test
     public void rocketLoaderTransfersItemsAfterLanding() throws Exception {
         int lx = 1150, ly = 65, lz = 1150;
-        // Loader meta=3 → TileRocketLoader.
+        // Loader meta=3 -> TileRocketLoader.
         ok(client().execute("artest place 0 " + lx + " " + ly + " " + lz
                 + " advancedrocketry:loader 3"));
         int rocketId = assembleFixture(lx + 20, 64, lz, "with-cargo");
@@ -306,7 +306,7 @@ public class RocketInfrastructureSmokeTest extends AbstractSharedServerTest {
         int rocketId = assembleFixture(ux + 20, 64, uz, "with-cargo");
         ok(client().execute("artest infra link 0 " + ux + " " + uy + " " + uz + " " + rocketId));
 
-        // Tick the unloader — empty cargo → no transfer, but the loop must
+        // Tick the unloader — empty cargo -> no transfer, but the loop must
         // not crash and the tile must remain wired.
         ok(client().execute("artest tile force-tick 0 " + ux + " " + uy + " " + uz + " 5"));
 

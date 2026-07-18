@@ -61,13 +61,13 @@ public final class FreeFlightPhysics {
      * Arcade ceiling on per-tick thrust acceleration (blocks/tick²). Bounds an
      * extremely high thrust-to-weight rocket so motion stays smooth; velocity is
      * still bounded independently by {@link #MAX_SPEED}. Normal rockets sit far
-     * below this (e.g. TWR 2 → ~0.1), so the cap only bites on absurd builds.
+     * below this (e.g. TWR 2 &rarr; ~0.1), so the cap only bites on absurd builds.
      */
     public static final double MAX_THRUST_ACCEL   = 0.5;
 
     /**
      * Per-tick velocity retention used by the liftoff/hover assist to bleed
-     * horizontal drift (0..1; ≈0.88 → settles in ~25–30 ticks).
+     * horizontal drift (0..1; ≈0.88 &rarr; settles in ~25–30 ticks).
      */
     public static final double HOVER_RETENTION    = 0.88;
 
@@ -156,13 +156,13 @@ public final class FreeFlightPhysics {
         };
     }
 
-    /** Roll-free body→world (delegates with roll = 0). */
+    /** Roll-free body&rarr;world (delegates with roll = 0). */
     public static double[] bodyToWorld(double fwd, double right, double up,
                                        float yawDeg, float pitchDeg) {
         return bodyToWorld(fwd, right, up, yawDeg, pitchDeg, 0f);
     }
 
-    /** Body-frame vector (forward, right, up) → world (x, y, z). */
+    /** Body-frame vector (forward, right, up) &rarr; world (x, y, z). */
     public static double[] bodyToWorld(double fwd, double right, double up,
                                        float yawDeg, float pitchDeg, float rollDeg) {
         double[] b = bodyBasis(yawDeg, pitchDeg, rollDeg);
@@ -173,13 +173,13 @@ public final class FreeFlightPhysics {
         };
     }
 
-    /** Roll-free world→body (delegates with roll = 0). */
+    /** Roll-free world&rarr;body (delegates with roll = 0). */
     public static double[] worldToBody(double x, double y, double z,
                                        float yawDeg, float pitchDeg) {
         return worldToBody(x, y, z, yawDeg, pitchDeg, 0f);
     }
 
-    /** World vector (x, y, z) → body frame (forward, right, up). The basis is
+    /** World vector (x, y, z) &rarr; body frame (forward, right, up). The basis is
      *  orthonormal, so the inverse is the transpose. */
     public static double[] worldToBody(double x, double y, double z,
                                        float yawDeg, float pitchDeg, float rollDeg) {
@@ -194,7 +194,7 @@ public final class FreeFlightPhysics {
     // -- Body-frame attitude (quaternion) ----------------------------------
 
     /**
-     * Unit quaternion orientation, body→world (w, x, y, z). The craft body frame
+     * Unit quaternion orientation, body&rarr;world (w, x, y, z). The craft body frame
      * is X = right, Y = up, Z = forward (nose); at {@link #IDENTITY} those map to
      * world +X/+Y/+Z, matching {@link #bodyBasis} at (0,0,0).
      *
@@ -232,10 +232,10 @@ public final class FreeFlightPhysics {
                     w * o.z + x * o.y - y * o.x + z * o.w);
         }
 
-        /** Rotate a world/body vector by this quaternion (body→world). Returns
+        /** Rotate a world/body vector by this quaternion (body&rarr;world). Returns
          *  {x, y, z}. */
         public double[] rotate(double vx, double vy, double vz) {
-            // v' = R·v, R built from the quaternion (body→world).
+            // v' = R·v, R built from the quaternion (body->world).
             double xx = x * x, yy = y * y, zz = z * z;
             double xy = x * y, xz = x * z, yz = y * z;
             double wx = w * x, wy = w * y, wz = w * z;
@@ -332,7 +332,7 @@ public final class FreeFlightPhysics {
         double bw = b.w, bx = b.x, by = b.y, bz = b.z;
         if (dot < 0.0) { dot = -dot; bw = -bw; bx = -bx; by = -by; bz = -bz; }
         if (dot > 0.9995) {
-            // Near-parallel: nlerp (avoids sin(θ)→0 blowup).
+            // Near-parallel: nlerp (avoids sin(θ)->0 blowup).
             return new Quat(a.w + (bw - a.w) * t, a.x + (bx - a.x) * t,
                     a.y + (by - a.y) * t, a.z + (bz - a.z) * t).normalized();
         }
@@ -352,7 +352,7 @@ public final class FreeFlightPhysics {
         return v;
     }
 
-    /** Body-frame vector (forward, right, up) → world, via a quaternion basis. */
+    /** Body-frame vector (forward, right, up) &rarr; world, via a quaternion basis. */
     public static double[] bodyToWorldQ(double fwd, double right, double up, Quat q) {
         double[] b = bodyBasisFromQuat(q);
         return new double[] {
@@ -362,8 +362,8 @@ public final class FreeFlightPhysics {
         };
     }
 
-    /** World vector → body frame (forward, right, up), via a quaternion basis
-     *  (orthonormal → inverse is the transpose). Used by FA re-enable to capture
+    /** World vector &rarr; body frame (forward, right, up), via a quaternion basis
+     *  (orthonormal &rarr; inverse is the transpose). Used by FA re-enable to capture
      *  the current velocity as a body-frame setpoint. */
     public static double[] worldToBodyQ(double x, double y, double z, Quat q) {
         double[] b = bodyBasisFromQuat(q);
@@ -381,7 +381,7 @@ public final class FreeFlightPhysics {
     }
 
     // -- Quaternion translation --------------------------
-    // Same control laws as the Euler faStep/step below, but the body→world basis
+    // Same control laws as the Euler faStep/step below, but the body->world basis
     // comes from the attitude quaternion so they are loop/pole-safe. Rotation is
     // NOT integrated here — the caller advances the quaternion by body rates
     // (integrateBodyRates) first; these only translate. The returned Step echoes
@@ -649,7 +649,7 @@ public final class FreeFlightPhysics {
      * via {@link #step} or their own rate handling before calling this.
      *
      * @return Step with new motion (yaw/pitch echoed back) and whether thrust
-     *         was commanded this tick (→ fuel burn)
+     *         was commanded this tick (&rarr; fuel burn)
      */
     /** Roll-free faStep (delegates with roll = 0). */
     public static Step faStep(double mx, double my, double mz,

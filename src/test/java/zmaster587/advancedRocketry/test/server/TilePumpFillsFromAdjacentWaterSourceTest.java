@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
  * was @Ignore'd: it misdiagnosed the empty tank as a placement issue
  * when the block simply isn't an IFluidBlock). AR's own fluids
  * ({@code advancedrocketry:rocketFuel} etc.) extend
- * {@code BlockFluidClassic} → ARE {@code IFluidBlock}, and a meta-0
+ * {@code BlockFluidClassic} &rarr; ARE {@code IFluidBlock}, and a meta-0
  * placement is a drainable source ({@code BlockFluidClassic.canDrain}
  * returns true for LEVEL==0). Observed: the pump does
  * not drain vanilla water.</p>
@@ -55,14 +55,14 @@ public class TilePumpFillsFromAdjacentWaterSourceTest extends AbstractSharedServ
                 + " advancedrocketry:blockPump");
 
         // Place an AR Forge-fluid source (rocketFuel, non-gaseous) directly
-        // below. meta 0 = source block (LEVEL==0 → canDrain true). Unlike
+        // below. meta 0 = source block (LEVEL==0 -> canDrain true). Unlike
         // vanilla water, this IS an IFluidBlock so the pump's drain gate
         // passes.
         ok("artest place 0 " + PX + " " + (PY - 1) + " " + PZ
                 + " advancedrocketry:rocketFuel");
 
         // Inject 1000 RF — pump's max energy (constructor super(1000)).
-        // Full energy → getFrequencyFromPower() returns 1 → canPerformFunction
+        // Full energy -> getFrequencyFromPower() returns 1 -> canPerformFunction
         // passes the worldTime % freq gate every tick.
         ok("artest energy inject 0 " + PX + " " + PY + " " + PZ + " 1000");
 

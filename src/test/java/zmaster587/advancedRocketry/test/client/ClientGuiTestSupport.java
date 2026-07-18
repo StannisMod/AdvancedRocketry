@@ -12,7 +12,7 @@ import java.io.IOException;
 /**
  * Shared helpers for the client GUI E2E tests.
  *
- * <p>The right-click → server {@code onBlockActivated} → {@code openGui} →
+ * <p>The right-click &rarr; server {@code onBlockActivated} &rarr; {@code openGui} &rarr;
  * client {@code displayGuiScreen} round-trip is driven over a socket bridge to
  * a real Minecraft client. A single {@code rightClickBlock} call is
  * occasionally a no-op (the interaction lands a tick before the chunk/player is

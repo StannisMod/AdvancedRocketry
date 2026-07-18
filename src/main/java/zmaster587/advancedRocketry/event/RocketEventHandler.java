@@ -74,9 +74,9 @@ public class RocketEventHandler extends Gui {
     /** Client-rendered FF attitude readback, sampled on the
      *  render thread from the interpolated attitude quaternion the camera used —
      *  the pilot's actual view. For perception-contract client e2e:
-     *  {@link #ffClientCamRoll} pins mouse-horizontal → bank; {@link #ffClientMinForwardZ}
+     *  {@link #ffClientCamRoll} pins mouse-horizontal &rarr; bank; {@link #ffClientMinForwardZ}
      *  (most-negative nose Z over the flight) pins a pitch LOOP past vertical with
-     *  no ±85° clamp (a clamped nose can never point backwards → Z stays ≳ 0).
+     *  no ±85° clamp (a clamped nose can never point backwards &rarr; Z stays ≳ 0).
      *  Reset when the flight ends. */
     public static volatile double ffClientCamPitch = 0.0;
     public static volatile double ffClientCamRoll  = 0.0;

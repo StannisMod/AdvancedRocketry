@@ -26,7 +26,7 @@ import static org.junit.Assert.assertNull;
  *
  * <p><b>Current production behaviour (≠ javadoc)</b>: the method
  * returns {@code null} for an unknown type, and
- * {@code createFromNBT} immediately dereferences {@code null} →
+ * {@code createFromNBT} immediately dereferences {@code null} &rarr;
  * {@code NullPointerException}. The shipping save-load path
  * ({@link zmaster587.advancedRocketry.dimension.DimensionProperties#readFromNBT})
  * catches the NPE in a {@code try / catch(NullPointerException)} and
@@ -41,8 +41,8 @@ import static org.junit.Assert.assertNull;
  * a re-evaluation. Documented here as a known bug.</p>
  *
  * <p><b>Why log this bug</b>: the player-visible scenario is "join a
- * server using a different mod set than the save was created with" →
- * NPE on packet handler → client disconnect or crash. Low-probability
+ * server using a different mod set than the save was created with" &rarr;
+ * NPE on packet handler &rarr; client disconnect or crash. Low-probability
  * (modpack-author hygiene usually prevents this) but real.</p>
  */
 public class SatelliteRegistryFallbackTest {

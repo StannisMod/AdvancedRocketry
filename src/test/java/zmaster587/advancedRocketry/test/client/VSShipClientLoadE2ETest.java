@@ -27,11 +27,11 @@ import static org.junit.Assert.assertTrue;
  * <p>Gated on real VS presence — run with {@code -PwithVS}; skips otherwise.
  */
 /**
- * End-to-end for the tier-2 Valkyrien Skies ship at the client tier: assemble → load (a
- * real client pulls its chunks in — a headless server cannot) → FLY IT WITH FORCE. This is
+ * End-to-end for the tier-2 Valkyrien Skies ship at the client tier: assemble &rarr; load (a
+ * real client pulls its chunks in — a headless server cannot) &rarr; FLY IT WITH FORCE. This is
  * the honest path after the runtime finding that a velocity setpoint does nothing (VS's
  * solver overwrites setLinearVelocity); the ship is driven by a per-physics-tick force
- * controller ({@code vs force-vel} → {@code VSShipController}) instead. Also exercises the
+ * controller ({@code vs force-vel} &rarr; {@code VSShipController}) instead. Also exercises the
  * spawn-window workaround (keep the observer far during spawn, or VS crashes on a double
  * ship-load). Gated on real VS presence — run with {@code -PwithVS}.
  */
@@ -135,8 +135,8 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
                 yAfter - yBefore > 1.0);
 
         // The same controller must also ROTATE the ship: command a yaw angular velocity,
-        // realized as TORQUE (linear zeroed → the ship hovers while it turns). The ship's
-        // body→world attitude quaternion must move meaningfully off where it started. Poll
+        // realized as TORQUE (linear zeroed -> the ship hovers while it turns). The ship's
+        // body->world attitude quaternion must move meaningfully off where it started. Poll
         // for the turn (bounded) for the same activation-lag robustness.
         double[] qBefore = readQuat(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
         double dot = 1.0;
@@ -145,7 +145,7 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
             assertTrue("force-rot must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
             double[] qNow = readQuat(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
-            // |dot| of two unit quaternions is cos(halfAngle); < 0.98 ⇒ rotated by more than ~23°.
+            // |dot| of two unit quaternions is cos(halfAngle); < 0.98 => rotated by more than ~23°.
             dot = Math.abs(qBefore[0] * qNow[0] + qBefore[1] * qNow[1]
                     + qBefore[2] * qNow[2] + qBefore[3] * qNow[3]);
         }
@@ -173,7 +173,7 @@ public class VSShipClientLoadE2ETest extends AbstractClientE2ETest {
         // FULL FREE FLIGHT PATH: hand the flight computer a held pilot input. Its server tick
         // reads the ship's attitude, runs FreeFlightPhysics, and publishes to the controller —
         // no probe touches the ship command directly here. A throttle input must MOVE the ship
-        // through that path (throttle → body axis → world velocity → controller force). We assert
+        // through that path (throttle -> body axis -> world velocity -> controller force). We assert
         // total displacement (not just altitude): the ship is left tilted by the earlier rotate
         // and attitude phases, so "body up" is not world up — moving at all is the contract here.
         double[] pBefore = readVec(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));

@@ -47,9 +47,9 @@ public class SatelliteTypeBehaviourTest extends AbstractSharedServerTest {
     private static final Pattern BLOCK_NAME =
             Pattern.compile("\"block\":\"([^\"]*)\"");
 
-    /** Pin: solarEnergy → SatelliteMicrowaveEnergy implements
+    /** Pin: solarEnergy &rarr; SatelliteMicrowaveEnergy implements
      *  {@link zmaster587.libVulpes.api.IUniversalEnergyTransmitter} —
-     *  the marker the orbital → ground energy receiver resolves
+     *  the marker the orbital &rarr; ground energy receiver resolves
      *  against. Also pin canTick=true and isUniversalEnergy=true (the
      *  battery side of the contract, used by GUI updates). */
     @Test
@@ -151,7 +151,7 @@ public class SatelliteTypeBehaviourTest extends AbstractSharedServerTest {
         assertTrue("test setup: pre-block must be air; " + preBlock,
                 stringField(BLOCK_NAME, preBlock, "block").equals("minecraft:air"));
 
-        // Lock the controller into mode 0 (the AIR→WATER branch).
+        // Lock the controller into mode 0 (the AIR->WATER branch).
         client().execute("artest satellite weather-mode 0 " + satId + " 0");
         // Queue one pos.
         client().execute("artest satellite weather-add-pos 0 " + satId

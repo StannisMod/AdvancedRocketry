@@ -132,7 +132,7 @@ public class SolarPanelInsolationTest extends AbstractSharedServerTest {
         // so the int truncation + the cap-at-10 collapses many distinct
         // insolation multipliers into the same per-tick value. Two dims
         // with insolation multipliers e.g. 1.0 and 1.2 BOTH produce
-        // exactly 2 RF/tick after the floor (2.001 → 2; 2.401 → 2). The
+        // exactly 2 RF/tick after the floor (2.001 -> 2; 2.401 -> 2). The
         // assertion that catches the IMPORTANT regression — getPowerPerOperation
         // returns zero on non-Earth dims because of a polarity flip — is
         // simply "non-zero on both". A stronger test would require

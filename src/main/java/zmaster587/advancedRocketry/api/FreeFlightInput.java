@@ -43,8 +43,8 @@ public final class FreeFlightInput {
     /** Roll (bank) rate about the nose axis. +1 = bank right, -1 = bank left. */
     public final float rollInput;
     public final float brakeInput;
-    /** Throttle cut (X): FA on → zero the velocity setpoint (brake-to-hover);
-     *  FA off → neutralise translation thrust while held. */
+    /** Throttle cut (X): FA on &rarr; zero the velocity setpoint (brake-to-hover);
+     *  FA off &rarr; neutralise translation thrust while held. */
     public final boolean cutActive;
 
     /** Legacy 5-channel constructor (no strafe / roll / cut). */

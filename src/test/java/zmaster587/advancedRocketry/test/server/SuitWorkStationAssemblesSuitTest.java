@@ -86,7 +86,7 @@ public class SuitWorkStationAssemblesSuitTest extends AbstractHeadlessServerTest
                 !pre.toLowerCase().contains("jetpack"));
 
         // 4. Put a jetpack into slot 1. Suit work station calls
-        // addArmorComponent → mutates the chestplate's NBT.
+        // addArmorComponent -> mutates the chestplate's NBT.
         String fillJet = join(client().execute(
                 "artest hatch fill 0 " + X + " " + Y + " " + Z + " 1 advancedrocketry:jetPack 1"));
         assertTrue("jetPack fill failed: " + fillJet,

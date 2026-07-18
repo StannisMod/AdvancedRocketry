@@ -68,7 +68,7 @@ public class ObservatoryMultiblockTest extends AbstractSharedServerTest {
         assertTrue("baseline must validate: " + first,
                 first.contains("\"isComplete\":true"));
 
-        // Central lens at y=1 of the structure → globalY = cy + 2, globalX = cx,
+        // Central lens at y=1 of the structure -> globalY = cy + 2, globalX = cx,
         // globalZ = cz + 2 (per handleFixtureObservatory). Replace it with stone.
         String breakLens = join(client().execute(
                 "artest place 0 " + cx + " " + (cy + 2) + " " + (cz + 2) + " minecraft:stone"));
@@ -92,7 +92,7 @@ public class ObservatoryMultiblockTest extends AbstractSharedServerTest {
         assertTrue("baseline must validate: " + first,
                 first.contains("\"isComplete\":true"));
 
-        // Motor at base layer → globalY = cy - 1, globalX = cx, globalZ = cz + 2
+        // Motor at base layer -> globalY = cy - 1, globalX = cx, globalZ = cz + 2
         // (per handleFixtureObservatory motorPos).
         String breakMotor = join(client().execute(
                 "artest place 0 " + cx + " " + (cy - 1) + " " + (cz + 2) + " minecraft:stone"));

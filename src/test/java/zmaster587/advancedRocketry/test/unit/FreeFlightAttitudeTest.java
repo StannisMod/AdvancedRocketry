@@ -218,7 +218,7 @@ public class FreeFlightAttitudeTest {
 
     @Test
     public void faHoverCancelsGravityAtIdentity() {
-        // Zero setpoint, healthy thrust, gravity present → FA holds a hover
+        // Zero setpoint, healthy thrust, gravity present -> FA holds a hover
         // (net vertical velocity ≈ 0 after gravity compensation).
         Step s = FreeFlightPhysics.faStep(0, 0, 0, Quat.IDENTITY,
                 0.0, 0.0, 0.0, 0.1, 0.02, true);

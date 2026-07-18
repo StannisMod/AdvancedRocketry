@@ -11,8 +11,8 @@ import static org.junit.Assert.assertTrue;
 /**
  * space station lifecycle.
  *
- * Empty list → create real {@link zmaster587.advancedRocketry.stations.SpaceStationObject}
- * via probe → assert list/info reflect it.
+ * Empty list &rarr; create real {@link zmaster587.advancedRocketry.stations.SpaceStationObject}
+ * via probe &rarr; assert list/info reflect it.
  */
 public class SpaceStationLifecycleSmokeTest extends AbstractHeadlessServerTest {
 

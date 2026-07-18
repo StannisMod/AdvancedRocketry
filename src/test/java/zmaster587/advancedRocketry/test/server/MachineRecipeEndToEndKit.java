@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
  * <ul>
  *   <li><b>Item ingredients</b> — some recipes have item inputs (RollingMachine,
  *       Lathe, Crystallizer, PrecisionLaserEtcher), some are fluid-only
- *       (ChemicalReactor rocketfuel = oxygen + hydrogen → rocketfuel).</li>
+ *       (ChemicalReactor rocketfuel = oxygen + hydrogen &rarr; rocketfuel).</li>
  *   <li><b>Fluid ingredients</b> — many require fluid in the liquid input
  *       hatch (RollingMachine pressuretank needs 100mB water).</li>
  *   <li><b>Item outputs vs fluid outputs</b> — most produce items, some
@@ -350,7 +350,7 @@ final class MachineRecipeEndToEndKit {
             StringBuilder seen = new StringBuilder();
             for (String pos : p.liquidOutputPositions) {
                 String read = String.join("\n", c.execute("artest fluid stored 0 " + pos));
-                seen.append(pos).append(" → ").append(read).append('\n');
+                seen.append(pos).append(" -> ").append(read).append('\n');
                 if (read.contains("\"fluid\":\"" + expectedFluid + "\"")) {
                     found = true; break;
                 }

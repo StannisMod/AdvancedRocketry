@@ -13,15 +13,15 @@ import static org.junit.Assert.assertTrue;
  * Bisects the tier-2 pilot-SEAT flight path from the client keybind/packet path. A real seated
  * pilot moves the ship not at all in a playtest, yet the {@code vs ff-input} probe (static channel)
  * flies it fine ({@link VSShipClientLoadE2ETest}). The only new links the seat adds are: client
- * sampling + packet → seat {@code useNetworkData} → {@code getFlightComputer()} (offset resolve) →
- * {@code setPilotInput} (per-tile) → {@code update()} → force.
+ * sampling + packet &rarr; seat {@code useNetworkData} &rarr; {@code getFlightComputer()} (offset resolve) &rarr;
+ * {@code setPilotInput} (per-tile) &rarr; {@code update()} &rarr; force.
  *
  * <p>This test drives the ship through {@code vs seat-input}, which server-side finds the loaded
  * pilot seat, resolves its linked AFC via the stored offset, and sets that AFC's per-tile pilot
  * input — exercising EVERYTHING except the client sampling + packet. If the ship climbs here, the
- * seat→AFC→force pipeline is sound and the playtest break is client-side (packet / distance check /
+ * seat&rarr;AFC&rarr;force pipeline is sound and the playtest break is client-side (packet / distance check /
  * keybinding); if the AFC does not resolve or the ship does not climb, the break is in the
- * seat→AFC link or the per-tile drive. Gated on real VS — run with {@code -PwithVS}.</p>
+ * seat&rarr;AFC link or the per-tile drive. Gated on real VS — run with {@code -PwithVS}.</p>
  */
 public class VSShipSeatDriveE2ETest extends AbstractClientE2ETest {
 
@@ -74,7 +74,7 @@ public class VSShipSeatDriveE2ETest extends AbstractClientE2ETest {
         assertTrue("the ship must LOAD with the client present", !Double.isNaN(yBefore));
 
         // Server-side seat drive: the seat must resolve its AFC, and a full-up throttle through
-        // the seat→AFC per-tile path must lift the ship (isolates ground friction: up only).
+        // the seat->AFC per-tile path must lift the ship (isolates ground friction: up only).
         double yAfter = yBefore;
         String lastSeat = "";
         for (int i = 0; i < 80 && yAfter - yBefore <= 1.5; i++) {
@@ -87,7 +87,7 @@ public class VSShipSeatDriveE2ETest extends AbstractClientE2ETest {
             bot().waitTicks(1);
             yAfter = readDouble(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ), POS_Y);
         }
-        assertTrue("a throttle driven through the pilot seat → AFC → force path must lift the ship "
+        assertTrue("a throttle driven through the pilot seat -> AFC -> force path must lift the ship "
                         + "(yBefore=" + yBefore + " yAfter=" + yAfter + ", lastSeat=" + lastSeat + ")",
                 yAfter - yBefore > 1.0);
     }

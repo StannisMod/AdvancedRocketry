@@ -16,8 +16,8 @@ import static org.junit.Assert.assertTrue;
 /**
  * The honest, full-path tier-2 pilot e2e: a bot SITS on the pilot seat and drives the ship with
  * REAL Free Flight keys, observing the ship move. This exercises everything a hands-on playtest
- * does — client key sampling ({@code KeyBindings.handleShipPilotInput}) → {@code PacketMachine} →
- * seat {@code useNetworkData} (the pilot guard) → AFC per-tile input → force — so a break anywhere
+ * does — client key sampling ({@code KeyBindings.handleShipPilotInput}) &rarr; {@code PacketMachine} &rarr;
+ * seat {@code useNetworkData} (the pilot guard) &rarr; AFC per-tile input &rarr; force — so a break anywhere
  * in the CLIENT path (which the server-side {@link VSShipSeatDriveE2ETest} bisection cannot reach)
  * fails here. It also covers the {@code ARKeyConflictContext} pilot-seat fix, since the vertical-up
  * key is one of the cockpit-scoped keys.
@@ -35,7 +35,7 @@ import static org.junit.Assert.assertTrue;
  *       moving craft, not left at the spawn point.</li>
  *   <li><b>The mouse steers, it never free-looks.</b> A hard sideways mouse look injected through
  *       the real client ({@code setLook}) does NOT swing the camera; the view stays locked to the
- *       ship's nose heading (derived from the server ship attitude with the same quat→Euler the
+ *       ship's nose heading (derived from the server ship attitude with the same quat&rarr;Euler the
  *       production camera lock uses), exactly like the rocket cockpit.</li>
  * </ul>
  */
@@ -124,7 +124,7 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
         }
 
         assertTrue("holding the vertical-up key while seated must lift the ship through the FULL "
-                        + "client path (key → packet → seat → AFC → force): yBefore=" + yBefore
+                        + "client path (key -> packet -> seat -> AFC -> force): yBefore=" + yBefore
                         + " yAfter=" + yAfter,
                 yAfter - yBefore > 1.0);
 
@@ -148,10 +148,10 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
 
         // --- The mouse must STEER the ship, never free-look the camera (the FF cockpit contract).
         // The ship is now hovering roughly upright. Inject a hard SIDEWAYS mouse look each tick
-        // (horizontal mouse → roll cursor; pure roll leaves the nose direction fixed). A camera that
+        // (horizontal mouse -> roll cursor; pure roll leaves the nose direction fixed). A camera that
         // free-looks would accumulate tens of degrees off; a nose-locked one is re-pinned to the
         // (unmoved) ship nose every client tick. Read BOTH the client camera and the server ship
-        // attitude, converting the latter to a heading with the SAME quat→Euler the lock uses.
+        // attitude, converting the latter to a heading with the SAME quat->Euler the lock uses.
         double camYawBefore = bot().reportState().get("playerYaw").getAsDouble();
         for (int i = 0; i < 6; i++) {
             JsonObject st = bot().reportState();
@@ -172,7 +172,7 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
     }
 
     /** The ship nose heading (MC yaw, degrees) from the attitude quaternion in {@code vs ship-info},
-     *  using the SAME quat→Euler conversion the production camera lock uses (no convention drift). */
+     *  using the SAME quat&rarr;Euler conversion the production camera lock uses (no convention drift). */
     private float shipNoseYaw(String shipInfoJson) {
         return FreeFlightPhysics.eulerFromQuat(new FreeFlightPhysics.Quat(
                 readDouble(shipInfoJson, QW), readDouble(shipInfoJson, QX),

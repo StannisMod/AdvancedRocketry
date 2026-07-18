@@ -216,7 +216,7 @@ public class SpaceDimGuardE2ETest {
                 spawnZ, posZ, 2.0);
         // Pin the "not overworld" invariant explicitly for readability.
         assertNotEquals("player must NOT be in overworld (station exists "
-                + "→ teleport-to-station branch, not fallback): " + after,
+                + "-> teleport-to-station branch, not fallback): " + after,
                 0, dim);
     }
 }

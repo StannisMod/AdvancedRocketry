@@ -158,7 +158,7 @@ public class PlanetBedSleepE2ETest {
                 + "tolerated): " + before, staged >= 20000 && staged < 22000);
 
         // The real player right-clicks the bed foot (server normalizes to the
-        // head) → production trySleep → fully asleep after 100 ticks → the
+        // head) -> production trySleep -> fully asleep after 100 ticks -> the
         // sleep skip runs WorldServer's setWorldTime through MixinWorldServer's
         // rotationalPeriod rounding.
         JsonObject click = clientHarness.bot().interactBlock(BED_X, BED_Y, BED_FOOT_Z);

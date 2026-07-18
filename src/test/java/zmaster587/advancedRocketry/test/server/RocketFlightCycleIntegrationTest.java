@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>{@link RocketFlightCycleDepthTest} pins each individual event-bus
  * emission. This file extends to the SEQUENCE: a rocket goes through
- * launch → orbit-reached → dismantle, and every event fires exactly
+ * launch &rarr; orbit-reached &rarr; dismantle, and every event fires exactly
  * once in the correct order with the correct global counter deltas.
  *
  * <p>Why "integration" and not just sequence: a regression that fires
@@ -101,7 +101,7 @@ public class RocketFlightCycleIntegrationTest extends AbstractSharedServerTest {
 
     @Test
     public void launchThenDismantleSequenceFiresExpectedEventsInOrder() throws Exception {
-        // SEQUENCE under test (assemble → launch → dismantle):
+        // SEQUENCE under test (assemble -> launch -> dismantle):
         //   1. assemble (no event)
         //   2. program destination (no event)
         //   3. launch (real production path) — RocketLaunchEvent +1
@@ -117,7 +117,7 @@ public class RocketFlightCycleIntegrationTest extends AbstractSharedServerTest {
         // direct entity lookups (e.g. dismantle's findRocket) fail
         // intermittently. The orbit-reached event-fire is pinned
         // separately in RocketFlightCycleDepthTest; this test focuses
-        // on the launch→dismantle ordering specifically.
+        // on the launch->dismantle ordering specifically.
         int destDim = firstNonOverworldArDimOrSkip();
         int id = buildAndAssemble(4000, 64, 500);
 

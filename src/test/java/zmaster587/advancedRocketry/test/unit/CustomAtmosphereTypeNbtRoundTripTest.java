@@ -74,13 +74,13 @@ public class CustomAtmosphereTypeNbtRoundTripTest {
 
     /**
      * Pin: write {@code atmosphere.getUnlocalizedName()} to NBT, read it
-     * back, query the registry → get the SAME registered instance.
+     * back, query the registry &rarr; get the SAME registered instance.
      *
      * <p>Mirrors the production
      * {@link zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector}
      * persistence loop (lines 136 + 144) but against a custom-registered
      * type, to verify companion-mod-registered atmospheres survive the
-     * save → load cycle.</p>
+     * save &rarr; load cycle.</p>
      */
     @Test
     public void customAtmosphereSurvivesNbtNameRoundTripThroughRegistry() {

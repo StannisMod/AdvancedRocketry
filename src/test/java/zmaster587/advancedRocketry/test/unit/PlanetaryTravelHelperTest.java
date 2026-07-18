@@ -54,7 +54,7 @@ public class PlanetaryTravelHelperTest {
     private static final int PLANET_A = 800;
     /** Moon orbiting PLANET_A. */
     private static final int MOON_OF_A = 801;
-    /** Second moon orbiting PLANET_A (used for moon→sibling-moon check). */
+    /** Second moon orbiting PLANET_A (used for moon&rarr;sibling-moon check). */
     private static final int MOON2_OF_A = 802;
     /** Unrelated planet (no parent/child link to A). */
     private static final int PLANET_C = 803;
@@ -135,18 +135,18 @@ public class PlanetaryTravelHelperTest {
 
     @Test
     public void planetToOwnMoonIsWithinPlanetarySystem() {
-        // Planet → its moon: the destination is in the planet's
+        // Planet -> its moon: the destination is in the planet's
         // childPlanets set. Production line 30-35.
-        assertTrue("planet → own-moon must report intra-system travel",
+        assertTrue("planet -> own-moon must report intra-system travel",
                 PlanetaryTravelHelper
                         .isTravelBetweenBodiesWithinPlanetarySystem(PLANET_A, MOON_OF_A));
     }
 
     @Test
     public void moonToParentPlanetIsWithnPlanetarySystem() {
-        // Moon → its parent planet: production line 21-22 checks
+        // Moon -> its parent planet: production line 21-22 checks
         // destination == parentPlanet.
-        assertTrue("moon → parent-planet must report intra-system travel",
+        assertTrue("moon -> parent-planet must report intra-system travel",
                 PlanetaryTravelHelper
                         .isTravelBetweenBodiesWithinPlanetarySystem(MOON_OF_A, PLANET_A));
     }
@@ -156,7 +156,7 @@ public class PlanetaryTravelHelperTest {
         // Two moons sharing a parent planet: production line 23-28
         // walks parent's childPlanets set, so sibling-moon travel is
         // intra-system.
-        assertTrue("moon → sibling-moon must report intra-system travel",
+        assertTrue("moon -> sibling-moon must report intra-system travel",
                 PlanetaryTravelHelper
                         .isTravelBetweenBodiesWithinPlanetarySystem(MOON_OF_A, MOON2_OF_A));
     }
@@ -166,7 +166,7 @@ public class PlanetaryTravelHelperTest {
         // Different parent stars / disconnected planets — the
         // unrelated planet is not in planetA's childPlanets and not
         // its parent. Cross-system travel.
-        assertFalse("planet → unrelated-planet must NOT report intra-system",
+        assertFalse("planet -> unrelated-planet must NOT report intra-system",
                 PlanetaryTravelHelper
                         .isTravelBetweenBodiesWithinPlanetarySystem(PLANET_A, PLANET_C));
     }
@@ -191,7 +191,7 @@ public class PlanetaryTravelHelperTest {
         assertTrue("same-dim must report anywhere-in-system",
                 PlanetaryTravelHelper
                         .isTravelAnywhereInPlanetarySystem(PLANET_A, PLANET_A));
-        assertTrue("planet → own-moon must report anywhere-in-system",
+        assertTrue("planet -> own-moon must report anywhere-in-system",
                 PlanetaryTravelHelper
                         .isTravelAnywhereInPlanetarySystem(PLANET_A, MOON_OF_A));
         assertFalse("cross-system must NOT report anywhere-in-system",

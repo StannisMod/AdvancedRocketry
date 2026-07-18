@@ -135,7 +135,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     private static final DataParameter<Float> FA_SP_FWD   = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_RIGHT = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> FA_SP_UP    = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
-    /** FF body-frame attitude quaternion (w, x, y, z), body→world.
+    /** FF body-frame attitude quaternion (w, x, y, z), body&rarr;world.
      *  Replicated as four full-precision floats — NOT the byte-quantised
      *  yaw/pitch tracker or a single roll float — so the client has the complete,
      *  pole-free orientation. This is the FF attitude source of truth: loops and
@@ -149,7 +149,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      *  applied this tick (world-frame Δv minus gravity, normalised by
      *  MAX_THRUST_ACCEL) — non-zero whenever thrust is produced in ANY direction
      *  (climb, cruise, strafe, or just cancelling gravity in a hover), which the
-     *  classic {@code areEnginesRunning} (motionY&gt;0) missed → intermittent sound. */
+     *  classic {@code areEnginesRunning} (motionY&gt;0) missed &rarr; intermittent sound. */
     private static final DataParameter<Float> FF_ENGINE_POWER = EntityDataManager.createKey(EntityRocket.class, DataSerializers.FLOAT);
     private static long ERROR_DISPLAY_TIME = 100;
     //Offset for buttons linking to the tileEntityGrid
@@ -187,7 +187,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      *  {@link IFlightBackend}). Legacy backend owns the entity transform
      *  exactly as before; a ship-physics backend would own displacement instead. */
     private final IFlightBackend flightBackend = new LegacyFlightBackend();
-    /** FF attitude source of truth (body→world quaternion).
+    /** FF attitude source of truth (body&rarr;world quaternion).
      *  Integrated by BODY rates on the server; on the client it is the smoothed
      *  local estimate (predict from input + slerp toward the replicated
      *  {@link #FF_QW}/QX/QY/QZ). prev tracks the last tick for render slerp. */
@@ -218,7 +218,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      *  client tick dead-reckons from local velocity/rates and pulls the RESIDUAL
      *  toward these — never the raw gap, which already contains this tick's motion
      *  (double-counting it left the client a full tick ahead of the server: a
-     *  constant lead that shifted with velocity → the FA-off jitter). Position is
+     *  constant lead that shifted with velocity &rarr; the FA-off jitter). Position is
      *  null / angles are NaN until the first FF packet arrives; all transient
      *  (client-only, re-seeded on load). */
     private transient Vec3d ffServerPos = null;
@@ -914,7 +914,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         return prevFreeFlightRoll;
     }
 
-    /** Current FF attitude (body→world). Client render/camera slerp between
+    /** Current FF attitude (body&rarr;world). Client render/camera slerp between
      *  {@link #getPrevFfQuat()} and this by partialTicks. */
     public FreeFlightPhysics.Quat getFfQuat() {
         return ffQuat == null ? FreeFlightPhysics.Quat.IDENTITY : ffQuat;
@@ -1044,7 +1044,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // getAcceleration(g) is the net per-tick climb at full thrust and is
         // thrust-multiplier / weight-system / gravityAffectsFuel aware. Adding the
         // per-tick gravity back yields the gross thrust accel, so that at full
-        // vertical throttle net == getAcceleration → the FF climb gate is exactly
+        // vertical throttle net == getAcceleration -> the FF climb gate is exactly
         // the classic thrust-to-weight gate (TWR > 1). No invented /10000 scale.
         double thrustMag = stats.getAcceleration(gravMult) + gravity;
 
@@ -1064,7 +1064,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         // Integrate the body-frame ATTITUDE by this tick's rotation rates: pitch
         // about the craft right axis, yaw about up, roll about the nose. A
-        // quaternion (not a world-frame Euler triple) → no gimbal lock, so loops
+        // quaternion (not a world-frame Euler triple) -> no gimbal lock, so loops
         // work and the controls never invert relative to the pilot when the craft
         // is rolled or inverted.
         double pitchRate = in.pitchInput * FreeFlightPhysics.MAX_PITCH_RATE;
@@ -1139,7 +1139,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // the state to the ship and own displacement itself.
         flightBackend.applyFlightState(newQuat, result, enginePow);
 
-        // Landing: ground contact + slow vertical motion → engines off
+        // Landing: ground contact + slow vertical motion -> engines off
         // (touchdown auto-shutdown). The detector arms only once the craft
         // has actually left the ground, so the engine-start hover can never
         // read as a touchdown — no timed grace window needed.
@@ -1865,7 +1865,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
                         ? FreeFlightInput.zero() : currentFreeFlightInput;
 
                 // Position: dead-reckon by synced velocity, then correct the residual
-                // to the server target. e → 0 in steady state (no lead, no lag).
+                // to the server target. e -> 0 in steady state (no lead, no lag).
                 double px = this.posX + this.motionX;
                 double py = this.posY + this.motionY;
                 double pz = this.posZ + this.motionZ;
@@ -1878,7 +1878,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
                 // Attitude: predict from the local input rates, then slerp a
                 // fraction toward the replicated server quaternion (FF_Q*). For the
-                // pilot the prediction ≈ the server, so the slerp barely moves →
+                // pilot the prediction ≈ the server, so the slerp barely moves ->
                 // smooth; an observer has zero input, so the correction carries the
                 // server attitude. Snapshot prev BEFORE the advance so the render and
                 // the hard-locked FF camera slerp one tick's rotation per frame — the
@@ -3001,10 +3001,10 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         motionY = nbt.getDouble("motionY");
         motionZ = nbt.getDouble("motionZ");
 
-        // Free Flight Mode — backcompat: missing key → CLASSIC_LAUNCH (DEFAULT).
+        // Free Flight Mode — backcompat: missing key -> CLASSIC_LAUNCH (DEFAULT).
         flightMode = RocketFlightMode.readFromNBT(nbt);
         // FF attitude quaternion. Missing key (older save /
-        // never-flown rocket) → upright identity; the pilot re-orients in flight.
+        // never-flown rocket) -> upright identity; the pilot re-orients in flight.
         if (nbt.hasKey("ffQuatW")) {
             ffQuat = new FreeFlightPhysics.Quat(nbt.getFloat("ffQuatW"), nbt.getFloat("ffQuatX"),
                     nbt.getFloat("ffQuatY"), nbt.getFloat("ffQuatZ")).normalized();
@@ -3023,11 +3023,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Flight Assist default ON for missing-key (legacy) saves.
         flightAssistOn = nbt.hasKey("flightAssistOn") ? nbt.getBoolean("flightAssistOn") : true;
         // Engine-start liftoff state; missing keys (legacy saves)
-        // → assist inactive + landing detector armed, i.e. plain in-flight.
+        // -> assist inactive + landing detector armed, i.e. plain in-flight.
         ffLiftoffTargetY = nbt.hasKey("ffLiftoffTargetY")
                 ? nbt.getDouble("ffLiftoffTargetY") : Double.NaN;
         freeFlightHasLeftGround = !nbt.hasKey("ffHasLeftGround") || nbt.getBoolean("ffHasLeftGround");
-        // FA velocity setpoint; missing keys → zero (hover intent).
+        // FA velocity setpoint; missing keys -> zero (hover intent).
         setFaSetpoint(nbt.getFloat("faSetpointFwd"),
                 nbt.getFloat("faSetpointRight"),
                 nbt.getFloat("faSetpointUp"));
@@ -3176,7 +3176,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
             position.writeToNBT(nbt);
         } else if (packetId == PacketType.SET_FLIGHT_MODE.ordinal()) {
-            // Wire: 1 byte = ordinal of RocketFlightMode (-1 → default).
+            // Wire: 1 byte = ordinal of RocketFlightMode (-1 -> default).
             byte ord = in.readByte();
             RocketFlightMode[] all = RocketFlightMode.values();
             RocketFlightMode mode = (ord >= 0 && ord < all.length) ? all[ord] : RocketFlightMode.DEFAULT;
@@ -3242,9 +3242,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         } else if (id == PacketType.SET_FLIGHT_MODE.ordinal()) {
             out.writeByte((byte) getFlightMode().ordinal());
         } else if (id == PacketType.FREE_FLIGHT_INPUT.ordinal()) {
-            // Client→server send: client writes its current input intent.
+            // Client->server send: client writes its current input intent.
             // The current intent on server is the latest applied input, so
-            // re-broadcasting it (server→client mirror) is also coherent.
+            // re-broadcasting it (server->client mirror) is also coherent.
             getCurrentFreeFlightInput().write(out);
         } else if (id == PacketType.SET_FLIGHT_ASSIST.ordinal()) {
             out.writeBoolean(isFlightAssistOn());
@@ -3347,7 +3347,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             PacketHandler.sendToPlayersTrackingEntity(
                     new PacketEntity(this, (byte) PacketType.SET_FLIGHT_MODE.ordinal()), this);
         } else if (id == PacketType.SET_FLIGHT_MODE.ordinal() && world.isRemote) {
-            // Echo from server → mutate local cache to keep client UI in sync.
+            // Echo from server -> mutate local cache to keep client UI in sync.
             String name = nbt.getString("flightMode");
             for (RocketFlightMode m : RocketFlightMode.values()) {
                 if (m.name().equals(name)) { this.flightMode = m; break; }
@@ -3505,7 +3505,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             // vertically-built model's +Y nose onto the body forward axis), so the
             // camera sits IN the cockpit and banks/pitches/loops rigidly with it —
             // pole-safe, unlike the derived Euler.
-            double bx = cx;      // model→body via Rx(90): (x, -z, y)
+            double bx = cx;      // model->body via Rx(90): (x, -z, y)
             double by = -cz;
             double bz = cy;
             double[] w = getFfQuat().rotate(bx, by, bz);
@@ -3835,7 +3835,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         SET_FLIGHT_MODE,
         FREE_FLIGHT_INPUT,
         SET_FLIGHT_ASSIST,
-        /** Client→server: the pilot completed the 3 s engine-start hold. No payload. */
+        /** Client&rarr;server: the pilot completed the 3 s engine-start hold. No payload. */
         ENGINE_START
     }
 

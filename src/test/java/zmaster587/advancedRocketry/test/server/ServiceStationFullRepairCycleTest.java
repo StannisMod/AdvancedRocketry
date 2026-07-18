@@ -33,7 +33,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *   <li><b>Phase 1 (consumePartToRepair).</b> First {@code performFunction}
  *       on the powered station discovers the assembler
  *       (rising-edge of {@code was_powered}), then calls
- *       {@code giveWorkToAssemblers} → {@code consumePartToRepair}: the
+ *       {@code giveWorkToAssemblers} &rarr; {@code consumePartToRepair}: the
  *       worn part moves from {@code partsToRepair} into
  *       {@code partsProcessing[0]}, and the dropped broken-motor item
  *       is injected into the assembler's input hatch.</li>
@@ -160,7 +160,7 @@ public class ServiceStationFullRepairCycleTest extends AbstractSharedServerTest 
                 0, extract(pre, PROC_COUNT));
 
         // === PHASE 1 — consumePartToRepair ===
-        // First performFunction: !was_powered → scanForAssemblers
+        // First performFunction: !was_powered -> scanForAssemblers
         // discovers the assembler, then giveWorkToAssemblers calls
         // consumePartToRepair. Part moves from partsToRepair into
         // partsProcessing[0].

@@ -61,7 +61,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
 
     @Test
     public void stoneBlockReportsSealedBranch() throws Exception {
-        // Full solid ROCK material → isBlockSealed returns true via the
+        // Full solid ROCK material -> isBlockSealed returns true via the
         // final `isFullBlock` clause. Branch: "sealed".
         int x = 200, y = 80, z = 200;
         place(x, y, z, "minecraft:stone");
@@ -84,7 +84,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
     public void airReportsNotSealMatBranch() throws Exception {
         // Material.AIR is on materialBanList (SealableBlockHandler line
         // 219). isBlockSealed returns false (material check); dispatch
-        // falls through to isMaterialBanned → true → "notsealmat".
+        // falls through to isMaterialBanned -> true -> "notsealmat".
         int x = 220, y = 80, z = 200;
         place(x, y, z, "minecraft:air");
         assertEquals("air must produce branch 'notsealmat' (Material.AIR is banned)",
@@ -117,9 +117,9 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
     @Test
     public void stoneSlabReportsOtherBranch() throws Exception {
         // Stone slab: Material.ROCK (solid, not banned), but half-block
-        // bounds → isFullBlock=false → isBlockSealed=false. Dispatch
+        // bounds -> isFullBlock=false -> isBlockSealed=false. Dispatch
         // falls through ROCK-not-banned, slab-not-banned,
-        // isFullBlock=false, not-IFluidBlock → "other".
+        // isFullBlock=false, not-IFluidBlock -> "other".
         // (Torch was tried first but vanilla torch requires an attached
         // adjacent block; /artest place succeeds at the placement call
         // but the torch entity immediately detaches, leaving air —
@@ -209,7 +209,7 @@ public class SealDetectorDispatchTest extends AbstractSharedServerTest {
      *    <li>block is NOT in {@code blockBanList} (otherwise "notsealblock"
      *        fires first);</li>
      *    <li>{@code isFullBlock(world, pos)} returns true — i.e. the
-     *        block's collision bounding box is exactly {@code [0,0,0]→[1,1,1]}.</li>
+     *        block's collision bounding box is exactly {@code [0,0,0]->[1,1,1]}.</li>
      *  </ul>
      *
      *  <p>No vanilla or AR-registered block satisfies all four. The liquid

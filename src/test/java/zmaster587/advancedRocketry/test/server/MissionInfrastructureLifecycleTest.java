@@ -9,7 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * mission ↔ infrastructure lifecycle contract.
+ * mission &harr; infrastructure lifecycle contract.
  *
  * <p>Pins the player-visible cause-effect of starting and completing
  * a mission that has linked-infrastructure tiles (e.g. a Rocket

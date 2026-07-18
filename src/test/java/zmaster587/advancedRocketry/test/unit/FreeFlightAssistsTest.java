@@ -22,7 +22,7 @@ import static org.junit.Assert.assertTrue;
  *    actual world velocity;
  *  - zero setpoint = hover (gravity compensated, motion driven to zero);
  *  - an under-powered craft honestly sags; no fuel = Newtonian brick;
- *  - any commanded thrust reports thrustApplied (→ fuel burn), including
+ *  - any commanded thrust reports thrustApplied (&rarr; fuel burn), including
  *    the hover's gravity-cancelling burn.
  */
 public class FreeFlightAssistsTest {

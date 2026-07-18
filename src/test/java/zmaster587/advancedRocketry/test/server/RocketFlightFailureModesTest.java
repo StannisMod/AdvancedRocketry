@@ -21,7 +21,7 @@ import static org.junit.Assert.assertTrue;
  *       from {@code launch()} when {@code partsWearSystem &&
  *       storage.shouldBreak()}. Pin the contract via the new probe.</li>
  *   <li><b>Out-of-fuel mid-flight</b> — one might expect an
- *       "out of fuel → rocket explodes" path but production has no such
+ *       "out of fuel &rarr; rocket explodes" path but production has no such
  *       branch. The {@code isInFlight()} branch (line 1226 onwards) just
  *       sets fuelFluid="null" and lets motionY accumulate downwards. Pin
  *       this as the current contract: zero fuel does NOT auto-explode.
@@ -111,7 +111,7 @@ public class RocketFlightFailureModesTest extends AbstractSharedServerTest {
 
     @Test
     public void outOfFuelMidFlightDoesNotAutoExplode_documentsCurrentBehavior() throws Exception {
-        // One might expect "out of fuel → explode" but
+        // One might expect "out of fuel -> explode" but
         // production has no such code path. The fuel-decrement loop at
         // line 1235 just sets fuelFluid="null" when amount hits 0. The
         // rocket continues to drift (falling under gravity once burning

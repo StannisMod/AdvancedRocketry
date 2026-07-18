@@ -133,7 +133,7 @@ public class PacketSerializationTest {
 
     @Test
     public void packetDimInfoNullPropertiesIsDeleteSignal() {
-        // ctor with null DimensionProperties → wire format collapses to
+        // ctor with null DimensionProperties -> wire format collapses to
         // {dimNumber, deleteDim=true}. executeClient interprets that as a delete.
         PacketDimInfo sent = new PacketDimInfo(99, null);
         ByteBuf buffer = newBuffer();
@@ -445,8 +445,8 @@ public class PacketSerializationTest {
 
         ByteBuf buffer = newBuffer();
         buffer.writeInt(7);                 // worldId
-        buffer.writeInt(12);                // chunk.x → xPos
-        buffer.writeInt(-3);                // chunk.z → zPos
+        buffer.writeInt(12);                // chunk.x -> xPos
+        buffer.writeInt(-3);                // chunk.z -> zPos
         buffer.writeInt(200);               // pos.x
         buffer.writeShort(64);              // pos.y (short)
         buffer.writeInt(-50);               // pos.z
@@ -784,7 +784,7 @@ public class PacketSerializationTest {
     @Test
     public void packetBiomeIDChangeReadClientEmptyBufferLeavesDefaults() {
         // PacketBiomeIDChange's no-arg ctor pre-allocates array=byte[256] and
-        // pos=HashedBlockPosition(0,0,0). Empty buffer → readInt underflows
+        // pos=HashedBlockPosition(0,0,0). Empty buffer -> readInt underflows
         // before any field assignment. The pre-allocated array stays all
         // zeros (would otherwise be filled by in.readBytes(array) to 256
         // attacker bytes).
@@ -960,7 +960,7 @@ public class PacketSerializationTest {
 
     @Test
     public void packetSatellitesUpdateReadClientEmptyBufferDoesNotMutateDimensionManager() {
-        // First read is byteBuf.readInt() (the dimNumber). Underflow → no
+        // First read is byteBuf.readInt() (the dimNumber). Underflow -> no
         // DimensionManager.getDimensionProperties call, no mutation.
         zmaster587.advancedRocketry.dimension.DimensionManager dm =
                 zmaster587.advancedRocketry.dimension.DimensionManager.getInstance();

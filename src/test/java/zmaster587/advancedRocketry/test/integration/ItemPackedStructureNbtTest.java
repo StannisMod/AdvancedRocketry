@@ -29,7 +29,7 @@ import static org.junit.Assert.assertNull;
  * eagerly calls {@code AdvancedRocketry.proxy.getProfiler()} which
  * NPEs without a running {@code MinecraftServer}. A future
  * server-tier probe-driven test could close that gap by going
- * through the existing rocket fixture → assemble → pack flow, but
+ * through the existing rocket fixture &rarr; assemble &rarr; pack flow, but
  * it would duplicate {@code RocketAssemblySmokeTest}'s coverage.</p>
  */
 public class ItemPackedStructureNbtTest {

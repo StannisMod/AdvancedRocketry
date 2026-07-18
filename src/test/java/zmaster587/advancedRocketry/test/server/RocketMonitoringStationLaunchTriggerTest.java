@@ -32,7 +32,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <ol>
  *   <li><b>Rising-edge fires {@code prepareLaunch}.</b> Redstone
- *       power rises from absent → present, one tick later
+ *       power rises from absent &rarr; present, one tick later
  *       {@code preLaunchCount} increments by 1.</li>
  *   <li><b>Sustained-high does not re-fire.</b> Subsequent ticks with
  *       the same power level do not call prepareLaunch (the
@@ -185,7 +185,7 @@ public class RocketMonitoringStationLaunchTriggerTest extends AbstractSharedServ
 
         int afterFirstTick = observedPreLaunchEvents();
         assertEquals("rising-edge tick must fire prepareLaunch exactly once "
-                        + "(observed preLaunchCount " + before + " → "
+                        + "(observed preLaunchCount " + before + " -> "
                         + afterFirstTick + ")",
                 1, afterFirstTick - before);
         assertTrue("was_powered must be true after rising-edge tick "

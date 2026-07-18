@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
  * fluid loader / unloader active transfer contract.
  *
  * <p>The pre-existing {@link RocketInfrastructureSmokeTest#fluidLoaderTransfersFluidAfterLanding}
- * pins only tile lifecycle (placement → link → 30 ticks survive). It
+ * pins only tile lifecycle (placement &rarr; link &rarr; 30 ticks survive). It
  * documents why active transfer was deferred: fuel-tank tiles in the
  * fixture rocket's storage chunk lose {@code FLUID_HANDLER_CAPABILITY}
  * when re-instantiated in the detached storage world.</p>
@@ -26,11 +26,11 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Pins:</p>
  * <ul>
- *   <li><b>Loader → rocket transfer</b> ({@link
+ *   <li><b>Loader &rarr; rocket transfer</b> ({@link
  *       zmaster587.advancedRocketry.tile.infrastructure.TileRocketFluidLoader#update}):
  *       fluid pre-loaded into the loader's own tank ends up in the
  *       linked rocket's storage liquidTanks after a tick budget.</li>
- *   <li><b>Unloader → rocket-drain</b> ({@link
+ *   <li><b>Unloader &rarr; rocket-drain</b> ({@link
  *       zmaster587.advancedRocketry.tile.infrastructure.TileRocketFluidUnloader#update}):
  *       fluid pre-filled into the linked rocket's storage liquidTanks
  *       gets pulled out into the unloader's tank.</li>

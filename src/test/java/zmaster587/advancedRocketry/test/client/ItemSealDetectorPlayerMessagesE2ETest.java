@@ -33,8 +33,8 @@ import static org.junit.Assert.assertTrue;
  * dispatched.</p>
  *
  * <p>Fixtures mirror {@code SealDetectorDispatchTest} (stone /
- * cobblestone → "sealed", air / leaves / sand → "notsealmat",
- * stone_slab → "other"). The {@code notsealblock}, {@code notfullblock}
+ * cobblestone &rarr; "sealed", air / leaves / sand &rarr; "notsealmat",
+ * stone_slab &rarr; "other"). The {@code notsealblock}, {@code notfullblock}
  * and {@code fluid} branches are out of scope here for the same reason
  * they are out of scope on the server tier — they need deterministic
  * fixtures (config-driven banned block, fluid registry) that aren't
@@ -110,7 +110,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
 
     /** Stages the fixture at (x, Y, Z), stands the player on a stone perch one
      *  block away holding the seal detector, RIGHT-CLICKS the fixture through
-     *  the real client ({@code interactBlock} → CPacketPlayerTryUseItemOnBlock),
+     *  the real client ({@code interactBlock} &rarr; CPacketPlayerTryUseItemOnBlock),
      *  and asserts the i18n-RESOLVED reply lands on the player's chat overlay.
      *  Cross-pins the branch against the server-tier seal-detector mirror. */
     private void assertSealDetectorBranch(int x, String fixtureBlock, String expected,
@@ -157,7 +157,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
 
     // ───────────────────── sealed branch ──────────────────────────────────
 
-    /** Solid ROCK material full-block → "sealed". */
+    /** Solid ROCK material full-block &rarr; "sealed". */
     @Test
     public void stoneFixtureDispatchesSealedMessageToPlayer() throws Exception {
         assertSealDetectorBranch(X_STONE, "minecraft:stone", "sealed", "Should hold a nice seal");
@@ -173,7 +173,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
 
     // ───────────────────── notsealmat branch ──────────────────────────────
 
-    /** Material.AIR is on the default materialBanList → "notsealmat". */
+    /** Material.AIR is on the default materialBanList &rarr; "notsealmat". */
     @Test
     public void airFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
         assertSealDetectorBranch(X_AIR, "minecraft:air", "notsealmat", "Material will not hold a seal");
@@ -196,8 +196,8 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
 
     // ───────────────────── other branch ───────────────────────────────────
 
-    /** Stone slab: ROCK material (not banned), but half-block bounds →
-     *  isFullBlock=false → dispatch falls through to "other" (after
+    /** Stone slab: ROCK material (not banned), but half-block bounds &rarr;
+     *  isFullBlock=false &rarr; dispatch falls through to "other" (after
      *  short-circuiting on the non-IFluidBlock check). */
     @Test
     public void stoneSlabFixtureDispatchesOtherMessageToPlayer() throws Exception {

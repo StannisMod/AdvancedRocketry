@@ -22,7 +22,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *
  * <p>Contract pinned:</p>
  * <ul>
- *   <li><b>Inject + link → scan finds it.</b> A rocket whose storage
+ *   <li><b>Inject + link &rarr; scan finds it.</b> A rocket whose storage
  *       contains a TileBrokenPart with stage&gt;0 is reported as having
  *       {@code partsToRepairCount == 1} after the service station links
  *       to it. This is what {@code updateRepairList()} guarantees and
@@ -79,7 +79,7 @@ public class ServiceStationBrokenPartScanContractTest extends AbstractSharedServ
     private static final int CX_MULTI        = 8500;
     private static final int CX_POST_LINK    = 8900;
 
-    /** Mark one rocket motor as worn, link → scan picks it up exactly
+    /** Mark one rocket motor as worn, link &rarr; scan picks it up exactly
      *  once. Also pins {@code initialPartToRepairCount} = 1 (the
      *  monotonic baseline counter that drives the GUI progress bar). */
     @Test
@@ -105,7 +105,7 @@ public class ServiceStationBrokenPartScanContractTest extends AbstractSharedServ
                         + state, 1, extract(state, INITIAL_COUNT));
     }
 
-    /** Two injections → two parts; scan is not a first-match
+    /** Two injections &rarr; two parts; scan is not a first-match
      *  short-circuit. {@code simple} variant has 2 advRocketmotor blocks
      *  so this is the maximum the fixture can support. */
     @Test

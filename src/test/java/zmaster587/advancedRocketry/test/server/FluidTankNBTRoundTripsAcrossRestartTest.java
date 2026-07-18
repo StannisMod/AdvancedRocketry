@@ -24,8 +24,8 @@ import static org.junit.Assert.assertTrue;
  * 7 500 mB of oxygen.</p>
  *
  * <p>This pins the {@code FluidTank.writeToNBT} / {@code readFromNBT} chain
- * end-to-end through the real save/load path (chunk save → region file →
- * chunk load → tile NBT). A regression in libVulpes' fluid-tank NBT format,
+ * end-to-end through the real save/load path (chunk save &rarr; region file &rarr;
+ * chunk load &rarr; tile NBT). A regression in libVulpes' fluid-tank NBT format,
  * or in AR's {@code writeToNBTHelper} override
  * ({@link zmaster587.advancedRocketry.tile.TileFluidTank}) would lose the
  * fluid on world reload — a silent gameplay break.</p>

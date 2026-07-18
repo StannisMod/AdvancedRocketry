@@ -145,7 +145,7 @@ public class XMLPlanetLoaderTest {
     }
 
     // Full planet/biome/oregen parsing requires DimensionManager + biome registry
-    // and is covered by PlanetXmlConfigIntegrationTest (write fixture XML →
-    // boot server → /artest planet info round-trip). No point keeping @Ignore
+    // and is covered by PlanetXmlConfigIntegrationTest (write fixture XML ->
+    // boot server -> /artest planet info round-trip). No point keeping @Ignore
     // stubs here that duplicate that coverage at a worse layer.
 }

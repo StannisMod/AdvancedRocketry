@@ -17,8 +17,8 @@ import static org.junit.Assert.assertTrue;
  * The smoke / depth tests in {@link SpaceStationLifecycleSmokeTest} and
  * {@link SpaceStationDepthTest} cover id allocation, fuel accounting,
  * and registry persistence. They do NOT exercise the LANDING-PAD
- * lifecycle: addLandingPad → setLandingPadAutoLandStatus →
- * getNextLandingPad → setPadStatus. That state is what every rocket
+ * lifecycle: addLandingPad &rarr; setLandingPadAutoLandStatus &rarr;
+ * getNextLandingPad &rarr; setPadStatus. That state is what every rocket
  * landing on a station and every rocket lifting off a pad mutates;
  * a subtle regression in this state machine would silently break
  * inter-dim travel for modpack players.
@@ -42,7 +42,7 @@ import static org.junit.Assert.assertTrue;
  *       is no longer reported by {@code pads}.</li>
  *   <li>Two pads at the same (x,z) — addLandingPad must de-dupe (the
  *       prod code uses {@code !spawnLocations.contains(pos)} via
- *       StationLandingLocation.equals → BlockPos equality).</li>
+ *       StationLandingLocation.equals &rarr; BlockPos equality).</li>
  *   <li>{@code dock(commit=false)} reads next-free without consuming.</li>
  * </ul>
  */
@@ -241,7 +241,7 @@ public class SpaceStationDockUndockTest extends AbstractSharedServerTest {
         // gating on auto-land. So even a non-auto-land pad reports
         // hasFreePad=true. Pin this contract — it's a separate axis from
         // dock-allocation.
-        assertTrue("pad just added (not occupied) → hasFreePad=true: "
+        assertTrue("pad just added (not occupied) -> hasFreePad=true: "
                 + oneOccupied, oneOccupied.contains("\"hasFreePad\":true"));
     }
 }

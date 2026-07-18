@@ -167,7 +167,7 @@ public class TileStationAltitudeController extends TileEntity implements IModula
         if (so == null) return;
         SpaceStationObject sso = (SpaceStationObject) so;
 
-        // Redstone → target
+        // Redstone -> target
         if (redstoneControl.getState() == RedstoneState.ON) {
             sso.targetOrbitalDistance = Math.max((world.getStrongPower(pos) * 13) + 4, 190);
         } else if (redstoneControl.getState() == RedstoneState.INVERTED) {

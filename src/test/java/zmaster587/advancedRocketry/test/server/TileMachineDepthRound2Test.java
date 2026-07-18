@@ -9,11 +9,11 @@ import static org.junit.Assert.assertTrue;
  * Extends {@link TileMachineDepthTest}
  * onto the next batch of "important but not yet pinned" tile families:
  *
- *   - {@code suitWorkStation}    → {@code TileSuitWorkStation}
- *   - {@code deployableRocketBuilder} → {@code TileUnmannedVehicleAssembler}
- *   - {@code landingPad}         → {@code TileLandingPad}
- *   - {@code fuelingStation}     → {@code TileFuelingStation}
- *   - {@code terraformer}        → {@code TileAtmosphereTerraformer}
+ *   - {@code suitWorkStation}    &rarr; {@code TileSuitWorkStation}
+ *   - {@code deployableRocketBuilder} &rarr; {@code TileUnmannedVehicleAssembler}
+ *   - {@code landingPad}         &rarr; {@code TileLandingPad}
+ *   - {@code fuelingStation}     &rarr; {@code TileFuelingStation}
+ *   - {@code terraformer}        &rarr; {@code TileAtmosphereTerraformer}
  *
  * Same contract surface as round 1: probe the registry name resolves to the
  * expected tile class, probe the capability surface (RF / IInventory / fluid)

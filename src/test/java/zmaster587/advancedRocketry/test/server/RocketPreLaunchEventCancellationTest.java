@@ -34,9 +34,9 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * conditionally cancels the event:</p>
  *
  * <ul>
- *   <li>armed → prepareLaunch fires event → cancelled → LAUNCH_COUNTER
+ *   <li>armed &rarr; prepareLaunch fires event &rarr; cancelled &rarr; LAUNCH_COUNTER
  *       stays at default -1 (countdown never starts).</li>
- *   <li>disarmed → prepareLaunch fires event → not cancelled →
+ *   <li>disarmed &rarr; prepareLaunch fires event &rarr; not cancelled &rarr;
  *       LAUNCH_COUNTER set to 200 (countdown started).</li>
  *   <li>The probe-side counter (events observed vs cancelled) proves
  *       the listener actually received both fires.</li>

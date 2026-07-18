@@ -8,7 +8,7 @@ import static org.junit.Assert.assertNull;
 
 /**
  * Decision table for {@code /advancedrocketry weather} refusals — the
- * better_weather ↔ 1.12 integration that makes the manual weather command aware
+ * better_weather &harr; 1.12 integration that makes the manual weather command aware
  * of the marker / atmosphere policy it would otherwise lose to.
  *
  * <p>{@code WorldProviderPlanet.updateWeather()} re-applies the planet's weather

@@ -25,8 +25,8 @@ import static org.junit.Assert.assertTrue;
  *       test extends that pattern to the full multiblock family.</li>
  * </ul>
  *
- * <p>For the actual ASSEMBLED-multiblock depth (form structure →
- * tick → produce output), see future follow-up sessions. Each
+ * <p>For the actual ASSEMBLED-multiblock depth (form structure &rarr;
+ * tick &rarr; produce output), see future follow-up sessions. Each
  * multiblock has a different shape contract; building each fixture is
  * a non-trivial probe-side investment.</p>
  *
@@ -87,7 +87,7 @@ public class MultiblockControllerPreAssemblyTest extends AbstractSharedServerTes
 
     @Test
     public void orbitalLaserDrillPreAssemblyContract() throws Exception {
-        // "spaceLaser" registry → TileOrbitalLaserDrill. Placing without
+        // "spaceLaser" registry -> TileOrbitalLaserDrill. Placing without
         // the surrounding multiblock leaves isComplete=false; the per-tick
         // loop early-exits.
         String state = placeAndProbe("advancedrocketry:spaceLaser", 0, 0);

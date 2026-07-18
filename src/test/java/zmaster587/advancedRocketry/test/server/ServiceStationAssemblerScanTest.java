@@ -23,7 +23,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  *       TilePrecisionAssembler tile (formed multiblock NOT required —
  *       the scan checks {@code instanceof}, not {@code isComplete()}).
  *       Pinned post-rising-edge-of-power, when
- *       {@code !was_powered → true} triggers the scan.</li>
+ *       {@code !was_powered -> true} triggers the scan.</li>
  *   <li><b>Without an assembler, broken parts stay queued.</b> A station
  *       linked to a rocket with a worn part, powered on but with NO
  *       TilePrecisionAssembler in its 5-block scan radius, keeps the
@@ -35,8 +35,8 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * </ul>
  *
  * <p><b>Out of scope</b>: the FULL repair cycle — broken part fed to
- * assembler → assembler produces a "rocket"-named output item → service
- * station observes via {@code processAssemblerResult} → part restored at
+ * assembler &rarr; assembler produces a "rocket"-named output item &rarr; service
+ * station observes via {@code processAssemblerResult} &rarr; part restored at
  * stage 0 to rocket storage. Driving the assembler end-to-end requires a
  * formed multiblock (4×3×3 structureBlock layout + hatches at wildcard
  * positions + attemptCompleteStructure), which is a substantial

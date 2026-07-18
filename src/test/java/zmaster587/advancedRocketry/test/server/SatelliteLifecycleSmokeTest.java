@@ -151,7 +151,7 @@ public class SatelliteLifecycleSmokeTest extends AbstractSharedServerTest {
     }
 
     /**
-     * Helper: drive the create → list → info round-trip and assert every
+     * Helper: drive the create &rarr; list &rarr; info round-trip and assert every
      * echoed field. Encapsulates the common assertion set so per-type tests
      * stay one-liners.
      */

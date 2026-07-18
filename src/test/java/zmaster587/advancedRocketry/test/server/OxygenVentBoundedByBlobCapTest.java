@@ -24,9 +24,9 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * player-visible contract is binary:</p>
  *
  * <ul>
- *   <li>a sealed space <b>within</b> the cap → pressurised
+ *   <li>a sealed space <b>within</b> the cap &rarr; pressurised
  *       ({@code PRESSURIZEDAIR});</li>
- *   <li>a sealed space <b>larger than</b> the cap → not sealed at all,
+ *   <li>a sealed space <b>larger than</b> the cap &rarr; not sealed at all,
  *       stays at the dim baseline ({@code air}).</li>
  * </ul>
  *
@@ -60,7 +60,7 @@ public class OxygenVentBoundedByBlobCapTest extends AbstractSharedServerTest {
     private static final int CAP = 8;
     /** Within-cap corridor: max cell distance ~sqrt(4^2+1) ≈ 4.1 < 8. */
     private static final int LEN_WITHIN = 4;
-    /** Oversized corridor: a cell at dx=12 sits at ~12 > 8 → voids. */
+    /** Oversized corridor: a cell at dx=12 sits at ~12 > 8 &rarr; voids. */
     private static final int LEN_OVER = 16;
 
     private int originalVentSize;
@@ -86,12 +86,12 @@ public class OxygenVentBoundedByBlobCapTest extends AbstractSharedServerTest {
 
     @Test
     public void ventSealsWithinCapButNotBeyondIt() throws Exception {
-        // Control: a corridor entirely inside the cap → must pressurise.
+        // Control: a corridor entirely inside the cap -> must pressurise.
         buildSealedCorridor(CX_WITHIN, LEN_WITHIN);
         sealVent(CX_WITHIN);
         String within = atmosphereTypeAt(CX_WITHIN, CY + 1, CZ);
 
-        // Subject: a corridor longer than the cap → blob voids → stays air.
+        // Subject: a corridor longer than the cap -> blob voids -> stays air.
         buildSealedCorridor(CX_OVER, LEN_OVER);
         sealVent(CX_OVER);
         String over = atmosphereTypeAt(CX_OVER, CY + 1, CZ);

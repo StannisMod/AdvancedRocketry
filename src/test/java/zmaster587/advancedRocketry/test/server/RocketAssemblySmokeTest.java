@@ -133,7 +133,7 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
      * a chip would route through item registry + hatch fill, but the
      * baseline behaviour we lock down here is that the slot is wired up and
      * reachable from the probe.) {@code guidanceComputerPresent=true} +
-     * {@code guidanceComputerSlotOccupied=false} → contract is "block is
+     * {@code guidanceComputerSlotOccupied=false} &rarr; contract is "block is
      * there, slot exists, no chip yet".
      */
     @Test

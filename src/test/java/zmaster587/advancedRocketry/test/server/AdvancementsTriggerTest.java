@@ -120,7 +120,7 @@ public class AdvancementsTriggerTest {
         assertEquals("baseline: WENT_TO_THE_MOON must not be granted yet",
                 false, isDone(exec("artest player advancement " + ADV_WENT)));
 
-        // Δy=15 from (2347,80,67) → distSq=225 < 512 ✓. 60 ticks ≥ 3 windows.
+        // Δy=15 from (2347,80,67) -> distSq=225 < 512 ✓. 60 ticks ≥ 3 windows.
         assertTrue(exec("artest player tick-living 60").contains("\"ok\":true"));
         // Poll off-thread — the server free-runs while the test JVM sleeps.
         boolean done = false;

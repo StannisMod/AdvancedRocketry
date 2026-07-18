@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
  * pre-join side-effects.
  *
  * The headless dedicated-server harness in this repo has NO connected
- * player. "Player joins AR planet → sky/gravity/weather wrapper applied"
+ * player. "Player joins AR planet &rarr; sky/gravity/weather wrapper applied"
  * is a behaviour that belongs in the {@code testClient} e2e harness
  * (real GL client + dedicated server), not here. What this layer
  * CAN do is
@@ -38,7 +38,7 @@ import static org.junit.Assert.assertTrue;
  *       leaks a {@code TransitionEntity}.</li>
  * </ol>
  *
- * The full "player joins AR dim → side effects fire" path is the job
+ * The full "player joins AR dim &rarr; side effects fire" path is the job
  * of the {@code testClient} e2e harness; the server-side state checked
  * here is the necessary pre-condition for that join to be coherent.
  */
@@ -199,7 +199,7 @@ public class PlayerEventHandlerWiringTest extends AbstractSharedServerTest {
 
     @Test
     public void transitionMapIsEmptyAtRest() throws Exception {
-        // No rocket launches have been issued in this test class → the
+        // No rocket launches have been issued in this test class -> the
         // transition queue MUST be empty. If it's not, either:
         //   (a) a previous test in the same JVM leaked a transition
         //       (failure of cleanup discipline), OR

@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
  *   <li><b>Slot-eligibility regression</b> — both must return true ONLY
  *       for {@code EntityEquipmentSlot.CHEST}. A regression that broadens
  *       this to ARMOR slots silently makes the components placeable in
- *       helmet/legs/boots → undefined behaviour.</li>
+ *       helmet/legs/boots &rarr; undefined behaviour.</li>
  *   <li><b>onComponentAdded contract</b> — must return true so
  *       {@code ItemSpaceArmor.addArmorComponent} actually inserts.
  *       A regression to false silently makes the component non-installable.</li>
@@ -138,7 +138,7 @@ public class ArmorComponentContractTest {
 
     @Test
     public void jetpackOnArmorDamagedIsNoOp() {
-        // Production wires component-tick → onArmorDamaged broadcasts to
+        // Production wires component-tick -> onArmorDamaged broadcasts to
         // every component. The jetpack's no-op contract is intentional —
         // a regression that adds damage-amount logic would (a) crash on
         // null-checks or (b) silently consume jetpack durability that

@@ -34,7 +34,7 @@ import static org.junit.Assert.assertTrue;
  *       setPosition copies the bot's coords onto itself — the verb
  *       must complete without crashing, and the bot's post-call
  *       position must equal its pre-call sender position. Pinning this
- *       gives us positive coverage of the full resolve → transfer →
+ *       gives us positive coverage of the full resolve &rarr; transfer &rarr;
  *       setPosition path without a second bot.</li>
  *   <li><b>Unknown name.</b> {@code /ar fetch nonExistentPlayerXYZ}
  *       must reply with "Invalid player name: nonExistentPlayerXYZ"
@@ -82,8 +82,8 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
 
     /** {@code /ar fetch <bot's-own-username>} typed in the real client chat
      *  must complete without crashing and leave the bot at the same coords
-     *  (sender pos == target pos in a self-fetch). Pins the chat → server
-     *  command → resolve → transfer → setPosition path, observed from the
+     *  (sender pos == target pos in a self-fetch). Pins the chat &rarr; server
+     *  command &rarr; resolve &rarr; transfer &rarr; setPosition path, observed from the
      *  CLIENT side. */
     @Test
     public void selfFetchCompletesAndPreservesPosition() throws Exception {
@@ -127,7 +127,7 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
     /** {@code /ar fetch <unknown-name>} typed in the real client chat must
      *  surface vanilla's "player cannot be found" error ON THE PLAYER'S CHAT
      *  OVERLAY (i18n resolved) without crashing. Pins the
-     *  {@code getPlayer → PlayerNotFoundException} branch at the layer the
+     *  {@code getPlayer -> PlayerNotFoundException} branch at the layer the
      *  player reads it. */
     @Test
     public void fetchUnknownNameReportsInvalidPlayerName() throws Exception {

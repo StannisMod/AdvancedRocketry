@@ -67,7 +67,7 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
      * pad fills the suit's pressure-tank component
      * over time when the player stands on it.
      *
-     * <p>The contract is the player-visible "stand on charger → suit
+     * <p>The contract is the player-visible "stand on charger &rarr; suit
      * refills" interaction; the test pins the END STATE (air rises
      * over a 60-tick window) rather than a per-tick mB rate.</p>
      */
@@ -96,7 +96,7 @@ public class GasChargePadFillsPressureTankE2ETest extends AbstractClientE2ETest 
         // ItemSpaceChest). Pin direction-of-change, not exact mB.
         // initialOxygen=500: half of the pressure tank's 1000 mB capacity.
         // Leaves headroom for the pad to actually add fluid; equip=1000
-        // results in tank-already-full → pad's
+        // results in tank-already-full -> pad's
         // canPerformFunction body short-circuits (amtFluid = 0).
         String equip = exec("artest player equip-space-chest 500");
         assertTrue("equip-space-chest must succeed: " + equip,

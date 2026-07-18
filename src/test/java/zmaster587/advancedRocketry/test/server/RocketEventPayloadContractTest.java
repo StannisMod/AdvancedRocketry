@@ -150,7 +150,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
         assertTrue("RocketLandedEvent must fire under the descent+collision "
                         + "pattern (counter pin guards the payload assertion "
                         + "below from passing on a stale recorder); "
-                        + landedBefore + " → " + landedAfter,
+                        + landedBefore + " -> " + landedAfter,
                 landedAfter > landedBefore);
 
         String payloads = exec("artest rocket event-payloads");
@@ -187,7 +187,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
         String countsBefore = exec("artest rocket event-counts-full");
         int deOrbitBefore = extract(countsBefore, DEORBIT_COUNT);
 
-        // ticksExisted=18 + 3 real ticks → super.onUpdate() advances to
+        // ticksExisted=18 + 3 real ticks -> super.onUpdate() advances to
         // 19, 20 (gate fires here), 21. The gate runs INSIDE the same
         // onUpdate as the increment (super first, then body) so the
         // tick that bumps the counter to 20 is the one that posts the
@@ -200,7 +200,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
         int deOrbitAfter = extract(countsAfter, DEORBIT_COUNT);
         assertTrue("RocketDeOrbitingEvent must fire on the tick "
                         + "ticksExisted == 20 with orbit=true: "
-                        + deOrbitBefore + " → " + deOrbitAfter,
+                        + deOrbitBefore + " -> " + deOrbitAfter,
                 deOrbitAfter > deOrbitBefore);
 
         String payloads = exec("artest rocket event-payloads");
@@ -243,7 +243,7 @@ public class RocketEventPayloadContractTest extends AbstractSharedServerTest {
         int orbitAfter = extract(countsAfter, ORBIT_REACHED_COUNT);
         assertTrue("force-orbit-reached must advance the orbitReached "
                         + "counter (sanity gate for the payload pin): "
-                        + orbitBefore + " → " + orbitAfter,
+                        + orbitBefore + " -> " + orbitAfter,
                 orbitAfter > orbitBefore);
 
         String payloads = exec("artest rocket event-payloads");

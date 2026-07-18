@@ -60,7 +60,7 @@ public class AstronomicalBodyHelperOrbitalThetaTest {
 
     @Test
     public void orbitalAngleWrapsCorrectly() {
-        // Earth-baseline orbit: distance=100, solarSize=1.0 → period=48 (per
+        // Earth-baseline orbit: distance=100, solarSize=1.0 -> period=48 (per
         // AstronomicalBodyHelper.getOrbitalPeriod docs). One full orbit takes
         // 24000 * 48 = 1_152_000 world ticks.
         final int distance = 100;
@@ -68,7 +68,7 @@ public class AstronomicalBodyHelperOrbitalThetaTest {
         final double period = AstronomicalBodyHelper.getOrbitalPeriod(distance, solarSize);
         final long oneOrbitTicks = (long) (24000d * period);
 
-        // Phase 0: t=0 → θ=0.
+        // Phase 0: t=0 -> θ=0.
         stub.fakeTime = 0L;
         assertEquals(0.0, AstronomicalBodyHelper.getOrbitalTheta(distance, solarSize), 1e-9);
 
@@ -82,12 +82,12 @@ public class AstronomicalBodyHelperOrbitalThetaTest {
         assertEquals(Math.PI,
                 AstronomicalBodyHelper.getOrbitalTheta(distance, solarSize), 1e-6);
 
-        // Wrap: a full orbit → back to θ=0 (modulo collapses to 0).
+        // Wrap: a full orbit -> back to θ=0 (modulo collapses to 0).
         stub.fakeTime = oneOrbitTicks;
         assertEquals(0.0,
                 AstronomicalBodyHelper.getOrbitalTheta(distance, solarSize), 1e-6);
 
-        // Wrap across many orbits: 7 full + a quarter → θ should still be π/2.
+        // Wrap across many orbits: 7 full + a quarter -> θ should still be π/2.
         stub.fakeTime = oneOrbitTicks * 7L + oneOrbitTicks / 4L;
         assertEquals("multiple wraps must collapse to the same cardinal phase",
                 Math.PI / 2,

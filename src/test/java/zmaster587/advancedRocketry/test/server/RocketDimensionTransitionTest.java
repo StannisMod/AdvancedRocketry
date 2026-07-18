@@ -24,13 +24,13 @@ import static org.junit.Assert.assertTrue;
  * double)} line 1967). Pinning the cause-effect:
  *
  * <ul>
- *   <li>Rocket originally in dim 0 → after force-orbit-reached on a chip
+ *   <li>Rocket originally in dim 0 &rarr; after force-orbit-reached on a chip
  *       programmed to another AR dim, the rocket entity is GONE from
  *       dim 0 and PRESENT in the dest dim — found by UUID.</li>
  *   <li>UUID stable across the dimension change (Forge contract).</li>
  *   <li>Storage chunk geometry / fuel-tank count / engine count
  *       preserved.</li>
- *   <li>Invalid destination dim → production
+ *   <li>Invalid destination dim &rarr; production
  *       {@code !DimensionManager.canTravelTo(dim)} guard in
  *       {@code EntityRocket.changeDimension} returns null; rocket stays
  *       in original dim, NO crash.</li>
@@ -151,7 +151,7 @@ public class RocketDimensionTransitionTest extends AbstractSharedServerTest {
                         + launchedInfo,
                 launchedInfo.contains("\"isInFlight\":true"));
 
-        // Force orbit reached → triggers transition.
+        // Force orbit reached -> triggers transition.
         ok(client().execute("artest rocket force-orbit-reached " + id));
 
         // Find the rocket by UUID — must now be in destDim.
@@ -215,7 +215,7 @@ public class RocketDimensionTransitionTest extends AbstractSharedServerTest {
     @Test
     public void transitionToInvalidDimFailsGracefullyAndKeepsRocket() throws Exception {
         // Force destDimId to a bogus value (-12345) directly, bypassing
-        // launch()'s canTravelTo guard. Then force-orbit-reached → the
+        // launch()'s canTravelTo guard. Then force-orbit-reached -> the
         // reachSpaceManned branch calls changeDimension(-12345) which
         // checks canTravelTo and returns null (line 1944 in EntityRocket).
         // Assertion: the call doesn't throw, and the rocket still exists

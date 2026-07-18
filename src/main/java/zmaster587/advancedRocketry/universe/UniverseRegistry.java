@@ -79,7 +79,7 @@ public final class UniverseRegistry extends WorldSavedData {
     /** The world seed fed to the generator; set by {@link #bindWorldSeed}, never persisted. */
     private long worldSeed = 0L;
     /**
-     * Derived super-cell → authored/pinned anchor index for member-cell attribution (A#1a). Rebuilt lazily
+     * Derived super-cell &rarr; authored/pinned anchor index for member-cell attribution (A#1a). Rebuilt lazily
      * from {@code byStar} — never persisted, so it cannot drift (derive-don't-store).
      */
     private transient Map<String, GalacticCoord> anchorsBySuper = null;
@@ -141,7 +141,7 @@ public final class UniverseRegistry extends WorldSavedData {
     /**
      * The system whose NEIGHBOURHOOD contains {@code coord}'s cell (A#1a member semantics): a member cell —
      * a planet's own zone cell, or the void between bodies of one system — resolves to its owning system.
-     * Resolution order: pinned → authored store → the procedural generator. Empty means void space.
+     * Resolution order: pinned &rarr; authored store &rarr; the procedural generator. Empty means void space.
      */
     public Optional<StarSystem> systemForCoord(GalacticCoord coord) {
         Optional<GalacticCoord> anchor = anchorForCell(coord);
@@ -153,7 +153,7 @@ public final class UniverseRegistry extends WorldSavedData {
 
     /**
      * The ANCHOR cell of the system whose neighbourhood contains {@code coord}'s cell, or empty for void
-     * space. This is the member→anchor attribution every system-semantics read goes through (A#1a
+     * space. This is the member&rarr;anchor attribution every system-semantics read goes through (A#1a
      * sub-decision d): authored/pinned anchors win over the procedural generator inside one super-cell.
      */
     public Optional<GalacticCoord> anchorForCell(GalacticCoord coord) {
@@ -168,7 +168,7 @@ public final class UniverseRegistry extends WorldSavedData {
         return generator.anchorAt(worldSeed, cell);
     }
 
-    /** The system AT a known anchor cell: pinned content → catalogued star → procedural generator. */
+    /** The system AT a known anchor cell: pinned content &rarr; catalogued star &rarr; procedural generator. */
     private Optional<StarSystem> systemAtAnchor(GalacticCoord anchor) {
         String key = anchor.cellKey();
         PinnedSystem pinned = pinnedSystems.get(key);
@@ -183,7 +183,7 @@ public final class UniverseRegistry extends WorldSavedData {
         return generator.systemAt(worldSeed, anchor);
     }
 
-    /** Lazily (re)build the super-cell → stored-anchor index; invalidated on store change / spacing change. */
+    /** Lazily (re)build the super-cell &rarr; stored-anchor index; invalidated on store change / spacing change. */
     private Map<String, GalacticCoord> anchorsBySuperIndex() {
         int s = generator.minSpacingCells();
         if (anchorsBySuper == null || anchorsBySuperSpacing != s) {
@@ -313,7 +313,7 @@ public final class UniverseRegistry extends WorldSavedData {
         return out;
     }
 
-    /** The full body list of the system anchored at {@code anchor}: pinned → authored → generator. */
+    /** The full body list of the system anchored at {@code anchor}: pinned &rarr; authored &rarr; generator. */
     private List<SystemBody> allSystemBodies(GalacticCoord anchor) {
         String key = anchor.cellKey();
         PinnedSystem pinned = pinnedSystems.get(key);

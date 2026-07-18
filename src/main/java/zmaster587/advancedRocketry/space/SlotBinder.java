@@ -47,7 +47,7 @@ public interface SlotBinder {
      * new session.
      *
      * <p>Defaults to {@code false} so a recording test fake that models no store keeps its existing
-     * behaviour (nothing persisted ⇒ everything regenerable).</p>
+     * behaviour (nothing persisted &rArr; everything regenerable).</p>
      */
     default boolean hasStored(String cellKey) {
         return false;

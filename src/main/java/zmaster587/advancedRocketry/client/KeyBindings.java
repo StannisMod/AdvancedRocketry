@@ -321,7 +321,7 @@ public class KeyBindings {
             // Pre-flight is a tier-1 rocket concept (the engine-start ritual). A tier-2 ship is
             // always "in flight" while seated, so it never reaches this branch.
             lines.add(I18n.format("msg.ff.hud.title"));
-            // Engine state: off → how to start; mid-hold → progress.
+            // Engine state: off -> how to start; mid-hold -> progress.
             if (engineStartHoldTicks > 0) {
                 lines.add(I18n.format("msg.ff.hud.engines.starting",
                         engineStartHoldTicks * 100 / ENGINE_START_HOLD_TICKS));
@@ -458,7 +458,7 @@ public class KeyBindings {
         // the FF camera looking out the nose, world +X (body right) renders on the
         // pilot's LEFT, so "strafe right" (E) must command −right to move the craft
         // the way the pilot sees it. (Playtest fix — the raw-axis mapping felt
-        // inverted.) The physics strafe→right-axis mapping is unchanged; only which
+        // inverted.) The physics strafe->right-axis mapping is unchanged; only which
         // key drives which sign flips here.
         float strafe = (strafeRight.isKeyDown() ? -1f : 0f)
                 + (strafeLeft.isKeyDown()  ?  1f : 0f);
@@ -493,7 +493,7 @@ public class KeyBindings {
         // mapped to [-1,1]². Its POSITION is the command — a stationary cursor is
         // a fixed, non-spiky input exactly like a held key, which is what makes
         // the mouse as glass-smooth as A/D (rate-from-movement was the jitter).
-        // Vertical → pitch rate, horizontal → roll (bank) rate. Yaw is keyboard.
+        // Vertical -> pitch rate, horizontal -> roll (bank) rate. Yaw is keyboard.
         // Snapshot the previous-tick cursor so the HUD interpolates the dot per
         // frame (sampled 20 Hz, drawn 60+ fps) instead of stepping at tick rate.
         prevFlightCursorX = flightCursorX;

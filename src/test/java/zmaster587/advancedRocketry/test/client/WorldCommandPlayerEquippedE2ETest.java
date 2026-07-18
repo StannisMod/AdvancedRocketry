@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * {@code /ar} player-equipped verbs positive paths, driven the way
  * a player drives them: typed into the REAL client chat
- * ({@code ClientBot.sendChat} → {@code CPacketChatMessage}), with the outcome
+ * ({@code ClientBot.sendChat} &rarr; {@code CPacketChatMessage}), with the outcome
  * observed from the CLIENT side (dim via {@code reportWeather}, inventory via
  * {@code reportPlayerItems}, command replies via {@code reportChat}) and the
  * server consulted only as a cross-side oracle.

@@ -37,7 +37,7 @@ public class StationAssemblerCategory implements IRecipeCategory<StationAssemble
     private static final int ANIM_MS = 100;
     private final IDrawable backBar;           // background frame (8x52)
     private final IDrawableStatic fillStatic;  // fill slice (2x38)
-    private final IDrawableAnimated fillAnim;  // animated fill (bottom→top)
+    private final IDrawableAnimated fillAnim;  // animated fill (bottom->top)
     private int _x0, _x1, _y0, _y1;
     private final int barX;
     private final int barY;

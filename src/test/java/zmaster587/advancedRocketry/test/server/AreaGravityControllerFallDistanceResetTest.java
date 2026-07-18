@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  * {@link zmaster587.advancedRocketry.tile.multiblock.TileAreaGravityController#update}
  * — when {@code isRunning()}, it gathers every {@link
  * net.minecraft.entity.Entity} in an AABB grown by {@code getRadius()}
- * (= {@code radius + 10}; default radius 5 → 15) around the controller and
+ * (= {@code radius + 10}; default radius 5 &rarr; 15) around the controller and
  * unconditionally sets {@code e.fallDistance = 0}. Player-visible: fall
  * damage is canceled for anything inside the gravity field.</p>
  *
@@ -54,8 +54,8 @@ public class AreaGravityControllerFallDistanceResetTest extends AbstractSharedSe
     public void controllerResetsFallDistanceInsideRadiusOnly() throws Exception {
         // 0) Hold the controller + out-of-radius chunks hot so spawned
         //    entities aren't lost to chunk-unload between probe calls
-        //    (no player nearby in a headless server). CX=5560 → chunk 347;
-        //    CX+40=5600 → chunk 350.
+        //    (no player nearby in a headless server). CX=5560 -> chunk 347;
+        //    CX+40=5600 -> chunk 350.
         ok("artest chunk forceload 0 " + (CX >> 4) + " " + (CZ >> 4));
         ok("artest chunk forceload 0 " + ((CX + 40) >> 4) + " " + (CZ >> 4));
 

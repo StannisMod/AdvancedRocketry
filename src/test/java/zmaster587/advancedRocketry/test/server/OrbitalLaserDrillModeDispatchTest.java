@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
  * zmaster587.advancedRocketry.tile.multiblock.orbitallaserdrill.MiningDrill#performOperation}
  * breaks the opaque blocks in the laser's 3×3 column, collects their
  * {@code Block.getDrops} output, and clears them to air (then descends the
- * column). The drops feed the drill's output hatches → adjacent inventory.</p>
+ * column). The drops feed the drill's output hatches &rarr; adjacent inventory.</p>
  *
  * <p>Pinned (player-visible): a MINING-mode drill fired over a solid ore
  * block removes that block and yields its drop. This is the mode-dispatch

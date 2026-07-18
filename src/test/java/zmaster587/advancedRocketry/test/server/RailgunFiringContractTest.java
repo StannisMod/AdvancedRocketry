@@ -101,7 +101,7 @@ public class RailgunFiringContractTest extends AbstractSharedServerTest {
      * The #61 fix: firing at a destination dimension that is registered but
      * not loaded now LOADS it (instead of silently bailing). A fresh asteroid
      * dim is registered-and-unloaded; after the shot it is loaded
-     * (destLoadedBefore=false → destLoaded=true). No railgun exists there, so
+     * (destLoadedBefore=false &rarr; destLoaded=true). No railgun exists there, so
      * the shot still doesn't deliver and reports TARGET_UNAVAILABLE — but the
      * dimension-load branch is proven, which (composed with the same-dimension
      * delivery test) is the cross-planet firing the bug was about.
@@ -127,8 +127,8 @@ public class RailgunFiringContractTest extends AbstractSharedServerTest {
         assertTrue("firing at a registered-but-unloaded dim MUST load it "
                         + "(issue #61 fix); fire=" + fire,
                 "true".equals(extractStr(fire, DEST_LOADED)));
-        // No railgun at the target → no delivery, reported (not silent).
-        assertTrue("no railgun at the freshly-loaded target → must not fire; "
+        // No railgun at the target -> no delivery, reported (not silent).
+        assertTrue("no railgun at the freshly-loaded target -> must not fire; "
                         + "fire=" + fire, "false".equals(extractStr(fire, FIRED)));
         assertTrue("status must report TARGET_UNAVAILABLE; fire=" + fire,
                 "TARGET_UNAVAILABLE".equals(extractStr(fire, FIRE_STATUS)));
@@ -155,7 +155,7 @@ public class RailgunFiringContractTest extends AbstractSharedServerTest {
 
         assertTrue("must NOT fire at an unloadable (unregistered) destination; "
                         + "fire=" + fire, "false".equals(extractStr(fire, FIRED)));
-        assertTrue("unregistered dim cannot be loaded → destLoaded:false; "
+        assertTrue("unregistered dim cannot be loaded -> destLoaded:false; "
                         + "fire=" + fire, "false".equals(extractStr(fire, DEST_LOADED)));
         assertTrue("status must report TARGET_UNAVAILABLE (not a silent no-op); "
                         + "fire=" + fire,

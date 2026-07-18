@@ -34,7 +34,7 @@ import static org.junit.Assert.assertTrue;
  *  - The bot's reportState confirms the player is still riding the rocket
  *    AFTER ticks: the FF tick must NOT eject the passenger.
  *
- * <p>The client-side keypress→packet→server input wiring is unit-tested
+ * <p>The client-side keypress&rarr;packet&rarr;server input wiring is unit-tested
  * via {@code FreeFlightInputTest} (ByteBuf round-trip with re-clamping) and
  * pinned indirectly here: the same {@code FREE_FLIGHT_INPUT} packet that
  * keybinds emit on real key events is what {@code free-flight-input} probe
@@ -186,7 +186,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         String infoBefore = exec("artest rocket info " + rocketId);
         double myBefore = parseDouble(infoBefore, MOTION_Y, "motionY");
 
-        // Let the REAL server tick loop run — onUpdate→tickFreeFlight runs
+        // Let the REAL server tick loop run — onUpdate->tickFreeFlight runs
         // every server tick because the rocket is in FF + isInFlight.
         bot().waitTicks(20);
 
@@ -299,7 +299,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void forwardThrustDisplacesHorizontally() throws Exception {
-        // Forward throttle at yaw=0 → +Z. Vertical kept on so the rocket stays
+        // Forward throttle at yaw=0 -> +Z. Vertical kept on so the rocket stays
         // airborne (doesn't auto-land mid-test).
         int rocketId = mountFreshFreeFlightRocket(3400, 64, 500);
 
@@ -347,8 +347,8 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void realVerticalKeyThrustClimbsServerAndClientTracks() throws Exception {
         // The honest end-to-end: FF entry via probes (M/space are event-driven and
         // not the broken part), but STEERING via a REAL injected key. Holding R
-        // (flightVerticalUp) drives KeyBindings.onClientTick → a real
-        // FREE_FLIGHT_INPUT packet → server tickFreeFlight. We assert BOTH halves
+        // (flightVerticalUp) drives KeyBindings.onClientTick -> a real
+        // FREE_FLIGHT_INPUT packet -> server tickFreeFlight. We assert BOTH halves
         // that the probe tests could never see:
         //   1) the server rocket actually climbs (real packet path delivers thrust),
         //   2) the CLIENT-rendered rocket tracks the server (no poscorrection lag).
@@ -369,7 +369,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         bot().releaseKey(Keyboard.KEY_R);
 
-        // 1) Real key → real packet → server physics.
+        // 1) Real key -> real packet -> server physics.
         assertTrue("holding real R must drive a server-side climb via the packet path "
                         + "(before=" + svrYBefore + " after=" + svrYAfter + ")",
                 svrYAfter - svrYBefore > 2.0);
@@ -578,7 +578,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void strafeLeftKeyMovesPositiveX() throws Exception {
-        // Q (strafe left) → +X at yaw 0 after the polarity fix: with the camera
+        // Q (strafe left) -> +X at yaw 0 after the polarity fix: with the camera
         // looking out the nose, world +X renders on the pilot's LEFT, so the
         // strafe-left key must push the craft toward +X to feel correct (the raw
         // body-right mapping felt inverted in playtest). E is the mirror.
@@ -944,7 +944,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         // And the camera attitude must CONVERGE to the SERVER craft heading
         // (replication). Convergence is asynchronous — the final resync packet
-        // (sent on the turn→idle edge) can be in flight for several ticks on a
+        // (sent on the turn->idle edge) can be in flight for several ticks on a
         // loaded box — so poll for it instead of a single-shot read; what we
         // pin is that the divergence DOES settle under the tracker quantum.
         double convErr = Double.MAX_VALUE;
@@ -966,7 +966,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // Mouse-as-rate: repeated downward swipes (a real drag) pitch the nose
         // down tick by tick; the camera never detaches from the craft. The
         // server nose pitch must integrate the swipes through the real
-        // key→packet path.
+        // key->packet path.
         int rocketId = mountFreshFreeFlightRocket(4900, 64, 500);
         bot().holdKey(Keyboard.KEY_R); // keep airborne so tickFreeFlight integrates pitch
 
@@ -989,7 +989,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         bot().releaseKey(Keyboard.KEY_R);
 
         assertTrue("mouse drag must pitch the nose down through the real "
-                + "swipe→rate→server path (got " + nosePitch + "°)", nosePitch > 20.0);
+                + "swipe->rate->server path (got " + nosePitch + "°)", nosePitch > 20.0);
         assertTrue("camera must stay locked to the nose during the drag "
                 + "(worst frame divergence " + maxErr + "°)", maxErr < 20.0);
 
@@ -1049,7 +1049,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         bot().holdKey(Keyboard.KEY_R);
         bot().waitTicks(30);
         bot().releaseKey(Keyboard.KEY_R);
-        bot().holdKey(Keyboard.KEY_X);   // cut → hover (attitude-independent)
+        bot().holdKey(Keyboard.KEY_X);   // cut -> hover (attitude-independent)
         bot().waitTicks(5);
 
         // Real downward mouse drag: saturate the absolute pitch cursor, which then
@@ -1059,7 +1059,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
             bot().setLook(st.get("playerYaw").getAsFloat(), st.get("playerPitch").getAsFloat() + 8f);
             bot().waitTicks(1);
         }
-        bot().waitTicks(60); // held cursor → the nose loops over the top
+        bot().waitTicks(60); // held cursor -> the nose loops over the top
 
         double minFwdZ = readClientDouble("ffClientMinForwardZ");
         boolean stillRiding = bot().reportRidingEntity() != null;
@@ -1093,7 +1093,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         double roll0 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");
 
         // Command a steady bank-right: probe args are
-        // id fwd vert yaw pitch brake cut strafe roll → roll = last (=+1).
+        // id fwd vert yaw pitch brake cut strafe roll -> roll = last (=+1).
         exec("artest rocket free-flight-input " + rocketId + " 0 0 0 0 0 0 0 1");
         bot().waitTicks(10);
         double roll1 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");

@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Mirrors the methodological pattern from
  * {@link HovercraftRideE2ETest}: the testClient bot has no exposed
- * "right-click on entity" interaction, so player→capsule mounting
+ * "right-click on entity" interaction, so player&rarr;capsule mounting
  * is driven through server-side probe verbs
  * ({@code /artest player mount-entity}, {@code dismount}) which call
  * {@code startRiding} / {@code dismountRidingEntity} respectively.

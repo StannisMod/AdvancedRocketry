@@ -45,7 +45,7 @@ public class SleepWakeTimeTest {
 
     @Test
     public void alreadyAtDawnSkipsToNextDay() {
-        // current exactly on a dawn boundary → advance a full day, not stay put.
+        // current exactly on a dawn boundary -> advance a full day, not stay put.
         int rp = 13888;
         long wake = ARDimensionWorldInfo.computeSleepWakeTime(2L * rp, rp);
         assertEquals(3L * rp, wake);

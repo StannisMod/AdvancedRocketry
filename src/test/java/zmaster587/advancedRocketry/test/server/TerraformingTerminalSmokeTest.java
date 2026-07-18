@@ -21,21 +21,21 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * </ul>
  *
  * <p>The gap was the terminal's <b>intermediary role</b>: place the
- * block → wire to satellite + redstone → drive biome mutation.</p>
+ * block &rarr; wire to satellite + redstone &rarr; drive biome mutation.</p>
  *
  * <p>This test pins the SMOKE surface that doesn't require a real
  * BiomeChanger chip fixture:</p>
  *
  * <ul>
  *   <li>Block places + reports the right tile class.</li>
- *   <li>Tick without inventory contents (no chip) → no crash + tile
+ *   <li>Tick without inventory contents (no chip) &rarr; no crash + tile
  *       remains queryable.</li>
- *   <li>Tick with redstone but no chip → still no crash (the
+ *   <li>Tick with redstone but no chip &rarr; still no crash (the
  *       {@code hasValidBiomeChanger} guard short-circuits the
  *       satellite-energy-drain branch).</li>
  * </ul>
  *
- * <p>The deeper "chip-in-slot + redstone + power → biome actually
+ * <p>The deeper "chip-in-slot + redstone + power &rarr; biome actually
  * changes" contract needs a BiomeChanger satellite chip with NBT-
  * embedded satellite-id pointing at a registered satellite with a
  * loaded battery. That fixture would duplicate

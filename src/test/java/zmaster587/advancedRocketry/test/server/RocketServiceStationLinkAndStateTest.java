@@ -35,7 +35,7 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * </ul>
  *
  * <p><b>Out of scope (deferred)</b>: the full repair cycle (worn parts
- * → linked PrecisionAssembler → completed item → stage=0) requires
+ * &rarr; linked PrecisionAssembler &rarr; completed item &rarr; stage=0) requires
  * fixture infrastructure for injecting {@code TileBrokenPart} instances
  * with stage&gt;0 into a rocket's {@code StorageChunk}, plus an
  * adjacent {@code TilePrecisionAssembler} with a valid recipe. That

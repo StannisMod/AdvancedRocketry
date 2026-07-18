@@ -47,7 +47,7 @@ final class WorldCommandFixtures {
 
     /** True iff AR's planet registry knows the given dim, observed via
      *  {@code /ar planet list} (which iterates {@code getRegisteredDimensions()}
-     *  → the underlying {@code dimensionList} keyset). Cannot use
+     *  &rarr; the underlying {@code dimensionList} keyset). Cannot use
      *  {@code /artest planet info} here because
      *  {@code DimensionManager.getDimensionProperties} falls back to
      *  {@code overworldProperties} for unknown dims (line 539), so the

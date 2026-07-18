@@ -29,8 +29,8 @@ import static org.junit.Assert.assertTrue;
  *   4. asserts every field is preserved.
  *
  * Production code dispatches read vs readClient based on side. Most AR packets are
- * server→client only (no executable {@code read} on server). We exercise the
- * client-bound path (write → readClient) here.
+ * server&rarr;client only (no executable {@code read} on server). We exercise the
+ * client-bound path (write &rarr; readClient) here.
  *
  * Packets that pull state from {@code DimensionManager} / {@code SpaceObjectManager}
  * during executeClient are NOT exercised end-to-end here; that lives in the
@@ -267,8 +267,8 @@ public class PacketSerializationTest {
         ByteBuf empty = newBuffer();
         PacketAtmSync packet = new PacketAtmSync();
         assertReadClientFailsSafely(() -> packet.readClient(empty));
-        // readCompoundTag underflowed → field assignments inside the try block
-        // never executed → fields are at no-arg-ctor defaults.
+        // readCompoundTag underflowed -> field assignments inside the try block
+        // never executed -> fields are at no-arg-ctor defaults.
         assertNull(PacketSerializationTest.<String>field(packet, "type"));
         assertEquals(0, (int) PacketSerializationTest.<Integer>field(packet, "pressure"));
     }
@@ -359,7 +359,7 @@ public class PacketSerializationTest {
     public void packetSyncKnownPlanetsReadClientTruncatedPayloadFailsBounded() {
         // Header claims 5 entries; only 1.5 entries' worth of bytes follow.
         // The loop reads entry 0 successfully, partially consumes 2 bytes for
-        // entry 1, then underflows on the next readInt → IOOBE. Asserts the
+        // entry 1, then underflows on the next readInt -> IOOBE. Asserts the
         // failure is bounded (a single exception, no infinite read).
         ByteBuf wire = newBuffer();
         wire.writeInt(99);            // stationId

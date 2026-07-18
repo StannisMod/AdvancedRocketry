@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
  * rocket item unloader active transfer contract.
  *
  * <p>The pre-existing {@link RocketInfrastructureSmokeTest#rocketUnloaderRemovesItemsAfterLanding}
- * pins only tile lifecycle (placement → link → 5 ticks survive); it
+ * pins only tile lifecycle (placement &rarr; link &rarr; 5 ticks survive); it
  * documents why the transfer was deferred ("once a chest-pre-populate
  * probe lands"). The
  * {@code rocket storage-item-fill} probe (mirror of
@@ -57,7 +57,7 @@ public class RocketItemUnloaderActiveTransferTest extends AbstractSharedServerTe
     @Test
     public void unloaderPullsItemsFromRocketStorage() throws Exception {
         int ux = 1450, uy = 65, uz = 1450;
-        // Loader meta=2 → TileRocketUnloader (item unloader).
+        // Loader meta=2 -> TileRocketUnloader (item unloader).
         ok("artest place 0 " + ux + " " + uy + " " + uz
                 + " advancedrocketry:loader 2");
 

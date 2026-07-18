@@ -33,9 +33,9 @@ import static org.junit.Assert.assertTrue;
  */
 public class PlanetWeatherGateTest {
 
-    private static final int DIM_THIN_RAIN   = 9111; // density 10, rainMarker 1   → must stay clear
-    private static final int DIM_THICK_RAIN  = 9112; // density 100, rainMarker 1  → must rain
-    private static final int DIM_DRY_THUNDER = 9113; // density 100, thunder 1 / rain -1 → no thunder
+    private static final int DIM_THIN_RAIN   = 9111; // density 10, rainMarker 1   -> must stay clear
+    private static final int DIM_THICK_RAIN  = 9112; // density 100, rainMarker 1  -> must rain
+    private static final int DIM_DRY_THUNDER = 9113; // density 100, thunder 1 / rain -1 -> no thunder
 
     private Path workDir;
     private RealDedicatedServerHarness harness;
@@ -106,7 +106,7 @@ public class PlanetWeatherGateTest {
         String thick  = weatherAfterSettle(DIM_THICK_RAIN);
         String dry    = weatherAfterSettle(DIM_DRY_THUNDER);
 
-        // Contrast: same rainMarker=1, opposite atmosphere → opposite rain state.
+        // Contrast: same rainMarker=1, opposite atmosphere -> opposite rain state.
         assertTrue("thick-atmosphere planet with rainMarker=1 must rain (gate baseline): " + thick,
                 thick.contains("\"isRaining\":true"));
         assertTrue("thin-atmosphere planet must stay clear despite rainMarker=1 "

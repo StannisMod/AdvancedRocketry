@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * atmosphere / oxygen gameplay.
  *
- * <p>Earth breathable by default → set density 0 → vacuum → restore. Plus
+ * <p>Earth breathable by default &rarr; set density 0 &rarr; vacuum &rarr; restore. Plus
  * depth coverage for the atmosphere detector, CO2 scrubber, gas charge pad,
  * the spacebreathing-enchant air-suit acceptance gate, and the torch-extinguish
  * config path.</p>
@@ -50,7 +50,7 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
      * atmosphereToDetect} is AIR, and overworld has no per-dim atmosphere
      * handler, so {@link zmaster587.advancedRocketry.tile.atmosphere.TileAtmosphereDetector#update()}
      * falls into the no-handler branch where {@code detectedAtm = atmosphereToDetect == AIR}
-     * → {@code true} → the block flips to POWERED on the first valid tick.
+     * &rarr; {@code true} &rarr; the block flips to POWERED on the first valid tick.
      * Then re-target the detector to a non-AIR atmosphere (vacuum) and confirm
      * it unpowers — exercises both branches of the update loop.
      */
@@ -145,7 +145,7 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
                         + " 0 advancedrocketry:carbonScrubberCartridge 1 0"));
         assertTrue("hatch fill failed: " + fill, fill.contains("\"ok\":true"));
 
-        // First consume — should succeed, damage goes 0 → 1.
+        // First consume — should succeed, damage goes 0 -> 1.
         String firstConsume = String.join("\n", client().execute(
                 "artest scrubber consume 0 " + bx + " " + by + " " + bz));
         assertTrue("first consume should succeed: " + firstConsume,
@@ -153,10 +153,10 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
         int damageBefore = extractInt(firstConsume, "\"damageBefore\":(-?\\d+)");
         int damageAfter = extractInt(firstConsume, "\"damageAfter\":(-?\\d+)");
         assertEquals("damage must increment by exactly 1 per consume — got "
-                + damageBefore + " → " + damageAfter,
+                + damageBefore + " -> " + damageAfter,
                 damageBefore + 1, damageAfter);
 
-        // Second consume — same contract, damage 1 → 2.
+        // Second consume — same contract, damage 1 -> 2.
         String secondConsume = String.join("\n", client().execute(
                 "artest scrubber consume 0 " + bx + " " + by + " " + bz));
         int secondAfter = extractInt(secondConsume, "\"damageAfter\":(-?\\d+)");
@@ -259,9 +259,9 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
      * {@link zmaster587.advancedRocketry.util.AtmosphereBlob}'s per-block
      * effect loop on a single coordinate via probe; verifies both branches:
      * <ol>
-     *   <li>vanilla {@code minecraft:torch} → replaced with
+     *   <li>vanilla {@code minecraft:torch} &rarr; replaced with
      *       {@code advancedrocketry:unlitTorch} (always-on, no config gate);</li>
-     *   <li>arbitrary block added to {@code torchBlocks} config → dropped
+     *   <li>arbitrary block added to {@code torchBlocks} config &rarr; dropped
      *       as item, position cleared to air.</li>
      * </ol>
      */
@@ -278,7 +278,7 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
         ok(client().execute("artest fill 0 " + (bx - 1) + " " + (by - 1) + " " + (bz - 1)
                 + " " + (bx + 1) + " " + (by - 1) + " " + (bz + 1) + " minecraft:stone"));
 
-        // ----- Branch 1: vanilla TORCH → blockUnlitTorch -------------------
+        // ----- Branch 1: vanilla TORCH -> blockUnlitTorch -------------------
         String placeTorch = String.join("\n", client().execute(
                 "artest place 0 " + bx + " " + by + " " + bz + " minecraft:torch"));
         assertTrue("torch did not place: " + placeTorch,
@@ -297,11 +297,11 @@ public class AtmosphereOxygenSmokeTest extends AbstractHeadlessServerTest {
 
         String postTorch = String.join("\n", client().execute(
                 "artest block at 0 " + bx + " " + by + " " + bz));
-        // Forge normalises registry names to lower-case ("unlitTorch" → "unlittorch").
+        // Forge normalises registry names to lower-case ("unlitTorch" -> "unlittorch").
         assertTrue("post-extinguish must be advancedrocketry:unlittorch: " + postTorch,
                 postTorch.contains("\"block\":\"advancedrocketry:unlittorch\""));
 
-        // ----- Branch 2: config-listed block → dropped as item -------------
+        // ----- Branch 2: config-listed block -> dropped as item -------------
         // Use stone — already on the floor, but we add it to torchBlocks then
         // run the probe on a fresh stone pillar.
         int sx = bx + 2;

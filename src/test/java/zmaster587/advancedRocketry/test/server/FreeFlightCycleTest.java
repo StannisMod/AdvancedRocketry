@@ -19,9 +19,9 @@ import static org.junit.Assert.assertTrue;
  *       set-flight-mode flips it; rocket info reports the new mode.</li>
  *   <li><b>Free-flight bypass</b>: start-free-flight flips isInFlight=true WITHOUT a
  *       destination chip and without the LAUNCH_COUNTER countdown.</li>
- *   <li><b>Input → motion</b>: pushing a positive forward throttle through
+ *   <li><b>Input &rarr; motion</b>: pushing a positive forward throttle through
  *       free-flight-input then ticking the FF physics produces a positive +Z motion
- *       delta on an unrotated rocket (yaw=0 → forward = +Z).</li>
+ *       delta on an unrotated rocket (yaw=0 &rarr; forward = +Z).</li>
  *   <li><b>Fuel drain</b>: vertical-thrust input across ticks decreases the primary
  *       fuel level monotonically until exhaustion.</li>
  *   <li><b>Mode-mismatch input is dropped</b>: free-flight-input on a CLASSIC rocket

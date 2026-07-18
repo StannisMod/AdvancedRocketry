@@ -83,7 +83,7 @@ public class SpacePositionTest {
 
         double squared = a.distanceToSpacePosition2(b);
 
-        // 3-4-12 Pythagorean → 13² = 169.
+        // 3-4-12 Pythagorean -> 13² = 169.
         assertEquals(169.0, squared, EPS);
     }
 
@@ -134,7 +134,7 @@ public class SpacePositionTest {
 
         SpacePosition projected = origin.getFromSpherical(50.0, 0.0);
 
-        // theta=0 ⇒ x = origin.x + cos(0)*r = 50, z = origin.z + sin(0)*r = 0.
+        // theta=0 => x = origin.x + cos(0)*r = 50, z = origin.z + sin(0)*r = 0.
         assertEquals(50.0, projected.x, EPS);
         assertEquals(100.0, projected.y, EPS); // y is preserved
         assertEquals(0.0, projected.z, EPS);

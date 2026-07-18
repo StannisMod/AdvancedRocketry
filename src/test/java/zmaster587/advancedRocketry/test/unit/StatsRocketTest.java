@@ -417,7 +417,7 @@ public class StatsRocketTest {
             // Contract: the sign follows the net force (thrust vs dry weight),
             // and more thrust accelerates harder. The exact scaling constant is
             // an implementation detail.
-            stats.setThrust(100); // thrust == counter-gravity weight → no net force
+            stats.setThrust(100); // thrust == counter-gravity weight -> no net force
             assertEquals(0f, stats.getDryAcceleration(1f), 1e-6);
 
             stats.setThrust(300);

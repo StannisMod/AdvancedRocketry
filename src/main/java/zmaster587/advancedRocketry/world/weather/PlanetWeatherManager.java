@@ -42,8 +42,8 @@ public final class PlanetWeatherManager {
     // Codes for SPacketChangeGameState. CAREFUL: the vanilla protocol
     // numbers don't match the human-readable names in the wiki. Decompile
     // NetHandlerPlayClient.handleChangeGameState to verify:
-    //   code 1 → world.getWorldInfo().setRaining(true)  + world.setRainStrength(0)
-    //   code 2 → world.getWorldInfo().setRaining(false) + world.setRainStrength(1)
+    //   code 1 -> world.getWorldInfo().setRaining(true)  + world.setRainStrength(0)
+    //   code 2 -> world.getWorldInfo().setRaining(false) + world.setRainStrength(1)
     // So "send code 1 when rain is on" is correct, and "send code 2 when
     // rain is off". Earlier revisions of this manager had these constants
     // swapped (named per the wiki, not per actual client behaviour), which

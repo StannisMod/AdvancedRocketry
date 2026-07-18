@@ -123,8 +123,8 @@ public class RocketDescentLandingTest extends AbstractSharedServerTest {
         // Setup under REAL server ticking:
         //   - assemble + force-load the rocket's chunk
         //   - state: orbit=true, flight=false, ticksExisted=DESCENT_TIMER+1
-        //   - server wait 5 ticks → onUpdate runs at least once →
-        //     gate fires → isInFlight flips to true.
+        //   - server wait 5 ticks -> onUpdate runs at least once ->
+        //     gate fires -> isInFlight flips to true.
         int baseX = 6100;
         int baseZ = 500;
         int id = buildAndAssemble(baseX, 64, baseZ);
@@ -199,7 +199,7 @@ public class RocketDescentLandingTest extends AbstractSharedServerTest {
         // rocket's chunk force-loaded:
         //   - 5×5 stone floor at y=64
         //   - orbit=true, flight=true, posY=66, motionY=-10
-        //   - wait 6 ticks → move() collides with stone → RocketLandedEvent.
+        //   - wait 6 ticks -> move() collides with stone -> RocketLandedEvent.
         int baseX = 6300;
         int baseY = 64;
         int baseZ = 500;
@@ -221,7 +221,7 @@ public class RocketDescentLandingTest extends AbstractSharedServerTest {
         String countsAfter = ok(client().execute("artest rocket event-counts-full"));
         int landedAfter = gi(LANDED_COUNT, countsAfter, "landed after");
         assertTrue("RocketLandedEvent must fire on ground collision under real ticks: "
-                + landedBefore + " → " + landedAfter, landedAfter > landedBefore);
+                + landedBefore + " -> " + landedAfter, landedAfter > landedBefore);
 
         String info = ok(client().execute("artest rocket info " + id));
         assertTrue("production must clear isInFlight on landing: " + info,

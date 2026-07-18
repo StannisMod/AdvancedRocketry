@@ -39,15 +39,15 @@ import static org.junit.Assert.assertTrue;
  * delta isolates the cohesion check):</p>
  *
  * <ul>
- *   <li><b>Core stacked above nuclear motor → thrust &gt; 0.</b> The
+ *   <li><b>Core stacked above nuclear motor &rarr; thrust &gt; 0.</b> The
  *       {@code with-nuclear-stack} fixture places 2 nuclear motors with
  *       cores directly above; the assembled rocket reports a positive
  *       {@code stats.thrust}, proving the nuclear chain energises the
  *       launch-readiness gate.</li>
- *   <li><b>Core misplaced (no engine/core below) → thrust = 0.</b> The
+ *   <li><b>Core misplaced (no engine/core below) &rarr; thrust = 0.</b> The
  *       {@code with-nuclear-misplaced} fixture places the same 2 nuclear
  *       motors but the core sits at the center column where below is air;
- *       {@code reactorLimit} stays 0 → {@code nuclearTotal=min(N,0)=0} →
+ *       {@code reactorLimit} stays 0 &rarr; {@code nuclearTotal=min(N,0)=0} &rarr;
  *       {@code thrust=max(0,0,0)=0}. Pins that the cohesion check is the
  *       difference, not just "presence of any nuclear block".</li>
  * </ul>
@@ -94,10 +94,10 @@ public class NuclearEngineRocketAssemblyTest extends AbstractSharedServerTest {
         String assemble = setupAndAttemptAssemble(baseX, baseY, baseZ, "with-nuclear-misplaced");
         // Player-visible contract — nuclear motor with core misplaced
         // (no IRocketEngine or IRocketNuclearCore below) leaves
-        // thrustNuclearReactorLimit=0 → nuclearTotalLimit=0 →
-        // stats.thrust=max(0,0,0)=0 → scan gate at
+        // thrustNuclearReactorLimit=0 -> nuclearTotalLimit=0 ->
+        // stats.thrust=max(0,0,0)=0 -> scan gate at
         // TileRocketAssemblingMachine line 457 (getThrust() <=
-        // getNeededThrust()) fires → status NOENGINES.
+        // getNeededThrust()) fires -> status NOENGINES.
         assertTrue("misplaced-core assemble must NOT succeed: " + assemble,
                 assemble.contains("\"error\""));
         assertTrue("misplaced-core scan must surface NOENGINES status: " + assemble,

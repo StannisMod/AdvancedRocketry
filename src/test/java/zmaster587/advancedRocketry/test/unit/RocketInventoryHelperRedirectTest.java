@@ -33,10 +33,10 @@ import static org.junit.Assert.assertTrue;
  *
  * <h2>What's pinned</h2>
  * <ol>
- *   <li>Bypass set member → return {@code true}, container.canInteractWith
+ *   <li>Bypass set member &rarr; return {@code true}, container.canInteractWith
  *       MUST NOT be invoked (vanilla close-screen path is skipped
  *       outright).</li>
- *   <li>Non-bypass-set player → delegates to
+ *   <li>Non-bypass-set player &rarr; delegates to
  *       {@code container.canInteractWith(player)} verbatim, both true and
  *       false outcomes propagate.</li>
  * </ol>

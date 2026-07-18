@@ -122,9 +122,9 @@ public class MissionLifecyclePyramidTest extends AbstractSharedServerTest {
         assertTrue("progress at 500/1000 must be < 1.0; got " + p, p < 1.0);
     }
 
-    /** complete-now backdates + drives tickEntity once → the probe's
+    /** complete-now backdates + drives tickEntity once &rarr; the probe's
      *  atomic post-state report must show isDeadAfter=true AND
-     *  completed=true (transition from alive→dead happened in this
+     *  completed=true (transition from alive&rarr;dead happened in this
      *  call). */
     @Test
     public void completionFiresAtProgressOne() throws Exception {

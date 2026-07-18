@@ -34,7 +34,7 @@ public class FuelRegistryTest {
         Fluid fluid = newFluid("ar.test.monoprop." + System.nanoTime());
         boolean wasNew = FuelRegistry.instance.registerFuel(FuelType.LIQUID_MONOPROPELLANT, fluid, 1.0f);
 
-        // registerFuel returns the set.add result; a brand-new fluid → true.
+        // registerFuel returns the set.add result; a brand-new fluid -> true.
         assertTrue("first registration of a fluid must succeed", wasNew);
         assertTrue(FuelRegistry.instance.isFuel(FuelType.LIQUID_MONOPROPELLANT, fluid));
         assertEquals(1.0f, FuelRegistry.instance.getMultiplier(FuelType.LIQUID_MONOPROPELLANT, fluid), 1e-6);

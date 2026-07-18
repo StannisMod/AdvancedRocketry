@@ -73,7 +73,7 @@ public class FuelingStationCategory implements IRecipeCategory<FuelingStationWra
         if (itemInputs.size() >= 2) {
             items.set(1, itemInputs.get(1));
         } else if (!wrapper.getRoleTankStack().isEmpty()) {
-            // fallback if bucket missing → the only input is the role tank
+            // fallback if bucket missing -> the only input is the role tank
             items.set(1, java.util.Collections.singletonList(wrapper.getRoleTankStack()));
         }
         fluids.addTooltipCallback((slotIndex, input, fluid, tooltip) -> {

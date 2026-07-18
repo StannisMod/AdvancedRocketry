@@ -105,7 +105,7 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
      *  <p>A single density step requires {@code completionTime = 18000 ×
      *  terraformSpeed} (default 18000) onRunningPoweredTick() calls, each
      *  consuming {@code terraformliquidRate = 40} mB of both N2 and O2.
-     *  The test runs in a fill→tick refill loop because no fluid hatch
+     *  The test runs in a fill&rarr;tick refill loop because no fluid hatch
      *  can hold the full 18000×40 = 720000 mB single-step requirement.</p> */
     @Test
     public void nativePlanetTerraformerWithFuelAndPowerStepsDensity() throws Exception {
@@ -131,7 +131,7 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
         // are N2 sources, hatch 2+3 are O2 sources. The controller's
         // drain loop iterates fluidInPorts; it picks up N2 from the
         // first two and O2 from the last two.
-        // Budget: 60 iterations × 400 ticks = 24000 ticks → at least
+        // Budget: 60 iterations × 400 ticks = 24000 ticks -> at least
         // one density step (every 18000 ticks).
         for (int i = 0; i < 60; i++) {
             injectFluidAt(fixture, 0, "nitrogen", 16000);
@@ -151,7 +151,7 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
                 densityBefore, densityAfter);
     }
 
-    /** Counter-test: fuel hatch empty → setOOF(true) → no power consumed,
+    /** Counter-test: fuel hatch empty &rarr; setOOF(true) &rarr; no power consumed,
      *  no progress, no density mutation. Pins the fuel-required branch. */
     @Test
     public void nativePlanetTerraformerWithoutFuelDoesNotStep() throws Exception {
@@ -174,8 +174,8 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
 
     /** Counter-test: controller's battery aggregator cleared
      *  ({@code MultiBattery.clear()}) so {@code hasEnergy(powerPerTick)}
-     *  reads 0 →  libVulpes' update() skips onRunningPoweredTick →
-     *  currentTime never increments → processComplete never fires →
+     *  reads 0 &rarr;  libVulpes' update() skips onRunningPoweredTick &rarr;
+     *  currentTime never increments &rarr; processComplete never fires &rarr;
      *  density unchanged. Pins the power-required branch.
      *
      *  <p><b>Why clear-batteries instead of skip-inject</b>: the default

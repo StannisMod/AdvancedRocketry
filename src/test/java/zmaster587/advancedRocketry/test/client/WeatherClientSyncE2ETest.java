@@ -29,11 +29,11 @@ import static org.junit.Assert.assertTrue;
  * test-only {@code /artest tp <dim>} probe (which calls
  * {@code PlayerList.transferPlayerToDimension} just like the production
  * {@code /advancedrocketry goto} command would, firing
- * {@code PlayerChangedDimensionEvent} → {@code PlanetWeatherEventHandler
- * .syncToPlayer} → vanilla {@code SPacketChangeGameState}), and the
+ * {@code PlayerChangedDimensionEvent} &rarr; {@code PlanetWeatherEventHandler
+ * .syncToPlayer} &rarr; vanilla {@code SPacketChangeGameState}), and the
  * <em>client-side rendered</em> weather state is observed via the framework's
  * {@code report_weather} probe (forge-test-framework 0.4.1+) to match the
- * dim the player is currently in. That's the full server→packet→client→render
+ * dim the player is currently in. That's the full server&rarr;packet&rarr;client&rarr;render
  * loop covered.</p>
  *
  * <p>The class does NOT extend {@link AbstractClientE2ETest} because that base
@@ -190,7 +190,7 @@ public class WeatherClientSyncE2ETest {
                 onA.get("rainStrength").getAsFloat() > 0f);
 
         // Teleport to dim B. This is the path that fires
-        // PlayerChangedDimensionEvent → PlanetWeatherEventHandler.syncToPlayer,
+        // PlayerChangedDimensionEvent -> PlanetWeatherEventHandler.syncToPlayer,
         // pushing the new dim's weather via SPacketChangeGameState. The
         // explicit end-raining packet should drop client-visible rain
         // immediately.
@@ -201,7 +201,7 @@ public class WeatherClientSyncE2ETest {
         assertTrue("client should be in dim B after goto: " + onB,
                 onB.has("dim") && onB.get("dim").getAsInt() == DIM_B);
         assertFalse("client-visible isRaining must be FALSE on dim B (isolation across "
-                        + "teleport — A→B must not carry A's rain): " + onB,
+                        + "teleport — A->B must not carry A's rain): " + onB,
                 onB.get("isRaining").getAsBoolean());
         // Not just the flag: an end-raining packet alone leaves the client at
         // strength 1.0 (vanilla code-2 semantics). The transfer sync must zero

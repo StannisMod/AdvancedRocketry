@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * fueling-station ⇒ rocket fuel transfer.
+ * fueling-station &rArr; rocket fuel transfer.
  *
  * <p>Pins the {@link zmaster587.advancedRocketry.tile.infrastructure.TileFuelingStation}
  * {@code performFunction} cause-effect: with a fueling station linked to an
@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  *   <li>Build a rocket fixture at (X_ROCKET, ...) via {@code /artest fixture rocket}
  *       and assemble it into an {@code EntityRocket}.</li>
  *   <li>Place a {@code fuelingStation} adjacent to the rocket pad area.</li>
- *   <li>Link the station → rocket via {@code /artest infra link}.</li>
+ *   <li>Link the station &rarr; rocket via {@code /artest infra link}.</li>
  *   <li>Inject {@code rocketFuel} into the station's tank and feed it
  *       RF via {@code /artest energy inject} so {@code canPerformFunction}
  *       returns true.</li>
@@ -111,7 +111,7 @@ public class FuelingStationFuelsAdjacentRocketTest extends AbstractHeadlessServe
                         + " response=" + preFuel,
                 fuelCapacity > 1000);
 
-        // ─── 3. Link station → rocket ──────────────────────────────────
+        // ─── 3. Link station -> rocket ──────────────────────────────────
         String link = join(client().execute(
                 "artest infra link 0 " + FX + " " + FY + " " + FZ + " " + rocketId));
         assertTrue("infra link failed: " + link, link.contains("\"ok\":true"));
@@ -150,7 +150,7 @@ public class FuelingStationFuelsAdjacentRocketTest extends AbstractHeadlessServe
                         + " response=" + preTank,
                 initialTank >= 1000);
 
-        // ─── 5. Force-tick station → drains tank + fills rocket ────────
+        // ─── 5. Force-tick station -> drains tank + fills rocket ────────
         // 200 ticks via the clock-advancing variant: TileFuelingStation
         // gates the transfer on `worldTime % OP_THROTTLE_TICKS == 0`, so a
         // frozen-clock force-tick would either never or always pass that gate

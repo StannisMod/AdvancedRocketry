@@ -12,8 +12,8 @@ import static org.junit.Assert.assertTrue;
  * {@code blockStructureBlock} around a {@code blockWarpCoreCore} centre,
  * bottom controller layer with rim ring + core centre.</p>
  *
- * <p>Both {@code blockWarpCoreRim} (→ Titanium block) and
- * {@code blockWarpCoreCore} (→ Gold block) are AR-registered OreDictionary
+ * <p>Both {@code blockWarpCoreRim} (&rarr; Titanium block) and
+ * {@code blockWarpCoreCore} (&rarr; Gold block) are AR-registered OreDictionary
  * entries; the fixture resolves them at runtime via
  * {@code firstOreDictBlockState}.</p>
  *
@@ -57,7 +57,7 @@ public class WarpCoreMultiblockTest extends AbstractSharedServerTest {
         assertTrue("baseline must validate: " + first,
                 first.contains("\"isComplete\":true"));
 
-        // Core centre at middle layer → globalY = cy + 1, globalX = cx, globalZ = cz + 1.
+        // Core centre at middle layer -> globalY = cy + 1, globalX = cx, globalZ = cz + 1.
         String breakCore = join(client().execute(
                 "artest place 0 " + cx + " " + (cy + 1) + " " + (cz + 1) + " minecraft:stone"));
         assertTrue("could not replace core centre: " + breakCore,
@@ -82,7 +82,7 @@ public class WarpCoreMultiblockTest extends AbstractSharedServerTest {
         assertTrue("baseline must validate: " + first,
                 first.contains("\"isComplete\":true"));
 
-        // Input hatch at top → globalY = cy + 2, globalX = cx, globalZ = cz + 1.
+        // Input hatch at top -> globalY = cy + 2, globalX = cx, globalZ = cz + 1.
         String breakHatch = join(client().execute(
                 "artest place 0 " + cx + " " + (cy + 2) + " " + (cz + 1) + " minecraft:stone"));
         assertTrue("could not replace input hatch: " + breakHatch,

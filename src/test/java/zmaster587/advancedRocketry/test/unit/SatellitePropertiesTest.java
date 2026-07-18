@@ -58,7 +58,7 @@ public class SatellitePropertiesTest {
 
     @Test
     public void propertyFlagsReflectConfiguredFields() {
-        // No type, no power, no data → only zero-valued fields.
+        // No type, no power, no data -> only zero-valued fields.
         SatelliteProperties empty = new SatelliteProperties();
         int emptyFlag = empty.getPropertyFlag();
         assertFalse(Property.MAIN.isOfType(emptyFlag));
@@ -94,7 +94,7 @@ public class SatellitePropertiesTest {
         assertEquals(0, props.getPowerGeneration());
         assertEquals(0, props.getPowerStorage());
         assertEquals(0, props.getMaxDataStorage());
-        assertEquals(0L, props.getId());     // empty NBT → readLong default is 0
+        assertEquals(0L, props.getId());     // empty NBT -> readLong default is 0
         assertEquals("", props.getSatelliteType());
         assertEquals(0f, props.getWeight(), 0f);
     }
@@ -102,7 +102,7 @@ public class SatellitePropertiesTest {
     // ---- SatelliteRegistry contract -----------------------------------
 
     /**
-     * The satellite type registry must support register → lookup → factory
+     * The satellite type registry must support register &rarr; lookup &rarr; factory
      * and behave predictably on unknown keys.
      *
      * We use a controlled local test subclass to avoid coupling to production
