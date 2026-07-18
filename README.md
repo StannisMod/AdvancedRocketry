@@ -1,98 +1,134 @@
-# Advanced Rocketry - Reworked
+# Advanced Rocketry — Reworked
 
-A maintained fork of **Advanced Rocketry** for **Minecraft 1.12.2**.
+A space and progression mod for **Minecraft 1.12.2**. Rockets here are built, not crafted: you lay out a
+launch pad, stack engines and fuel tanks around a guidance computer, and the Rocket Assembling Machine scans
+that structure and turns it into a rocket you can fly. Where it can reach depends on its mass and thrust, so
+a heavier target means going back and rebuilding rather than just refuelling.
 
-This project continues development of the original mod with ongoing bug fixes, improvements, and quality-of-life updates for modern 1.12.2 modpacks.
+Everything runs on Forge Energy (RF), and the mod brings its own generation — solar panels and arrays up
+through a black hole generator — so it works on its own and still accepts power from any tech mod you already
+run.
+
+This is a maintained fork. **Current release: 2.3.0**, stable, last updated July 2026. A 3.0.0 with
+ship-based flight is [in development](#coming-in-300).
+
+## Screenshots
+
+<!-- TODO: add screenshots. Suggested set:
+       1. A finished rocket on its launch pad
+       2. Interior of a sealed base on an airless world (oxygen vent + scrubber visible)
+       3. A space station in orbit with a rocket docked
+       4. A tier-2 ship in flight, once 3.0.0 is closer
+     Put the files in docs/img/ and reference them here. -->
+
+---
+
+## What you do
+
+### Rocket assembly
+
+Engines come in three families: monopropellant, bipropellant and nuclear thermal. Parts pick up wear across
+flights and are repaired at a Service Station, so a fleet needs maintenance rather than just fuel.
+
+Rockets normally fly themselves. **Free Flight** is the alternative: six-axis manual control, switched on per
+rocket, leaving the rest on autopilot.
+
+### Life support
+
+Landing somewhere airless turns the game into a sealing problem. You build an airtight room, run an Oxygen
+Vent into it, scrub the CO2 back out, and check the seal before taking the helmet off. Step outside and you
+are on suit oxygen until you get back.
+
+Planets each have their own gravity, day length and weather, and the mod handles the awkward cases: sleeping
+works on a world whose day is not 24 000 ticks, and acid rain will corrode a base left open to the sky.
+
+### Surveying
+
+An Observatory finds new worlds. Satellites you launch into orbit survey them properly and then keep working
+— orbital scans, and a laser drill that mines a body from above.
+
+### Orbital construction
+
+Space stations are assembled in orbit from a station container, docked to with a Docking Pad, and given
+artificial gravity. A Warp Core moves a finished station between planets.
+
+### Industry and terraforming
+
+Ore processing runs through its own machine chain: precision assembler, crystallizer, cutting machine, arc
+furnace. Terraforming sits at the far end, raising a world's pressure and oxygen until a suit is no longer
+needed there.
+
+---
+
+## Requirements
+
+| | |
+| --- | --- |
+| Minecraft | 1.12.2 with Forge |
+| Required | **[LibVulpes — this fork](https://github.com/StannisMod/libVulpes-fork2)** · [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixinbooter) |
+| Optional | JEI · TheOneProbe / Waila · Galacticraft Legacy and Matter Overdrive compat |
+
+> [!IMPORTANT]
+> Advanced Rocketry is built against the **forked LibVulpes** linked above and will not run correctly on the
+> upstream release. Installing stock LibVulpes is the most common way to get a broken setup.
+
+Download from [GitHub Releases](../../releases). Runs on dedicated servers; client and server must match.
+
+You can add the mod to a world you are already playing, though its ores and structures only appear in land
+that generates after you install it, so you may need to travel to find them.
+
+---
+
+## Coming in 3.0.0
+
+3.0.0 replaces the rocket-you-sit-in with a ship you walk around on. Building a craft around an Advanced
+Flight Computer produces a physics-driven vessel; you fly it from the Pilot Seat, and anyone seated aboard
+travels with it. Fly high enough and the ship leaves for space by itself, and it lands you back down when you
+return to a world. Packs can also have their star systems placed across galactic coordinates procedurally
+rather than by hand.
+
+It is not released, and while it is in development:
+
+- Ships need **Valkyrien Skies**. Without it, nothing changes and the mod stays on classic rockets.
+- The Advanced Flight Computer has **no crafting recipe**, so a pack shipping ships has to add one.
+- Interstellar jumps do not work yet.
 
 > [!CAUTION]
-> ## ⚠️ VERSION 3.0.0 IS NOT COMPATIBLE WITH OLD SAVES ⚠️
-> **ADVANCED ROCKETRY 3.0.0 IS A CLEAN BREAK. WORLDS AND SAVES FROM ANY EARLIER AR VERSION (2.x AND BELOW) WILL NOT LOAD CORRECTLY AND MAY BE CORRUPTED.**
-> The space-model rework changes NBT data, registry names, and world structure **WITHOUT BACKWARD COMPATIBILITY**.
-> **BACK UP YOUR WORLD FIRST — DO NOT UPGRADE AN EXISTING SAVE IN PLACE.**
+> **3.0.0 will not load worlds created in 2.x.** The save format changes with no migration path. Back up
+> first and start a new world to try it.
 
 ---
 
-## Download
+## For pack developers
 
-Download the mod on CurseForge:  
-**[Advanced Rocketry - Reworked](https://www.curseforge.com/minecraft/mc-mods/advanced-rocketry-2)**
+The mod adds its own dimensions, worldgen and ore-processing chain, so it takes up room in a pack. Each major
+system has a config switch, including worldgen, planet weather and the whole 3.0.0 space subsystem.
 
----
+Planets, stars and ores are configured in XML, with references and templates in [`docs/`](docs/):
 
-## About
+- planetDefs — [reference](docs/README_PLANETDEFS.md) · [template](docs/TEMPLATE_planetdefs.xml)
+- oreConfig — [reference](docs/README_ORECONFIG.md) · [template](docs/TEMPLATE_oreconfig.xml)
 
-**Advanced Rocketry - Reworked** exists to keep Advanced Rocketry alive and actively maintained for the community.
+Coming from an older 2.x build: commands moved into subcommands, so **command scripts and quest-book command
+rewards need updating**. Power and data cabling was replaced by a wireless system.
 
-The goal of this fork is to improve stability, expand usability for both players and pack developers, and continue refining one of the most ambitious space and progression mods for Minecraft 1.12.2.
-
----
-
-## Documentation
-
-### Main Resources
-
-- **CurseForge:** [Advanced Rocketry - Reworked](https://www.curseforge.com/minecraft/mc-mods/advanced-rocketry-2)
-- **Wiki Documentation:** [Advanced Rocketry Wiki](http://arwiki.dmodoomsirius.me/)
-- **Change Log:** [`CHANGELOG.md`](./CHANGELOG.md)
-
-
-- **PlanetDefs Documentation**[`XML_PLANETDEFS_README.md`](docs/README_PLANETDEFS.md)
-- **OreConfig Documentation**[`XML_ORECONFIG_README.md`](docs/README_ORECONFIG.md)
-- **Templates** found `/docs/`
-
-For pack makers and advanced users, this repository also includes a dedicated reference for configuring `planetDefs.xml`:
+A pack built around 3.0.0's ships is planned — Advanced Rocketry, Valkyrien Skies for the physics, GregTech
+CEu for the tech tree, and a quest mod to guide the route. The 2.x line is also maintained for
+[Towards Rocket Science](https://www.curseforge.com/minecraft/modpacks/towardsrocketscience).
 
 ---
 
-## Featured Modpacks
+## Contributing
 
-If you want to play Advanced Rocketry as part of a larger progression-focused experience, check out these modpacks:
+Build instructions, the test layout and the branch map are in [`CONTRIBUTING.md`](./CONTRIBUTING.md). Bugs and
+pull requests go through this repository's issue tracker.
 
-### [Towards Rocket Science](https://www.curseforge.com/minecraft/modpacks/towardsrocketscience)
+## Credits and licence
 
-A modpack built around **Advanced Rocketry** and **Immersive Engineering**.  
-Great for players who want quests, tech progression, and a more beginner-friendly route into rocket-based gameplay.
+Built on the original [Advanced Rocketry](https://github.com/Advanced-Rocketry/AdvancedRocketry) by
+zmaster587, and on the forks maintained since. Released under the MIT licence
+([`LICENSE`](./LICENSE)), so packs may redistribute it freely.
 
-### [MeatballCraft, Dimensional Ascension](https://www.curseforge.com/minecraft/modpacks/meatballcraft)
-
-A massive expert-style progression pack for players who want deep automation, long-term goals, and a huge endgame.
-
-### [Enigmatica 2: Expert - Extended](https://www.curseforge.com/minecraft/modpacks/enigmatica-2-expert-extended)
-
-An extended continuation of the classic expert experience, with heavier progression and plenty of room for Advanced Rocketry to shine.
-
----
-
-## Compatibility Notes
-
-- **PlusTiC Portly rocket compatibility removed.** Earlier builds shipped a
-  narrow ASM patch that adjusted rocket yaw when PlusTiC "Portly" tools
-  released an Advanced Rocketry rocket. The coremod was rewritten to Mixin,
-  and this third-party patch could not be ported safely without the PlusTiC
-  source on the build classpath, so it was dropped. Releasing AR rockets with
-  PlusTiC Portly tools still works; only the cosmetic yaw-preservation tweak
-  is gone. The `enablePlusTiCPortlyRocketCompat` config option no longer
-  exists.
-
----
-
-## Development Notes
-
-Bug fixes, balance changes, and other improvements are tracked in:
-
-- the repository commit history
-- [`CHANGELOG.md`](./CHANGELOG.md)
-
----
-
-## Credits
-
-Full credit goes to the original [**Advanced Rocketry**](https://github.com/Advanced-Rocketry/AdvancedRocketry) developers, along with the maintainers of previous forks, for laying the foundation of this project.
-
-This fork exists to continue development and keep the mod available and useful for the modded Minecraft community.
-
----
-
-## Support
-
-If you run into a bug, want to suggest an improvement, or would like to contribute, please use this repository’s issue tracker and pull requests.
+Version history is in [`CHANGELOG.md`](./CHANGELOG.md). The older
+[community wiki](http://arwiki.dmodoomsirius.me/) still covers the basics but predates Free Flight and the
+3.0.0 work.
