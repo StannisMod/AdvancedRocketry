@@ -1,5 +1,12 @@
 package zmaster587.advancedRocketry.space;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
@@ -23,6 +30,11 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     /** Monotonic per-boot counter for RESTORED arrivals (imported only at server start), spreading them
      *  across the NEGATIVE-X paste band so they never overlap each other or a live arrival. */
     private int restoredLane;
+
+    /** The full crew captured at depart, keyed by ship id, held until the arrival reseat succeeds. In-memory
+     *  only (the transit record persists the crew UUIDs, not the AFC-link offsets a reseat needs), so a
+     *  restored transit's stash is empty after a restart - its reseat is a no-op, deferred to login-restore. */
+    private final Map<String, List<CrewTransfer.Crew>> crewStash = new HashMap<>();
 
     @Override
     public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
@@ -105,5 +117,58 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // anchor on the first call, no retry - never a duplicate paste.
         int dstX = -ARRIVAL_LANE_STRIDE * (restoredLane++ + 1);
         return VSIntegration.pasteAndAssemble(dst, snapshot, dstX, ARRIVAL_Y, 0);
+    }
+
+    @Override
+    public List<UUID> captureCrew(int srcSlotDim, BlockPos srcAnchor, String shipId) {
+        WorldServer src = DimensionManager.getWorld(srcSlotDim);
+        if (src == null || srcAnchor == null) {
+            return Collections.emptyList();
+        }
+        // Locate the AFC FIRST: flightComputerAt force-loads the ship's far subspace shipyard, which is what
+        // also makes CrewTransfer.capture's per-seat getTileEntity(seatPos) resolve (the aboard pilot only
+        // chunk-loaded the ship's RENDER region, not its subspace shipyard). The AFC block is what capture
+        // filters the ship's seats against.
+        BlockPos afcPos = VSIntegration.flightComputerAt(src,
+                srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5);
+        if (afcPos == null) {
+            return Collections.emptyList(); // no flight computer on this ship - carry no crew
+        }
+        // The ship's live WORLD position, keyed by the AFC's SUBSPACE block: getShipWorldPosition takes a
+        // managed subspace block (as entry/descent pass their afcPos), NOT the world anchor - passing the world
+        // anchor returns null (it is not a block the ship manages).
+        double[] shipWorldPos = VSIntegration.getShipWorldPosition(src, afcPos);
+        if (shipWorldPos == null) {
+            return Collections.emptyList();
+        }
+        List<CrewTransfer.Crew> crew = CrewTransfer.capture(src, afcPos, shipWorldPos);
+        if (!crew.isEmpty()) {
+            crewStash.put(shipId, crew);
+        }
+        List<UUID> ids = new ArrayList<>();
+        for (CrewTransfer.Crew c : crew) {
+            ids.add(c.player.getUniqueID());
+        }
+        return ids;
+    }
+
+    @Override
+    public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+        List<CrewTransfer.Crew> stash = crewStash.get(shipId);
+        if (stash == null || stash.isEmpty()) {
+            return true; // crewless, restored (stash wiped on restart), or already reseated - nothing to do
+        }
+        WorldServer dst = DimensionManager.getWorld(targetSlotDim);
+        if (dst == null || arrivalAnchor == null) {
+            return false; // target world not up yet - retry next tick
+        }
+        // Keep the destination's ships load-queued so the re-assembled seat tiles become resolvable (the
+        // proven entry/descent reseat path, VSShipCrossingOps.loadShips).
+        VSIntegration.loadAllShips(dst);
+        if (CrewTransfer.reseat(dst, arrivalAnchor, stash)) {
+            crewStash.remove(shipId);
+            return true;
+        }
+        return false;
     }
 }

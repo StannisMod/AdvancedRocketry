@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.space;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,6 +97,29 @@ public final class ShipTransitManager {
         default BlockPos completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
             return null;
         }
+
+        /**
+         * Capture the seated crew of the ship being departed - anchored at world-frame {@code srcAnchor} in
+         * origin slot {@code srcSlotDim} - BEFORE {@link #departToHyperspace} cuts its seat blocks (a post-cut
+         * capture finds nothing). The production impl stashes the full crew (keyed by {@code shipId}) for the
+         * reseat at arrival and returns the aboard player UUIDs, which drive the offline-progress gate and
+         * persist on the transit record. The default (pure state-machine / no-VS) captures nothing.
+         */
+        default List<UUID> captureCrew(int srcSlotDim, BlockPos srcAnchor, String shipId) {
+            return Collections.emptyList();
+        }
+
+        /**
+         * Re-seat the crew captured for {@code shipId} onto the re-assembled ship at {@code arrivalAnchor} in
+         * target slot {@code targetSlotDim}. Returns {@code true} when every aboard crew member is re-seated
+         * OR there is none to move - a crewless transit, a restored transit (its stash is wiped on the restart
+         * it survived), or an abort that never cut - and {@code false} to retry next tick while the async
+         * re-assembly's seat tiles are not up yet. Idempotent across retries (already-seated riders are not
+         * double-mounted). The default returns {@code true} (nothing to reseat).
+         */
+        default boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+            return true;
+        }
     }
 
     /** Per-ship in-flight state. */
@@ -128,6 +152,25 @@ public final class ShipTransitManager {
         }
     }
 
+    /**
+     * A ship that has physically arrived (crossed + settled in the ledger) and whose crew reseat is still
+     * being retried. Kept OUT of {@link #transits} on purpose: the transit's durable lifecycle ends at
+     * physical arrival, so a save in the (few-tick) reseat window exports nothing for it - it cannot be
+     * re-pasted as a duplicate on restart. The reseat itself is best-effort and not persisted.
+     */
+    private static final class PendingReseat {
+        final String shipId;
+        final int targetSlotDim;
+        final BlockPos anchor;
+        int attempts;
+
+        PendingReseat(String shipId, int targetSlotDim, BlockPos anchor) {
+            this.shipId = shipId;
+            this.targetSlotDim = targetSlotDim;
+            this.anchor = anchor;
+        }
+    }
+
     private final SpaceManager space;
     private final HyperspaceTiles tiles;
     private final Crosser crosser;
@@ -138,6 +181,8 @@ public final class ShipTransitManager {
     /** Offline-progress gate; {@code null} = always advance (state-machine unit tests). */
     private OfflineProgress offlineProgress;
     private final Map<String, Transit> transits = new LinkedHashMap<>();
+    /** Arrived ships whose crew reseat is still retrying (best-effort, not persisted). See {@link PendingReseat}. */
+    private final List<PendingReseat> reseating = new ArrayList<>();
 
     /** State-machine only: no ledger sync, a zero clock. Used by the transit-wiring unit tests. */
     public ShipTransitManager(SpaceManager space, HyperspaceTiles tiles, Crosser crosser) {
@@ -167,6 +212,10 @@ public final class ShipTransitManager {
             return false; // already in transit
         }
         HyperspaceTiles.Tile tile = tiles.allocate();
+        // Capture the seated crew BEFORE the depart crossing cuts the seat blocks (a post-cut capture finds
+        // nothing). captureCrew stashes the full crew inside the crosser (keyed by shipId) for the reseat at
+        // arrival and returns the aboard player UUIDs for the offline-progress gate + the transit record.
+        List<UUID> crew = crosser.captureCrew(originSlotDim, originAnchor, shipId);
         // Floor snapshot: capture the source ship BEFORE the depart crossing cuts it, so a save fired in the
         // window before the hyperspace ship assembles (snapshotParked still empty) never persists a
         // snapshot-less record - which on restart would strand + silently delete the ship. Later saves refresh
@@ -175,6 +224,10 @@ public final class ShipTransitManager {
         BlockPos hyperAnchor = crosser.departToHyperspace(originSlotDim, originAnchor, tile);
         if (hyperAnchor == null) {
             tiles.free(tile);
+            // The depart cut never happened (the ship stays in the origin cell), but captureCrew already
+            // dismounted the crew - re-seat them onto the still-present origin ship so an aborted jump does
+            // not silently eject the pilot.
+            crosser.reseatCrew(originSlotDim, originAnchor, shipId);
             LOGGER.warn("[SPACE] transit depart crossing failed for ship {} - jump aborted", shipId);
             return false;
         }
@@ -187,9 +240,19 @@ public final class ShipTransitManager {
         Transit t = new Transit(origin, target, tile, hyperAnchor, speed, arrivalTick, now,
                 new ShipTransit(origin, target));
         t.snapshot = initialSnapshot;
+        t.crew.addAll(crew); // the offline-progress gate + the persisted transit record read these UUIDs
         transits.put(shipId, t);
         ledgerBeginTransit(shipId, target);
         return true;
+    }
+
+    /**
+     * Advance the whole subsystem one server tick: every in-flight transit, then the best-effort crew
+     * reseat of any ship that has already physically arrived.
+     */
+    public void tick() {
+        tickTransits();
+        tickReseating();
     }
 
     /**
@@ -197,7 +260,7 @@ public final class ShipTransitManager {
      * logically). A ship that reaches its target performs the arrival crossing: materialize the target
      * cell (refcount handoff, half 2), cross + unpark into it, and free the hyperspace lane.
      */
-    public void tick() {
+    private void tickTransits() {
         if (transits.isEmpty()) {
             return;
         }
@@ -231,6 +294,12 @@ public final class ShipTransitManager {
                 // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #46).
                 ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
                 space.markDirty(t.target);
+                // Hand any aboard crew to the best-effort reseat retry. The transit is already settled and
+                // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
+                // few ticks (async re-assembly) without ever risking a duplicate ship on restart.
+                if (!t.crew.isEmpty()) {
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt));
+                }
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // The hyperspace ship never became crossable (should not happen - assembly is async but
                 // completes in a few ticks), or a restored snapshot could not be pasted. Give up: undo the
@@ -253,6 +322,30 @@ public final class ShipTransitManager {
     /** Number of ships currently in transit (hyperspace lanes in use). */
     public int inTransitCount() {
         return transits.size();
+    }
+
+    /** Number of arrived ships whose crew reseat is still retrying (0 once every jump's crew is re-seated). */
+    public int reseatingCount() {
+        return reseating.size();
+    }
+
+    /**
+     * Retry the crew reseat of every arrived ship. Each entry drops out when {@code reseatCrew} reports the
+     * crew re-seated (or nothing to seat), or after {@link #MAX_ARRIVAL_ATTEMPTS} retries of a re-assembly
+     * whose seat tiles never came up (the ship is already settled - the crew is simply not re-seated).
+     */
+    private void tickReseating() {
+        if (reseating.isEmpty()) {
+            return;
+        }
+        Iterator<PendingReseat> it = reseating.iterator();
+        while (it.hasNext()) {
+            PendingReseat r = it.next();
+            if (crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId)
+                    || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
+                it.remove();
+            }
+        }
     }
 
     /** Remaining transit distance (blocks) for {@code shipId}, or {@code -1} if it is not in transit. */

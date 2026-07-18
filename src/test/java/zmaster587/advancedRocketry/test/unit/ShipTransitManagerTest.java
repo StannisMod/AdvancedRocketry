@@ -57,10 +57,18 @@ public class ShipTransitManagerTest {
         int completeRestoredFailCount; // fail the restored paste this many times, then succeed
         NBTTagCompound snapshotToReturn; // what snapshotParked hands back (the re-cut stub)
         NBTTagCompound sourceSnapshotToReturn; // what snapshotSource hands back (the depart-time floor)
+        // Crew seam (option-A capture at depart, reseat at arrival). EMPTY crew by default, so every existing
+        // test sees no crew captured and no reseat entries - behaviorally identical to before this seam.
+        final List<UUID> crewToCapture = new ArrayList<>(); // captureCrew hands these back (empty => no crew)
+        int reseatFailCount;                                // fail reseatCrew this many times, then succeed
+        final List<String> captureCalls = new ArrayList<>();
+        final List<String> reseatCalls = new ArrayList<>();
+        final List<String> order = new ArrayList<>();       // shared call order: pins capture-before-depart
 
         @Override
         public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
             departs.add(srcSlotDim + "@" + tile.index);
+            order.add("depart");
             return failDepart ? null : tile.pos;
         }
 
@@ -92,6 +100,23 @@ public class ShipTransitManagerTest {
                 return null; // paste/assembly not up yet - retry next tick
             }
             return new BlockPos(0, 200, 0);
+        }
+
+        @Override
+        public List<UUID> captureCrew(int srcSlotDim, BlockPos srcAnchor, String shipId) {
+            captureCalls.add(srcSlotDim + "@" + shipId);
+            order.add("capture");
+            return new ArrayList<>(crewToCapture); // empty by default => existing tests get no crew
+        }
+
+        @Override
+        public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+            reseatCalls.add(targetSlotDim + "@" + shipId);
+            if (reseatFailCount > 0) {
+                reseatFailCount--;
+                return false; // seat tiles not up yet - retry next tick
+            }
+            return true;
         }
     }
 
@@ -449,5 +474,99 @@ public class ShipTransitManagerTest {
         mgr.importTransit(new TransitRecord("", cell(1), cell(2), 10L, 0L, 1L, new ArrayList<UUID>(),
                 new NBTTagCompound()));
         assertEquals("a blank-id record is dropped", 0, mgr.inTransitCount());
+    }
+
+    // ── Crew capture at depart + reseat at arrival (option A) ────────────────────────────────────────
+
+    @Test
+    public void captureRunsAtDepartAndCrewFlowsToTheOfflineGate() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID()); // one aboard crew member, captured at depart
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+        // crew-online mode, nobody online -> a transit whose captured crew is offline must pause.
+        mgr.setOfflineProgress(new OfflineProgress(OfflineProgress.Mode.CREW_ONLINE, id -> false));
+
+        int originDim = space.materialize(cell(1));
+        assertTrue(mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2),
+                ARRIVE_IN_ONE_TICK));
+
+        // captureCrew ran exactly once, and BEFORE the depart crossing cut the seat blocks.
+        assertEquals("capture invoked once at depart", 1, crosser.captureCalls.size());
+        assertEquals("crew captured before the depart crossing", "capture", crosser.order.get(0));
+        assertTrue("the depart crossing ran too", crosser.order.contains("depart"));
+
+        // The captured UUID reached the transit's crew list: the crew-online gate now reads it and, with the
+        // crew offline, PAUSES the flight - it would otherwise arrive this tick (ARRIVE_IN_ONE_TICK).
+        double before = mgr.remainingDistance("s");
+        mgr.tick();
+        assertTrue("captured crew keeps the transit alive (paused, not arrived)", mgr.isInTransit("s"));
+        assertEquals("a manned crew-online transit does not advance while its crew is offline",
+                before, mgr.remainingDistance("s"), 0.0);
+    }
+
+    @Test
+    public void arrivedShipRetriesReseatUntilDone() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID());
+        crosser.reseatFailCount = 2; // seat tiles not up for the first 2 reseat attempts, then succeed
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
+
+        mgr.tick(); // arrives this tick: the transit settles + is removed, but the crew reseat is pending
+
+        assertFalse("the ship has physically arrived (no longer in transit)", mgr.isInTransit("s"));
+        assertEquals("the transit is off the in-flight map at arrival", 0, mgr.inTransitCount());
+        assertEquals("an arrived ship with crew is awaiting a reseat", 1, mgr.reseatingCount());
+        assertEquals("first reseat attempt ran on the arrival tick", 1, crosser.reseatCalls.size());
+
+        mgr.tick(); // reseat attempt 2 fails
+        assertEquals("still awaiting reseat after the second failed attempt", 1, mgr.reseatingCount());
+        mgr.tick(); // reseat attempt 3 succeeds -> drops out of the reseat list
+
+        assertEquals("the crew reseat succeeded on the third attempt", 0, mgr.reseatingCount());
+        assertEquals("the reseat was retried each tick until it took", 3, crosser.reseatCalls.size());
+    }
+
+    @Test
+    public void crewlessArrivalNeverEntersTheReseatList() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser(); // crewToCapture empty => captureCrew returns no crew
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
+
+        mgr.tick(); // arrives this tick
+
+        assertEquals("the ship arrived and left the in-flight map", 0, mgr.inTransitCount());
+        assertEquals("a crewless transit is fully done at arrival - no reseat pending, no strand",
+                0, mgr.reseatingCount());
+    }
+
+    @Test
+    public void abortedDepartReseatsTheCrewOnOrigin() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID()); // captureCrew dismounts a crew member at depart
+        crosser.failDepart = true;                    // ...then the depart crossing fails -> jump aborts
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        boolean began = mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2),
+                ARRIVE_IN_ONE_TICK);
+
+        assertFalse("depart crossing failed => jump aborted", began);
+        assertFalse(mgr.isInTransit("s"));
+        // The crew was dismounted by captureCrew before the (failed) cut; the abort must re-seat them onto the
+        // still-present origin ship rather than leaving the pilot ejected.
+        assertFalse("an aborted jump re-seats the crew it dismounted", crosser.reseatCalls.isEmpty());
     }
 }

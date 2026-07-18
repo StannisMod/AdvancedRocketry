@@ -590,6 +590,80 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
             return;
         }
+        // seat-mount-at <dim> <sx> <sy> <sz> — like seat-mount, but bind the dummy to an EXPLICIT (subspace)
+        // seat position instead of scanning loadedTileEntityList. Used by the crew-transit e2e, whose ship
+        // sits in a pool cell where a loadedTileEntityList scan is unreliable (the seat pos comes from
+        // transit-setup-piloted, which force-loaded the shipyard to find it).
+        if (args.length >= 5 && "seat-mount-at".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos sp = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            zmaster587.advancedRocketry.entity.EntityDummy dummy =
+                    new zmaster587.advancedRocketry.entity.EntityDummy(
+                            world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+            dummy.setSeatPos(sp); // EntityDummy.onUpdate glues it to the seat's live world position next tick
+            world.spawnEntity(dummy);
+            send(sender, "{\"ok\":true,\"dummyId\":" + dummy.getEntityId() + "}");
+            return;
+        }
+        // find-seat <dim> <x> <y> <z> — after an async ship assembly completes, locate the ship's pilot seat in
+        // its (force-loaded) subspace shipyard and report the seat's SUBSPACE pos + the ship's WORLD pos, so a
+        // crew test can seat a bot deterministically. Mirrors flightComputerAt's force-load-then-scan idiom.
+        if (args.length >= 5 && "find-seat".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            int ax = parseIntOr(args[2], 0), ay = parseIntOr(args[3], 0), az = parseIntOr(args[4], 0);
+            net.minecraft.util.math.AxisAlignedBB yard =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(
+                            world, ax + 0.5, ay + 0.5, az + 0.5);
+            net.minecraft.util.math.BlockPos seatSub = null;
+            if (yard != null) {
+                int minX = (int) yard.minX, maxX = (int) yard.maxX;
+                int minZ = (int) yard.minZ, maxZ = (int) yard.maxZ;
+                for (int cx = minX >> 4; cx <= (maxX >> 4); cx++) {
+                    for (int cz = minZ >> 4; cz <= (maxZ >> 4); cz++) {
+                        world.getChunkProvider().provideChunk(cx, cz);
+                    }
+                }
+                outer:
+                for (int bx = minX; bx < maxX; bx++) {
+                    for (int by = 0; by < 256; by++) {
+                        for (int bz = minZ; bz < maxZ; bz++) {
+                            net.minecraft.util.math.BlockPos p = new net.minecraft.util.math.BlockPos(bx, by, bz);
+                            if (world.getTileEntity(p) instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
+                                seatSub = p;
+                                break outer;
+                            }
+                        }
+                    }
+                }
+            }
+            // The bot's spawn point: the SEAT's live world position (keyed by its subspace block - the world
+            // anchor is not a managed block, so getShipWorldPosition/getSeatWorldPosition need the subspace pos).
+            double[] shipWorld = seatSub == null ? null
+                    : zmaster587.advancedRocketry.integration.vs.VSIntegration.getSeatWorldPosition(world, seatSub);
+            StringBuilder sb = new StringBuilder("{\"ok\":true");
+            if (seatSub != null) {
+                sb.append(",\"seatFound\":true,\"seatX\":").append(seatSub.getX())
+                        .append(",\"seatY\":").append(seatSub.getY()).append(",\"seatZ\":").append(seatSub.getZ());
+            } else {
+                sb.append(",\"seatFound\":false");
+            }
+            if (shipWorld != null) {
+                sb.append(",\"shipWorldX\":").append(shipWorld[0])
+                        .append(",\"shipWorldY\":").append(shipWorld[1])
+                        .append(",\"shipWorldZ\":").append(shipWorld[2]);
+            }
+            sb.append("}");
+            send(sender, sb.toString());
+            return;
+        }
         // shiplocal <off|observe|takeover|status> — arm the Entity.move takeover for the first
         // player, or report it. "observe" fires the hook without cancelling (proves the injection
         // lives); "takeover" cancels the vanilla move, which also suppresses every hook queued
@@ -937,6 +1011,66 @@ public class TestProbeCommand extends CommandBase {
                     w, new net.minecraft.util.math.BlockPos(1, 65, 1));
             send(sender, "{\"ok\":true,\"originDim\":" + originDim
                     + ",\"anchorX\":1,\"anchorY\":65,\"anchorZ\":1}");
+            return;
+        }
+        // transit-setup-piloted: like transit-setup, but the origin cell holds a PILOTED tier-2 ship
+        // (advancedFlightComputer + an AFC-linked pilotSeat on a small deck) so the crew-transit e2e can seat
+        // a bot and carry it through the jump. Returns the ship anchor, the ship's world position (for
+        // `space enter`), and the pilot seat's post-assembly subspace position (for `seat-mount-at`).
+        if (args.length >= 1 && "transit-setup-piloted".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerPool(2);
+            zmaster587.advancedRocketry.space.HyperspaceWorld.register();
+            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
+                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                    () -> (long) server.getTickCounter(),
+                    new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                            zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
+            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
+                    transitMgr,
+                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                    new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
+            transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
+            int originDim = transitMgr.materialize(transitOrigin);
+            net.minecraft.world.WorldServer w = net.minecraftforge.common.DimensionManager.getWorld(originDim);
+            if (w == null) {
+                send(sender, "{\"error\":\"origin cell world not loaded\"}");
+                return;
+            }
+            net.minecraft.block.Block afcBlock = ForgeRegistries.BLOCKS.getValue(
+                    new ResourceLocation("advancedrocketry", "advancedFlightComputer"));
+            net.minecraft.block.Block pilotSeatBlock = ForgeRegistries.BLOCKS.getValue(
+                    new ResourceLocation("advancedrocketry", "pilotSeat"));
+            if (afcBlock == null || pilotSeatBlock == null) {
+                send(sender, "{\"error\":\"missing advancedFlightComputer / pilotSeat block\"}");
+                return;
+            }
+            // A small 3x3 stone deck with the AFC and an AFC-linked pilot seat on top, assembled into a ship.
+            net.minecraft.block.state.IBlockState stone = net.minecraft.init.Blocks.STONE.getDefaultState();
+            for (int dx = 0; dx < 3; dx++) {
+                for (int dz = 0; dz < 3; dz++) {
+                    w.setBlockState(new net.minecraft.util.math.BlockPos(dx, 64, dz), stone);
+                }
+            }
+            net.minecraft.util.math.BlockPos afcBuild = new net.minecraft.util.math.BlockPos(0, 65, 0);
+            net.minecraft.util.math.BlockPos seatBuild = new net.minecraft.util.math.BlockPos(1, 65, 0);
+            w.setBlockState(afcBuild, afcBlock.getDefaultState());
+            w.setBlockState(seatBuild, pilotSeatBlock.getDefaultState());
+            // Link the seat to the AFC while both are still on the pad (the assembler's job in real play); the
+            // relative offset is invariant under the ship relocation, so capture/reseat can re-match the seat.
+            TileEntity seatTe = w.getTileEntity(seatBuild);
+            if (!(seatTe instanceof zmaster587.advancedRocketry.tile.TilePilotSeat)) {
+                send(sender, "{\"error\":\"pilot seat tile missing after placement\"}");
+                return;
+            }
+            ((zmaster587.advancedRocketry.tile.TilePilotSeat) seatTe).linkToFlightComputer(afcBuild);
+            net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(1, 64, 1);
+            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(w, anchor);
+            // Assembly is ASYNC (queued on the physics thread), so the seat + ship world pos are NOT queryable
+            // yet. The caller polls `vs ship-count-all`/`load-ships`/`ship-count` for the ship, then reads the
+            // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> 1 64 1`.
+            send(sender, "{\"ok\":true,\"originDim\":" + originDim
+                    + ",\"anchorX\":1,\"anchorY\":64,\"anchorZ\":1}");
             return;
         }
         // transit-begin <originDim> <ax> <ay> <az>: start the jump (arrival retries until the async

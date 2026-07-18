@@ -389,6 +389,49 @@ public final class VSIntegration {
         return null;
     }
 
+    /**
+     * The SUBSPACE {@link BlockPos} of the {@code TileAdvancedFlightComputer} on the VS ship whose world BB
+     * contains {@code (x,y,z)}, or {@code null} when VS is absent / no ship is there / it carries no flight
+     * computer. Same queryable, force-loaded subspace scan as {@link #shipBlockAt}, but matched by tile type
+     * instead of "first non-air". The transit depart path holds only a world-frame ship anchor (unlike entry
+     * and descent, which run from the AFC tile itself and get its position for free), so it must recover the
+     * AFC block - which {@code CrewTransfer.capture} filters the ship's seats against - by scanning the
+     * shipyard. Force-loading the far subspace chunks first also makes a subsequent per-seat
+     * {@code getTileEntity(seatPos)} resolve, so a depart-time crew capture works even though the nearby
+     * pilot only chunk-loaded the ship's RENDER region, not its subspace shipyard.
+     */
+    public static BlockPos flightComputerAt(net.minecraft.world.WorldServer world,
+            double x, double y, double z) {
+        if (!isAvailable()) {
+            return null;
+        }
+        AxisAlignedBB yard = shipyardBoundsAt(world, x, y, z);
+        if (yard == null) {
+            return null;
+        }
+        int minX = (int) yard.minX, maxX = (int) yard.maxX;
+        int minZ = (int) yard.minZ, maxZ = (int) yard.maxZ;
+        // Force-load the shipyard chunks first (a headless server holds the physo loaded but may not
+        // chunk-load its far subspace region, so an un-loaded scan finds no tile) - same reason as shipBlockAt.
+        for (int cx = minX >> 4; cx <= (maxX >> 4); cx++) {
+            for (int cz = minZ >> 4; cz <= (maxZ >> 4); cz++) {
+                world.getChunkProvider().provideChunk(cx, cz);
+            }
+        }
+        for (int wx = minX; wx < maxX; wx++) {
+            for (int wy = 0; wy < 256; wy++) {
+                for (int wz = minZ; wz < maxZ; wz++) {
+                    BlockPos p = new BlockPos(wx, wy, wz);
+                    net.minecraft.tileentity.TileEntity te = world.getTileEntity(p);
+                    if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+                        return p;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private static int[] scanShipBlockYBand(World world, int minX, int maxX, int minZ, int maxZ) {
         // Force-load the shipyard chunks first so the scan reads the ship's real blocks, not an
         // unloaded all-air region (a headless server may hold the physo loaded but not chunk-load its
