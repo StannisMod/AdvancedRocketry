@@ -383,6 +383,11 @@ public class KeyBindings {
         // deck even when the mouse is captured by a screen.
         if (player != null) {
             DeckLook.clientTick(player);
+            // Subspace census: record every tick what the CLIENT world holds at the nearby ship's
+            // subspace coordinates. Sampled here, not in the travel hook, so it keeps reporting
+            // through the phases where the client is NOT resolving (server-held fallback) - which
+            // is exactly when the question "does this client even have the ship's chunks?" matters.
+            zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.clientCensusTick(player);
         }
         // Don't steer while a GUI is open. (We intentionally do NOT require
         // inGameHasFocus — losing window focus shouldn't freeze the controls,

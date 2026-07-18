@@ -295,15 +295,26 @@ public final class ShipFrameTravel {
             // HULL-STAND while the body still touches the hull, or release to vanilla when it does
             // not. A jump/fall over a deck always keeps its floor within reach and never trips
             // this; a hatch entry re-captures by first contact the moment a real deck is below.
+            //
+            // EXCEPT inside the ship's own block region (contract C12): an interior body's deck
+            // can legitimately sit farther than the probe's reach while deck gravity is still
+            // cancelling the velocity it entered with (a fast interior entry rises away from the
+            // deck in the ship frame before falling back). Interior = the deck's; releasing it
+            // here handed a just-captured interior body straight back to world gravity.
             if (!hasDeckBelowFor(entity, state.shipId)) {
-                if (hullContactFor(entity, state.shipId)) {
-                    state.hullStand = true;
-                    clearPersistedAnchor(entity); // hull-stand is world semantics; only ABOARD relogs
-                    logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
-                    return true;
+                AxisAlignedBB own = VSIntegration.subspaceStayRegion(entity.world, state.shipId, 0.0);
+                boolean interior = own != null
+                        && own.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]));
+                if (!interior) {
+                    if (hullContactFor(entity, state.shipId)) {
+                        state.hullStand = true;
+                        clearPersistedAnchor(entity); // hull-stand is world semantics; only ABOARD relogs
+                        logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
+                        return true;
+                    }
+                    release(entity, "noDeckBelow");
+                    return false;
                 }
-                release(entity, "noDeckBelow");
-                return false;
             }
             return true;
         }
@@ -319,6 +330,34 @@ public final class ShipFrameTravel {
         }
         String candidate = firstContactCandidate(entity);
         boolean hullStand = false;
+        if (candidate == null) {
+            // Interior boarding (contract C12): a body INSIDE a ship's own subspace block region
+            // with a deck below it IN THAT SHIP'S FRAME is the deck's to claim even without
+            // standing support - ship-frame gravity can seat it (a body that stopped flying
+            // inside the hull, fell in through a hatch, or relogged there). Without this the
+            // interior of a non-upright ship belonged to WORLD gravity: the body was either
+            // pinned to the interior world-floor by the outer-hull fallback (a world camera on a
+            // "captured" body) or fell clean out through an opening. Checked BEFORE that
+            // fallback - hull contact from INSIDE must not demote an interior body to world
+            // semantics. The region is the ship's own block bounds (margin 0), NOT the grown
+            // stay region: a bystander in the surrounding airspace stays world-frame (C9), and
+            // the terrain veto above already keeps anyone standing on the ground out.
+            for (String shipId : VSIntegration.shipIdsAt(
+                    entity.world, entity.posX, entity.posY, entity.posZ)) {
+                double[] sub = VSIntegration.toShipFrameFor(
+                        entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+                if (sub == null) {
+                    continue;
+                }
+                AxisAlignedBB region = VSIntegration.subspaceStayRegion(entity.world, shipId, 0.0);
+                if (region != null
+                        && region.contains(new net.minecraft.util.math.Vec3d(sub[0], sub[1], sub[2]))
+                        && hasDeckBelowFor(entity, shipId)) {
+                    candidate = shipId;
+                    break;
+                }
+            }
+        }
         if (candidate == null) {
             // No deck under the body in any candidate's frame - but its box may still be meeting a
             // ship's OUTER hull (contract C11: the world-facing surface of a non-upright ship, or
@@ -481,6 +520,7 @@ public final class ShipFrameTravel {
         if (entity == null || shipId == null) {
             return false;
         }
+        seedAttempts++;
         // NEVER force-capture a body in an excluded state (contract C4): handles() would release it
         // right back next tick, and the re-sent seed then snaps it to the deck point again - a
         // per-tick teleport war that froze a creative-FLYING ex-pilot mid-air at the seat column.
@@ -488,6 +528,8 @@ public final class ShipFrameTravel {
         if (entity instanceof EntityLivingBase) {
             String excluded = excludedStateOf((EntityLivingBase) entity);
             if (excluded != null) {
+                seedRefusals++;
+                lastSeedRefusal = excluded;
                 if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
                     zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed "
                             + "REFUSED (" + excluded + ") remote=" + entity.world.isRemote
@@ -501,6 +543,7 @@ public final class ShipFrameTravel {
         // client never has to guess by containment among overlapping world boxes.
         double[] world = VSIntegration.toWorldFrameFor(entity.world, shipId, subX, subY, subZ);
         if (world == null) {
+            seedNotLoaded++;
             // Playtest trace ([FF-TRACE/CAP], -Dadvancedrocketry.tests=true): the anchor ship is not
             // loaded on this side (yet). No-op; the dismount window re-sends.
             if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
@@ -510,6 +553,7 @@ public final class ShipFrameTravel {
             }
             return false;
         }
+        seedOks++;
         if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
             zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/CAP] seed OK ship="
                     + shipId + " world=(" + world[0] + "," + world[1] + "," + world[2] + ")");
@@ -657,6 +701,181 @@ public final class ShipFrameTravel {
             verdict = candidate != null;
         }
         m.put("verdict", verdict);
+        return m;
+    }
+
+    // ---- Subspace census: does THIS side's world actually CONTAIN the ship's subspace blocks? ----
+    //
+    // Every deck probe, collision sweep and interior gate reads block states at the ship's SUBSPACE
+    // coordinates (the shipyard region, far from the ship's world position). A side whose world never
+    // received those chunks answers every one of those reads with "air": sweeps see zero obstacles,
+    // resolved bodies tunnel through their own deck, and crew mechanics silently degrade to the
+    // server-held fallback. The census tells that WORLD-CONTENT failure (chunkLoaded=false / nonAir=0)
+    // apart from a sweep defect (blocks present, collision boxes still not found). The client updates
+    // the statics every tick near a ship (a test reads them in the client JVM); the server answers the
+    // same census on demand through the `/artest vs subspace-census` probe as the control side.
+
+    /** Census samples taken on this side since the game started (proves the sampler itself runs). */
+    public static volatile long censusTicks = 0L;
+    /** The ship the last census resolved against ("" until first sample). */
+    public static volatile String censusShipId = "";
+    /** Whether that census subject had a live capture state on this side. */
+    public static volatile boolean censusTracked = false;
+    /** The subject's feet block position in the ship's subspace, "x,y,z". */
+    public static volatile String censusSubPos = "";
+    /** Whether this side's world has the chunk at that subspace position loaded. */
+    public static volatile boolean censusChunkLoaded = false;
+    /** Non-air block states in the 7x7x7 cube around the subspace feet position; -1 until sampled. */
+    public static volatile int censusNonAir = -1;
+    /** Collision boxes this side's world returns for the subject's subspace feet box grown one block
+     *  down - the exact instrument class the travel sweep uses; -1 until sampled. */
+    public static volatile int censusCollisionBoxes = -1;
+    /** Seed outcomes on this side ({@link #seedShipFrameCapture}): a dismount whose seed never
+     *  lands (refused for the whole hold window, or the ship missing on this side) hands the body
+     *  to vanilla's world-frame dismount spot - which on a non-upright ship maps OFF the deck. */
+    public static volatile long seedAttempts = 0L;
+    public static volatile long seedOks = 0L;
+    public static volatile long seedRefusals = 0L;
+    public static volatile long seedNotLoaded = 0L;
+    public static volatile String lastSeedRefusal = "";
+    /** The ship's own subspace block region (margin 0), "minX,minY,minZ..maxX,maxY,maxZ". */
+    public static volatile String censusRegion = "";
+    /** Non-air block states in the WHOLE ship region - a body-position-INDEPENDENT sample, so a
+     *  drop to zero at a fixed region means the blocks themselves vanished from this side's world
+     *  (not that the body wandered into air); -1 until sampled or when the region is too large. */
+    public static volatile int censusRegionNonAir = -1;
+
+    /** Per-client-tick census update; a no-op away from ships and on the server side. */
+    public static void clientCensusTick(EntityLivingBase entity) {
+        if (entity == null || entity.world == null || !entity.world.isRemote) {
+            return;
+        }
+        Map<String, Object> m = subspaceCensusFor(entity);
+        if (m == null) {
+            return;
+        }
+        censusTicks++;
+        censusShipId = String.valueOf(m.get("shipId"));
+        censusTracked = Boolean.TRUE.equals(m.get("tracked"));
+        censusSubPos = String.valueOf(m.get("subPos"));
+        censusChunkLoaded = Boolean.TRUE.equals(m.get("chunkLoaded"));
+        censusNonAir = ((Number) m.get("nonAir")).intValue();
+        censusCollisionBoxes = ((Number) m.get("collisionBoxes")).intValue();
+        censusRegion = String.valueOf(m.get("region"));
+        censusRegionNonAir = ((Number) m.get("regionNonAir")).intValue();
+    }
+
+    /**
+     * The census itself, side-neutral and READ-ONLY: resolve the entity's position into a ship's
+     * subspace (its capture anchor when tracked, else the ship whose region contains it) and measure
+     * what this side's world holds there. {@code null} when no ship claims the position on this side
+     * or its transform is unavailable.
+     */
+    public static Map<String, Object> subspaceCensusFor(EntityLivingBase entity) {
+        return subspaceCensusFor(entity, false);
+    }
+
+    /**
+     * @param deep also sweep the region grown by 8 for iron blocks ({@code ironNear}) - locates
+     *             fixture deck blocks that were relocated OUTSIDE the ship's reported bounds.
+     *             Probe-only cost; the per-tick client sampler passes false.
+     */
+    public static Map<String, Object> subspaceCensusFor(EntityLivingBase entity, boolean deep) {
+        if (entity == null || entity.world == null || !VSIntegration.isAvailable()) {
+            return null;
+        }
+        ShipFrameState state = STATE.get(entity);
+        String shipId = state != null ? state.shipId : null;
+        if (shipId == null) {
+            List<String> ids = VSIntegration.shipIdsAt(
+                    entity.world, entity.posX, entity.posY, entity.posZ);
+            shipId = ids.isEmpty() ? null : ids.get(0);
+        }
+        if (shipId == null) {
+            return null;
+        }
+        double[] sub = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (sub == null) {
+            return null;
+        }
+        World world = entity.world;
+        BlockPos feet = new BlockPos(
+                MathHelper.floor(sub[0]), MathHelper.floor(sub[1]), MathHelper.floor(sub[2]));
+        int nonAir = 0;
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dy = -3; dy <= 3; dy++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    if (!world.isAirBlock(feet.add(dx, dy, dz))) {
+                        nonAir++;
+                    }
+                }
+            }
+        }
+        double halfWidth = entity.width / 2.0;
+        AxisAlignedBB feetBox = new AxisAlignedBB(
+                sub[0] - halfWidth, sub[1], sub[2] - halfWidth,
+                sub[0] + halfWidth, sub[1] + entity.height, sub[2] + halfWidth)
+                .expand(0.0, -1.0, 0.0);
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("isRemote", world.isRemote);
+        m.put("shipId", shipId);
+        m.put("tracked", state != null);
+        m.put("subPos", feet.getX() + "," + feet.getY() + "," + feet.getZ());
+        m.put("chunkLoaded", world.isBlockLoaded(feet));
+        m.put("nonAir", nonAir);
+        m.put("collisionBoxes", world.getCollisionBoxes(null, feetBox).size());
+        // The fixed-point half of the census: the whole ship block region, independent of where the
+        // body is. Content vanishing HERE means the ship's blocks left this side's world; a zero in
+        // the body-relative counts alone only means the body wandered into air.
+        m.put("shipBlocks", VSIntegration.shipBlockCount(world, shipId));
+        AxisAlignedBB region = VSIntegration.subspaceStayRegion(world, shipId, 0.0);
+        if (region == null) {
+            m.put("region", "");
+            m.put("regionNonAir", -1);
+        } else {
+            BlockPos lo = new BlockPos(MathHelper.floor(region.minX),
+                    MathHelper.floor(region.minY), MathHelper.floor(region.minZ));
+            BlockPos hi = new BlockPos(MathHelper.ceil(region.maxX),
+                    MathHelper.ceil(region.maxY), MathHelper.ceil(region.maxZ));
+            long volume = (long) (hi.getX() - lo.getX() + 1) * (hi.getY() - lo.getY() + 1)
+                    * (hi.getZ() - lo.getZ() + 1);
+            int regionNonAir = -1;
+            if (volume > 0 && volume <= 8192) {
+                regionNonAir = 0;
+                for (BlockPos p : BlockPos.getAllInBoxMutable(lo, hi)) {
+                    if (!world.isAirBlock(p)) {
+                        regionNonAir++;
+                    }
+                }
+            }
+            m.put("region", lo.getX() + "," + lo.getY() + "," + lo.getZ()
+                    + ".." + hi.getX() + "," + hi.getY() + "," + hi.getZ());
+            m.put("regionNonAir", regionNonAir);
+            if (deep) {
+                // Iron blocks in the grown neighbourhood: fixture deck blocks that DID reach the
+                // shipyard but landed outside the ship's reported bounds show up here.
+                BlockPos glo = lo.add(-8, -8, -8);
+                BlockPos ghi = hi.add(8, 8, 8);
+                int ironNear = 0;
+                int ilx = Integer.MAX_VALUE, ily = Integer.MAX_VALUE, ilz = Integer.MAX_VALUE;
+                int ihx = Integer.MIN_VALUE, ihy = Integer.MIN_VALUE, ihz = Integer.MIN_VALUE;
+                for (BlockPos p : BlockPos.getAllInBoxMutable(glo, ghi)) {
+                    if (world.getBlockState(p).getBlock() == net.minecraft.init.Blocks.IRON_BLOCK) {
+                        ironNear++;
+                        if (p.getX() < ilx) ilx = p.getX();
+                        if (p.getY() < ily) ily = p.getY();
+                        if (p.getZ() < ilz) ilz = p.getZ();
+                        if (p.getX() > ihx) ihx = p.getX();
+                        if (p.getY() > ihy) ihy = p.getY();
+                        if (p.getZ() > ihz) ihz = p.getZ();
+                    }
+                }
+                m.put("ironNear", ironNear);
+                m.put("ironBox", ironNear == 0 ? "" : ilx + "," + ily + "," + ilz
+                        + ".." + ihx + "," + ihy + "," + ihz);
+            }
+        }
         return m;
     }
 

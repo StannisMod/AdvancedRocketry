@@ -366,6 +366,13 @@ public final class VSIntegration {
                 ? null : VSBridge.subspaceStayRegion(world, shipId, margin);
     }
 
+    /** How many blocks the ship's own data says it owns ({@code ShipData.blockPositions}), or -1
+     *  when VS is absent / the ship is not loaded on this side. The authoritative assembled-block
+     *  count — a fixture that should have N blocks but reports fewer lost them at assembly. */
+    public static int shipBlockCount(World world, String shipId) {
+        return (!isAvailable() || world == null) ? -1 : VSBridge.shipBlockCount(world, shipId);
+    }
+
     /**
      * Read-only diagnostic of what Valkyrien Skies already knows about {@code entity}'s relationship
      * to a ship: its last-touched ship, whether VS counts it as standing on that ship

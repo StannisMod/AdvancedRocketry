@@ -675,6 +675,41 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // subspace-census [<dim> <entityId>] - READ-ONLY. What the SERVER world holds at the subject's
+        // position mapped into its ship's subspace: chunk loaded, non-air block count, collision boxes.
+        // The server-side control for the client's per-tick census statics (ShipFrameTravel.census*):
+        // server rich + client empty = the client never received the ship's subspace chunks; both empty
+        // = the subspace region itself is wrong; both rich = the collision sweep is at fault.
+        if (args.length >= 1 && "subspace-census".equalsIgnoreCase(args[0])) {
+            net.minecraft.entity.Entity subject;
+            if (args.length >= 3) {
+                net.minecraft.world.WorldServer w = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+                subject = w == null ? null : w.getEntityByID(parseIntOr(args[2], -1));
+            } else {
+                java.util.List<EntityPlayerMP> ps = sender.getServer() == null
+                        ? java.util.Collections.<EntityPlayerMP>emptyList()
+                        : sender.getServer().getPlayerList().getPlayers();
+                subject = ps.isEmpty() ? null : ps.get(0);
+            }
+            if (!(subject instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"no living subject\"}");
+                return;
+            }
+            Map<String, Object> census =
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.subspaceCensusFor(
+                            (net.minecraft.entity.EntityLivingBase) subject, true);
+            if (census == null) {
+                send(sender, "{\"ok\":true,\"aboardShip\":false}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("aboardShip", true);
+            m.putAll(census);
+            m.put("entityId", subject.getEntityId());
+            send(sender, jsonMap(m));
+            return;
+        }
         // shipframe-stats - READ-ONLY. Whether the ship-frame movement hook is actually running, and
         // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
         // that applied and declined every entity look identical from outside the JVM; these counters
@@ -832,7 +867,8 @@ public class TestProbeCommand extends CommandBase {
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
                 + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>"
-                + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]\"}");
+                + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
+                + "|subspace-census [<dim> <id>]\"}");
     }
 
     /** Resolve (loading if needed) a {@link net.minecraft.world.WorldServer} for VS ship probes. */

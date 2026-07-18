@@ -872,6 +872,16 @@ final class VSBridge {
         }
     }
 
+    /** {@code ShipData.blockPositions.size()} for the loaded ship, or -1. */
+    static int shipBlockCount(World world, String shipId) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            return physo == null ? -1 : physo.getShipData().getBlockPositions().size();
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     /** The loaded ship in {@code world} whose data matches {@code target}, or null. */
     private static PhysicsObject loadedPhysoByUuid(World world, ShipData target) {
         for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
