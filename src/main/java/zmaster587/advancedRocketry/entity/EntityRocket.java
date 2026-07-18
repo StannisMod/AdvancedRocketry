@@ -2510,39 +2510,66 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         List<TileSatelliteHatch> satelliteHatches = storage.getSatelliteHatches();
 
         for (TileSatelliteHatch tile : satelliteHatches) {
-            SatelliteBase satellite = tile.getSatellite();
-            if (satellite == null) {
-                ItemStack stack = tile.getStackInSlot(0);
-                if (!stack.isEmpty() && stack.getItem() == AdvancedRocketryItems.itemSpaceStation) {
-                    StorageChunk storage = ((ItemPackedStructure) stack.getItem()).getStructure(stack);
-                    ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStation(ItemStationChip.getUUID(stack));
+            deploySatelliteFromHatch(tile);
+        }
+    }
 
-                    //in case of no NBT data or the like
-                    if (spaceObject == null) {
-                        tile.setInventorySlotContents(0, ItemStack.EMPTY);
-                        continue;
-                    }
+    /**
+     * Deploys the contents of a single satellite hatch on orbit reach: a station
+     * chassis unpacks its module, a resolvable satellite is added to the
+     * destination dimension, and a chassis whose type no longer resolves reports
+     * the failure to the pilot (C151) instead of silently vanishing. Extracted
+     * from {@link #unpackSatellites()} so the deploy path is drivable one hatch at
+     * a time from tests; behaviour is unchanged.
+     */
+    public void deploySatelliteFromHatch(TileSatelliteHatch tile) {
+        SatelliteBase satellite = tile.getSatellite();
+        if (satellite == null) {
+            ItemStack stack = tile.getStackInSlot(0);
+            if (!stack.isEmpty() && stack.getItem() == AdvancedRocketryItems.itemSpaceStation) {
+                StorageChunk storage = ((ItemPackedStructure) stack.getItem()).getStructure(stack);
+                ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStation(ItemStationChip.getUUID(stack));
 
-                    SpaceObjectManager.getSpaceManager().moveStationToBody(spaceObject,
-                            DimensionManager.getEffectiveDimId(this.world.provider.getDimension(), getPosition()).getId());
-
-                    //Vector3F<Integer> spawn = spaceObject.getSpawnLocation();
-
-                    spaceObject.onModuleUnpack(storage);
+                //in case of no NBT data or the like
+                if (spaceObject == null) {
                     tile.setInventorySlotContents(0, ItemStack.EMPTY);
+                    return;
                 }
-            } else {
-                int destinationId = storage.getDestinationDimId(world.provider.getDimension(), (int) posX, (int) posZ);
-                DimensionProperties properties = DimensionManager.getEffectiveDimId_byID(destinationId, this.getPosition());
-                int world2;
-                if (destinationId == ARConfiguration.getCurrentConfig().spaceDimId || destinationId == Constants.INVALID_PLANET)
-                    world2 = properties.getId();
-                else
-                    world2 = destinationId;
 
-                properties.addSatellite(satellite, world2, world.isRemote);
+                SpaceObjectManager.getSpaceManager().moveStationToBody(spaceObject,
+                        DimensionManager.getEffectiveDimId(this.world.provider.getDimension(), getPosition()).getId());
+
+                //Vector3F<Integer> spawn = spaceObject.getSpawnLocation();
+
+                spaceObject.onModuleUnpack(storage);
                 tile.setInventorySlotContents(0, ItemStack.EMPTY);
+            } else if (!stack.isEmpty() && !world.isRemote) {
+                // C151: getSatellite() returned null for a non-station chassis — a
+                // satellite whose stored type no longer resolves (e.g. a mod/type was
+                // removed). It can't be deployed; instead of silently doing nothing,
+                // tell the pilot and leave the chassis in the hatch (retrievable).
+                AdvancedRocketry.logger.warn("Satellite in hatch could not be deployed"
+                        + " (unresolved type) at " + tile.getPos() + " dim "
+                        + world.provider.getDimension());
+                for (Entity passenger : getPassengers()) {
+                    if (passenger instanceof EntityPlayer) {
+                        ((EntityPlayer) passenger).sendMessage(
+                                new net.minecraft.util.text.TextComponentTranslation(
+                                        "msg.rocket.satelliteDeployFailed"));
+                    }
+                }
             }
+        } else {
+            int destinationId = storage.getDestinationDimId(world.provider.getDimension(), (int) posX, (int) posZ);
+            DimensionProperties properties = DimensionManager.getEffectiveDimId_byID(destinationId, this.getPosition());
+            int world2;
+            if (destinationId == ARConfiguration.getCurrentConfig().spaceDimId || destinationId == Constants.INVALID_PLANET)
+                world2 = properties.getId();
+            else
+                world2 = destinationId;
+
+            properties.addSatellite(satellite, world2, world.isRemote);
+            tile.setInventorySlotContents(0, ItemStack.EMPTY);
         }
     }
 

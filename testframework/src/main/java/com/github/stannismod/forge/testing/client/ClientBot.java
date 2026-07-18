@@ -357,6 +357,33 @@ public final class ClientBot implements Closeable {
         return assertOk(execute(command));
     }
 
+    /**
+     * Invokes the tile's libVulpes {@code getModules(int, EntityPlayer)} on the
+     * client thread and reports {@code threw} — whether building its modular GUI
+     * throws. Pins a client-side GUI-build crash without needing the multiblock
+     * assembled (which the GUI-open path would otherwise require).
+     */
+    public JsonObject tileModulesThrows(int x, int y, int z) throws IOException {
+        JsonObject command = command("tile_modules_throws");
+        command.addProperty("x", x);
+        command.addProperty("y", y);
+        command.addProperty("z", z);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Evaluates a no-arg reflective chain on the client (first method static on
+     * {@code className}, each next called on the prior result). Reports
+     * {@code result} and, when the final value is an array/Collection/Map, its
+     * {@code size}. A framework-agnostic client-state probe.
+     */
+    public JsonObject invokeStaticChain(String className, String methods) throws IOException {
+        JsonObject command = command("invoke_static_chain");
+        command.addProperty("class", className);
+        command.addProperty("methods", methods);
+        return assertOk(execute(command));
+    }
+
     public void closeScreen() throws IOException {
         assertOk(execute(command("close_screen")));
     }

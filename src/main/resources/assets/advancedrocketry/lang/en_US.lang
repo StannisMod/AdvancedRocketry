@@ -391,6 +391,7 @@ commands.advancedrocketry.weather.usage=/advancedrocketry weather <clear|rain|th
 commands.advancedrocketry.weather.invalid=Current dimension (%s) is not an Advanced Rocketry planet!
 
 msg.crystalliser.gravityTooHigh=Gravity is not low enough!
+msg.rocket.satelliteDeployFailed=A satellite could not be deployed: its type is no longer available. The chassis was left in the hatch.
 msg.observetory.scan.tooltip=Scans for new asteroids, consumes 100 distance data
 msg.observetory.scan.button=Scan!
 msg.observetory.text.asteroids=Asteroids

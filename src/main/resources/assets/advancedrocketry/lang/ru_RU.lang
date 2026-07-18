@@ -248,6 +248,7 @@ key.toggleJetpack=Переключить реактивный ранец
 
 enchantment.advancedrocketry.spacebreathing.desc=Позволяет сделать компоненты брони герметичными
 
+msg.rocket.satelliteDeployFailed=Спутник не удалось развернуть: его тип больше недоступен. Корпус остался в отсеке.
 msg.observetory.scan.tooltip=Поиск новых астероидов, потребляет 100 единиц данных расстояния
 msg.observetory.scan.button=Сканировать!
 msg.observetory.text.asteroids=Астероиды

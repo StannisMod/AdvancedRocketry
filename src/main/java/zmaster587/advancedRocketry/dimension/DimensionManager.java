@@ -518,6 +518,13 @@ public class DimensionManager implements IGalaxy {
         knownPlanets.clear();
         overworldProperties.resetProperties();
         hasBeenInitialized = false;
+        // C126: progression flags are process-global statics read from a world's
+        // "stat" NBT on load. Reset them on teardown so a freshly-created world
+        // (whose loadDimensions early-returns before the stat read) cannot inherit
+        // the previous world's moon/warp progression in the same JVM (single-player,
+        // where the client and integrated server share one process).
+        hasReachedMoon = false;
+        hasReachedWarp = false;
     }
 
     /**

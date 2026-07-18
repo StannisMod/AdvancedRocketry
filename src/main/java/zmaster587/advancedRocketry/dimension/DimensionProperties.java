@@ -1584,14 +1584,54 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             allowedBiomes.addAll(biomesList);
         }
 
-        if (nbt.hasKey("craterBiomes")) {
+        // Crater biomes mirror allowedBiomes: new format = registry names
+        // (craterBiomeNames), safe vs biome-ID drift across modpack versions;
+        // legacy format = integer biome IDs, kept only for old temp.dat.
+        //
+        // If craterBiomeNames exists, it is authoritative. The legacy integer
+        // path skips unresolvable IDs (so no null biome reaches MapGenCrater and
+        // NPEs at world-gen) and guards the weight index (findings C043/C044).
+        if (nbt.hasKey("craterBiomeNames", NBT.TAG_LIST)) {
+
+            craterBiomeWeights.clear();
+            NBTTagList craterNames = nbt.getTagList("craterBiomeNames", NBT.TAG_STRING);
+            int[] biomeWeights = nbt.getIntArray("craterWeights");
+            List<BiomeEntry> biomesList = new ArrayList<>();
+
+            for (int i = 0; i < craterNames.tagCount(); i++) {
+                String biomeNameString = craterNames.getStringTagAt(i);
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+
+                try {
+                    ResourceLocation biomeName = new ResourceLocation(biomeNameString);
+                    Biome biome = Biome.REGISTRY.getObject(biomeName);
+
+                    if (biome != null && biome.getRegistryName() != null && biome.getRegistryName().equals(biomeName)) {
+                        biomesList.add(new BiomeEntry(biome, weight));
+                    } else {
+                        AdvancedRocketry.logger.warn("Unknown crater biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                    }
+                } catch (RuntimeException e) {
+                    AdvancedRocketry.logger.warn("Invalid crater biome registry name '" + biomeNameString + "' for DIMID " + getId() + ", skipping");
+                }
+            }
+
+            craterBiomeWeights.addAll(biomesList);
+        }
+        else if (nbt.hasKey("craterBiomes", NBT.TAG_INT_ARRAY)) {
 
             craterBiomeWeights.clear();
             int[] biomeIds = nbt.getIntArray("craterBiomes");
             int[] biomeWeights = nbt.getIntArray("craterWeights");
             List<BiomeEntry> biomesList = new ArrayList<>();
             for (int i = 0; i < biomeIds.length; i++) {
-                biomesList.add(new BiomeEntry(AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]), biomeWeights[i]));
+                int weight = i < biomeWeights.length ? biomeWeights[i] : 30;
+                Biome biome = AdvancedRocketryBiomes.instance.getBiomeById(biomeIds[i]);
+                if (biome != null) {
+                    biomesList.add(new BiomeEntry(biome, weight));
+                } else {
+                    AdvancedRocketry.logger.warn("Unknown legacy crater biome ID " + biomeIds[i] + " for DIMID " + getId() + ", skipping");
+                }
             }
 
             craterBiomeWeights.addAll(biomesList);
@@ -1956,15 +1996,32 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             }
         }
 
+        // Persist crater biomes by registry NAME (craterBiomeNames), matching
+        // allowedBiomes, so the save survives biome-ID drift across modpack/version
+        // changes (findings C043/C044). Null/unnamed biomes are skipped, not written.
         if (!craterBiomeWeights.isEmpty()) {
-            int[] biomeId = new int[craterBiomeWeights.size()];
+            NBTTagList craterNames = new NBTTagList();
             int[] weights = new int[craterBiomeWeights.size()];
-            for (int i = 0; i < craterBiomeWeights.size(); i++) {
-                biomeId[i] = Biome.getIdForBiome(craterBiomeWeights.get(i).biome);
-                weights[i] = craterBiomeWeights.get(i).itemWeight;
+            int validCount = 0;
+            for (BiomeEntry entry : craterBiomeWeights) {
+                ResourceLocation biomeName = entry.biome != null ? Biome.REGISTRY.getNameForObject(entry.biome) : null;
+                if (biomeName != null) {
+                    craterNames.appendTag(new NBTTagString(biomeName.toString()));
+                    weights[validCount] = entry.itemWeight;
+                    validCount++;
+                } else {
+                    AdvancedRocketry.logger.warn("Cannot save unnamed/null crater biome for DIMID " + getId() + ", skipping");
+                }
             }
-            nbt.setIntArray("craterBiomes", biomeId);
-            nbt.setIntArray("craterWeights", weights);
+
+            if (!craterNames.hasNoTags()) {
+                if (validCount != weights.length) {
+                    weights = Arrays.copyOf(weights, validCount);
+                }
+
+                nbt.setTag("craterBiomeNames", craterNames);
+                nbt.setIntArray("craterWeights", weights);
+            }
         }
 
         if (!laserDrillOres.isEmpty()) {

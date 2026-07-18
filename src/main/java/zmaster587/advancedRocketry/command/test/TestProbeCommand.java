@@ -2788,6 +2788,43 @@ public class TestProbeCommand extends CommandBase {
     // §5.6 Satellite probes ---------------------------------------------------
 
     private void handleSatellite(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 1 && "deploy-unresolved".equalsIgnoreCase(args[0])) {
+            // C151: mount the (single) online player on a rocket and deploy a hatch
+            // holding an UNRESOLVABLE satellite chassis (a bare itemSatellite has no
+            // registered properties, so getSatellite() returns null). The C151 branch
+            // must then send the failure message to that real pilot. Optional arg[1]
+            // = player name; defaults to the first online player.
+            net.minecraft.entity.player.EntityPlayerMP player = args.length >= 2
+                    ? server.getPlayerList().getPlayerByUsername(args[1])
+                    : (server.getPlayerList().getPlayers().isEmpty()
+                        ? null : server.getPlayerList().getPlayers().get(0));
+            if (player == null) {
+                send(sender, "{\"error\":\"no player to mount\"}");
+                return;
+            }
+            net.minecraft.world.World world = player.world;
+            zmaster587.advancedRocketry.entity.EntityRocket rocket =
+                    new zmaster587.advancedRocketry.entity.EntityRocket(world);
+            rocket.setPosition(player.posX, player.posY, player.posZ);
+            world.spawnEntity(rocket);
+            player.startRiding(rocket, true);
+
+            // The (int) ctor sizes the inventory to one slot (super(1)); the bare
+            // ctor leaves zero slots and would AIOOBE on setInventorySlotContents.
+            zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch hatch =
+                    new zmaster587.advancedRocketry.tile.hatch.TileSatelliteHatch(1);
+            hatch.setWorld(world);
+            hatch.setPos(player.getPosition());
+            hatch.setInventorySlotContents(0, new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemSatellite));
+
+            boolean mounted = rocket.isPassenger(player);
+            rocket.deploySatelliteFromHatch(hatch);
+
+            send(sender, "{\"ok\":true,\"mounted\":" + mounted
+                    + ",\"player\":\"" + escapeJson(player.getName()) + "\"}");
+            return;
+        }
         if (args.length >= 3 && "create".equalsIgnoreCase(args[0])) {
             // satellite create <dim> <typeId> [powerGen] [powerStorage] [maxData] [weight]
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);

@@ -778,6 +778,79 @@ public final class ForgeTestClientBootstrap {
                     Minecraft.getMinecraft().shutdown();
                     return ok();
                 });
+            case "tile_modules_throws":
+                // Invoke a tile's libVulpes getModules(int, EntityPlayer) on the CLIENT
+                // and report whether it threw. Lets a client e2e pin a GUI-build crash
+                // (getModules runs client-side inside the modular-GUI open path) without
+                // needing the full multiblock assembled — the exact production method is
+                // driven on real client world/tile state.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.world == null) {
+                        return error("no client world");
+                    }
+                    BlockPos pos = new BlockPos(requireInt(request, "x"),
+                            requireInt(request, "y"), requireInt(request, "z"));
+                    net.minecraft.tileentity.TileEntity tile = mc.world.getTileEntity(pos);
+                    if (tile == null) {
+                        return error("no tile at pos");
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("tile", tile.getClass().getName());
+                    java.lang.reflect.Method method;
+                    try {
+                        method = tile.getClass().getMethod("getModules",
+                                int.class, net.minecraft.entity.player.EntityPlayer.class);
+                    } catch (NoSuchMethodException noSuchMethod) {
+                        return error("tile has no getModules(int, EntityPlayer): "
+                                + tile.getClass().getName());
+                    }
+                    try {
+                        method.setAccessible(true);
+                        method.invoke(tile, 0, mc.player);
+                        response.addProperty("threw", false);
+                    } catch (java.lang.reflect.InvocationTargetException invocationTarget) {
+                        response.addProperty("threw", true);
+                        response.addProperty("error", String.valueOf(invocationTarget.getTargetException()));
+                    } catch (Throwable other) {
+                        response.addProperty("threw", true);
+                        response.addProperty("error", String.valueOf(other));
+                    }
+                    return response;
+                });
+            case "invoke_static_chain":
+                // Evaluate a no-arg reflective chain on the CLIENT: the first method is
+                // static on {@code class}, each subsequent method is called on the prior
+                // result. Reports the final value's toString and, when it is an
+                // array/Collection/Map, its size. Framework-agnostic client-state probe.
+                return runOnClientThread(() -> {
+                    String className = request.get("class").getAsString();
+                    String[] methods = request.get("methods").getAsString().split(",");
+                    JsonObject response = ok();
+                    try {
+                        Class<?> cls = Class.forName(className);
+                        Object target = null;
+                        for (int i = 0; i < methods.length; i++) {
+                            String name = methods[i].trim();
+                            java.lang.reflect.Method method = (i == 0)
+                                    ? cls.getMethod(name)
+                                    : target.getClass().getMethod(name);
+                            method.setAccessible(true);
+                            target = method.invoke(target);
+                        }
+                        if (target != null && target.getClass().isArray()) {
+                            response.addProperty("size", java.lang.reflect.Array.getLength(target));
+                        } else if (target instanceof java.util.Collection) {
+                            response.addProperty("size", ((java.util.Collection<?>) target).size());
+                        } else if (target instanceof java.util.Map) {
+                            response.addProperty("size", ((java.util.Map<?, ?>) target).size());
+                        }
+                        response.addProperty("result", String.valueOf(target));
+                    } catch (Throwable t) {
+                        return error("invoke_static_chain failed: " + t);
+                    }
+                    return response;
+                });
             default:
                 return error("Unknown command: " + command);
         }
