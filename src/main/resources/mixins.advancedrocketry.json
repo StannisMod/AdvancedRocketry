@@ -8,6 +8,8 @@
   "mixins": [
     "MixinEntityGravity",
     "MixinEntityLivingShipTravel",
+    "MixinEntityPlayerShipFlight",
+    "MixinEntityShipEyes",
     "MixinEntityShipLocalMove",
     "MixinEntityPlayerInventoryAccess",
     "MixinEntityPlayerMPInventoryAccess",

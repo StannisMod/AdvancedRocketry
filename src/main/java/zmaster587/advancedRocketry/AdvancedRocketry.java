@@ -1141,6 +1141,10 @@ public class AdvancedRocketry {
 
         // Async weather fix
         MinecraftForge.EVENT_BUS.register(new EntityEventHandler());
+        // Re-seat a returning player on the ship deck he logged out on (crew contract C14).
+        // Safe without VS on the classpath: every ship call inside goes through the
+        // VSIntegration seam, which no-ops when the physics mod is absent.
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.integration.vs.RelogDeckHold());
         // Async weather info injection
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
         // Acid rain damage on planets flagged acidicRain

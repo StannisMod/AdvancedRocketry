@@ -20,6 +20,7 @@ import org.valkyrienskies.mod.common.entity.EntityShipMovementData;
 import org.valkyrienskies.mod.common.ships.ShipData;
 import org.valkyrienskies.mod.common.ships.block_relocation.BlockFinder;
 import org.valkyrienskies.mod.common.ships.entity_interaction.EntityShipMountData;
+import org.valkyrienskies.mod.common.ships.entity_interaction.IDraggable;
 import org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import org.valkyrienskies.mod.common.ships.ship_world.WorldServerShipManager;
@@ -490,6 +491,50 @@ final class VSBridge {
      * Returns a plain JDK map (no VS types cross back to AR core), or {@code null} if VS cannot be
      * consulted. Defensive: any VS-side failure degrades to {@code null} rather than throwing.
      */
+    /**
+     * Clear the physics mod's own entity-to-ship association (and the drag velocity riding on it)
+     * for a body AR resolves ship-locally. Returns true when something was actually cleared.
+     *
+     * <p>The physics mod's {@code EntityDraggable} ticks every loaded entity once per world tick and,
+     * while {@code lastTouchedShip} is fresh, moves the body from ITS OWN ship anchor - a second
+     * mover fighting AR's ship-frame resolution (live symptom: the client commit was undone every
+     * tick by exactly the drag's move, a constant pull toward a stale point). The association is fed
+     * by the mod's collision injector during UNRESOLVED moves (a creative flight into the hull, the
+     * boarding fall) and, because AR cancels that injector for resolved bodies, it can never refresh
+     * honestly - it goes stale and keeps dragging. Clearing it every resolved tick makes the physics
+     * mod see the body as ship-free; after AR releases the body, the mod's own collision re-arms it
+     * naturally on first contact.</p>
+     */
+    static boolean clearEntityShipAssociation(Entity entity) {
+        try {
+            if (!(entity instanceof IDraggable)) {
+                return false;
+            }
+            IDraggable draggable = (IDraggable) entity;
+            EntityShipMovementData data = draggable.getEntityShipMovementData();
+            if (data == null) {
+                return false;
+            }
+            Vector3dc added = data.getAddedLinearVelocity();
+            boolean dirty = data.getLastTouchedShip() != null
+                    || (added != null && (added.x() != 0.0 || added.y() != 0.0 || added.z() != 0.0))
+                    || data.getAddedYawVelocity() != 0.0;
+            if (!dirty) {
+                return false;
+            }
+            // A large-but-not-MAX tick count: the mod increments it per tick, so MAX_VALUE would
+            // overflow negative and re-arm the drag.
+            draggable.setEntityShipMovementData(data
+                    .withLastTouchedShip(null)
+                    .withTicksSinceTouchedShip(1000000)
+                    .withAddedLinearVelocity(new Vector3d())
+                    .withAddedYawVelocity(0.0));
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     static Map<String, Object> entityShipMovementData(Entity entity) {
         try {
             Map<String, Object> out = new LinkedHashMap<>();
@@ -650,6 +695,264 @@ final class VSBridge {
             return new double[]{v.x, v.y, v.z};
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    // ---- Anchored (by-ship-id) frame access -------------------------------------------------
+    // A capture EPISODE must keep talking to the ship it was captured on. Resolving the ship by
+    // world-AABB containment every call re-picks it, and with several loaded ships whose grown
+    // boxes overlap, first-match can flip mid-episode (ledger #36/#45). These variants take the
+    // ship's UUID string (its ShipData identity) and answer for THAT ship or not at all.
+
+    /** The loaded ship whose {@code ShipData} UUID string equals {@code shipId}, or null. */
+    private static PhysicsObject physoById(World world, String shipId) {
+        if (shipId == null) {
+            return null;
+        }
+        try {
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                if (shipId.equals(physo.getShipData().getUuid().toString())) {
+                    return physo;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * UUID string of the ship whose SUBSPACE claim manages the block at {@code pos}, or {@code null}.
+     * Subspace claims of distinct ships never overlap ({@code ShipChunkAllocator} spaces them), so —
+     * unlike world-AABB containment — this resolution is unambiguous. The seed/anchor resolver for a
+     * capture that starts from a ship block (the pilot seat).
+     */
+    static String shipIdManagingBlock(World world, BlockPos pos) {
+        try {
+            Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
+            return managing.isPresent()
+                    ? managing.get().getShipData().getUuid().toString() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * UUID strings of EVERY loaded ship whose grown world AABB contains {@code (x,y,z)} — the
+     * first-contact CANDIDATE list. The caller disambiguates by testing deck support in each
+     * candidate's own frame; returning all matches (not first-match) is what makes that possible.
+     */
+    static java.util.List<String> shipIdsAt(World world, double x, double y, double z) {
+        java.util.List<String> ids = new java.util.ArrayList<>(2);
+        try {
+            Vec3d point = new Vec3d(x, y, z);
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                AxisAlignedBB bb = physo.getShipBB();
+                if (bb != null && bb.grow(ABOARD_MARGIN).contains(point)) {
+                    ids.add(physo.getShipData().getUuid().toString());
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return ids;
+    }
+
+    /** World point -> ship-frame point, for the ship {@code shipId}. Null when it is not loaded. */
+    static double[] toShipFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .transform(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame point -> world point, for the ship {@code shipId}. Null when it is not loaded. */
+    static double[] toWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** World direction -> ship-frame direction (rotation only), for the ship {@code shipId}. */
+    static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .rotate(new Vec3d(x, y, z), TransformType.GLOBAL_TO_SUBSPACE);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame direction -> world direction (rotation only), for the ship {@code shipId}. */
+    static double[] rotateToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            Vec3d v = physo.getShipData().getShipTransform()
+                    .rotate(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** {@link #shipVelocityAtPoint}, but for the anchored ship {@code shipId} instead of a
+     *  containment lookup — the guard of an anchored capture must widen by ITS ship's carry.
+     *
+     *  <p>On the CLIENT the physics feed does not exist: {@code getPhysicsData()}'s velocities live
+     *  on the server's physics thread and read ZERO here even while the ship's transform visibly
+     *  steps between ticks (network transform updates). Everything built on this value — the
+     *  external-move guard's carry-widening AND the held-carry velocity subtraction — was therefore
+     *  blind client-side, and the client capture thrashed on any fast-moving ship (drop+re-capture
+     *  every tick once the per-tick step crossed the bare 0.2 epsilon; reproduced in-harness on a
+     *  level fast climb, ledger #47). The client instead derives the velocity the only honest way
+     *  it can: MEASURING the observed transform's per-tick delta. */
+    static double[] shipVelocityAtPointFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            if (world.isRemote) {
+                return measuredVelocityAtPoint(world, physo, x, y, z);
+            }
+            Vector3dc vLin = physo.getPhysicsData().getLinearVelocity();
+            Vector3dc w = physo.getPhysicsData().getAngularVelocity();
+            Vec3d c = physo.getShipData().getShipTransform().getShipPositionVec3d();
+            double rx = x - c.x, ry = y - c.y, rz = z - c.z;
+            return new double[]{
+                    vLin.x() + (w.y() * rz - w.z() * ry),
+                    vLin.y() + (w.z() * rx - w.x() * rz),
+                    vLin.z() + (w.x() * ry - w.y() * rx)
+            };
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Per-side cache of each ship's last OBSERVED transform and the rates derived from its delta:
+     *  {@code [tick, posXYZ, quatWXYZ, vLinXYZ, omegaXYZ]}. Weak keys: an unloading ship takes its
+     *  entry with it. Synchronized only against the two logical sides' threads; entries are
+     *  side-local because each side holds its own {@link PhysicsObject} instances. */
+    private static final Map<PhysicsObject, double[]> OBSERVED_TRANSFORM =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<PhysicsObject, double[]>());
+
+    /** The MEASURED world-frame velocity (blocks/second) of {@code physo}'s transform at the point
+     *  {@code (x,y,z)}: linear rate from the ship position's per-tick delta, angular rate from the
+     *  rotation quaternion's per-tick delta, combined as {@code v + omega x r}. This is the speed
+     *  the deck is ACTUALLY carrying that point as observed on this side — exactly the quantity the
+     *  external-move guard must tolerate — independent of any physics feed. Null until two distinct
+     *  ticks have been observed (one tick of warm-up per ship per side). */
+    private static double[] measuredVelocityAtPoint(World world, PhysicsObject physo,
+                                                    double x, double y, double z) {
+        ShipTransform t = physo.getShipData().getShipTransform();
+        Vec3d c = t.getShipPositionVec3d();
+        Quaterniond q = t.rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+        long now = world.getTotalWorldTime();
+        double[] prev = OBSERVED_TRANSFORM.get(physo);
+        double[] cur;
+        if (prev != null && (long) prev[0] == now) {
+            cur = prev; // second caller this tick (guard + commit): reuse the derived rates
+        } else {
+            cur = new double[14];
+            cur[0] = now;
+            cur[1] = c.x; cur[2] = c.y; cur[3] = c.z;
+            cur[4] = q.w; cur[5] = q.x; cur[6] = q.y; cur[7] = q.z;
+            if (prev == null || now < (long) prev[0]) {
+                OBSERVED_TRANSFORM.put(physo, cur);
+                return null; // first observation of this ship on this side: no rate yet
+            }
+            double dt = (now - (long) prev[0]) * 0.05;
+            cur[8] = (c.x - prev[1]) / dt;
+            cur[9] = (c.y - prev[2]) / dt;
+            cur[10] = (c.z - prev[3]) / dt;
+            // omega from the rotation delta dq = q * conj(prevQ) (world-frame, left-multiplied)
+            double pw = prev[4], px = prev[5], py = prev[6], pz = prev[7];
+            double dw = q.w * pw + q.x * px + q.y * py + q.z * pz;
+            double dx = -q.w * px + q.x * pw - q.y * pz + q.z * py;
+            double dy = -q.w * py + q.x * pz + q.y * pw - q.z * px;
+            double dz = -q.w * pz - q.x * py + q.y * px + q.z * pw;
+            double s = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (s > 1.0E-12) {
+                if (dw < 0) { dx = -dx; dy = -dy; dz = -dz; } // shortest arc
+                double angle = 2.0 * Math.atan2(s, Math.abs(dw));
+                double k = angle / (s * dt);
+                cur[11] = dx * k; cur[12] = dy * k; cur[13] = dz * k;
+            }
+            OBSERVED_TRANSFORM.put(physo, cur);
+        }
+        double rx = x - c.x, ry = y - c.y, rz = z - c.z;
+        return new double[]{
+                cur[8] + (cur[12] * rz - cur[13] * ry),
+                cur[9] + (cur[13] * rx - cur[11] * rz),
+                cur[10] + (cur[11] * ry - cur[12] * rx)
+        };
+    }
+
+    /**
+     * The ship's STAY region, in SUBSPACE coordinates, grown by {@code margin}: the region an
+     * anchored aboard body may occupy without being released. Derived from the subspace image of the
+     * ship's world AABB corners — the world box bounds the hull in world space, so its subspace image
+     * bounds the hull in subspace (over-including by at most the hull diagonal, acceptable for a
+     * release-hysteresis bound whose only contract is "boundary at least {@code margin} away from
+     * every hull block"). Deliberately NOT built from the chunk claim: the claim is a server-side
+     * allocation detail and this region must resolve identically on the CLIENT, which owns a
+     * player's movement. Measured in subspace so a jump/fall above the deck NEVER exits it sideways
+     * through a grown WORLD box the way the old {@code leftShipBox} gate did. Null when unloaded.
+     */
+    static AxisAlignedBB subspaceStayRegion(World world, String shipId, double margin) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            AxisAlignedBB worldBB = physo.getShipBB();
+            if (worldBB == null) {
+                return null;
+            }
+            ShipTransform t = physo.getShipData().getShipTransform();
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+            for (int i = 0; i < 8; i++) {
+                Vec3d corner = new Vec3d(
+                        (i & 1) == 0 ? worldBB.minX : worldBB.maxX,
+                        (i & 2) == 0 ? worldBB.minY : worldBB.maxY,
+                        (i & 4) == 0 ? worldBB.minZ : worldBB.maxZ);
+                Vec3d s = t.transform(corner, TransformType.GLOBAL_TO_SUBSPACE);
+                if (s.x < minX) minX = s.x;
+                if (s.y < minY) minY = s.y;
+                if (s.z < minZ) minZ = s.z;
+                if (s.x > maxX) maxX = s.x;
+                if (s.y > maxY) maxY = s.y;
+                if (s.z > maxZ) maxZ = s.z;
+            }
+            return new AxisAlignedBB(
+                    minX - margin, minY - margin, minZ - margin,
+                    maxX + margin, maxY + margin, maxZ + margin);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** {@code ShipData.blockPositions.size()} for the loaded ship, or -1. */
+    static int shipBlockCount(World world, String shipId) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            return physo == null ? -1 : physo.getShipData().getBlockPositions().size();
+        } catch (Throwable t) {
+            return -1;
         }
     }
 

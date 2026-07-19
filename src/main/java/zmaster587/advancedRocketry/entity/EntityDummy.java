@@ -190,8 +190,20 @@ public class EntityDummy extends Entity {
             dismountedPilot = null; // a plain seat, or off a loaded ship: leave vanilla's dismount alone
             return;
         }
-        // Captured on the deck by ShipFrameTravel already? Stop holding so he can walk freely.
-        if (zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(exit)) {
+        // Deliberately NOT stopped by ShipFrameTravel.isResolving(exit): that reads THIS side's
+        // (the server's) capture state, which the server-held fallback satisfies within a tick or
+        // two of the dismount - long before the CLIENT (the side that owns a player's movement)
+        // has seeded anything. Stopping there starved the client of re-sends and the dismount
+        // degenerated to vanilla's world-frame spot. The seed packet is idempotent on the client
+        // (a taken seed no-ops, a pending one just refreshes), so re-sending the whole short
+        // window is harmless and is what actually delivers the deck point.
+        // Pilot in an excluded state (creative flight, riding, water...): the client-side seed
+        // refuses such a capture, so re-sending it every window tick is a packet-per-tick war for
+        // nothing. He is moving under his own (world-frame) power; the deck hold is moot.
+        if (exit instanceof net.minecraft.entity.EntityLivingBase
+                && zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isExcludedFromCapture(
+                        (net.minecraft.entity.EntityLivingBase) exit)) {
+            logHold("pilotExcluded", exit);
             dismountedPilot = null;
             return;
         }
@@ -203,10 +215,15 @@ public class EntityDummy extends Entity {
         // holds it. A server-computed world position would differ here by more than the guard and drop
         // instantly. Re-sent each tick of the window; the client seeds once and no-ops the rest.
         if (exit instanceof net.minecraft.entity.player.EntityPlayerMP) {
-            zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
-                    new zmaster587.advancedRocketry.network.PacketDeckCapture(
-                            seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
-                    (net.minecraft.entity.player.EntityPlayerMP) exit);
+            // The anchor ship, resolved from the seat's SUBSPACE block - unambiguous (subspace claims
+            // of distinct ships never overlap), unlike containment among overlapping world boxes.
+            String shipId = VSIntegration.shipIdManagingBlock(world, seatPos);
+            if (shipId != null) {
+                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
+                        new zmaster587.advancedRocketry.network.PacketDeckCapture(
+                                shipId, seatPos.getX() + 0.5, seatPos.getY(), seatPos.getZ() + 0.5),
+                        (net.minecraft.entity.player.EntityPlayerMP) exit);
+            }
         }
     }
 
