@@ -985,11 +985,60 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
             zmaster587.advancedRocketry.space.ShipTransitManager tm =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.transit();
+            // The slot dim IDS, not just how many: they are minted from whatever dimension ids happen
+            // to be free at registration, so a restart can hand the pool a DIFFERENT set. Anything
+            // that persisted a slot id across the restart (a ledger entry, a saved player) has to be
+            // checked against this list rather than assumed stable.
+            StringBuilder slots = new StringBuilder();
+            for (Integer d : zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims()) {
+                if (slots.length() > 0) {
+                    slots.append(',');
+                }
+                slots.append(d);
+            }
             send(sender, "{\"registered\":"
                     + (zmaster587.advancedRocketry.space.SpaceSubsystem.get() != null)
                     + ",\"pool\":" + zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().size()
+                    + ",\"slotDims\":[" + slots + "]"
                     + ",\"ledger\":" + (led == null ? -1 : led.size())
                     + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount()) + "}");
+            return;
+        }
+        // aboard-tag <playerName>: read back the durable "this player is aboard ship X, in the seat Y
+        // blocks from its flight computer" record carried by a CONNECTED player. Strictly READ-ONLY -
+        // it never stamps, clears or mints anything - because it is the witness a restart test uses to
+        // prove the record existed BEFORE the logout; a witness with side effects would be measuring
+        // its own footprint. The seat is reported as the flight-computer link OFFSET the record
+        // actually stores, not as a position: every re-assembly rebuilds the ship into a fresh
+        // subspace, so only the offset is stable across a jump, an entry or a descent.
+        if (args.length >= 2 && "aboard-tag".equalsIgnoreCase(args[0])) {
+            net.minecraft.entity.player.EntityPlayerMP target =
+                    server.getPlayerList().getPlayerByUsername(args[1]);
+            if (target == null) {
+                send(sender, "{\"error\":\"player not found\",\"player\":\""
+                        + escapeJson(args[1]) + "\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.ShipAboardTag.Aboard aboard =
+                    zmaster587.advancedRocketry.space.ShipAboardTag.of(target);
+            if (aboard == null) {
+                // No record, a record of the wrong shape, or an unparseable ship id - the reader
+                // collapses all three to "not aboard", and so does this probe.
+                send(sender, "{\"ok\":true,\"tagged\":false}");
+                return;
+            }
+            if (aboard.shipId == null || aboard.coord == null) {
+                // Unreachable through the reader (it rejects a half-formed record rather than
+                // returning one), but a named error beats an NPE rendered as a JSON blob.
+                send(sender, "{\"error\":\"aboard record incomplete\",\"player\":\""
+                        + escapeJson(target.getName()) + "\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"tagged\":true,\"shipId\":\"" + aboard.shipId
+                    + "\",\"cell\":\"" + aboard.coord.cellKey()
+                    + "\",\"afcDx\":" + aboard.afcDx
+                    + ",\"afcDy\":" + aboard.afcDy
+                    + ",\"afcDz\":" + aboard.afcDz + "}");
             return;
         }
         // ledger-settle <shipUuid> <sx> <sy> <sz> <lx> <ly> <lz>: record a settled ship in the
@@ -13735,9 +13784,14 @@ public class TestProbeCommand extends CommandBase {
                         + escapeJson(targetName) + "\"}");
                 return;
             }
+            // playerDim is the world the entity is actually ticking in; playerDimField is the
+            // entity's own dimension field. They are set separately and CAN disagree, and it is the
+            // FIELD that Entity.writeToNBT persists - so a mismatch here means the player is saved
+            // into a different dimension than the one he is standing in.
             send(sender, "{\"ok\":true"
                     + ",\"player\":\"" + escapeJson(targetName) + "\""
                     + ",\"playerDim\":" + target.world.provider.getDimension()
+                    + ",\"playerDimField\":" + target.dimension
                     + ",\"playerPosX\":" + target.posX
                     + ",\"playerPosY\":" + target.posY
                     + ",\"playerPosZ\":" + target.posZ + "}");
