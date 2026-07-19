@@ -291,7 +291,7 @@ public final class ShipTransitManager {
                 freeLane(t);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
                 // Record the arrival in the durable ledger (no longer amnesiac) and mark the arrived cell
-                // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #46).
+                // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #79).
                 ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
                 space.markDirty(t.target);
                 // Hand any aboard crew to the best-effort reseat retry. The transit is already settled and
