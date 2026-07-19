@@ -34,6 +34,22 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command("wait_world")));
     }
 
+    /**
+     * A REAL relog: quits the current server connection and reconnects to the same address,
+     * exactly as the player's disconnect + rejoin would. The server performs a full logout
+     * (player data saved to disk) and a fresh login; the client rebuilds its world and player
+     * entity. Follow with {@link #waitForWorld()} - the reconnect is asynchronous.
+     *
+     * <p>The address is read off the live connection, so this reconnects to the server the
+     * client is attached to RIGHT NOW. It therefore cannot follow a server that has been
+     * restarted in between: each harness boot reserves a fresh port, so the old address is
+     * dead. To span a restart, run two harness lifecycles against the same workDir and start
+     * a second client instead.</p>
+     */
+    public void reconnect() throws IOException {
+        assertOk(execute(command("reconnect")));
+    }
+
     public void waitTicks(int ticks) throws IOException {
         JsonObject command = command("wait_ticks");
         command.addProperty("ticks", ticks);
@@ -210,6 +226,24 @@ public final class ClientBot implements Closeable {
         JsonObject command = command("set_look");
         command.addProperty("yaw", yaw);
         command.addProperty("pitch", pitch);
+        assertOk(execute(command));
+    }
+
+    /**
+     * Turns the client player's look by a RAW mouse delta, through the game's own
+     * {@code Entity.turn} - the exact method the real mouse handler feeds accumulated
+     * movement into. Unlike {@link #setLook} (which writes the rotation fields directly,
+     * like a teleport), this exercises every mod hook installed on the turn path, e.g.
+     * a frame-relative look transform for a player standing on a moving platform.
+     *
+     * <p>Deltas are in vanilla mouse units: {@code rotationYaw += deltaYaw * 0.15},
+     * {@code rotationPitch -= deltaPitch * 0.15} (positive {@code deltaPitch} looks UP),
+     * pitch clamped to +-90.</p>
+     */
+    public void turnLook(float deltaYaw, float deltaPitch) throws IOException {
+        JsonObject command = command("turn_look");
+        command.addProperty("deltaYaw", deltaYaw);
+        command.addProperty("deltaPitch", deltaPitch);
         assertOk(execute(command));
     }
 
