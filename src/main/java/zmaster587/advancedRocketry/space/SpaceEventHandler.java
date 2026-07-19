@@ -115,10 +115,20 @@ public final class SpaceEventHandler {
     @SubscribeEvent
     public void onPlayerLoadFromFile(PlayerEvent.LoadFromFile event) {
         EntityPlayer player = event.getEntityPlayer();
-        if (player == null || !isSubsystemWorld(player.dimension)) {
+        if (player == null) {
+            return;
+        }
+        // A slot dimension id is TRANSIENT. The pool mints its ids from whatever dimension ids happen
+        // to be free when it registers, so the id a player was saved under can belong to something
+        // else - or to nothing - on the very next boot. Deciding "was he out in space?" from that id
+        // alone therefore silently loses every space-borne player across a restart, which is the one
+        // case this hook exists for. The aboard record is the durable evidence: it names the ship and
+        // its galactic coordinate, neither of which is transient. So the record opens the restore, and
+        // the dimension id is only a fallback for someone who was in a subsystem world without one.
+        ShipAboardTag.Aboard aboard = ShipAboardTag.of(player);
+        if (aboard == null && !isSubsystemWorld(player.dimension)) {
             return; // saved in an ordinary world: vanilla's own restore is correct, leave it alone
         }
-        ShipAboardTag.Aboard aboard = ShipAboardTag.of(player);
         LoginRestore.Placement placement =
                 LoginRestore.resolve(aboard, new SubsystemOps(player), player.getUniqueID());
 
