@@ -8234,7 +8234,14 @@ public class TestProbeCommand extends CommandBase {
             // "with-pilot-deck" — like with-pilot-seat, but the seat sits on a real 5x5 walkable DECK
             // (a bare rocket seat sits over air, so a dismounted pilot has nowhere to stand — not
             // representative of a ship with a deck). Used by the crew/dismount e2e.
-            boolean includePilotDeck = "with-pilot-deck".equals(variant);
+            // "with-roofed-deck" - with-pilot-deck plus a 5x5 solid ROOF four blocks above the deck,
+            // making the cockpit an ENCLOSED cavity (deck below + roof above in the ship frame).
+            // The open-topped deck variant cannot exercise interior-boarding semantics - its
+            // cockpit is open air over a deck, exactly what the enclosure term exists to exclude.
+            // The structure tower is raised so the assembly scan (bounded by tower height)
+            // reaches the roof. Used by the enclosed-interior crew e2e.
+            boolean includeRoofedDeck = "with-roofed-deck".equals(variant);
+            boolean includePilotDeck = "with-pilot-deck".equals(variant) || includeRoofedDeck;
             boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck;
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
@@ -8313,9 +8320,11 @@ public class TestProbeCommand extends CommandBase {
                             launchpad.getDefaultState());
                 }
             }
-            // Structure tower.
+            // Structure tower. The assembly scan tops out at the tower's height, so the roofed
+            // variant raises it far enough to take the roof (rocketY+8 = baseY+9) into the ship.
+            int towerTop = includeRoofedDeck ? 9 : 6;
             if (structureTower != null) {
-                for (int dy = 0; dy <= 6; dy++) {
+                for (int dy = 0; dy <= towerTop; dy++) {
                     world.setBlockState(new BlockPos(baseX - 1, baseY + dy, baseZ + padSize / 2),
                             structureTower.getDefaultState());
                 }
@@ -8425,6 +8434,27 @@ public class TestProbeCommand extends CommandBase {
                         world.setBlockState(new BlockPos(rocketX + dx, rocketY + 3, rocketZ + dz),
                                 net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
                     }
+                }
+            }
+            if (includeRoofedDeck) {
+                // A 5x5 solid ROOF over the deck, high enough that the seat's "passable above"
+                // scan cell (rocketY+5) stays clear and a body displaced a block off the deck
+                // still fits under it: the cockpit becomes an ENCLOSED cavity - deck below AND
+                // ship blocks overhead in the ship frame - rather than open air over a deck.
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        world.setBlockState(new BlockPos(rocketX + dx, rocketY + 8, rocketZ + dz),
+                                net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
+                    }
+                }
+                // One corner pillar connecting deck to roof: the physics mod assembles the ship
+                // by flood-filling blocks CONNECTED to the anchor, so a floating roof slab would
+                // be left behind on the pad. A single corner column keeps the cavity itself open
+                // (the seat sits at the centre, 2+ blocks away) while making the roof part of
+                // the craft.
+                for (int dy = 4; dy <= 7; dy++) {
+                    world.setBlockState(new BlockPos(rocketX - 2, rocketY + dy, rocketZ - 2),
+                            net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
                 }
             }
             if (includeCargo) {
