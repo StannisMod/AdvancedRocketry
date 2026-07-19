@@ -51,6 +51,11 @@ public final class DeckLook {
         // (which skews on a rolled ship and degenerates when the deck goes vertical). Installed
         // here so a dedicated server, which never loads this client class, keeps the fallback.
         ShipFrameTravel.clientDeckLookYaw = DeckLook::heldDeckYawFor;
+        // The flying-aboard vertical intent: read at CALL time (during the local player's own
+        // travel) so it is EXACTLY the movementInput state vanilla's world-frame fly impulse
+        // consumed this tick - the resolution subtracts that impulse and re-applies it on deck
+        // axes, and an off-by-one-tick sample would leave a world-frame residual.
+        ShipFrameTravel.clientFlyIntent = DeckLook::flyIntentFor;
     }
 
     /** The held deck heading for {@code entity}, or {@code null} when this client does not own
@@ -60,6 +65,16 @@ public final class DeckLook {
             return null;
         }
         return (float) deckYawDeg;
+    }
+
+    /** The local player's vertical fly intent (+1 ascend / -1 descend / 0), or {@code null} when
+     *  this client does not own {@code entity}'s movement. */
+    private static Integer flyIntentFor(net.minecraft.entity.EntityLivingBase entity) {
+        net.minecraft.client.entity.EntityPlayerSP player = Minecraft.getMinecraft().player;
+        if (entity == null || player == null || entity != player || player.movementInput == null) {
+            return null;
+        }
+        return (player.movementInput.jump ? 1 : 0) - (player.movementInput.sneak ? 1 : 0);
     }
 
     // ---- Client-observable state (read by the deck-look e2e through readStaticField). NOT

@@ -357,25 +357,7 @@ public final class ShipFrameTravel {
             // semantics. The region is the ship's own block bounds (margin 0), NOT the grown
             // stay region: a bystander in the surrounding airspace stays world-frame (C9), and
             // the terrain veto above already keeps anyone standing on the ground out.
-            for (String shipId : VSIntegration.shipIdsAt(
-                    entity.world, entity.posX, entity.posY, entity.posZ)) {
-                double[] sub = VSIntegration.toShipFrameFor(
-                        entity.world, shipId, entity.posX, entity.posY, entity.posZ);
-                if (sub == null) {
-                    continue;
-                }
-                AxisAlignedBB region = VSIntegration.subspaceStayRegion(entity.world, shipId, 0.0);
-                if (region != null
-                        && region.contains(new net.minecraft.util.math.Vec3d(sub[0], sub[1], sub[2]))
-                        && hasDeckBelowFor(entity, shipId)
-                        // Enclosure, not just containment: the block-bounds region includes the
-                        // OPEN air over a deck, and claiming that hijacked a body merely flying
-                        // through the ship's airspace. A roof overhead is what makes "inside".
-                        && hasRoofAboveFor(entity, shipId)) {
-                    candidate = shipId;
-                    break;
-                }
-            }
+            candidate = interiorCandidate(entity);
         }
         if (candidate == null) {
             // No deck under the body in any candidate's frame - but its box may still be meeting a
@@ -438,9 +420,29 @@ public final class ShipFrameTravel {
             return "excludedLevitation";
         }
         if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
-            return "creativeFlight";
+            // Flying-aboard (contract C13): creative flight stops being an excluded state for a
+            // body the deck already owns (its flight then resolves on DECK axes - no partial
+            // "captured but flying world-frame" split, which is the old force-capture war), and
+            // for a flyer the deck may CLAIM right now - standing contact or an enclosed
+            // interior. A flyer anywhere else (open airspace, flown away from his seat, over
+            // terrain) keeps world-frame flight untouched.
+            ShipFrameState st = STATE.get(entity);
+            boolean aboard = st != null && !st.hullStand;
+            if (!aboard && !flyCaptureEligible(entity)) {
+                return "creativeFlight";
+            }
         }
         return null;
+    }
+
+    /** Whether a creative FLYER is the deck's to claim right now (contract C13): supported by a
+     *  ship's blocks in its own frame (standing contact) or inside an enclosed interior - and not
+     *  on world terrain. Everything else keeps world-frame flight. */
+    private static boolean flyCaptureEligible(EntityLivingBase entity) {
+        if (isSupportedByWorldTerrain(entity)) {
+            return false;
+        }
+        return firstContactCandidate(entity) != null || interiorCandidate(entity) != null;
     }
 
     /** The ship this body is standing on RIGHT NOW, chosen among every loaded ship whose grown world
@@ -869,11 +871,10 @@ public final class ShipFrameTravel {
         boolean terrain = isSupportedByWorldTerrain(entity);
         m.put("supportedByWorldTerrain", terrain);
         // The handles() verdict, replicated WITHOUT its capture/release side effects.
+        // excludedStateOf is itself side-effect-free (its C13 flying clause only READS state and
+        // candidates), so the probe shares it instead of drifting from the live gate.
         boolean gated = !available || (!entity.isServerWorld() && !entity.canPassengerSteer())
-                || entity.hasNoGravity() || entity.isRiding() || entity.isElytraFlying()
-                || entity.isInWater() || entity.isInLava() || entity.isOnLadder()
-                || entity.isPotionActive(MobEffects.LEVITATION)
-                || (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying);
+                || excludedStateOf(entity) != null;
         boolean verdict;
         if (gated) {
             int shipObstacles = shipSupportObstacleCount(entity);
@@ -1195,6 +1196,32 @@ public final class ShipFrameTravel {
         return false;
     }
 
+    /** The ship whose ENCLOSED interior contains the body - inside the margin-0 block region,
+     *  with a deck below AND a roof above in that ship's frame - or null. The interior-boarding
+     *  candidate (a hatch entry, an inverted cockpit): such a body is the deck's to claim even
+     *  without standing support, because ship-frame gravity can seat it. */
+    private static String interiorCandidate(EntityLivingBase entity) {
+        for (String shipId : VSIntegration.shipIdsAt(
+                entity.world, entity.posX, entity.posY, entity.posZ)) {
+            double[] sub = VSIntegration.toShipFrameFor(
+                    entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+            if (sub == null) {
+                continue;
+            }
+            AxisAlignedBB region = VSIntegration.subspaceStayRegion(entity.world, shipId, 0.0);
+            if (region != null
+                    && region.contains(new net.minecraft.util.math.Vec3d(sub[0], sub[1], sub[2]))
+                    && hasDeckBelowFor(entity, shipId)
+                    // Enclosure, not just containment: the block-bounds region includes the
+                    // OPEN air over a deck, and claiming that hijacked a body merely flying
+                    // through the ship's airspace. A roof overhead is what makes "inside".
+                    && hasRoofAboveFor(entity, shipId)) {
+                return shipId;
+            }
+        }
+        return null;
+    }
+
     /** Whether SHIP blocks sit anywhere ABOVE the body's head in {@code shipId}'s frame, up to the
      *  top of the ship's block region - the "enclosed" half of the interior test. A ship's margin-0
      *  block-bounds region over-covers: it includes the OPEN air between a deck and the ship's
@@ -1345,6 +1372,10 @@ public final class ShipFrameTravel {
 
         if (anchored.hullStand) {
             return hullStandTravel(entity, anchored, strafe, vertical, forward, jumpMovementFactor);
+        }
+        if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
+            return flyingAboardTravel(entity, anchored, strafe, vertical, forward,
+                    jumpMovementFactor);
         }
 
         // The deck frame. Held across ticks, so the ship can rotate under a body that is standing
@@ -1514,6 +1545,119 @@ public final class ShipFrameTravel {
         // mover otherwise undoes this commit (live: a constant pull toward a stale point, and the
         // walking thrash whose entityMoved exactly negated this commit's motion). Cleared every
         // resolved tick; a release hands the body back and the mod re-arms naturally on contact.
+        if (VSIntegration.suppressShipDrag(entity)) {
+            dragSuppressions++;
+        }
+        return true;
+    }
+
+    /** Vanilla's per-tick vertical damping while creative-flying ({@code EntityPlayer.travel}:
+     *  {@code motionY = d3 * 0.6}), applied here along the DECK normal instead. */
+    private static final double FLY_VERTICAL_DRAG = 0.6D;
+    /** Vanilla's vertical fly impulse per input tick is {@code flySpeed * 3} ({@code
+     *  EntityPlayerSP.onLivingUpdate}); the factor is re-applied on deck axes. */
+    private static final double FLY_IMPULSE_FACTOR = 3.0D;
+
+    /** The local player's vertical fly intent (+1 ascend / -1 descend / 0), read at CALL time so
+     *  it is exactly the input state vanilla's own impulse used THIS tick. Installed once from the
+     *  client (the deck-look class); stays {@code null} on a dedicated server, where a player's
+     *  flight is client-authoritative anyway. */
+    public static volatile java.util.function.Function<EntityLivingBase, Integer> clientFlyIntent = null;
+
+    /**
+     * One tick of FLYING-ABOARD movement (contract C13): vanilla creative-flight kinematics -
+     * fly-speed horizontal input, the {@code 0.6} vertical damping, NO gravity - computed on DECK
+     * axes with the held-carry velocity rule, swept against the ship's own blocks. One frame for
+     * input, aim, camera and motion; the partial "captured but flying world-frame" split is
+     * exactly the old force-capture war and is forbidden by the contract.
+     *
+     * <p>Vanilla applies the vertical fly impulse as a WORLD {@code motionY} write before travel
+     * runs ({@code EntityPlayerSP.onLivingUpdate}); this branch subtracts exactly that impulse
+     * (a deliberate, commented world-frame step - undoing a world-frame writer) and re-applies it
+     * along the deck's up, so ascend/descend follow the deck like everything else.</p>
+     */
+    private static boolean flyingAboardTravel(EntityLivingBase entity, ShipFrameState anchored,
+                                              float strafe, float vertical, float forward,
+                                              float flyMoveFactor) {
+        World world = entity.world;
+        String shipId = anchored.shipId;
+        double[] local = heldShipFramePos(entity);
+        if (local == null) {
+            local = VSIntegration.toShipFrameFor(world, shipId, entity.posX, entity.posY, entity.posZ);
+        }
+        int fly = 0;
+        java.util.function.Function<EntityLivingBase, Integer> intent = clientFlyIntent;
+        if (intent != null) {
+            Integer j = intent.apply(entity);
+            if (j != null) {
+                fly = j;
+            }
+        }
+        double flyImpulse = entity instanceof EntityPlayer
+                ? ((EntityPlayer) entity).capabilities.getFlySpeed() * FLY_IMPULSE_FACTOR : 0.0;
+        // Deliberate world-frame step: remove the WORLD-axis vertical impulse vanilla already
+        // added for THIS tick's input, so it is not counted once on world axes and again on deck
+        // axes below.
+        double worldMotionY = entity.motionY - flyImpulse * fly;
+        double[] motion = VSIntegration.rotateToShipFrameFor(world, shipId,
+                entity.motionX - anchored.carryX,
+                worldMotionY - anchored.carryY,
+                entity.motionZ - anchored.carryZ);
+        if (local == null || motion == null) {
+            declinedTicks++;
+            return false;
+        }
+        float deckYaw = deckYawDeg(entity, shipId);
+        moveRelative(motion, strafe, vertical, forward, flyMoveFactor, deckYaw);
+        // Ascend/descend along the DECK's up - the same impulse vanilla applies along world Y.
+        motion[1] += flyImpulse * fly;
+
+        // Sweep the deck-aligned box; a flyer still collides with his ship's geometry.
+        Sweep sweep = sweepShipFrame(world, entity, local, motion[0], motion[1], motion[2], false);
+        boolean onDeck = sweep.collidedVertically && sweep.wantY < 0.0;
+        if (sweep.collidedX) motion[0] = 0.0;
+        if (sweep.collidedY) motion[1] = 0.0;
+        if (sweep.collidedZ) motion[2] = 0.0;
+
+        // Vanilla's flight drags, on the axes they were meant for: 0.6 along the deck normal,
+        // the airborne friction in the deck plane. No gravity while flying.
+        motion[1] *= FLY_VERTICAL_DRAG;
+        motion[0] *= AIR_FRICTION;
+        motion[2] *= AIR_FRICTION;
+
+        // Commit - identical shape to the walking path: subspace-authoritative position, carry
+        // re-added freshly and remembered.
+        double[] worldPos = VSIntegration.toWorldFrameFor(world, shipId, sweep.x, sweep.y, sweep.z);
+        double[] worldMotion = VSIntegration.rotateToWorldFrameFor(world, shipId,
+                motion[0], motion[1], motion[2]);
+        if (worldPos == null || worldMotion == null) {
+            declinedTicks++;
+            return false;
+        }
+        resolvedTicks++;
+        lastObstacleCount = sweep.obstacleCount;
+        lastOnDeck = onDeck;
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                world, shipId, worldPos[0], worldPos[1], worldPos[2]);
+        double carryX = shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS;
+        double carryY = shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS;
+        double carryZ = shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS;
+        worldMotion[0] += carryX;
+        worldMotion[1] += carryY;
+        worldMotion[2] += carryZ;
+        remember(entity, shipId, sweep.x, sweep.y, sweep.z,
+                worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
+        persistAnchor(entity, shipId, sweep.x, sweep.y, sweep.z);
+        entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
+        entity.motionX = worldMotion[0];
+        entity.motionY = worldMotion[1];
+        entity.motionZ = worldMotion[2];
+        entity.onGround = onDeck;
+        entity.collidedHorizontally = sweep.collidedX || sweep.collidedZ;
+        entity.collidedVertically = sweep.collidedVertically;
+        entity.collided = entity.collidedHorizontally || entity.collidedVertically;
+        entity.fallDistance = 0.0F;
+        updateLimbSwing(entity, sweep.x - local[0], sweep.z - local[2]);
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }

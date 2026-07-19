@@ -166,6 +166,146 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
                 + "(shipCamActive=" + shipCam + ")", shipCam);
     }
 
+    // ---- Flying-aboard (contract C13): flight resolves in the DECK frame -----------------------
+
+    @Test
+    public void aFlyingCrewMemberAscendsAlongTheDeckNormalAndReseatsOnFlightOff() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6720, by = 64, bz = 6720;
+
+        // The flying-aboard contract on a steeply ROLLED ship: starting creative flight on the
+        // deck keeps the body the deck's (no release, ship camera stays), the vertical fly
+        // intent ascends along the DECK NORMAL - measured in SUBSPACE, where deck-up is plain +Y
+        // regardless of the roll; a world-up ascent would instead leak most of its motion into
+        // the subspace deck PLANE (at 60 deg: cos60 = 0.5 up, sin60 = 0.87 sideways) - and
+        // turning flight off hands the body to deck gravity, which seats it back on the deck.
+        buildAndBoardShip(bx, by, bz);
+        exec("gamemode creative @a"); // flight needs creative; the harness default is not
+        bot().waitTicks(20);
+        double h = Math.toRadians(60.0) / 2.0;
+        assertTrue("attitude hold must accept the roll",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(150);
+        exec("artest player dismount");
+        boolean aboard = false;
+        for (int i = 0; i < 30 && !aboard; i++) {
+            bot().waitTicks(4);
+            String cap = exec("artest vs deck-capture");
+            aboard = cap.contains("\"alreadyTracked\":true") && !cap.contains("\"hullStand\":true");
+        }
+        assertTrue("the dismounted pilot must be captured ABOARD on the rolled deck: "
+                + exec("artest vs deck-capture"), aboard);
+        double[] sub0 = parseSub(censusStatic("censusSubPos"));
+
+        // Start creative flight: double-tap space (the first tap is a deck jump; the second,
+        // within the toggle window, flips flight).
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(4);
+
+        // The double-tap itself climbs a few blocks (a deck jump + held-space flight ticks), so
+        // re-baseline AFTER flight is on: the pin measures the held-ascend phase alone. The hold
+        // is SHORT deliberately - the stay region ends ~4 blocks above the hull top, and a climb
+        // that exits it is C4's legitimate release, not this pin's subject.
+        double[] subFly = parseSub(censusStatic("censusSubPos"));
+        StringBuilder trace = new StringBuilder();
+        int trackedSeen = 0, camSeen = 0, samples = 0;
+        double[] subEnd = subFly;
+        // Climb TO A TARGET RISE (+2 subspace blocks), not for a fixed time: the climb rate
+        // varies run to run, and a timed hold can overshoot into the stay region's edge - whose
+        // release is C4 doing its job, not this pin's subject. From a ~129-130 start the +2
+        // target tops out well below that edge.
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        try {
+            for (int i = 0; i < 10 && subEnd[1] - subFly[1] < 2.0; i++) {
+                bot().waitTicks(2);
+                samples++;
+                String cap = exec("artest vs deck-capture");
+                boolean tracked = cap.contains("\"alreadyTracked\":true")
+                        && !cap.contains("\"hullStand\":true");
+                if (tracked) trackedSeen++;
+                if (Boolean.parseBoolean(bot().readStaticField(SHIP_CAMERA, "shipCamActive")
+                        .get("value").getAsString())) {
+                    camSeen++;
+                }
+                subEnd = parseSub(censusStatic("censusSubPos"));
+                trace.append(String.format(java.util.Locale.ROOT, "[t%d sub=%.1f,%.1f,%.1f cap=%b] ",
+                        i * 2, subEnd[0], subEnd[1], subEnd[2], tracked));
+            }
+        } finally {
+            bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        }
+        double dySub = subEnd[1] - subFly[1];
+        double dxzSub = Math.sqrt((subEnd[0] - subFly[0]) * (subEnd[0] - subFly[0])
+                + (subEnd[2] - subFly[2]) * (subEnd[2] - subFly[2]));
+        System.out.println("[flyaboard] subFly=" + subFly[1] + " dySub=" + dySub + " dxzSub="
+                + dxzSub + " tracked=" + trackedSeen + "/" + samples + " cam=" + camSeen
+                + "/" + samples + " :: " + trace);
+
+        // The contract, in its three player-visible parts:
+        assertTrue("starting flight on the deck must NOT release the capture (tracked "
+                + trackedSeen + "/" + samples + "): " + trace, trackedSeen == samples);
+        assertTrue("the ship camera must stay engaged for a flying-aboard body (cam " + camSeen
+                + "/" + samples + ")", camSeen == samples);
+        // The census position is block-floored, so allow a block of lateral jitter; a WORLD-up
+        // ascent at 60 deg would drift the deck plane by ~1.7x the climb (several blocks here).
+        assertTrue("holding ascend must climb along the DECK NORMAL (subspace +Y): dySub=" + dySub
+                + " dxzSub=" + dxzSub + " :: " + trace, dySub > 1.2 && dxzSub < 1.6);
+
+        // Descend back toward the deck first - the flight-off double-tap itself adds a little
+        // climb, and toggling at the stay region's edge exits it mid-flight (C4's legitimate
+        // release, but then WORLD gravity owns the fall and the reseat below is not this
+        // contract's). The descend leg also pins the OTHER vertical intent: sneak sinks along
+        // the deck normal exactly as space climbs it.
+        double[] subHigh = subEnd;
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_LSHIFT);
+        bot().waitTicks(14);
+        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_LSHIFT);
+        double[] subDown = parseSub(censusStatic("censusSubPos"));
+        assertTrue("holding descend must sink along the DECK NORMAL (subspace -Y): "
+                + subHigh[1] + " -> " + subDown[1], subDown[1] < subHigh[1]);
+
+        // Flight off: double-tap again; deck gravity reclaims the airborne body and seats it.
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        bot().waitTicks(2);
+        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        boolean seated = false;
+        String capEnd = "";
+        double[] subSeated = subEnd;
+        for (int i = 0; i < 40 && !seated; i++) {
+            bot().waitTicks(3);
+            capEnd = exec("artest vs deck-capture");
+            subSeated = parseSub(censusStatic("censusSubPos"));
+            // The descend leg parks the body over the SEAT column, so deck gravity may seat it on
+            // the seat block's top - one block above the deck stand. Either landing is "seated on
+            // the ship's geometry at the deck spot"; only staying airborne (or lost to the world)
+            // fails.
+            seated = capEnd.contains("\"alreadyTracked\":true")
+                    && !capEnd.contains("\"hullStand\":true")
+                    && subSeated[1] <= sub0[1] + 1.4;
+        }
+        exec("gamemode survival @a"); // leave the shared world as the other tests expect it
+        assertTrue("turning flight off must hand the body to deck gravity and seat it back "
+                + "(sub=" + subSeated[1] + " vs start " + sub0[1] + "): " + capEnd, seated);
+    }
+
+    /** "x,y,z" census position as doubles (block coords are integral; that is fine here). */
+    private static double[] parseSub(String sub) {
+        String[] s = sub.split(",");
+        return new double[]{Double.parseDouble(s[0].trim()), Double.parseDouble(s[1].trim()),
+                Double.parseDouble(s[2].trim())};
+    }
+
     // ---- helpers (self-contained, mirroring the other tier-2 e2e classes) ----------------------
 
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */

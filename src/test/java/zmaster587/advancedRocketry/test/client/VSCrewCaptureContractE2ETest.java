@@ -590,40 +590,53 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(2);
         bot().releaseKey(Keyboard.KEY_SPACE);
 
-        // Hold space through the rest of the window: a flying player RISES steadily. The war's
+        // Hold space well past the hold window: a flying player RISES steadily and, on this
+        // upright open fixture, soon leaves the ship's grown stay region entirely. The war's
         // signature is the opposite - position pinned to the seat column, isResolving flickering.
+        //
+        // Contract as amended by flying-aboard (C13): a transient capture of the flyer while he
+        // is still the deck's to claim (standing contact at the seat) is LEGAL - his flight then
+        // resolves on deck axes and he still rises. What must NEVER happen is the old war: the
+        // body frozen/yanked at the seat column. And once he has risen out of the ship's stay
+        // region he is RELEASED (C4) and stays world-frame - never re-captured, never snapped
+        // back down.
         double y0 = bot().reportState().get("playerY").getAsDouble();
         long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
         StringBuilder win = new StringBuilder();
         double yMax = y0;
-        int resolvingSeen = 0;
+        double maxDrop = 0.0;
+        boolean trackedAtEnd = false;
         bot().holdKey(Keyboard.KEY_SPACE);
         try {
-            for (int i = 0; i < 12; i++) {
+            for (int i = 0; i < 25; i++) {
                 bot().waitTicks(2);
                 double y = bot().reportState().get("playerY").getAsDouble();
+                maxDrop = Math.max(maxDrop, yMax - y);
                 yMax = Math.max(yMax, y);
-                boolean tracked = exec("artest vs deck-capture").contains("\"alreadyTracked\":true");
-                if (tracked) resolvingSeen++;
+                trackedAtEnd = exec("artest vs deck-capture").contains("\"alreadyTracked\":true");
                 win.append(String.format(java.util.Locale.ROOT, "[t%d y=%.2f cap=%b] ",
-                        i * 2, y, tracked));
+                        i * 2, y, trackedAtEnd));
             }
         } finally {
             bot().releaseKey(Keyboard.KEY_SPACE);
         }
         long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
         exec("gamemode survival @a"); // leave the shared world as the other tests expect it
-        System.out.println("[crewcap] fly-window y0=" + y0 + " yMax=" + yMax + " resolvingSeen="
-                + resolvingSeen + " churn=" + churn + " :: " + win);
+        System.out.println("[crewcap] fly-window y0=" + y0 + " yMax=" + yMax + " maxDrop=" + maxDrop
+                + " trackedAtEnd=" + trackedAtEnd + " churn=" + churn + " :: " + win);
 
         // Instrument-fires: the double-tap really put the client into creative flight - a
         // non-flying player holding space would jump and land, never rising a full 1.5 blocks.
         assertTrue("the double-tap must actually start creative flight (y " + y0 + " -> max " + yMax
                 + "): " + win, yMax - y0 > 1.5);
-        // The contract: no seed snap, no capture war - the flying ex-pilot is never re-captured
-        // through the hold window.
-        assertTrue("a creative-flying ex-pilot must never be re-captured/snapped by the dismount "
-                + "hold (captured in " + resolvingSeen + "/12 samples): " + win, resolvingSeen == 0);
+        // The war's signature: the body yanked back toward the seat. A steady ascent (deck-frame
+        // or world-frame - this ship is upright) never gives back more than a fraction of a block.
+        assertTrue("a flying ex-pilot must never be yanked back down (maxDrop=" + maxDrop + "): "
+                + win, maxDrop < 0.75);
+        // Risen far above the open fixture, he has left the stay region: released, world-frame,
+        // and no re-capture pulling at him from below.
+        assertTrue("a flyer who has left the ship must be RELEASED, not still captured: " + win,
+                !trackedAtEnd);
     }
 
     // ---- C11: the OUTER hull of an inverted ship is walkable with WORLD-frame semantics ---------
