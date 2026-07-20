@@ -560,6 +560,21 @@ public class TestProbeCommand extends CommandBase {
             send(sender, sb.toString());
             return;
         }
+        // seat-delivery - read the SERVER JVM's pilot-input delivery diagnostics (the ungated
+        // statics on TilePilotSeat): how many control packets arrived, how many passed both server
+        // gates, the last packet's gate verdict, and what the server's own last rider resolution
+        // saw. Read-only, no waits; the client-side halves of the same chain are read reflectively
+        // from the client JVM by the test.
+        if (args.length >= 1 && "seat-delivery".equalsIgnoreCase(args[0])) {
+            send(sender, "{\"ok\":true"
+                    + ",\"received\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.pilotInputPacketsReceived
+                    + ",\"delivered\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.pilotInputPacketsDelivered
+                    + ",\"lastVerdict\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastPilotInputVerdict + "\""
+                    + ",\"riderResolveCount\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.riderResolveCount
+                    + ",\"lastRiderResolve\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastRiderResolve + "\""
+                    + "}");
+            return;
+        }
         // seat-mount <dim> — spawn the pilot seat's dummy mount and return its entity id, so a
         // test bot can `player mount-entity <id>` and become the ship's pilot. Mirrors
         // BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a ship block).
@@ -980,7 +995,7 @@ public class TestProbeCommand extends CommandBase {
         }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
-                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>"
+                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-delivery"
                 + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
                 + "|subspace-census [<dim> <id>]\"}");
     }

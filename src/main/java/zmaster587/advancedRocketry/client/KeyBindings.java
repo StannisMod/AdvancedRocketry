@@ -117,6 +117,21 @@ public class KeyBindings {
      *  frames (arbitrary look) don't pollute it. */
     private static volatile boolean cameraPinValid = false;
 
+    // ---- Ship-input delivery diagnostics (ungated statics) ----------------------------------
+    // The tier-2 gate below (handleShipPilotInput) refuses SILENTLY: when the ridden mount does
+    // not resolve a linked pilot seat the client just never sends, which from the outside is
+    // indistinguishable from "sent but lost". These counters make the gate's per-tick decision
+    // and the actual send observable (a client test reads them reflectively), so a dead cockpit
+    // can be attributed to the right link of the chain. See TilePilotSeat.lastRiderResolve for
+    // WHAT the resolution saw; deliberately not test-gated so they carry values everywhere.
+
+    /** Client ticks on which the tier-2 gate refused: riding, but no linked seat resolved. */
+    public static volatile int shipGateClosedTicks;
+    /** Client ticks on which the tier-2 gate held a linked pilot seat (the pilot branch ran). */
+    public static volatile int shipGateOpenTicks;
+    /** PACKET_PILOT_INPUT packets this client actually dispatched to the seat. */
+    public static volatile int shipInputSendCount;
+
     public static boolean isCameraPinnedThisFlight() {
         return cameraPinValid;
     }
@@ -562,12 +577,18 @@ public class KeyBindings {
         // not locate the seat tile on a physics-mod ship — the seat lives in a distant subspace).
         TilePilotSeat seat = TilePilotSeat.forRider(player.getRidingEntity(), mc.world);
         if (seat == null || !seat.isLinked()) {
+            // Diagnostics: count only ticks where the player IS on a seat mount - that is the
+            // silent "seated but not piloting" state worth attributing (walking ticks are noise).
+            if (player.getRidingEntity() instanceof EntityDummy) {
+                shipGateClosedTicks++;
+            }
             shipPilotPinValid = false;
             lastSentShipInput = FreeFlightInput.zero();
             pendingCursorYawDeg = 0f;
             pendingCursorPitchDeg = 0f;
             return false;
         }
+        shipGateOpenTicks++;
         BlockPos seatPos = seat.getPos();
 
         boolean cut = turnRocketDown.isKeyDown();
@@ -642,6 +663,7 @@ public class KeyBindings {
         if (!input.equals(lastSentShipInput)) {
             seat.pendingInput = input;
             PacketHandler.sendToServer(new PacketMachine(seat, TilePilotSeat.PACKET_PILOT_INPUT));
+            shipInputSendCount++;
             kbTrace("SHIP send " + input + " -> seat " + seatPos);
             lastSentShipInput = input;
         }

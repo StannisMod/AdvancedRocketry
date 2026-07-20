@@ -58,6 +58,29 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     private boolean linked = false;
     private int afcDx, afcDy, afcDz;
 
+    // ---- Delivery diagnostics (ungated statics, per JVM) -------------------------------------
+    // The pilot-input delivery chain fails SILENTLY on both of its gates: the piloting client
+    // simply does not send when it cannot resolve a linked seat for the mount it rides, and the
+    // server drops an arrived packet without a reply when its own guard or AFC resolve fails.
+    // These statics make each gate's last decision observable from outside the JVM (a client test
+    // reads them reflectively, a server test through a read-only probe), so a "the ship ignores
+    // the pilot" report can name the gate that ate the input instead of guessing. They are written
+    // by the SAME resolution the delivery path uses - never a parallel re-resolution - and are
+    // deliberately not gated on any test flag: they must have values in a production-configured
+    // JVM. Plain diagnostics; nothing in production reads them back.
+
+    /** How many times {@link #forRider} ran in this JVM (proof the resolver is exercised at all). */
+    public static volatile int riderResolveCount;
+    /** What the last {@link #forRider} call saw: the mount's bound seat position, the position it
+     *  looked up, what tile (if any) was there, and whether that seat was linked. */
+    public static volatile String lastRiderResolve = "";
+    /** Pilot-input packets that reached {@link #useNetworkData} in this JVM (any seat). */
+    public static volatile int pilotInputPacketsReceived;
+    /** Pilot-input packets that passed both server gates and were handed to the flight computer. */
+    public static volatile int pilotInputPacketsDelivered;
+    /** The last received pilot-input packet's gate outcome (seat pos, pilot guard, AFC resolve). */
+    public static volatile String lastPilotInputVerdict = "";
+
     /**
      * Client-only cache of the linked computer's Flight-Assist state, synced from the server via
      * the seat's update tag ({@link #getUpdateTag}). The piloting client's HUD reads this so it
@@ -112,12 +135,24 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         if (!(riding instanceof EntityDummy) || world == null) {
             return null;
         }
-        BlockPos seatPos = ((EntityDummy) riding).getSeatPos();
-        if (seatPos == null) {
-            seatPos = new BlockPos(riding);
-        }
+        BlockPos bound = ((EntityDummy) riding).getSeatPos();
+        BlockPos seatPos = bound != null ? bound : new BlockPos(riding);
         TileEntity te = world.getTileEntity(seatPos);
-        return te instanceof TilePilotSeat ? (TilePilotSeat) te : null;
+        TilePilotSeat seat = te instanceof TilePilotSeat ? (TilePilotSeat) te : null;
+        // Delivery diagnostics: record what THIS resolution - the one every control check actually
+        // uses - saw, so a silent "not piloting" verdict is attributable from outside the JVM.
+        riderResolveCount++;
+        lastRiderResolve = "bound=" + (bound == null ? "null" : xyz(bound))
+                + " lookup=" + xyz(seatPos)
+                + " tile=" + (te == null ? "null" : te.getClass().getSimpleName())
+                + " linked=" + (seat != null && seat.isLinked())
+                + " remote=" + world.isRemote;
+        return seat;
+    }
+
+    /** Compact {@code (x,y,z)} for the diagnostic strings above. */
+    private static String xyz(BlockPos pos) {
+        return "(" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ")";
     }
 
     /**
@@ -191,9 +226,13 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         if (id == PACKET_PILOT_INPUT) {
             boolean pilot = isPilotOf(player);
             TileAdvancedFlightComputer afc = pilot ? getFlightComputer() : null;
-            // Harness trace: the packet ARRIVED — log whether the pilot guard and the AFC resolve
-            // passed, so a playtest with -Dadvancedrocketry.tests=true shows where a seated pilot's
-            // input is dropped. No-op in normal play.
+            // Delivery diagnostics: the packet ARRIVED - record both server gates' outcome so a
+            // dropped input is attributable (see the statics' javadoc above). Ungated on purpose.
+            pilotInputPacketsReceived++;
+            lastPilotInputVerdict = "seat=" + xyz(pos) + " pilotGuard=" + pilot
+                    + " afcResolved=" + (afc != null);
+            // Harness trace: log the same verdict, so a playtest with -Dadvancedrocketry.tests=true
+            // shows where a seated pilot's input is dropped. No-op in normal play.
             if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
                 zmaster587.advancedRocketry.AdvancedRocketry.logger.info(
                         "[FF-TRACE/SEAT] recv pilotInput at " + pos + " pilotGuard=" + pilot
@@ -203,6 +242,7 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
             if (!pilot || afc == null) {
                 return;
             }
+            pilotInputPacketsDelivered++;
             FreeFlightInput input = new FreeFlightInput(
                     nbt.getFloat("ffFwd"), nbt.getFloat("ffVert"), nbt.getFloat("ffStrafe"),
                     nbt.getFloat("ffYaw"), nbt.getFloat("ffPitch"), nbt.getFloat("ffRoll"),
