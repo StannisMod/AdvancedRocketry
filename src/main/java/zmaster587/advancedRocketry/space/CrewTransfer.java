@@ -175,19 +175,23 @@ public final class CrewTransfer {
      * mount for a freshly-bound one - the same mount recipe every other boarding path ends in, so
      * the pilot keeps his seat with no re-click.
      *
-     * <p>Returns {@code false} while the relocated seat is not resolvable yet (the relocation is
-     * asynchronous - the caller retries next tick), {@code true} when the swap happened or has
-     * become moot (the pilot disconnected, stood up, or was re-seated by another path - he is never
-     * forced back into the seat).</p>
+     * <p>The caller owns retry and give-up policy, so the return is a tri-state: the swap
+     * happened; the relocated seat is not resolvable yet (relocation is asynchronous - retry next
+     * tick); or the pilot is not riding the recorded stale mount THIS TICK. The last one is
+     * deliberately not treated as final here: a single such observation can be a transient read
+     * during entity churn, and cancelling on it once left a pilot permanently on his stale mount -
+     * the caller debounces it over consecutive ticks before letting the entry go.</p>
      */
-    public static boolean rebindAcrossAssembly(WorldServer world, BlockPos anchor,
+    public enum RebindOutcome { REBOUND, NOT_READY, NOT_ON_STALE_MOUNT }
+
+    public static RebindOutcome rebindAcrossAssembly(WorldServer world, BlockPos anchor,
             EntityPlayerMP player, int staleDummyId, int afcDx, int afcDy, int afcDz) {
         if (player.hasDisconnected() || player.world != world) {
-            return true; // gone from this world; the login-restore path owns him now
+            return RebindOutcome.NOT_ON_STALE_MOUNT; // gone from this world; login-restore owns him
         }
         Entity riding = player.getRidingEntity();
         if (!(riding instanceof EntityDummy) || riding.getEntityId() != staleDummyId) {
-            return true; // stood up (or re-seated elsewhere) while waiting - do not force him back
+            return RebindOutcome.NOT_ON_STALE_MOUNT; // stood up / re-seated - never force him back
         }
         TilePilotSeat seat = matchSeat(seatsOfShipAt(world, anchor),
                 new Crew(player, afcDx, afcDy, afcDz));
@@ -197,7 +201,7 @@ public final class CrewTransfer {
         double[] seatWorld = seat == null
                 ? null : VSIntegration.getSeatWorldPosition(world, seat.getPos());
         if (seat == null || seatWorld == null) {
-            return false; // ship not up yet - retry
+            return RebindOutcome.NOT_READY; // ship not up yet - retry
         }
         // Atomic swap, one tick: a mechanical dismount (not the player leaving his post - the
         // aboard record must survive it), the stale mount retired, then the standard mount recipe
@@ -214,7 +218,7 @@ public final class CrewTransfer {
         dummy.setSeatPos(seat.getPos());
         world.spawnEntity(dummy);
         player.startRiding(dummy, true);
-        return true;
+        return RebindOutcome.REBOUND;
     }
 
     /** Every pilot-seat tile of the ship at {@code anchor}, found over its subspace shipyard. */

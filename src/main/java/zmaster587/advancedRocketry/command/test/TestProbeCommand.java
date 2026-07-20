@@ -572,6 +572,11 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"lastVerdict\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastPilotInputVerdict + "\""
                     + ",\"riderResolveCount\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.riderResolveCount
                     + ",\"lastRiderResolve\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastRiderResolve + "\""
+                    + ",\"rebindEnqueued\":" + zmaster587.advancedRocketry.space.AssemblyCrewRebind.enqueuedCount
+                    + ",\"rebindRebound\":" + zmaster587.advancedRocketry.space.AssemblyCrewRebind.reboundCount
+                    + ",\"rebindExpired\":" + zmaster587.advancedRocketry.space.AssemblyCrewRebind.expiredCount
+                    + ",\"rebindCancelled\":" + zmaster587.advancedRocketry.space.AssemblyCrewRebind.cancelledCount
+                    + ",\"rebindLastOutcome\":\"" + zmaster587.advancedRocketry.space.AssemblyCrewRebind.lastOutcome + "\""
                     + "}");
             return;
         }

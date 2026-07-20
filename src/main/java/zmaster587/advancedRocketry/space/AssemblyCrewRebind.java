@@ -31,11 +31,31 @@ public final class AssemblyCrewRebind {
 
     private static final Logger LOGGER = LogManager.getLogger("advancedrocketry.assemblycrewrebind");
 
-    /** Retry budget in server ticks (~15 s at 20 TPS); relocation normally completes within a
-     *  couple of seconds, but a loaded server or a large craft stretches it. */
-    private static final int MAX_ATTEMPTS = 300;
+    /** Retry budget in server ticks (~60 s at 20 TPS). Giving up strands the pilot on a mount
+     *  bound to vacated coordinates - a dead cockpit - so the budget errs long: the physics mod
+     *  relocates on its own thread, and on a heavily loaded server (many ships, many worlds) that
+     *  thread can lag far behind the server tick that counts these attempts. A 15 s budget was
+     *  measured expiring under an 8-fork test load. */
+    private static final int MAX_ATTEMPTS = 1200;
+
+    /** How many CONSECUTIVE ticks the pilot must be observed off his stale mount before the entry
+     *  is cancelled. A single observation is not trustworthy - a transient read during entity
+     *  churn once cancelled a rebind whose pilot never stood up, stranding him. */
+    private static final int NOT_ON_MOUNT_DEBOUNCE = 3;
 
     private static final List<Pending> PENDING = new ArrayList<>();
+
+    // ---- Outcome diagnostics (ungated statics, e2e/probe-readable) ---------------------------
+    /** Rebinds queued by the assembler in this JVM. */
+    public static volatile int enqueuedCount;
+    /** Rebinds that completed (the pilot got a fresh mount on the relocated seat). */
+    public static volatile int reboundCount;
+    /** Entries dropped because the retry budget expired (the WARN path - a stranded pilot). */
+    public static volatile int expiredCount;
+    /** Entries dropped because the pilot was observed off his stale mount (debounced). */
+    public static volatile int cancelledCount;
+    /** The last entry's outcome, for post-mortems. */
+    public static volatile String lastOutcome = "";
 
     /** One seated pilot owed a rebind: who, off which stale mount, onto which ship's seat. */
     private static final class Pending {
@@ -45,6 +65,8 @@ public final class AssemblyCrewRebind {
         final BlockPos anchor;
         final int afcDx, afcDy, afcDz;
         int attempts;
+        /** Consecutive ticks the pilot was observed NOT riding the stale mount (see debounce). */
+        int notOnMountStreak;
 
         Pending(int dimension, UUID playerId, int staleDummyId, BlockPos anchor,
                 int afcDx, int afcDy, int afcDz) {
@@ -65,6 +87,7 @@ public final class AssemblyCrewRebind {
      */
     public static void enqueue(WorldServer world, EntityPlayerMP player, int staleDummyId,
             BlockPos anchor, int afcDx, int afcDy, int afcDz) {
+        enqueuedCount++;
         PENDING.add(new Pending(world.provider.getDimension(), player.getUniqueID(),
                 staleDummyId, anchor, afcDx, afcDy, afcDz));
     }
@@ -85,13 +108,37 @@ public final class AssemblyCrewRebind {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(pending.playerId);
             WorldServer world = player == null ? null : server.getWorld(pending.dimension);
             if (player == null || world == null) {
-                it.remove(); // logged out mid-assembly; the login-restore path owns him now
+                // Debounced like the mount check: a transient lookup miss must not strand a
+                // still-connected pilot on a dead binding.
+                if (++pending.notOnMountStreak >= NOT_ON_MOUNT_DEBOUNCE) {
+                    cancelledCount++;
+                    lastOutcome = "cancelled(playerGone) anchor=" + pending.anchor;
+                    it.remove(); // logged out mid-assembly; the login-restore path owns him now
+                }
                 continue;
             }
-            if (CrewTransfer.rebindAcrossAssembly(world, pending.anchor, player,
-                    pending.staleDummyId, pending.afcDx, pending.afcDy, pending.afcDz)) {
+            CrewTransfer.RebindOutcome outcome = CrewTransfer.rebindAcrossAssembly(world,
+                    pending.anchor, player, pending.staleDummyId,
+                    pending.afcDx, pending.afcDy, pending.afcDz);
+            if (outcome == CrewTransfer.RebindOutcome.REBOUND) {
+                reboundCount++;
+                lastOutcome = "rebound anchor=" + pending.anchor + " after=" + pending.attempts;
                 it.remove();
-            } else if (++pending.attempts > MAX_ATTEMPTS) {
+                continue;
+            }
+            if (outcome == CrewTransfer.RebindOutcome.NOT_ON_STALE_MOUNT) {
+                if (++pending.notOnMountStreak >= NOT_ON_MOUNT_DEBOUNCE) {
+                    cancelledCount++;
+                    lastOutcome = "cancelled(offMount) anchor=" + pending.anchor
+                            + " after=" + pending.attempts;
+                    it.remove(); // genuinely stood up / re-seated - never force him back
+                }
+                continue;
+            }
+            pending.notOnMountStreak = 0; // still on the stale mount, ship just not up yet
+            if (++pending.attempts > MAX_ATTEMPTS) {
+                expiredCount++;
+                lastOutcome = "expired anchor=" + pending.anchor;
                 LOGGER.warn("gave up rebinding {} onto the ship assembled at {} after {} ticks - "
                         + "the relocated seat never resolved; he keeps the stale mount",
                         player.getName(), pending.anchor, MAX_ATTEMPTS);
