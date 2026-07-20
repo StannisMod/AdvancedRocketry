@@ -242,4 +242,28 @@ public class ShipEntryControllerTest {
         assertFalse("never from a space-subsystem world",
                 ShipEntryController.shouldTriggerEntry(true, true, 1001.0, 1000));
     }
+
+    /**
+     * The entry line must always be REACHABLE under the physics mod's hard altitude clamp. With
+     * stock configs both the orbit height and the clamp sit at 1000, and a line at the clamp can
+     * never be crossed - the ship stops dead at an invisible wall and entry never fires. The
+     * effective line is therefore derived from the live clamp, not trusted to configs to agree.
+     */
+    @Test
+    public void entryLineStaysReachableBelowThePhysicsClamp() {
+        // The stock-config collision: orbit 1000, clamp 1000 -> the line moves below the clamp.
+        int line = ShipEntryController.effectiveEntryCeiling(1000, 1000.0);
+        assertTrue("with orbit == clamp the line must drop below the clamp (got " + line + ")",
+                line < 1000);
+        assertTrue("a ship must be able to EXCEED the line before the clamp stops it (line " + line
+                        + ", clamp 1000)",
+                ShipEntryController.shouldTriggerEntry(false, true, 1000.0, line));
+
+        // A clamp raised well above the orbit line leaves the configured orbit height in charge.
+        assertEquals(1000, ShipEntryController.effectiveEntryCeiling(1000, 2_000_000.0));
+
+        // No physics mod -> no clamp -> the configured orbit height is untouched.
+        assertEquals(1000,
+                ShipEntryController.effectiveEntryCeiling(1000, Double.POSITIVE_INFINITY));
+    }
 }

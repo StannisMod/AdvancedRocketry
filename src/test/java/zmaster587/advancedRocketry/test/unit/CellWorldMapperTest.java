@@ -38,6 +38,22 @@ public class CellWorldMapperTest {
         assertEquals(GalacticCoord.HALF_CELL, centre[1] - floor[1], 0.0);
     }
 
+    /**
+     * The physics mod clamps every ship's altitude per physics step, and a ship's own thrust can
+     * never carry it past the clamp - so the ceiling the subsystem initializes at registration
+     * must sit ABOVE every pose a cell can realize, or some part of the advertised cell range is
+     * an invisible wall. Pins ceiling-covers-band, not any particular number.
+     */
+    @Test
+    public void initializedShipCeilingCoversEveryRealizablePose() {
+        double top = CellWorldMapper.poseWorldOf(
+                at(0, 0, 0, 0, GalacticCoord.HALF_CELL - 1, 0))[1];
+        assertTrue("the ship ceiling raised at subsystem registration ("
+                        + zmaster587.advancedRocketry.space.SpaceSubsystem.requiredShipCeiling()
+                        + ") must clear the topmost realizable cell pose (" + top + ")",
+                zmaster587.advancedRocketry.space.SpaceSubsystem.requiredShipCeiling() > top);
+    }
+
     @Test
     public void poseMappingRoundTripsExactly() {
         GalacticCoord original = at(5, 1, -9, 123_456, -777_777, 42);

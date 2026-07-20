@@ -99,6 +99,30 @@ public final class ShipEntryController {
     }
 
     /**
+     * How far below the physics mod's own altitude clamp the entry line is forced. The clamp is a
+     * hard per-tick cap on the ship's pose, so a trigger that requires {@code shipY > line} can
+     * only ever fire if the line sits comfortably BELOW the clamp - this margin is the room the
+     * ship needs to demonstrably cross the line before the clamp stops it.
+     */
+    public static final int PHYSICS_CLAMP_ENTRY_MARGIN = 16;
+
+    /**
+     * The orbit line entry actually fires on: the dimension's configured orbit height, capped
+     * below the physics mod's hard altitude clamp by {@link #PHYSICS_CLAMP_ENTRY_MARGIN}. With
+     * stock configs both numbers are 1000, which used to make the trigger line physically
+     * unreachable - the ship stopped dead at an invisible wall and the branch's headline feature
+     * never fired. Deriving the line from the live clamp keeps the two from ever desyncing,
+     * whatever either config says. An infinite {@code physicsCeiling} (physics mod absent) leaves
+     * the configured orbit height untouched.
+     */
+    public static int effectiveEntryCeiling(int orbitHeight, double physicsCeiling) {
+        if (Double.isInfinite(physicsCeiling)) {
+            return orbitHeight;
+        }
+        return (int) Math.min(orbitHeight, physicsCeiling - PHYSICS_CLAMP_ENTRY_MARGIN);
+    }
+
+    /**
      * Begin an entry for the ship whose flight computer sits at {@code afcPos} in dimension
      * {@code launchDimId}: resolve the target coordinate, materialize its cell, run the crossing,
      * and queue the multi-tick settle. Returns {@code true} if the crossing was started (the ship

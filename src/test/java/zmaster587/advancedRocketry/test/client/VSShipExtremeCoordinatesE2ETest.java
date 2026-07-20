@@ -12,7 +12,9 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * SPIKE e2e: is a tier-2 ship CONTROLLABLE — and does the real client keep tracking it — at extreme
- * world Y (≈ 2,000,000)? The honest-Y realization question: entities are NOT capped by the 256
+ * world Y (~4,000,000, just under the TOP of the cells' realized pose band, so the whole
+ * advertised vertical range is evidenced, not only the middle)? The honest-Y realization
+ * question: entities are NOT capped by the 256
  * build height (blocks are; vanilla's only hard line for entities is the void-kill below −64), so a
  * ship's world-frame pose can realize a galactic local-Y directly. A green run = GO for amending
  * the planar realization rule to an honest Y mapping.
@@ -43,7 +45,7 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 3400, BY = 64, BZ = 3400;
-    private static final double EXTREME_Y = 2_000_000d;
+    private static final double EXTREME_Y = 3_999_000d;
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));

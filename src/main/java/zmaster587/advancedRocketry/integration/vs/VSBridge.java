@@ -102,6 +102,31 @@ final class VSBridge {
     }
 
     /**
+     * The physics mod's hard ceiling for a ship's world-frame altitude ("Ship Y Position
+     * Maximum"): VS clamps every ship's pose to this Y each physics step, so no ship can climb
+     * above it under any thrust, whatever AR believes about orbit heights.
+     */
+    static double shipYPositionMaximum() {
+        return org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit;
+    }
+
+    /**
+     * Raise the physics mod's ship altitude ceiling to AT LEAST {@code required}. The clamp is a
+     * global static applied per physics step; the space cells realize ship poses megablocks above
+     * the stock value, and a ship's own thrust can never carry it past the clamp - so the ceiling
+     * must cover the whole pose band BEFORE the first ship arrives, deterministically, not be
+     * ratcheted up teleport-by-teleport. Never lowers a value the user configured higher; the
+     * raise is per-session (the VS config file is not written back).
+     */
+    static void raiseShipCeilingTo(double required, Logger logger) {
+        if (org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit < required) {
+            logger.info("Raising the physics ship altitude ceiling {} -> {} to cover the space cells.",
+                    org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit, required);
+            org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit = required;
+        }
+    }
+
+    /**
      * The WORLD position of the seat block at ship-subspace {@code seatPos}, as
      * {@code [x, y, z]}, or {@code null} if no ship manages it. The seat block lives in the
      * ship's subspace (a fixed shipyard region) but is rendered — and must be occupied by its
@@ -331,6 +356,11 @@ final class VSBridge {
         if (ship == null) {
             return false;
         }
+        // Safety net only: production space cells get their whole pose band covered ONCE at
+        // subsystem registration (raiseShipCeilingTo), so for them this never fires. It remains
+        // for destinations outside any pre-raised range (probe teleports to arbitrary Y, and
+        // deployments where the subsystem never registered) - without it the next physics step
+        // would clamp the ship straight back out of the teleport.
         if (dstY + 100d > org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit) {
             org.valkyrienskies.mod.common.config.VSConfig.shipUpperLimit = dstY + 1_000d;
         }

@@ -113,6 +113,20 @@ public final class SpaceSubsystem {
         return (!testMode || forceUnderTestHarness) && enabled && vsAvailable && !alreadyBuilt;
     }
 
+    /** Extra headroom above the cells' topmost realizable pose, so a ship can maneuver at the very
+     *  top of a cell without touching the physics clamp. {@code tunable}. */
+    private static final double SHIP_CEILING_MARGIN = 2_000d;
+
+    /**
+     * The ship-altitude ceiling the slot cells require: the top of the realized pose band
+     * ({@link CellWorldMapper#POSE_BAND_Y} + {@link GalacticCoord#CELL}) plus a maneuvering
+     * margin. Pure, so the "every realizable cell pose is below the initialized ceiling" contract
+     * is directly checkable.
+     */
+    public static double requiredShipCeiling() {
+        return (double) CellWorldMapper.POSE_BAND_Y + GalacticCoord.CELL + SHIP_CEILING_MARGIN;
+    }
+
     /**
      * Server-start hook. Registers the pool (once per JVM) and builds the production
      * {@link SpaceManager}, unless {@link #shouldRegister} says to stand down (test harness, the
@@ -145,6 +159,13 @@ public final class SpaceSubsystem {
             }
             return;
         }
+        // The cells realize ship poses across the whole [POSE_BAND_Y, CELL + POSE_BAND_Y) band
+        // (top ~ world Y 4M) while the physics mod's stock altitude clamp sits at 1000 and a
+        // ship's own thrust can never carry it past that clamp. Raise the ceiling ONCE here,
+        // deterministically, so the full vertical range of every cell is flyable from the first
+        // tick - not ratcheted up arrival-by-arrival, which left each ship a mere ~1000-block
+        // corridor above wherever it happened to enter.
+        VSIntegration.raiseShipCeilingTo(requiredShipCeiling());
         // Register the physical slot dimensions once per JVM; a single-player world re-open reuses the
         // already-registered dims (DimensionManager registration is JVM-global and re-registering throws).
         if (SpaceSlotPool.slotDims().isEmpty()) {

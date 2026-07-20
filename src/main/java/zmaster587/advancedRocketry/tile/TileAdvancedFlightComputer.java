@@ -318,8 +318,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             zmaster587.advancedRocketry.dimension.DimensionProperties props =
                     zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
                             .getDimensionProperties(world.provider.getDimension());
-            int ceiling = props != null ? props.getOrbitHeight()
-                    : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit;
+            int ceiling = zmaster587.advancedRocketry.space.ShipEntryController.effectiveEntryCeiling(
+                    props != null ? props.getOrbitHeight()
+                            : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit,
+                    VSIntegration.shipYPositionMaximum());
             if (entryCtl != null && shipPos != null
                     && zmaster587.advancedRocketry.space.ShipEntryController
                             .shouldTriggerEntry(false, true, shipPos[1], ceiling)

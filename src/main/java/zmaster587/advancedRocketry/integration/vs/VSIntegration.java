@@ -84,6 +84,34 @@ public final class VSIntegration {
     }
 
     /**
+     * The physics mod's hard ceiling for ship altitude (world Y), or
+     * {@code Double.POSITIVE_INFINITY} when the physics mod is absent (nothing clamps, so nothing
+     * caps a trigger line). Any gate that fires on "the ship climbed past altitude H" must derive
+     * its H BELOW this value: the clamp is applied every physics step, so a trigger line at or
+     * above it is physically unreachable and the gate silently never fires.
+     */
+    public static double shipYPositionMaximum() {
+        if (!isAvailable()) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return VSBridge.shipYPositionMaximum();
+    }
+
+    /**
+     * Raise the physics mod's ship altitude ceiling to at least {@code required} (no-op when the
+     * physics mod is absent, or when the configured/current value is already higher). Called once
+     * at space-subsystem registration so every slot cell's pose band is flyable from the first
+     * tick - see {@link VSBridge#raiseShipCeilingTo} for why this must be deterministic rather
+     * than teleport-ratcheted.
+     */
+    public static void raiseShipCeilingTo(double required) {
+        if (!isAvailable()) {
+            return;
+        }
+        VSBridge.raiseShipCeilingTo(required, LOGGER);
+    }
+
+    /**
      * The subspace shipyard bounding box (world coordinates) of the loaded VS ship whose world BB
      * contains {@code (x,y,z)}, or {@code null} when VS is absent or no ship is there. A ship's blocks
      * live in this far-off shipyard region, not at the rendered position — the per-ship "crossing"
