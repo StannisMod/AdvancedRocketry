@@ -120,7 +120,8 @@ public class ShipEntryControllerTest {
         assertTrue(ctl.isEntering(SHIP));
         assertEquals("slot pinned across the async crossing", 1, ops.pinned.size());
 
-        ctl.tick(); // reseat + pose teleport
+        ctl.tick(); // pose teleport (runs FIRST: the split-pair invariant)
+        ctl.tick(); // re-seat at the pose
         ctl.tick(); // unpark + settle
 
         assertFalse(ctl.isEntering(SHIP));
@@ -196,8 +197,8 @@ public class ShipEntryControllerTest {
         SpaceManager space = new SpaceManager(new FakeBinder(10, 11), clock::get, never());
         ShipLedger ledger = new ShipLedger();
         FakeOps ops = new FakeOps();
-        ops.reseatFailCount = 2;   // seats resolve on the third tick
-        ops.teleportFailCount = 1; // ship queryable one tick after that
+        ops.teleportFailCount = 2; // re-assembly queryable on the third tick
+        ops.reseatFailCount = 1;   // seats resolve one tick after that
         ShipEntryController ctl = new ShipEntryController(space, ledger, ops,
                 dim -> body(5), clock::get);
 
@@ -206,7 +207,8 @@ public class ShipEntryControllerTest {
             assertTrue("still settling on tick " + i, ctl.isEntering(SHIP));
             ctl.tick();
         }
-        ctl.tick(); // the unpark+settle tick after the successful pose write
+        ctl.tick(); // the successful re-seat at the pose
+        ctl.tick(); // the unpark+settle tick
 
         assertFalse("settled despite the slow re-assembly", ctl.isEntering(SHIP));
         assertNotNull(ledger.get(SHIP));
@@ -225,6 +227,7 @@ public class ShipEntryControllerTest {
         assertFalse("an in-flight entry is not restarted", ctl.requestEntry(LAUNCH_DIM, AFC, SHIP));
         assertEquals(1, ops.crossings);
 
+        ctl.tick();
         ctl.tick();
         ctl.tick();
         assertFalse("a ship already in space cannot enter again",

@@ -190,6 +190,7 @@ public class VSShipPoweredEntryE2ETest {
             assertTrue("ARRANGEMENT (control leg): the pilot must be able to fly AT ALL before the "
                             + "entry leg can indict the crossing. yRest=" + yRest + " yControl="
                             + yControl, (yControl - yRest) >= MIN_CONTROL_CLIMB);
+            System.out.println("[GATE-STATS after control leg] " + clientGateStats());
 
             // ---- ENTRY LEG: keep climbing until the ledger records the settled entry. ---------
             // While the crossing runs, the origin-world ship vanishes (the cut), so posY going
@@ -211,6 +212,8 @@ public class VSShipPoweredEntryE2ETest {
                     }
                 }
             }
+            System.out.println("[GATE-STATS after entry leg] " + clientGateStats());
+            System.out.println("[ARRIVAL-TRACE entry leg] " + exec("artest vs arrival-trace"));
             assertTrue("a ship climbing under its own power past the orbit line (" + ORBIT_LINE
                             + ") must be taken by the entry crossing and SETTLE in a cell - the whole "
                             + "on-ramp a real player flies. lastSeenY=" + lastY
@@ -256,6 +259,12 @@ public class VSShipPoweredEntryE2ETest {
             seatedTwice = prev && isRiding(riding);
             prev = isRiding(riding);
         }
+        // Position-writer timeline for the arrival, printed win-or-lose: the harness deletes its
+        // child workdirs on close, so the only way to read the writers post-run is through the
+        // test's own stdout. Server ring via the probe; client ring via a static-field read.
+        System.out.println("[ARRIVAL-TRACE server] " + exec("artest vs arrival-trace"));
+        System.out.println("[ARRIVAL-TRACE client] " + bot().readStaticField(
+                "zmaster587.advancedRocketry.space.ArrivalTrace", "CLIENT"));
         assertTrue("the pilot who FLEW his ship into space must still be in his seat on arrival - "
                         + "a crossing must never stand him up. riding=" + riding
                         + " delivery=" + exec("artest vs seat-delivery"),
@@ -307,6 +316,20 @@ public class VSShipPoweredEntryE2ETest {
     private double clientPlayerY() throws Exception {
         JsonObject state = bot().reportState();
         return state.has("playerY") ? state.get("playerY").getAsDouble() : Double.NaN;
+    }
+
+    /** The client-side pilot-input gate discriminators (the delivery chain's CLIENT half). */
+    private String clientGateStats() throws Exception {
+        String cls = "zmaster587.advancedRocketry.client.KeyBindings";
+        return "open=" + bot().readStaticField(cls, "shipGateOpenTicks").get("value").getAsString()
+                + " closed=" + bot().readStaticField(cls, "shipGateClosedTicks").get("value").getAsString()
+                + " sends=" + bot().readStaticField(cls, "shipInputSendCount").get("value").getAsString()
+                + " clientTicks=" + bot().readStaticField(
+                        "com.github.stannismod.forge.testing.client.bridge.ForgeTestClientBootstrap",
+                        "CLIENT_TICKS").get("value").getAsString()
+                + " wallMs=" + System.currentTimeMillis()
+                + " shipData=" + exec("artest vs player-ship-data")
+                + " riding=" + bot().reportRidingEntity();
     }
 
     private static boolean isRiding(JsonObject riding) {

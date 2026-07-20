@@ -312,7 +312,19 @@ public class EntityDummy extends Entity {
         }
         double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seat);
         if (worldSeat != null) {
+            double glueJump = Math.abs(worldSeat[1] - posY);
             setPosition(worldSeat[0], worldSeat[1], worldSeat[2]);
+            if (glueJump > 64.0) {
+                // A seat-glue snap far beyond any per-tick tracking step: this side's ship
+                // transform moved under the mount (a pose teleport landing, or the two sides'
+                // transforms disagreeing). One of the position writers the arrival timeline names.
+                zmaster587.advancedRocketry.space.ArrivalTrace.side(world.isRemote,
+                        "glueJump t=" + world.getTotalWorldTime()
+                                + " dummy=" + getEntityId()
+                                + " dy=" + zmaster587.advancedRocketry.space.ArrivalTrace.fmt(glueJump)
+                                + " toY=" + zmaster587.advancedRocketry.space.ArrivalTrace.fmt(worldSeat[1])
+                                + " pass=" + zmaster587.advancedRocketry.space.ArrivalTrace.ids(getPassengers()));
+            }
         }
         if (!world.isRemote) {
             keepDismountedPilotOnDeck();

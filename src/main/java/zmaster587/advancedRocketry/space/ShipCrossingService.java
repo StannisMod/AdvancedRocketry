@@ -12,9 +12,14 @@ import net.minecraft.util.math.BlockPos;
  * The generalized per-ship <b>crossing</b> shared by the entry on-ramp ({@link ShipEntryController},
  * planet&rarr;cell) and the planet descent ({@link DescentController}, cell&rarr;planet). It owns the
  * momentary crossing (pin the destination, run the per-ship pack/paste) and the asynchronous
- * multi-tick <b>settle</b> (re-seat the crew, rigid-teleport the re-assembled ship to its final pose,
- * unpark). The DIRECTION-specific decisions — where the ship goes, the ledger/refcount bookkeeping,
- * the player-facing messages — stay in each controller and are delivered here through {@link Ops}
+ * multi-tick <b>settle</b> (rigid-teleport the re-assembled ship to its final pose, then re-seat the
+ * crew AT that pose, then unpark). The settle order is a hard invariant: the pose teleport runs
+ * BEFORE the re-seat, so a rider is never mounted onto a mount that is about to move — re-seating
+ * first once left a freshly-mounted pilot at the paste band while his mount teleported to the cell
+ * pose, a split the client can never recover from (the new mount spawns out of tracking range, so
+ * the client is never told it exists and un-seats when the old mount's destroy packet lands). The
+ * DIRECTION-specific decisions — where the ship goes, the ledger/refcount bookkeeping, the
+ * player-facing messages — stay in each controller and are delivered here through {@link Ops}
  * (the world seam) and a {@link Completion} callback.
  *
  * <p>{@link ShipTransitManager} keeps the hyperspace legs (it advances a coordinate logically rather
@@ -48,11 +53,15 @@ public final class ShipCrossingService {
         /** Queue every ship in the destination world loaded (async assembly may lack a player yet). */
         void loadShips(int destDim);
 
-        /** Re-seat the captured crew on the re-assembled ship. {@code false} = retry next tick. */
+        /** Re-seat the captured crew on the re-assembled ship. Runs AFTER the pose teleport, so
+         *  {@code anchor} is a world point on the ship at its FINAL pose (the paste anchor no
+         *  longer resolves the moved ship). {@code false} = retry next tick. */
         boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew);
 
         /** Rigid-teleport the ship near {@code anchor} to the pose position, carrying riders.
-         *  The ship comes out PARKED. {@code false} = ship not up yet, retry. */
+         *  Runs FIRST in the settle (before the re-seat), so it owns its own proof that the
+         *  asynchronous re-assembly is complete. The ship comes out PARKED. {@code false} = ship
+         *  not up yet, retry. */
         boolean teleportPoseWithRiders(int destDim, BlockPos anchor, double px, double py, double pz);
 
         /** Re-enable physics on the ship at the (post-teleport) pose position. */
@@ -131,9 +140,12 @@ public final class ShipCrossingService {
     }
 
     /**
-     * Advance every in-flight crossing one tick: keep the destination's ships load-queued, re-seat
-     * the crew once the re-assembled seats exist, rigid-teleport the pose to the final position, then
-     * a tick later unpark and hand off to the controller's {@link Completion}.
+     * Advance every in-flight crossing one tick: keep the destination's ships load-queued,
+     * rigid-teleport the pose to the final position once the re-assembly is queryable, a tick later
+     * re-seat the crew AT that pose, then unpark and hand off to the controller's
+     * {@link Completion}. Pose before re-seat is the split-pair invariant (class javadoc); the
+     * tick between them lets the moved transform propagate so the seat lookup already maps
+     * through the arrived pose.
      */
     public void tick() {
         if (pending.isEmpty()) {
@@ -143,16 +155,19 @@ public final class ShipCrossingService {
         while (it.hasNext()) {
             Pending e = it.next().getValue();
             ops.loadShips(e.destDim);
-            if (!e.reseated) {
-                e.reseated = ops.reseat(e.destDim, e.anchor, e.crew);
-            }
-            if (e.reseated && !e.poseDone) {
+            if (!e.poseDone) {
                 e.poseDone = ops.teleportPoseWithRiders(
                         e.destDim, e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
-            } else if (e.poseDone) {
-                // A tick after the pose write: the transform adoption has propagated — unpark, then
-                // let the controller settle/release. Removed from the map before the callback so a
-                // completion that re-queries this service sees the crossing as done.
+            } else if (!e.reseated) {
+                // The ship sits at its final pose now, so the paste anchor no longer resolves it —
+                // the re-seat probes at the pose itself, and the crew's fresh mounts (and the crew)
+                // are born directly there: no write ever targets a superseded position.
+                e.reseated = ops.reseat(e.destDim, new BlockPos(
+                        e.finalPose[0], e.finalPose[1], e.finalPose[2]), e.crew);
+            } else {
+                // A tick after the re-seat: unpark at the pose, then let the controller
+                // settle/release. Removed from the map before the callback so a completion that
+                // re-queries this service sees the crossing as done.
                 ops.unparkAt(e.destDim, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
                 it.remove();
                 e.completion.settled(e.shipId);

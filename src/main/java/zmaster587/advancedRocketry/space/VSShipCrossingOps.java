@@ -83,6 +83,13 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
             return false;
         }
         double sx = anchor.getX() + 0.5, sy = anchor.getY() + 0.5, sz = anchor.getZ() + 0.5;
+        // Second gate, relocation COMPLETE: the pose teleport runs before the crew re-seat now, so
+        // the "seats are managed by a live ship" proof the re-seat used to provide implicitly must
+        // be established here — a block at the paste anchor is managed only once VS has finished
+        // relocating the pasted blocks into the shipyard.
+        if (VSIntegration.shipBlockAt(world, sx, sy, sz) == null) {
+            return false;
+        }
         // Capture riders at the CURRENT pose before the write, then carry them by the same delta
         // (the proven teleport-ship recipe; a carried dummy's seated player follows as passenger).
         List<EntityDummy> riders = world.getEntitiesWithinAABB(EntityDummy.class,
@@ -90,8 +97,29 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
         if (!VSIntegration.teleportShipTo(world, sx, sy, sz, px, py, pz)) {
             return false;
         }
+        ArrivalTrace.server("poseTp.ship t=" + world.getTotalWorldTime()
+                + " y=" + ArrivalTrace.fmt(sy) + "->" + ArrivalTrace.fmt(py)
+                + " riders=" + riders.size());
         for (EntityDummy d : riders) {
+            double oldY = d.posY;
             d.setPositionAndUpdate(d.posX + (px - sx), d.posY + (py - sy), d.posZ + (pz - sz));
+            ArrivalTrace.server("poseTp.dummy t=" + world.getTotalWorldTime()
+                    + " dummy=" + d.getEntityId()
+                    + " y=" + ArrivalTrace.fmt(oldY) + "->" + ArrivalTrace.fmt(d.posY)
+                    + " pass=" + ArrivalTrace.ids(d.getPassengers()));
+            // Safety net: a mount must never leave a seated player behind (a rider split from his
+            // mount by more than tracking range is unrecoverable client-side). The settle re-seats
+            // AFTER this teleport so no crew normally rides through it, but probe mounts and any
+            // future caller with a live rider are carried by the same delta.
+            for (net.minecraft.entity.Entity p : d.getPassengers()) {
+                if (p instanceof net.minecraft.entity.player.EntityPlayerMP) {
+                    double riderY = p.posY;
+                    p.setPositionAndUpdate(p.posX + (px - sx), p.posY + (py - sy), p.posZ + (pz - sz));
+                    ArrivalTrace.server("poseTp.rider t=" + world.getTotalWorldTime()
+                            + " p=" + p.getEntityId()
+                            + " y=" + ArrivalTrace.fmt(riderY) + "->" + ArrivalTrace.fmt(p.posY));
+                }
+            }
         }
         return true;
     }

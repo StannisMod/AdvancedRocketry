@@ -580,6 +580,17 @@ public class TestProbeCommand extends CommandBase {
                     + "}");
             return;
         }
+        // arrival-trace - dump the SERVER JVM's position-writer timeline around ship crossings
+        // (the ungated ring on ArrivalTrace): every tagged write site, per-tick jump samples and
+        // mount/dismount call stacks. Read-only, no waits; the client half of the timeline is read
+        // from the client JVM via readStaticField(ArrivalTrace.CLIENT).
+        if (args.length >= 1 && "arrival-trace".equalsIgnoreCase(args[0])) {
+            send(sender, "{\"ok\":true"
+                    + ",\"count\":" + zmaster587.advancedRocketry.space.ArrivalTrace.SERVER.size()
+                    + ",\"events\":\"" + zmaster587.advancedRocketry.space.ArrivalTrace.dumpServer() + "\""
+                    + "}");
+            return;
+        }
         // seat-mount <dim> — spawn the pilot seat's dummy mount and return its entity id, so a
         // test bot can `player mount-entity <id>` and become the ship's pilot. Mirrors
         // BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a ship block).
@@ -1000,7 +1011,7 @@ public class TestProbeCommand extends CommandBase {
         }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
-                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-delivery"
+                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-delivery|arrival-trace"
                 + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
                 + "|subspace-census [<dim> <id>]\"}");
     }

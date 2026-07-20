@@ -137,7 +137,8 @@ public class DescentControllerTest {
         assertEquals("the vacated cell's slot is free", SLOT_DIM, space.materialize(body(77)));
         assertTrue("the settle is still in flight", ctl.isDescending(SHIP));
 
-        ctl.tick(); // reseat + pose teleport
+        ctl.tick(); // pose teleport (runs FIRST: the split-pair invariant)
+        ctl.tick(); // re-seat at the pose
         ctl.tick(); // unpark + settle
 
         assertFalse(ctl.isDescending(SHIP));

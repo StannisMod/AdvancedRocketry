@@ -149,8 +149,12 @@ public final class CrewTransfer {
                 player.getServer().getPlayerList().transferPlayerToDimension(player,
                         dstWorld.provider.getDimension(),
                         (world, entity, yaw) -> entity.setLocationAndAngles(tx, ty, tz, yaw, 0f));
+                ArrivalTrace.server("reseat.dimTransfer t=" + dstWorld.getTotalWorldTime()
+                        + " p=" + player.getEntityId() + " toY=" + ArrivalTrace.fmt(ty));
             } else {
                 player.setPositionAndUpdate(seatWorld[0], seatWorld[1], seatWorld[2]);
+                ArrivalTrace.server("reseat.setPos t=" + dstWorld.getTotalWorldTime()
+                        + " p=" + player.getEntityId() + " toY=" + ArrivalTrace.fmt(seatWorld[1]));
             }
             if (player.getRidingEntity() instanceof EntityDummy) {
                 continue; // already re-seated by an earlier retry
@@ -161,6 +165,9 @@ public final class CrewTransfer {
             dummy.setSeatPos(seat.getPos());
             dstWorld.spawnEntity(dummy);
             player.startRiding(dummy, true);
+            ArrivalTrace.server("reseat.mount t=" + dstWorld.getTotalWorldTime()
+                    + " p=" + player.getEntityId() + " dummy=" + dummy.getEntityId()
+                    + " y=" + ArrivalTrace.fmt(seatWorld[1]));
         }
         return allSeated;
     }
@@ -218,6 +225,9 @@ public final class CrewTransfer {
         dummy.setSeatPos(seat.getPos());
         world.spawnEntity(dummy);
         player.startRiding(dummy, true);
+        ArrivalTrace.server("rebind.swap t=" + world.getTotalWorldTime()
+                + " p=" + player.getEntityId() + " stale=" + staleDummyId
+                + " dummy=" + dummy.getEntityId() + " toY=" + ArrivalTrace.fmt(seatWorld[1]));
         return RebindOutcome.REBOUND;
     }
 
