@@ -92,8 +92,10 @@ public final class SpaceSubsystem {
      *   <li>{@code testMode} — the spike/probe tests register their OWN pool via {@code /artest space
      *       manager}; the production register must stand down or it stacks pools and shifts slot ids.
      *       {@code forceUnderTestHarness} overrides exactly this one gate, so a test that wants to
-     *       drive the REAL server-start path can opt in; it changes nothing on a normal server, where
-     *       no harness is ever detected.</li>
+     *       drive the REAL server-start path can opt in. Note test mode is a JVM property, NOT a
+     *       harness detection: an interactive dev-client session launched with the property (the
+     *       usual way to get the probe commands in a playtest) trips this gate too - which is why
+     *       the standdown is logged at WARN and the override flag matters outside CI.</li>
      *   <li>{@code enabled} — the {@code enableSpaceSubsystem} config flag; when off the subsystem is fully
      *       disabled, registering no dimensions at all (a config toggle must return the vanilla baseline).</li>
      *   <li>{@code vsAvailable} — the subsystem only hosts tier-2 Valkyrien Skies ships; without VS there
@@ -122,13 +124,21 @@ public final class SpaceSubsystem {
         boolean vsAvailable = VSIntegration.isAvailable();
         boolean forced = cfg.spaceRegisterUnderTestHarness;
         if (!shouldRegister(testMode, cfg.enableSpaceSubsystem, vsAvailable, instance != null, forced)) {
-            // Log the operator-facing reason for the two config/environment gates only (test mode and
-            // already-built are internal, expected no-ops that must stay quiet).
-            if (!testMode && instance == null) {
-                if (!cfg.enableSpaceSubsystem) {
+            // Log the operator-facing reason (already-built is an internal, expected no-op that
+            // must stay quiet). The test-mode standdown is a WARN, not an INFO: it also fires in
+            // an interactive dev-client session launched with the test property (the usual way to
+            // get the probe commands in a playtest), where it silently disables the very subsystem
+            // being play-tested - the operator must be able to see WHY space never engages.
+            if (instance == null) {
+                if (testMode && cfg.enableSpaceSubsystem && vsAvailable) {
+                    AdvancedRocketry.logger.warn("[SPACE] test mode detected - space subsystem "
+                            + "STANDING DOWN (no space dimensions registered, ship entry will never "
+                            + "fire). This also affects interactive sessions launched with the test "
+                            + "property; set spaceRegisterUnderTestHarness=true to register anyway.");
+                } else if (!testMode && !cfg.enableSpaceSubsystem) {
                     AdvancedRocketry.logger.info("[SPACE] subsystem disabled (enableSpaceSubsystem=false) - "
                             + "no space dimensions registered");
-                } else if (!vsAvailable) {
+                } else if (!testMode && !vsAvailable) {
                     AdvancedRocketry.logger.info("[SPACE] Valkyrien Skies not installed - space subsystem "
                             + "not registered (no tier-2 ships to host)");
                 }
