@@ -130,6 +130,55 @@ public final class ShipFrameTravel {
      *  i.e. the mod HAD armed its own mover on a body AR resolves (a boarding fall, a flight
      *  contact) and it was disarmed before it could fight the resolution. */
     public static volatile long dragSuppressions = 0L;
+    /** Render-vs-collision pose skew, sampled at each CLIENT-side commit: the distance between the
+     *  world position this class committed (mapped through the game-tick transform — the pose the
+     *  body collides and stands against) and where the ship RENDERER draws the same subspace point
+     *  this frame (the render transform). A non-zero value is the visible gap between the body's
+     *  feet and the surface the player sees; {@code lastRenderSkewMode} names the resolution mode
+     *  ("aboard"/"hull") of the most recent sample. Side-local statics, client-only in practice. */
+    public static volatile long renderSkewSamples = 0L;
+    public static volatile double lastRenderSkew = -1.0;
+    public static volatile String lastRenderSkewMode = "";
+    /** The raw ingredients of the most recent skew sample: the held SUBSPACE point and the world
+     *  position THIS side committed for it. A prober on the other side can map the same subspace
+     *  point through its own transform and compare — the cross-side pose divergence the in-client
+     *  skew above cannot see. */
+    public static volatile double lastSkewSubX, lastSkewSubY, lastSkewSubZ;
+    public static volatile double lastSkewCommitX, lastSkewCommitY, lastSkewCommitZ;
+    /** HULL-STAND box misalignment: the sweep collides a box that is axis-aligned in SUBSPACE
+     *  (feet + height along subspace-up), but a hull-stand body is a WORLD-upright capsule. The
+     *  distance between the two volumes' centres — {@code h/2 · |shipFrame(world-up) − (0,1,0)|}
+     *  = {@code h·sin(tilt/2)} — is the phantom displacement of every contact this mode computes:
+     *  at a steep attitude the body collides with hull geometry that far from where it visibly
+     *  stands. Zero on a level ship. */
+    public static volatile double lastHullBoxMismatch = -1.0;
+
+    /** Measure how far the committed world position sits from where the renderer draws the same
+     *  subspace point. Client-side only: the render transform never advances on a dedicated
+     *  server, and the skew is a per-frame render observable. */
+    private static void sampleRenderSkew(World world, String shipId,
+                                         double subX, double subY, double subZ,
+                                         double[] worldPos, String mode) {
+        if (!world.isRemote) {
+            return;
+        }
+        double[] drawn = VSIntegration.renderToWorldFrameFor(world, shipId, subX, subY, subZ);
+        if (drawn == null) {
+            return;
+        }
+        double dx = worldPos[0] - drawn[0];
+        double dy = worldPos[1] - drawn[1];
+        double dz = worldPos[2] - drawn[2];
+        lastRenderSkew = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        lastRenderSkewMode = mode;
+        lastSkewSubX = subX;
+        lastSkewSubY = subY;
+        lastSkewSubZ = subZ;
+        lastSkewCommitX = worldPos[0];
+        lastSkewCommitY = worldPos[1];
+        lastSkewCommitZ = worldPos[2];
+        renderSkewSamples++;
+    }
 
     /** Called by the move-suppression hook: a world-frame mover asked to displace a resolved body. */
     public static void noteWorldMove(String type, double x, double y, double z) {
@@ -1138,41 +1187,61 @@ public final class ShipFrameTravel {
      *  the underside, where world-frame semantics own it (contract C11). */
     private static final double FLOOR_PROBE_DEPTH = 6.0;
 
-    /** WORLD-down expressed in ship {@code shipId}'s frame, unit length - the gravity direction a
-     *  HULL-STAND body falls along inside the subspace. Null when the transform is unavailable. */
-    private static double[] worldDownInShipFrame(World world, String shipId) {
-        double[] g = VSIntegration.rotateToShipFrameFor(world, shipId, 0.0, -1.0, 0.0);
-        if (g == null) {
-            return null;
-        }
-        double m = Math.sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
-        if (m < 1.0E-9) {
-            return null;
-        }
-        return new double[]{g[0] / m, g[1] / m, g[2] / m};
-    }
+    /** Whether the body's REAL world-upright box, moved by its motion this tick (plus a hair of
+     *  slack), touches ship {@code shipId}'s geometry in its TRUE world orientation - the
+     *  world-frame analogue of the deck support probe: "is world gravity about to seat this body
+     *  on the hull". Penetrating overlap counts: a fast faller a face deep into the hull is
+     *  exactly who must be caught (the sweep then resolves the contact instead of the physics
+     *  mod's bounce-and-tunnel). Must agree with {@code hullStandTravel}'s collision solid, or
+     *  hold and collision fight each other. */
+    /** Diagnostics of {@code hullContactFor} on THIS side: the most recent call's obstacle count
+     *  (-1 = transform away, -2 = axes away) and verdict, plus cumulative calls / the maximum
+     *  obstacle count ever seen / how many calls answered "touch". */
+    public static volatile int lastHullContactObstacles = -99;
+    public static volatile int lastHullContactTouch = -99;
+    public static volatile long hullContactCalls = 0L;
+    public static volatile int hullContactMaxObstacles = -99;
+    public static volatile long hullContactTouches = 0L;
 
-    /** Whether the body's box, moved by its RELATIVE motion this tick (plus a hair of slack),
-     *  touches ship {@code shipId}'s subspace geometry - the world-frame analogue of the deck
-     *  support probe: "is world gravity about to seat this body on the hull". Penetrating overlap
-     *  counts: a fast faller a face deep into the hull is exactly who must be caught (the sweep
-     *  then resolves the contact instead of the physics mod's bounce-and-tunnel). */
+    /** How far from the hull's true geometry the contact gate still reads "about to stand on
+     *  this hull". This is a CAPTURE gate, not a collision test: before the capture takes over,
+     *  the physics mod's own world collision parks a faller a few tenths of a block OFF the face
+     *  (0.15–0.4 measured on the inverted fixture), and a gate that demanded near-touch (0.05)
+     *  lost the handover race — the body was chewed and dropped through the hull, the exact
+     *  failure this capture mode exists to prevent. The
+     *  margin must exceed that parking gap; bystanders are safe (the terrain veto and the C4/C13
+     *  flight exclusions run before any hull capture). */
+    private static final double HULL_CONTACT_MARGIN = 0.5;
+
     private static boolean hullContactFor(Entity entity, String shipId) {
-        double[] local = VSIntegration.toShipFrameFor(
-                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
-        if (local == null) {
+        hullContactCalls++;
+        double[][] axes = shipAxesFor(entity.world, shipId);
+        if (axes == null) {
+            lastHullContactObstacles = -2;
+            lastHullContactTouch = 0;
             return false;
         }
-        double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
-                entity.motionX, entity.motionY, entity.motionZ);
-        double half = entity.width / 2.0;
-        AxisAlignedBB box = new AxisAlignedBB(
-                local[0] - half, local[1], local[2] - half,
-                local[0] + half, local[1] + entity.height, local[2] + half);
-        if (motion != null) {
-            box = box.expand(motion[0], motion[1], motion[2]);
+        AxisAlignedBB wb = entity.getEntityBoundingBox()
+                .expand(entity.motionX, entity.motionY, entity.motionZ)
+                .grow(HULL_CONTACT_MARGIN);
+        double[] box = {wb.minX, wb.minY, wb.minZ, wb.maxX, wb.maxY, wb.maxZ};
+        List<double[]> obstacles = hullObstaclesFor(entity.world, shipId, entity, box,
+                0.0, 0.0, 0.0);
+        if (obstacles == null) {
+            lastHullContactObstacles = -1;
+            lastHullContactTouch = 0;
+            return false;
         }
-        return !entity.world.getCollisionBoxes(entity, box.grow(0.05)).isEmpty();
+        boolean touch = HullSweep.touchesAny(box, obstacles, axes);
+        lastHullContactObstacles = obstacles.size();
+        if (obstacles.size() > hullContactMaxObstacles) {
+            hullContactMaxObstacles = obstacles.size();
+        }
+        if (touch) {
+            hullContactTouches++;
+        }
+        lastHullContactTouch = touch ? 1 : 0;
+        return touch;
     }
 
     /** Whether ANY standing floor exists within {@link #FLOOR_PROBE_DEPTH} below the body's feet in
@@ -1528,6 +1597,7 @@ public final class ShipFrameTravel {
         // The relog anchor follows the body: persisted per resolved ABOARD tick so a save catches
         // the deck spot he is standing on NOW (contract C14), not the episode's first contact.
         persistAnchor(entity, shipId, sweep.x, sweep.y, sweep.z);
+        sampleRenderSkew(world, shipId, sweep.x, sweep.y, sweep.z, worldPos, "aboard");
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
@@ -1681,22 +1751,37 @@ public final class ShipFrameTravel {
         if (local == null) {
             local = VSIntegration.toShipFrameFor(world, shipId, entity.posX, entity.posY, entity.posZ);
         }
-        double[] g = worldDownInShipFrame(world, shipId);
-        if (local == null || g == null) {
+        double[][] axes = shipAxesFor(world, shipId);
+        if (local == null || axes == null) {
+            declinedTicks++;
+            return false;
+        }
+        // Position is subspace-authoritative (the deck carries the body), but the COLLISION
+        // volume is the body's REAL world-upright box anchored at the mapped feet — sweeping a
+        // subspace-aligned box instead displaced every contact by h*sin(tilt/2), the "walking a
+        // block beside the blocks I see" report.
+        double[] feet = VSIntegration.toWorldFrameFor(world, shipId, local[0], local[1], local[2]);
+        if (feet == null) {
             declinedTicks++;
             return false;
         }
         boolean wasGrounded = entity.onGround;
+        double half = entity.width / 2.0;
+        double[] box = {feet[0] - half, feet[1], feet[2] - half,
+                feet[0] + half, feet[1] + entity.height, feet[2] + half};
 
-        // Friction of the block the body stands on - sampled one step along WORLD-down from the
-        // feet, in the ship frame, because that is where its supporting hull block sits.
+        // Friction of the block the body stands on — half a block below the feet along WORLD
+        // down, mapped into the subspace where the block actually lives.
         float friction = AIR_FRICTION;
         if (wasGrounded) {
-            BlockPos under = new BlockPos(local[0] + g[0] * 0.5, local[1] + g[1] * 0.5 - 0.5,
-                    local[2] + g[2] * 0.5);
-            IBlockState underState = world.getBlockState(under);
-            friction = underState.getBlock().getSlipperiness(underState, world, under, entity)
-                    * AIR_FRICTION;
+            double[] us = VSIntegration.toShipFrameFor(world, shipId,
+                    feet[0], feet[1] - 0.5, feet[2]);
+            if (us != null) {
+                BlockPos under = new BlockPos(us[0], us[1], us[2]);
+                IBlockState underState = world.getBlockState(under);
+                friction = underState.getBlock().getSlipperiness(underState, world, under, entity)
+                        * AIR_FRICTION;
+            }
         }
         float speedFactor = SPEED_NORMALISER / (friction * friction * friction);
         float moveFactor = wasGrounded ? entity.getAIMoveSpeed() * speedFactor : jumpMovementFactor;
@@ -1710,75 +1795,161 @@ public final class ShipFrameTravel {
         moveRelative(vWorld, strafe, vertical, forward, moveFactor, entity.rotationYaw);
         vWorld[1] -= LIVING_GRAVITY; // world gravity, before the sweep (same ordering as aboard)
 
-        double[] want = VSIntegration.rotateToShipFrameFor(world, shipId,
-                vWorld[0], vWorld[1], vWorld[2]);
-        if (want == null) {
+        List<double[]> obstacles = hullObstaclesFor(world, shipId, entity, box,
+                Math.abs(vWorld[0]) + entity.stepHeight + 1.0,
+                Math.abs(vWorld[1]) + entity.stepHeight + 1.0,
+                Math.abs(vWorld[2]) + entity.stepHeight + 1.0);
+        if (obstacles == null) {
             declinedTicks++;
             return false;
         }
-        Sweep sweep = sweepShipFrame(world, entity, local, want[0], want[1], want[2], wasGrounded);
-        double gotX = sweep.x - local[0], gotY = sweep.y - local[1], gotZ = sweep.z - local[2];
-        // Grounded = the body wanted to move INTO world gravity and the hull clipped that component.
-        double wantAlongG = want[0] * g[0] + want[1] * g[1] + want[2] * g[2];
-        double gotAlongG = gotX * g[0] + gotY * g[1] + gotZ * g[2];
-        boolean grounded = wantAlongG > 1.0E-7 && gotAlongG < wantAlongG - 1.0E-7;
+        HullSweep.Result r = HullSweep.sweep(box, vWorld[0], vWorld[1], vWorld[2],
+                obstacles, axes, WORLD_UP, entity.stepHeight, wasGrounded);
+        double dx = r.liftX + r.dx, dy = r.liftY + r.dy, dz = r.liftZ + r.dz;
 
-        double[] clipped = {want[0], want[1], want[2]};
-        if (sweep.collidedX) clipped[0] = 0.0;
-        if (sweep.collidedY) clipped[1] = 0.0;
-        if (sweep.collidedZ) clipped[2] = 0.0;
-        double[] worldMotion = VSIntegration.rotateToWorldFrameFor(world, shipId,
-                clipped[0], clipped[1], clipped[2]);
-        double[] worldPos = VSIntegration.toWorldFrameFor(world, shipId, sweep.x, sweep.y, sweep.z);
-        if (worldMotion == null || worldPos == null) {
+        // Stand vs slide follows gravity with unit friction (maintainer ruling): a contact face
+        // steeper than 45° to gravity-up sheds the body — the clipped-off part of the gravity
+        // move re-runs tangentially, itself swept so it cannot pass through other geometry.
+        boolean slid = false;
+        if (r.collidedY && vWorld[1] < 0.0) {
+            double[] slide = HullSweep.slideOfBlocked(0.0, vWorld[1] - r.dy, 0.0,
+                    new double[]{r.normalX, r.normalY, r.normalZ}, WORLD_UP);
+            if (slide != null) {
+                double[] slideBox = {box[0] + dx, box[1] + dy, box[2] + dz,
+                        box[3] + dx, box[4] + dy, box[5] + dz};
+                HullSweep.Result s = HullSweep.sweep(slideBox, slide[0], slide[1], slide[2],
+                        obstacles, axes, null, 0.0, false);
+                dx += s.dx;
+                dy += s.dy;
+                dz += s.dz;
+                slid = true;
+            }
+        }
+        // Grounded = world gravity was clipped by a face that statically holds the body.
+        boolean grounded = r.collidedY && vWorld[1] < 0.0 && !slid;
+
+        double[] worldPos = {feet[0] + dx, feet[1] + dy, feet[2] + dz};
+        double[] sub = VSIntegration.toShipFrameFor(world, shipId,
+                worldPos[0], worldPos[1], worldPos[2]);
+        if (sub == null) {
             declinedTicks++;
             return false;
         }
-        // Vanilla's drag, on the axes it was written for - the world's.
+        // Vanilla's drag, on the axes it was written for - the world's; clipped axes stop.
+        double[] worldMotion = {r.collidedX ? 0.0 : vWorld[0],
+                r.collidedY ? 0.0 : vWorld[1],
+                r.collidedZ ? 0.0 : vWorld[2]};
         worldMotion[1] *= GRAVITY_AXIS_DRAG;
         worldMotion[0] *= friction;
         worldMotion[2] *= friction;
 
         resolvedTicks++;
-        lastObstacleCount = sweep.obstacleCount;
+        lastObstacleCount = obstacles.size();
         lastOnDeck = grounded;
+        // The sweep now consumes the body's OWN world box: the collision solid and the real
+        // volume coincide by construction. Anyone re-introducing a different solid must bring
+        // back a real measurement here.
+        lastHullBoxMismatch = 0.0;
         double[] shipVel = VSIntegration.shipVelocityAtPointFor(
                 world, shipId, worldPos[0], worldPos[1], worldPos[2]);
         double carryX = shipVel == null ? 0.0 : shipVel[0] * TICK_SECONDS;
         double carryY = shipVel == null ? 0.0 : shipVel[1] * TICK_SECONDS;
         double carryZ = shipVel == null ? 0.0 : shipVel[2] * TICK_SECONDS;
-        remember(entity, shipId, sweep.x, sweep.y, sweep.z,
+        remember(entity, shipId, sub[0], sub[1], sub[2],
                 worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
         ShipFrameState refreshed = STATE.get(entity);
         if (refreshed != null) {
             refreshed.hullStand = true; // remember() rebuilds the state; keep the mode
         }
+        sampleRenderSkew(world, shipId, sub[0], sub[1], sub[2], worldPos, "hull");
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0] + carryX;
         entity.motionY = worldMotion[1] + carryY;
         entity.motionZ = worldMotion[2] + carryZ;
         entity.onGround = grounded;
-        entity.collidedHorizontally = sweep.collidedX || sweep.collidedZ;
-        entity.collidedVertically = sweep.collidedY;
+        entity.collidedHorizontally = r.collidedX || r.collidedZ;
+        entity.collidedVertically = r.collidedY;
         entity.collided = entity.collidedHorizontally || entity.collidedVertically;
 
-        // Fall accounting along WORLD-down; the landed-on block sits one step along it.
+        // Fall accounting along WORLD-down; the landed-on block sits one step below the feet,
+        // in the subspace where it lives.
         if (grounded) {
             if (entity.fallDistance > 0.0F) {
-                BlockPos landedOn = new BlockPos(
-                        sweep.x + g[0] * 0.2, sweep.y + g[1] * 0.2 - 0.2, sweep.z + g[2] * 0.2);
-                world.getBlockState(landedOn).getBlock()
-                        .onFallenUpon(world, landedOn, entity, entity.fallDistance);
+                double[] ls = VSIntegration.toShipFrameFor(world, shipId,
+                        worldPos[0], worldPos[1] - 0.2, worldPos[2]);
+                if (ls != null) {
+                    BlockPos landedOn = new BlockPos(ls[0], ls[1], ls[2]);
+                    world.getBlockState(landedOn).getBlock()
+                            .onFallenUpon(world, landedOn, entity, entity.fallDistance);
+                }
             }
             entity.fallDistance = 0.0F;
-        } else if (gotAlongG > 0.0) {
-            entity.fallDistance += (float) gotAlongG;
+        } else if (dy < 0.0 && !slid) {
+            entity.fallDistance += (float) -dy;
         }
-        updateLimbSwing(entity, gotX, gotZ);
+        updateLimbSwing(entity, dx, dz);
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }
         return true;
+    }
+
+    /** Gravity-up for the hull walker. The stand/slide mechanic follows the LOCAL gravity by
+     *  ruling; this constant is the seam a zero-/alternate-gravity space subsystem later feeds
+     *  ({@code null} would disable the lift/step/slide machinery honestly). */
+    private static final double[] WORLD_UP = {0.0, 1.0, 0.0};
+
+    /** The ship's three axes as world-frame unit vectors, or null while the transform is away. */
+    private static double[][] shipAxesFor(World world, String shipId) {
+        double[] ax = VSIntegration.rotateToWorldFrameFor(world, shipId, 1.0, 0.0, 0.0);
+        double[] ay = VSIntegration.rotateToWorldFrameFor(world, shipId, 0.0, 1.0, 0.0);
+        double[] az = VSIntegration.rotateToWorldFrameFor(world, shipId, 0.0, 0.0, 1.0);
+        if (ax == null || ay == null || az == null) {
+            return null;
+        }
+        return new double[][]{ax, ay, az};
+    }
+
+    /** Ship blocks near the body as WORLD-frame boxes ({cx,cy,cz,hx,hy,hz}, axis-aligned in the
+     *  ship frame): collected in the subspace region covering the body's grown world box, with
+     *  each box's center mapped back through the transform. Null while the transform is away. */
+    private static List<double[]> hullObstaclesFor(World world, String shipId, Entity entity,
+                                                   double[] worldBox,
+                                                   double growX, double growY, double growZ) {
+        double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
+        for (int c = 0; c < 8; c++) {
+            double wx = (c & 1) == 0 ? worldBox[0] - growX : worldBox[3] + growX;
+            double wy = (c & 2) == 0 ? worldBox[1] - growY : worldBox[4] + growY;
+            double wz = (c & 4) == 0 ? worldBox[2] - growZ : worldBox[5] + growZ;
+            double[] s = VSIntegration.toShipFrameFor(world, shipId, wx, wy, wz);
+            if (s == null) {
+                return null;
+            }
+            if (c == 0) {
+                minX = maxX = s[0];
+                minY = maxY = s[1];
+                minZ = maxZ = s[2];
+            } else {
+                minX = Math.min(minX, s[0]);
+                maxX = Math.max(maxX, s[0]);
+                minY = Math.min(minY, s[1]);
+                maxY = Math.max(maxY, s[1]);
+                minZ = Math.min(minZ, s[2]);
+                maxZ = Math.max(maxZ, s[2]);
+            }
+        }
+        AxisAlignedBB subRegion = new AxisAlignedBB(minX, minY, minZ, maxX, maxY, maxZ);
+        List<double[]> out = new java.util.ArrayList<>();
+        for (AxisAlignedBB b : world.getCollisionBoxes(entity, subRegion)) {
+            double[] c = VSIntegration.toWorldFrameFor(world, shipId,
+                    (b.minX + b.maxX) * 0.5, (b.minY + b.maxY) * 0.5, (b.minZ + b.maxZ) * 0.5);
+            if (c == null) {
+                return null;
+            }
+            out.add(new double[]{c[0], c[1], c[2],
+                    (b.maxX - b.minX) * 0.5, (b.maxY - b.minY) * 0.5, (b.maxZ - b.minZ) * 0.5});
+        }
+        return out;
     }
 
     /** One tick of jump, along the deck's up rather than the world's. */

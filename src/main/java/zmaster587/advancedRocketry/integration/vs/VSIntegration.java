@@ -332,6 +332,14 @@ public final class VSIntegration {
         return (!isAvailable() || world == null) ? null : VSBridge.toWorldFrameFor(world, shipId, x, y, z);
     }
 
+    /** Ship-frame point to world point through the ship's RENDER pose — where the renderer draws
+     *  that point this frame, as opposed to where the game-tick transform places it. Client-side
+     *  observable (null on a dedicated server or when the ship is not loaded). */
+    public static double[] renderToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null)
+                ? null : VSBridge.renderToWorldFrameFor(world, shipId, x, y, z);
+    }
+
     /** World direction to ship-frame direction (rotation only), for the anchored ship. */
     public static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
         return (!isAvailable() || world == null) ? null : VSBridge.rotateToShipFrameFor(world, shipId, x, y, z);

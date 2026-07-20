@@ -329,6 +329,39 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // to-world <dim> <x> <y> <z> <subX> <subY> <subZ> — map a SUBSPACE point of the ship whose
+        // grown world AABB contains (x,y,z) through THIS side's (the server's) transform. Paired
+        // with the client-side skew statics it measures cross-side pose divergence: the same
+        // subspace point mapped by each side's own transform.
+        if (args.length >= 8 && "to-world".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.List<String> ids = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipIdsAt(world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0),
+                            parseDoubleOr(args[4], 0));
+            if (ids.isEmpty()) {
+                send(sender, "{\"error\":\"no ship at point\"}");
+                return;
+            }
+            double[] w = zmaster587.advancedRocketry.integration.vs.VSIntegration.toWorldFrameFor(
+                    world, ids.get(0), parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                    parseDoubleOr(args[7], 0));
+            if (w == null) {
+                send(sender, "{\"error\":\"ship not loaded\",\"shipId\":\"" + ids.get(0) + "\"}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("shipId", ids.get(0));
+            m.put("worldX", w[0]);
+            m.put("worldY", w[1]);
+            m.put("worldZ", w[2]);
+            send(sender, jsonMap(m));
+            return;
+        }
         // ship-repack <dim> <sx> <sy> <sz> <dstX> <dstY> <dstZ> — the per-ship "crossing":
         // snapshot the ship's subspace SHIPYARD blocks (+TileEntities) at visible pos (sx,sy,sz) via
         // StorageChunk, deregister the ship, paste the blocks at (dstX,dstY,dstZ), and re-assemble them

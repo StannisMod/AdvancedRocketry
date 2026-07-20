@@ -708,6 +708,25 @@ final class VSBridge {
         }
     }
 
+    /** Ship-frame point -> world point through the pose the ship is DRAWN at, for the ship
+     *  {@code shipId}. The renderer does not draw the game-tick transform: the client interpolates
+     *  its own render transform between the transform updates it receives, so on a moving ship the
+     *  drawn pose and the tick pose genuinely differ. Meaningful on the CLIENT only (a dedicated
+     *  server never advances a render transform); null when the ship is not loaded or its render
+     *  transform does not exist yet. */
+    static double[] renderToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            ShipTransform drawn = physo.getShipTransformationManager().getRenderTransform();
+            if (drawn == null) return null;
+            Vec3d v = drawn.transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** World direction -> ship-frame direction (rotation only), for the ship {@code shipId}. */
     static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
         try {
