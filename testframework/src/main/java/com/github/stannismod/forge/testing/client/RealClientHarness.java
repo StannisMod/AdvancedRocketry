@@ -83,10 +83,14 @@ public final class RealClientHarness implements AutoCloseable {
         Files.createDirectories(root.resolve("resourcepacks"));
         bootstrapClientFiles(root);
 
-        int controlPort = reservePort();
         Path clientLogFile = root.resolve("client.log");
         Process process = null;
-        try (java.net.ServerSocket controlSocket = openControlSocket(controlPort)) {
+        // Bind port 0 and keep THAT socket: the old reserve-close-rebind dance had a TOCTOU window
+        // where another process could grab the port between the probe and the real bind - rare
+        // solo, real under concurrent forks churning ephemeral ports. The actually-bound port is
+        // what gets handed to the client.
+        try (java.net.ServerSocket controlSocket = openControlSocket()) {
+            int controlPort = controlSocket.getLocalPort();
             process = launchClient(root, serverHarness.port(), controlPort, clientLogFile,
                     clientUsername);
 
@@ -104,8 +108,7 @@ public final class RealClientHarness implements AutoCloseable {
             Path preservedLog = null;
             try {
                 if (Files.isRegularFile(clientLogFile)) {
-                    preservedLog = Paths.get(System.getProperty("java.io.tmpdir"),
-                            "forge-test-client-last.log");
+                    preservedLog = preservedLogPath();
                     Files.copy(clientLogFile, preservedLog, StandardCopyOption.REPLACE_EXISTING);
                 }
             } catch (IOException ignored) {
@@ -144,9 +147,8 @@ public final class RealClientHarness implements AutoCloseable {
                 // path so post-mortem looks at one well-known file.
                 try {
                     if (clientLogFile != null && Files.isRegularFile(clientLogFile)) {
-                        Path preservedLog = Paths.get(System.getProperty("java.io.tmpdir"),
-                                "forge-test-client-last.log");
-                        Files.copy(clientLogFile, preservedLog, StandardCopyOption.REPLACE_EXISTING);
+                        Files.copy(clientLogFile, preservedLogPath(),
+                                StandardCopyOption.REPLACE_EXISTING);
                     }
                 } catch (IOException ignored) {
                     // Best-effort only — never block close on preserve failure.
@@ -222,9 +224,16 @@ public final class RealClientHarness implements AutoCloseable {
         String launcherClassPath = buildLauncherClassPath(currentClassPath, libDir);
 
         List<String> javaArgs = new ArrayList<>();
+        // Cap the child heap (Java 8 ergonomics would grant ~1/4 of RAM otherwise - the killer of
+        // concurrent forks). 2560m fits a modded 1.12 client; override per machine.
+        javaArgs.add("-Xmx" + System.getProperty("forge.test.client.xmx", "2560m"));
         javaArgs.add("-Djava.awt.headless=true");
         javaArgs.add("-Dforge.test.client=true");
         javaArgs.add("-Dforge.test.client.port=" + controlPort);
+        // Forward the wall-clock multiplier so the client-side ceilings (waitTicks, waitForWorld,
+        // client-thread task get) stretch with the fork count exactly like the test JVM's.
+        javaArgs.add("-D" + com.github.stannismod.forge.testing.TestTimeouts.PROP_FACTOR + "="
+                + com.github.stannismod.forge.testing.TestTimeouts.factor());
         javaArgs.add("-Djava.library.path=" + nativesDir.toAbsolutePath());
         javaArgs.add("-Dorg.lwjgl.librarypath=" + nativesDir.toAbsolutePath());
         javaArgs.add("-Dforge.test.client.logFile=" + clientLogFile.toAbsolutePath());
@@ -339,7 +348,10 @@ public final class RealClientHarness implements AutoCloseable {
     }
 
     private static ClientBot awaitClientBot(java.net.ServerSocket serverSocket) throws IOException {
-        serverSocket.setSoTimeout((int) TimeUnit.MINUTES.toMillis(2));
+        // Load-scaled: the client JVM's boot (GL init + mod load + jar copying) is the slowest
+        // single phase and stretches most under concurrent forks.
+        serverSocket.setSoTimeout(com.github.stannismod.forge.testing.TestTimeouts
+                .scaledMillis(TimeUnit.MINUTES.toMillis(2)));
         java.net.Socket socket = serverSocket.accept();
         return new ClientBot(socket);
     }
@@ -511,17 +523,25 @@ public final class RealClientHarness implements AutoCloseable {
         Files.write(configDir.resolve("splash.properties"), splash, StandardCharsets.UTF_8);
     }
 
-    private static int reservePort() throws IOException {
-        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
-        }
+    /**
+     * The stable post-mortem location of the last client log, one file PER TEST-JVM (the PID
+     * suffix): a single fixed name let concurrent forks clobber each other's diagnostics, which
+     * makes every post-mortem unreliable exactly when parallel runs make failures interesting.
+     */
+    private static Path preservedLogPath() {
+        String jvm = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+        int at = jvm.indexOf('@');
+        String pid = at > 0 ? jvm.substring(0, at) : jvm;
+        return Paths.get(System.getProperty("java.io.tmpdir"),
+                "forge-test-client-last-pid" + pid + ".log");
     }
 
-    private static java.net.ServerSocket openControlSocket(int port) throws IOException {
+    /** Bind an ephemeral control port and KEEP the socket - the bound port is read off it, so
+     *  there is no reserve-then-rebind window for another process to steal the port. */
+    private static java.net.ServerSocket openControlSocket() throws IOException {
         java.net.ServerSocket socket = new java.net.ServerSocket();
         socket.setReuseAddress(true);
-        socket.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+        socket.bind(new java.net.InetSocketAddress("127.0.0.1", 0));
         return socket;
     }
 

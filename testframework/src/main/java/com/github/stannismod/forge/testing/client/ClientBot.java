@@ -24,10 +24,12 @@ public final class ClientBot implements Closeable {
     ClientBot(Socket socket) throws IOException {
         this.socket = socket;
         this.socket.setTcpNoDelay(true);
-        this.socket.setSoTimeout((int) Duration.ofMinutes(2).toMillis());
+        // Load-scaled: a starved client thread queue stretches every command round-trip.
+        this.socket.setSoTimeout(com.github.stannismod.forge.testing.TestTimeouts
+                .scaledMillis(Duration.ofMinutes(2).toMillis()));
         this.reader = new BufferedReader(new java.io.InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         this.writer = new BufferedWriter(new java.io.OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
-        awaitReady(Duration.ofMinutes(2));
+        awaitReady(com.github.stannismod.forge.testing.TestTimeouts.scaled(Duration.ofMinutes(2)));
     }
 
     public void waitForWorld() throws IOException {

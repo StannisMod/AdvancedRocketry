@@ -404,11 +404,19 @@ def configureHarnessTest = { Test t, boolean enableClient ->
         }
     }
 
-    // Each child MC JVM is heavyweight; isolate one test class per fork.
-    t.maxParallelForks = (findProperty('test_harness_forks') ?: '1') as int
+    // Each child MC JVM is heavyweight; isolate one test class per fork. Effective concurrency is
+    // min(test_harness_forks, --max-workers) - when forking, do NOT pass --max-workers=1 on the
+    // CLI. Budget ~4 GB per fork: 512m this worker + 1g server child + 2.5g client child (the
+    // child caps live in the harness, overridable via forge.test.server.xmx/forge.test.client.xmx).
+    def harnessForks = (findProperty('test_harness_forks') ?: '1') as int
+    t.maxParallelForks = harnessForks
     t.forkEvery 1L
     t.minHeapSize = '256m'
-    t.maxHeapSize = '1g'
+    t.maxHeapSize = '512m'
+    // One wall-clock multiplier for every hard harness ceiling (boot, handshake, waitTicks,
+    // command round-trips): N concurrent MC pairs stretch the effective tick rate, and fixed
+    // ceilings would turn that contention into spurious reds. See TestTimeouts.
+    t.systemProperty 'forge.test.timeout.factor', String.valueOf(1.0d + harnessForks / 4.0d)
 
     t.testLogging {
         events 'failed', 'skipped', 'passed'

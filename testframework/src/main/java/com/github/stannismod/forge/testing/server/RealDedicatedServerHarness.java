@@ -84,7 +84,9 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
             TestClient client = new TestClient(process, TestClient.newWriter(process), transcript);
             BootOutcome outcome;
             try {
-                outcome = awaitReadyOrBindFailure(process, transcript, Duration.ofMinutes(3));
+                // Load-scaled: N concurrent modded boots contend on disk + CPU.
+                outcome = awaitReadyOrBindFailure(process, transcript,
+                        com.github.stannismod.forge.testing.TestTimeouts.scaled(Duration.ofMinutes(3)));
             } catch (RuntimeException | InterruptedException failure) {
                 destroyAndJoin(process, readerThread);
                 throw failure;
@@ -235,8 +237,14 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
 
         List<String> command = new ArrayList<>();
         command.add(javaBinary.toString());
+        // Cap the child heap: without an explicit -Xmx, Java 8 ergonomics grant EACH server child
+        // ~1/4 of physical RAM, which is what makes concurrent forks memory-infeasible. 1g fits a
+        // modded 1.12 dedicated server; override per machine via the property.
+        command.add("-Xmx" + System.getProperty("forge.test.server.xmx", "1g"));
         command.add("-Djava.awt.headless=true");
         command.add("-Dforge.test.server=true");
+        command.add("-D" + com.github.stannismod.forge.testing.TestTimeouts.PROP_FACTOR + "="
+                + com.github.stannismod.forge.testing.TestTimeouts.factor());
         command.add("-cp");
         command.add(Objects.requireNonNull(System.getProperty("java.class.path"), "java.class.path"));
         command.add(launcherClass);

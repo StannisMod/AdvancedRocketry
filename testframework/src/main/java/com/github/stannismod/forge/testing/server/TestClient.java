@@ -26,7 +26,9 @@ public final class TestClient implements Closeable {
         int startIndex = snapshotSize();
         sendRaw(command);
         sendRaw("say " + marker);
-        return awaitMarker(startIndex, marker, Duration.ofSeconds(30));
+        // Load-scaled: under concurrent forks a starved server thread stretches command latency.
+        return awaitMarker(startIndex, marker,
+                com.github.stannismod.forge.testing.TestTimeouts.scaled(Duration.ofSeconds(30)));
     }
 
     public List<String> awaitOutputContaining(String token, Duration timeout) throws InterruptedException {
