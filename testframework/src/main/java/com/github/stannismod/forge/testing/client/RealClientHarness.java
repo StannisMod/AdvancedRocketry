@@ -36,13 +36,14 @@ public final class RealClientHarness implements AutoCloseable {
     private static final int SW_SHOWMINNOACTIVE = 7;
 
     /**
-     * Controls how the LWJGL client window first appears. Default
-     * {@code minimized} — the window is iconified to the taskbar without
-     * stealing focus, so concurrent local work is not disrupted. Set to
-     * {@code normal} to restore the previous behaviour ({@code SW_SHOWNOACTIVATE},
-     * window visible at requested geometry but without keyboard focus). Honoured
-     * on the Windows {@code CreateProcessW} launch path only — other platforms
-     * inherit the default desktop behaviour.
+     * Controls how the LWJGL client window appears. Default {@code offscreen} — a watcher in the
+     * TEST JVM ({@link #startWindowSuppressor}) moves the child's window off-screen the moment it
+     * exists and for the child's whole lifetime, so neither the FML boot splash nor the game
+     * window ever sits on the desktop; the window keeps rendering normally (deliberately NOT
+     * minimized — an iconic client is a different GL regime that perturbs ship physics, see
+     * {@link #startWindowSuppressor}). {@code minimized} iconifies instead (the perturbing
+     * regime, for studying it); {@code normal} keeps the window visible. Honoured on every
+     * Windows launch path; other platforms inherit the default desktop behaviour.
      */
     private static final String PROP_WINDOW_START_STATE = "forge.test.client.window.startState";
 
@@ -227,6 +228,11 @@ public final class RealClientHarness implements AutoCloseable {
         // Cap the child heap (Java 8 ergonomics would grant ~1/4 of RAM otherwise - the killer of
         // concurrent forks). 2560m fits a modded 1.12 client; override per machine.
         javaArgs.add("-Xmx" + System.getProperty("forge.test.client.xmx", "2560m"));
+        // Forward the window mode so the child's first-tick minimize backstop agrees with the
+        // watcher: in the default OFF-SCREEN mode the child must NOT iconify the window (an iconic
+        // client is a different GL regime that perturbs ship physics — see startWindowSuppressor).
+        javaArgs.add("-D" + PROP_WINDOW_START_STATE + "="
+                + System.getProperty(PROP_WINDOW_START_STATE, "offscreen"));
         javaArgs.add("-Djava.awt.headless=true");
         javaArgs.add("-Dforge.test.client=true");
         javaArgs.add("-Dforge.test.client.port=" + controlPort);
@@ -320,6 +326,7 @@ public final class RealClientHarness implements AutoCloseable {
         builder.redirectErrorStream(true);
         applyClientEnvOverrides(builder);
         Process process = builder.start();
+        startWindowSuppressor(process, windowsProcessId(process));
         return new LoggedProcess(process, clientLogFile);
     }
 
@@ -431,7 +438,10 @@ public final class RealClientHarness implements AutoCloseable {
 
         processInformation.read();
         Kernel32Native.INSTANCE.CloseHandle(processInformation.hThread);
-        return new NativeClientProcess(processInformation.hProcess, processInformation.dwProcessId);
+        NativeClientProcess nativeProcess =
+                new NativeClientProcess(processInformation.hProcess, processInformation.dwProcessId);
+        startWindowSuppressor(nativeProcess, processInformation.dwProcessId);
+        return nativeProcess;
     }
 
     private static String buildCommandLine(List<String> javaArgs) {
@@ -691,6 +701,103 @@ public final class RealClientHarness implements AutoCloseable {
         }
     }
 
+    /** The child PID of a {@code java.lang.ProcessImpl} (Windows), or -1 when unresolvable. */
+    private static int windowsProcessId(Process process) {
+        try {
+            java.lang.reflect.Field handleField = process.getClass().getDeclaredField("handle");
+            handleField.setAccessible(true);
+            long handle = handleField.getLong(process);
+            return Kernel32Native.INSTANCE.GetProcessId(new Pointer(handle));
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /**
+     * Suppresses the client's game window from OUTSIDE the child JVM, for the child's whole
+     * lifetime. The in-child minimize ({@code ForgeTestClientBootstrap.applyInitialWindowState})
+     * fires only on the FIRST client tick — after the entire FML boot — so the splash/mod-load
+     * window (~40-60 s per client) used to sit mid-screen stealing focus; under a parallel gate
+     * that is a constant window parade. This watcher knows the child PID before its window can
+     * exist, polls for visible top-level windows of that PID, and moves each OFF-SCREEN the
+     * moment it appears (worst case one poll interval of visibility).
+     *
+     * <p>Off-screen, NOT minimized, is the deliberate default: an iconic (minimized) client is a
+     * DIFFERENT GL regime — measured 2026-07-20, the powered-entry e2e goes red ~3/4 runs with the
+     * window iconic and stays green with it merely off-screen or visible (the ship's drive
+     * under-thrusts; kin of the load-tail thrust duty-cycle family). An off-screen window renders
+     * exactly like an on-screen one, so the desktop stays clean without perturbing the subject.
+     * {@code minimized} remains available for explicitly studying that regime; {@code normal}
+     * disables suppression. Windows-only; silent best-effort — never breaks a test run.</p>
+     *
+     * <p>Each suppression prints one {@code [forge-test] suppressed client window} line to the
+     * test JVM's stdout — the instrumental proof the watcher fired, so a verification run can
+     * assert the suppressed leg (line present, no visible window) and the {@code normal} control
+     * leg (line absent, window visible) instead of trusting an eyeball.</p>
+     */
+    private static void startWindowSuppressor(final Process process, final int pid) {
+        if (!WINDOWS || pid <= 0) {
+            return;
+        }
+        String startState = System.getProperty(PROP_WINDOW_START_STATE, "offscreen")
+                .toLowerCase(java.util.Locale.ROOT);
+        if ("normal".equals(startState)) {
+            return;
+        }
+        final boolean iconify = "minimized".equals(startState);
+        final int SW_FORCEMINIMIZE = 11;
+        final int SWP_FLAGS = 0x0001 | 0x0004 | 0x0010; // NOSIZE | NOZORDER | NOACTIVATE
+        Thread watcher = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final IntByReference windowPid = new IntByReference();
+                // Off-screen moves are once-per-window (a moved window stays moved); track by hwnd.
+                final java.util.Set<Long> moved = new java.util.HashSet<Long>();
+                final WndEnumProc suppressor = new WndEnumProc() {
+                    @Override
+                    public boolean callback(Pointer hWnd, Pointer lParam) {
+                        windowPid.setValue(0);
+                        User32Native.INSTANCE.GetWindowThreadProcessId(hWnd, windowPid);
+                        if (windowPid.getValue() != pid
+                                || !User32Native.INSTANCE.IsWindowVisible(hWnd)) {
+                            return true;
+                        }
+                        if (iconify) {
+                            if (!User32Native.INSTANCE.IsIconic(hWnd)) {
+                                User32Native.INSTANCE.SetWindowPos(hWnd, Pointer.NULL,
+                                        -32000, -32000, 0, 0, SWP_FLAGS);
+                                User32Native.INSTANCE.ShowWindow(hWnd, SW_FORCEMINIMIZE);
+                                System.out.println("[forge-test] suppressed client window pid="
+                                        + pid + " mode=minimized");
+                            }
+                        } else if (moved.add(Pointer.nativeValue(hWnd))) {
+                            User32Native.INSTANCE.SetWindowPos(hWnd, Pointer.NULL,
+                                    -32000, -32000, 0, 0, SWP_FLAGS);
+                            System.out.println("[forge-test] suppressed client window pid="
+                                    + pid + " mode=offscreen");
+                        }
+                        return true;
+                    }
+                };
+                while (process.isAlive()) {
+                    try {
+                        User32Native.INSTANCE.EnumWindows(suppressor, Pointer.NULL);
+                    } catch (Throwable ignored) {
+                        // Best-effort — a JNA hiccup must never fail the run.
+                    }
+                    try {
+                        Thread.sleep(150L);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+        }, "client-window-suppressor-" + pid);
+        watcher.setDaemon(true);
+        watcher.start();
+    }
+
     private static void shutdownProcess(Process process) {
         if (process == null) {
             return;
@@ -810,6 +917,30 @@ public final class RealClientHarness implements AutoCloseable {
         boolean TerminateProcess(Pointer hProcess, int uExitCode);
 
         boolean CloseHandle(Pointer hObject);
+
+        int GetProcessId(Pointer hProcess);
+    }
+
+    /** {@code EnumWindows} callback — JNA requires the single method be named {@code callback}. */
+    private interface WndEnumProc extends Callback {
+        boolean callback(Pointer hWnd, Pointer lParam);
+    }
+
+    private interface User32Native extends Library {
+        User32Native INSTANCE = Native.loadLibrary("user32", User32Native.class);
+
+        boolean EnumWindows(WndEnumProc lpEnumFunc, Pointer lParam);
+
+        int GetWindowThreadProcessId(Pointer hWnd, IntByReference lpdwProcessId);
+
+        boolean IsWindowVisible(Pointer hWnd);
+
+        boolean IsIconic(Pointer hWnd);
+
+        boolean ShowWindow(Pointer hWnd, int nCmdShow);
+
+        boolean SetWindowPos(Pointer hWnd, Pointer hWndInsertAfter, int x, int y,
+                             int cx, int cy, int uFlags);
     }
 
     public static final class STARTUPINFO extends Structure {

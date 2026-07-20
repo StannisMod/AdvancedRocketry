@@ -396,6 +396,14 @@ def configureHarnessTest = { Test t, boolean enableClient ->
         if (project.hasProperty('clientFbo')) {
             t.systemProperty 'forge.test.client.fbo', project.property('clientFbo').toString()
         }
+        // -PclientWindowState=normal keeps the client's game window visible (default: the harness
+        // suppresses it off-screen/minimized for the whole client lifetime). The visible mode is
+        // both the debugging escape hatch and the control leg that proves the suppressor is the
+        // variable when a client behaviour differs between visible and suppressed windows.
+        if (project.hasProperty('clientWindowState')) {
+            t.systemProperty 'forge.test.client.window.startState',
+                    project.property('clientWindowState').toString()
+        }
         ['DISPLAY', 'XAUTHORITY', 'LIBGL_ALWAYS_SOFTWARE'].each { var ->
             def v = System.getenv(var)
             if (v != null) {
