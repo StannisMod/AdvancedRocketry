@@ -629,9 +629,49 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // drop-living <dim> <entityName> <x> <y> <z> — spawn a registered LIVING entity (e.g.
+        // minecraft:cow) and report its id. Unlike drop-stand this gives a subject whose renderer
+        // INHERITS RenderLivingBase.applyRotations: RenderArmorStand overrides that method without
+        // calling super, so an armour stand is invisible to any hook installed there - it is a fine
+        // collision subject and a useless RENDER subject. Vanilla /summon cannot serve instead: it
+        // reports no entity id, and every probe here is queried by id.
+        if (args.length >= 6 && "drop-living".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.entity.Entity spawned = net.minecraft.entity.EntityList.createEntityByIDFromName(
+                    new net.minecraft.util.ResourceLocation(args[2]), world);
+            if (!(spawned instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"not a living entity: " + args[2] + "\"}");
+                return;
+            }
+            spawned.setLocationAndAngles(parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), 0f, 0f);
+            spawned.motionX = 0;
+            spawned.motionY = 0;
+            spawned.motionZ = 0;
+            // Persistent: a mob that despawns mid-window would silently empty the subject out from
+            // under a render assertion.
+            if (spawned instanceof net.minecraft.entity.EntityLiving) {
+                ((net.minecraft.entity.EntityLiving) spawned).enablePersistence();
+                ((net.minecraft.entity.EntityLiving) spawned).setNoAI(true);
+            }
+            boolean ok = world.spawnEntity(spawned);
+            // Report the LOOKUP, not just the spawn call: "spawnEntity returned true" and "the
+            // world can find it by id" are different claims, and only the second is what every
+            // other probe needs. A true/false split here localises the failure immediately.
+            boolean found = world.getEntityByID(spawned.getEntityId()) != null;
+            send(sender, "{\"ok\":" + ok + ",\"found\":" + found + ",\"dead\":" + spawned.isDead
+                    + ",\"entityId\":" + spawned.getEntityId()
+                    + ",\"height\":" + spawned.height + "}");
+            return;
+        }
         // drop-stand <dim> <x> <y> <z> [mode] — spawn an armour stand: a TALL (1.975) subject, unlike
         // an item, so the orientation of its collision box actually matters on a rolled deck. Same
-        // atomic arming as drop-item.
+        // atomic arming as drop-item. NOTE: an armour stand's renderer overrides applyRotations
+        // without super, so it is NOT a valid subject for render-hook tests - use drop-living.
         if (args.length >= 5 && "drop-stand".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {

@@ -695,6 +695,24 @@ final class VSBridge {
         }
     }
 
+    /** The body-&gt;world attitude of the ship {@code shipId} as {@code {w,x,y,z}}, or {@code null}
+     *  when it is not loaded on this side. The by-ID sibling of {@link #shipAttitudeAt}: a consumer
+     *  that already knows WHICH ship it means must not re-derive one by containment (contract C2 -
+     *  the anchor is the ship, not whatever box the body currently sits inside). */
+    static double[] shipAttitudeForId(World world, String shipId) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            Quaterniond q = physo.getShipData().getShipTransform()
+                    .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{q.w, q.x, q.y, q.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** Ship-frame point -> world point, for the ship {@code shipId}. Null when it is not loaded. */
     static double[] toWorldFrameFor(World world, String shipId, double x, double y, double z) {
         try {

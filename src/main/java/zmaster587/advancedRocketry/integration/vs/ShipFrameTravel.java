@@ -874,6 +874,28 @@ public final class ShipFrameTravel {
         return state != null && !state.hullStand;
     }
 
+    /**
+     * The id of the ship {@code entity} has STANDING support from, measured spatially in that
+     * ship's subspace, or {@code null} when no loaded ship carries it.
+     *
+     * <p>This is the same question first contact asks, exposed for a consumer that cannot use the
+     * capture state: a body whose movement THIS side never resolves. The capture map only ever
+     * holds bodies this side moves - on a client that is the local player alone - so anything
+     * asking "is that other body standing on a ship" has no state to read and would otherwise
+     * fall back to world-AABB containment, which is true across a large air volume around the
+     * hull. The probe needs only the ship's blocks in subspace, which both sides hold.</p>
+     *
+     * <p>Answers about SUPPORT, not about aboard-ness: a body in mid-jump over the deck is
+     * momentarily unsupported and comes back {@code null}. A consumer that must not flicker
+     * across a jump is responsible for its own hysteresis.</p>
+     */
+    public static String standingOnShipIdFor(EntityLivingBase entity) {
+        if (entity == null || entity.world == null) {
+            return null;
+        }
+        return firstContactCandidate(entity);
+    }
+
     /** The ANCHOR ship id this class resolves {@code entity} against in ABOARD (deck) mode, or
      *  {@code null} when it is not aboard (never captured, or held in HULL-STAND mode). The
      *  deck-frame look derives the crew member's world aim through THIS ship - the capture

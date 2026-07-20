@@ -463,6 +463,20 @@ public final class VSIntegration {
         return q == null ? null : new FreeFlightPhysics.Quat(q[0], q[1], q[2], q[3]);
     }
 
+    /**
+     * The body&rarr;world attitude of the ship {@code shipId}, or {@code null} when VS is absent or
+     * that ship is not loaded on this side. Use this - not {@link #shipAttitudeAt} - whenever the
+     * ship is already known by id: containment answers for whatever box a point falls inside, which
+     * is a different question and a large air volume around the hull.
+     */
+    public static FreeFlightPhysics.Quat shipAttitudeForId(World world, String shipId) {
+        if (!isAvailable() || shipId == null) {
+            return null;
+        }
+        double[] q = VSBridge.shipAttitudeForId(world, shipId);
+        return q == null ? null : new FreeFlightPhysics.Quat(q[0], q[1], q[2], q[3]);
+    }
+
     /** The attitude of the ship {@code entity} is aboard, or {@code null}. See {@link #shipAttitudeAt}. */
     public static FreeFlightPhysics.Quat shipAttitudeFor(net.minecraft.entity.Entity entity) {
         if (entity == null || entity.world == null) {
