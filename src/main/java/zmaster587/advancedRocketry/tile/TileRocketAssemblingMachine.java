@@ -715,6 +715,34 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                 ((TileAdvancedFlightComputer) afcTe).getOrCreateShipId();
             }
             VSIntegration.assembleTier2Ship(world, shipAnchor);
+            // A pilot who took the seat BEFORE assembly is riding a mount bound to the seat's
+            // build-time position, which the cut above just vacated - once the blocks relocate
+            // into the ship's subspace nothing in his control chain resolves and the ship ignores
+            // him. Queue the rebind that re-expresses his boarding on the relocated seat; queued,
+            // not done inline, because the relocation is asynchronous.
+            if (scannedPilotSeatPos != null) {
+                BlockPos postLiftSeat = scannedPilotSeatPos.add(0, liftGap, 0);
+                for (zmaster587.advancedRocketry.entity.EntityDummy mount :
+                        world.getEntitiesWithinAABB(zmaster587.advancedRocketry.entity.EntityDummy.class,
+                                rocketBB.grow(2.0))) {
+                    BlockPos bound = mount.getSeatPos();
+                    if (bound == null
+                            || !(bound.equals(scannedPilotSeatPos) || bound.equals(postLiftSeat))) {
+                        continue; // an ordinary (passenger) seat mount, or someone else's seat
+                    }
+                    for (net.minecraft.entity.Entity passenger : mount.getPassengers()) {
+                        if (passenger instanceof net.minecraft.entity.player.EntityPlayerMP) {
+                            zmaster587.advancedRocketry.space.AssemblyCrewRebind.enqueue(
+                                    (net.minecraft.world.WorldServer) world,
+                                    (net.minecraft.entity.player.EntityPlayerMP) passenger,
+                                    mount.getEntityId(), shipAnchor,
+                                    shipAnchor.getX() - postLiftSeat.getX(),
+                                    shipAnchor.getY() - postLiftSeat.getY(),
+                                    shipAnchor.getZ() - postLiftSeat.getZ());
+                        }
+                    }
+                }
+            }
             stats.reset();
             this.status = ErrorCodes.FINISHED;
             this.markDirty();

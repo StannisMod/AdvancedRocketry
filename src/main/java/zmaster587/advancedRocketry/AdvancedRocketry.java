@@ -1176,6 +1176,9 @@ public class AdvancedRocketry {
         // Login restore (a returning player goes back to his ship, not to a stale pool slot) and the
         // cell-divergence hook. Independent of the controller so it stays quiet while it is down.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceEventHandler());
+        // Carries a pre-assembly boarding across the asynchronous ship assembly (core assembly
+        // glue - registered unconditionally, works with the space subsystem down).
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.AssemblyCrewRebind());
 
         PacketHandler.init();
 

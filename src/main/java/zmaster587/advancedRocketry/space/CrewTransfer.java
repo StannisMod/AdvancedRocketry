@@ -165,6 +165,58 @@ public final class CrewTransfer {
         return allSeated;
     }
 
+    /**
+     * Re-express a PRE-ASSEMBLY boarding across the assembly relocation. A pilot who took the seat
+     * while his craft was still loose blocks is riding a mount bound to the seat's build-time world
+     * position; assembly cuts those blocks and relocates them into the ship's subspace, so the
+     * binding names vacated coordinates and nothing in the control chain resolves - the piloting
+     * client never even sends. Once the relocated seat (re-identified by its AFC-link offset, the
+     * one relocation-invariant identity) is managed by a live ship, this atomically swaps the stale
+     * mount for a freshly-bound one - the same mount recipe every other boarding path ends in, so
+     * the pilot keeps his seat with no re-click.
+     *
+     * <p>Returns {@code false} while the relocated seat is not resolvable yet (the relocation is
+     * asynchronous - the caller retries next tick), {@code true} when the swap happened or has
+     * become moot (the pilot disconnected, stood up, or was re-seated by another path - he is never
+     * forced back into the seat).</p>
+     */
+    public static boolean rebindAcrossAssembly(WorldServer world, BlockPos anchor,
+            EntityPlayerMP player, int staleDummyId, int afcDx, int afcDy, int afcDz) {
+        if (player.hasDisconnected() || player.world != world) {
+            return true; // gone from this world; the login-restore path owns him now
+        }
+        Entity riding = player.getRidingEntity();
+        if (!(riding instanceof EntityDummy) || riding.getEntityId() != staleDummyId) {
+            return true; // stood up (or re-seated elsewhere) while waiting - do not force him back
+        }
+        TilePilotSeat seat = matchSeat(seatsOfShipAt(world, anchor),
+                new Crew(player, afcDx, afcDy, afcDz));
+        // getSeatWorldPosition is non-null only for a block MANAGED by a live ship, so a seat tile
+        // still sitting at the paste site (relocation unfinished) does not pass - rebinding to it
+        // would just go stale again the moment the blocks move.
+        double[] seatWorld = seat == null
+                ? null : VSIntegration.getSeatWorldPosition(world, seat.getPos());
+        if (seat == null || seatWorld == null) {
+            return false; // ship not up yet - retry
+        }
+        // Atomic swap, one tick: a mechanical dismount (not the player leaving his post - the
+        // aboard record must survive it), the stale mount retired, then the standard mount recipe
+        // on the seat's current subspace binding.
+        crossingCapture = true;
+        try {
+            player.dismountRidingEntity();
+        } finally {
+            crossingCapture = false;
+        }
+        riding.setDead();
+        player.setPositionAndUpdate(seatWorld[0], seatWorld[1], seatWorld[2]);
+        EntityDummy dummy = new EntityDummy(world, seatWorld[0], seatWorld[1], seatWorld[2]);
+        dummy.setSeatPos(seat.getPos());
+        world.spawnEntity(dummy);
+        player.startRiding(dummy, true);
+        return true;
+    }
+
     /** Every pilot-seat tile of the ship at {@code anchor}, found over its subspace shipyard. */
     private static List<TilePilotSeat> seatsOfShipAt(WorldServer world, BlockPos anchor) {
         List<TilePilotSeat> seats = new ArrayList<>();

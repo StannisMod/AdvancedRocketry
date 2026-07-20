@@ -75,9 +75,12 @@ import static org.junit.Assert.assertTrue;
  * its free drift is measured over a window of the SAME length as the measurement window with NO key
  * held, and only then is the key-held climb measured. Both numbers are reported side by side.</p>
  *
- * <p><b>This test is expected to FAIL until pre-assembly pilot control survives assembly.</b> That
- * is its purpose: it is the missing repro for a craft that a hand-boarded pilot cannot fly. It
- * deliberately does not pin the current behaviour.</p>
+ * <p><b>History.</b> This file began as the missing repro for a craft that a hand-boarded pilot
+ * could not fly: a pilot seated before assembly kept riding a mount bound to the seat's build-time
+ * world position, which assembly vacates, so nothing in his control chain resolved and the piloting
+ * client never sent a single input packet. It now pins the fixed contract: the assembler queues
+ * every seated pilot's binding for re-expression onto the relocated seat, and both cells must stay
+ * green.</p>
  *
  * <p>Manual server + client lifecycle rather than the shared base class, because the config has to be
  * written into the game directory BEFORE the server boots and the base class owns a throwaway root
@@ -334,6 +337,15 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
                         + "not some leftover entity. boarding=" + how + " riding=" + ridingAfter,
                 entityClassOf(ridingAfter).contains("EntityDummy"));
 
+        // Paste-site census, printed unconditionally (visible in green runs too): assembly pastes
+        // the craft one block above its build position before relocating it into the ship's
+        // subspace, and whether anything LINGERS in the world afterwards distinguishes a clean
+        // relocation from a leftover world-frame copy (which would explain pilot input landing on
+        // a world-coordinate seat in live play).
+        System.out.println("[PASTE-SITE] boarding=" + how
+                + " seatBuild=" + bot().blockState(SEAT_X, SEAT_Y, SEAT_Z)
+                + " seatPaste=" + bot().blockState(SEAT_X, SEAT_Y + 1, SEAT_Z));
+
         // ---- CONTROL LEG ---------------------------------------------------------------------
         // Settle first: a freshly assembled physics object may be resolved upward out of the pad it
         // overlaps, and that motion is not the pilot's.
@@ -374,6 +386,18 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
             bot().releaseKey(Keyboard.KEY_R);
         }
 
+        // Late paste-site census: by now the relocation demonstrably finished (the settle and the
+        // measurement windows ran on the live ship), so anything still at the paste site is a
+        // LINGERING world-frame copy, not relocation-in-progress.
+        System.out.println("[PASTE-SITE post-flight] boarding=" + how
+                + " seatPaste=" + bot().blockState(SEAT_X, SEAT_Y + 1, SEAT_Z));
+
+        // Delivery-chain diagnostics, gathered AFTER the key-held window so they describe this very
+        // attempt. Folded into the failure message: a red run must name the gate that ate the
+        // input (client never sent / server dropped / delivered but no motion), not just report
+        // "climb 0.0" and leave the chain to be guessed at.
+        String delivery = deliveryDiagnostics();
+
         assertTrue("a player who took the pilot seat BEFORE assembling his ship must be able to FLY "
                         + "that ship right after assembly: holding the vertical-up key has to lift it, "
                         + "with no re-seating. boarding=" + how
@@ -381,8 +405,42 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
                         + "-tick window): drift=" + controlDrift
                         + " | EXPERIMENT (key held): yBefore=" + yBefore + " yAfter=" + yAfter
                         + " climb=" + (yAfter - yBefore) + " (need >= " + MIN_CLIMB + ")"
+                        + " | DELIVERY: " + delivery
                         + " | riding=" + ridingAfter + " subsystem=" + status,
                 (yAfter - yBefore) >= MIN_CLIMB);
+    }
+
+    /**
+     * Reads both halves of the pilot-input delivery chain: the CLIENT's gate/send counters and last
+     * seat resolution (reflectively, from the client JVM), and the SERVER's receive/deliver
+     * counters and its own last resolution (via the read-only {@code seat-delivery} probe). Never
+     * throws - a diagnostic that kills the run it is meant to explain would be worse than none -
+     * and reports read failures inline instead.
+     */
+    private String deliveryDiagnostics() {
+        String client;
+        try {
+            client = "gateClosedTicks=" + staticValue("zmaster587.advancedRocketry.client.KeyBindings", "shipGateClosedTicks")
+                    + " gateOpenTicks=" + staticValue("zmaster587.advancedRocketry.client.KeyBindings", "shipGateOpenTicks")
+                    + " sends=" + staticValue("zmaster587.advancedRocketry.client.KeyBindings", "shipInputSendCount")
+                    + " resolves=" + staticValue("zmaster587.advancedRocketry.tile.TilePilotSeat", "riderResolveCount")
+                    + " lastResolve[" + staticValue("zmaster587.advancedRocketry.tile.TilePilotSeat", "lastRiderResolve") + "]";
+        } catch (Exception e) {
+            client = "unreadable(" + e + ")";
+        }
+        String server;
+        try {
+            server = exec("artest vs seat-delivery");
+        } catch (Exception e) {
+            server = "unreadable(" + e + ")";
+        }
+        return "client{" + client + "} server{" + server + "}";
+    }
+
+    /** One client static field's value, via the harness's reflective read. */
+    private String staticValue(String className, String fieldName) throws Exception {
+        JsonObject read = bot().readStaticField(className, fieldName);
+        return read.has("value") ? read.get("value").getAsString() : String.valueOf(read);
     }
 
     // ---- Boarding variants -------------------------------------------------------------------
