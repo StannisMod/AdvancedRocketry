@@ -589,6 +589,12 @@ public final class ForgeTestClientBootstrap {
                 // Recent lines of the client chat overlay (GuiNewChat), newest
                 // first — i18n ALREADY RESOLVED, exactly what the player reads.
                 // The honest observation for "the player got a chat message".
+                // Also reports the ACTION-BAR overlay (GuiIngame.setOverlayMessage,
+                // the GAME_INFO chat type) under "overlay"/"overlayTicks" — those
+                // messages never enter GuiNewChat, so without this a server's
+                // action-bar reply is invisible to the harness. "overlay" is the
+                // last one shown (empty before any); overlayTicks > 0 = still on
+                // screen right now.
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
                     int limit = request.has("limit") ? request.get("limit").getAsInt() : 20;
@@ -605,6 +611,15 @@ public final class ForgeTestClientBootstrap {
                             for (int i = 0; i < raw.size() && i < limit; i++) {
                                 lines.add(raw.get(i).getChatComponent().getUnformattedText());
                             }
+                            java.lang.reflect.Field overlayF =
+                                    findField(mc.ingameGUI.getClass(), "overlayMessage");
+                            overlayF.setAccessible(true);
+                            response.addProperty("overlay",
+                                    String.valueOf(overlayF.get(mc.ingameGUI)));
+                            java.lang.reflect.Field overlayTimeF =
+                                    findField(mc.ingameGUI.getClass(), "overlayMessageTime");
+                            overlayTimeF.setAccessible(true);
+                            response.addProperty("overlayTicks", overlayTimeF.getInt(mc.ingameGUI));
                         } catch (Throwable t) {
                             throw new IllegalStateException("report_chat failed: " + t, t);
                         }

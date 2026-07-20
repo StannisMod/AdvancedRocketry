@@ -84,7 +84,8 @@ public class ShipEntryControllerTest {
 
         @Override public void loadShips(int slotDim) { }
 
-        @Override public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew) {
+        @Override public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
+                java.util.UUID shipId) {
             if (reseatFailCount > 0) { reseatFailCount--; return false; }
             return true;
         }

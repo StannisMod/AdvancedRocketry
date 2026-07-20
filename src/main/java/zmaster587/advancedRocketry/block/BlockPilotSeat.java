@@ -19,10 +19,14 @@ import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import net.minecraft.util.text.TextComponentTranslation;
+
 import zmaster587.advancedRocketry.client.TooltipInjector;
 import zmaster587.advancedRocketry.entity.EntityDummy;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 import zmaster587.advancedRocketry.tile.TilePilotSeat;
+import zmaster587.advancedRocketry.util.StorageChunk;
 
 /**
  * Pilot seat for a tier-2 (Valkyrien Skies) ship. Sits exactly like the {@linkplain BlockSeat
@@ -50,42 +54,100 @@ public class BlockPilotSeat extends BlockSeat {
      * while this seat block lives at a distant ship-subspace position, so the client must resolve
      * the seat from the bound block pos, not the dummy's own position. (Reimplemented rather than
      * delegating to {@code super} so the dummy carries the binding whether it is reused or spawned.)
+     *
+     * <p>Refusals are surfaced, not silent: a seat whose dummy already carries a DIFFERENT
+     * passenger answers with an action-bar message naming the occupant (a click on one's own
+     * occupied seat is a silent no-op), and a successful sit on a craft that is not yet assembled
+     * (the seat is unlinked, so no input will reach any flight computer) tells the pilot why his
+     * controls are dead. The occupied refusal wins — exactly one message per click.</p>
      */
     @Override
     public boolean onBlockActivated(World world, BlockPos pos, IBlockState state, EntityPlayer player,
                                     EnumHand hand, EnumFacing facing, float hitX, float hitY, float hitZ) {
         if (!world.isRemote) {
-            EntityDummy existing = findSeatDummy(world, pos, player);
-            if (existing != null) {
-                if (!existing.getPassengers().isEmpty()) {
-                    return true; // someone is already piloting from this seat
+            EntityDummy existing = boundDummyAt(world, pos);
+            if (existing != null && !existing.getPassengers().isEmpty()) {
+                Entity occupant = existing.getPassengers().get(0);
+                if (occupant != player) {
+                    player.sendStatusMessage(new TextComponentTranslation(
+                            "msg.pilotseat.occupied", occupant.getName()), true);
                 }
+                return true; // someone is already piloting from this seat
+            }
+            if (existing != null) {
                 existing.setPosition(pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
                 existing.setSeatPos(pos);
                 player.startRiding(existing);
-                return true;
+            } else {
+                EntityDummy dummy = new EntityDummy(world,
+                        pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
+                dummy.setSeatPos(pos);
+                world.spawnEntity(dummy);
+                player.startRiding(dummy);
             }
-            EntityDummy dummy = new EntityDummy(world, pos.getX() + 0.5f, pos.getY() + 0.2f, pos.getZ() + 0.5f);
-            dummy.setSeatPos(pos);
-            world.spawnEntity(dummy);
-            player.startRiding(dummy);
+            TileEntity te = world.getTileEntity(pos);
+            if ((!(te instanceof TilePilotSeat) || !((TilePilotSeat) te).isLinked())
+                    && player instanceof net.minecraft.entity.player.EntityPlayerMP) {
+                // Delayed past the mount packet's tracker flush: sent immediately, the notice is
+                // overwritten by vanilla's "press X to dismount" hint before the player reads it.
+                zmaster587.advancedRocketry.util.DelayedActionBar.send(
+                        (net.minecraft.entity.player.EntityPlayerMP) player,
+                        new TextComponentTranslation("msg.pilotseat.notassembled"), 10);
+            }
         }
         return true;
     }
 
     /**
-     * The dummy already bound to this seat, or {@code null} if none. A tier-2 seat block lives in
-     * the ship's distant subspace while its bound dummy is glued to the seat's live WORLD position
-     * ({@link EntityDummy#onUpdate}), so a search at the block position alone never finds it on a
-     * moving ship. Without this, every re-mount would spawn a FRESH dummy and leave the old (empty)
-     * one behind — and an empty dummy clears the flight computer's pilot input every server tick
-     * ({@link EntityDummy} telemetry), so the accumulated dummies would fight a returning pilot's
-     * input. Search the seat's live world position too, and match on the bound seat pos so a
-     * neighbouring seat's dummy is never grabbed.
+     * Destroying an occupied pilot seat by ANY cause (mined, explosion, a command) releases the
+     * ship's controls instead of latching them: the seated rider is dismounted, the seat's bound
+     * dummy is removed, and the linked flight computer drops its live input and cruise setpoint
+     * ({@link TileAdvancedFlightComputer#onControlStationLost}), reverting the ship to an unmanned
+     * station-hold. Without this, the client silently stops sending when the seat tile dies (no
+     * release packet), the riderless-dummy input clearer never runs (it needs the seat tile to
+     * resolve), and the flight computer executes the pilot's last command every tick — with Flight
+     * Assist on, a held throttle keeps ramping the cruise: an uncontrollable runaway ship.
+     *
+     * <p>NOT run when a relocation cut ({@link StorageChunk#isRelocationInProgress}) removes the
+     * block — assembly and crossings move the craft, and their crew handling (rebind / capture +
+     * re-seat) owns the binding across the move.</p>
      */
-    private static EntityDummy findSeatDummy(World world, BlockPos seatPos, EntityPlayer player) {
+    @Override
+    public void breakBlock(World world, BlockPos pos, IBlockState state) {
+        if (!world.isRemote && !StorageChunk.isRelocationInProgress()) {
+            TileEntity te = world.getTileEntity(pos); // still present: removed after breakBlock
+            if (te instanceof TilePilotSeat) {
+                TileAdvancedFlightComputer afc = ((TilePilotSeat) te).getFlightComputer();
+                if (afc != null) {
+                    afc.onControlStationLost();
+                }
+            }
+            EntityDummy dummy = boundDummyAt(world, pos);
+            if (dummy != null) {
+                for (Entity rider : new java.util.ArrayList<>(dummy.getPassengers())) {
+                    rider.dismountRidingEntity();
+                }
+                dummy.setDead();
+            }
+        }
+        super.breakBlock(world, pos, state);
+    }
+
+    /**
+     * The dummy already bound to the seat at {@code seatPos}, or {@code null} if none. A tier-2
+     * seat block lives in the ship's distant subspace while its bound dummy is glued to the seat's
+     * live WORLD position ({@link EntityDummy#onUpdate}), so a search at the block position alone
+     * never finds it on a moving ship. Without the reuse this enables, every re-mount would spawn a
+     * FRESH dummy and leave the old (empty) one behind — and an empty dummy clears the flight
+     * computer's pilot input every server tick ({@link EntityDummy} telemetry), so the accumulated
+     * dummies would fight a returning pilot's input. Search the seat's live world position too, and
+     * match on the bound seat pos so a neighbouring seat's dummy is never grabbed. Every path that
+     * mounts (or spawns a mount for) a pilot seat goes through this lookup first — one seat, one
+     * dummy.
+     */
+    public static EntityDummy boundDummyAt(World world, BlockPos seatPos) {
         EntityDummy atBlock = firstBoundDummy(world,
-                new AxisAlignedBB(seatPos, seatPos.add(1, 1, 1)), seatPos, player);
+                new AxisAlignedBB(seatPos, seatPos.add(1, 1, 1)), seatPos);
         if (atBlock != null) {
             return atBlock;
         }
@@ -95,15 +157,14 @@ public class BlockPilotSeat extends BlockSeat {
         }
         AxisAlignedBB atWorld = new AxisAlignedBB(worldSeat[0], worldSeat[1], worldSeat[2],
                 worldSeat[0], worldSeat[1], worldSeat[2]).grow(1.0);
-        return firstBoundDummy(world, atWorld, seatPos, player);
+        return firstBoundDummy(world, atWorld, seatPos);
     }
 
     /** The first dummy in {@code box} bound to {@code seatPos}, or {@code null}. */
-    private static EntityDummy firstBoundDummy(World world, AxisAlignedBB box, BlockPos seatPos,
-                                               EntityPlayer player) {
-        for (Entity e : world.getEntitiesWithinAABBExcludingEntity(player, box)) {
-            if (e instanceof EntityDummy && seatPos.equals(((EntityDummy) e).getSeatPos())) {
-                return (EntityDummy) e;
+    private static EntityDummy firstBoundDummy(World world, AxisAlignedBB box, BlockPos seatPos) {
+        for (EntityDummy e : world.getEntitiesWithinAABB(EntityDummy.class, box)) {
+            if (seatPos.equals(e.getSeatPos())) {
+                return e;
             }
         }
         return null;

@@ -56,6 +56,22 @@ import java.util.*;
 
 public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBreakable {
 
+    /**
+     * Depth of structure-relocation cuts currently in progress on the server thread. A relocation
+     * (assembly, crossing, station cut) removes every block of a craft through
+     * {@code world.setBlockState(pos, AIR)}, which fires each block's {@code breakBlock} exactly as
+     * a pickaxe or an explosion would — but the craft is being MOVED, not destroyed, so destruction
+     * side effects (dismounting a seated pilot, zeroing his ship's controls) must not run. Blocks
+     * whose {@code breakBlock} distinguishes the two cases gate on {@link #isRelocationInProgress()}.
+     * Server main thread only (all cuts run there), so a plain int suffices.
+     */
+    private static int relocationDepth = 0;
+
+    /** Whether a structure-relocation cut is removing blocks right now (see {@link #relocationDepth}). */
+    public static boolean isRelocationInProgress() {
+        return relocationDepth > 0;
+    }
+
     public Chunk chunk;
     public WorldDummy world;
     public boolean finalized = false; // Make sure we are ready to render
@@ -441,6 +457,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     public static StorageChunk cutWorldBB(World worldObj, AxisAlignedBB bb) {
         StorageChunk chunk = StorageChunk.copyWorldBB(worldObj, bb);
 
+        relocationDepth++;
+        try {
         for (int x = (int) bb.minX; x <= bb.maxX; x++) {
             for (int z = (int) bb.minZ; z <= bb.maxZ; z++) {
                 for (int y = (int) bb.minY; y <= bb.maxY; y++) {
@@ -458,6 +476,9 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                     worldObj.setBlockState(pos, Blocks.AIR.getDefaultState(), 2);
                 }
             }
+        }
+        } finally {
+            relocationDepth--;
         }
 
         //Carpenter's block's dupe

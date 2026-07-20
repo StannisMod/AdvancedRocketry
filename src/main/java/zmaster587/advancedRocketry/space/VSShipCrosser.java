@@ -165,10 +165,20 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // Keep the destination's ships load-queued so the re-assembled seat tiles become resolvable (the
         // proven entry/descent reseat path, VSShipCrossingOps.loadShips).
         VSIntegration.loadAllShips(dst);
-        if (CrewTransfer.reseat(dst, arrivalAnchor, stash)) {
+        if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId))) {
             crewStash.remove(shipId);
             return true;
         }
         return false;
+    }
+
+    /** The transit keys ships by the AR ship UUID string; a non-UUID key (test fixtures) carries
+     *  no durable identity, so the re-seat runs without the wrong-ship filter there. */
+    private static java.util.UUID toUuid(String shipId) {
+        try {
+            return java.util.UUID.fromString(shipId);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

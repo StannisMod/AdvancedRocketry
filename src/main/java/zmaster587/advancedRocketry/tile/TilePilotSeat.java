@@ -51,10 +51,6 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     /** Control-packet id: toggle the linked flight computer's AUTO-TAKEOFF autopilot (no payload). */
     public static final byte PACKET_AUTO_TAKEOFF_TOGGLE = 2;
 
-    /** World-frame fallback range (blocks²) for accepting a control packet, used only when the
-     *  rider's block position does not already match the seat (see {@link #isPilotOf}). */
-    private static final double PILOT_RANGE_SQ = 36.0;
-
     private boolean linked = false;
     private int afcDx, afcDy, afcDz;
 
@@ -197,28 +193,28 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     }
 
     /**
-     * Whether {@code player} is the pilot seated on THIS seat, checked frame-agnostically so it
-     * holds on a Valkyrien Skies ship where the seat lives in a distant subspace. On a ship the
-     * rider's world position and the seat's subspace position can be thousands of blocks apart, so
-     * a plain world-distance gate wrongly rejects every packet. Instead accept when the sender
-     * rides the seat's dummy (its block position matches this seat — subspace-safe), OR, as a
-     * world-frame fallback, when the sender is within {@link #PILOT_RANGE_SQ} of the seat.
+     * Whether {@code player} is the pilot seated on THIS seat: he rides a mount dummy whose bound
+     * seat position is exactly this seat's block. The binding is the ONLY accepted proof — checked
+     * in the seat's own (subspace-safe) block frame, so it holds on a Valkyrien Skies ship where
+     * the seat lives in a distant subspace while the rider sits at world coordinates. There is
+     * deliberately no world-distance fallback: distance identifies the wrong seat the moment two
+     * craft park near each other (and, on an assembled ship, compares a WORLD position against a
+     * SUBSPACE one — a frame-crossing comparison that can accept a bystander thousands of blocks
+     * from the craft). A packet with no exact binding is dropped.
      */
     private boolean isPilotOf(EntityPlayer player) {
         if (player == null) {
             return false;
         }
         Entity riding = player.getRidingEntity();
-        if (riding instanceof EntityDummy) {
-            BlockPos seatPos = ((EntityDummy) riding).getSeatPos();
-            if (seatPos == null) {
-                seatPos = new BlockPos(riding);
-            }
-            if (seatPos.equals(pos)) {
-                return true;
-            }
+        if (!(riding instanceof EntityDummy)) {
+            return false;
         }
-        return player.getDistanceSqToCenter(pos) <= PILOT_RANGE_SQ;
+        BlockPos seatPos = ((EntityDummy) riding).getSeatPos();
+        if (seatPos == null) {
+            seatPos = new BlockPos(riding);
+        }
+        return seatPos.equals(pos);
     }
 
     @Override

@@ -612,12 +612,19 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             BlockPos sp = seat.getPos();
+            // One seat - one dummy: reuse the seat's existing bound mount (mirrors the
+            // BlockPilotSeat right-click recipe), spawn only when none exists.
             zmaster587.advancedRocketry.entity.EntityDummy dummy =
-                    new zmaster587.advancedRocketry.entity.EntityDummy(
-                            world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
-            dummy.setSeatPos(sp); // bind to the seat so the client resolves it despite VS subspace
-            world.spawnEntity(dummy);
+                    zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, sp);
+            boolean reused = dummy != null;
+            if (dummy == null) {
+                dummy = new zmaster587.advancedRocketry.entity.EntityDummy(
+                        world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+                dummy.setSeatPos(sp); // bind to the seat so the client resolves it despite VS subspace
+                world.spawnEntity(dummy);
+            }
             send(sender, "{\"seatFound\":true,\"dummyId\":" + dummy.getEntityId()
+                    + ",\"reused\":" + reused
                     + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
             return;
         }
@@ -632,12 +639,87 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             BlockPos sp = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            // One seat - one dummy: reuse before spawning, exactly like seat-mount above.
             zmaster587.advancedRocketry.entity.EntityDummy dummy =
-                    new zmaster587.advancedRocketry.entity.EntityDummy(
-                            world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
-            dummy.setSeatPos(sp); // EntityDummy.onUpdate glues it to the seat's live world position next tick
-            world.spawnEntity(dummy);
-            send(sender, "{\"ok\":true,\"dummyId\":" + dummy.getEntityId() + "}");
+                    zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, sp);
+            boolean reused = dummy != null;
+            if (dummy == null) {
+                dummy = new zmaster587.advancedRocketry.entity.EntityDummy(
+                        world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+                dummy.setSeatPos(sp); // EntityDummy.onUpdate glues it to the seat's live world position next tick
+                world.spawnEntity(dummy);
+            }
+            send(sender, "{\"ok\":true,\"dummyId\":" + dummy.getEntityId()
+                    + ",\"reused\":" + reused + "}");
+            return;
+        }
+        // seat-occupy <dim> <x> <y> <z> — occupy the pilot seat at the given block with a spawned
+        // NON-PLAYER rider (an armor stand: no AI, no mob living-update side effects — a pig was
+        // observed silently self-dismounting within ~2s), so a client test can arrange the "seat
+        // already taken" refusal without a second bot. Reuses the seat's bound dummy per the
+        // one-seat-one-dummy rule. Returns the occupant's display name (what the refusal message
+        // shows the clicking player).
+        if (args.length >= 5 && "seat-occupy".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos sp = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            zmaster587.advancedRocketry.entity.EntityDummy dummy =
+                    zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, sp);
+            if (dummy == null) {
+                dummy = new zmaster587.advancedRocketry.entity.EntityDummy(
+                        world, sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+                dummy.setSeatPos(sp);
+                world.spawnEntity(dummy);
+            }
+            if (!dummy.getPassengers().isEmpty()) {
+                send(sender, "{\"error\":\"seat already occupied\"}");
+                return;
+            }
+            net.minecraft.entity.item.EntityArmorStand occupant =
+                    new net.minecraft.entity.item.EntityArmorStand(world);
+            occupant.setPosition(sp.getX() + 0.5, sp.getY() + 0.2, sp.getZ() + 0.5);
+            boolean spawned = world.spawnEntity(occupant);
+            boolean mounted = occupant.startRiding(dummy, true);
+            send(sender, "{\"ok\":true,\"dummyId\":" + dummy.getEntityId()
+                    + ",\"occupantId\":" + occupant.getEntityId()
+                    + ",\"spawned\":" + spawned
+                    + ",\"mounted\":" + mounted
+                    + ",\"passengers\":" + dummy.getPassengers().size()
+                    + ",\"occupantName\":\"" + occupant.getName() + "\"}");
+            return;
+        }
+        // seat-status <dim> <x> <y> <z> — server truth about the seat's bound dummy: its id and its
+        // passengers (id + class), so a test can verify an arranged occupancy actually holds.
+        if (args.length >= 5 && "seat-status".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos sp = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            zmaster587.advancedRocketry.entity.EntityDummy dummy =
+                    zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, sp);
+            if (dummy == null) {
+                send(sender, "{\"ok\":true,\"dummyFound\":false}");
+                return;
+            }
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"dummyFound\":true,\"dummyId\":")
+                    .append(dummy.getEntityId()).append(",\"passengers\":[");
+            boolean firstP = true;
+            for (net.minecraft.entity.Entity p : dummy.getPassengers()) {
+                if (!firstP) {
+                    sb.append(',');
+                }
+                firstP = false;
+                sb.append("{\"id\":").append(p.getEntityId())
+                        .append(",\"class\":\"").append(p.getClass().getSimpleName())
+                        .append("\",\"name\":\"").append(escapeJson(p.getName())).append("\"}");
+            }
+            sb.append("]}");
+            send(sender, sb.toString());
             return;
         }
         // find-seat <dim> <x> <y> <z> — after an async ship assembly completes, locate the ship's pilot seat in
@@ -683,6 +765,18 @@ public class TestProbeCommand extends CommandBase {
             if (seatSub != null) {
                 sb.append(",\"seatFound\":true,\"seatX\":").append(seatSub.getX())
                         .append(",\"seatY\":").append(seatSub.getY()).append(",\"seatZ\":").append(seatSub.getZ());
+                // The linked flight computer's SUBSPACE pos (seat pos + stored offset), so a test
+                // can target the computer block itself (e.g. break it) without geometry guesswork.
+                net.minecraft.tileentity.TileEntity seatTe = world.getTileEntity(seatSub);
+                if (seatTe instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
+                    net.minecraft.util.math.BlockPos afcSub =
+                            ((zmaster587.advancedRocketry.tile.TilePilotSeat) seatTe).getFlightComputerPos();
+                    if (afcSub != null) {
+                        sb.append(",\"afcX\":").append(afcSub.getX())
+                                .append(",\"afcY\":").append(afcSub.getY())
+                                .append(",\"afcZ\":").append(afcSub.getZ());
+                    }
+                }
             } else {
                 sb.append(",\"seatFound\":false");
             }
@@ -1011,7 +1105,7 @@ public class TestProbeCommand extends CommandBase {
         }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
-                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-delivery|arrival-trace"
+                + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-occupy <dim> <x> <y> <z>|seat-delivery|arrival-trace"
                 + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
                 + "|subspace-census [<dim> <id>]\"}");
     }

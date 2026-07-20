@@ -208,6 +208,37 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     }
 
     /**
+     * The pilot's control station was DESTROYED (his seat mined, blown up, or otherwise removed
+     * outside a relocation) while this computer survives. Drop the live command state: the last
+     * received input and the cruise setpoint are zeroed, so the ship reverts to an unmanned
+     * station-hold instead of flying the destroyed station's last command forever (with Flight
+     * Assist on, a held throttle would otherwise keep ramping the cruise — an uncontrollable
+     * runaway). The Flight-Assist MODE and the station-keeping flag are settings, not commands —
+     * both are retained.
+     */
+    public void onControlStationLost() {
+        pilotInput = null;
+        velocitySetpoint = new double[]{0.0, 0.0, 0.0};
+    }
+
+    /**
+     * This tile is being removed (block broken, chunk cut for a relocation, world teardown). The
+     * live command channels die with it: the physics-thread force controller reads them off the
+     * tile object it captured, so a destroyed computer whose channels stayed set could keep
+     * thrusting a ship nobody can control. A relocation's fresh tile starts with clean channels
+     * anyway, so clearing here is always safe.
+     */
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        pilotInput = null;
+        commandedVelocity = null;
+        commandedAngVel = null;
+        targetAttitude = null;
+        velocitySetpoint = new double[]{0.0, 0.0, 0.0};
+    }
+
+    /**
      * Server tick: when a Free Flight input is held and this tile's block is part of a physics
      * ship, run the FF decision layer and publish the command the controller realizes. Reads
      * the ship's current attitude from the physics mod (through the AR-core gate — no physics
@@ -358,17 +389,19 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         }
         if (in == null) {
             // Nobody is flying. A ship that has NEVER been flown this load stays inert - its physics is
-            // off, so it just rests and there is nothing to hold. But a ship that WAS being flown must
-            // HOLD STATION when the pilot stands up: hover in place, at the attitude he left it, until a
-            // pilot returns. A hovering craft is not coasting - it needs continuous force to fight
-            // gravity, so the instant the controller stops commanding it falls out of the sky (the
-            // playtest: stood up mid-hover, the ship dropped and took the pilot down with it). So rather
-            // than clearing the command, keep commanding a zero-velocity, hold-current-attitude station
-            // keep. attitudeReference is non-null only once a pilot has actually flown the ship, so it is
-            // the "was piloted" witness - hold it, do not clear it.
+            // off, so it just rests and there is nothing to hold. But a ship that WAS being flown keeps
+            // EXECUTING its retained Flight-Assist setting when the pilot stands up: with FA on and a
+            // non-zero cruise setpoint it KEEPS CRUISING at that setpoint (that is what makes it an
+            // autopilot - the pilot dismounts mid-flight and the ship flies on); with a zero setpoint,
+            // or FA off, it degenerates to holding station: hover in place, at the attitude he left it,
+            // until a pilot returns. A hovering craft is not coasting - it needs continuous force to
+            // fight gravity, so the instant the controller stops commanding it falls out of the sky (the
+            // playtest: stood up mid-hover, the ship dropped and took the pilot down with it).
             // The "was flown" witness is the PERSISTED stationKeeping flag, not the live attitudeReference
             // (which is null after a reload). A never-flown ship (physics off) stays inert; a ship that has
-            // been flown holds station, and does so again after a world reload instead of falling.
+            // been flown holds its setting, and holds station again after a world reload instead of falling.
+            // The setpoint is deliberately NOT zeroed and NOT re-captured here: the dismounted pilot's
+            // cruise setting is his to come back to, never a reset-from-live-velocity.
             if (!stationKeeping) {
                 commandedVelocity = null;
                 commandedAngVel = null;
@@ -379,12 +412,16 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                 attitudeReference = attitude; // re-seed from the ship's current attitude after a reload
             }
             VSIntegration.ensureShipPhysicsEnabled(world, getPos());
-            commandedVelocity = new double[]{0.0, 0.0, 0.0};
+            // FA on: an idle input over the retained setpoint IS the cruise command (zero setpoint =
+            // hover). FA off: no cruise control exists - hold station at zero velocity explicitly
+            // (shipVelocityCommand would answer "coast", and a coasting hover falls).
+            commandedVelocity = flightAssistEnabled
+                    ? FreeFlightPhysics.shipVelocityCommand(FreeFlightInput.zero(), attitudeReference,
+                            true, velocitySetpoint, SHIP_MAX_SPEED)
+                    : new double[]{0.0, 0.0, 0.0};
             commandedAngVel = new double[]{0.0, 0.0, 0.0};
             targetAttitude = new double[]{attitudeReference.w, attitudeReference.x,
                     attitudeReference.y, attitudeReference.z};
-            velocitySetpoint = new double[]{0.0, 0.0, 0.0};
-            captureSetpointOnNextTick = true; // a returning pilot re-seeds cruise from the live velocity
             return;
         }
         // A pilot is flying: from now on this ship holds station when unmanned - persisted, so the hold

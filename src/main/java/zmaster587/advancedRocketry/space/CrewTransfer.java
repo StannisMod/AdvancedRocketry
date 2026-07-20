@@ -47,7 +47,7 @@ public final class CrewTransfer {
         public final EntityPlayerMP player;
         public final int afcDx, afcDy, afcDz;
 
-        Crew(EntityPlayerMP player, int afcDx, int afcDy, int afcDz) {
+        public Crew(EntityPlayerMP player, int afcDx, int afcDy, int afcDz) {
             this.player = player;
             this.afcDx = afcDx;
             this.afcDy = afcDy;
@@ -125,15 +125,23 @@ public final class CrewTransfer {
      * and mount it on a freshly-bound dummy. Returns {@code false} if any rider's seat could not
      * be resolved yet (the caller retries next tick — re-assembly is asynchronous; already-seated
      * riders are not double-mounted thanks to the bound-dummy reuse in the mount recipe).
+     *
+     * <p>{@code expectedShipId} is the DESTINATION ship's durable id (the flight computer's
+     * persisted UUID, which rides the crossing's tile NBT verbatim). When non-null, only a seat
+     * whose linked computer carries that id is accepted — the seat search is a spatial
+     * neighbourhood scan, and without the id filter two ships parked within a few blocks of each
+     * other with matching seat offsets can CROSS-SEAT a rider onto the wrong craft. {@code null}
+     * skips the filter (caller has no id — e.g. a ship whose computer never minted one).</p>
      */
-    public static boolean reseat(WorldServer dstWorld, BlockPos anchor, List<Crew> crew) {
+    public static boolean reseat(WorldServer dstWorld, BlockPos anchor, List<Crew> crew,
+            java.util.UUID expectedShipId) {
         if (crew.isEmpty()) {
             return true;
         }
         List<TilePilotSeat> seats = seatsOfShipAt(dstWorld, anchor);
         boolean allSeated = true;
         for (Crew rider : crew) {
-            TilePilotSeat seat = matchSeat(seats, rider);
+            TilePilotSeat seat = matchSeat(seats, rider, expectedShipId, DURABLE_SHIP_ID);
             double[] seatWorld = seat == null
                     ? null : VSIntegration.getSeatWorldPosition(dstWorld, seat.getPos());
             if (seat == null || seatWorld == null) {
@@ -160,10 +168,14 @@ public final class CrewTransfer {
                 continue; // already re-seated by an earlier retry
             }
             // The BlockPilotSeat mount recipe: a dummy at the seat's live world position, bound
-            // to the seat's (new) subspace block, and the player riding it.
-            EntityDummy dummy = new EntityDummy(dstWorld, seatWorld[0], seatWorld[1], seatWorld[2]);
-            dummy.setSeatPos(seat.getPos());
-            dstWorld.spawnEntity(dummy);
+            // to the seat's (new) subspace block, and the player riding it. Reuse the seat's
+            // existing bound dummy when one is already there (one seat — one dummy; a second
+            // dummy's riderless twin would clear the ship's pilot input every tick).
+            EntityDummy dummy = boundDummyForMount(dstWorld, seat.getPos(),
+                    seatWorld[0], seatWorld[1], seatWorld[2]);
+            if (dummy == null) {
+                continue; // the seat's dummy is occupied by someone else — never double-mount
+            }
             player.startRiding(dummy, true);
             ArrivalTrace.server("reseat.mount t=" + dstWorld.getTotalWorldTime()
                     + " p=" + player.getEntityId() + " dummy=" + dummy.getEntityId()
@@ -192,7 +204,8 @@ public final class CrewTransfer {
     public enum RebindOutcome { REBOUND, NOT_READY, NOT_ON_STALE_MOUNT }
 
     public static RebindOutcome rebindAcrossAssembly(WorldServer world, BlockPos anchor,
-            EntityPlayerMP player, int staleDummyId, int afcDx, int afcDy, int afcDz) {
+            EntityPlayerMP player, int staleDummyId, int afcDx, int afcDy, int afcDz,
+            java.util.UUID expectedShipId) {
         if (player.hasDisconnected() || player.world != world) {
             return RebindOutcome.NOT_ON_STALE_MOUNT; // gone from this world; login-restore owns him
         }
@@ -201,7 +214,7 @@ public final class CrewTransfer {
             return RebindOutcome.NOT_ON_STALE_MOUNT; // stood up / re-seated - never force him back
         }
         TilePilotSeat seat = matchSeat(seatsOfShipAt(world, anchor),
-                new Crew(player, afcDx, afcDy, afcDz));
+                new Crew(player, afcDx, afcDy, afcDz), expectedShipId, DURABLE_SHIP_ID);
         // getSeatWorldPosition is non-null only for a block MANAGED by a live ship, so a seat tile
         // still sitting at the paste site (relocation unfinished) does not pass - rebinding to it
         // would just go stale again the moment the blocks move.
@@ -221,9 +234,11 @@ public final class CrewTransfer {
         }
         riding.setDead();
         player.setPositionAndUpdate(seatWorld[0], seatWorld[1], seatWorld[2]);
-        EntityDummy dummy = new EntityDummy(world, seatWorld[0], seatWorld[1], seatWorld[2]);
-        dummy.setSeatPos(seat.getPos());
-        world.spawnEntity(dummy);
+        EntityDummy dummy = boundDummyForMount(world, seat.getPos(),
+                seatWorld[0], seatWorld[1], seatWorld[2]);
+        if (dummy == null) {
+            return RebindOutcome.NOT_ON_STALE_MOUNT; // seat taken while he rode the stale mount
+        }
         player.startRiding(dummy, true);
         ArrivalTrace.server("rebind.swap t=" + world.getTotalWorldTime()
                 + " p=" + player.getEntityId() + " stale=" + staleDummyId
@@ -253,20 +268,69 @@ public final class CrewTransfer {
         return seats;
     }
 
-    /** The seat whose AFC-link offset matches {@code rider}'s record, or {@code null}. */
-    private static TilePilotSeat matchSeat(List<TilePilotSeat> seats, Crew rider) {
+    /**
+     * The durable ship id a seat belongs to: its linked flight computer tile's persisted UUID, or
+     * {@code null} while the computer tile is not resolvable (ship still assembling — the caller's
+     * retry loop covers that) or has never minted one.
+     */
+    static final java.util.function.Function<TilePilotSeat, java.util.UUID> DURABLE_SHIP_ID =
+            seat -> {
+                zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                        seat.getFlightComputer();
+                return afc == null ? null : afc.shipIdOrNull();
+            };
+
+    /**
+     * The seat whose AFC-link offset matches {@code rider}'s record — and, when
+     * {@code expectedShipId} is given, whose ship (per {@code shipIdOf}) IS that ship — or
+     * {@code null}. The offset alone is a weak identity: any two ships built from the same design
+     * share it, and the candidate list is gathered by spatial proximity, so without the id check a
+     * neighbouring ship's seat can win. A candidate whose id cannot be resolved yet does not match
+     * (the callers retry until the destination's tiles are up). Public with the resolver
+     * injected so the discrimination is testable without a world.
+     */
+    public static TilePilotSeat matchSeat(List<TilePilotSeat> seats, Crew rider,
+            java.util.UUID expectedShipId,
+            java.util.function.Function<TilePilotSeat, java.util.UUID> shipIdOf) {
         for (TilePilotSeat seat : seats) {
             BlockPos afc = seat.getFlightComputerPos();
             if (afc == null) {
                 continue;
             }
             BlockPos p = seat.getPos();
-            if (afc.getX() - p.getX() == rider.afcDx
-                    && afc.getY() - p.getY() == rider.afcDy
-                    && afc.getZ() - p.getZ() == rider.afcDz) {
-                return seat;
+            if (afc.getX() - p.getX() != rider.afcDx
+                    || afc.getY() - p.getY() != rider.afcDy
+                    || afc.getZ() - p.getZ() != rider.afcDz) {
+                continue;
             }
+            if (expectedShipId != null && !expectedShipId.equals(shipIdOf.apply(seat))) {
+                continue; // same design, different craft — never cross-seat
+            }
+            return seat;
         }
         return null;
+    }
+
+    /**
+     * The seat's single mount dummy, ready to be ridden: reuse the one already bound to
+     * {@code seatPos} (moved to the seat's live world position), or spawn a fresh bound one there.
+     * Returns {@code null} when the existing dummy is occupied — the caller must never mount a
+     * second rider onto a taken seat, and must never spawn a second dummy beside it.
+     */
+    private static EntityDummy boundDummyForMount(WorldServer world, BlockPos seatPos,
+            double x, double y, double z) {
+        EntityDummy existing =
+                zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, seatPos);
+        if (existing != null) {
+            if (!existing.getPassengers().isEmpty()) {
+                return null;
+            }
+            existing.setPosition(x, y, z);
+            return existing;
+        }
+        EntityDummy dummy = new EntityDummy(world, x, y, z);
+        dummy.setSeatPos(seatPos);
+        world.spawnEntity(dummy);
+        return dummy;
     }
 }

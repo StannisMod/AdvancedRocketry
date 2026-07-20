@@ -247,7 +247,10 @@ public final class SpaceEventHandler {
         // binding that survives a ship being re-assembled into a fresh subspace.
         CrewTransfer.Crew rider = new CrewTransfer.Crew(player,
                 pending.aboard.afcDx, pending.aboard.afcDy, pending.aboard.afcDz);
-        return CrewTransfer.reseat(world, anchor, Collections.singletonList(rider));
+        // The aboard record names the ship by its durable id — hand it to the re-seat so a
+        // neighbouring ship with the same seat offset can never claim the returning pilot.
+        return CrewTransfer.reseat(world, anchor, Collections.singletonList(rider),
+                pending.aboard.shipId);
     }
 
     // --- keeping the aboard record true ----------------------------------------------------------

@@ -65,9 +65,10 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
-    public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew) {
+    public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
+            java.util.UUID shipId) {
         WorldServer world = DimensionManager.getWorld(destDim);
-        return world != null && CrewTransfer.reseat(world, anchor, crew);
+        return world != null && CrewTransfer.reseat(world, anchor, crew, shipId);
     }
 
     @Override

@@ -64,12 +64,15 @@ public final class AssemblyCrewRebind {
         final int staleDummyId;
         final BlockPos anchor;
         final int afcDx, afcDy, afcDz;
+        /** The assembling ship's durable id, so the rebind can never grab an equal-offset seat of
+         *  a neighbouring craft ({@code null} when the assembler had none to give). */
+        final UUID shipId;
         int attempts;
         /** Consecutive ticks the pilot was observed NOT riding the stale mount (see debounce). */
         int notOnMountStreak;
 
         Pending(int dimension, UUID playerId, int staleDummyId, BlockPos anchor,
-                int afcDx, int afcDy, int afcDz) {
+                int afcDx, int afcDy, int afcDz, UUID shipId) {
             this.dimension = dimension;
             this.playerId = playerId;
             this.staleDummyId = staleDummyId;
@@ -77,19 +80,21 @@ public final class AssemblyCrewRebind {
             this.afcDx = afcDx;
             this.afcDy = afcDy;
             this.afcDz = afcDz;
+            this.shipId = shipId;
         }
     }
 
     /**
      * Queue {@code player} - currently riding the stale mount {@code staleDummyId} bound to the
      * seat's pre-assembly position - for a rebind onto the ship being assembled at {@code anchor},
-     * whose seat is re-identified by the given AFC-link offset. Server main thread only.
+     * whose seat is re-identified by the given AFC-link offset on the ship with durable id
+     * {@code shipId}. Server main thread only.
      */
     public static void enqueue(WorldServer world, EntityPlayerMP player, int staleDummyId,
-            BlockPos anchor, int afcDx, int afcDy, int afcDz) {
+            BlockPos anchor, int afcDx, int afcDy, int afcDz, UUID shipId) {
         enqueuedCount++;
         PENDING.add(new Pending(world.provider.getDimension(), player.getUniqueID(),
-                staleDummyId, anchor, afcDx, afcDy, afcDz));
+                staleDummyId, anchor, afcDx, afcDy, afcDz, shipId));
     }
 
     @SubscribeEvent
@@ -119,7 +124,7 @@ public final class AssemblyCrewRebind {
             }
             CrewTransfer.RebindOutcome outcome = CrewTransfer.rebindAcrossAssembly(world,
                     pending.anchor, player, pending.staleDummyId,
-                    pending.afcDx, pending.afcDy, pending.afcDz);
+                    pending.afcDx, pending.afcDy, pending.afcDz, pending.shipId);
             if (outcome == CrewTransfer.RebindOutcome.REBOUND) {
                 reboundCount++;
                 lastOutcome = "rebound anchor=" + pending.anchor + " after=" + pending.attempts;

@@ -417,8 +417,17 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         assertTrue("holding vertical-up must lift the ship: " + ship[1] + " -> " + climbed,
                 climbed - ship[1] > 1.0);
 
-        // Stand up. A ship that has been flown holds station while unmanned: the flight computer commands
-        // a ZERO world velocity and holds the attitude - the exact path this bug lives on.
+        // Park before standing up: cut (X) zeroes the Flight-Assist cruise setpoint. A dismount
+        // with a NON-zero setpoint deliberately leaves the ship CRUISING (the autopilot contract,
+        // pinned by VSShipUnmannedCruiseE2ETest); the station-hold this test pins is the parked
+        // pilot's case - zero setpoint - whose regression mode is the -g*dt sink measured below.
+        bot().holdKey(Keyboard.KEY_X);
+        bot().waitTicks(10);
+        bot().releaseKey(Keyboard.KEY_X);
+        bot().waitTicks(5);
+
+        // Stand up. A parked ship that has been flown holds station while unmanned: the flight computer
+        // commands a ZERO world velocity and holds the attitude - the exact path this bug lives on.
         exec("artest player dismount");
         bot().waitTicks(60); // let the controller brake the climb out and settle onto the hold
 

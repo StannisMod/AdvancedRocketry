@@ -55,8 +55,10 @@ public final class ShipCrossingService {
 
         /** Re-seat the captured crew on the re-assembled ship. Runs AFTER the pose teleport, so
          *  {@code anchor} is a world point on the ship at its FINAL pose (the paste anchor no
-         *  longer resolves the moved ship). {@code false} = retry next tick. */
-        boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew);
+         *  longer resolves the moved ship). {@code shipId} is the crossing ship's durable id —
+         *  the re-seat accepts only THAT ship's seats (a neighbouring ship with the same seat
+         *  offset must never claim the crew). {@code false} = retry next tick. */
+        boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew, UUID shipId);
 
         /** Rigid-teleport the ship near {@code anchor} to the pose position, carrying riders.
          *  Runs FIRST in the settle (before the re-seat), so it owns its own proof that the
@@ -163,7 +165,7 @@ public final class ShipCrossingService {
                 // the re-seat probes at the pose itself, and the crew's fresh mounts (and the crew)
                 // are born directly there: no write ever targets a superseded position.
                 e.reseated = ops.reseat(e.destDim, new BlockPos(
-                        e.finalPose[0], e.finalPose[1], e.finalPose[2]), e.crew);
+                        e.finalPose[0], e.finalPose[1], e.finalPose[2]), e.crew, e.shipId);
             } else {
                 // A tick after the re-seat: unpark at the pose, then let the controller
                 // settle/release. Removed from the map before the callback so a completion that

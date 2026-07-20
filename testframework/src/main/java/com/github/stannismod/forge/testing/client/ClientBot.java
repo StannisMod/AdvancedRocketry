@@ -330,7 +330,10 @@ public final class ClientBot implements Closeable {
     /**
      * Recent lines of the client chat overlay, newest first, i18n already
      * resolved — exactly the text the player reads. The honest observation
-     * for "the player received a chat message".
+     * for "the player received a chat message". The response also carries
+     * {@code overlay} — the last ACTION-BAR message ({@code setOverlayMessage}
+     * / the GAME_INFO chat type, which never enters the chat list) — and
+     * {@code overlayTicks} (&gt; 0 while it is still on screen).
      */
     public JsonObject reportChat(int limit) throws IOException {
         JsonObject command = command("report_chat");

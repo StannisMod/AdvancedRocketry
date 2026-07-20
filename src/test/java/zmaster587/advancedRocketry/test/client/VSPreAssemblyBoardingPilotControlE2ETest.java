@@ -337,6 +337,31 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
                         + "not some leftover entity. boarding=" + how + " riding=" + ridingAfter,
                 entityClassOf(ridingAfter).contains("EntityDummy"));
 
+        // ARRANGEMENT window, load-aware: the boarding is re-expressed onto the relocated seat by
+        // an asynchronous rebind that can only run once the physics mod has finished relocating the
+        // craft into its subspace — and under a parallel-suite load that relocation lags by many
+        // seconds. The contract clock ("controls the ship immediately") starts at the physics
+        // object going LIVE, so waiting for the rebind here measures the contract, not a softened
+        // version of it; without the wait the measurement legs below just run out before the ship
+        // exists. Early exit the moment the rebind lands; a cancelled/expired rebind is a red.
+        int rebindBudget = (int) (240 * com.github.stannismod.forge.testing.TestTimeouts.factor());
+        String rebindState = "";
+        boolean rebound = false;
+        for (int i = 0; i < rebindBudget && !rebound; i++) {
+            bot().waitTicks(TICKS_PER_SAMPLE);
+            rebindState = exec("artest vs seat-delivery");
+            rebound = rebindState.contains("\"rebindRebound\":1");
+            assertTrue("the pre-assembly boarding's rebind must never be CANCELLED or EXPIRED while "
+                            + "the pilot demonstrably sits on his stale mount: " + rebindState,
+                    rebindState.contains("\"rebindCancelled\":0")
+                            && rebindState.contains("\"rebindExpired\":0"));
+        }
+        assertTrue("ARRANGEMENT: the assembly's crew rebind never completed within "
+                        + (rebindBudget * TICKS_PER_SAMPLE) + " ticks (load-scaled) - the relocated "
+                        + "ship/seat never became resolvable, so the control chain under test never "
+                        + "came up. boarding=" + how + " delivery=" + rebindState,
+                rebound);
+
         // Paste-site census, printed unconditionally (visible in green runs too): assembly pastes
         // the craft one block above its build position before relocating it into the ship's
         // subspace, and whether anything LINGERS in the world afterwards distinguishes a clean

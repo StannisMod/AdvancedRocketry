@@ -426,6 +426,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         boolean hasSatellite = false;
         boolean hasGuidance = false;
         boolean invalidBlock = false;
+        // Tier-2 control blocks are counted, not just located: a craft may carry at most ONE
+        // Advanced Flight Computer and ONE pilot seat (the "last scanned wins" slot assignment
+        // below would otherwise silently pick one and leave the others as live hazards — a second
+        // computer ticks and fights the linked one for the ship, a second seat is silently dead).
+        int flightComputerCount = 0;
+        int pilotSeatCount = 0;
         float weight = 0;
 
         if (verifyScan(bb, world)) {
@@ -513,8 +519,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 hasGuidance = true;
                             } else if (tile instanceof TileAdvancedFlightComputer) {
                                 scannedFlightComputerPos = currBlockPos;
+                                flightComputerCount++;
                             } else if (tile instanceof TilePilotSeat) {
                                 scannedPilotSeatPos = currBlockPos;
+                                pilotSeatCount++;
                             }
                         }
                     }
@@ -579,6 +587,19 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                     || (thrustMonopropellant > 0 && totalFuelUse > monopropellantfuelUse)
                     || (thrustNuclearTotalLimit > 0 && totalFuelUse > nuclearWorkingFluidUse))) {
                 status = ErrorCodes.COMBINEDTHRUST;
+
+            } else if (VSIntegration.isAvailable() && flightComputerCount > 1) {
+                // One craft — one command authority. A second Advanced Flight Computer would tick
+                // and steer against the linked one (both are physics force controllers), so a
+                // multi-computer build is rejected at the scan, before anything can assemble.
+                status = ErrorCodes.MULTIPLEFLIGHTCOMPUTERS;
+
+            } else if (VSIntegration.isAvailable() && scannedFlightComputerPos != null
+                    && pilotSeatCount > 1) {
+                // One craft — one command seat. Only the last-scanned pilot seat would be linked;
+                // a pilot in any other seat would have silently dead controls. Passenger seats
+                // (the plain seat block) are unrestricted — this counts only pilot seats.
+                status = ErrorCodes.MULTIPLEPILOTSEATS;
 
             } else if (!hasGuidance && !hasSatellite
                     && !(scannedFlightComputerPos != null && VSIntegration.isAvailable())) {
@@ -711,8 +732,9 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             // is the one stable key for the ship (the physics mod's own UUID is re-minted per
             // re-assembly and must never key durable state).
             TileEntity afcTe = world.getTileEntity(shipAnchor);
+            java.util.UUID durableShipId = null;
             if (afcTe instanceof TileAdvancedFlightComputer) {
-                ((TileAdvancedFlightComputer) afcTe).getOrCreateShipId();
+                durableShipId = ((TileAdvancedFlightComputer) afcTe).getOrCreateShipId();
             }
             VSIntegration.assembleTier2Ship(world, shipAnchor);
             // A pilot who took the seat BEFORE assembly is riding a mount bound to the seat's
@@ -738,7 +760,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                     mount.getEntityId(), shipAnchor,
                                     shipAnchor.getX() - postLiftSeat.getX(),
                                     shipAnchor.getY() - postLiftSeat.getY(),
-                                    shipAnchor.getZ() - postLiftSeat.getZ());
+                                    shipAnchor.getZ() - postLiftSeat.getZ(),
+                                    durableShipId);
                         }
                     }
                 }
@@ -1444,7 +1467,9 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         UNSCANNED_STATION(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.unscanned_station")),
         FAIL_CUT(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fail_cut")),
         NOINTAKE(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.nointake")),
-        NOTANK(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.notank"));
+        NOTANK(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.notank")),
+        MULTIPLEFLIGHTCOMPUTERS(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.multipleflightcomputers")),
+        MULTIPLEPILOTSEATS(LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.multiplepilotseats"));
 
         String code;
 

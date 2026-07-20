@@ -724,7 +724,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockNuclearFuelTank = new BlockNuclearFuelTank(Material.IRON).setUnlocalizedName("nuclearfueltank").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockNuclearCore = new BlockNuclearCore(Material.IRON).setUnlocalizedName("nuclearcore").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
-        AdvancedRocketryBlocks.blockAdvancedFlightComputer = new BlockTile(TileAdvancedFlightComputer.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockIntake = new BlockIntake(Material.IRON).setUnlocalizedName("gasIntake").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockDrill = new BlockMiningDrill().setUnlocalizedName("drill").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockLandingFloat = new Block(Material.IRON).setUnlocalizedName("landingfloat").setCreativeTab(tabAdvRocketry).setHardness(1).setResistance(1f);
@@ -1179,6 +1179,7 @@ public class AdvancedRocketry {
         // Carries a pre-assembly boarding across the asynchronous ship assembly (core assembly
         // glue - registered unconditionally, works with the space subsystem down).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.AssemblyCrewRebind());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.DelayedActionBar());
         // Position-writer timeline around ship crossings (ungated diagnostics, probe-readable).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.ArrivalTrace.Hooks());
 
