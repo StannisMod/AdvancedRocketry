@@ -45,7 +45,7 @@ public class ARConfiguration {
     private final static String WORLDGEN = "World and Ore Generation";
     private final static String ROCKET = "Rockets";
     private final static String STATION = "Station Configuration";
-    private final static String PLANET = "Planet";
+    private final static String PLANET = Constants.CONFIG_CATEGORY_PLANET;
     private final static String OXYGEN = "Oxygen System";
     private final static String ENERGY = "Energy Production";
     private final static String MISSION = "Resource Collection Missions";
@@ -494,7 +494,7 @@ public class ARConfiguration {
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
-        arConfig.perDimWorldInfo = config.get(PLANET, "perDimWorldInfo", true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
+        arConfig.perDimWorldInfo = config.get(PLANET, Constants.CONFIG_KEY_PER_DIM_WORLD_INFO, true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
         arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "Sub-toggle of perDimWorldInfo (no effect when that is false): if true, each AR planet has its own weather state (rain, thunder, /weather, isRaining); if false, weather delegates to the overworld while per-dimension time-of-day still applies.").getBoolean();
         arConfig.logPlanetWeatherWrapping = config.get(PLANET, "logPlanetWeatherWrapping", true, "Log an info line every time an AR planet's WorldInfo is wrapped for per-dimension weather. Useful for diagnosing weather-wrapping issues; safe to disable in production.").getBoolean();
         arConfig.forcePlanetWeatherWorldInfoWrapper = config.get(PLANET, "forcePlanetWeatherWorldInfoWrapper", false, "Force per-dimension weather wrapping on every secondary (non-overworld) dimension, including non-AR dims of other mods. Compatibility/debug flag — do NOT enable unless you know exactly what you are doing.").getBoolean();

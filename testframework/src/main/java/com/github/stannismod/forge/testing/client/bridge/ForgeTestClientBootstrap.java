@@ -709,6 +709,61 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("thunderStrength", mc.world.getThunderStrength(1.0f));
                     return response;
                 });
+            case "report_spawn":
+                // Client-side view of the spawn point for the dim the client is
+                // currently in — precisely the two fields
+                // NetHandlerPlayClient.handleSpawnPosition writes when
+                // SPacketSpawnPosition arrives:
+                //     mc.player.setSpawnPoint(pos, true)
+                //     mc.world.getWorldInfo().setSpawn(pos)
+                // WorldClient seeds worldInfo's spawn to the placeholder
+                // (8,64,8) in its constructor and is rebuilt from scratch on
+                // every dimension change, so these values are the canonical
+                // observation for "did the spawn-position packet reach the
+                // client for the dim it is in". No server-side query can see
+                // this: the server's own state is identical whether or not the
+                // packet was sent.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.world == null) {
+                        response.addProperty("worldReady", false);
+                        return response;
+                    }
+                    response.addProperty("worldReady", true);
+                    response.addProperty("dim", mc.world.provider.getDimension());
+                    response.addProperty("worldInfoClass", mc.world.getWorldInfo().getClass().getName());
+                    response.addProperty("spawnX", mc.world.getWorldInfo().getSpawnX());
+                    response.addProperty("spawnY", mc.world.getWorldInfo().getSpawnY());
+                    response.addProperty("spawnZ", mc.world.getWorldInfo().getSpawnZ());
+                    // World.getSpawnPoint() adds the provider indirection and a
+                    // world-border clamp — reporting it too makes a
+                    // provider-level divergence visible instead of silent, and
+                    // it is the exact expression the SERVER packs into the
+                    // packet.
+                    BlockPos worldSpawn = mc.world.getSpawnPoint();
+                    response.addProperty("worldSpawnX", worldSpawn.getX());
+                    response.addProperty("worldSpawnY", worldSpawn.getY());
+                    response.addProperty("worldSpawnZ", worldSpawn.getZ());
+                    if (mc.player == null) {
+                        response.addProperty("playerReady", false);
+                        return response;
+                    }
+                    response.addProperty("playerReady", true);
+                    // getBedLocation() delegates to getBedLocation(this.dimension),
+                    // which reads spawnPos for dim 0 and spawnChunkMap otherwise —
+                    // mirroring the branch setSpawnPoint(pos, forced) takes. So
+                    // this is dimension-correct on AR planets too. null means the
+                    // packet never arrived.
+                    BlockPos bed = mc.player.getBedLocation();
+                    response.addProperty("hasBedLocation", bed != null);
+                    if (bed != null) {
+                        response.addProperty("bedX", bed.getX());
+                        response.addProperty("bedY", bed.getY());
+                        response.addProperty("bedZ", bed.getZ());
+                    }
+                    return response;
+                });
             case "report_sounds": {
                 // Sound locations the client SoundManager was asked to play
                 // since the last clear_sounds — PlaySoundEvent fires per

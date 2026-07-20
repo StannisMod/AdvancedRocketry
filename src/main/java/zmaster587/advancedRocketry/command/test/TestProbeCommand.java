@@ -270,7 +270,35 @@ public class TestProbeCommand extends CommandBase {
                     + "\",\"count\":" + n + ",\"sounds\":[" + list + "]}");
             return;
         }
-        send(sender, "{\"error\":\"unknown registry subcommand — try summary | sounds <namespace>\",\"sub\":\"" + args[0] + "\"}");
+        if (args.length >= 2 && "lookup".equalsIgnoreCase(args[0])) {
+            // lookup <domain:path> — whether that exact registry name is live in
+            // the block and item registries after a real mod boot, and whether a
+            // recipe still resolves to it. Guards frozen save identifiers: the
+            // name in an existing world's level.dat snapshot must keep resolving.
+            // Reports raw state and asserts nothing — a probe carrying the
+            // expected literal would be "corrected" alongside a future rename and
+            // muffle the very regression it exists to catch.
+            ResourceLocation key = new ResourceLocation(args[1]);
+            boolean blockRegistered = ForgeRegistries.BLOCKS.containsKey(key);
+            boolean itemRegistered = ForgeRegistries.ITEMS.containsKey(key);
+            boolean craftable = false;
+            if (itemRegistered) {
+                net.minecraft.item.Item item = ForgeRegistries.ITEMS.getValue(key);
+                for (net.minecraft.item.crafting.IRecipe recipe : ForgeRegistries.RECIPES) {
+                    net.minecraft.item.ItemStack out = recipe.getRecipeOutput();
+                    if (!out.isEmpty() && out.getItem() == item) {
+                        craftable = true;
+                        break;
+                    }
+                }
+            }
+            send(sender, "{\"ok\":true,\"name\":\"" + escapeJson(key.toString())
+                    + "\",\"blockRegistered\":" + blockRegistered
+                    + ",\"itemRegistered\":" + itemRegistered
+                    + ",\"craftable\":" + craftable + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown registry subcommand — try summary | sounds <namespace> | lookup <domain:path>\",\"sub\":\"" + args[0] + "\"}");
     }
 
     private static long count(net.minecraftforge.registries.IForgeRegistry<?> registry) {
@@ -420,6 +448,21 @@ public class TestProbeCommand extends CommandBase {
             info.put("saveDir", (world != null && world.provider.getSaveFolder() != null)
                     ? world.provider.getSaveFolder() : "null");
             info.put("isARPlanet", DimensionManager.getInstance().isDimensionCreated(dim));
+            // World spawn exactly as the SERVER holds it — the same expression
+            // vanilla packs into SPacketSpawnPosition at PlayerList:1044. A
+            // client-side read of the same three numbers is the discriminator
+            // for whether that packet reached the client at all.
+            //
+            // For AR planets this reports the OVERWORLD's spawn: WorldServerMulti
+            // installs a DerivedWorldInfo whose getSpawnX/Y/Z delegate, and
+            // ARDimensionWorldInfo passes straight through. That is a fact about
+            // the dimension, not a probe limitation.
+            if (world != null) {
+                net.minecraft.util.math.BlockPos spawn = world.getSpawnPoint();
+                info.put("spawnX", spawn.getX());
+                info.put("spawnY", spawn.getY());
+                info.put("spawnZ", spawn.getZ());
+            }
             if (props != null) {
                 info.put("name", props.getName());
                 info.put("rotationalPeriod", props.rotationalPeriod);
@@ -428,6 +471,41 @@ public class TestProbeCommand extends CommandBase {
                 info.put("orbitalDistance", props.orbitalDist);
             }
             send(sender, jsonMap(info));
+            return;
+        }
+        if ("set-spawn".equalsIgnoreCase(args[0]) && args.length >= 5) {
+            // /artest dim set-spawn <dim> <x> <y> <z> — move a world's spawn
+            // WITHOUT the SPacketSpawnPosition broadcast that vanilla
+            // /setworldspawn performs (CommandSetDefaultSpawnpoint:62). That
+            // broadcast tells every connected client the new value directly,
+            // which would mask whether the login / dim-transfer path carries it.
+            // Reads the value back so a caller can detect a swallowed write:
+            // ARDimensionWorldInfo.setSpawn is an empty override, so this is a
+            // no-op on AR planet dims — set dim 0 and let the DerivedWorldInfo
+            // delegation carry it.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], Integer.MIN_VALUE);
+            int y = parseIntOr(args[3], Integer.MIN_VALUE);
+            int z = parseIntOr(args[4], Integer.MIN_VALUE);
+            if (dim == Integer.MIN_VALUE || x == Integer.MIN_VALUE
+                    || y == Integer.MIN_VALUE || z == Integer.MIN_VALUE) {
+                send(sender, "{\"error\":\"usage: /artest dim set-spawn <dim> <x> <y> <z>\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = net.minecraftforge.common.DimensionManager.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"dimension not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            world.setSpawnPoint(new net.minecraft.util.math.BlockPos(x, y, z));
+            net.minecraft.util.math.BlockPos after = world.getSpawnPoint();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("ok", true);
+            result.put("dim", dim);
+            result.put("spawnX", after.getX());
+            result.put("spawnY", after.getY());
+            result.put("spawnZ", after.getZ());
+            send(sender, jsonMap(result));
             return;
         }
         if ("celestial-angle".equalsIgnoreCase(args[0]) && args.length >= 3) {
@@ -6560,6 +6638,31 @@ public class TestProbeCommand extends CommandBase {
      * commands themselves run on the server thread).
      */
     private void handleTile(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 5 && "nbt-id".equalsIgnoreCase(args[0])) {
+            // nbt-id <dim> <x> <y> <z> — the tile's own NBT "id" string, taken
+            // from the production write path (TileEntity.writeToNBT). That string
+            // is literally what lands in the saved chunk and in a packed
+            // rocket/station, so it is the only honest observation of a frozen
+            // tile-entity registry id.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (tile == null) {
+                send(sender, "{\"error\":\"no tile at position\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound nbt = tile.writeToNBT(new net.minecraft.nbt.NBTTagCompound());
+            send(sender, "{\"ok\":true,\"id\":\"" + escapeJson(nbt.getString("id"))
+                    + "\",\"tileClass\":\"" + tile.getClass().getName() + "\"}");
+            return;
+        }
         if (args.length >= 6 && "force-tick".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);

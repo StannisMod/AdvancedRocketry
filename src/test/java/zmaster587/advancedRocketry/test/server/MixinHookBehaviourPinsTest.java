@@ -66,12 +66,22 @@ import static org.junit.Assert.assertTrue;
  *   </tr>
  * </table>
  *
- * <p>Mixin AP statically resolves every target at compile time and
- * {@code required: true} hard-fails at apply time — so the silent-no-op
- * regression mode the original {@code IClassTransformer} allowed is
- * structurally impossible. These tests are belt-and-braces against
- * mapping-snapshot drift and behavioural drift in the helper code the
- * hooks call.</p>
+ * <p><b>Corrected 2026-07-18.</b> This block used to claim that the Mixin
+ * annotation processor plus {@code "required": true} made the silent-no-op
+ * regression mode "structurally impossible". That is false, and believing it
+ * is how a real bug shipped. {@code required} governs mixin <em>application</em>
+ * and makes it CRASH, not go quiet; what decides whether an <em>injector</em>
+ * that matches nothing is fatal is {@code defaultRequire}, which
+ * {@code mixins.advancedrocketry.json} does not set and therefore leaves at
+ * {@code 0}. So an injector whose target moved — because a third-party coremod
+ * rewrote the vanilla method — silently does nothing, on every mixin that does
+ * not carry its own {@code require}. Compile-time resolution says nothing about
+ * the bytecode actually present at runtime.</p>
+ *
+ * <p>These tests are therefore not belt-and-braces; for the hooks with no
+ * fallback they are the only thing standing between a silently dead injector
+ * and a player suffocating in a base that looks intact. Assertions here must
+ * discriminate — an assertion that vanilla alone would satisfy pins nothing.</p>
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class MixinHookBehaviourPinsTest extends AbstractSharedServerTest {

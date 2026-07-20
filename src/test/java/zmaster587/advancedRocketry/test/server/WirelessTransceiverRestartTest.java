@@ -120,7 +120,7 @@ public class WirelessTransceiverRestartTest {
     private static void place(RealDedicatedServerHarness h, int x) throws Exception {
         String r = String.join("\n", h.client().execute(
                 "artest place " + DIM + " " + x + " " + Y + " " + Z
-                        + " advancedrocketry:wirelessTransceiver"));
+                        + " advancedrocketry:wirelessTransciever"));
         assertTrue("place failed at x=" + x + ": " + r, r.contains("\"placed\":true"));
     }
 

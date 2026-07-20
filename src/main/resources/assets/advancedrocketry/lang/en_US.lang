@@ -212,6 +212,7 @@ item.elevatorChip.name=Space Elevator Chip
 container.satellite=Satellite Bay
 container.monitoringstation=Monitoring Station
 container.invhatch=Storage Hatch
+container.servicestation=Service Station
 
 material.TitaniumAluminide.name=Titanium Aluminide
 material.TitaniumIridium.name=Titanium Iridium Alloy
@@ -444,6 +445,8 @@ msg.spaceElevator.warning.unanchored=This elevator has no tether
 msg.spaceElevator.turnedOff=Elevator is turned off
 msg.fuelingStation.link=You program the linker with the fueling station at
 
+msg.monitoringStation.tab.status=Status
+msg.monitoringStation.tab.mission=Mission
 msg.monitoringStation.buttonLaunch=Launch!
 msg.monitoringStation.missionProgressNA=Mission Progress: N/A
 msg.monitoringStation.missionNoActiveMission=No Active Missions...

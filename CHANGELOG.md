@@ -1,3 +1,18 @@
+Changelog 2.3.0
+- Fixed the compass pointing at nothing after joining a world or changing dimension.
+  - The weather-sync fix in 2.2.9 replaced a vanilla method with a copy of itself, and the
+    copy left out the packet that tells your client where the world spawn is. Clients kept
+    an internal placeholder position instead.
+  - Now only the one thing we disagree with is changed, so the rest of the method — present
+    and future — stays vanilla.
+- Wireless Transceiver registry name reverted to its original spelling. Restores compat.
+  - 2.2.9 corrected the long-standing "transciever" typo in the block/item registry name
+    and in the tile entity id. Both are written into save files, so the correction deleted
+    every placed and stored transceiver on upgrade, along with its network id, mode and
+    priority — silently for transceivers inside packed rockets and stations.
+  - The misspelled ids are now frozen and pinned by a test. Renaming them properly needs a
+    registry remap and is deferred to 3.0.0.
+
 Changelog 2.2.9
 - Fixed crater worldgen crash from negative Y placement.
 - Fixed enriched lava flow texture tiling.

@@ -328,6 +328,24 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Client-side view of the spawn point for the dim the player is currently
+     * in: {@code dim}, {@code worldInfoClass}, {@code spawnX/Y/Z} (what
+     * {@code NetHandlerPlayClient.handleSpawnPosition} writes into
+     * {@code WorldInfo}), {@code worldSpawnX/Y/Z} (the provider + world-border
+     * view), {@code hasBedLocation} and {@code bedX/Y/Z} (the player's own
+     * spawn, dimension-aware). If the client world isn't ready only
+     * {@code worldReady=false} is set; if the player isn't spawned yet,
+     * {@code playerReady=false}.
+     *
+     * <p>A fresh {@code WorldClient} seeds the placeholder {@code (8,64,8)},
+     * so reading that value back means no {@code SPacketSpawnPosition} was
+     * applied for the dim the client is in.</p>
+     */
+    public JsonObject reportSpawn() throws IOException {
+        return assertOk(execute(command("report_spawn")));
+    }
+
+    /**
      * Sound locations the client {@code SoundManager} was asked to play since
      * the last {@link #clearSounds()} — recorded via the client-side
      * {@code PlaySoundEvent}. The event fires BEFORE asset resolution, so this

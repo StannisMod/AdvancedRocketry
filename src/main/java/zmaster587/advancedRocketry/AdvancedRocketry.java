@@ -446,7 +446,13 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileSeal.class, "ARBlockSeal");
         GameRegistry.registerTileEntity(TileSpaceElevator.class, "ARSpaceElevator");
         GameRegistry.registerTileEntity(TileBeacon.class, "ARBeacon");
-        GameRegistry.registerTileEntity(TileWirelessTransceiver.class, "ARTransceiver");
+        //FROZEN save id — the misspelling is deliberate, do not "fix" it. This exact string is
+        //written as the tile's NBT "id" into every saved chunk and into packed rockets and
+        //stations (StorageChunk); a mismatch drops the tile silently on load — the block
+        //survives, its network id, mode and priority do not.
+        //TODO(3.0.0): rename to ARTransceiver only behind a compat alias that keeps the old id
+        //readable — MissingMappings covers Forge registries, not TileEntity.REGISTRY.
+        GameRegistry.registerTileEntity(TileWirelessTransceiver.class, "ARTransciever");
         GameRegistry.registerTileEntity(TileBlackHoleGenerator.class, "ARblackholegenerator");
         GameRegistry.registerTileEntity(TilePump.class, new ResourceLocation(Constants.modId, "ARpump"));
         GameRegistry.registerTileEntity(TileCentrifuge.class, new ResourceLocation(Constants.modId, "ARCentrifuge"));
@@ -659,7 +665,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockSuitWorkStation = new BlockSuitWorkstation(TileSuitWorkStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("suitWorkStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockPressureTank = new BlockPressurizedFluidTank(Material.IRON).setUnlocalizedName("pressurizedTank").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSolarGenerator = new BlockSolarGenerator(TileSolarPanel.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("solarGenerator");
-        AdvancedRocketryBlocks.blockTransceiver = new BlockTransceiver(TileWirelessTransceiver.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransceiver").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockTransciever = new BlockTransceiver(TileWirelessTransceiver.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransceiver").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Multiblock machines
         //T1 processing
         AdvancedRocketryBlocks.blockArcFurnace = new BlockMultiblockMachine(TileElectricArcFurnace.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("electricArcFurnace").setCreativeTab(tabAdvRocketry).setHardness(3f);
@@ -833,7 +839,14 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSuitWorkStation.setRegistryName("suitWorkStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPressureTank.setRegistryName("liquidTank"), ItemBlockFluidTank.class, true);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarGenerator.setRegistryName("solarGenerator"));
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransceiver.setRegistryName("wirelessTransceiver"));
+        //FROZEN save id — the misspelling is deliberate, do not "fix" it. Shipped since 2018
+        //(48610953), so existing worlds hold advancedrocketry:wirelesstransciever in their
+        //level.dat registry snapshot; respelling it drops every placed transceiver and every
+        //ItemBlock in storage. Blockstate, block/item models and the recipe result are keyed
+        //off this string as well and must move with it.
+        //TODO(3.0.0): rename to wirelessTransceiver, but only together with a
+        //RegistryEvent.MissingMappings remap of the old name. See CHANGELOG.
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransciever.setRegistryName("wirelessTransciever"));
         //Multiblock machines
         //T1 processing
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockArcFurnace.setRegistryName("arcfurnace"));

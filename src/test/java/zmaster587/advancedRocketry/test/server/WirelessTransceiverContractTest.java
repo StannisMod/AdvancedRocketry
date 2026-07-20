@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -243,6 +244,57 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         assertFalse("flipping mode must not re-enable", extractBool(ENABLED, s3));
     }
 
+    /**
+     * Frozen save identifiers. The block/ItemBlock registry name and the tile
+     * entity id are written into every world that ever contained a transceiver
+     * — the registry name into the {@code level.dat} FML snapshot, the tile id
+     * into each saved chunk and into packed rockets/stations. Respelling either
+     * one deletes those transceivers on load; it already happened once (the
+     * 2026-05-31 "transciever" → "transceiver" typo fix, reverted afterwards).
+     *
+     * <p>This test fails if production breaks the contract that a world saved
+     * by any shipped build still resolves its wireless transceivers: the block
+     * and its ItemBlock stay registered under
+     * {@code advancedrocketry:wirelesstransciever}, that name stays craftable,
+     * the tile keeps writing the same NBT {@code id}, and the client-side
+     * resources keyed off the registry name still exist.</p>
+     */
+    @Test
+    public void frozenSaveIdentifiersMustNotBeRespelled() throws Exception {
+        String reg = String.join("\n", client().execute(
+                "artest registry lookup advancedrocketry:wirelessTransciever"));
+        assertTrue("registry lookup probe errored: " + reg, reg.contains("\"ok\":true"));
+        assertTrue("FROZEN block registry name advancedrocketry:wirelesstransciever is gone — "
+                        + "every existing world loses its placed transceivers: " + reg,
+                reg.contains("\"blockRegistered\":true"));
+        assertTrue("FROZEN ItemBlock registry name is gone — stored transceivers are deleted "
+                        + "from inventories and chests: " + reg,
+                reg.contains("\"itemRegistered\":true"));
+        assertTrue("transceiver is no longer craftable — the recipe result no longer resolves "
+                        + "against the frozen registry name: " + reg,
+                reg.contains("\"craftable\":true"));
+
+        int baseX = 3000;
+        placeAt(baseX);
+        String nbt = String.join("\n", client().execute(
+                "artest tile nbt-id " + DIM + " " + baseX + " " + Y + " " + Z));
+        assertTrue("tile nbt-id probe errored: " + nbt, nbt.contains("\"ok\":true"));
+        assertTrue("FROZEN tile entity id changed — tiles in existing chunks and inside packed "
+                        + "rockets/stations load as null, losing network id, mode and priority: " + nbt,
+                nbt.contains("\"id\":\"minecraft:artransciever\""));
+
+        // The client resolves blockstate and models from the registry name
+        // (lowercased). A server tier cannot render, but it can prove the files
+        // a client will ask for exist and carry no stale reference.
+        assertNotNull("blockstate JSON missing for the frozen registry name — the block would "
+                        + "render as the missing model",
+                getClass().getResource("/assets/advancedrocketry/blockstates/wirelesstransciever.json"));
+        assertNotNull("block model JSON missing for the frozen registry name",
+                getClass().getResource("/assets/advancedrocketry/models/block/wirelesstransciever.json"));
+        assertNotNull("item model JSON missing for the frozen registry name",
+                getClass().getResource("/assets/advancedrocketry/models/item/wirelesstransciever.json"));
+    }
+
     // --- helpers -----------------------------------------------------------
 
     private static final int Y = 65;
@@ -253,7 +305,7 @@ public class WirelessTransceiverContractTest extends AbstractSharedServerTest {
         for (int x : xs) {
             String r = String.join("\n", client().execute(
                     "artest place " + DIM + " " + x + " " + Y + " " + Z
-                            + " advancedrocketry:wirelessTransceiver"));
+                            + " advancedrocketry:wirelessTransciever"));
             assertTrue("place failed at x=" + x + ": " + r,
                     r.contains("\"placed\":true"));
             // Under parallel-fork load the tile entity can lag the block
