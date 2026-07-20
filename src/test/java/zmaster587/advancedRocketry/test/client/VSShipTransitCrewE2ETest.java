@@ -96,12 +96,25 @@ public class VSShipTransitCrewE2ETest extends AbstractClientE2ETest {
         assertEquals("the client must have followed into the transit origin cell",
                 originDim, bot().reportWeather().get("dim").getAsInt());
 
-        // Seat the bot on the ship's pilot-seat dummy (bound to the seat's subspace pos located at setup).
-        String mountAt = exec("artest vs seat-mount-at " + originDim + " " + seatX + " " + seatY + " " + seatZ);
-        assertTrue("seat-mount-at must spawn the seat dummy: " + mountAt, readBool(mountAt, "ok"));
-        int dummyId = readInt(mountAt, "dummyId");
-        String mount = exec("artest player mount-entity " + dummyId);
-        assertTrue("the bot must mount the pilot-seat dummy: " + mount, readBool(mount, "mounted"));
+        // Seat the bot on the ship's pilot-seat dummy (bound to the seat's subspace pos located at
+        // setup). Retried with a FRESH spawn on failure: the dummy is spawned at the shipyard's
+        // subspace coordinates and glued to the ship's world position only on its first tick - on
+        // a loaded machine the spawn chunk can unload before that tick and the returned entity id
+        // resolves to nothing ("entity not found"). A fresh spawn each retry is what recovers.
+        String mountAt = "", mount = "";
+        boolean mounted = false;
+        for (int attempt = 0; attempt < 5 && !mounted; attempt++) {
+            mountAt = exec("artest vs seat-mount-at " + originDim + " " + seatX + " " + seatY + " " + seatZ);
+            assertTrue("seat-mount-at must spawn the seat dummy: " + mountAt, readBool(mountAt, "ok"));
+            int dummyId = readInt(mountAt, "dummyId");
+            mount = exec("artest player mount-entity " + dummyId);
+            mounted = mount.contains("\"mounted\":true");
+            if (!mounted) {
+                bot().waitTicks(10);
+            }
+        }
+        assertTrue("the bot must mount the pilot-seat dummy (5 spawn+mount attempts): " + mount,
+                mounted);
         bot().waitTicks(10);
 
         // CONTROL: the client must confirm it IS riding BEFORE the transit — so "riding after" is meaningful.

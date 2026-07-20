@@ -493,8 +493,20 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         double maxFrameStep = 0.0, maxCarry = -1.0, maxRate = 0.0, travelled = 0.0;
         double yPrev = shipY0;
         StringBuilder samples = new StringBuilder();
-        int phaseDownFrom = 120;
-        for (int i = 0; i < 200; i++) {
+        // The drive's thrust duty-cycle is cadence-bound: the pilot input decays between re-sends,
+        // so when concurrent forks stretch the per-iteration round-trip the ship climbs LESS per
+        // iteration (measured: a consistent ~3.1 blocks over the fixed budget at 8-12 forks vs >4
+        // idle). Scale the phase budgets by the harness load factor and let the up phase exit as
+        // soon as the instrument-fires target is comfortably met - an idle machine exits at the
+        // same iteration it always did, a loaded one gets the iterations it actually needs.
+        double loadFactor = com.github.stannismod.forge.testing.TestTimeouts.factor();
+        int phaseDownFrom = (int) (120 * loadFactor);
+        int totalIters = (int) (200 * loadFactor);
+        for (int i = 0; i < totalIters; i++) {
+            if (i < phaseDownFrom && travelled > 6.0) {
+                phaseDownFrom = i; // target met - flip to descent, keep its budget proportional
+                totalIters = i + (int) (80 * loadFactor);
+            }
             boolean up = i < phaseDownFrom;
             String drive = exec("artest vs seat-input 0 0 " + (up ? "1" : "-1") + " 0 0 0 0");
             assertTrue("seat-input must resolve the seat's AFC: " + drive,
@@ -1208,8 +1220,12 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
+        // The physics mod assembles on its own thread and its queue lags behind a loaded machine;
+        // both waits below exit early the moment the state appears, so scaling their budgets by
+        // the harness load factor costs an idle run nothing (measured expiring at 8 forks).
+        int assemblyBudget = (int) (40 * com.github.stannismod.forge.testing.TestTimeouts.factor());
         int all = shipsBefore;
-        for (int i = 0; i < 40 && all <= shipsBefore; i++) {
+        for (int i = 0; i < assemblyBudget && all <= shipsBefore; i++) {
             bot().waitTicks(5);
             all = count("ship-count-all");
         }
@@ -1222,7 +1238,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
 
         String info = "";
         double[] where = null;
-        for (int i = 0; i < 40 && where == null; i++) {
+        for (int i = 0; i < assemblyBudget && where == null; i++) {
             bot().waitTicks(5);
             info = shipInfo(bx, by, bz);
             if (!info.contains("\"managed\":true")) {
