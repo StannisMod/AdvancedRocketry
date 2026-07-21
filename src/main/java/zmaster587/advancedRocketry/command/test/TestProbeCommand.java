@@ -706,6 +706,34 @@ public class TestProbeCommand extends CommandBase {
         // living entity's movement in a ship frame. Pins the gate that keeps a body standing on world
         // terrain near a ship (its box overlaps the ship's world AABB) from being dropped through the
         // floor into the ship's empty subspace.
+        // spawn-diag [reset] — READ-ONLY snapshot (or reset) of the VS spawn diagnostics
+        // (VSIntegration.spawn* statics, written by MixinWorldServerShipManager). Localises where a
+        // queued+named tier-2 ship dies (ledger #60): spawnNewShipsRuns=0 -> never processed;
+        // runs>0 & maxShips=0 -> processed but addShip skipped/threw; maxShips>=1 -> registered then destroyed.
+        if (args.length >= 1 && "spawn-diag".equalsIgnoreCase(args[0])) {
+            if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {
+                zmaster587.advancedRocketry.integration.vs.VSIntegration.resetSpawnDiag();
+                send(sender, "{\"ok\":true,\"reset\":true}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"spawnNewShipsRuns\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnNewShipsRuns
+                    + ",\"spawnNewShipsReturns\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnNewShipsReturns
+                    + ",\"lastSpawnQueueSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastSpawnQueueSize
+                    + ",\"maxShips\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnDiagMaxShips
+                    + ",\"lastFoundSetSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastFoundSetSize
+                    + ",\"lastCleanHouse\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastCleanHouse
+                    + ",\"lastBlacklistSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastBlacklistSize
+                    + ",\"floodShape\":\""
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastFloodShape + "\"}");
+            return;
+        }
         if (args.length >= 3 && "would-take-over".equalsIgnoreCase(args[0])) {
             net.minecraft.server.MinecraftServer server = sender.getServer();
             net.minecraft.world.WorldServer world = server == null ? null

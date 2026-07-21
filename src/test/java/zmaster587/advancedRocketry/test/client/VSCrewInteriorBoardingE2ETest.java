@@ -472,6 +472,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(10);
 
         int shipsBefore = count("ship-count-all");
+        exec("artest vs spawn-diag reset");
         String assemble = assembleFixture(bx, by, bz, variant);
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
@@ -486,7 +487,8 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
             all = count("ship-count-all");
         }
         assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all
-                        + "). assemble said: " + assemble.replace('\n', ' '),
+                        + "). spawn-diag: " + exec("artest vs spawn-diag").replace('\n', ' ')
+                        + " assemble said: " + assemble.replace('\n', ' '),
                 all > shipsBefore);
         bot().waitTicks(40);
 
@@ -540,14 +542,25 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
     }
 
     private String assembleFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
-        int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;
-        int cx2 = (baseX + 7) >> 4, cz2 = (baseZ + 7) >> 4;
+        // EXPERIMENT (#60 root cause): the site (6820,6820) is FORESTED. VS's flood detector treats
+        // leaves/logs as floodable (they are NOT in shipSpawnDetectorBlacklist), so when the tier-2
+        // assembly flood escapes the craft it grabs the surrounding canopy and hits the 15001 cap ->
+        // "Ship too big" abort -> no ship. The tight pre-clear only cleared the fixture's own box, not
+        // the trees. Fell everything in the flood's measured reach (bbox was ~[base-16..+19, ..90]).
+        int cx1 = (baseX - 18) >> 4, cz1 = (baseZ - 18) >> 4;
+        int cx2 = (baseX + 22) >> 4, cz2 = (baseZ + 22) >> 4;
         assertTrue("chunk warmup failed",
                 exec("artest chunk warmup 0 " + cx1 + " " + cz1 + " " + cx2 + " " + cz2)
                         .contains("\"ok\":true"));
-        assertTrue("pre-clear failed",
-                exec("artest fill 0 " + (baseX - 2) + " " + (baseY + 1) + " " + (baseZ - 2)
-                        + " " + (baseX + 7) + " " + (baseY + 10) + " " + (baseZ + 7) + " minecraft:air")
+        // Two stacked fills: the fill verb caps volume at 32768; base-18..base+21 (40 wide) x 20 tall
+        // x 40 = 32000 each, covering the measured escaped-flood bbox in two layers.
+        assertTrue("pre-clear (lower) failed",
+                exec("artest fill 0 " + (baseX - 18) + " " + (baseY + 1) + " " + (baseZ - 18)
+                        + " " + (baseX + 21) + " " + (baseY + 20) + " " + (baseZ + 21) + " minecraft:air")
+                        .contains("\"ok\":true"));
+        assertTrue("pre-clear (upper) failed",
+                exec("artest fill 0 " + (baseX - 18) + " " + (baseY + 21) + " " + (baseZ - 18)
+                        + " " + (baseX + 21) + " " + (baseY + 40) + " " + (baseZ + 21) + " minecraft:air")
                         .contains("\"ok\":true"));
         String fixture = exec("artest fixture rocket 0 " + baseX + " " + baseY + " " + baseZ + " " + variant);
         assertTrue("fixture (" + variant + ") failed: " + fixture, fixture.contains("\"ok\":true"));
