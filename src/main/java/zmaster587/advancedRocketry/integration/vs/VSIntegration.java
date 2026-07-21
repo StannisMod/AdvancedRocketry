@@ -580,6 +580,14 @@ public final class VSIntegration {
         return (!isAvailable() || world == null) ? null : VSBridge.toWorldFrameFor(world, shipId, x, y, z);
     }
 
+    /** Ship-frame point to world point through the ship's RENDER pose — where the renderer draws
+     *  that point this frame, as opposed to where the game-tick transform places it. Client-side
+     *  observable (null on a dedicated server or when the ship is not loaded). */
+    public static double[] renderToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        return (!isAvailable() || world == null)
+                ? null : VSBridge.renderToWorldFrameFor(world, shipId, x, y, z);
+    }
+
     /** World direction to ship-frame direction (rotation only), for the anchored ship. */
     public static double[] rotateToShipFrameFor(World world, String shipId, double x, double y, double z) {
         return (!isAvailable() || world == null) ? null : VSBridge.rotateToShipFrameFor(world, shipId, x, y, z);
@@ -717,6 +725,20 @@ public final class VSIntegration {
         return q == null ? null : new FreeFlightPhysics.Quat(q[0], q[1], q[2], q[3]);
     }
 
+    /**
+     * The body&rarr;world attitude of the ship {@code shipId}, or {@code null} when VS is absent or
+     * that ship is not loaded on this side. Use this - not {@link #shipAttitudeAt} - whenever the
+     * ship is already known by id: containment answers for whatever box a point falls inside, which
+     * is a different question and a large air volume around the hull.
+     */
+    public static FreeFlightPhysics.Quat shipAttitudeForId(World world, String shipId) {
+        if (!isAvailable() || shipId == null) {
+            return null;
+        }
+        double[] q = VSBridge.shipAttitudeForId(world, shipId);
+        return q == null ? null : new FreeFlightPhysics.Quat(q[0], q[1], q[2], q[3]);
+    }
+
     /** The attitude of the ship {@code entity} is aboard, or {@code null}. See {@link #shipAttitudeAt}. */
     public static FreeFlightPhysics.Quat shipAttitudeFor(net.minecraft.entity.Entity entity) {
         if (entity == null || entity.world == null) {
@@ -780,6 +802,79 @@ public final class VSIntegration {
             return -1;
         }
         return VSBridge.loadedShipCount(world);
+    }
+
+    // ---- Spawn diagnostics (ledger #60). Ungated statics written by MixinWorldServerShipManager
+    // from inside VS's own spawnNewShips, so an e2e can read WHERE a queued+named tier-2 ship dies:
+    // never-processed vs processed-but-never-registered vs registered-then-destroyed. Harness child
+    // JVMs have no test mode, so these must be ungated (isTestMode gates log lines only). --------
+    /** Times spawnNewShips ran with a non-empty spawnQueue since the last reset. */
+    public static volatile long spawnNewShipsRuns = 0L;
+    /** Times spawnNewShips RETURNED NORMALLY since reset. runs>returns ⇒ it exited by THROW (one of
+     *  VS's pre-addShip athrows: "already loaded"@98, "Incorrect block copy!"@568/1012). */
+    public static volatile long spawnNewShipsReturns = 0L;
+    /** spawnQueue size seen at the last spawnNewShips entry (how many spawns VS tried to process). */
+    public static volatile int lastSpawnQueueSize = 0;
+    /** Max queryable-ship count observed at spawnNewShips RETURN since reset. >=1 means the ship DID
+     *  enter the registry at least momentarily (register-then-destroy); 0 with runs>0 means the
+     *  spawn was processed but addShip was never reached (gate skip or a pre-addShip throw). */
+    public static volatile int spawnDiagMaxShips = 0;
+
+    /** Reset the spawn diagnostics (call before an assembly under test). */
+    public static void resetSpawnDiag() {
+        spawnNewShipsRuns = 0L;
+        spawnNewShipsReturns = 0L;
+        lastSpawnQueueSize = 0;
+        spawnDiagMaxShips = 0;
+    }
+
+    /** Called by the mixin at spawnNewShips NORMAL return (never on a throw). */
+    public static void noteSpawnReturn() {
+        spawnNewShipsReturns++;
+    }
+
+    /** Called by the mixin at spawnNewShips entry with the current spawnQueue size. */
+    public static void noteSpawnEntry(int queueSize) {
+        if (queueSize > 0) {
+            spawnNewShipsRuns++;
+            lastSpawnQueueSize = queueSize;
+        }
+    }
+
+    /** Called by the mixin at spawnNewShips return with the current queryable-ship count. */
+    public static void noteQueryableCount(int count) {
+        if (count > spawnDiagMaxShips) {
+            spawnDiagMaxShips = count;
+        }
+    }
+
+    /** foundSet size of the flood at the last spawn attempt (the block count VS's abort gate tests
+     *  against maxDetectedShipSize=15000): ~craft size on a healthy spawn, huge if the flood escaped
+     *  into terrain. */
+    public static volatile int lastFoundSetSize = -1;
+    /** cleanHouse at the last spawn attempt: true iff the flood reached bedrock (the other abort leg). */
+    public static volatile boolean lastCleanHouse = false;
+
+    /** Size of VS's ShipSpawnDetector spawn-blacklist Set at the last flood. 21 = fully populated
+     *  (air+terrain excluded); 0/small = the blacklist was mid-rebuild (syncWithConfig clears then
+     *  repopulates non-atomically), so AIR was floodable and the flood escaped. -1 = unread. */
+    public static volatile int lastBlacklistSize = -1;
+
+    /** WHERE the flood went: bbox of the found set + the block sampled at its farthest corner from
+     *  the anchor. On an escaped flood this names the escape direction and what it floods through. */
+    public static volatile String lastFloodShape = "";
+
+    /** Called by the mixin right after the flood detector is built, with the flood result. */
+    public static void noteDetector(int foundSetSize, boolean cleanHouse, int blacklistSize) {
+        lastFoundSetSize = foundSetSize;
+        lastCleanHouse = cleanHouse;
+        lastBlacklistSize = blacklistSize;
+    }
+
+    /** Called by the mixin (huge floods only) with the found-set geometry, pre-formatted by the
+     *  bridge (which may touch VS/MC types); this class only stores the string. */
+    public static void noteFloodShape(String shape) {
+        lastFloodShape = shape;
     }
 
     /** Total ships in {@code world} loaded or not (queryable registry), or -1 when VS absent. */

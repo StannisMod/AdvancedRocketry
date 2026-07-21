@@ -799,6 +799,24 @@ final class VSBridge {
         }
     }
 
+    /** The body-&gt;world attitude of the ship {@code shipId} as {@code {w,x,y,z}}, or {@code null}
+     *  when it is not loaded on this side. The by-ID sibling of {@link #shipAttitudeAt}: a consumer
+     *  that already knows WHICH ship it means must not re-derive one by containment (contract C2 -
+     *  the anchor is the ship, not whatever box the body currently sits inside). */
+    static double[] shipAttitudeForId(World world, String shipId) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) {
+                return null;
+            }
+            Quaterniond q = physo.getShipData().getShipTransform()
+                    .rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{q.w, q.x, q.y, q.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** Ship-frame point -> world point, for the ship {@code shipId}. Null when it is not loaded. */
     static double[] toWorldFrameFor(World world, String shipId, double x, double y, double z) {
         try {
@@ -806,6 +824,25 @@ final class VSBridge {
             if (physo == null) return null;
             Vec3d v = physo.getShipData().getShipTransform()
                     .transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
+            return new double[]{v.x, v.y, v.z};
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Ship-frame point -> world point through the pose the ship is DRAWN at, for the ship
+     *  {@code shipId}. The renderer does not draw the game-tick transform: the client interpolates
+     *  its own render transform between the transform updates it receives, so on a moving ship the
+     *  drawn pose and the tick pose genuinely differ. Meaningful on the CLIENT only (a dedicated
+     *  server never advances a render transform); null when the ship is not loaded or its render
+     *  transform does not exist yet. */
+    static double[] renderToWorldFrameFor(World world, String shipId, double x, double y, double z) {
+        try {
+            PhysicsObject physo = physoById(world, shipId);
+            if (physo == null) return null;
+            ShipTransform drawn = physo.getShipTransformationManager().getRenderTransform();
+            if (drawn == null) return null;
+            Vec3d v = drawn.transform(new Vec3d(x, y, z), TransformType.SUBSPACE_TO_GLOBAL);
             return new double[]{v.x, v.y, v.z};
         } catch (Throwable ignored) {
             return null;

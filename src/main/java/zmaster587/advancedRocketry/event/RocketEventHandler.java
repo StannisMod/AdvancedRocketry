@@ -194,6 +194,14 @@ public class RocketEventHandler extends Gui {
      */
     @SubscribeEvent
     public void onFreeFlightCameraSetup(net.minecraftforge.client.event.EntityViewRenderEvent.CameraSetup event) {
+        // Render-stage liveness + subject presence, for tests that measure what the client DRAWS.
+        // A zero on a draw-stage counter has several causes (hook not woven, render stage not
+        // running, nothing to draw), and they are only separable with a control: this samples the
+        // render stage itself and the client world's entity population from the SAME frame.
+        zmaster587.advancedRocketry.client.ShipFrameCamera.cameraHookCalls++;
+        zmaster587.advancedRocketry.client.ShipFrameCamera.clientLoadedEntities =
+                Minecraft.getMinecraft().world == null
+                        ? -1 : Minecraft.getMinecraft().world.loadedEntityList.size();
         net.minecraft.entity.Entity view = Minecraft.getMinecraft().getRenderViewEntity();
         if (view == null) return;
         net.minecraft.entity.Entity ridden = view.getRidingEntity();

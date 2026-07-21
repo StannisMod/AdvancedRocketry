@@ -166,6 +166,137 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
                 + "(shipCamActive=" + shipCam + ")", shipCam);
     }
 
+    // ---- Enclosed cavity (contract C12 positive): the interior gate claims an UNSUPPORTED body -
+
+    @Test
+    public void aBodyLostMidCavityOfAnEnclosedInvertedShipIsReclaimedByTheDeck() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6820, by = 64, bz = 6820;
+
+        // The open-topped cockpit above cannot exercise interior boarding: since the enclosure
+        // term, its re-seat path is supported first contact (the body is pressed against the
+        // deck), and the interior gate never fires there. This test's subject is the gate's own
+        // claim: a body UNSUPPORTED mid-cavity of an ENCLOSED cockpit - deck below AND roof
+        // above in the ship frame - with world gravity pulling it AWAY from the deck (the ship
+        // is inverted). Pre-gate, that body belonged to world gravity: it fell onto the roof -
+        // the cavity's world-floor - and the outer-hull fallback pinned it there with a world
+        // camera, the reported "captured, but the camera never flips" desync. The contract: the
+        // deck reclaims it without standing support and carries it back AGAINST world gravity.
+        buildAndBoardShip(bx, by, bz, "with-roofed-deck");
+        bot().waitTicks(20);
+        double h = Math.toRadians(170.0) / 2.0;
+        assertTrue("attitude hold must accept the inversion",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        bot().waitTicks(200);
+        exec("artest player dismount");
+        boolean aboardBefore = false;
+        for (int i = 0; i < 30 && !aboardBefore; i++) {
+            bot().waitTicks(4);
+            String cap = exec("artest vs deck-capture");
+            aboardBefore = cap.contains("\"alreadyTracked\":true") && !cap.contains("\"hullStand\":true");
+        }
+        assertTrue("the dismounted pilot must be captured ABOARD inside the inverted ship: "
+                + exec("artest vs deck-capture"), aboardBefore);
+        double preY = bot().reportState().get("playerY").getAsDouble();
+        double[] sub0 = parseSub(censusStatic("censusSubPos"));
+
+        // Fixture enclosure by measurement: the ROOF must have entered the assembled ship - the
+        // subspace block region reaches at least four blocks above the stand (roofless deck
+        // variant: one). An open-topped build here would silently turn this test into the
+        // supported-first-contact one above.
+        String regionStr = censusStatic("censusRegion");
+        double regionMaxY = parseRegionMaxY(regionStr);
+        System.out.println("[cavity] stand sub0=" + censusStatic("censusSubPos")
+                + " region=" + regionStr + " regionNonAir=" + censusStatic("censusRegionNonAir")
+                + " server=" + exec("artest vs subspace-census"));
+        assertTrue("the assembled ship must include the roof (region " + regionStr
+                + " must reach >= 4 blocks above the stand at subY=" + sub0[1] + ")",
+                regionMaxY >= sub0[1] + 4.0);
+
+        // Displace the body OFF the deck into the cavity. At 170 degrees world-DOWN is ship-UP:
+        // the teleport reads as an external move (drops the capture) and leaves the body
+        // mid-cavity with no standing support, world gravity pulling it deeper into the cavity
+        // (toward the roof), ship-frame gravity - if the interior gate claims it - pulling it
+        // back to the deck. The two verdicts diverge by ~3 world blocks; the settle cannot
+        // straddle them.
+        //
+        // The displacement targets STATE, not time: on a loaded box the attitude hold can still
+        // be converging when the fixed pre-dismount wait elapses, and a world-down step at a
+        // half-turned attitude maps mostly into the deck PLANE - the body never leaves the
+        // stand. Re-step until the measured subspace position is actually mid-cavity (the ship
+        // keeps turning between attempts), and only then judge the settle.
+        String subAfter = censusStatic("censusSubPos");
+        for (int i = 0; i < 8 && parseSub(subAfter)[1] <= sub0[1] + 0.5; i++) {
+            if (i > 0) {
+                bot().waitTicks(20); // reclaimed to the stand meanwhile; let the hold keep turning
+            }
+            exec("tp @a ~ ~-1.2 ~");
+            bot().waitTicks(2);
+            subAfter = censusStatic("censusSubPos");
+        }
+
+        // Subject validity (geometry by measurement): the displaced body must still be INSIDE
+        // the region AND off the deck - a body that stayed at the stand would be re-claimed by
+        // plain standing support and prove nothing about the interior gate.
+        assertTrue("the displaced body must remain INSIDE the ship's block region (sub="
+                + subAfter + " region=" + regionStr + ")", subInRegion(subAfter, regionStr));
+        assertTrue("the displaced body must be OFF the deck, mid-cavity (sub=" + subAfter
+                + " vs stand " + sub0[1] + "; is the attitude hold converged? ship-info="
+                + shipInfo(bx, by, bz) + ")", parseSub(subAfter)[1] > sub0[1] + 0.5);
+
+        // Sample the settle: which mode claims the unsupported interior body?
+        int aboardSeen = 0, hullSeen = 0, samples = 0;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i < 30; i++) {
+            bot().waitTicks(3);
+            samples++;
+            String cap = exec("artest vs deck-capture");
+            boolean tracked = cap.contains("\"alreadyTracked\":true");
+            boolean hull = cap.contains("\"hullStand\":true");
+            if (tracked && !hull) aboardSeen++;
+            if (tracked && hull) hullSeen++;
+            trace.append(String.format(java.util.Locale.ROOT,
+                    "[t%d y=%.2f cap=%b hull=%b cSub=%s obst=%s] ",
+                    i * 3, bot().reportState().get("playerY").getAsDouble(), tracked, hull,
+                    censusStatic("censusSubPos"),
+                    bot().readStaticField(SHIP_FRAME_TRAVEL, "lastObstacleCount").get("value")
+                            .getAsString()));
+        }
+        boolean shipCam = Boolean.parseBoolean(
+                bot().readStaticField(SHIP_CAMERA, "shipCamActive").get("value").getAsString());
+        double settledY = bot().reportState().get("playerY").getAsDouble();
+        double[] subEnd = parseSub(censusStatic("censusSubPos"));
+        String capEnd = exec("artest vs deck-capture");
+        System.out.println("[cavity] aboard=" + aboardSeen + " hull=" + hullSeen + "/" + samples
+                + " shipCamActive=" + shipCam + " preY=" + preY + " settledY=" + settledY
+                + " subEnd=" + subEnd[1] + " :: " + trace);
+
+        // The interior-boarding contract, positive half: the ENCLOSED unsupported body is the
+        // deck's - claimed ABOARD (not pinned by the outer-hull fallback on the cavity's
+        // world-floor), carried back against world gravity to its deck stand, ship camera on.
+        assertTrue("an unsupported body in an enclosed cavity must be claimed ABOARD (saw aboard "
+                + aboardSeen + "/" + samples + ", hull-stand " + hullSeen + "): " + trace,
+                aboardSeen > samples / 2);
+        assertTrue("deck gravity must carry the body BACK to the deck, not let it settle on the "
+                + "roof ~3 world blocks below (preY=" + preY + " settledY=" + settledY + "): " + trace,
+                Math.abs(settledY - preY) < 1.5 && capEnd.contains("\"alreadyTracked\":true"));
+        assertTrue("the body must re-seat at its deck stand in subspace (subY " + subEnd[1]
+                + " vs stand " + sub0[1] + "; seat-top landing allowed): " + trace,
+                Math.abs(subEnd[1] - sub0[1]) <= 1.1);
+        assertTrue("the client camera must engage for the reclaimed interior body "
+                + "(shipCamActive=" + shipCam + ")", shipCam);
+    }
+
+    /** The max subspace Y of a census "x,y,z..x,y,z" region string, or NaN when malformed. */
+    private static double parseRegionMaxY(String region) {
+        try {
+            return Double.parseDouble(region.split("\\.\\.")[1].split(",")[1].trim());
+        } catch (RuntimeException malformed) {
+            return Double.NaN;
+        }
+    }
+
     // ---- Flying-aboard (contract C13): flight resolves in the DECK frame -----------------------
 
     @Test
@@ -272,16 +403,26 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
                 + subHigh[1] + " -> " + subDown[1], subDown[1] < subHigh[1]);
 
         // Flight off: double-tap again; deck gravity reclaims the airborne body and seats it.
-        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
-        bot().waitTicks(2);
-        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
-        bot().waitTicks(2);
-        bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
-        bot().waitTicks(2);
-        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+        // The toggle targets STATE, not time: under suite load the client can stretch the two
+        // taps past vanilla's double-tap window and the toggle silently misses (the body then
+        // hovers forever and the seat wait below measures nothing) - so re-tap while the
+        // capture probe still reports the body flying.
         boolean seated = false;
         String capEnd = "";
         double[] subSeated = subEnd;
+        for (int round = 0; round < 4; round++) {
+            bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+            bot().waitTicks(2);
+            bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+            bot().waitTicks(2);
+            bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+            bot().waitTicks(2);
+            bot().releaseKey(org.lwjgl.input.Keyboard.KEY_SPACE);
+            bot().waitTicks(6);
+            if (!exec("artest vs deck-capture").contains("\"isFlying\":true")) {
+                break; // the toggle registered; NEVER tap again or flight flips back on
+            }
+        }
         for (int i = 0; i < 40 && !seated; i++) {
             bot().waitTicks(3);
             capEnd = exec("artest vs deck-capture");
@@ -310,7 +451,11 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
 
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
-        double[] ship = buildShip(bx, by, bz);
+        return buildAndBoardShip(bx, by, bz, VARIANT);
+    }
+
+    private double[] buildAndBoardShip(int bx, int by, int bz, String variant) throws Exception {
+        double[] ship = buildShip(bx, by, bz, variant);
         String mountInfo = exec("artest vs seat-mount 0");
         assertTrue("seat-mount must find the pilot seat: " + mountInfo,
                 mountInfo.contains("\"seatFound\":true"));
@@ -322,21 +467,28 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         return ship;
     }
 
-    private double[] buildShip(int bx, int by, int bz) throws Exception {
+    private double[] buildShip(int bx, int by, int bz, String variant) throws Exception {
         exec("tp @a " + (bx + 600) + " 120 " + (bz + 600) + " 0 0");
         bot().waitTicks(10);
 
         int shipsBefore = count("ship-count-all");
-        String assemble = assembleFixture(bx, by, bz);
+        exec("artest vs spawn-diag reset");
+        String assemble = assembleFixture(bx, by, bz, variant);
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
+        // NOT a latency budget: raising this from 200 to 600 ticks was measured and changed
+        // nothing (2/4 red either way, ledger #60) - VS logs the queued spawn by name and the ship
+        // still never enters the queryable registry. Left at the original budget so a failing run
+        // fails fast.
         int all = shipsBefore;
         for (int i = 0; i < 40 && all <= shipsBefore; i++) {
             bot().waitTicks(5);
             all = count("ship-count-all");
         }
-        assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all + ")",
+        assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all
+                        + "). spawn-diag: " + exec("artest vs spawn-diag").replace('\n', ' ')
+                        + " assemble said: " + assemble.replace('\n', ' '),
                 all > shipsBefore);
         bot().waitTicks(40);
 
@@ -378,21 +530,40 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         System.out.println("[interior] census postBuild#1=" + census1);
         System.out.println("[interior] census postBuild#2=" + census2);
         System.out.println("[interior] leftoverDeckAtBase=" + leftover);
+        // Roofed-variant diagnostic: iron left at the roof plane after assembly means the roof
+        // did not join the ship - pre-lift (by+9) = never scanned, post-lift (by+10) = scanned
+        // but dropped by the assembly's connectivity flood-fill.
+        System.out.println("[interior] leftoverRoofAtBase="
+                + exec("testforblock " + (bx + 3) + " " + (by + 9) + " " + (bz + 3)
+                        + " minecraft:iron_block")
+                + " | " + exec("testforblock " + (bx + 3) + " " + (by + 10) + " " + (bz + 3)
+                        + " minecraft:iron_block"));
         return where;
     }
 
-    private String assembleFixture(int baseX, int baseY, int baseZ) throws Exception {
-        int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;
-        int cx2 = (baseX + 7) >> 4, cz2 = (baseZ + 7) >> 4;
+    private String assembleFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
+        // EXPERIMENT (#60 root cause): the site (6820,6820) is FORESTED. VS's flood detector treats
+        // leaves/logs as floodable (they are NOT in shipSpawnDetectorBlacklist), so when the tier-2
+        // assembly flood escapes the craft it grabs the surrounding canopy and hits the 15001 cap ->
+        // "Ship too big" abort -> no ship. The tight pre-clear only cleared the fixture's own box, not
+        // the trees. Fell everything in the flood's measured reach (bbox was ~[base-16..+19, ..90]).
+        int cx1 = (baseX - 18) >> 4, cz1 = (baseZ - 18) >> 4;
+        int cx2 = (baseX + 22) >> 4, cz2 = (baseZ + 22) >> 4;
         assertTrue("chunk warmup failed",
                 exec("artest chunk warmup 0 " + cx1 + " " + cz1 + " " + cx2 + " " + cz2)
                         .contains("\"ok\":true"));
-        assertTrue("pre-clear failed",
-                exec("artest fill 0 " + (baseX - 2) + " " + (baseY + 1) + " " + (baseZ - 2)
-                        + " " + (baseX + 7) + " " + (baseY + 10) + " " + (baseZ + 7) + " minecraft:air")
+        // Two stacked fills: the fill verb caps volume at 32768; base-18..base+21 (40 wide) x 20 tall
+        // x 40 = 32000 each, covering the measured escaped-flood bbox in two layers.
+        assertTrue("pre-clear (lower) failed",
+                exec("artest fill 0 " + (baseX - 18) + " " + (baseY + 1) + " " + (baseZ - 18)
+                        + " " + (baseX + 21) + " " + (baseY + 20) + " " + (baseZ + 21) + " minecraft:air")
                         .contains("\"ok\":true"));
-        String fixture = exec("artest fixture rocket 0 " + baseX + " " + baseY + " " + baseZ + " " + VARIANT);
-        assertTrue("fixture (" + VARIANT + ") failed: " + fixture, fixture.contains("\"ok\":true"));
+        assertTrue("pre-clear (upper) failed",
+                exec("artest fill 0 " + (baseX - 18) + " " + (baseY + 21) + " " + (baseZ - 18)
+                        + " " + (baseX + 21) + " " + (baseY + 40) + " " + (baseZ + 21) + " minecraft:air")
+                        .contains("\"ok\":true"));
+        String fixture = exec("artest fixture rocket 0 " + baseX + " " + baseY + " " + baseZ + " " + variant);
+        assertTrue("fixture (" + variant + ") failed: " + fixture, fixture.contains("\"ok\":true"));
         Matcher bp = BUILDER_POS.matcher(fixture);
         assertTrue("fixture missing builderPos: " + fixture, bp.find());
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));

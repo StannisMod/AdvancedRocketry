@@ -329,6 +329,39 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // to-world <dim> <x> <y> <z> <subX> <subY> <subZ> — map a SUBSPACE point of the ship whose
+        // grown world AABB contains (x,y,z) through THIS side's (the server's) transform. Paired
+        // with the client-side skew statics it measures cross-side pose divergence: the same
+        // subspace point mapped by each side's own transform.
+        if (args.length >= 8 && "to-world".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.List<String> ids = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipIdsAt(world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0),
+                            parseDoubleOr(args[4], 0));
+            if (ids.isEmpty()) {
+                send(sender, "{\"error\":\"no ship at point\"}");
+                return;
+            }
+            double[] w = zmaster587.advancedRocketry.integration.vs.VSIntegration.toWorldFrameFor(
+                    world, ids.get(0), parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                    parseDoubleOr(args[7], 0));
+            if (w == null) {
+                send(sender, "{\"error\":\"ship not loaded\",\"shipId\":\"" + ids.get(0) + "\"}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("shipId", ids.get(0));
+            m.put("worldX", w[0]);
+            m.put("worldY", w[1]);
+            m.put("worldZ", w[2]);
+            send(sender, jsonMap(m));
+            return;
+        }
         // ship-repack <dim> <sx> <sy> <sz> <dstX> <dstY> <dstZ> — the per-ship "crossing":
         // snapshot the ship's subspace SHIPYARD blocks (+TileEntities) at visible pos (sx,sy,sz) via
         // StorageChunk, deregister the ship, paste the blocks at (dstX,dstY,dstZ), and re-assemble them
@@ -835,9 +868,49 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // drop-living <dim> <entityName> <x> <y> <z> — spawn a registered LIVING entity (e.g.
+        // minecraft:cow) and report its id. Unlike drop-stand this gives a subject whose renderer
+        // INHERITS RenderLivingBase.applyRotations: RenderArmorStand overrides that method without
+        // calling super, so an armour stand is invisible to any hook installed there - it is a fine
+        // collision subject and a useless RENDER subject. Vanilla /summon cannot serve instead: it
+        // reports no entity id, and every probe here is queried by id.
+        if (args.length >= 6 && "drop-living".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.entity.Entity spawned = net.minecraft.entity.EntityList.createEntityByIDFromName(
+                    new net.minecraft.util.ResourceLocation(args[2]), world);
+            if (!(spawned instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"not a living entity: " + args[2] + "\"}");
+                return;
+            }
+            spawned.setLocationAndAngles(parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), 0f, 0f);
+            spawned.motionX = 0;
+            spawned.motionY = 0;
+            spawned.motionZ = 0;
+            // Persistent: a mob that despawns mid-window would silently empty the subject out from
+            // under a render assertion.
+            if (spawned instanceof net.minecraft.entity.EntityLiving) {
+                ((net.minecraft.entity.EntityLiving) spawned).enablePersistence();
+                ((net.minecraft.entity.EntityLiving) spawned).setNoAI(true);
+            }
+            boolean ok = world.spawnEntity(spawned);
+            // Report the LOOKUP, not just the spawn call: "spawnEntity returned true" and "the
+            // world can find it by id" are different claims, and only the second is what every
+            // other probe needs. A true/false split here localises the failure immediately.
+            boolean found = world.getEntityByID(spawned.getEntityId()) != null;
+            send(sender, "{\"ok\":" + ok + ",\"found\":" + found + ",\"dead\":" + spawned.isDead
+                    + ",\"entityId\":" + spawned.getEntityId()
+                    + ",\"height\":" + spawned.height + "}");
+            return;
+        }
         // drop-stand <dim> <x> <y> <z> [mode] — spawn an armour stand: a TALL (1.975) subject, unlike
         // an item, so the orientation of its collision box actually matters on a rolled deck. Same
-        // atomic arming as drop-item.
+        // atomic arming as drop-item. NOTE: an armour stand's renderer overrides applyRotations
+        // without super, so it is NOT a valid subject for render-hook tests - use drop-living.
         if (args.length >= 5 && "drop-stand".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
@@ -872,6 +945,34 @@ public class TestProbeCommand extends CommandBase {
         // living entity's movement in a ship frame. Pins the gate that keeps a body standing on world
         // terrain near a ship (its box overlaps the ship's world AABB) from being dropped through the
         // floor into the ship's empty subspace.
+        // spawn-diag [reset] — READ-ONLY snapshot (or reset) of the VS spawn diagnostics
+        // (VSIntegration.spawn* statics, written by MixinWorldServerShipManager). Localises where a
+        // queued+named tier-2 ship dies (ledger #60): spawnNewShipsRuns=0 -> never processed;
+        // runs>0 & maxShips=0 -> processed but addShip skipped/threw; maxShips>=1 -> registered then destroyed.
+        if (args.length >= 1 && "spawn-diag".equalsIgnoreCase(args[0])) {
+            if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {
+                zmaster587.advancedRocketry.integration.vs.VSIntegration.resetSpawnDiag();
+                send(sender, "{\"ok\":true,\"reset\":true}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"spawnNewShipsRuns\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnNewShipsRuns
+                    + ",\"spawnNewShipsReturns\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnNewShipsReturns
+                    + ",\"lastSpawnQueueSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastSpawnQueueSize
+                    + ",\"maxShips\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.spawnDiagMaxShips
+                    + ",\"lastFoundSetSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastFoundSetSize
+                    + ",\"lastCleanHouse\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastCleanHouse
+                    + ",\"lastBlacklistSize\":"
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastBlacklistSize
+                    + ",\"floodShape\":\""
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.lastFloodShape + "\"}");
+            return;
+        }
         if (args.length >= 3 && "would-take-over".equalsIgnoreCase(args[0])) {
             net.minecraft.server.MinecraftServer server = sender.getServer();
             net.minecraft.world.WorldServer world = server == null ? null
@@ -9070,7 +9171,14 @@ public class TestProbeCommand extends CommandBase {
             // "with-pilot-deck" — like with-pilot-seat, but the seat sits on a real 5x5 walkable DECK
             // (a bare rocket seat sits over air, so a dismounted pilot has nowhere to stand — not
             // representative of a ship with a deck). Used by the crew/dismount e2e.
-            boolean includePilotDeck = "with-pilot-deck".equals(variant);
+            // "with-roofed-deck" - with-pilot-deck plus a 5x5 solid ROOF four blocks above the deck,
+            // making the cockpit an ENCLOSED cavity (deck below + roof above in the ship frame).
+            // The open-topped deck variant cannot exercise interior-boarding semantics - its
+            // cockpit is open air over a deck, exactly what the enclosure term exists to exclude.
+            // The structure tower is raised so the assembly scan (bounded by tower height)
+            // reaches the roof. Used by the enclosed-interior crew e2e.
+            boolean includeRoofedDeck = "with-roofed-deck".equals(variant);
+            boolean includePilotDeck = "with-pilot-deck".equals(variant) || includeRoofedDeck;
             boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck;
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
@@ -9149,9 +9257,11 @@ public class TestProbeCommand extends CommandBase {
                             launchpad.getDefaultState());
                 }
             }
-            // Structure tower.
+            // Structure tower. The assembly scan tops out at the tower's height, so the roofed
+            // variant raises it far enough to take the roof (rocketY+8 = baseY+9) into the ship.
+            int towerTop = includeRoofedDeck ? 9 : 6;
             if (structureTower != null) {
-                for (int dy = 0; dy <= 6; dy++) {
+                for (int dy = 0; dy <= towerTop; dy++) {
                     world.setBlockState(new BlockPos(baseX - 1, baseY + dy, baseZ + padSize / 2),
                             structureTower.getDefaultState());
                 }
@@ -9261,6 +9371,27 @@ public class TestProbeCommand extends CommandBase {
                         world.setBlockState(new BlockPos(rocketX + dx, rocketY + 3, rocketZ + dz),
                                 net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
                     }
+                }
+            }
+            if (includeRoofedDeck) {
+                // A 5x5 solid ROOF over the deck, high enough that the seat's "passable above"
+                // scan cell (rocketY+5) stays clear and a body displaced a block off the deck
+                // still fits under it: the cockpit becomes an ENCLOSED cavity - deck below AND
+                // ship blocks overhead in the ship frame - rather than open air over a deck.
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        world.setBlockState(new BlockPos(rocketX + dx, rocketY + 8, rocketZ + dz),
+                                net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
+                    }
+                }
+                // One corner pillar connecting deck to roof: the physics mod assembles the ship
+                // by flood-filling blocks CONNECTED to the anchor, so a floating roof slab would
+                // be left behind on the pad. A single corner column keeps the cavity itself open
+                // (the seat sits at the centre, 2+ blocks away) while making the roof part of
+                // the craft.
+                for (int dy = 4; dy <= 7; dy++) {
+                    world.setBlockState(new BlockPos(rocketX - 2, rocketY + dy, rocketZ - 2),
+                            net.minecraft.init.Blocks.IRON_BLOCK.getDefaultState());
                 }
             }
             if (includeCargo) {
