@@ -476,12 +476,17 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
+        // NOT a latency budget: raising this from 200 to 600 ticks was measured and changed
+        // nothing (2/4 red either way, ledger #60) - VS logs the queued spawn by name and the ship
+        // still never enters the queryable registry. Left at the original budget so a failing run
+        // fails fast.
         int all = shipsBefore;
         for (int i = 0; i < 40 && all <= shipsBefore; i++) {
             bot().waitTicks(5);
             all = count("ship-count-all");
         }
-        assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all + ")",
+        assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all
+                        + "). assemble said: " + assemble.replace('\n', ' '),
                 all > shipsBefore);
         bot().waitTicks(40);
 
