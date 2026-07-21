@@ -122,20 +122,25 @@ public final class DescentController {
             return false; // not on a physics ship (or it unloaded mid-check)
         }
 
-        // Crew first: the crossing cuts the seat blocks; a post-cut capture finds nothing.
-        final List<CrewTransfer.Crew> crew = crossing.ops().captureCrew(slotDim, afcPos, shipPos);
         final GalacticCoord sourceCell = entry.coord;
 
         int laneIndex = (laneCounter++ % DESCENT_LANE_COUNT);
         Landing landing = pasteResolver.resolve(slotDim, shipPos, targetPlanetDim, laneIndex);
         if (landing == null) {
-            // No clear landing above the terrain (the ship is too tall for it) — a surfaced outcome.
+            // No clear landing above the terrain (the ship is too tall for it) — a surfaced
+            // outcome, and the pilot KEEPS HIS SEAT: the crew is only READ here (a capture would
+            // dismount it), so a refusal costs the crew nothing but the message.
             LOGGER.warn("[SPACE] descent refused for ship {}: no landing fits in dim {}",
                     shipId, targetPlanetDim);
-            crossing.ops().messageCrew(crew, "msg.shipdescent.refused");
+            crossing.ops().messageCrew(crossing.ops().peekCrew(slotDim, afcPos, shipPos),
+                    "msg.shipdescent.refused");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;
         }
+
+        // Capture only now, with the landing RESOLVED — the last refusal is behind — and still
+        // before the cut: the crossing cuts the seat blocks, and a post-cut capture finds nothing.
+        final List<CrewTransfer.Crew> crew = crossing.ops().captureCrew(slotDim, afcPos, shipPos);
 
         final List<CrewTransfer.Crew> settledCrew = crew;
         BlockPos anchor = crossing.begin(shipId, slotDim, shipPos, targetPlanetDim,
@@ -159,6 +164,11 @@ public final class DescentController {
                 });
         if (anchor == null) {
             LOGGER.error("[SPACE] descent crossing failed for ship {} from slot {}", shipId, slotDim);
+            // A null anchor means the cut never produced a paste — the ship is (best-effort) still
+            // intact in its slot cell, so put the already-captured crew back on their seats before
+            // messaging them; a missing seat just leaves that rider standing.
+            crossing.ops().reseat(slotDim,
+                    new BlockPos(shipPos[0], shipPos[1], shipPos[2]), crew, shipId);
             crossing.ops().messageCrew(crew, "msg.shipdescent.failed");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;

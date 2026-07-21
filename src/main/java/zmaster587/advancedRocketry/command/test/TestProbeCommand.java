@@ -1185,6 +1185,29 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount()) + "}");
             return;
         }
+        // occupy <sx> <sy> <sz>: hold cell (sx,sy,sz) live in the PRODUCTION space manager (an
+        // occupant with no ship — the refcount alone). Lets a test fill a small seeded pool and
+        // observe a REFUSED entry against real pool pressure without flying N extra ships.
+        if (args.length >= 4 && "occupy".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceManager mgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            if (mgr == null) {
+                send(sender, "{\"error\":\"space subsystem not registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord coord =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            try {
+                int dim = mgr.materialize(coord);
+                send(sender, "{\"ok\":true,\"slotDim\":" + dim
+                        + ",\"cellKey\":\"" + coord.cellKey() + "\"}");
+            } catch (zmaster587.advancedRocketry.space.SpaceManager.PoolExhaustedException full) {
+                send(sender, "{\"ok\":false,\"exhausted\":true}");
+            }
+            return;
+        }
         // aboard-tag <playerName>: read back the durable "this player is aboard ship X, in the seat Y
         // blocks from its flight computer" record carried by a CONNECTED player. Strictly READ-ONLY -
         // it never stamps, clears or mints anything - because it is the witness a restart test uses to

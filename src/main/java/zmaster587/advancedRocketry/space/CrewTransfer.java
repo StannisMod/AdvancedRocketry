@@ -73,9 +73,31 @@ public final class CrewTransfer {
      * Enumerate the seated crew of the ship whose flight computer sits at subspace {@code afcPos},
      * with the ship's live world position {@code shipWorldPos}. Records each seated player against
      * its seat's link offset, dismounts it, and retires the now-orphaned dummy. Call BEFORE the
-     * crossing cuts the ship's blocks.
+     * crossing cuts the ship's blocks — and only once every refusal is behind: a capture unseats
+     * the crew, so a crossing that can still be refused must {@link #peek} instead.
      */
     public static List<Crew> capture(WorldServer world, BlockPos afcPos, double[] shipWorldPos) {
+        crossingCapture = true;
+        try {
+            return walk(world, afcPos, shipWorldPos, true);
+        } finally {
+            crossingCapture = false;
+        }
+    }
+
+    /**
+     * The read-only twin of {@link #capture}: enumerate the same seated crew WITHOUT touching it —
+     * no dismount, no dummy retirement. This is what a refusal path reads to message the crew while
+     * leaving every pilot exactly where he sits.
+     */
+    public static List<Crew> peek(WorldServer world, BlockPos afcPos, double[] shipWorldPos) {
+        return walk(world, afcPos, shipWorldPos, false);
+    }
+
+    /** The shared enumeration behind {@link #capture} / {@link #peek}; {@code detach} is the only
+     *  difference between them. */
+    private static List<Crew> walk(WorldServer world, BlockPos afcPos, double[] shipWorldPos,
+            boolean detach) {
         List<Crew> crew = new ArrayList<>();
         if (shipWorldPos == null) {
             return crew;
@@ -83,8 +105,6 @@ public final class CrewTransfer {
         AxisAlignedBB box = new AxisAlignedBB(
                 shipWorldPos[0], shipWorldPos[1], shipWorldPos[2],
                 shipWorldPos[0], shipWorldPos[1], shipWorldPos[2]).grow(RIDER_RANGE);
-        crossingCapture = true;
-        try {
         for (EntityDummy dummy : world.getEntitiesWithinAABB(EntityDummy.class, box)) {
             BlockPos seatPos = dummy.getSeatPos();
             if (seatPos == null) {
@@ -105,15 +125,16 @@ public final class CrewTransfer {
             for (Entity passenger : dummy.getPassengers()) {
                 if (passenger instanceof EntityPlayerMP) {
                     crew.add(new Crew((EntityPlayerMP) passenger, dx, dy, dz));
-                    passenger.dismountRidingEntity();
+                    if (detach) {
+                        passenger.dismountRidingEntity();
+                    }
                 }
             }
-            // The seat block this dummy is bound to is about to be cut; a stale dummy would
-            // otherwise linger and clear the (re-assembled) ship's pilot input every tick.
-            dummy.setDead();
-        }
-        } finally {
-            crossingCapture = false;
+            if (detach) {
+                // The seat block this dummy is bound to is about to be cut; a stale dummy would
+                // otherwise linger and clear the (re-assembled) ship's pilot input every tick.
+                dummy.setDead();
+            }
         }
         return crew;
     }

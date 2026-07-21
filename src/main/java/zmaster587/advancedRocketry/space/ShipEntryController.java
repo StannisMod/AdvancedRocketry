@@ -145,19 +145,23 @@ public final class ShipEntryController {
         }
         final GalacticCoord entryCoord = resolveEntryCoord(launchDimId, shipId);
 
-        // Crew first: the crossing cuts the seat blocks; a post-cut capture finds nothing.
-        final List<CrewTransfer.Crew> crew = crossing.ops().captureCrew(launchDimId, afcPos, shipPos);
-
         final int slotDim;
         try {
             slotDim = space.materialize(entryCoord);
         } catch (SpaceManager.PoolExhaustedException full) {
-            // Refuse entry: a normal, surfaced outcome — the ship stays below the ceiling.
+            // Refuse entry: a normal, surfaced outcome — the ship stays below the ceiling and the
+            // pilot KEEPS HIS SEAT. The crew is only READ here (a capture would dismount it), so a
+            // refusal costs the crew nothing but the message.
             LOGGER.warn("[SPACE] entry refused for ship {}: {}", shipId, full.getMessage());
-            crossing.ops().messageCrew(crew, "msg.shipentry.refused");
+            crossing.ops().messageCrew(crossing.ops().peekCrew(launchDimId, afcPos, shipPos),
+                    "msg.shipentry.refused");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;
         }
+
+        // Capture only now, with the cell GRANTED — the last refusal is behind — and still before
+        // the cut: the crossing cuts the seat blocks, and a post-cut capture finds nothing.
+        final List<CrewTransfer.Crew> crew = crossing.ops().captureCrew(launchDimId, afcPos, shipPos);
 
         int lane = (laneCounter++ % ENTRY_LANE_COUNT);
         double[] pose = CellWorldMapper.poseWorldOf(entryCoord);
@@ -186,6 +190,11 @@ public final class ShipEntryController {
         if (anchor == null) {
             LOGGER.error("[SPACE] entry crossing failed for ship {} from dim {}", shipId, launchDimId);
             space.dematerialize(entryCoord);
+            // A null anchor means the cut never produced a paste — the ship is (best-effort) still
+            // intact in the launch world, so put the already-captured crew back on their seats
+            // before messaging them; a missing seat just leaves that rider standing.
+            crossing.ops().reseat(launchDimId,
+                    new BlockPos(shipPos[0], shipPos[1], shipPos[2]), crew, shipId);
             crossing.ops().messageCrew(crew, "msg.shipentry.failed");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;

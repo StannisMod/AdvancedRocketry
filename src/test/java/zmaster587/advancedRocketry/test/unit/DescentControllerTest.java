@@ -59,7 +59,12 @@ public class DescentControllerTest {
         boolean shipPresent = true;
         boolean failCross;
         final List<String> messages = new ArrayList<>();
+        final List<Integer> reseatDims = new ArrayList<>();
         int crossings;
+        int captures;
+        int peeks;
+        List<CrewTransfer.Crew> lastCaptured;
+        List<CrewTransfer.Crew> lastReseated;
 
         @Override public double[] shipWorldPosition(int dimId, BlockPos afcPos) {
             return shipPresent ? new double[]{5.0, 80.0, 5.0} : null;
@@ -67,7 +72,15 @@ public class DescentControllerTest {
 
         @Override public List<CrewTransfer.Crew> captureCrew(int dimId, BlockPos afcPos,
                                                              double[] shipWorldPos) {
-            return new ArrayList<>(); // crew mechanics are integration-tier; none here
+            captures++;
+            lastCaptured = new ArrayList<>(); // crew mechanics are integration-tier; none here
+            return lastCaptured;
+        }
+
+        @Override public List<CrewTransfer.Crew> peekCrew(int dimId, BlockPos afcPos,
+                                                          double[] shipWorldPos) {
+            peeks++;
+            return new ArrayList<>();
         }
 
         @Override public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
@@ -81,6 +94,8 @@ public class DescentControllerTest {
 
         @Override public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
                 java.util.UUID shipId) {
+            reseatDims.add(destDim);
+            lastReseated = crew;
             return true;
         }
 
@@ -176,6 +191,11 @@ public class DescentControllerTest {
         assertFalse(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
         assertFalse(ctl.isDescending(SHIP));
         assertEquals("no crossing was attempted", 0, ops.crossings);
+        // A refusal must leave the pilot in his seat: the crew is READ for the message, never
+        // captured (a capture dismounts every rider and retires the mounts).
+        assertEquals("a refused descent never captures (= unseats) the crew", 0, ops.captures);
+        assertTrue("the refusal message still reaches the crew via the read-only peek",
+                ops.peeks >= 1);
         assertEquals("the pilot is told", "msg.shipdescent.refused", ops.messages.get(0));
         assertNotNull("the ship is still in space after a refusal", ledger.get(SHIP));
 
@@ -201,6 +221,13 @@ public class DescentControllerTest {
         assertFalse(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
         assertFalse(ctl.isDescending(SHIP));
         assertEquals("msg.shipdescent.failed", ops.messages.get(0));
+        // The cut never happened, so the crew captured just before it must be put BACK on their
+        // seats — in the slot world the intact ship still sits in.
+        assertEquals("the captured crew is re-seated after the failed cut", 1, ops.reseatDims.size());
+        assertEquals("the re-seat targets the ship's slot world", SLOT_DIM,
+                (int) ops.reseatDims.get(0));
+        assertTrue("the re-seat restores exactly the crew the capture took",
+                ops.lastReseated == ops.lastCaptured);
         // The crossing never removed the ship, so it is still settled in space and holds its cell.
         ShipLedger.Entry entry = ledger.get(SHIP);
         assertNotNull("a failed descent leaves the ship in space", entry);

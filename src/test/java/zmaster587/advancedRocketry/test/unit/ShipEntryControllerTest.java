@@ -62,8 +62,13 @@ public class ShipEntryControllerTest {
         final List<String> messages = new ArrayList<>();
         final List<Integer> pinned = new ArrayList<>();
         final List<double[]> teleports = new ArrayList<>();
+        final List<Integer> reseatDims = new ArrayList<>();
         int unparks;
         int crossings;
+        int captures;
+        int peeks;
+        List<CrewTransfer.Crew> lastCaptured;
+        List<CrewTransfer.Crew> lastReseated;
 
         @Override public double[] shipWorldPosition(int dimId, BlockPos afcPos) {
             return shipPresent ? new double[]{10.0, 1200.0, 10.0} : null;
@@ -71,7 +76,15 @@ public class ShipEntryControllerTest {
 
         @Override public List<CrewTransfer.Crew> captureCrew(int dimId, BlockPos afcPos,
                                                              double[] shipWorldPos) {
-            return new ArrayList<>(); // crew mechanics are integration-tier; none here
+            captures++;
+            lastCaptured = new ArrayList<>(); // crew mechanics are integration-tier; none here
+            return lastCaptured;
+        }
+
+        @Override public List<CrewTransfer.Crew> peekCrew(int dimId, BlockPos afcPos,
+                                                          double[] shipWorldPos) {
+            peeks++;
+            return new ArrayList<>();
         }
 
         @Override public BlockPos cross(int srcDimId, double[] srcShipPos, int slotDim,
@@ -86,6 +99,8 @@ public class ShipEntryControllerTest {
 
         @Override public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
                 java.util.UUID shipId) {
+            reseatDims.add(slotDim);
+            lastReseated = crew;
             if (reseatFailCount > 0) { reseatFailCount--; return false; }
             return true;
         }
@@ -160,6 +175,11 @@ public class ShipEntryControllerTest {
         assertFalse(ctl.isEntering(SHIP));
         assertNull("nothing ledgered on a refusal", ledger.get(SHIP));
         assertEquals("no crossing was attempted", 0, ops.crossings);
+        // A refusal must leave the pilot in his seat: the crew is READ for the message, never
+        // captured (a capture dismounts every rider and retires the mounts).
+        assertEquals("a refused entry never captures (= unseats) the crew", 0, ops.captures);
+        assertTrue("the refusal message still reaches the crew via the read-only peek",
+                ops.peeks >= 1);
         assertEquals("the pilot is told", "msg.shipentry.refused", ops.messages.get(0));
 
         // The refusal armed a cooldown: an immediate retry is silently ignored (no message spam).
@@ -186,6 +206,13 @@ public class ShipEntryControllerTest {
         assertFalse(ctl.isEntering(SHIP));
         assertNull(ledger.get(SHIP));
         assertEquals("msg.shipentry.failed", ops.messages.get(0));
+        // The cut never happened, so the crew captured just before it must be put BACK on their
+        // seats — in the LAUNCH world the intact ship still sits in.
+        assertEquals("the captured crew is re-seated after the failed cut", 1, ops.reseatDims.size());
+        assertEquals("the re-seat targets the launch world", LAUNCH_DIM,
+                (int) ops.reseatDims.get(0));
+        assertTrue("the re-seat restores exactly the crew the capture took",
+                ops.lastReseated == ops.lastCaptured);
         // The refcount was released: another ship can claim the single slot right away.
         SpaceManager probe = space; // same manager
         assertEquals("the failed entry's cell holds no occupant",

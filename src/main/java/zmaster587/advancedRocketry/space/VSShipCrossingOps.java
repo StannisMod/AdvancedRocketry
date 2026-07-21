@@ -39,6 +39,14 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
+    public List<CrewTransfer.Crew> peekCrew(int dimId, BlockPos afcPos, double[] shipWorldPos) {
+        WorldServer world = DimensionManager.getWorld(dimId);
+        return world == null
+                ? new java.util.ArrayList<CrewTransfer.Crew>()
+                : CrewTransfer.peek(world, afcPos, shipWorldPos);
+    }
+
+    @Override
     public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
                           int pasteX, int pasteY, int pasteZ) {
         WorldServer src = DimensionManager.getWorld(srcDimId);

@@ -39,8 +39,13 @@ public final class ShipCrossingService {
         /** The ship's live world position read off its managed block, or {@code null}. */
         double[] shipWorldPosition(int dimId, BlockPos afcPos);
 
-        /** Enumerate + dismount the seated crew of the ship at {@code afcPos}. Pre-cut. */
+        /** Enumerate + dismount the seated crew of the ship at {@code afcPos}. Pre-cut, and only
+         *  once every refusal is behind — a capture unseats the crew. */
         List<CrewTransfer.Crew> captureCrew(int dimId, BlockPos afcPos, double[] shipWorldPos);
+
+        /** Enumerate the same seated crew WITHOUT dismounting — what a refusal path reads to
+         *  message the crew while every pilot stays exactly where he sits. */
+        List<CrewTransfer.Crew> peekCrew(int dimId, BlockPos afcPos, double[] shipWorldPos);
 
         /** Cross the ship at {@code srcShipPos} into {@code destDim} at the paste point.
          *  Returns the re-assembly anchor, or {@code null} on failure. */
