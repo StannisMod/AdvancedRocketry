@@ -18,8 +18,8 @@ import java.util.UUID;
  *
  * <p><b>Unmanned transits ALWAYS advance</b>, in either mode. World time only ticks while the server is
  * up, so "neither mode advances while the server is off" holds by construction (the clock is stopped).
- * The Δ-computation / arrival-tick event queue is a TASK-102 optimization; this policy is the per-tick
- * gate that produces the same result. Pure — no server access beyond the injected {@link OnlineCheck}.</p>
+ * A Δ-computation / arrival-tick event queue is a possible future optimization; this policy is the
+ * per-tick gate that produces the same result. Pure — no server access beyond the injected {@link OnlineCheck}.</p>
  */
 public final class OfflineProgress {
 

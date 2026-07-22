@@ -25,7 +25,7 @@ import java.util.UUID;
  * ship&rarr;body DIRECTION (see {@link #buildByDim}). Sent to a player at login and rebroadcast on a
  * throttle so the boundary/bodies track the ship as it flies within the cell.
  *
- * <p>No discovery / {@code isSystemKnown} gate (TASK-95 design: presence is the gate); the same
+ * <p>No discovery / {@code isSystemKnown} gate (by design, presence is the gate); the same
  * payload goes to everyone, so the rebroadcast is a single {@link PacketHandler#sendToAll}.
  * Server main thread only.</p>
  */
