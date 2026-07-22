@@ -111,16 +111,18 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
 
         // Lift into a real hover with the pilot's own vertical-up key.
         double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
-        double liftedY = startY;
         bot().holdKey(Keyboard.KEY_R);
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
-                bot().waitTicks(2);
-                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 200-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double liftedY = lift.value;
         assertTrue("the pilot must be able to lift the ship off the ground: " + startY + " -> " + liftedY,
                 liftedY - startY > 2.0);
         bot().waitTicks(10);
@@ -301,16 +303,18 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         // Fly it into a hover, then stand up: it is now an unmanned, station-keeping, hovering ship -
         // exactly the state a saved hovering ship is in on disk.
         double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
-        double liftedY = startY;
         bot().holdKey(org.lwjgl.input.Keyboard.KEY_R);
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
-                bot().waitTicks(2);
-                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 200-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(org.lwjgl.input.Keyboard.KEY_R);
         }
+        double liftedY = lift.value;
         assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
                 liftedY - startY > 2.0);
         exec("artest player dismount");
@@ -334,9 +338,9 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
                 + "reload path", loaded == 0);
 
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
-        for (int i = 0; i < 40 && count("ship-count") < 1; i++) {
-            bot().waitTicks(5);
-        }
+        // Event-gated VS reload barrier (load-scaled ceiling + early exit): a fixed 40-iteration budget
+        // can miss a slow async reload under concurrent-fork load and hard-fail the downstream parse.
+        ClientPoll.until(bot()::waitTicks, () -> count("ship-count"), n -> n >= 1, 5, 40);
         bot().waitTicks(80); // give a ship that lost its hold time to visibly fall
 
         double afterY = readDouble(shipInfo(bx, by, bz), POS_Y);
@@ -768,11 +772,11 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
-        int all = shipsBefore;
-        for (int i = 0; i < 40 && all <= shipsBefore; i++) {
-            bot().waitTicks(5);
-            all = count("ship-count-all");
-        }
+        // Event-gated async-VS assembly barrier (load-scaled ceiling + early exit): AWAIT the SPAWNED
+        // stage instead of a fixed tick budget that reds a healthy spawn under concurrent-fork load.
+        ClientPoll.Result<Integer> spawned = ClientPoll.until(bot()::waitTicks,
+                () -> count("ship-count-all"), n -> n > shipsBefore, 5, 40);
+        int all = spawned.value;
         assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all + ")",
                 all > shipsBefore);
         bot().waitTicks(40);
@@ -780,21 +784,21 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
-        String info = "";
-        double[] where = null;
-        for (int i = 0; i < 40 && where == null; i++) {
-            bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
-            if (!info.contains("\"managed\":true")) {
-                continue;
-            }
-            double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
-                where = candidate;
-            }
-        }
-        assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
-                where != null);
+        // Await the ship LOADING near this base (managed + within range) — event-gated barrier with a
+        // load-scaled ceiling + early exit, instead of a fixed budget that reds a healthy load.
+        ClientPoll.Result<double[]> loaded = ClientPoll.until(bot()::waitTicks,
+                () -> {
+                    String si = shipInfo(bx, by, bz);
+                    if (!si.contains("\"managed\":true")) {
+                        return null;
+                    }
+                    double[] c = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
+                    return distance(c, new double[]{bx, by, bz}) < 24.0 ? c : null;
+                },
+                w -> w != null, 5, 40);
+        double[] where = loaded.value;
+        assertTrue("the ship built at this base must LOAD with the client present (base " + bx + ","
+                + by + "," + bz + ")", where != null);
         System.out.println("[deckcap] ship at (" + bx + "," + by + "," + bz + ") -> "
                 + java.util.Arrays.toString(where));
         return where;

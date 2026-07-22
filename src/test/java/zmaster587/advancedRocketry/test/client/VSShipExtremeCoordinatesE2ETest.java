@@ -135,16 +135,18 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
     private void climbLeg(String label, double nearX, double nearY, double nearZ) throws Exception {
         double yBefore = shipY(nearX, nearY, nearZ);
         double riderYBefore = bot().reportRidingEntity().get("posY").getAsDouble();
-        double yAfter = yBefore;
         bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 100 && yAfter - yBefore <= 1.5; i++) {
-                bot().waitTicks(2);
-                yAfter = shipY(nearX, nearY, nearZ);
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 100-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> shipY(nearX, nearY, nearZ),
+                    y -> y - yBefore > 1.5, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double yAfter = lift.value;
         assertTrue("[" + label + "] the vertical-up key must lift the ship (yBefore=" + yBefore
                 + " yAfter=" + yAfter + ")", yAfter - yBefore > 1.0);
         bot().waitTicks(6);

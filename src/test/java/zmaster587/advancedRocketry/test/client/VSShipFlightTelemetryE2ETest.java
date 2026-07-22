@@ -83,29 +83,31 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
                 !hudBefore.isEmpty());
 
         bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
-        double climbed = ship[1];
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 100 && climbed - ship[1] <= 2.0; i++) {
-                bot().waitTicks(2);
-                climbed = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated hover-lift: hold vertical-up until the ship has climbed, with a load-scaled
+            // ceiling + early exit. A fixed 100-iteration budget under-lifts a frame-starved client
+            // under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - ship[1] > 2.0, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double climbed = lift.value;
         assertTrue("holding vertical-up must lift the ship: " + ship[1] + " -> " + climbed,
                 climbed - ship[1] > 1.0);
 
         // The client's own velocity readout must be non-zero while the ship is moving. Read it from the
         // rendered HUD text: that is the string the pilot is looking at, not an internal field.
-        String hudMoving = "";
-        boolean sawSpeed = false;
-        for (int i = 0; i < 30 && !sawSpeed; i++) {
-            bot().waitTicks(2);
-            hudMoving = clientString(ROCKET_EVENTS, "lastFreeFlightHud");
-            sawSpeed = hasNonZeroSpeedReadout(hudMoving);
-        }
+        // Event-gated: poll the rendered HUD until it shows a non-zero speed (load-scaled ceiling +
+        // early exit; a fixed 30-iteration budget can miss a slow client under concurrent-fork load).
+        ClientPoll.Result<String> hud = ClientPoll.until(bot()::waitTicks,
+                () -> clientString(ROCKET_EVENTS, "lastFreeFlightHud"),
+                VSShipFlightTelemetryE2ETest::hasNonZeroSpeedReadout, 2, 30);
+        String hudMoving = hud.value;
         assertTrue("the tier-2 flight HUD must show the ship's real speed while it is moving; "
-                + "the client rendered: '" + hudMoving + "'", sawSpeed);
+                + "the client rendered: '" + hudMoving + "'", hud.satisfied);
 
         // --- The spin brake. Deflect the flight cursor sideways through the client's OWN raw-mouse
         // entry point, so the ship rolls, then centre the cursor and watch the spin die.
@@ -117,11 +119,12 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         assertTrue("a raw mouse delta must deflect the client's flight cursor (got "
                 + cursorDeflected + ")", Math.abs(cursorDeflected) > 0.2);
 
-        double spinning = 0.0;
-        for (int i = 0; i < 60 && spinning < 0.05; i++) {
-            bot().waitTicks(2);
-            spinning = readDouble(shipInfo(bx, by, bz), OMEGA);
-        }
+        // Event-gated: poll omega until the deflected cursor has actually spun the ship up (load-scaled
+        // ceiling + early exit; a fixed 60-iteration budget can under-observe under concurrent-fork load).
+        ClientPoll.Result<Double> spin = ClientPoll.until(bot()::waitTicks,
+                () -> readDouble(shipInfo(bx, by, bz), OMEGA),
+                o -> o >= 0.05, 2, 60);
+        double spinning = spin.value;
         assertTrue("a deflected flight cursor must actually spin the ship (omega=" + spinning + ")",
                 spinning > 0.05);
 
@@ -405,15 +408,17 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         // Fly it a couple of blocks up so it is genuinely airborne (and mark it "flown", which arms the
         // unmanned station-keeping hold), then release the throttle.
         bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
-        double climbed = ship[1];
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 100 && climbed - ship[1] <= 2.0; i++) {
-                bot().waitTicks(2);
-                climbed = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 100-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - ship[1] > 2.0, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double climbed = lift.value;
         assertTrue("holding vertical-up must lift the ship: " + ship[1] + " -> " + climbed,
                 climbed - ship[1] > 1.0);
 

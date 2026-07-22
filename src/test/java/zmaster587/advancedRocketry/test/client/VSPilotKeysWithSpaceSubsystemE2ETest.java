@@ -160,19 +160,24 @@ public class VSPilotKeysWithSpaceSubsystemE2ETest {
         clientHarness.bot().waitTicks(10);
 
         // The real key, through the real client input path, exactly as a player holds it.
-        double yAfter = yBefore;
+        final double y0 = yBefore;
         clientHarness.bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
+        ClientPoll.Result<Double> lift;
         try {
-            for (int attempt = 0; attempt < 40 && (yAfter - yBefore) < MIN_CLIMB; attempt++) {
-                clientHarness.bot().waitTicks(5);
-                Matcher m = POS_Y.matcher(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
-                if (m.find()) {
-                    yAfter = Double.parseDouble(m.group(1));
-                }
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 40-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            // The probe keeps the tolerant nullable ship-info parse (returns the baseline when a reply
+            // is unparseable), so the predicate holds only on a genuine climb.
+            lift = ClientPoll.until(clientHarness.bot()::waitTicks,
+                    () -> {
+                        Matcher m = POS_Y.matcher(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+                        return m.find() ? Double.parseDouble(m.group(1)) : y0;
+                    },
+                    y -> (y - y0) >= MIN_CLIMB, 5, 40);
         } finally {
             clientHarness.bot().releaseKey(Keyboard.KEY_R);
         }
+        double yAfter = lift.value;
 
         assertTrue("a seated pilot holding the vertical-up key must lift his ship even with the space "
                         + "subsystem registered - this is the configuration every real player runs, and "

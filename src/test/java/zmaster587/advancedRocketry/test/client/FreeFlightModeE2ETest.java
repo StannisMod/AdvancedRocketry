@@ -358,7 +358,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         bot().holdKey(Keyboard.KEY_R);
 
         double svrYBefore = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
-        bot().waitTicks(40);
+        // Event-gated: hold the climb key until the server rocket has actually climbed (load-scaled
+        // ceiling + early exit; a fixed 40-tick budget can under-climb a frame-starved client under load).
+        ClientPoll.until(bot()::waitTicks,
+                () -> parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY"),
+                y -> y - svrYBefore > 2.0, 4, 10);
         String svrInfo = exec("artest rocket info " + rocketId);
         double svrYAfter = parseDouble(svrInfo, POS_Y, "posY");
 
@@ -555,7 +559,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // yaw 0 (world +X renders on the pilot's left out the nose).
         bot().holdKey(Keyboard.KEY_R);
         bot().holdKey(KEY_INVENTORY);
-        bot().waitTicks(25);
+        // Event-gated strafe (load-scaled ceiling + early exit): a fixed 25-tick budget can under-strafe
+        // a frame-starved client under concurrent-fork load and red a healthy strafe.
+        ClientPoll.until(bot()::waitTicks,
+                () -> parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX"),
+                x -> x - xBefore < -1.0, 5, 5);
 
         String screenDuring = currentScreen();
         String info = exec("artest rocket info " + rocketId);
@@ -587,7 +595,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         bot().holdKey(Keyboard.KEY_R);          // stay airborne
         bot().holdKey(Keyboard.KEY_Q);          // strafe left
-        bot().waitTicks(25);
+        // Event-gated strafe (load-scaled ceiling + early exit): a fixed 25-tick budget can under-strafe
+        // a frame-starved client under concurrent-fork load and red a healthy strafe.
+        ClientPoll.until(bot()::waitTicks,
+                () -> parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX"),
+                x -> x - xBefore > 1.0, 5, 5);
         double xAfter = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
         bot().releaseKey(Keyboard.KEY_Q);
         bot().releaseKey(Keyboard.KEY_R);
@@ -617,8 +629,12 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         // F is downward thrust: it must reduce the vertical velocity vs the climb.
         bot().holdKey(Keyboard.KEY_F);
-        bot().waitTicks(10);
-        double myDown = parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY");
+        // Event-gated: hold downward thrust until it has reduced the vertical velocity (load-scaled
+        // ceiling + early exit; a fixed 10-tick budget can under-brake a frame-starved client under load).
+        ClientPoll.Result<Double> down = ClientPoll.until(bot()::waitTicks,
+                () -> parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY"),
+                my -> my < myUp - 0.05, 5, 2);
+        double myDown = down.value;
         bot().releaseKey(Keyboard.KEY_F);
         assertTrue("F must reduce vertical velocity vs the climb (myUp=" + myUp
                 + " myDown=" + myDown + ")", myDown < myUp - 0.05);
@@ -679,7 +695,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         }
 
         bot().holdKey(Keyboard.KEY_X);
-        bot().waitTicks(40);
+        // Event-gated: hold the cut until it has braked the climb into a hover (load-scaled ceiling +
+        // early exit; a fixed 40-tick budget can leave the craft mid-brake under concurrent-fork load).
+        ClientPoll.until(bot()::waitTicks,
+                () -> parseDouble(exec("artest rocket info " + rocketId), MOTION_Y, "motionY"),
+                my -> Math.abs(my) < 0.05, 5, 8);
         String info = exec("artest rocket info " + rocketId);
         double myCut = parseDouble(info, MOTION_Y, "motionY");
         bot().releaseKey(Keyboard.KEY_X);
@@ -786,15 +806,13 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(30); // settle into the liftoff hover
 
         bot().holdKey(Keyboard.KEY_F);
-        // Poll for landing rather than a fixed wait (descent into ground
-        // contact + landed-event latency varies with load).
-        boolean landed = false;
-        for (int i = 0; i < 40 && !landed; i++) {
-            bot().waitTicks(5);
-            landed = exec("artest rocket info " + rocketId).contains("\"isInFlight\":false");
-        }
+        // Poll for landing rather than a fixed wait (descent into ground contact + landed-event latency
+        // varies with load): event-gated with a load-scaled ceiling + early exit.
+        ClientPoll.Result<Boolean> landing = ClientPoll.until(bot()::waitTicks,
+                () -> exec("artest rocket info " + rocketId).contains("\"isInFlight\":false"),
+                b -> b, 5, 40);
         bot().releaseKey(Keyboard.KEY_F);
-        assertTrue("descending into the ground must shut the engines off", landed);
+        assertTrue("descending into the ground must shut the engines off", landing.satisfied);
 
         bot().waitTicks(5);
         String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
@@ -818,9 +836,17 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         int rocketId = mountFreshFreeFlightRocket(5400, 64, 500);
 
         bot().holdKey(Keyboard.KEY_R);
-        bot().waitTicks(25);
-        String hudClimb = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
-                .get("value").getAsString();
+        // Event-gated: hold R until the rendered HUD VRT setpoint has ramped and the actual velocity is
+        // chasing it (load-scaled ceiling + early exit; a fixed 25-tick budget can under-ramp under load).
+        ClientPoll.Result<String> climbHud = ClientPoll.until(bot()::waitTicks,
+                () -> bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                        .get("value").getAsString(),
+                h -> {
+                    Matcher mm = HUD_VRT.matcher(h);
+                    return mm.find() && Double.parseDouble(mm.group(1)) > 0.4
+                            && Double.parseDouble(mm.group(2)) > 0.1;
+                }, 5, 5);
+        String hudClimb = climbHud.value;
         bot().releaseKey(Keyboard.KEY_R);
 
         Matcher m = HUD_VRT.matcher(hudClimb);
@@ -836,9 +862,16 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
         // Cut: the setpoint marker must return to zero on the rendered HUD.
         bot().holdKey(Keyboard.KEY_X);
-        bot().waitTicks(15);
-        String hudCut = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
-                .get("value").getAsString();
+        // Event-gated: hold cut until the rendered VRT setpoint has returned to zero (load-scaled ceiling
+        // + early exit; a fixed 15-tick budget can leave the setpoint mid-decay under load).
+        ClientPoll.Result<String> cutHud = ClientPoll.until(bot()::waitTicks,
+                () -> bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
+                        .get("value").getAsString(),
+                h -> {
+                    Matcher mm = HUD_VRT.matcher(h);
+                    return mm.find() && Math.abs(Double.parseDouble(mm.group(1))) <= 0.01;
+                }, 5, 3);
+        String hudCut = cutHud.value;
         bot().releaseKey(Keyboard.KEY_X);
         Matcher m2 = HUD_VRT.matcher(hudCut);
         assertTrue("HUD must still render the VRT pair after the cut: " + hudCut, m2.find());
@@ -947,13 +980,17 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // (sent on the turn->idle edge) can be in flight for several ticks on a
         // loaded box — so poll for it instead of a single-shot read; what we
         // pin is that the divergence DOES settle under the tracker quantum.
-        double convErr = Double.MAX_VALUE;
-        for (int i = 0; i < 20 && convErr >= 2.0; i++) {
-            double svrYaw = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
-            double camYaw = bot().reportState().get("playerYaw").getAsDouble();
-            convErr = angDiff(camYaw, svrYaw);
-            if (convErr >= 2.0) bot().waitTicks(4);
-        }
+        // Event-gated: the resync convergence is async (the final packet can be in flight for several
+        // ticks on a loaded box); poll until the camera yaw has converged to the server heading
+        // (load-scaled ceiling + early exit) instead of a fixed 20-iteration budget.
+        ClientPoll.Result<Double> conv = ClientPoll.until(bot()::waitTicks,
+                () -> {
+                    double svrYaw = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
+                    double camYaw = bot().reportState().get("playerYaw").getAsDouble();
+                    return angDiff(camYaw, svrYaw);
+                },
+                e -> e < 2.0, 4, 20);
+        double convErr = conv.value;
         assertTrue("camera yaw must converge to the server craft heading "
                 + "(residual " + convErr + "°)", convErr < 2.0);
 
@@ -1016,9 +1053,12 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
             bot().setLook(st.get("playerYaw").getAsFloat() + 8f, st.get("playerPitch").getAsFloat());
             bot().waitTicks(1);
         }
-        bot().waitTicks(15); // let the held bank integrate
-
-        double camRoll = readClientDouble("ffClientCamRoll");
+        // Event-gated: let the held bank integrate until the client camera roll has grown (load-scaled
+        // ceiling + early exit; a fixed 15-tick budget can under-integrate under concurrent-fork load).
+        ClientPoll.Result<Double> bank = ClientPoll.until(bot()::waitTicks,
+                () -> readClientDouble("ffClientCamRoll"),
+                r -> Math.abs(r) > 15.0, 3, 5);
+        double camRoll = bank.value;
         double yaw1 = bot().reportRidingEntity().get("rotationYaw").getAsDouble();
         bot().releaseKey(Keyboard.KEY_R);
 
@@ -1059,9 +1099,13 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
             bot().setLook(st.get("playerYaw").getAsFloat(), st.get("playerPitch").getAsFloat() + 8f);
             bot().waitTicks(1);
         }
-        bot().waitTicks(60); // held cursor -> the nose loops over the top
-
-        double minFwdZ = readClientDouble("ffClientMinForwardZ");
+        // Event-gated: the held pitch cursor loops the nose over the top; poll the client min-forward-Z
+        // accumulator until it has gone negative (load-scaled ceiling + early exit) instead of a fixed
+        // 60-tick budget that can under-integrate under concurrent-fork load.
+        ClientPoll.Result<Double> loop = ClientPoll.until(bot()::waitTicks,
+                () -> readClientDouble("ffClientMinForwardZ"),
+                z -> z < -0.5, 5, 12);
+        double minFwdZ = loop.value;
         boolean stillRiding = bot().reportRidingEntity() != null;
         bot().releaseKey(Keyboard.KEY_X);
 
