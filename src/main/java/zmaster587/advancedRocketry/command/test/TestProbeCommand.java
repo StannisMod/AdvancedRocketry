@@ -726,6 +726,9 @@ public class TestProbeCommand extends CommandBase {
         }
         // seat-status <dim> <x> <y> <z> — server truth about the seat's bound dummy: its id and its
         // passengers (id + class), so a test can verify an arranged occupancy actually holds.
+        // "boundCount" is the number of dummies in the WHOLE world bound to this seat block — the
+        // one-seat-one-dummy invariant's direct witness (boundDummyAt alone returns the first match
+        // and cannot see a duplicate).
         if (args.length >= 5 && "seat-status".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
@@ -733,14 +736,23 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             BlockPos sp = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            int boundCount = 0;
+            for (net.minecraft.entity.Entity e : world.loadedEntityList) {
+                if (e instanceof zmaster587.advancedRocketry.entity.EntityDummy && !e.isDead
+                        && sp.equals(((zmaster587.advancedRocketry.entity.EntityDummy) e).getSeatPos())) {
+                    boundCount++;
+                }
+            }
             zmaster587.advancedRocketry.entity.EntityDummy dummy =
                     zmaster587.advancedRocketry.block.BlockPilotSeat.boundDummyAt(world, sp);
             if (dummy == null) {
-                send(sender, "{\"ok\":true,\"dummyFound\":false}");
+                send(sender, "{\"ok\":true,\"dummyFound\":false,\"boundCount\":" + boundCount + "}");
                 return;
             }
             StringBuilder sb = new StringBuilder("{\"ok\":true,\"dummyFound\":true,\"dummyId\":")
-                    .append(dummy.getEntityId()).append(",\"passengers\":[");
+                    .append(dummy.getEntityId())
+                    .append(",\"boundCount\":").append(boundCount)
+                    .append(",\"passengers\":[");
             boolean firstP = true;
             for (net.minecraft.entity.Entity p : dummy.getPassengers()) {
                 if (!firstP) {
@@ -1460,6 +1472,32 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"anchorX\":1,\"anchorY\":65,\"anchorZ\":1}");
             return;
         }
+        // transit-setup-empty: the transit STACK alone (pool of 2 + hyperspace + manager), origin cell
+        // materialized but EMPTY. For tests whose subject needs a flyable ship: the piloted setup's bare
+        // 3x3 deck has no propulsion (it can neither hold station nor climb), so a test that must FLY
+        // builds the real with-pilot-seat fixture in the empty origin cell with the real assembler.
+        if (args.length >= 1 && "transit-setup-empty".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
+            zmaster587.advancedRocketry.space.HyperspaceWorld.register();
+            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
+                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                    () -> (long) server.getTickCounter(),
+                    new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                            zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
+            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
+                    transitMgr,
+                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                    new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
+            transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
+            int originDim = transitMgr.materialize(transitOrigin);
+            if (net.minecraftforge.common.DimensionManager.getWorld(originDim) == null) {
+                send(sender, "{\"error\":\"origin cell world not loaded\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"originDim\":" + originDim + "}");
+            return;
+        }
         // transit-setup-piloted: like transit-setup, but the origin cell holds a PILOTED tier-2 ship
         // (advancedFlightComputer + an AFC-linked pilotSeat on a small deck) so the crew-transit e2e can seat
         // a bot and carry it through the jump. Returns the ship anchor, the ship's world position (for
@@ -1520,8 +1558,11 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"anchorX\":1,\"anchorY\":64,\"anchorZ\":1}");
             return;
         }
-        // transit-begin <originDim> <ax> <ay> <az>: start the jump (arrival retries until the async
-        // hyperspace ship is crossable, so a large speed is fine).
+        // transit-begin <originDim> <ax> <ay> <az> [speedBlocksPerTick]: start the jump (arrival
+        // retries until the async hyperspace ship is crossable, so a large speed is fine). The
+        // optional speed lets a test SIZE the park: the setup cells sit one sector (4M blocks)
+        // apart, so the default 5M crosses in a single tick, while e.g. 100k parks the ship for
+        // ~40 probe-driven ticks — enough for a mid-transit stimulus (a relog) to land inside it.
         if (args.length >= 5 && "transit-begin".equalsIgnoreCase(args[0])) {
             if (transitTm == null) {
                 send(sender, "{\"error\":\"transit not set up\"}");
@@ -1530,8 +1571,10 @@ public class TestProbeCommand extends CommandBase {
             int originDim = parseIntOr(args[1], Integer.MIN_VALUE);
             net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(
                     parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            long speed = args.length >= 6
+                    ? Math.max(1L, Long.parseLong(args[5])) : 5_000_000L;
             boolean began = transitTm.beginTransit("t", transitOrigin, originDim, anchor,
-                    transitTarget, 5_000_000L);
+                    transitTarget, speed);
             send(sender, "{\"ok\":true,\"began\":" + began + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }

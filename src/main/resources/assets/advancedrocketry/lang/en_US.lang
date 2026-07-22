@@ -881,6 +881,7 @@ msg.shipentry.arrived=§aOrbit reached - the ship has entered space.
 msg.shipentry.autotakeoff.blocked=§eAuto-takeoff aborted - the path to orbit is blocked. Reposition and climb manually.
 msg.pilotseat.notassembled=§eShip not assembled - assemble it to fly.
 msg.pilotseat.occupied=§e%s is already in this seat.
+msg.pilotseat.taken=§eYour seat was taken by %s while you were away.
 msg.pilotseat.afcdestroyed=§cFlight computer destroyed - the ship is adrift.
 msg.shipdescent.refused=§cNo clear landing on the surface below - the ship is too tall to fit there. Move and try again.
 msg.shipdescent.failed=§cThe descent failed - the ship could not cross onto the planet.

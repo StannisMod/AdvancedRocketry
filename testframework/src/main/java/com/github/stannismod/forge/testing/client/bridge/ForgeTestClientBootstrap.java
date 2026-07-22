@@ -45,6 +45,30 @@ public final class ForgeTestClientBootstrap {
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static final AtomicLong CLIENT_TICKS = new AtomicLong(0L);
 
+    /**
+     * The server address the last "disconnect" command left, so a later "connect" can rejoin it.
+     * Only the disconnect/connect pair uses this; "reconnect" reads the address off the live
+     * connection and never touches it. Client-thread confined (both writers and the reader run
+     * via runOnClientThread).
+     */
+    private static String lastServerHost;
+    private static int lastServerPort;
+
+    /**
+     * A connection teardown (quit, or quit+reconnect) deferred to the next ClientTickEvent.
+     *
+     * <p>NEVER close the server channel from inside the scheduled-task drain (runOnClientThread):
+     * {@code Minecraft.runGameLoop} HOLDS the {@code scheduledTasks} monitor while draining, and
+     * {@code NetworkManager.closeChannel} then waits on the netty event loop — which can itself be
+     * BLOCKED in {@code Minecraft.addScheduledTask} on that same monitor, delivering an inbound
+     * packet. Measured deadlock (2026-07-22): a mid-transit relog raced a Valkyrien Skies
+     * ship-index packet; client thread waited on the close promise, Netty Client IO waited on the
+     * task queue, forever. The tick event fires on the client thread OUTSIDE the drain, so a quit
+     * performed there cannot deadlock against inbound traffic.</p>
+     */
+    private static final java.util.concurrent.atomic.AtomicReference<Runnable>
+            PENDING_CONNECTION_ACTION = new java.util.concurrent.atomic.AtomicReference<>();
+
     private ForgeTestClientBootstrap() {
     }
 
@@ -491,6 +515,9 @@ public final class ForgeTestClientBootstrap {
                     // server sees a full player logout (data saved) and a fresh login; the
                     // client rebuilds its world and player entity. The control bridge lives
                     // at JVM level and survives. Callers follow with wait_world.
+                    // The teardown itself is DEFERRED to the next client tick — closing the
+                    // channel inside this scheduled task deadlocks against inbound packets
+                    // (see PENDING_CONNECTION_ACTION).
                     Minecraft mc = Minecraft.getMinecraft();
                     JsonObject response = ok();
                     if (mc.getConnection() == null || mc.world == null) {
@@ -506,13 +533,89 @@ public final class ForgeTestClientBootstrap {
                     java.net.InetSocketAddress addr = (java.net.InetSocketAddress) remote;
                     String host = addr.getAddress().getHostAddress();
                     int port = addr.getPort();
-                    mc.world.sendQuittingDisconnectingPacket();
-                    mc.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
-                    mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(
-                            new net.minecraft.client.gui.GuiMainMenu(), mc, host, port));
+                    PENDING_CONNECTION_ACTION.set(() -> {
+                        // Step markers on stdout: a hang here leaves no stacktrace, and the
+                        // surviving client.log's LAST marker names the hung step.
+                        System.out.println("[forge-test] reconnect: quitting");
+                        Minecraft m = Minecraft.getMinecraft();
+                        if (m.world != null) {
+                            m.world.sendQuittingDisconnectingPacket();
+                        }
+                        System.out.println("[forge-test] reconnect: unloading world");
+                        m.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
+                        System.out.println("[forge-test] reconnect: connecting to " + host + ":" + port);
+                        m.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(
+                                new net.minecraft.client.gui.GuiMainMenu(), m, host, port));
+                        System.out.println("[forge-test] reconnect: initiated");
+                    });
                     response.addProperty("applied", true);
                     response.addProperty("host", host);
                     response.addProperty("port", port);
+                    return response;
+                });
+            case "disconnect":
+                return runOnClientThread(() -> {
+                    // The DISCONNECT half of "reconnect": quit the server connection and STAY at
+                    // the main menu, exactly as the player's own disconnect button would. The
+                    // server performs a full logout (player data saved to disk) and the world
+                    // keeps running without the player - which is the point: a test can now act
+                    // on the server while the player is genuinely OFFLINE, then "connect" back.
+                    // The address is remembered for that later "connect"; the control bridge
+                    // lives at JVM level and survives without a world. The teardown is DEFERRED
+                    // to the next client tick like reconnect's (see PENDING_CONNECTION_ACTION).
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.getConnection() == null || mc.world == null) {
+                        response.addProperty("applied", false);
+                        return response;
+                    }
+                    java.net.SocketAddress remote =
+                            mc.getConnection().getNetworkManager().getRemoteAddress();
+                    if (!(remote instanceof java.net.InetSocketAddress)) {
+                        response.addProperty("applied", false);
+                        return response;
+                    }
+                    java.net.InetSocketAddress addr = (java.net.InetSocketAddress) remote;
+                    lastServerHost = addr.getAddress().getHostAddress();
+                    lastServerPort = addr.getPort();
+                    PENDING_CONNECTION_ACTION.set(() -> {
+                        System.out.println("[forge-test] disconnect: quitting");
+                        Minecraft m = Minecraft.getMinecraft();
+                        if (m.world != null) {
+                            m.world.sendQuittingDisconnectingPacket();
+                        }
+                        m.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
+                        m.displayGuiScreen(new net.minecraft.client.gui.GuiMainMenu());
+                        System.out.println("[forge-test] disconnect: at main menu");
+                    });
+                    response.addProperty("applied", true);
+                    response.addProperty("host", lastServerHost);
+                    response.addProperty("port", lastServerPort);
+                    return response;
+                });
+            case "connect":
+                return runOnClientThread(() -> {
+                    // The CONNECT half: rejoin the server a prior "disconnect" left, exactly as
+                    // the player's rejoin would - the server sees a fresh login and re-reads the
+                    // player's saved data. Asynchronous like "reconnect": callers follow with
+                    // wait_world. Fails loudly without a remembered address (a connect that
+                    // silently went nowhere would make every later observation unattributable),
+                    // and no-ops when a world is already up (the caller's sequencing is broken).
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.getConnection() != null && mc.world != null) {
+                        response.addProperty("applied", false);
+                        return response;
+                    }
+                    if (lastServerHost == null) {
+                        return error("connect without a prior disconnect: no remembered address");
+                    }
+                    mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(
+                            new net.minecraft.client.gui.GuiMainMenu(), mc,
+                            lastServerHost, lastServerPort));
+                    response.addProperty("applied", true);
+                    response.addProperty("host", lastServerHost);
+                    response.addProperty("port", lastServerPort);
                     return response;
                 });
             case "turn_look":
@@ -1180,6 +1283,13 @@ public final class ForgeTestClientBootstrap {
                     applyInitialWindowState();
                 }
                 CLIENT_TICKS.incrementAndGet();
+                // Deferred connection teardown: this event runs on the client thread OUTSIDE
+                // the scheduled-task drain, so closing the channel here cannot deadlock
+                // against an inbound packet handler (see PENDING_CONNECTION_ACTION).
+                Runnable action = PENDING_CONNECTION_ACTION.getAndSet(null);
+                if (action != null) {
+                    action.run();
+                }
             }
         }
     }

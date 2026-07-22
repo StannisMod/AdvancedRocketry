@@ -47,6 +47,10 @@ public final class CrewTransfer {
         public final EntityPlayerMP player;
         public final int afcDx, afcDy, afcDz;
 
+        /** Whether this rider has already been told his seat is held by someone else — the reseat
+         *  retries every tick until the whole crew resolves, and the message must not repeat. */
+        boolean seatLostNotified;
+
         public Crew(EntityPlayerMP player, int afcDx, int afcDy, int afcDz) {
             this.player = player;
             this.afcDx = afcDx;
@@ -171,7 +175,17 @@ public final class CrewTransfer {
             }
             EntityPlayerMP player = rider.player;
             if (player.hasDisconnected()) {
-                continue;
+                // A rider who RELOGGED mid-crossing: the captured reference is the pre-relog
+                // entity, replaced wholesale by his fresh login. Re-resolve by UUID — the durable
+                // identity — so the arrival still seats the RETURNED player (a mid-transit relog
+                // must hand control back on arrival). Genuinely-offline crew stays skipped: the
+                // login restore owns whoever comes back after the crossing is over.
+                EntityPlayerMP fresh = player.getServer() == null ? null
+                        : player.getServer().getPlayerList().getPlayerByUUID(player.getUniqueID());
+                if (fresh == null || fresh.hasDisconnected()) {
+                    continue;
+                }
+                player = fresh;
             }
             if (player.dimension != dstWorld.provider.getDimension()) {
                 final double tx = seatWorld[0], ty = seatWorld[1], tz = seatWorld[2];
@@ -195,7 +209,21 @@ public final class CrewTransfer {
             EntityDummy dummy = boundDummyForMount(dstWorld, seat.getPos(),
                     seatWorld[0], seatWorld[1], seatWorld[2]);
             if (dummy == null) {
-                continue; // the seat's dummy is occupied by someone else — never double-mount
+                // The seat's dummy is occupied by someone else — never double-mount. The rider
+                // stays where the transfer above put him: STANDING aboard at his post. A silently
+                // lost chair reads as a broken restore, so tell him who holds it (once).
+                if (!rider.seatLostNotified) {
+                    rider.seatLostNotified = true;
+                    EntityDummy resident = zmaster587.advancedRocketry.block.BlockPilotSeat
+                            .boundDummyAt(dstWorld, seat.getPos());
+                    if (resident != null && !resident.getPassengers().isEmpty()) {
+                        zmaster587.advancedRocketry.util.DelayedActionBar.send(player,
+                                new net.minecraft.util.text.TextComponentTranslation(
+                                        "msg.pilotseat.taken",
+                                        resident.getPassengers().get(0).getName()), 20);
+                    }
+                }
+                continue;
             }
             player.startRiding(dummy, true);
             ArrivalTrace.server("reseat.mount t=" + dstWorld.getTotalWorldTime()

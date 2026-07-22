@@ -52,6 +52,27 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command("reconnect")));
     }
 
+    /**
+     * The DISCONNECT half of {@link #reconnect()}: quits the current server connection and stays
+     * at the main menu. The server performs a full player logout (data saved to disk) and keeps
+     * running WITHOUT the player - use this when a test must act on the server while the player
+     * is genuinely offline (e.g. someone takes his seat), then {@link #connect()} back. The
+     * server address is remembered inside the client for that later connect.
+     */
+    public void disconnect() throws IOException {
+        assertOk(execute(command("disconnect")));
+    }
+
+    /**
+     * The CONNECT half: rejoins the server a prior {@link #disconnect()} left - the server sees
+     * a fresh login and re-reads the player's saved data. Asynchronous like {@link #reconnect()}:
+     * follow with {@link #waitForWorld()}. Fails if no disconnect ran before it. Like reconnect,
+     * this cannot span a server restart (each harness boot reserves a fresh port).
+     */
+    public void connect() throws IOException {
+        assertOk(execute(command("connect")));
+    }
+
     public void waitTicks(int ticks) throws IOException {
         JsonObject command = command("wait_ticks");
         command.addProperty("ticks", ticks);

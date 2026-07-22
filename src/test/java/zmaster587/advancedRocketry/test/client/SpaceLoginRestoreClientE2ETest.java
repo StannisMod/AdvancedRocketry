@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.client;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
 import com.github.stannismod.forge.testing.client.ClientBot;
 import com.github.stannismod.forge.testing.client.RealClientHarness;
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
@@ -11,6 +12,7 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.lwjgl.input.Keyboard;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -76,7 +78,11 @@ import static org.junit.Assert.assertTrue;
  * tier and is deliberately not re-derived here. What this adds is that the REAL wiring runs that
  * decision: a real ledger written by the real entry path, persisted to and restored from disk, the
  * real login hook, a real slot dimension registered again on the second boot, and a real client that
- * has to end up inside it.</p>
+ * has to end up inside it - with a WORKING control chain: a seated return whose held key no longer
+ * flies the ship is the play-reported shape of a broken relog, so both sides of the restart hold the
+ * client's real vertical-up key and require the client-rendered altitude to climb (the pre-restart
+ * leg makes a post-restart red attributable to the restore rather than to a chain that never worked
+ * in the cell).</p>
  *
  * <p>Position is never written out as a literal. The pilot is expected back at his ship, so the
  * ship's own live pose is the actual he is compared against; and that pose is separately required to
@@ -129,6 +135,13 @@ public class SpaceLoginRestoreClientE2ETest {
     /** Sentinel for "the client has no world yet", so nobody reads a "dim" key that is absent. */
     private static final int NO_CLIENT_WORLD = Integer.MIN_VALUE;
 
+    /**
+     * A demonstrable held-key climb: well above settle jitter, cheap to reach. Same bar as the
+     * planet-side relog-control pin ({@link VSPilotSeatRelogControlE2ETest}) - the contract is
+     * "held input MOVES the ship within a bounded window", not any particular rate.
+     */
+    private static final double MIN_CLIMB = 1.0;
+
     private static final Pattern SHIP_ID = Pattern.compile("\"shipId\":\"([^\"]+)\"");
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
@@ -179,6 +192,22 @@ public class SpaceLoginRestoreClientE2ETest {
     @Test
     public void aPilotWhoLoggedOutSeatedOnHisShipComesBackAboardItAfterAServerRestart() throws Exception {
         int slotDim = seatThePilotAboardHisShip();
+
+        // CONTROL LEG (pre-restart): the seated pilot's REAL key must fly the ship in its cell
+        // BEFORE the restart - without this, a dead key after the reboot could be a chain that
+        // never worked in the cell at all, and the post-restart assertion could not indict the
+        // restore. The stimulus is the client's own vertical-up key, not the flight-input probe
+        // the arrangement used: what is being proven here is the key->packet->flight-computer
+        // chain the restored pilot will need again on the other side of the restart.
+        double preY0 = clientPlayerY();
+        double preY1 = climbWith(Keyboard.KEY_R, preY0);
+        assertTrue("ARRANGEMENT (control leg): the seated pilot must be able to fly his ship in "
+                + "its cell BEFORE the restart. clientY " + preY0 + " -> " + preY1
+                + " (need +" + MIN_CLIMB + ")", (preY1 - preY0) >= MIN_CLIMB);
+        // Let the station-hold settle the hovering ship before he logs out: the restore below
+        // compares his login position against the ship's LIVE pose, and a ship still drifting
+        // upward when the server stops turns that comparison into a moving target.
+        bot().waitTicks(30);
 
         // The restore can only be exercised if he is STILL aboard in the slot dimension at the moment
         // the server writes him to disk. Assert that here rather than at the end: a pilot who has
@@ -344,6 +373,18 @@ public class SpaceLoginRestoreClientE2ETest {
         assertTrue("the client's position must realize a coordinate in his ship's own cell "
                 + arrangedCellKey + ", but it maps to " + realized.cellKey() + ": " + observed,
                 realized.sameCell(cell));
+
+        // CONTROL LEG (load-bearing): the restored chain still FLIES the ship. Being put back in
+        // the chair is only half the relog promise - a restored seat with a dead key is exactly
+        // the play-reported shape of a broken control chain, and it would read green on every
+        // assertion above. Same real-key stimulus, same client-observed altitude as the pre-restart
+        // leg, so a red here is attributable to the restart and nothing else.
+        double postY0 = clientPlayerY();
+        double postY1 = climbWith(Keyboard.KEY_R, postY0);
+        assertTrue("after the restart, held input must MOVE THE SHIP - a restored seat with a "
+                + "dead key is a broken control chain. clientY " + postY0 + " -> " + postY1
+                + " (need +" + MIN_CLIMB + ") delivery=" + exec("artest vs seat-delivery"),
+                (postY1 - postY0) >= MIN_CLIMB);
     }
 
     /**
@@ -704,6 +745,33 @@ public class SpaceLoginRestoreClientE2ETest {
 
     private ClientBot bot() {
         return clientHarness.bot();
+    }
+
+    /**
+     * Hold {@code key} until the client-rendered rider altitude climbs {@link #MIN_CLIMB} over
+     * {@code from} (bounded, early-exit, load-scaled); returns the last observed altitude. Same
+     * stimulus/observation pair as the planet-side relog-control pin: the REAL key in, the
+     * client's own rendered player altitude out.
+     */
+    private double climbWith(int key, double from) throws Exception {
+        int budget = (int) (40 * TestTimeouts.factor());
+        double last = from;
+        bot().holdKey(key);
+        try {
+            for (int i = 0; i < budget && (last - from) < MIN_CLIMB; i++) {
+                bot().waitTicks(5);
+                last = clientPlayerY();
+            }
+        } finally {
+            bot().releaseKey(key);
+        }
+        return last;
+    }
+
+    /** The client's own rendered player altitude, or NaN while it has no world/player. */
+    private double clientPlayerY() throws Exception {
+        JsonObject state = bot().reportState();
+        return state.has("playerY") ? state.get("playerY").getAsDouble() : Double.NaN;
     }
 
     /**
