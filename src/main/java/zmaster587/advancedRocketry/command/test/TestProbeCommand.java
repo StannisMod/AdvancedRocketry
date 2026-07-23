@@ -892,6 +892,13 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
+            // The test server runs with spawn-animals off, and vanilla
+            // WorldServer.updateEntityWithOptionalForce setDead()s every EntityAnimal each tick while
+            // canSpawnAnimals() is false — persistence does NOT exempt it. So a spawned cow vanishes
+            // on its first update tick with no LivingDeathEvent. canSpawnAnimals() reads the server
+            // flag live, so flipping it here lets the subject actually survive to be observed.
+            net.minecraft.server.MinecraftServer srv = sender.getServer();
+            if (srv != null) srv.setCanSpawnAnimals(true);
             net.minecraft.entity.Entity spawned = net.minecraft.entity.EntityList.createEntityByIDFromName(
                     new net.minecraft.util.ResourceLocation(args[2]), world);
             if (!(spawned instanceof net.minecraft.entity.EntityLivingBase)) {
@@ -1016,8 +1023,15 @@ public class TestProbeCommand extends CommandBase {
                         : sender.getServer().getPlayerList().getPlayers();
                 subject = ps.isEmpty() ? null : ps.get(0);
             }
+            // Split the two failure modes: a subject that was REMOVED (id not in this world) reads
+            // differently from one that is present but not living. A single message for both hides
+            // which of the two happened, which costs a diagnostic round every time a subject vanishes.
+            if (subject == null) {
+                send(sender, "{\"error\":\"entity not found\"}");
+                return;
+            }
             if (!(subject instanceof net.minecraft.entity.EntityLivingBase)) {
-                send(sender, "{\"error\":\"no living subject\"}");
+                send(sender, "{\"error\":\"not a living entity\"}");
                 return;
             }
             Map<String, Object> m = new LinkedHashMap<>(

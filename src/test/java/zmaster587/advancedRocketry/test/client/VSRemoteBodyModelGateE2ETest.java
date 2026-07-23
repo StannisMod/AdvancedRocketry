@@ -27,10 +27,19 @@ import static org.junit.Assert.assertTrue;
  * snapshot would land on an arbitrary moment and say nothing.
  *
  * <p>The two legs are each other's control, and the pairing is what makes either meaningful:
- * leg A (body on terrain) asserts NO remote body is rotated while proving the instrument fires at
- * all; leg B (body on the deck) asserts the same instrument DOES report a rotation for a carried
- * body. Leg A alone would pass just as well if the gate rejected everything, or if the body were
- * never rendered.
+ * leg A (body on terrain) asserts NO remote body is rotated; leg B (body on the deck) asserts the
+ * same instrument DOES report a rotation for a carried body. Each leg proves the instrument fired
+ * for ITS OWN subject via {@link #assertInstrumentFired} (samples &gt; 0) BEFORE trusting the
+ * rotation count, so a zero can never pass either leg vacuously - leg A would otherwise pass just as
+ * well if the gate rejected everything, or if the body were never rendered.
+ *
+ * <p>An earlier "leg 0" spawned a LONE cow on open ground as a separate control that the client
+ * draws remote bodies at all. It was removed: each contract leg's {@code assertInstrumentFired}
+ * already covers "the hook fired", and it covers the real gameplay case (a body near a ship) rather
+ * than a no-ship scenario that never occurs in play. That lone-body leg was also the only flaky one
+ * here - a lone subject on open ground was not reliably sampled when this class runs its methods in
+ * one shared client after the ship-building legs (a teleport/render-settle race), while the
+ * ship-anchored legs sample reliably.
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
  */
@@ -55,111 +64,6 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
      *  cannot falsify anything here. */
     private static final String STEEP_ROLL = "0.17365 0.0 0.0 0.98481";
 
-    // ---- Leg 0 (instrument calibration): does this client draw remote bodies at all? -----------
-
-    /**
-     * The precondition every other leg silently depends on: that a remote body in view produces
-     * model-rotation decisions on THIS client. No ship is involved - a lone stand on open ground,
-     * looked at.
-     *
-     * <p>Without it, {@code modelRotationCalls == 0} is ambiguous in exactly the way that cost a
-     * run here: it reads identically for "the {@code require = 0} mixin never applied", "the
-     * headless client draws no entity models", and "the subject was not there to be drawn". A
-     * control that can come back "no" is what separates them, and it belongs in the suite
-     * permanently - the day a render mod or an ordinal drift kills the hook, THIS is the test that
-     * says so, instead of the contract legs failing for a reason that is not their subject.</p>
-     */
-    @Test
-    public void theClientDrawsRemoteBodiesAtAll() throws Exception {
-        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
-        // The subject is placed where the PLAYER is standing, not at a hand-picked coordinate.
-        // A first draft used a fixed (7820,65,7820) with a stone block under it and measured
-        // clientEntities=1 - the client world held only the player: the terrain height there was
-        // never checked, so the cow was most likely spawned inside rock. The player's own settled
-        // position is by construction a loaded, air, standable spot, and it is READ from the
-        // client rather than assumed.
-        exec("kill @e[type=cow]");
-        exec("tp @a 7820.5 80 7820.5 0 0");
-        bot().waitTicks(40);
-        // Settle FIRST, then aim, then spawn in front of the settled camera: teleporting after the
-        // spawn re-streams chunks and entities, and the subject's arrival on the client is a race
-        // that a fixed wait wins only sometimes (measured: clientEntities 2, then 1, same code).
-        double[] me = clientPos();
-        double x = me[0] + 4.0, y = me[1], z = me[2];
-        aimAt(x, y, z);
-        int subjectId = spawnSubject(x, y, z);
-
-        // Liveness TIMELINE: "never registered" and "registered then died" need different fixes.
-        System.out.println("[modelgate] t0   : " + probeLine(subjectId));
-        bot().waitTicks(20);
-        System.out.println("[modelgate] t20  : " + probeLine(subjectId)
-                + " clientEntities=" + (int) clientDouble(SHIP_CAMERA, "clientLoadedEntities"));
-        bot().waitTicks(100);
-        System.out.println("[modelgate] t120 : " + probeLine(subjectId)
-                + " clientEntities=" + (int) clientDouble(SHIP_CAMERA, "clientLoadedEntities"));
-
-        // Gate on the MEASURED arrival, never on elapsed ticks.
-        int seen = 0;
-        for (int i = 0; i < 20 && seen < 2; i++) {
-            bot().waitTicks(10);
-            seen = (int) clientDouble(SHIP_CAMERA, "clientLoadedEntities");
-        }
-        // Server-side liveness, printed either way: "the client never got it" and "it died on the
-        // server" are different problems, and the client-side count alone cannot tell them apart.
-        String alive = exec("artest vs deck-capture 0 " + subjectId);
-        System.out.println("[modelgate] subject server-side: " + alive.replace('\n', ' '));
-        assertTrue("the subject never arrived in the CLIENT world (clientEntities=" + seen
-                + " after 200 ticks). Server-side probe for the same id: " + alive,
-                seen > 1);
-
-        long calls0 = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls");
-        long remote0 = (long) clientDouble(SHIP_CAMERA, "remoteModelSamples");
-        long camera0 = (long) clientDouble(SHIP_CAMERA, "cameraHookCalls");
-        bot().waitTicks(60);
-        long calls = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls") - calls0;
-        long remote = (long) clientDouble(SHIP_CAMERA, "remoteModelSamples") - remote0;
-
-        int installed = (int) clientDouble(SHIP_CAMERA, "modelGateInstalledFlag");
-        long cameraFrames = (long) clientDouble(SHIP_CAMERA, "cameraHookCalls") - camera0;
-        int clientEntities = (int) clientDouble(SHIP_CAMERA, "clientLoadedEntities");
-        System.out.println("[modelgate] calibration: installed=" + installed
-                + " cameraFrames=" + cameraFrames + " clientEntities=" + clientEntities
-                + " calls=" + calls + " remote=" + remote);
-
-        // Controls BEFORE the conclusion. A zero on the draw-stage counter has three causes and
-        // they are not interchangeable; naming the wrong one sent an earlier version of this test
-        // to the ledger as a "measured harness limit" it had not measured.
-        assertTrue("no camera-stage frame ran at all in this window (cameraFrames=" + cameraFrames
-                        + ") - the client is not rendering, which is a harness/environment problem, "
-                        + "not a statement about the model gate",
-                cameraFrames > 0);
-        // > 1, not > 0: the client world always holds the player itself, so "at least one entity"
-        // is satisfied even when the subject is absent - which is exactly how an earlier version
-        // of this control passed while the cow was not there at all.
-        assertTrue("the CLIENT world holds only the player (clientEntities=" + clientEntities
-                        + ") - the subject never reached this side, so a draw-stage zero says "
-                        + "nothing about whether models are drawn",
-                clientEntities > 1);
-
-        // Separate the two ways this can read zero, in order. Installed-but-silent and
-        // never-installed are different defects with different owners, and a bare "no samples"
-        // conflates them - which cost two runs here before this check existed.
-        assertTrue("the model-roll hook is NOT woven into RenderLivingBase at all: the require = 0 "
-                        + "mixin did not apply, so the deck-roll feature is silently absent on this "
-                        + "client. That is a production defect, not a test-fixture problem",
-                installed == 1);
-        // MEASURED 2026-07-20: installed=1, calls=0. The hook is woven in and the client's camera
-        // hooks demonstrably fire (other e2es read shipCamActive), but RenderLivingBase.applyRotations
-        // never runs - this headless client does not draw entity MODELS. That is a harness limit,
-        // not a verdict on the gate, so the contract legs below skip rather than lie in either
-        // direction. They are written, compiled and ready: the day the harness draws entity models,
-        // deleting nothing makes them run.
-        Assume.assumeTrue("harness limit: this client does not draw entity models (hook installed="
-                        + installed + ", applyRotations calls=" + calls + " over 60 ticks), so the "
-                        + "remote-body model gate is not observable here",
-                remote > 0);
-    }
-
     // ---- Leg A: the bug - a body the ship does NOT carry must not be drawn ship-aligned --------
 
     @Test
@@ -167,7 +71,6 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
         final int bx = 7420, by = 64, bz = 7420;
 
-        assumeEntityModelsAreDrawn();
         double[] ship = buildShip(bx, by, bz);
         rollShip(bx, by, bz);
 
@@ -211,8 +114,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
         lookAt(ship[0], ship[1], ship[2]); // the model must actually be rendered to be decided about
         long[] before = remoteCounters();
-        bot().waitTicks(60);
-        long[] after = remoteCounters();
+        long[] after = sampleUntilInstrumentFires(before);
 
         long samples = after[1] - before[1];
         long rotated = after[2] - before[2];
@@ -233,12 +135,11 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
         final int bx = 7620, by = 64, bz = 7620;
 
-        assumeEntityModelsAreDrawn();
         double[] ship = buildShip(bx, by, bz);
         // Put the subject on the deck BEFORE the roll: it rides the deck up with the ship, which is
         // how a crew member gets to a steep deck in play. Spawning onto an already-inverted deck
         // would need a world point that is only derivable through the ship transform.
-        int subject = spawnSubjectOnDeck(ship);
+        int subject = spawnSubjectOnDeck(bx, by, bz);
         rollShip(bx, by, bz);
 
         String contact = exec("artest vs deck-capture 0 " + subject);
@@ -247,8 +148,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
         lookAt(ship[0], ship[1], ship[2]);
         long[] before = remoteCounters();
-        bot().waitTicks(60);
-        long[] after = remoteCounters();
+        long[] after = sampleUntilInstrumentFires(before);
 
         long samples = after[1] - before[1];
         long rotated = after[2] - before[2];
@@ -263,15 +163,19 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
     // ---- helpers (self-contained, mirroring the other tier-2 e2e classes) ----------------------
 
-    /** The contract legs are only meaningful where the client actually draws entity models. Measured
-     *  false on this harness (see the calibration leg) - so they SKIP with a named reason instead of
-     *  passing vacuously, which is what an unguarded "rotated == 0" would do here. */
-    private void assumeEntityModelsAreDrawn() throws Exception {
-        long calls0 = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls");
-        bot().waitTicks(20);
-        long calls = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls") - calls0;
-        Assume.assumeTrue("harness limit: this client draws no entity models (applyRotations calls="
-                + calls + "); the remote-body model gate is not observable here", calls > 0);
+    /** Wait for the model-rotation instrument to actually SAMPLE the subject, in bounded short rounds
+     *  instead of one fixed window. Under shared-harness load (three methods, one client) the subject's
+     *  first rendered frame can lag the look, and a single 60-tick window then reads zero samples on a
+     *  client that draws models fine. Returns the counters once at least one remote sample has landed
+     *  (or after the cap - the caller's {@link #assertInstrumentFired} then reports the honest zero).
+     *  Waits for the instrument to fire; weakens no threshold. */
+    private long[] sampleUntilInstrumentFires(long[] before) throws Exception {
+        long[] after = before;
+        for (int i = 0; i < 8 && after[1] - before[1] <= 0; i++) {
+            bot().waitTicks(15);
+            after = remoteCounters();
+        }
+        return after;
     }
 
     /** {@code {modelRotationCalls, remoteModelSamples, remoteModelRotatedSamples}} as the client
@@ -346,9 +250,33 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 + " minecraft:stone").contains("\"ok\":true");
     }
 
-    /** Spawn the subject mob on the fixture's deck and return its entity id. */
-    private int spawnSubjectOnDeck(double[] ship) throws Exception {
-        return spawnSubject(ship[0], ship[1] + 2.0, ship[2]);
+    /** Spawn the subject mob ON the fixture's iron deck (built at {@code rocketY+3 = baseY+4}, walkable
+     *  top at {@code baseY+5}, centred on {@code baseX+3 / baseZ+3}) and return its entity id.
+     *
+     *  <p>The deck's WORLD position is derived from the base, not from the ship-info reference point
+     *  ({@code ship[1]} is the physics object's origin, not the deck floor — a {@code +2} offset off it
+     *  floated the subject 3 blocks under the deck and read zero support). VS assembles the ship in
+     *  place, so the deck blocks stay at their world coordinates until the roll. The derived height is
+     *  then VERIFIED by the support probe (a small sweep tolerates a one-block VS settle), never
+     *  assumed — a subject the ship does not actually carry would make this control leg vacuous.</p> */
+    private int spawnSubjectOnDeck(int bx, int by, int bz) throws Exception {
+        double cx = bx + 3 + 0.5, cz = bz + 3 + 0.5;
+        int chosen = -1;
+        StringBuilder tried = new StringBuilder();
+        for (double y : new double[]{by + 5, by + 5.2, by + 6, by + 4.5, by + 7}) {
+            exec("kill @e[type=cow]");
+            int candidate = spawnSubject(cx, y, cz);
+            String probe = exec("artest vs deck-capture 0 " + candidate);
+            int obst = readInt(probe, OBSTACLES);
+            tried.append(String.format(java.util.Locale.ROOT, "[y=%.1f obst=%d]", y, obst));
+            if (obst > 0) {
+                chosen = candidate;
+                break;
+            }
+        }
+        assertTrue("no height over the deck put the subject ON it (ship carries it, >=1 support "
+                        + "obstacle); tried " + tried, chosen >= 0);
+        return chosen;
     }
 
     private int spawnSubject(double x, double y, double z) throws Exception {
@@ -403,13 +331,6 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         if (d >= 180.0) d -= 360.0;
         if (d < -180.0) d += 360.0;
         return d;
-    }
-
-    /** One-line server-side liveness read for an entity id. */
-    private String probeLine(int id) throws Exception {
-        String r = exec("artest vs deck-capture 0 " + id);
-        int b = r.indexOf('{');
-        return b < 0 ? r : r.substring(b, Math.min(r.length(), b + 150));
     }
 
     private double[] clientPos() throws Exception {
