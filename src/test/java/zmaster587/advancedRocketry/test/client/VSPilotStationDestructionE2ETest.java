@@ -191,12 +191,15 @@ public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
         assertTrue("bot must mount the seat dummy: " + mount, mount.contains("\"mounted\":true"));
         bot().waitTicks(10);
 
-        double yAfter = y0;
+        final double baseY = y0;
         bot().holdKey(Keyboard.KEY_R);
-        for (int i = 0; i < 100 && yAfter - y0 <= 2.0; i++) {
-            bot().waitTicks(2);
-            yAfter = shipY(bx, by, bz);
-        }
+        // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 100-iteration budget
+        // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+        // NOTE: this leg returns with KEY_R still HELD — the caller releases it, so no finally here.
+        ClientPoll.Result<Double> lift = ClientPoll.until(bot()::waitTicks,
+                () -> shipY(bx, by, bz),
+                y -> y - baseY > 2.0, 2, 100);
+        double yAfter = lift.value;
         assertTrue("ARRANGEMENT: the seated bot must be flying the ship before its station can be "
                         + "destroyed (y0=" + y0 + " yAfter=" + yAfter + ")",
                 yAfter - y0 > 2.0);

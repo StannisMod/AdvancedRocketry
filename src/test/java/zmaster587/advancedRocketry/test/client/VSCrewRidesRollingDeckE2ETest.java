@@ -104,20 +104,19 @@ public class VSCrewRidesRollingDeckE2ETest extends AbstractClientE2ETest {
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
-        int all = 0;
-        for (int i = 0; i < 40 && all < 1; i++) {
-            bot().waitTicks(5);
-            all = count("ship-count-all");
-        }
+        // Event-gated async-VS assembly barrier (load-scaled ceiling + early exit): AWAIT the SPAWNED
+        // stage instead of a fixed tick budget that reds a healthy spawn under concurrent-fork load.
+        ClientPoll.Result<Integer> spawned = ClientPoll.until(bot()::waitTicks,
+                () -> count("ship-count-all"), n -> n >= 1, 5, 40);
+        int all = spawned.value;
         assertTrue("assembly must create a ship (all=" + all + ")", all >= 1);
         bot().waitTicks(40);
 
         exec("tp @a " + (BX + 0.5) + " " + (BY + 8) + " " + (BZ + 0.5) + " 0 0");
-        int loaded = 0;
-        for (int i = 0; i < 40 && loaded < 1; i++) {
-            bot().waitTicks(5);
-            loaded = count("ship-count");
-        }
+        // Await the ship LOADING near the client (same event-gated barrier, load-scaled + early exit).
+        ClientPoll.Result<Integer> loadedShips = ClientPoll.until(bot()::waitTicks,
+                () -> count("ship-count"), n -> n >= 1, 5, 40);
+        int loaded = loadedShips.value;
         assertTrue("the ship must LOAD with the client present", loaded >= 1);
 
         // The ship does not stay at the pad base. Find it, then drop the bot ONTO it: standing next

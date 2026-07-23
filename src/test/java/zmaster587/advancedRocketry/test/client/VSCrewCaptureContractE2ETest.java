@@ -289,16 +289,19 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(20);
 
         double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
-        double liftedY = startY;
         bot().holdKey(Keyboard.KEY_R);
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
-                bot().waitTicks(2);
-                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated: hold the vertical thruster until the ship has actually climbed
+            // 3 blocks, with a load-scaled ceiling + early exit. A fixed 200-iteration budget
+            // under-lifts a frame-starved client under concurrent load and reds a healthy hover.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double liftedY = lift.value;
         assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
                 liftedY - startY > 2.0);
         exec("artest player dismount");
@@ -357,16 +360,19 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
         double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
-        double liftedY = startY;
         bot().holdKey(Keyboard.KEY_R);
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 200 && liftedY - startY < 3.0; i++) {
-                bot().waitTicks(2);
-                liftedY = readDouble(shipInfo(bx, by, bz), POS_Y);
-            }
+            // Event-gated: hold the vertical thruster until the ship has actually climbed
+            // 3 blocks, with a load-scaled ceiling + early exit. A fixed 200-iteration budget
+            // under-lifts a frame-starved client under concurrent load and reds a healthy hover.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double liftedY = lift.value;
         assertTrue("the pilot must lift the ship into a hover: " + startY + " -> " + liftedY,
                 liftedY - startY > 2.0);
         exec("artest player dismount");
@@ -684,13 +690,14 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // whole encounter would then sample a frozen body and prove nothing). Gate the window on
         // the fall actually beginning.
         double preY = bot().reportState().get("playerY").getAsDouble();
-        boolean falling = false;
-        for (int i = 0; i < 60 && !falling; i++) {
-            bot().waitTicks(2);
-            falling = Math.abs(bot().reportState().get("playerY").getAsDouble() - preY) > 0.4;
-        }
+        // Event-gated fall detection with a load-scaled ceiling: a fixed 60-iteration
+        // budget can miss a slow chunk-stream / tick start under concurrent load and red a healthy
+        // encounter before it has even begun.
+        ClientPoll.Result<Double> fall = ClientPoll.until(bot()::waitTicks,
+                () -> bot().reportState().get("playerY").getAsDouble(),
+                y -> Math.abs(y - preY) > 0.4, 2, 60);
         assertTrue("the teleported client must start falling before the encounter window "
-                + "(client tick/chunk-stream stall)", falling);
+                + "(client tick/chunk-stream stall)", fall.satisfied);
         long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
         StringBuilder land = new StringBuilder();
         double settledY = Double.NaN;
@@ -760,13 +767,14 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // whole encounter would then sample a frozen body and prove nothing). Gate the window on
         // the fall actually beginning.
         double preY = bot().reportState().get("playerY").getAsDouble();
-        boolean falling = false;
-        for (int i = 0; i < 60 && !falling; i++) {
-            bot().waitTicks(2);
-            falling = Math.abs(bot().reportState().get("playerY").getAsDouble() - preY) > 0.4;
-        }
+        // Event-gated fall detection with a load-scaled ceiling: a fixed 60-iteration
+        // budget can miss a slow chunk-stream / tick start under concurrent load and red a healthy
+        // encounter before it has even begun.
+        ClientPoll.Result<Double> fall = ClientPoll.until(bot()::waitTicks,
+                () -> bot().reportState().get("playerY").getAsDouble(),
+                y -> Math.abs(y - preY) > 0.4, 2, 60);
         assertTrue("the teleported client must start falling before the encounter window "
-                + "(client tick/chunk-stream stall)", falling);
+                + "(client tick/chunk-stream stall)", fall.satisfied);
         long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
         int aboardSeen = 0, hullSeen = 0, samples = 0;
         StringBuilder enc = new StringBuilder();
@@ -1220,15 +1228,13 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("a with-pilot-seat build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
-        // The physics mod assembles on its own thread and its queue lags behind a loaded machine;
-        // both waits below exit early the moment the state appears, so scaling their budgets by
-        // the harness load factor costs an idle run nothing (measured expiring at 8 forks).
-        int assemblyBudget = (int) (40 * com.github.stannismod.forge.testing.TestTimeouts.factor());
-        int all = shipsBefore;
-        for (int i = 0; i < assemblyBudget && all <= shipsBefore; i++) {
-            bot().waitTicks(5);
-            all = count("ship-count-all");
-        }
+        // Event-gated async-VS assembly barrier: the physics mod assembles on its own
+        // thread and its queue lags behind a loaded machine, so AWAIT the SPAWNED stage (the queryable
+        // ship count rising past the pre-assembly baseline) with a load-scaled ceiling + early exit,
+        // instead of a fixed tick budget that reds a healthy spawn under concurrent-fork load.
+        ClientPoll.Result<Integer> spawned = ClientPoll.until(bot()::waitTicks,
+                () -> count("ship-count-all"), n -> n > shipsBefore, 5, 40);
+        int all = spawned.value;
         assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all + ")",
                 all > shipsBefore);
         bot().waitTicks(40);
@@ -1236,21 +1242,20 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
-        String info = "";
-        double[] where = null;
-        for (int i = 0; i < assemblyBudget && where == null; i++) {
-            bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
-            if (!info.contains("\"managed\":true")) {
-                continue;
-            }
-            double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
-                where = candidate;
-            }
-        }
-        assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
-                where != null);
+        // Await the ship LOADING near this base (managed + within range) — same event-gated barrier.
+        ClientPoll.Result<double[]> loaded = ClientPoll.until(bot()::waitTicks,
+                () -> {
+                    String si = shipInfo(bx, by, bz);
+                    if (!si.contains("\"managed\":true")) {
+                        return null;
+                    }
+                    double[] c = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
+                    return distance(c, new double[]{bx, by, bz}) < 24.0 ? c : null;
+                },
+                w -> w != null, 5, 40);
+        double[] where = loaded.value;
+        assertTrue("the ship built at this base must LOAD with the client present (base " + bx + ","
+                + by + "," + bz + ")", where != null);
         System.out.println("[crewcap] ship at (" + bx + "," + by + "," + bz + ") -> "
                 + java.util.Arrays.toString(where));
         return where;

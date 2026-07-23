@@ -397,19 +397,21 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
                         + "key-held window", !Double.isNaN(yBefore));
 
         // The real key, through the real client input path, exactly as a player holds it.
-        double yAfter = yBefore;
+        final double y0 = yBefore;
         bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
+        ClientPoll.Result<Double> lift;
         try {
-            for (int attempt = 0; attempt < MEASURE_SAMPLES && (yAfter - yBefore) < MIN_CLIMB; attempt++) {
-                bot().waitTicks(TICKS_PER_SAMPLE);
-                double y = shipPosY();
-                if (!Double.isNaN(y)) {
-                    yAfter = y;
-                }
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed MEASURE_SAMPLES budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            // Only the EXPERIMENT ceiling scales; the control leg's fixed drift window stays fixed. The
+            // probe keeps the NaN-tolerant read (returns the baseline when shipPosY is unparseable).
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> { double y = shipPosY(); return Double.isNaN(y) ? y0 : y; },
+                    y -> (y - y0) >= MIN_CLIMB, TICKS_PER_SAMPLE, MEASURE_SAMPLES);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double yAfter = lift.value;
 
         // Late paste-site census: by now the relocation demonstrably finished (the settle and the
         // measurement windows ran on the live ship), so anything still at the paste site is a

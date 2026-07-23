@@ -110,13 +110,13 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
         // freshly-teleported client may not tick until its chunks stream in).
         exec("tp @a " + sx + " " + (sy + 7) + " " + sz + " 0 0");
         double preY = bot().reportState().get("playerY").getAsDouble();
-        boolean falling = false;
-        for (int i = 0; i < 60 && !falling; i++) {
-            bot().waitTicks(2);
-            falling = Math.abs(bot().reportState().get("playerY").getAsDouble() - preY) > 0.4;
-        }
+        // Event-gated fall detection (load-scaled ceiling + early exit): a fixed 60-iteration budget can
+        // miss a slow chunk-stream / tick start under concurrent-fork load and red a healthy encounter.
+        ClientPoll.Result<Double> fall = ClientPoll.until(bot()::waitTicks,
+                () -> bot().reportState().get("playerY").getAsDouble(),
+                y -> Math.abs(y - preY) > 0.4, 2, 60);
         assertTrue("the teleported client must start falling before the hull leg "
-                + "(client tick/chunk-stream stall)", falling);
+                + "(client tick/chunk-stream stall)", fall.satisfied);
 
         // Wait for the hull-stand hold to actually engage — the leg proves nothing otherwise.
         boolean hullHeld = false;

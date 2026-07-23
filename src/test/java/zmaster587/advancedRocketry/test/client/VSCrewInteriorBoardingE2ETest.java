@@ -395,9 +395,18 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         // contract's). The descend leg also pins the OTHER vertical intent: sneak sinks along
         // the deck normal exactly as space climbs it.
         double[] subHigh = subEnd;
+        // Event-gated descend (load-scaled ceiling + early exit): hold sneak until the body has sunk
+        // along the deck normal, instead of a fixed 14-tick budget a frame-starved client can under-sink
+        // under concurrent-fork load. Census-Y is block-floored, so the predicate is a strict drop below
+        // the captured start height.
         bot().holdKey(org.lwjgl.input.Keyboard.KEY_LSHIFT);
-        bot().waitTicks(14);
-        bot().releaseKey(org.lwjgl.input.Keyboard.KEY_LSHIFT);
+        try {
+            ClientPoll.until(bot()::waitTicks,
+                    () -> parseSub(censusStatic("censusSubPos"))[1],
+                    y -> y < subHigh[1], 2, 7);
+        } finally {
+            bot().releaseKey(org.lwjgl.input.Keyboard.KEY_LSHIFT);
+        }
         double[] subDown = parseSub(censusStatic("censusSubPos"));
         assertTrue("holding descend must sink along the DECK NORMAL (subspace -Y): "
                 + subHigh[1] + " -> " + subDown[1], subDown[1] < subHigh[1]);

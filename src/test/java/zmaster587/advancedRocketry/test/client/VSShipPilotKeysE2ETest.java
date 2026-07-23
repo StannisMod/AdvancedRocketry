@@ -112,16 +112,19 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
 
         // Drive REAL keys: hold vertical-up. The client samples it, sends it to the seat, and the
         // AFC lifts the ship. Up isolates from ground friction; poll for the climb (bounded).
-        double yAfter = yBefore;
+        final double y0 = yBefore;
         bot().holdKey(Keyboard.KEY_R); // flightVerticalUp
+        ClientPoll.Result<Double> lift;
         try {
-            for (int i = 0; i < 100 && yAfter - yBefore <= 1.5; i++) {
-                bot().waitTicks(2);
-                yAfter = readDouble(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ), POS_Y);
-            }
+            // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 100-iteration budget
+            // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
+            lift = ClientPoll.until(bot()::waitTicks,
+                    () -> readDouble(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ), POS_Y),
+                    y -> y - y0 > 1.5, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        double yAfter = lift.value;
 
         assertTrue("holding the vertical-up key while seated must lift the ship through the FULL "
                         + "client path (key -> packet -> seat -> AFC -> force): yBefore=" + yBefore
