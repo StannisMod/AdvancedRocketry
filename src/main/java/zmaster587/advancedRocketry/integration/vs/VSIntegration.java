@@ -3,7 +3,6 @@ package zmaster587.advancedRocketry.integration.vs;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraftforge.fml.common.Loader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -38,16 +37,19 @@ public final class VSIntegration {
     private VSIntegration() {}
 
     /**
-     * Whether Valkyrien Skies is installed. Defensive: any failure to consult
-     * Forge's {@link Loader} (e.g. a non-FML test environment) is treated as
-     * "VS absent" rather than propagating. The result is cached after the first
-     * successful query.
+     * Whether Valkyrien Skies is present. VS is vendored into Advanced Rocketry — compiled into
+     * this jar rather than loaded as a separate mod — so its presence is a classpath fact, not a
+     * modid registration ({@code Loader.isModLoaded("valkyrienskies")} would now be false). Probe a
+     * VS core class instead; any failure (e.g. a stripped classpath) is treated as "VS absent"
+     * rather than propagating. Cached after the first query.
      */
     public static boolean isAvailable() {
         Boolean cached = available;
         if (cached == null) {
             try {
-                cached = Loader.isModLoaded(MODID);
+                Class.forName("org.valkyrienskies.mod.common.ValkyrienSkiesMod", false,
+                        VSIntegration.class.getClassLoader());
+                cached = Boolean.TRUE;
             } catch (Throwable t) {
                 cached = Boolean.FALSE;
             }

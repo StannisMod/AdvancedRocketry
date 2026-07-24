@@ -1,0 +1,277 @@
+#PARSE_ESCAPES
+
+### Valkyrien Skies Main
+
+# Blocks
+tile.captains_chair.name=Cap'ns Chair
+tooltip.valkyrienskies.captains_chair_1=Smartly sit and bring a spring upon 'er!
+tooltip.valkyrienskies.captains_chair_2=If ye be standing on yer ship, you will be seated when ye set sail. Arr, or ye'll steer her on the deck.
+
+tile.passenger_chair.name=Crewmate's Chair
+tooltip.valkyrienskies.passenger_chair=Helps the tar with gettin' their sea legs.
+
+
+# Item Tab
+itemGroup.valkyrienskies=Valkyrien Skies
+
+
+## Commands
+commands.vs.list-ships.noships=Arr, the seas be empty!
+commands.vs.list-ships.ships=The barrelman reports these ships:\n%s
+
+commands.vs.gc.success=The bilge be thrown abaft!
+
+
+# Config (Remember to update VSConfig after any changes are made here)
+valkyrienskies.general.shiplowerlimit=The lowest she'll go!
+valkyrienskies.general.shiplowerlimit.tooltip=
+
+valkyrienskies.general.shipupperlimit=The highest waves!
+valkyrienskies.general.shipupperlimit.tooltip=
+
+valkyrienskies.general.dogravity=Let Davy Jones tug at ye!
+valkyrienskies.general.dogravity.tooltip=
+
+valkyrienskies.general.dophysicsblocks=Let land set sail!
+valkyrienskies.general.dophysicsblocks.tooltip=
+
+valkyrienskies.general.rendershipchunkclaimsindebug=Show the fathoms of yer vessel!
+valkyrienskies.general.rendershipchunkclaimsindebug.tooltip=See the cursed widths of yer ship (Also be summon'd by chantin' f3 + b).
+
+valkyrienskies.general.showannoyingdebugoutput=Hear the Ghost's Cries
+valkyrienskies.general.showannoyingdebugoutput.tooltip=Don't allow this lest ye be sick in the head, or if God told ye so!
+
+valkyrienskies.general.timesimulatedperphysicstick=Roughness of the Seas
+valkyrienskies.general.timesimulatedperphysicstick.tooltip=How fast the waters roll beneath ye. There be 100 waves to a log entry, which be a hundredth of a second.
+
+valkyrienskies.general.threadcount=Amount of Waves
+valkyrienskies.general.threadcount.tooltip=The number of waves ye be hit by, should be yer vessel's sails subtract 2. Can't be allowed when ye be sailin'!
+
+valkyrienskies.general.maxdetectedshipsize=Largest Ship Size
+valkyrienskies.general.maxdetectedshipsize.tooltip=The biggest vessel on the seas. If yer freeboard be longer than this, yer hornswaggler will belay it's order.
+
+valkyrienskies.general.gravityvecx=Davy Jones Portward Tug
+valkyrienskies.general.gravityvecx.tooltip=
+
+valkyrienskies.general.gravityvecy=Davy Jones Keelward Tug
+valkyrienskies.general.gravityvecy.tooltip=
+
+valkyrienskies.general.gravityvecz=Davy Jones Bowward Tug
+valkyrienskies.general.gravityvecz.tooltip=
+
+valkyrienskies.general.tickstosticktoship=The Sea Legs of yer mateys
+valkyrienskies.general.tickstosticktoship.tooltip=How long yer vessel will drag at yer crew. They'll be marooned when this time is up.
+
+valkyrienskies.general.ship_loading_settings=Ship Sailing Log
+valkyrienskies.general.ship_loading_settings.tooltip=Set how far ye'll see ships set sail. The order of the crow's nest is:\nPlayer Watch Distance < Ship Load Distance < Ship Load Background Distance <= Player Unwatch Distance < Ship Unload Distance
+
+valkyrienskies.general.ship_loading_settings.watchDistance=Crow's Nest Visibility
+valkyrienskies.general.ship_loading_settings.watchDistance.tooltip=If yer leagues to this ship are short, and if yer eyes be off it, yer barrelman will spy it.
+
+valkyrienskies.general.ship_loading_settings.loadDistance=Ship Sail Distance
+valkyrienskies.general.ship_loading_settings.loadDistance.tooltip=If yer leagues to this ship are short, and it hasn't set sail, it will weigh anchor and haul wind.
+
+valkyrienskies.general.ship_loading_settings.loadBackgroundDistance=Ship Sail Preparation Distance
+valkyrienskies.general.ship_loading_settings.loadBackgroundDistance.tooltip=If yer leagues to this ship are short, and it hasn't set sail, it will prepare it's foresail.
+
+valkyrienskies.general.ship_loading_settings.unwatchDistance=Fog Rolling Distance
+valkyrienskies.general.ship_loading_settings.unwatchDistance.tooltip=If yer leagues to this ship are long, and if yer eyes be on it, yer barrelman will lose it in the fog.
+
+valkyrienskies.general.ship_loading_settings.unloadDistance=Ship Anchor Distance
+valkyrienskies.general.ship_loading_settings.unloadDistance.tooltip=If all ye landlubber's leagues to this ship are long, it'll drop anchor.
+
+valkyrienskies.general.shipspawndetectorblacklist=Shipwright's Code of Conduct
+valkyrienskies.general.shipspawndetectorblacklist.tooltip=These materials should never be used for shipbuildin'!
+
+valkyrienskies.general.blockmass=Weight of yer Vessel
+valkyrienskies.general.blockmass.tooltip=How low yer draft be when on the seas.
+
+### Valkyrien Skies Control
+
+# Items
+item.physics_core.name=Killick
+tooltip.vs_control.physics_core=The weights of yer Davy Jones' Hornswaggler.
+
+item.relay_wire.name=Rope
+tooltip.vs_control.relay_wire=Fer settin' up yer rigging. Ye can use it fer reeving or tossing what's been rove.
+message.vs_control.error_relay_wire_limit=This tackle be full, ye bilge rat! It fits only %d ropes!.
+message.vs_control.error_relay_wire_length=Yer rope can't stretch these fathoms!
+
+item.vanishing_wire.name=Anchored Rigging
+tooltip.vs_control.vanishing_wire=Fer settin up yer rigging without yer hands knowin'.
+
+item.vs_wrench.name=Shipwright's Tool
+tooltip.vs_control.wrench_usage=Avast! Ye need a Shipwright's Tool to spring this!
+tooltip.vs_control.wrench_modes=%s + %s to flip yer tool.
+tooltip.vs_control.wrench_switched.construct=Arr, yer Shipwright's Tool is in Work mode.
+tooltip.vs_control.wrench_switched.deconstruct=Arr, yer Shipwright's Tool is in Sinkin' mode.
+tooltip.vs_control.wrench_toggle=Arr, ye can flip yer tool when ye be needin it.
+tooltip.vs_control.wrench.construct=Used to work yer machines.
+tooltip.vs_control.wrench.deconstruct=Used to sink the damned machines.
+
+# Blocks
+## Ship blocks
+tile.physics_infuser.name=Davy Jones' Hornswaggler
+tooltip.vs_control.physics_infuser=Convert yer empty hull to a true vessel, lest the hull's make be on the Shipwright's Code of Conduct.
+
+tile.physics_infuser_creative.name=Free-roamin' Davy Jones' Hornswaggler
+tooltip.vs_control.physics_infuser_creative_1=Blimey! Set sail with any hull ye will, breakin the code of conduct as ye please.
+tooltip.vs_control.physics_infuser_creative_2=This can break the Shipwright's Code of Conduct, ye bilge-sucker! Take care ye don't sink yer whole island with this curse!
+
+tile.physics_infuser_dummy.name=Davy Jones' Brother's Hornswaggler
+tooltip.vs_control.physics_infuser_dummy=This item be the cursed other half of Davy Jones' Hornswaggler.
+
+tile.ship_helm.name=Ship Helm
+tooltip.vs_control.ship_helm=Arr! Use fer bringin' a spring upon her cable.
+
+tile.speed_telegraph.name=Sail Tackle
+tooltip.vs_control.speed_telegraph=Lets ye furl and unfurl yer mainsails.
+
+tile.dummy_telegraph.name=Sail Tackle's Block
+tooltip.vs_control.dummy_telegraph=This be the cursed other half of the Sail Tackle.
+
+tile.lift_lever.name=Scuttle's Post
+tooltip.vs_control.lift_lever=Set the openin' of yer Scuttles to raise or lower yer draft.
+
+tile.gearbox.name=Shroud Post
+tooltip.vs_control.gearbox_1=Rigs to yer masts and allows ye to turn them.
+tooltip.vs_control.gearbox_2=Rig up to a Sail Tackle to control yer shrouds.
+
+tile.rotation_axle.name=Shroud
+tooltip.vs_control.rotation_axle=Rigs to yer boilers, shroud posts, and sails.
+
+
+## Network
+tile.network_display.name=Shipwright's Log
+tooltip.vs_control.network_display=[Cursed] See what yer shipwright knows about yer rigging.
+
+tile.network_relay.name=Rigging Post
+tooltip.vs_control.network_relay=Can be rove with %d ropes.
+
+
+## Multi-Block parts
+tile.valkyrium_compressor_part.name=Scuttle Part
+tooltip.vs_control.valkyrium_compressor_part_1=Part of a 2x2x2 lengths machine, the Scuttle.
+tooltip.vs_control.valkyrium_compressor_part_2=This machine lets ye control yer draft in the seas.
+
+tile.rudder_part.name=Rudder Part
+tooltip.vs_control.rudder_part=The rudder be used for steerin', and be rigged to the Ship's Helm.
+
+tile.giant_propeller_part.name=Mainsail Part
+tooltip.vs_control.giant_propeller_part=Avast! Build yer sails from 3x3 to 7x7 lengths to give wind to yer main.
+
+tile.valkyrium_engine_part.name=Boiler Part
+tooltip.vs_control.valkyrium_engine_part=Arr, this machine turns fire into wind fer yer mainsail.
+
+
+## Legacy engines
+tile.basic_engine.name=Landlubber's Oar
+tile.advanced_engine.name=Bilge Rat's Oar
+tile.elite_engine.name=Matey's Oar
+tile.ultimate_engine.name=Quartermaster's Oar
+tile.redstone_engine.name=Captain's Oar
+
+tooltip.vs_control.legacy_engine=Let yer rowboat set sail with but a Redstone signal.
+
+
+## Misc.
+tile.compacted_valkyrium.name=Squished Upballast
+tooltip.vs_control.compacted_valkyrium=Floatin' tug: %.0f knots.
+
+tile.gyroscope_stabilizer.name=Listing Weights
+tooltip.vs_control.gyroscope_stabilizer=Arr, this weight prevents yer ship from listin'.
+
+tile.gyroscope_dampener.name=Landlubber's Comforter
+tooltip.vs_control.gyroscope_dampener=For the lily-livered who haven't earned their sea legs, it'll keep yer vessel from rockin'.
+
+tooltip.vs_control.wrench.switched.construct=Shipwright's Tool in Work mode
+tooltip.vs_control.wrench.switched.deconstruct=Shipwright's Tool in Sinkin' mode
+
+
+# Gui
+gui.physics_infuser=Davy Jones' Hornswaggler
+gui.assemble_ship=Set Sail
+gui.disassemble_ship=Dock at the Port
+gui.enable_physics=Weigh Anchor
+gui.disable_physics=Drop Anchor
+gui.align_ship=Becalm Ship
+gui.stop_align_ship=Stop Becalmin'
+
+
+## Not Yet Implemented
+tile.lift_valve.name=Lift Valve
+tooltip.vs_control.lift_valve=Cursed!
+
+# Config (Remember to update VSControlConfig after any changes are made here)
+vs_control.general.wrenchmodeless=Disallow Shipwright's Tool Modes
+vs_control.general.wrenchmodeless.tooltip=Allow yer shipwright to flip his tool as he pleases.
+
+vs_control.general.networkrelaylimit=Size of yer Tackles
+vs_control.general.networkrelaylimit.tooltip=How much rope can ye reeve a tackle with, with yer standards bein' 8.
+
+vs_control.general.relaywirelength=Length of Rope
+vs_control.general.relaywirelength.tooltip=How long yer riggin can be. Standards be 8 lengths.
+
+vs_control.general.compactedvalkyriumlift=Squished Upballast Floatin' Tug
+vs_control.general.compactedvalkyriumlift.tooltip=How fast yer upballast will tug at yer hull. Standards be 200000 knots.
+
+vs_control.general.engine_thrust=Oar Thrust Settings
+vs_control.general.engine_thrust.tooltip=Set how hard yer oars can push. Replace yer old oars with new ones at port.
+
+vs_control.general.engine_thrust.basicenginethrust=Landlubber's Oar Thrust
+vs_control.general.engine_thrust.basicenginethrust.tooltip=
+
+vs_control.general.engine_thrust.advancedenginethrust=Bilge Rat's Oar Thrust
+vs_control.general.engine_thrust.advancedenginethrust.tooltip=
+
+vs_control.general.engine_thrust.eliteenginethrust=Matey's Oar Thrust
+vs_control.general.engine_thrust.eliteenginethrust.tooltip=
+
+vs_control.general.engine_thrust.ultimateenginethrust=Quartermaster's Oar Thrust
+vs_control.general.engine_thrust.ultimateenginethrust.tooltip=
+
+vs_control.general.engine_thrust.redstoneenginethrust=Captain's Oar Thrust
+vs_control.general.engine_thrust.redstoneenginethrust.tooltip=
+
+### Valkyrien Skies World
+
+# Items
+item.valkyrium_crystal.name=Piece o' Upballast
+tooltip.vs_world.valkyrium_crystal=Be warned, it'll put some wind in yer britches!
+
+
+# Blocks
+tile.valkyrium_ore.name=Orrre o' Upballast
+tooltip.vs_world.valkyrium_ore_1=Keep yer ships afloat with the upballast in this rock.
+tooltip.vs_world.valkyrium_ore_2=Be warned, it'll put some wind in yer britches!
+
+
+# Potions
+effect.valkyrium-levitation=Upballast's Tug
+effect.valkyrium-levitation-jump=Upballast's Wind
+
+potion.effect.valkyrium-levitation=Foamy Rum
+potion.effect.valkyrium-levitation-jump=Foamy Grog
+
+splash_potion.effect.valkyrium-levitation=Grenade o' Foamy Rum
+splash_potion.effect.valkyrium-levitation-jump=Grenade o' Foamy Grog
+
+tipped_arrow.effect.valkyrium-levitation=Bolt o' Foamy Rum
+tipped_arrow.effect.valkyrium-levitation-jump=Bolt o' Foamy Grog
+
+lingering_potion.effect.valkyrium-levitation=Bottled fog o' Foamy Rum
+lingering_potion.effect.valkyrium-levitation-jump=Bottled fog o' Foamy Grog
+
+
+# Config (Remember to update VSWorldConfig after any changes are made here)
+vs_world.general.valkyriumitemsliftplayers=Enable Upballast Wind in yer Britches
+vs_world.general.valkyriumitemsliftplayers.tooltip=When it be, Upballast will put the winds in yer britches. When belayed, it won't.
+
+vs_world.general.valkyriumcrystalforce=Upballast Wind Speed
+vs_world.general.valkyriumcrystalforce.tooltip=Arr, the standards be 1 knot. 0 knots to becalm it.
+
+vs_world.general.valkyriumoreforce=Orrre o' Upballast Wind Speed.
+vs_world.general.valkyriumoreforce.tooltip=Arr, the standards be 4 knots. 0 knots to becalm it.
+
+vs_world.general.valkyriumoregenenabled=Does there be Upballast in these seas?
+vs_world.general.valkyriumoregenenabled.tooltip=Arr, the standards allow it. Let it be false to plunder it all.

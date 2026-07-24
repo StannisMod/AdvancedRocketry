@@ -51,6 +51,7 @@ repositories {
             includeGroup 'maven.modrinth'
         }
     }
+    mavenCentral() // Valkyrien Skies' de-shaded libs (cqengine, jackson, joml, javax.inject, picocli)
     mavenLocal() // Must be last for caching to work
 }
 
@@ -113,22 +114,28 @@ dependencies {
     compileOnly rfg.deobf('curse.maven:galacticraft-legacy-564236:4671122')
     compileOnly rfg.deobf('curse.maven:matter-overdrive-557428:6439254')
 
-    // Valkyrien Skies — optional/soft integration for the "true spaceships"
-    // feature. compileOnly: AR compiles against the VS Core API but never bundles
-    // or requires it; the feature lights up only when VS is also installed (gated
-    // in integration/vs/VSIntegration). Flip run_valkyrien_skies (top of this
-    // file) to add VS to the dev runtime for hands-on testing.
-    //   Core    (258371, file 3286262) 1.12.2-1.1.7 — the API AR compiles against
-    //   World   (404464, file 3061764) 1.0.0        — ship world manager (runtime)
-    //   Control (404463, file 3160203) 1.1.1        — helm/control blocks (runtime)
-    // World + Control are runtime-only: AR never compiles against them, but a live
-    // VS needs them to assemble and steer a ship.
-    compileOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
-    if (run_valkyrien_skies) {
-        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-258371:3286262')
-        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-world-404464:3061764')
-        runtimeOnly rfg.deobf('curse.maven:valkyrien-skies-control-404463:3160203')
+    // Valkyrien Skies physics engine — its source is vendored as a subtree under
+    // valkyrienskies/ and compiled into AR's main source set (VS is now a mandatory
+    // part of AR — the 3.0.0 "own the physics stack" call). The libraries below were
+    // previously shaded inside the VS jar; here they are ordinary compile+runtime
+    // dependencies. Mixin itself comes from MixinBooter (declared in build.gradle),
+    // so it is deliberately NOT re-declared here.
+    implementation('com.googlecode.cqengine:cqengine:3.4.0') {
+        exclude module: 'sqlite-jdbc'
+        exclude module: 'antlr4-runtime'
+        exclude module: 'javassist'
     }
+    // jackson (2.10.x, incl. its transitive core+annotations) and joml ship a Java-9
+    // module-info.class at the jar root. Forge 1.12.2's Java-8 mod scanner (old ASM)
+    // aborts reading it, so they are consumed from module-info-stripped local copies
+    // under libs/vs-deps/ (see libs/vs-deps/README). Stock VS sidestepped this by
+    // shading+relocating these libs; release shading is a separate step.
+    implementation fileTree(dir: "${rootDir}/libs/vs-deps", include: '*.jar')
+    implementation 'javax.inject:javax.inject:1'
+    implementation 'info.picocli:picocli:4.0.1'
+    // VS's small legacy API module (package valkyrienwarfare.api); pure interfaces
+    // with no MC references, so a plain committed jar (no deobf needed).
+    implementation files("${rootDir}/libs/valkyrienskies-api-1.0.0.9.jar")
     // Optional Mouse Tweaks API annotations, e.g. @MouseTweaksIgnore
     compileOnly(rfg.deobf("curse.maven:mouse-tweaks-unofficial-461660:5876158")) {
         transitive = false

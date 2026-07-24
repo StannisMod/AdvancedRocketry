@@ -78,6 +78,7 @@ import zmaster587.advancedRocketry.event.*;
 import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
+import org.valkyrienskies.mod.common.ValkyrienSkiesMod;
 import zmaster587.advancedRocketry.integration.theoneprobe.TopIntegration;
 import zmaster587.advancedRocketry.item.*;
 import zmaster587.advancedRocketry.item.components.ItemJetpack;
@@ -501,6 +502,10 @@ public class AdvancedRocketry {
         machineRecipes.registerMachine(TileCrystallizer.class);
         machineRecipes.registerMachine(TileCentrifuge.class);
         machineRecipes.registerMachine(TilePrecisionLaserEtcher.class);
+
+        // Valkyrien Skies is vendored into AR and hosted by AR's mod container: drive its lifecycle
+        // from AR's own handlers (VS is no longer a separate @Mod with its own @EventHandler methods).
+        ValkyrienSkiesMod.INSTANCE.preInit(event);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGH)
@@ -1085,6 +1090,8 @@ public class AdvancedRocketry {
         TileMultiBlock.addMapping('D', list);
 
         machineRecipes.createAutoGennedRecipes(modProducts);
+
+        ValkyrienSkiesMod.INSTANCE.init(event);
     }
 
 
@@ -1207,6 +1214,8 @@ public class AdvancedRocketry {
 
         TilePlugBase.energy_multiplier =  zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig(). blockEnergyHatchCapacityMultiplier;
         TileFluidHatch.capacityMultiplier =  zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().blockLiquidHatchCapacityMultiplier;
+
+        ValkyrienSkiesMod.INSTANCE.postInit(event);
     }
 
     @EventHandler
@@ -1335,6 +1344,8 @@ public class AdvancedRocketry {
             }
         }
         //End open and load ore files
+
+        ValkyrienSkiesMod.INSTANCE.serverStart(event);
     }
 
 

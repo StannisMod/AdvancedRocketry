@@ -1,0 +1,277 @@
+#PARSE_ESCAPES
+
+### Valkyrien Skies Main
+
+# Blocks
+tile.captains_chair.name=舰长座椅
+tooltip.valkyrienskies.captains_chair_1=用这个来驾驶船只！
+tooltip.valkyrienskies.captains_chair_2=如果你在船上，你就会坐在上面开船。否则你会“遥控”这艘船。
+
+tile.passenger_chair.name=乘客座椅
+tooltip.valkyrienskies.passenger_chair=用这个来稳稳地坐在船上。
+
+
+# Item Tab
+itemGroup.valkyrienskies=瓦尔基里天空
+
+
+## Commands
+commands.vs.list-ships.noships=这个世界没有飞船!
+commands.vs.list-ships.ships=这个世界有以下飞船:\n%s
+
+commands.vs.gc.success=成功收集垃圾!
+
+
+# Config (Remember to update VSConfig after any changes are made here)
+valkyrienskies.general.shiplowerlimit=飞船最低高度
+valkyrienskies.general.shiplowerlimit.tooltip=
+
+valkyrienskies.general.shipupperlimit=飞船最高高度
+valkyrienskies.general.shipupperlimit.tooltip=
+
+valkyrienskies.general.dogravity=启动物理
+valkyrienskies.general.dogravity.tooltip=
+
+valkyrienskies.general.dophysicsblocks=启动物理方块
+valkyrienskies.general.dophysicsblocks.tooltip=
+
+valkyrienskies.general.rendershipchunkclaimsindebug=渲染调试模式飞船轮廓
+valkyrienskies.general.rendershipchunkclaimsindebug.tooltip=启用时所有飞船区块会有绿色边框 (调试渲染模式 (f3 + b))。
+
+valkyrienskies.general.showannoyingdebugoutput=启用调试模式控制台
+valkyrienskies.general.showannoyingdebugoutput.tooltip=不推荐启用，除非遇到bug，或者开发者告诉你这样做。
+
+valkyrienskies.general.timesimulatedperphysicstick=物理运行速度
+valkyrienskies.general.timesimulatedperphysicstick.tooltip=每个物理tick占用的时间。 默认模式下每一秒有100个物理tick, 所以默认值是1/100。
+
+valkyrienskies.general.threadcount=物理线程数
+valkyrienskies.general.threadcount.tooltip=物理引擎使用的线程数, 建议为值为CPU线程数-2。 不能在游戏运行时修改。
+
+valkyrienskies.general.maxdetectedshipsize=飞船方块数量上限
+valkyrienskies.general.maxdetectedshipsize.tooltip=物理注入器一次性可以作用的最大方块数。方块多于这个数值的飞船无法被物理化。此数值不限制物理化以后的方块数量。
+
+valkyrienskies.general.gravityvecx=X轴重力矢量分量
+valkyrienskies.general.gravityvecx.tooltip=
+
+valkyrienskies.general.gravityvecy=Y轴重力矢量分量
+valkyrienskies.general.gravityvecy.tooltip=
+
+valkyrienskies.general.gravityvecz=Z轴重力矢量分量
+valkyrienskies.general.gravityvecz.tooltip=
+
+valkyrienskies.general.tickstosticktoship=玩家从属于飞船空间的时间
+valkyrienskies.general.tickstosticktoship.tooltip=如果玩家碰到飞船, 除非他们离开并碰到其他飞船 (或者陆地) 他们会在这么多tick的时间区间内和飞船同步移动。超出这个区间玩家将不再和飞船同步移动。
+
+valkyrienskies.general.ship_loading_settings=飞船加载设置
+valkyrienskies.general.ship_loading_settings.tooltip=设置飞船的加载距离和渲染距离。 这些设置必须满足以下条件:\n飞船渲染距离 < 飞船加载距离 < 飞船预加载距离 <= 飞船停止渲染距离 < 飞船停止加载距离
+
+valkyrienskies.general.ship_loading_settings.watchDistance=飞船渲染距离
+valkyrienskies.general.ship_loading_settings.watchDistance.tooltip=玩家和飞船距离的XZ平面投影小于此数值时可以看到飞船。
+
+valkyrienskies.general.ship_loading_settings.loadDistance=飞船加载距离
+valkyrienskies.general.ship_loading_settings.loadDistance.tooltip=玩家和飞船距离的XZ平面投影小于此数值时将加载飞船。
+
+valkyrienskies.general.ship_loading_settings.loadBackgroundDistance=飞船预加载距离
+valkyrienskies.general.ship_loading_settings.loadBackgroundDistance.tooltip=玩家和飞船距离的XZ平面投影小于此数值时将预加载飞船。
+
+valkyrienskies.general.ship_loading_settings.unwatchDistance=飞船停止渲染距离
+valkyrienskies.general.ship_loading_settings.unwatchDistance.tooltip=玩家和飞船距离的XZ平面投影大于这个值时飞船将停止渲染。
+
+valkyrienskies.general.ship_loading_settings.unloadDistance=飞船停止加载距离
+valkyrienskies.general.ship_loading_settings.unloadDistance.tooltip=玩家和飞船距离的XZ平面投影大于这个值时飞船将停止加载。
+
+valkyrienskies.general.shipspawndetectorblacklist=构建飞船黑名单
+valkyrienskies.general.shipspawndetectorblacklist.tooltip=这些方块构建飞船时将不被包含。
+
+valkyrienskies.general.blockmass=方块质量
+valkyrienskies.general.blockmass.tooltip=修改自动生成的方块质量，单位是千克。
+
+### Valkyrien Skies Control
+
+# Items
+item.physics_core.name=物理核心
+tooltip.vs_control.physics_core=物理注入器的核心。
+
+item.relay_wire.name=中继线缆
+tooltip.vs_control.relay_wire=用来把中继器连接到组件或其他中继器上。会中断已有链接
+message.vs_control.error_relay_wire_limit=其中一方连接数已达上限。网络中继器可以建立%d个连接，其余所有组件都只能建立1个连接。
+message.vs_control.error_relay_wire_length=线缆太短，无法建立连接！
+
+item.vanishing_wire.name=隐形线缆
+tooltip.vs_control.vanishing_wire=功能和普通线缆一样，但是手里不拿着它的话你是看不见线缆的。
+
+item.vs_wrench.name=VS扳手
+tooltip.vs_control.wrench_usage=需要用VS扳手来构建它。
+tooltip.vs_control.wrench_modes=Shift+右击来改变模式。
+tooltip.vs_control.wrench_switched.construct=已切换扳手至构建模式。
+tooltip.vs_control.wrench_switched.deconstruct=已切换扳手至拆解模式。
+tooltip.vs_control.wrench_toggle=右击多方块结构来拆解它。
+tooltip.vs_control.wrench.construct=可以用来构建多方块结构或调整齿轮箱朝向。
+tooltip.vs_control.wrench.deconstruct=可以用来安全拆解多方块结构。
+
+# Blocks
+## Ship blocks
+tile.physics_infuser.name=物理注入器
+tooltip.vs_control.physics_infuser=会将除了自然生成的绝大多数方块（如石头）外与此连接的任何方块组建成船只。
+
+tile.physics_infuser_creative.name=创造物理注入器
+tooltip.vs_control.physics_infuser_creative_1=会将与此连接的任何方块组建成船只，当心别影响到整个世界。
+tooltip.vs_control.physics_infuser_creative_2=警告：此注入器没有连接上限，会影响到与此连接的所有方块！请谨慎使用。
+
+tile.physics_infuser_dummy.name=附属物理注入器
+tooltip.vs_control.physics_infuser_dummy=物理注入器的另一半。
+
+tile.ship_helm.name=舵轮
+tooltip.vs_control.ship_helm=这个方块可以让你控制处在同一网络中的方向舵。
+
+tile.speed_telegraph.name=车钟
+tooltip.vs_control.speed_telegraph=这个方块可以让你控制齿轮箱的输出速度，借此来控制螺旋桨转速。
+
+tile.dummy_telegraph.name=附属车钟
+tooltip.vs_control.dummy_telegraph=没有功能的车钟。\n启动时会激活它下面的方块。
+
+tile.lift_lever.name=升降舵
+tooltip.vs_control.lift_lever=这个方块可以让你调整瓦尔基里压缩机的目标高度。
+
+tile.gearbox.name=齿轮箱
+tooltip.vs_control.gearbox_1=用来调整扭矩输出方向及功率大小。
+tooltip.vs_control.gearbox_2=连接到速度计来调整扭矩输出。
+
+tile.rotation_axle.name=传动轴
+tooltip.vs_control.rotation_axle=用来把瓦尔基里发动机连接到齿轮箱或螺旋桨上。
+
+
+## Network
+tile.network_display.name=网络显示器
+tooltip.vs_control.network_display=[未完成]可以列出当前网络中的所有连接的节点。
+
+tile.network_relay.name=网络中继器
+tooltip.vs_control.network_relay=通过使用线缆来把最多%d个组件或其他中继器连接起来。
+
+
+## Multi-Block parts
+tile.valkyrium_compressor_part.name=瓦尔基里压缩机构件
+tooltip.vs_control.valkyrium_compressor_part_1=瓦尔基里压缩机（2x2x2的多方块结构）的构件。
+tooltip.vs_control.valkyrium_compressor_part_2=这个多方块结构可以提供大量垂直升力。
+
+tile.rudder_part.name=方向舵构件
+tooltip.vs_control.rudder_part=可以通过船舵来改变螺旋桨的推进方向。
+
+tile.giant_propeller_part.name=巨型螺旋桨构件
+tooltip.vs_control.giant_propeller_part=能将扭矩转换为推力的3x3至7x7大小的多方块结构。
+
+tile.valkyrium_engine_part.name=瓦尔基里引擎构件
+tooltip.vs_control.valkyrium_engine_part=为螺旋桨提供扭矩的2x3x2大小的多方块结构。
+
+
+## Legacy engines
+tile.basic_engine.name=基础引擎
+tile.advanced_engine.name=高级引擎
+tile.elite_engine.name=精英引擎
+tile.ultimate_engine.name=终极引擎
+tile.redstone_engine.name=红石引擎
+
+tooltip.vs_control.legacy_engine=老式引擎，仅需红石信号即可工作。
+
+
+## Misc.
+tile.compacted_valkyrium.name=压缩瓦尔基里块
+tooltip.vs_control.compacted_valkyrium=升力： %.0f 牛。
+
+tile.gyroscope_stabilizer.name=稳定陀螺仪
+tooltip.vs_control.gyroscope_stabilizer=这个方块会被动地提供一个使船体保持水平的扭矩。
+
+tile.gyroscope_dampener.name=减震陀螺仪
+tooltip.vs_control.gyroscope_dampener=这个方块会被动地提供一个防止船体摇摆的扭矩。
+
+tooltip.vs_control.wrench.switched.construct=扳手 构建模式
+tooltip.vs_control.wrench.switched.deconstruct=扳手 拆解模式
+
+
+# Gui
+gui.physics_infuser=物理注入器
+gui.assemble_ship=构建飞船
+gui.disassemble_ship=解构飞船
+gui.enable_physics=启动物理
+gui.disable_physics=停止物理
+gui.align_ship=对正飞船
+gui.stop_align_ship=停止对正
+
+
+## Not Yet Implemented
+tile.lift_valve.name=支撑阀
+tooltip.vs_control.lift_valve=尚未实装
+
+# Config (Remember to update VSControlConfig after any changes are made here)
+vs_control.general.wrenchmodeless=取消扳手解构模式
+vs_control.general.wrenchmodeless.tooltip=启用它会去除扳手的构建/解构模式，改为调节多方块结构的构建/解构状态。
+
+vs_control.general.networkrelaylimit=网络中继器连接上限
+vs_control.general.networkrelaylimit.tooltip=网络中继器的最大连接数, 默认是8。
+
+vs_control.general.relaywirelength=中继线缆长度上限
+vs_control.general.relaywirelength.tooltip=中继线缆的最大长度，默认是8米。
+
+vs_control.general.compactedvalkyriumlift=压缩瓦尔基里块升力
+vs_control.general.compactedvalkyriumlift.tooltip=每个压缩瓦尔基里块提供的升力，默认值是200000牛。
+
+vs_control.general.engine_thrust=引擎推力设置
+vs_control.general.engine_thrust.tooltip=设置引擎方块的推力。修改之后引擎必须重新放置。
+
+vs_control.general.engine_thrust.basicenginethrust=基础引擎推力
+vs_control.general.engine_thrust.basicenginethrust.tooltip=
+
+vs_control.general.engine_thrust.advancedenginethrust=高级引擎推力
+vs_control.general.engine_thrust.advancedenginethrust.tooltip=
+
+vs_control.general.engine_thrust.eliteenginethrust=精英引擎推力
+vs_control.general.engine_thrust.eliteenginethrust.tooltip=
+
+vs_control.general.engine_thrust.ultimateenginethrust=终极引擎推力
+vs_control.general.engine_thrust.ultimateenginethrust.tooltip=
+
+vs_control.general.engine_thrust.redstoneenginethrust=红石引擎推力
+vs_control.general.engine_thrust.redstoneenginethrust.tooltip=
+
+### Valkyrien Skies World
+
+# Items
+item.valkyrium_crystal.name=瓦尔基里水晶
+tooltip.vs_world.valkyrium_crystal=带太多可能会要了你的命。
+
+
+# Blocks
+tile.valkyrium_ore.name=瓦尔基里矿石
+tooltip.vs_world.valkyrium_ore_1=一种神秘的漂浮着的矿石。
+tooltip.vs_world.valkyrium_ore_2=带太多可能会要了你的命。
+
+
+# Potions
+effect.valkyrium-levitation=升力
+effect.valkyrium-levitation-jump=弹跳
+
+potion.effect.valkyrium-levitation=升力药水
+potion.effect.valkyrium-levitation-jump=弹跳药水
+
+splash_potion.effect.valkyrium-levitation=升力溅射药水
+splash_potion.effect.valkyrium-levitation-jump=弹跳溅射药水
+
+tipped_arrow.effect.valkyrium-levitation=升力之箭
+tipped_arrow.effect.valkyrium-levitation-jump=弹跳之箭
+
+lingering_potion.effect.valkyrium-levitation=升力滞留药水
+lingering_potion.effect.valkyrium-levitation-jump=弹跳滞留药水
+
+
+# Config (Remember to update VSWorldConfig after any changes are made here)
+vs_world.general.valkyriumitemsliftplayers=启用瓦尔基里物品升力
+vs_world.general.valkyriumitemsliftplayers.tooltip=启用后瓦尔基里物品可以提供升力。
+
+vs_world.general.valkyriumcrystalforce=瓦尔基里水晶升力
+vs_world.general.valkyriumcrystalforce.tooltip=默认是1, 设为0将取消反重力。
+
+vs_world.general.valkyriumoreforce=瓦尔基里矿石升力
+vs_world.general.valkyriumoreforce.tooltip=默认是4, 设为0将取消反重力。
+
+vs_world.general.valkyriumoregenenabled=启用瓦尔基里水晶世界生成
+vs_world.general.valkyriumoregenenabled.tooltip=默认启用。改为false停用

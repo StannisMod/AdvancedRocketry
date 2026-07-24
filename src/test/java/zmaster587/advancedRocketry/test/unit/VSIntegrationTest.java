@@ -4,39 +4,39 @@ import org.junit.Test;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
- * Soft-dependency contract for the Valkyrien Skies integration.
+ * Presence contract for the Valkyrien Skies integration.
  *
- * <p>The player/packager-facing promise: <b>AR loads and runs without Valkyrien
- * Skies installed.</b> VS is a {@code compileOnly} dependency, so it is NOT on
- * this test JVM's runtime classpath — neither is {@code VSBridge}'s
- * {@code org.valkyrienskies.*} import. So the gate must report absent and
- * {@code init()} must be a no-op that never loads a VS-importing class.</p>
+ * <p>VS is <b>vendored into Advanced Rocketry</b> — its source is compiled into AR's own jar and its
+ * libraries are ordinary runtime dependencies, so VS is a mandatory part of AR and is always on the
+ * runtime classpath (the 3.0.0 "own the physics stack" decision). The gate must therefore report
+ * <b>present</b>, and {@link VSIntegration#init()} must resolve the VS API without throwing.</p>
  *
- * <p>The {@code initIsASafeNoOpWithoutVs} test is a real guard, not decoration:
- * if someone breaks the boundary rule and touches {@code VSBridge} outside the
- * {@code isAvailable()} gate, this fails with {@code NoClassDefFoundError}
- * because VS is not on the runtime classpath here.</p>
+ * <p>Presence is detected by a classpath probe, not a modid — VS is no longer registered as its own
+ * mod (it is hosted by AR's single mod container), so {@code Loader.isModLoaded("valkyrienskies")}
+ * would be false.</p>
  */
 public class VSIntegrationTest {
 
     @Test
-    public void gateReportsAbsentWhenVsNotInstalled() {
-        assertFalse("VS must report absent in the test JVM (it is compileOnly, not a runtime dep)",
+    public void gateReportsPresentBecauseVsIsVendored() {
+        assertTrue("VS is vendored into AR (compiled in) — the gate must report it present",
                 VSIntegration.isAvailable());
     }
 
     @Test
-    public void initIsASafeNoOpWithoutVs() {
-        // Must not throw and must not load VSBridge (which imports
-        // org.valkyrienskies.*). A NoClassDefFoundError here means the gate leaked.
+    public void initResolvesTheVsApiWhenPresent() {
+        // With VS present this runs the real integration path (logs + touches a VS API type).
+        // A NoClassDefFoundError here would mean the vendored VS classpath did not resolve.
         VSIntegration.init();
     }
 
     @Test
-    public void modidIsTheVsCoreId() {
+    public void modidIsTheVsRegistryDomain() {
+        // Still "valkyrienskies": the registry DOMAIN for VS blocks/items survives the merge even
+        // though VS is no longer its own mod (a registry domain need not equal the owning modid).
         assertEquals("valkyrienskies", VSIntegration.MODID);
     }
 }

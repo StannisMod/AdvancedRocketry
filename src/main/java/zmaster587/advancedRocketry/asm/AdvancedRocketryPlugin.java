@@ -4,7 +4,7 @@ import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
 import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin.MCVersion;
 import zone.rong.mixinbooter.IEarlyMixinLoader;
 
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -30,7 +30,11 @@ public class AdvancedRocketryPlugin implements IFMLLoadingPlugin, IEarlyMixinLoa
 
     @Override
     public List<String> getMixinConfigs() {
-        return Collections.singletonList("mixins.advancedrocketry.json");
+        // mixins.valkyrienskies.json belongs to the vendored Valkyrien Skies physics
+        // engine (compiled into this mod); it must be queued here, at the early
+        // coremod point, so VS's interface-injection mixins (e.g. World implements
+        // IHasShipManager) are applied before any world class is loaded.
+        return Arrays.asList("mixins.advancedrocketry.json", "mixins.valkyrienskies.json");
     }
 
     @Override

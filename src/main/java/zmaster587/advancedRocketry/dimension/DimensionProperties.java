@@ -183,7 +183,11 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private String terrainTemplate = "";  // template folder name for TEMPLATE
     //public int target_sea_level;
 
-    @SidedProxy(serverSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.serverlists", clientSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.clientlists")
+    // modId must be declared explicitly: this @SidedProxy lives outside the @Mod class, and the jar
+    // now ships more than one @Mod. FML's implicit owner resolution matches the target class name
+    // against the @Mod class names, which fails for a field in a non-@Mod class when >1 mod is present,
+    // leaving this proxy uninjected (null). Naming the owning mod bypasses that resolution.
+    @SidedProxy(modId = Constants.modId, serverSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.serverlists", clientSide = "zmaster587.advancedRocketry.integrated_server_and_client_variable_sharing_fix.clientlists")
     public static Afuckinginterface proxylists;
 
 
