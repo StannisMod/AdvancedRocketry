@@ -1,0 +1,33 @@
+NOTICE — Modifications to Valkyrien Skies
+=========================================
+
+The contents of this directory (valkyrienskies/) are a MODIFIED version of
+Valkyrien Skies, redistributed under the Apache License, Version 2.0. The
+unmodified Apache-2.0 license text is in LICENSE (this directory).
+
+Original work:
+  Valkyrien Skies — https://github.com/ValkyrienSkies/Valkyrien-Skies
+  Imported from tag 1.12.2-1.1.7.
+
+This copy has been changed by the Advanced Rocketry project. Per section 4(b)
+of the Apache License, Version 2.0, this notice states that the files in this
+directory have been changed. The modifications include (non-exhaustive):
+
+  - All Java sources delombok'd (Project Lombok removed); the @NonNull and
+    @SneakyThrows residue that delombok leaves was rewritten by hand.
+  - Remapped from MCP stable_39 to MCP snapshot_20171003 (Advanced Rocketry's
+    mappings): member renames and access-transformer widenings.
+  - Bundled (shaded) dependencies de-shaded to ordinary build dependencies.
+  - Folded into Advanced Rocketry's single Forge mod container: the Valkyrien
+    Skies @Mod / @Instance / @SidedProxy annotations were removed and its
+    lifecycle is now driven by Advanced Rocketry; its @EventBusSubscriber
+    handlers were re-owned by Advanced Rocketry's mod id.
+  - The sponge_compatibility mixins and the JAR-signature (fingerprint) handler
+    were removed; the bundled mcmod.info was removed (Valkyrien Skies is not a
+    separate mod in this distribution).
+  - Assorted mapping and mixin fixes required by the changes above.
+
+Advanced Rocketry as a whole is distributed under the GNU General Public
+License, version 3, with a linking exception (see the repository-root LICENSE).
+These Apache-2.0 files retain their own license as stated above; Apache-2.0 is
+compatible with version 3 of the GNU General Public License.
