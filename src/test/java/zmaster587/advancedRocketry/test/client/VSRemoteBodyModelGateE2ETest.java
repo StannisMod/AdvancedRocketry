@@ -43,6 +43,19 @@ import static org.junit.Assert.assertTrue;
  * ship-anchored legs sample reliably.
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
+ *
+ * <p><b>Known limitation, REVISIT WHEN VALKYRIEN SKIES SOURCE IS AVAILABLE.</b> Under the parallel
+ * client gate (many client JVMs contending for one GPU) leg A's subject was intermittently never
+ * DRAWN: measured, a red window rendered 543 frames yet ran {@code RenderLivingBase.applyRotations}
+ * zero times for any living body, while the same client drew leg B's carried cow fine. So a world
+ * entity standing inside a steeply-rolled ship's world AABB (leg A's precondition) is sometimes absent
+ * from the vanilla living-render dispatch. The camera→subject offset is fixed, so it is not a frustum
+ * miss; the suspected cause is Valkyrien Skies' per-frame handling of world entities that fall inside a
+ * ship's world box - but VS is jar-only here, so the exact render path was not opened. Leg A works
+ * around it by re-staging the subject until the client provably draws it (see {@link #MAX_STAGINGS});
+ * that keeps the test honest without root-causing a symptom that needs GPU contention to appear and so
+ * does not reach a single-client player. When VS is vendored as source, root-cause the render path and
+ * decide whether the re-stage workaround can be retired.</p>
  */
 public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
