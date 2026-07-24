@@ -53,3 +53,10 @@ timeout --signal=KILL 360 ./gradlew testServer --no-daemon > logs/testServer.log
 Keep changes focused, and match the surrounding code style rather than introducing a new one. The mod targets
 Java 8, so no `var`, records, or switch expressions. Registry names, NBT keys and packet formats are contracts
 — changing one inside a release line breaks saves and servers.
+
+## Licence
+
+Advanced Rocketry is distributed under the **GNU General Public License, version 3, with a linking exception**
+(see [`LICENSE`](./LICENSE) and [`COPYING`](./COPYING)). By submitting a contribution — a pull request, a patch,
+or any other change — you agree to license it under those same terms, so the project can continue to be
+distributed as a whole under GPL-3.0 with the linking exception.
