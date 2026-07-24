@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.client;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import org.junit.Assume;
 import org.junit.Test;
@@ -84,7 +85,12 @@ public class VSShipUnmannedCruiseE2ETest extends AbstractClientE2ETest {
         double yRamped = y0;
         bot().holdKey(Keyboard.KEY_R);
         try {
-            for (int i = 0; i < 30; i++) {
+            // Scale the ramp hold by the fork factor (load-tail): the setpoint ramp is driven by the
+            // CLIENT re-sending the held key each tick, so under frame-starvation fewer ramp steps land
+            // in a fixed 60 ticks. Scale the DURATION - no early-exit, the ramp needs the full hold and
+            // a position early-exit would release before the setpoint is ramped (audit: not poll-able).
+            int rampIters = (int) Math.ceil(30 * TestTimeouts.factor());
+            for (int i = 0; i < rampIters; i++) {
                 bot().waitTicks(2);
             }
             yRamped = shipY();
