@@ -79,6 +79,7 @@ import zmaster587.advancedRocketry.integration.CompatibilityMgr;
 import zmaster587.advancedRocketry.integration.GalacticCraftHandler;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import org.valkyrienskies.mod.common.ValkyrienSkiesMod;
+import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import zmaster587.advancedRocketry.integration.theoneprobe.TopIntegration;
 import zmaster587.advancedRocketry.item.*;
 import zmaster587.advancedRocketry.item.components.ItemJetpack;
@@ -505,6 +506,10 @@ public class AdvancedRocketry {
         // Valkyrien Skies is vendored into AR and hosted by AR's mod container: drive its lifecycle
         // from AR's own handlers (VS is no longer a separate @Mod with its own @EventHandler methods).
         ValkyrienSkiesMod.INSTANCE.preInit(event);
+
+        // Advanced Force Field System (shield subsystem) is vendored into AR and folded into AR's
+        // mod container: drive its lifecycle from AR's own handlers, as with VS above.
+        AdvancedForceFieldSystem.INSTANCE.preInit(event);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGH)
@@ -1002,7 +1007,10 @@ public class AdvancedRocketry {
 
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new GuiHandler());
 
-        NetworkRegistry.INSTANCE.registerGuiHandler(this, new zmaster587.advancedRocketry.inventory.GuiHandler());
+        // The vendored AFFS shield system is folded into AR's container, so its GUIs are routed
+        // through AR's handler (offset ids >= AffsGuiRouter.AFFS_GUI_BASE go to the AFFS handler).
+        NetworkRegistry.INSTANCE.registerGuiHandler(this, new zmaster587.advancedRocketry.integration.affs.AffsGuiRouter(
+                new com.github.stannismod.affs.gui.GuiHandler(), new zmaster587.advancedRocketry.inventory.GuiHandler()));
         planetWorldType = new WorldTypePlanetGen("PlanetCold");
         spaceWorldType = new WorldTypeSpace("Space");
 
@@ -1087,6 +1095,7 @@ public class AdvancedRocketry {
         machineRecipes.createAutoGennedRecipes(modProducts);
 
         ValkyrienSkiesMod.INSTANCE.init(event);
+        AdvancedForceFieldSystem.INSTANCE.init(event);
     }
 
 
@@ -1211,6 +1220,7 @@ public class AdvancedRocketry {
         TileFluidHatch.capacityMultiplier =  zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().blockLiquidHatchCapacityMultiplier;
 
         ValkyrienSkiesMod.INSTANCE.postInit(event);
+        AdvancedForceFieldSystem.INSTANCE.postInit(event);
     }
 
     @EventHandler

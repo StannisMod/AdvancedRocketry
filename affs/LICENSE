@@ -1,0 +1,47 @@
+Advanced Force Field System
+Copyright (C) 2025-2026 StannisMod
+
+This is the "Advanced Force Field System" (AFFS), the maintainer's own project,
+vendored into Advanced Rocketry as its shield subsystem. The files under this
+directory retain their own copyright and licence, stated here; as part of the
+Advanced Rocketry distribution they are additionally covered by the project as a
+whole (see the top-level LICENSE and COPYING).
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 3, as published by the Free
+Software Foundation, WITH the Linking Exception stated below. The complete text
+of the GNU General Public License, version 3, is in the file COPYING.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+SPDX-License-Identifier: GPL-3.0-only WITH Linking-Exception
+
+
+LINKING EXCEPTION
+=================
+
+As a special exception, the copyright holders of Advanced Force Field System
+give you permission to link or combine independent modules with this program to
+produce a combined work, and to convey the resulting combined work under terms
+of your choice, provided that:
+
+  (a) the independent module is not itself derived from or based on Advanced
+      Force Field System other than by linking against or calling its code as a
+      library / Forge mod dependency; and
+
+  (b) you comply with the GNU General Public License, version 3, for Advanced
+      Force Field System itself and for any modifications you make to it.
+
+Depending on, linking against, or calling this program does not, by itself, make
+your work a work based on Advanced Force Field System for the purposes of this
+License.
+
+If you modify Advanced Force Field System itself, this exception does not extend
+to those modifications, which remain governed by the GNU General Public License,
+version 3.
+
+You may, at your option, remove this exception from a given copy of the program;
+doing so makes the plain GNU General Public License, version 3, apply to that
+copy.

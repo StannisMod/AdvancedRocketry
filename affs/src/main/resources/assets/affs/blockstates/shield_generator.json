@@ -1,0 +1,16 @@
+{
+  "variants": {
+    "tier=0": {
+      "model": "affs:shield_generator_tier0"
+    },
+    "tier=1": {
+      "model": "affs:shield_generator_tier1"
+    },
+    "tier=2": {
+      "model": "affs:shield_generator_tier2"
+    },
+    "tier=3": {
+      "model": "affs:shield_generator_tier3"
+    }
+  }
+}

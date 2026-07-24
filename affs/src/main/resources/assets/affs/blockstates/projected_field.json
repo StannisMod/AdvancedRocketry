@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "normal": {
+      "model": "affs:projected_field"
+    },
+    "inventory": {
+      "model": "affs:projected_field"
+    }
+  }
+}

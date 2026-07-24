@@ -1,0 +1,289 @@
+{
+  "variants": {
+    "inventory": {
+      "model": "affs:shield_cable_tier0"
+    }
+  },
+  "multipart": [
+    {
+      "when": {
+        "tier": 0
+      },
+      "apply": {
+        "model": "affs:shield_cable_core_tier0"
+      }
+    },
+    {
+      "when": {
+        "tier": 1
+      },
+      "apply": {
+        "model": "affs:shield_cable_core_tier1"
+      }
+    },
+    {
+      "when": {
+        "tier": 2
+      },
+      "apply": {
+        "model": "affs:shield_cable_core_tier2"
+      }
+    },
+    {
+      "when": {
+        "tier": 3
+      },
+      "apply": {
+        "model": "affs:shield_cable_core_tier3"
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "north": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier0"
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "east": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier0",
+        "y": 90,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "south": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier0",
+        "y": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "west": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier0",
+        "y": 270,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "up": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier0"
+      }
+    },
+    {
+      "when": {
+        "tier": 0,
+        "down": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier0",
+        "x": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "north": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier1"
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "east": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier1",
+        "y": 90,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "south": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier1",
+        "y": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "west": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier1",
+        "y": 270,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "up": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier1"
+      }
+    },
+    {
+      "when": {
+        "tier": 1,
+        "down": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier1",
+        "x": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "north": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier2"
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "east": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier2",
+        "y": 90,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "south": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier2",
+        "y": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "west": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier2",
+        "y": 270,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "up": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier2"
+      }
+    },
+    {
+      "when": {
+        "tier": 2,
+        "down": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier2",
+        "x": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "north": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier3"
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "east": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier3",
+        "y": 90,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "south": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier3",
+        "y": 180,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "west": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_side_plate_tier3",
+        "y": 270,
+        "uvlock": true
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "up": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier3"
+      }
+    },
+    {
+      "when": {
+        "tier": 3,
+        "down": true
+      },
+      "apply": {
+        "model": "affs:shield_cable_vertical_plate_tier3",
+        "x": 180,
+        "uvlock": true
+      }
+    }
+  ]
+}

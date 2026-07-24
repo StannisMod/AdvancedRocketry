@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "normal": { "model": "affs:shield_console" },
+    "inventory": { "model": "affs:shield_console" }
+  }
+}

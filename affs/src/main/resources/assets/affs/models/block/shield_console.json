@@ -1,0 +1,7 @@
+{
+  "parent": "block/cube_all",
+  "ambientocclusion": false,
+  "textures": {
+    "all": "affs:blocks/shield_console"
+  }
+}

@@ -171,6 +171,14 @@ if (propertyBool('enable_junit_testing')) {
 sourceSets.main.java.srcDir 'valkyrienskies/src/main/java'
 sourceSets.main.resources.srcDir 'valkyrienskies/src/main/resources'
 
+// Advanced Force Field System — vendored under affs/ and compiled into the main
+// source set as AR's shield subsystem. Its classes (com.github.stannismod.affs.*)
+// ship inside AR; it is no longer a separate @Mod (folded into AR's mod container),
+// its access-transformer entries are merged into advancedrocketry_at.cfg, and it
+// keeps its own registry domain (affs:). See affs/LICENSE.
+sourceSets.main.java.srcDir 'affs/src/main/java'
+sourceSets.main.resources.srcDir 'affs/src/main/resources'
+
 apply from: 'gradle/scripts/dependencies.gradle'
 
 // Adds Access Transformer files to tasks

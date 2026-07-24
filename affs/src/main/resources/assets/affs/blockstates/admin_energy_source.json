@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "normal": {
+      "model": "affs:admin_energy_source"
+    },
+    "inventory": {
+      "model": "affs:admin_energy_source"
+    }
+  }
+}
