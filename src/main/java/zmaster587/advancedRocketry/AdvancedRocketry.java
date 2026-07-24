@@ -449,7 +449,6 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileStationAltitudeController.class, "ARStationAltitudeController");
         GameRegistry.registerTileEntity(TileRailgun.class, "ARRailgun");
         GameRegistry.registerTileEntity(TileHolographicPlanetSelector.class, "ARplanetHoloSelector");
-        GameRegistry.registerTileEntity(TileForceFieldProjector.class, "ARForceFieldProjector");
         GameRegistry.registerTileEntity(TileSeal.class, "ARBlockSeal");
         GameRegistry.registerTileEntity(TileSpaceElevator.class, "ARSpaceElevator");
         GameRegistry.registerTileEntity(TileBeacon.class, "ARBeacon");
@@ -663,8 +662,6 @@ public class AdvancedRocketry {
         //Singleblock machines
         AdvancedRocketryBlocks.blockPlatePress = new BlockSmallPlatePress().setUnlocalizedName("platepress").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockPlatePressHead = new BlockSmallPlatePressHead().setUnlocalizedName("platepress_head").setHardness(2f);
-        AdvancedRocketryBlocks.blockForceFieldProjector = new BlockForceFieldProjector(Material.IRON).setUnlocalizedName("forceFieldProjector").setCreativeTab(tabAdvRocketry).setHardness(3f);
-        AdvancedRocketryBlocks.blockForceField = new BlockForceField(Material.BARRIER).setBlockUnbreakable().setResistance(6000000.0F).setUnlocalizedName("forceField");
         AdvancedRocketryBlocks.blockVacuumLaser = new BlockVacuumLaser(Material.IRON).setUnlocalizedName("vacuumLaser").setCreativeTab(tabAdvRocketry).setHardness(4f);
         AdvancedRocketryBlocks.blockPump = new BlockPump(TilePump.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("pump").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSuitWorkStation = new BlockSuitWorkstation(TileSuitWorkStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("suitWorkStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
@@ -839,8 +836,6 @@ public class AdvancedRocketry {
         //Singleblock machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlatePress.setRegistryName("platepress"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlatePressHead.setRegistryName("platepress_head"), null, false);
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockForceFieldProjector.setRegistryName("forceFieldProjector"));
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockForceField.setRegistryName("forceField"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockVacuumLaser.setRegistryName("vacuumLaser"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPump.setRegistryName("blockPump"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSuitWorkStation.setRegistryName("suitWorkStation"));

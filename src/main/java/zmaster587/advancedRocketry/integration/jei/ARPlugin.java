@@ -221,7 +221,6 @@ public class ARPlugin implements IModPlugin {
 
         IIngredientBlacklist blacklist = registry.getJeiHelpers().getIngredientBlacklist();
         //Hide problematic blocks
-        blacklist.addIngredientToBlacklist(new ItemStack(AdvancedRocketryBlocks.blockForceField));
         blacklist.addIngredientToBlacklist(new ItemStack(AdvancedRocketryBlocks.blockLightSource));
         blacklist.addIngredientToBlacklist(new ItemStack(AdvancedRocketryBlocks.blockAirLock));
         //Hide problematic items

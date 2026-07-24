@@ -122,8 +122,6 @@ tile.advRocket.name=Advanced Monopropellant Rocket Engine
 tile.advbipropellantRocket.name=Advanced Bipropellant Rocket Engine
 tile.planetHoloSelector.name=Holographic Planet Selector
 tile.lens.name=Lens
-tile.forceField.name=Force Field
-tile.forceFieldProjector.name=Force Field Projector
 tile.vacuumLaser.name=Vacuum-Chamber High Power Laser Emitter
 tile.gravityMachine.name=Area Gravity Controller
 tile.pipeSeal.name=Pipe Seal
@@ -1530,8 +1528,6 @@ tooltip.advancedrocketry.spacelaser.shift.1=§bUse Holo-Projector!
 tooltip.advancedrocketry.spacelaser.alt.1=§fRequires Redstone to run
 
 # Force Field Projector
-tooltip.advancedrocketry.forcefieldprojector=Projects up to 32 blocks away!
-tooltip.advancedrocketry.forcefieldprojector.shift.1=§fActivate with Redstone
 
 # Vacuum Laser
 tooltip.advancedrocketry.vacuumlaser=§cPart of Multiblock

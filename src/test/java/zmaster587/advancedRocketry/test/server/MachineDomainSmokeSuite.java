@@ -35,18 +35,6 @@ import static org.junit.Assert.assertTrue;
  *   <li>{@code BlackHoleGeneratorSmokeTest}    &rarr; {@link #controllerWithoutStructureTicksWithoutCrash()}</li>
  * </ul>
  *
- * <h2>NOT consolidated: {@code ForceFieldProjectionSmokeTest}</h2>
- *
- * <p>The force-field projector relies on the server's natural tick loop to
- * advance {@code world.getTotalWorldTime()} past the {@code % 5 == 0} gate
- * that drives extension range. In the shared harness, by the time
- * {@code poweredProjectorProjectsAndUnpoweredCollapses} runs, the projector's
- * chunk may have been unloaded by chunk eviction from the prior 7 tests,
- * stalling extension at range=0 despite the redstone being detected. Keeps
- * the test isolated in its original {@code ForceFieldProjectionSmokeTest}
- * class extending {@link com.github.stannismod.forge.testing.junit.AbstractHeadlessServerTest}
- * — one extra JVM-boot, deterministic behaviour.</p>
- *
  * <h2>State-leak audit</h2>
  *
  * <p>The shared-harness contract (see {@link AbstractSharedServerTest})
@@ -60,12 +48,6 @@ import static org.junit.Assert.assertTrue;
  *   <li><b>Time / weather</b>: {@link #solarPanelAccumulatesEnergyOverTicks()}
  *       sets {@code day} + {@code clear} (intentional, doesn't restore — both
  *       are friendly state for every other method in this suite).</li>
- *   <li><b>Force-field projector</b>: placed by
- *       {@link #allSpecialBlocksPlaceAndTickWithoutException()} (at 720,64,700)
- *       but never powered, so no field blocks are projected. The powered/
- *       collapse cycle is tested separately in
- *       {@code ForceFieldProjectionSmokeTest} (see "NOT consolidated" note
- *       above).</li>
  * </ul>
  */
 public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
@@ -429,10 +411,7 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
 
     // ─────────────────────────────────────────────────────────────────────
     // From SpecialInfrastructureSmokeTest
-    // Position patch: 5 devices at x=700,710,720,730,740, y=64, z=700.
-    // Note: forceFieldProjector at (720,64,700) is never powered (no redstone)
-    // -> no field blocks projected. Powered/collapse cycle for the projector
-    // lives in ForceFieldProjectionSmokeTest (own JVM).
+    // Position patch: 4 devices at x=700,710,730,740, y=64, z=700.
     // ─────────────────────────────────────────────────────────────────────
 
     @Test
@@ -443,7 +422,6 @@ public class MachineDomainSmokeSuite extends AbstractSharedServerTest {
         Map<String, Integer> devices = new LinkedHashMap<>();
         devices.put("advancedrocketry:railgun", 0);
         devices.put("advancedrocketry:beacon", 10);
-        devices.put("advancedrocketry:forceFieldProjector", 20);
         devices.put("advancedrocketry:spaceLaser", 30);
         devices.put("advancedrocketry:spaceElevatorController", 40);
 

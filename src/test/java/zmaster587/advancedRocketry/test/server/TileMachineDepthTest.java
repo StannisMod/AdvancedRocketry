@@ -104,22 +104,6 @@ public class TileMachineDepthTest extends AbstractSharedServerTest {
     }
 
     @Test
-    public void forceFieldProjectorIsTickableAndDoesNotCrashOnForceTick() throws Exception {
-        // TileForceFieldProjector implements ITickable directly (not the
-        // libVulpes inventoried-machine hierarchy). The force-tick probe
-        // refuses to tick a non-ITickable — assert this WORKS (i.e. the
-        // probe doesn't 'error' with "tile not ITickable").
-        int x = BASE_X, z = BASE_Z + 4;
-        place("advancedrocketry:forceFieldProjector", x, Y, z);
-
-        String tickResp = ok(client().execute(
-                "artest tile force-tick " + DIM + " " + x + " " + Y + " " + z + " 3"));
-        assertTrue("forceFieldProjector force-tick must succeed (must be ITickable): "
-                        + tickResp,
-                !tickResp.contains("tile not ITickable"));
-    }
-
-    @Test
     public void guidanceComputerHasInventorySlotAccessibleByHatchProbe() throws Exception {
         // TileGuidanceComputer extends TileInventoryHatch, so the
         // /artest hatch read probe must dump at least one slot (even if

@@ -120,8 +120,6 @@ tile.advRocket.name=高级单组元推进剂火箭发动机
 tile.advbipropellantRocket.name=高级双组元推进剂火箭发动机
 tile.planetHoloSelector.name=全息星球选择器
 tile.lens.name=透镜
-tile.forceField.name=力场
-tile.forceFieldProjector.name=力场投射器
 tile.vacuumLaser.name=真空室高功率激光发射器
 tile.gravityMachine.name=区域重力控制器
 tile.pipeSeal.name=密封管
@@ -1469,8 +1467,6 @@ tooltip.advancedrocketry.spacelaser.shift.1=§b使用全息投影器！
 tooltip.advancedrocketry.spacelaser.alt.1=§f需要红石信号来运行
 
 # Force Field Projector
-tooltip.advancedrocketry.forcefieldprojector=最远可投射32格距离！
-tooltip.advancedrocketry.forcefieldprojector.shift.1=§f使用红石信号激活
 
 # Vacuum Laser
 tooltip.advancedrocketry.vacuumlaser=§c多方块结构的组成部分

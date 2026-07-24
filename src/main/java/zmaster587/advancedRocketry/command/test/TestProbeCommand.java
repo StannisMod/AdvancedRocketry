@@ -187,9 +187,6 @@ public class TestProbeCommand extends CommandBase {
                 case "block":
                     handleBlock(server, sender, tail(args));
                     break;
-                case "field":
-                    handleField(server, sender, tail(args));
-                    break;
                 case "scrubber":
                     handleScrubber(server, sender, tail(args));
                     break;
@@ -8382,41 +8379,6 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        if (args.length >= 5 && "forcefield-tick".equalsIgnoreCase(args[0])) {
-            // Drive TileForceFieldProjector.update() so tests can step
-            // extension / retraction without waiting on natural ticks.
-            // update() only acts when world.getTotalWorldTime() % 5 == 0, so we
-            // advance the world clock to a fresh 5-tick boundary before each call
-            // (otherwise every call in this command would see the same world time
-            // and either all fire or none do).
-            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
-            int x = parseIntOr(args[2], 0);
-            int y = parseIntOr(args[3], 0);
-            int z = parseIntOr(args[4], 0);
-            int ticks = args.length >= 6 ? parseIntOr(args[5], 1) : 1;
-            net.minecraft.world.WorldServer world = server.getWorld(dim);
-            if (world == null) {
-                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
-                return;
-            }
-            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
-            if (!(tile instanceof zmaster587.advancedRocketry.tile.TileForceFieldProjector)) {
-                send(sender, "{\"error\":\"not a TileForceFieldProjector\",\"tile\":\""
-                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
-                return;
-            }
-            zmaster587.advancedRocketry.tile.TileForceFieldProjector projector =
-                    (zmaster587.advancedRocketry.tile.TileForceFieldProjector) tile;
-            long base = world.getWorldInfo().getWorldTotalTime();
-            long aligned = base - (base % 5L);
-            for (int i = 0; i < ticks; i++) {
-                aligned += 5L;
-                world.getWorldInfo().setWorldTotalTime(aligned);
-                projector.update();
-            }
-            send(sender, "{\"ok\":true,\"ticked\":" + ticks + "}");
-            return;
-        }
         if (args.length >= 5 && "comparator-override".equalsIgnoreCase(args[0])) {
             // read IComparatorOverride.getComparatorOverride
             // on a placed tile (libVulpes interface). Used for tiles whose
@@ -15313,90 +15275,6 @@ public class TestProbeCommand extends CommandBase {
             return findFieldInHierarchy(cls, name);
         } catch (NoSuchFieldException e) {
             return null;
-        }
-    }
-
-    // Force-field projector state probe -------------------------------
-
-    /**
-     * {@code /artest field info <dim> <x> <y> <z>} — reads the projector's
-     * private {@code extensionRange} field via reflection so tests can verify
-     * "the field has grown" without scanning blocks. Also blocks the server
-     * thread up to ~12s (240 sleeps × 50ms) to let the projector's
-     * {@code % 5 == 0} time gate hit naturally — production runs the
-     * extension cycle only every 5 world ticks, and {@code tile force-tick}
-     * doesn't advance world time, so a wait against the natural tick loop is
-     * the only way to drive extension without modifying production logic.
-     * The 12 s ceiling absorbs parallel-fork pressure that stretches effective
-     * tick rate; happy-path callers exit on the first observed non-zero range.
-     *
-     * <p>{@code /artest field info-now <dim> <x> <y> <z>} — same probe but
-     * without the wait (snapshot the current state).</p>
-     */
-    private void handleField(MinecraftServer server, ICommandSender sender, String[] args) {
-        if (args.length < 5 ||
-                !("info".equalsIgnoreCase(args[0]) || "info-now".equalsIgnoreCase(args[0])
-                  || "tick".equalsIgnoreCase(args[0]))) {
-            send(sender, "{\"error\":\"unknown field subcommand — try info <dim> <x> <y> <z> | info-now <dim> <x> <y> <z> | tick <dim> <x> <y> <z> [n]\"}");
-            return;
-        }
-        boolean waitForTickGate = "info".equalsIgnoreCase(args[0]);
-        boolean directTick = "tick".equalsIgnoreCase(args[0]);
-        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
-        int x = parseIntOr(args[2], 0);
-        int y = parseIntOr(args[3], 0);
-        int z = parseIntOr(args[4], 0);
-        net.minecraft.world.WorldServer world = server.getWorld(dim);
-        if (world == null) {
-            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
-            return;
-        }
-        BlockPos pos = new BlockPos(x, y, z);
-        TileEntity tile = world.getTileEntity(pos);
-        if (!(tile instanceof zmaster587.advancedRocketry.tile.TileForceFieldProjector)) {
-            send(sender, "{\"isProjector\":false,\"tile\":\""
-                    + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
-            return;
-        }
-        zmaster587.advancedRocketry.tile.TileForceFieldProjector proj =
-                (zmaster587.advancedRocketry.tile.TileForceFieldProjector) tile;
-
-        if (waitForTickGate) {
-            // Loop up to 240 × 50ms = 12s while releasing the server thread so
-            // natural ticks (and the projector's % 5 time gate) fire. Bail
-            // early once we observe ANY non-zero extensionRange.
-            for (int iter = 0; iter < 240; iter++) {
-                if (readExtensionRange(proj) != 0) break;
-                try { Thread.sleep(50L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-            }
-        } else if (directTick) {
-            // Drive the projector's extension cycle directly, bypassing the
-            // natural %5 tick gate. Each call advances extension by 1 (when
-            // powered) or retracts by 1 (when unpowered). Optional count arg
-            // defaults to 1; tests typically pass N>=MAX_RANGE (32) for full
-            // extension or retraction in a single probe round-trip.
-            int count = (args.length >= 6) ? parseIntOr(args[5], 1) : 1;
-            if (count < 1) count = 1;
-            if (count > 64) count = 64;
-            for (int i = 0; i < count; i++) {
-                proj.update();
-            }
-        }
-
-        short range = readExtensionRange(proj);
-        boolean powered = world.isBlockPowered(pos);
-        send(sender, "{\"isProjector\":true,\"extensionRange\":" + range
-                + ",\"isPowered\":" + powered + "}");
-    }
-
-    private static short readExtensionRange(zmaster587.advancedRocketry.tile.TileForceFieldProjector proj) {
-        try {
-            java.lang.reflect.Field f = zmaster587.advancedRocketry.tile.TileForceFieldProjector
-                    .class.getDeclaredField("extensionRange");
-            f.setAccessible(true);
-            return f.getShort(proj);
-        } catch (ReflectiveOperationException e) {
-            return -1;
         }
     }
 
