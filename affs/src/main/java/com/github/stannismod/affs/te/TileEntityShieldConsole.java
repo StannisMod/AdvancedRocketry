@@ -2,7 +2,6 @@ package com.github.stannismod.affs.te;
 
 import com.github.stannismod.affs.config.ModConfig;
 import com.github.stannismod.affs.gui.NetworkMapMarker;
-import com.github.stannismod.affs.util.CodeUtils;
 import com.github.stannismod.affs.world.contour.ContourFrameGeometry;
 import com.github.stannismod.affs.world.shield.*;
 import net.minecraft.nbt.NBTTagCompound;
@@ -25,7 +24,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
 
-    private String networkCode = "";
     private boolean networkConnected = false;
     private int networkStatus = 0;
     private int cableCount = 0;
@@ -59,10 +57,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
 
         ShieldNetworkState state = ShieldNetworkManager.getState(world, pos);
         if (state != null) {
-            if (state.getNetworkCode().isEmpty() && !networkCode.isEmpty()) {
-                ShieldNetworkManager.setNetworkCode(world, pos, networkCode);
-                state = ShieldNetworkManager.getState(world, pos);
-            }
             applyNetworkState(state);
         } else {
             applyDisconnectedState();
@@ -77,9 +71,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
         if (world != null && !world.isRemote) {
             ShieldNetworkRegistry.register(this);
             ShieldNetworkManager.markDirty(world);
-            if (!networkCode.isEmpty()) {
-                ShieldNetworkManager.setNetworkCode(world, pos, networkCode);
-            }
         }
     }
 
@@ -133,8 +124,7 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
                 || Double.compare(shieldEnergyResistanceBias, state.getShieldEnergyResistanceBias()) != 0
                 || rootX != state.getRoot().getX()
                 || rootY != state.getRoot().getY()
-                || rootZ != state.getRoot().getZ()
-                || !networkCode.equals(state.getNetworkCode());
+                || rootZ != state.getRoot().getZ();
 
         networkConnected = state.isConnected();
         networkStatus = state.getStatus();
@@ -153,7 +143,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
         rootX = state.getRoot().getX();
         rootY = state.getRoot().getY();
         rootZ = state.getRoot().getZ();
-        networkCode = state.getNetworkCode();
 
         if (changed) {
             markDirty();
@@ -202,21 +191,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
             markDirty();
             queueClientSync();
         }
-    }
-
-    @Override
-    public String getNetworkCode() {
-        return networkCode;
-    }
-
-    public void applyNetworkCode(String code) {
-        String normalized = CodeUtils.normalize(code);
-        if (normalized.equals(networkCode)) {
-            return;
-        }
-        networkCode = normalized;
-        markDirty();
-        queueClientSync();
     }
 
     public String getRootString() {
@@ -412,7 +386,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound compound) {
         super.writeToNBT(compound);
-        compound.setString("networkCode", networkCode);
         compound.setBoolean("networkConnected", networkConnected);
         compound.setInteger("networkStatus", networkStatus);
         compound.setInteger("cableCount", cableCount);
@@ -441,7 +414,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     @Override
     public void readFromNBT(NBTTagCompound compound) {
         super.readFromNBT(compound);
-        networkCode = CodeUtils.normalize(compound.getString("networkCode"));
         networkConnected = compound.getBoolean("networkConnected");
         networkStatus = compound.getInteger("networkStatus");
         cableCount = compound.getInteger("cableCount");

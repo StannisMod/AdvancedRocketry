@@ -1,7 +1,6 @@
 package com.github.stannismod.affs.world.shield;
 
 import com.github.stannismod.affs.config.ModConfig;
-import com.github.stannismod.affs.util.CodeUtils;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.HashSet;
@@ -11,8 +10,6 @@ public final class ShieldNetworkState {
 
     private BlockPos root = BlockPos.ORIGIN;
     private final Set<BlockPos> memberPositions = new HashSet<>();
-    private String networkCode = "";
-    private long codeRevision = 0L;
     private boolean connected;
     private int status;
     private int cableCount;
@@ -33,8 +30,6 @@ public final class ShieldNetworkState {
         ShieldNetworkState copy = new ShieldNetworkState();
         copy.root = root;
         copy.memberPositions.addAll(memberPositions);
-        copy.networkCode = networkCode;
-        copy.codeRevision = codeRevision;
         copy.connected = connected;
         copy.status = status;
         copy.cableCount = cableCount;
@@ -69,22 +64,6 @@ public final class ShieldNetworkState {
 
     public void setRoot(BlockPos root) {
         this.root = root == null ? BlockPos.ORIGIN : root;
-    }
-
-    public String getNetworkCode() {
-        return networkCode;
-    }
-
-    public long getCodeRevision() {
-        return codeRevision;
-    }
-
-    public void setNetworkCode(String code) {
-        String normalized = CodeUtils.normalize(code);
-        if (!normalized.equals(networkCode)) {
-            networkCode = normalized;
-            codeRevision++;
-        }
     }
 
     public boolean isConnected() {

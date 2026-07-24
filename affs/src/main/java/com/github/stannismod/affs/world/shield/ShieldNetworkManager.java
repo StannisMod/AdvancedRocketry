@@ -1,7 +1,6 @@
 package com.github.stannismod.affs.world.shield;
 
 import com.github.stannismod.affs.AdvancedForceFieldSystem;
-import com.github.stannismod.affs.te.TileEntityContourInjector;
 import com.github.stannismod.affs.te.TileEntityFieldGenerator;
 import com.github.stannismod.affs.te.TileEntityShieldCable;
 import com.github.stannismod.affs.te.TileEntityShieldGenerator;
@@ -42,25 +41,6 @@ public final class ShieldNetworkManager {
         }
         WorldState state = WORLD_STATES.get(world.provider.getDimension());
         return state == null ? null : state.stateByPos.get(pos);
-    }
-
-    public static String getNetworkCode(World world, BlockPos pos) {
-        ShieldNetworkState state = getState(world, pos);
-        return state == null ? "" : state.getNetworkCode();
-    }
-
-    public static void setNetworkCode(World world, BlockPos pos, String code) {
-        if (world == null || world.isRemote || pos == null) {
-            return;
-        }
-        WorldState state = getState(world);
-        ShieldNetworkState networkState = state.stateByPos.get(pos);
-        if (networkState == null) {
-            return;
-        }
-
-        networkState.setNetworkCode(code);
-        state.propagateNetworkCode(networkState);
     }
 
     public static void setShieldEnergyResistanceBias(World world, BlockPos pos, double bias) {
@@ -212,7 +192,6 @@ public final class ShieldNetworkManager {
                 if (state == null) {
                     state = new ShieldNetworkState();
                 }
-                seedNetworkCodeFromControllers(state, componentControllers);
                 seedShieldEnergyBiasFromControllers(state, componentControllers);
                 state.clearMembers();
                 state.setRoot(cablePos);
@@ -224,13 +203,12 @@ public final class ShieldNetworkManager {
                 components.add(new ComponentTopology(state, componentCables, componentSources, componentSinks, componentControllers));
                 if (AdvancedForceFieldSystem.LOG != null) {
                     AdvancedForceFieldSystem.LOG.info(
-                        "[ShieldNetwork] component anchor={} cables={} sources={} sinks={} controllers={} codeRevision={}",
+                        "[ShieldNetwork] component anchor={} cables={} sources={} sinks={} controllers={}",
                         cablePos,
                         componentCables.size(),
                         componentSources.size(),
                         componentSinks.size(),
-                        componentControllers.size(),
-                        state.getCodeRevision()
+                        componentControllers.size()
                     );
                 }
             }
@@ -242,11 +220,9 @@ public final class ShieldNetworkManager {
             ShieldNetworkState best = null;
             for (BlockPos pos : memberPositions) {
                 ShieldNetworkState candidate = previousStateByPos.get(pos);
-                if (candidate == null) {
-                    continue;
-                }
-                if (best == null || candidate.getCodeRevision() > best.getCodeRevision()) {
+                if (candidate != null) {
                     best = candidate;
+                    break;
                 }
             }
             if (best == null) {
@@ -256,23 +232,6 @@ public final class ShieldNetworkManager {
                 return best;
             }
             return best.copy();
-        }
-
-        private void seedNetworkCodeFromControllers(ShieldNetworkState state, List<ControllerNode> controllers) {
-            if (state == null || controllers == null || !state.getNetworkCode().isEmpty()) {
-                return;
-            }
-            for (ControllerNode controller : controllers) {
-                if (controller == null || controller.controller == null) {
-                    continue;
-                }
-                String code = controller.controller.getNetworkCode();
-                if (code == null || code.isEmpty()) {
-                    continue;
-                }
-                state.setNetworkCode(code);
-                return;
-            }
         }
 
         private void seedShieldEnergyBiasFromControllers(ShieldNetworkState state, List<ControllerNode> controllers) {
@@ -338,19 +297,6 @@ public final class ShieldNetworkManager {
                 }
             }
             return false;
-        }
-
-        private void propagateNetworkCode(ShieldNetworkState state) {
-            if (state == null) {
-                return;
-            }
-            String code = state.getNetworkCode();
-            for (ComponentTopology component : components) {
-                if (component.state != state) {
-                    continue;
-                }
-                component.pushNetworkCodeToConsumers();
-            }
         }
     }
 
@@ -496,7 +442,7 @@ public final class ShieldNetworkManager {
                 totalConsumptionPerTick
             );
 
-            pushNetworkCodeToConsumers();
+            pushNetworkStateToControllers();
 
             for (CableNode cable : cables) {
                 if (cable.cable instanceof TileEntityShieldCable) {
@@ -547,15 +493,7 @@ public final class ShieldNetworkManager {
             }
         }
 
-        private void pushNetworkCodeToConsumers() {
-            String code = state.getNetworkCode();
-            for (SinkNode sink : sinks) {
-                if (sink.sink instanceof TileEntityFieldGenerator) {
-                    ((TileEntityFieldGenerator) sink.sink).applyNetworkCode(code);
-                } else if (sink.sink instanceof TileEntityContourInjector) {
-                    ((TileEntityContourInjector) sink.sink).applyContourCode(code);
-                }
-            }
+        private void pushNetworkStateToControllers() {
             for (ControllerNode controller : controllers) {
                 controller.controller.applyNetworkState(state);
             }

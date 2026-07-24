@@ -117,17 +117,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     public String getAccessCode() {
-        if (world != null && !world.isRemote) {
-            String networkCode = ShieldNetworkManager.getNetworkCode(world, pos);
-            if (!networkCode.isEmpty() || ShieldNetworkManager.getState(world, pos) != null) {
-                return networkCode;
-            }
-        }
         return accessCode;
-    }
-
-    public String getNetworkCode() {
-        return getAccessCode();
     }
 
     @Override
@@ -220,7 +210,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         // Sphere-based field no longer places blocks in the world.
     }
 
-    public void applyNetworkCode(String code) {
+    public void applyAccessCode(String code) {
         String normalized = CodeUtils.normalize(code);
         if (!normalized.equals(accessCode)) {
             accessCode = normalized;

@@ -56,7 +56,7 @@ public class GuiFieldGenerator extends GuiAffsBase {
     @Override
     protected void drawGuiContainerForegroundLayer(int mouseX, int mouseY) {
         drawTitle(I18n.format("tile.field_generator.name"));
-        drawStat(I18n.format("gui.affs.network_code"), tile.getNetworkCode(), rowY(0));
+        drawStat(I18n.format("gui.affs.access_code"), tile.getAccessCode(), rowY(0));
         drawStat(I18n.format("gui.affs.radius"), tile.getRadius(), rowY(2));
         drawStat(I18n.format("gui.affs.shield_accumulator"), tile.getEnergyStored() + " / " + tile.getMaxEnergyStored(), rowY(5));
         drawStat(I18n.format("gui.affs.tier"), (tile.getTier() + 1) + " / 4", rowY(6));
