@@ -1,21 +1,62 @@
-MIT License
+Advanced Rocketry
+Copyright (C) 2024-2026 StannisMod and the Advanced Rocketry contributors
 
-Copyright (c) 2024
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 3, as published by the Free
+Software Foundation, WITH the Linking Exception stated below. The complete text
+of the GNU General Public License, version 3, is in the file COPYING.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+SPDX-License-Identifier: GPL-3.0-only WITH Linking-Exception
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+
+LINKING EXCEPTION
+=================
+
+As a special exception, the copyright holders of Advanced Rocketry give you
+permission to link or combine independent modules with Advanced Rocketry solely
+through its public API — the `zmaster587.advancedRocketry.api` package and its
+subpackages — to produce a combined work, and to convey the resulting combined
+work under terms of your choice, provided that:
+
+  (a) the independent module uses Advanced Rocketry only through that public
+      API, and is not otherwise derived from or based on Advanced Rocketry; and
+
+  (b) you comply with the GNU General Public License, version 3, for Advanced
+      Rocketry itself and for any modifications you make to it.
+
+An "independent module" is a module which is not derived from or based on
+Advanced Rocketry other than through the public API named above. Depending on,
+linking against, or calling that public API does not, by itself, make your work
+a work based on Advanced Rocketry for the purposes of this License.
+
+If you modify Advanced Rocketry itself — any code outside the public API named
+above — this exception does not extend to those modifications, which remain
+governed by the GNU General Public License, version 3.
+
+You may, at your option, remove this exception from a given copy of the program;
+doing so makes the plain GNU General Public License, version 3, apply to that
+copy.
+
+
+THIRD-PARTY COMPONENTS
+======================
+
+This distribution incorporates third-party code under its own terms. The
+project as a whole is distributed under the GNU General Public License, version
+3, with the Linking Exception above; the components below additionally retain
+their own licenses.
+
+  * Portions derived from the original Advanced Rocketry by zmaster587 are
+    licensed under the MIT License — see LICENSE-MIT. Those portions remain
+    available under the MIT License; their inclusion here is compatible with
+    the GNU General Public License, version 3.
+
+  * Valkyrien Skies, vendored under `valkyrienskies/`, is licensed under the
+    Apache License, Version 2.0 — see `valkyrienskies/LICENSE`. Files changed
+    for Advanced Rocketry carry a notice to that effect. The Apache-2.0
+    components retain their license; Apache-2.0 is compatible with version 3 of
+    the GNU General Public License.

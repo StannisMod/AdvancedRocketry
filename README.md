@@ -126,8 +126,14 @@ pull requests go through this repository's issue tracker.
 ## Credits and licence
 
 Built on the original [Advanced Rocketry](https://github.com/Advanced-Rocketry/AdvancedRocketry) by
-zmaster587, and on the forks maintained since. Released under the MIT licence
-([`LICENSE`](./LICENSE)), so packs may redistribute it freely.
+zmaster587, and on the forks maintained since. Advanced Rocketry is released under the **GNU General
+Public License v3** with a **linking exception** ([`LICENSE`](./LICENSE) + the full GPL text in
+[`COPYING`](./COPYING)): the mod itself is copyleft — you may redistribute and modify it, and packs may
+bundle it, as long as source stays available — while the linking exception lets dependent and addon
+mods build against the `advancedRocketry.api` package **without themselves becoming GPL**. Portions
+derived from the original are retained under the MIT licence ([`LICENSE-MIT`](./LICENSE-MIT)); the
+bundled [Valkyrien Skies](https://github.com/ValkyrienSkies/Valkyrien-Skies) physics engine
+(`valkyrienskies/`) is under Apache-2.0 ([`valkyrienskies/LICENSE`](./valkyrienskies/LICENSE)).
 
 Version history is in [`CHANGELOG.md`](./CHANGELOG.md). The older
 [community wiki](http://arwiki.dmodoomsirius.me/) still covers the basics but predates Free Flight and the
