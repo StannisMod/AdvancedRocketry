@@ -242,8 +242,10 @@ public class TestProbeCommand extends CommandBase {
      *   <li>{@code tick <dim>} — run one network solve pass (the WorldTickEvent body) so tests can
      *       advance the max-flow deterministically without waiting on real server ticks;</li>
      *   <li>{@code read <dim> <x> <y> <z>} — report an emitter's ({@code field_generator}) live shield
-     *       state (powered / stored / radius / requested), a generator's stored/available energy, or an
-     *       accumulator's stored/available/free reserve.</li>
+     *       state (powered / stored / radius / requested / tier / throughput / maintenance), a
+     *       generator's stored/available energy, or an accumulator's stored/available/free reserve;</li>
+     *   <li>{@code zone <dim> <x> <y> <z>} — report which active emitter owns the surface point
+     *       (x+0.5, y+0.5, z+0.5): the nearest-emitter Voronoi partition (D134-3 responsible area).</li>
      * </ul>
      */
     private void handleShield(MinecraftServer server, ICommandSender sender, String[] args) {
@@ -290,6 +292,13 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldMax", emitter.getMaxEnergyStored());
                 info.put("radius", emitter.getRadius());
                 info.put("requested", emitter.getRequestedShieldEnergy());
+                // P2 (D134-3/4): the emitter's tier, its tier-scaled recharge throughput (the per-zone
+                // regen cap), the passive-maintenance draw this tick, and how much it actually received
+                // this tick — so a test can assert the throughput cap and the tier scaling.
+                info.put("tier", emitter.getTier());
+                info.put("throughput", emitter.getRechargeThroughput());
+                info.put("maintenance", emitter.getShieldDrainThisTick());
+                info.put("receivedThisTick", emitter.getShieldReceivedThisTick());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldGenerator) {
                 com.github.stannismod.affs.te.TileEntityShieldGenerator gen =
                         (com.github.stannismod.affs.te.TileEntityShieldGenerator) tile;
@@ -330,7 +339,42 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"strength\":" + strength + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength]\"}");
+        if (args.length >= 5 && "zone".equalsIgnoreCase(args[0])) {
+            // zone <dim> <x> <y> <z> — which active emitter owns the surface point at the block centre.
+            // Exercises the D134-3 responsible-area partition (FieldZoneMath.nearestEmitter) end-to-end.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            java.util.List<com.github.stannismod.affs.te.TileEntityFieldGenerator> emitters =
+                    com.github.stannismod.affs.world.FieldSurfaceMath.getActiveGenerators(world);
+            net.minecraft.util.math.Vec3d point =
+                    new net.minecraft.util.math.Vec3d(x + 0.5D, y + 0.5D, z + 0.5D);
+            com.github.stannismod.affs.world.FieldSource owner =
+                    com.github.stannismod.affs.world.FieldZoneMath.nearestEmitter(emitters, point);
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("dim", dim);
+            info.put("posX", x);
+            info.put("posY", y);
+            info.put("posZ", z);
+            info.put("activeEmitters", emitters.size());
+            if (owner == null) {
+                info.put("owned", false);
+            } else {
+                info.put("owned", true);
+                info.put("ownerX", owner.getPos().getX());
+                info.put("ownerY", owner.getPos().getY());
+                info.put("ownerZ", owner.getPos().getZ());
+            }
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------

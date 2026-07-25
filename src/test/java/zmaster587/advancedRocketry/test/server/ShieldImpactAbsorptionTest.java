@@ -11,7 +11,8 @@ import static org.junit.Assert.assertTrue;
 /**
  * P1: a charged shield emitter must absorb a single impact whose cost exceeds the coil's per-tick
  * intake. An energy projectile (AFFS {@code laser_bolt}) costs {@code energyProjectileImpactEnergy}
- * (default 10000) — far above {@code SHIELD_RECEIVE_PER_TICK} (4000). Absorption is all-or-nothing, so
+ * (default 10000) — far above a Tier 0 emitter's per-tick recharge throughput (default 4000).
+ * Absorption is all-or-nothing, so
  * if the coil could only release a per-tick sliver it would refuse the bolt outright (and burn the
  * sliver). This pins that a well-charged coil actually stops the bolt at the shell and pays its full
  * cost — guarding the fix that unthrottles coil extraction (ledger #99).

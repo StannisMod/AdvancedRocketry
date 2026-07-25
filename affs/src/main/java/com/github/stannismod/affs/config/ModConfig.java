@@ -42,6 +42,18 @@ public final class ModConfig {
     public static double shieldTierEfficiencyStep = 0.2D;
     public static double contourMaintenanceEnergyPerFieldBlock = 4.0D;
 
+    // D134-3: per-emitter recharge throughput. An emitter can only pour energy into its zone of the
+    // field at a bounded rate; this is the shield's per-zone regeneration bottleneck (the "interesting"
+    // limiter). Base rate per tick, scaled up per emitter tier so larger/denser emitters regenerate
+    // faster. The network never routes an emitter more than this per tick.
+    public static int emitterRechargeThroughputBase = 4_000;
+    public static double emitterThroughputTierStep = 0.5D;
+    // D134-4: passive-maintenance coefficient. Holding a powered field at its current strength costs
+    // little (this coefficient x pi x r^2 per tick, spread over a 20-tick cycle) — the SMALL of the two
+    // draws. Regeneration (the LARGE draw) is the throughput-capped refill above. Kept small relative to
+    // the throughput so maintenance never dominates the regeneration budget.
+    public static double emitterMaintenanceEnergyPerSurfaceArea = 12.0D;
+
     private ModConfig() {
     }
 
@@ -163,6 +175,37 @@ public final class ModConfig {
                 0.0F,
                 Float.MAX_VALUE,
                 "Energy consumed per contour field block per tick while the contour field is active."
+        );
+
+        emitterRechargeThroughputBase = configuration.getInt(
+                "emitterRechargeThroughputBase",
+                CATEGORY_SHIELD,
+                4_000,
+                1,
+                Integer.MAX_VALUE,
+                "Base per-tick shield-energy recharge throughput of a single Tier 0 emitter. This is the "
+                        + "per-zone regeneration bottleneck: the field regenerates its zone no faster than "
+                        + "this, no matter how large the generator or accumulator behind it."
+        );
+
+        emitterThroughputTierStep = configuration.getFloat(
+                "emitterThroughputTierStep",
+                CATEGORY_SHIELD,
+                0.5F,
+                0.0F,
+                Float.MAX_VALUE,
+                "Each emitter tier above Tier 0 adds this fraction of the base throughput. Tier 0 uses the "
+                        + "base rate, Tier 1 uses base x (1 + step), etc. — higher-tier emitters regenerate faster."
+        );
+
+        emitterMaintenanceEnergyPerSurfaceArea = configuration.getFloat(
+                "emitterMaintenanceEnergyPerSurfaceArea",
+                CATEGORY_SHIELD,
+                12.0F,
+                0.0F,
+                Float.MAX_VALUE,
+                "Passive-maintenance coefficient. Holding a powered field costs this x pi x radius^2 per "
+                        + "tick (the small draw); regeneration after damage is the larger, throughput-capped draw."
         );
 
         generatorShieldBuffer = configuration.getInt(

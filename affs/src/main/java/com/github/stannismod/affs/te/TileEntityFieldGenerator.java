@@ -41,10 +41,6 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     public static final int MIN_RADIUS = 1;
     public static final int MAX_RADIUS = 16;
     public static final int DEFAULT_RADIUS = 4;
-    // Per-tick shield intake rate of the emitter coil (D134-3 "per-emitter recharge throughput" seed).
-    // The coil advertises no more demand than this per tick, so the network never routes flow the coil
-    // cannot physically accept — energy that is extracted from a source is always received by the coil.
-    public static final int SHIELD_RECEIVE_PER_TICK = 4_000;
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
     private static final DamageSource SHIELD_COLLISION_DAMAGE = new DamageSource("affs.shield_collision");
@@ -53,10 +49,14 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     // Coil capacity is read from config at construction (config is loaded in preInit, before any tile
     // is built). Small and fast: the field activates at shieldActivationThreshold of this capacity.
-    // maxReceive is the per-tick recharge-throughput seed (D134-3), but extraction is UNTHROTTLED
-    // (maxExtract == capacity): absorbing one hit may need to spend far more than a tick's intake, so a
-    // per-tick extract cap would make the coil unable to block any impact larger than that cap.
-    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, SHIELD_RECEIVE_PER_TICK, ModConfig.emitterCoilBuffer);
+    // Both intake and extraction are UNTHROTTLED at the storage (maxReceive == maxExtract == capacity):
+    //   - the per-tick recharge-throughput cap (D134-3) is tier-dependent (getRechargeThroughput()) and
+    //     read from the world block state at runtime, so it cannot live on this construction-time field;
+    //     it is enforced instead as the coil's advertised network demand (getRequestedShieldEnergy),
+    //     which is the single source of truth for the throttle;
+    //   - extraction is unthrottled because absorbing one hit may need to spend far more than a tick's
+    //     intake, so a per-tick extract cap would make the coil unable to block any impact above it.
+    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, ModConfig.emitterCoilBuffer, ModConfig.emitterCoilBuffer);
     private int radius = DEFAULT_RADIUS;
     private String accessCode = "";
     private int shieldDrainPhase = 0;
@@ -169,11 +169,24 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     @Override
     public int getRequestedShieldEnergy() {
-        // Advertise only what the coil can physically intake this tick (min of free space and the
-        // per-tick receive rate). The network solver uses this as the coil's demand-edge capacity, so a
-        // large source (e.g. an accumulator) can never have more energy extracted from it than the coil
-        // actually receives — keeping the network energy-conserving.
-        return Math.min(getFreeShieldCapacity(), SHIELD_RECEIVE_PER_TICK);
+        // Advertise only what the coil can physically intake this tick (min of free space and this
+        // emitter's tier-scaled recharge throughput). The network solver uses this as the coil's
+        // demand-edge capacity, so (a) a large source (e.g. an accumulator) can never have more energy
+        // extracted from it than the coil actually receives — keeping the network energy-conserving —
+        // and (b) regeneration is capped at the emitter's throughput (D134-3), the per-zone bottleneck.
+        return Math.min(getFreeShieldCapacity(), getRechargeThroughput());
+    }
+
+    /**
+     * This emitter's per-tick shield-energy recharge throughput (D134-3), the per-zone regeneration
+     * bottleneck. Tier-scaled from the config base: a higher-tier emitter pours energy into its zone
+     * faster. This is the cap the network never exceeds when refilling the coil, so a big generator or
+     * accumulator behind a small emitter cannot over-regenerate.
+     */
+    public int getRechargeThroughput() {
+        double scaled = ModConfig.emitterRechargeThroughputBase
+                * (1.0D + ModConfig.emitterThroughputTierStep * getTier());
+        return Math.max(1, (int) Math.round(scaled));
     }
 
     @Override
@@ -428,7 +441,9 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private int estimateShieldCost(int r) {
-        return Math.max(1, (int) Math.round(12.0D * Math.PI * r * r)) * 20;
+        // Passive-maintenance draw (D134-4, the small draw): proportional to the field's surface area
+        // (~r^2), tunable via the config coefficient, and spread across a 20-tick cycle by the caller.
+        return Math.max(1, (int) Math.round(ModConfig.emitterMaintenanceEnergyPerSurfaceArea * Math.PI * r * r)) * 20;
     }
 
     private int clampRadius(int requestedRadius) {
