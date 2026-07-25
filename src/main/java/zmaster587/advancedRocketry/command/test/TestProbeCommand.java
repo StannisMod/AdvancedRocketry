@@ -12751,36 +12751,6 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"fallDistance\":" + entity.fallDistance + "}");
             return;
         }
-        if (args.length >= 3 && "tick".equalsIgnoreCase(args[0])) {
-            // entity tick <dim> <entityId> [n] — drive N onUpdate ticks so the entity actually moves
-            // (advancing pos vs prevPos). The shield's deflection keys on the pos->prevPos sweep, not on
-            // the motion field, so a projectile must physically step before it can be seen moving inward.
-            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
-            int id = parseIntOr(args[2], -1);
-            int n = args.length >= 4 ? Math.max(0, parseIntOr(args[3], 1)) : 1;
-            net.minecraft.world.WorldServer world = server.getWorld(dim);
-            if (world == null) {
-                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
-                return;
-            }
-            net.minecraft.entity.Entity entity = world.getEntityByID(id);
-            if (entity == null) {
-                send(sender, "{\"error\":\"entity not found\",\"entityId\":" + id + "}");
-                return;
-            }
-            int ticked = 0;
-            for (int i = 0; i < n; i++) {
-                if (entity.isDead) {
-                    break;
-                }
-                entity.onUpdate();
-                ticked++;
-            }
-            send(sender, "{\"ok\":true,\"entityId\":" + id + ",\"ticked\":" + ticked
-                    + ",\"isDead\":" + entity.isDead
-                    + ",\"posX\":" + entity.posX + ",\"posY\":" + entity.posY + ",\"posZ\":" + entity.posZ + "}");
-            return;
-        }
         if (args.length >= 6 && "set-motion".equalsIgnoreCase(args[0])) {
             // entity set-motion <dim> <entityId> <mx> <my> <mz>
             // give an entity a velocity so a shield can see it moving inward and deflect it (the
@@ -13170,7 +13140,7 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"legacyFaOn\":" + legacyPeer.isFlightAssistOn() + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id> | rocket-nbt-roundtrip <dim> <id>\"}");
+        send(sender, "{\"error\":\"unknown entity subcommand — try spawn <dim> <x> <y> <z> <name> [block-id] | info <dim> <entityId> | tick <dim> <entityId> [count] | set-motion <dim> <entityId> <mx> <my> <mz> | scan-items <dim> <cx> <cy> <cz> <radius> | capsule-state <dim> <id> | capsule-set-motion <dim> <id> <value> | capsule-set-dst <dim> <id> <dstDim> <x> <y> <z> | capsule-set-src <dim> <id> <srcDim> <x> <y> <z> | capsule-nbt-roundtrip <dim> <id> | rocket-nbt-roundtrip <dim> <id>\"}");
     }
 
     /**
