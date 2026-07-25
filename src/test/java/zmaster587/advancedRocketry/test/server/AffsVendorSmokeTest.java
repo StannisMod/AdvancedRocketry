@@ -31,6 +31,7 @@ public class AffsVendorSmokeTest extends AbstractSharedServerTest {
         Map<String, Integer> blocks = new LinkedHashMap<>();
         blocks.put("affs:field_generator", 0);
         blocks.put("affs:shield_generator", 2);
+        blocks.put("affs:shield_accumulator", 3);
         blocks.put("affs:shield_cable", 4);
         blocks.put("affs:shield_console", 6);
         blocks.put("affs:admin_energy_source", 8);

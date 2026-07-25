@@ -42,14 +42,19 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     public static final int MIN_RADIUS = 1;
     public static final int MAX_RADIUS = 16;
     public static final int DEFAULT_RADIUS = 4;
-    public static final int MAX_ENERGY = 200_000;
+    // Per-tick shield intake rate of the emitter coil (D134-3 "per-emitter recharge throughput" seed).
+    // The coil advertises no more demand than this per tick, so the network never routes flow the coil
+    // cannot physically accept — energy that is extracted from a source is always received by the coil.
+    public static final int SHIELD_RECEIVE_PER_TICK = 4_000;
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
     private static final DamageSource SHIELD_COLLISION_DAMAGE = new DamageSource("affs.shield_collision");
     private static final Set<TileEntityFieldGenerator> ACTIVE_GENERATORS = new HashSet<>();
     private static final Map<UUID, PlayerLastSafePosition> PLAYER_LAST_SAFE_POSITIONS = new HashMap<>();
 
-    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(MAX_ENERGY, 4_000, 4_000);
+    // Coil capacity is read from config at construction (config is loaded in preInit, before any tile
+    // is built). Small and fast: the field activates at shieldActivationThreshold of this capacity.
+    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, SHIELD_RECEIVE_PER_TICK, SHIELD_RECEIVE_PER_TICK);
     private int radius = DEFAULT_RADIUS;
     private String accessCode = "";
     private int shieldDrainPhase = 0;
@@ -164,7 +169,11 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     @Override
     public int getRequestedShieldEnergy() {
-        return getFreeShieldCapacity();
+        // Advertise only what the coil can physically intake this tick (min of free space and the
+        // per-tick receive rate). The network solver uses this as the coil's demand-edge capacity, so a
+        // large source (e.g. an accumulator) can never have more energy extracted from it than the coil
+        // actually receives — keeping the network energy-conserving.
+        return Math.min(getFreeShieldCapacity(), SHIELD_RECEIVE_PER_TICK);
     }
 
     @Override
@@ -510,7 +519,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private int getShieldActivationEnergy() {
-        return Math.max(1, (int) Math.ceil(MAX_ENERGY * ModConfig.shieldActivationThreshold));
+        return Math.max(1, (int) Math.ceil(energy.getMaxEnergyStored() * ModConfig.shieldActivationThreshold));
     }
 
     private int estimateEntityImpactEnergy(Entity entity) {
@@ -680,7 +689,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     public void readFromNBT(NBTTagCompound compound) {
         super.readFromNBT(compound);
         radius = clampRadius(compound.getInteger("radius"));
-        energy.setEnergyStored(Math.max(0, Math.min(MAX_ENERGY, compound.getInteger("energy"))));
+        energy.setEnergyStored(Math.max(0, Math.min(energy.getMaxEnergyStored(), compound.getInteger("energy"))));
         shieldReceivedThisTick = Math.max(0, compound.getInteger("shieldReceivedThisTick"));
         shieldConsumedThisTick = Math.max(0, compound.getInteger("shieldConsumedThisTick"));
         accessCode = CodeUtils.normalize(compound.getString("accessCode"));

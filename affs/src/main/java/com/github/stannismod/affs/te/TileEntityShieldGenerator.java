@@ -1,5 +1,6 @@
 package com.github.stannismod.affs.te;
 
+import com.github.stannismod.affs.config.ModConfig;
 import com.github.stannismod.affs.world.shield.IShieldSource;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
 import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
@@ -19,14 +20,14 @@ import javax.annotation.Nullable;
 
 public class TileEntityShieldGenerator extends TileEntity implements ITickable, IShieldSource {
 
-    public static final int MAX_FE_BUFFER = 200_000;
-    public static final int MAX_SHIELD_BUFFER = 200_000;
     public static final int CONVERSION_PER_TICK = 4_000;
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
 
-    private final InputEnergyStorage feStorage = new InputEnergyStorage(MAX_FE_BUFFER, 4_000);
-    private final ShieldEnergyStorage shieldStorage = new ShieldEnergyStorage(MAX_SHIELD_BUFFER, MAX_SHIELD_BUFFER, MAX_SHIELD_BUFFER);
+    // Buffer sizes are read from config at construction (config is loaded in preInit, long before any
+    // tile is built). The generator holds only a small conversion-smoothing store, not a reserve.
+    private final InputEnergyStorage feStorage = new InputEnergyStorage(ModConfig.generatorFeBuffer, CONVERSION_PER_TICK);
+    private final ShieldEnergyStorage shieldStorage = new ShieldEnergyStorage(ModConfig.generatorShieldBuffer, ModConfig.generatorShieldBuffer, ModConfig.generatorShieldBuffer);
     private int feReceivedThisTick = 0;
     private int feConsumedThisTick = 0;
     private int shieldProducedThisTick = 0;
@@ -198,8 +199,8 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
     @Override
     public void readFromNBT(NBTTagCompound compound) {
         super.readFromNBT(compound);
-        feStorage.setEnergyStored(Math.max(0, Math.min(MAX_FE_BUFFER, compound.getInteger("fe"))));
-        shieldStorage.setEnergyStored(Math.max(0, Math.min(MAX_SHIELD_BUFFER, compound.getInteger("shield"))));
+        feStorage.setEnergyStored(Math.max(0, Math.min(feStorage.getMaxEnergyStored(), compound.getInteger("fe"))));
+        shieldStorage.setEnergyStored(Math.max(0, Math.min(shieldStorage.getMaxEnergyStored(), compound.getInteger("shield"))));
         feReceivedThisTick = Math.max(0, compound.getInteger("feReceivedThisTick"));
         feConsumedThisTick = Math.max(0, compound.getInteger("feConsumedThisTick"));
         shieldProducedThisTick = Math.max(0, compound.getInteger("shieldProducedThisTick"));

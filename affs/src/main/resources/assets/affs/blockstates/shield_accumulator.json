@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "normal": { "model": "affs:shield_accumulator" },
+    "inventory": { "model": "affs:shield_accumulator" }
+  }
+}

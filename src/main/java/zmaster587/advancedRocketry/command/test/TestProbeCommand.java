@@ -242,7 +242,8 @@ public class TestProbeCommand extends CommandBase {
      *   <li>{@code tick <dim>} — run one network solve pass (the WorldTickEvent body) so tests can
      *       advance the max-flow deterministically without waiting on real server ticks;</li>
      *   <li>{@code read <dim> <x> <y> <z>} — report an emitter's ({@code field_generator}) live shield
-     *       state (powered / stored / radius / requested) or a generator's stored/available energy.</li>
+     *       state (powered / stored / radius / requested), a generator's stored/available energy, or an
+     *       accumulator's stored/available/free reserve.</li>
      * </ul>
      */
     private void handleShield(MinecraftServer server, ICommandSender sender, String[] args) {
@@ -296,6 +297,14 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
                 info.put("available", gen.getAvailableShieldEnergy());
+            } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldAccumulator) {
+                com.github.stannismod.affs.te.TileEntityShieldAccumulator acc =
+                        (com.github.stannismod.affs.te.TileEntityShieldAccumulator) tile;
+                info.put("kind", "accumulator");
+                info.put("shieldStored", acc.getShieldStored());
+                info.put("shieldMax", acc.getMaxShieldStored());
+                info.put("available", acc.getAvailableShieldEnergy());
+                info.put("free", acc.getFreeShieldCapacity());
             } else {
                 info.put("error", "not a shield tile");
                 info.put("tileClass", tile == null ? "null" : tile.getClass().getName());

@@ -1,5 +1,6 @@
 tile.field_generator.name=Shield Injector
 tile.shield_generator.name=Shield Generator
+tile.shield_accumulator.name=Shield Accumulator
 tile.shield_cable.name=Shield Cable
 tile.shield_console.name=Network Console
 tile.projected_field.name=Projected Field

@@ -64,6 +64,7 @@ public class AdvancedForceFieldSystem {
 
     public static Item itemFieldGenerator;
     public static Item itemShieldGenerator;
+    public static Item itemShieldAccumulator;
     public static Item itemShieldCable;
     public static Item itemAdminEnergySource;
     public static Item itemContourFrame;
@@ -73,6 +74,7 @@ public class AdvancedForceFieldSystem {
 
     public static BlockFieldGenerator BLOCK_FIELD_GENERATOR;
     public static BlockShieldGenerator BLOCK_SHIELD_GENERATOR;
+    public static BlockShieldAccumulator BLOCK_SHIELD_ACCUMULATOR;
     public static BlockShieldCable BLOCK_SHIELD_CABLE;
     public static BlockShieldConsole BLOCK_SHIELD_CONSOLE;
     public static BlockAdminEnergySource BLOCK_ADMIN_ENERGY_SOURCE;
@@ -110,6 +112,7 @@ public class AdvancedForceFieldSystem {
     public void init(FMLInitializationEvent event) {
         GameRegistry.registerTileEntity(TileEntityFieldGenerator.class, new ResourceLocation(MODID, "field_generator"));
         GameRegistry.registerTileEntity(TileEntityShieldGenerator.class, new ResourceLocation(MODID, "shield_generator"));
+        GameRegistry.registerTileEntity(TileEntityShieldAccumulator.class, new ResourceLocation(MODID, "shield_accumulator"));
         GameRegistry.registerTileEntity(TileEntityShieldCable.class, new ResourceLocation(MODID, "shield_cable"));
         GameRegistry.registerTileEntity(TileEntityShieldConsole.class, new ResourceLocation(MODID, "shield_console"));
         GameRegistry.registerTileEntity(TileEntityAdminEnergySource.class, new ResourceLocation(MODID, "admin_energy_source"));
@@ -146,6 +149,7 @@ public class AdvancedForceFieldSystem {
 
         BLOCK_FIELD_GENERATOR = new BlockFieldGenerator("field_generator", Material.IRON);
         BLOCK_SHIELD_GENERATOR = new BlockShieldGenerator("shield_generator", Material.IRON);
+        BLOCK_SHIELD_ACCUMULATOR = new BlockShieldAccumulator("shield_accumulator", Material.IRON);
         BLOCK_SHIELD_CABLE = new BlockShieldCable("shield_cable", Material.IRON);
         BLOCK_SHIELD_CONSOLE = new BlockShieldConsole("shield_console", Material.IRON);
         BLOCK_ADMIN_ENERGY_SOURCE = new BlockAdminEnergySource("admin_energy_source", Material.IRON);
@@ -158,6 +162,7 @@ public class AdvancedForceFieldSystem {
         List<Block> content = new ArrayList<>();
         content.add(BLOCK_FIELD_GENERATOR);
         content.add(BLOCK_SHIELD_GENERATOR);
+        content.add(BLOCK_SHIELD_ACCUMULATOR);
         content.add(BLOCK_SHIELD_CABLE);
         content.add(BLOCK_SHIELD_CONSOLE);
         content.add(BLOCK_ADMIN_ENERGY_SOURCE);
@@ -223,6 +228,9 @@ public class AdvancedForceFieldSystem {
                 break;
             case "shield_generator":
                 itemShieldGenerator = item;
+                break;
+            case "shield_accumulator":
+                itemShieldAccumulator = item;
                 break;
             case "shield_cable":
                 itemShieldCable = item;

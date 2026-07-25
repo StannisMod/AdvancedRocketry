@@ -9,8 +9,25 @@ public final class ModConfig {
     private static final String CATEGORY_IMPACT = "impact";
     private static final String CATEGORY_SHIELD = "shield";
     private static final String CATEGORY_CONTOUR = "contour";
+    private static final String CATEGORY_BUFFERS = "buffers";
+
+    // Distinct roles for the three shield-energy buffers (each tunable):
+    //  - generatorShieldBuffer: small conversion-smoothing store in the shield generator (a few ticks
+    //    of FE->shield conversion), so a generator hoards no meaningful reserve on its own;
+    //  - generatorFeBuffer: the generator's raw-FE intake buffer, kept equally small;
+    //  - emitterCoilBuffer: the emitter's small, fast field-hold coil (activation is a fraction of it);
+    //  - accumulatorBuffer: the bulk reserve held by the dedicated accumulator block.
+    public static final int DEFAULT_GENERATOR_SHIELD_BUFFER = 16_000;
+    public static final int DEFAULT_GENERATOR_FE_BUFFER = 16_000;
+    public static final int DEFAULT_EMITTER_COIL_BUFFER = 40_000;
+    public static final int DEFAULT_ACCUMULATOR_BUFFER = 500_000;
 
     private static Configuration configuration;
+
+    public static int generatorShieldBuffer = DEFAULT_GENERATOR_SHIELD_BUFFER;
+    public static int generatorFeBuffer = DEFAULT_GENERATOR_FE_BUFFER;
+    public static int emitterCoilBuffer = DEFAULT_EMITTER_COIL_BUFFER;
+    public static int accumulatorBuffer = DEFAULT_ACCUMULATOR_BUFFER;
 
     public static double entityImpactEnergyPerVelocitySq = 160.0D;
     public static double projectileImpactEnergyPerVelocitySq = 320.0D;
@@ -146,6 +163,44 @@ public final class ModConfig {
                 0.0F,
                 Float.MAX_VALUE,
                 "Energy consumed per contour field block per tick while the contour field is active."
+        );
+
+        generatorShieldBuffer = configuration.getInt(
+                "generatorShieldBuffer",
+                CATEGORY_BUFFERS,
+                DEFAULT_GENERATOR_SHIELD_BUFFER,
+                0,
+                Integer.MAX_VALUE,
+                "Shield-energy buffer inside a shield generator. Small on purpose: it smooths FE->shield "
+                        + "conversion over a few ticks, it is not a reserve. Bulk storage is the accumulator's job."
+        );
+
+        generatorFeBuffer = configuration.getInt(
+                "generatorFeBuffer",
+                CATEGORY_BUFFERS,
+                DEFAULT_GENERATOR_FE_BUFFER,
+                0,
+                Integer.MAX_VALUE,
+                "Raw-FE intake buffer inside a shield generator. Kept small so a generator cannot hoard FE."
+        );
+
+        emitterCoilBuffer = configuration.getInt(
+                "emitterCoilBuffer",
+                CATEGORY_BUFFERS,
+                DEFAULT_EMITTER_COIL_BUFFER,
+                1,
+                Integer.MAX_VALUE,
+                "Field-hold coil buffer inside an emitter (field generator). Small and fast: the field "
+                        + "activates once the coil reaches shieldActivationThreshold of this value."
+        );
+
+        accumulatorBuffer = configuration.getInt(
+                "accumulatorBuffer",
+                CATEGORY_BUFFERS,
+                DEFAULT_ACCUMULATOR_BUFFER,
+                1,
+                Integer.MAX_VALUE,
+                "Bulk shield-energy reserve held by a shield accumulator block."
         );
 
         if (configuration.hasChanged()) {
