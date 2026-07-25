@@ -263,6 +263,39 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
         return shieldEnergyResistanceBias;
     }
 
+    // Priority-group editor (D134-5 / D134-6 Layer 4) ---------------------------------------------
+    // The console is a STATELESS editor: it stores none of this. Every call resolves the domain from
+    // the console's own position and edits the one authoritative ShieldDomainConfig, so two consoles on
+    // one hull are interchangeable and destroying either loses nothing. No console at all is still a
+    // working shield — zero groups means one implicit uniform group.
+
+    /** The domain configuration this console edits (shared by every console on the same hull/base). */
+    public ShieldDomainConfig getDomainConfig() {
+        return ShieldControl.configFor(world, pos);
+    }
+
+    public ShieldPriorityGroup createPriorityGroup(String name, int priority) {
+        return ShieldControl.createGroup(world, pos, name, priority);
+    }
+
+    public boolean deletePriorityGroup(String name) {
+        return ShieldControl.deleteGroup(world, pos, name);
+    }
+
+    /** Sets a group's priority and pushes it into its member emitters ("all power to the rear shields"). */
+    public boolean setPriorityGroupPriority(String name, int priority) {
+        return ShieldControl.setGroupPriority(world, pos, name, priority);
+    }
+
+    public boolean assignEmitterToGroup(String name, BlockPos emitterPos) {
+        return ShieldControl.assignEmitter(world, pos, name, emitterPos);
+    }
+
+    /** Regenerates the domain's access credential on leak (Layer 3); grouping and identity are untouched. */
+    public String rotateAccessCode() {
+        return ShieldControl.rotateAccessCode(world, pos);
+    }
+
     public String getShieldEnergyResistanceText() {
         double energy = (1.0D - shieldEnergyResistanceBias) * 100.0D;
         double physical = shieldEnergyResistanceBias * 100.0D;

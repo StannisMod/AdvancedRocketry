@@ -54,6 +54,11 @@ public final class ModConfig {
     // draws. Regeneration (the LARGE draw) is the throughput-capped refill above. Kept small relative to
     // the throughput so maintenance never dominates the regeneration budget.
     public static double emitterMaintenanceEnergyPerSurfaceArea = 12.0D;
+    // P6 "the interesting limiter binds": a cable's per-tick transport cap. Deliberately several times
+    // the emitter base throughput so ordinary builds are constrained by EMITTER PLACEMENT (the fun,
+    // construction-derived limiter) and cable throughput (plumbing) only bites at extremes — a big
+    // multi-emitter network squeezed through one thin line. Tunable, never balance-pinned.
+    public static int cableThroughputPerTick = 20_000;
 
     // D134-2 tier-1 cooperative weapon interaction (axis-G tunable, never balance-pinned):
     //  - shieldStrikeAbsorptionRate: shield energy spent per unit of a cooperative strike's declared
@@ -217,6 +222,17 @@ public final class ModConfig {
                 Float.MAX_VALUE,
                 "Passive-maintenance coefficient. Holding a powered field costs this x pi x radius^2 per "
                         + "tick (the small draw); regeneration after damage is the larger, throughput-capped draw."
+        );
+
+        cableThroughputPerTick = configuration.getInt(
+                "cableThroughputPerTick",
+                CATEGORY_SHIELD,
+                20_000,
+                1,
+                Integer.MAX_VALUE,
+                "Per-tick shield-energy transport capacity of one cable. Kept well above a single emitter's "
+                        + "recharge throughput on purpose: normal builds should be limited by where you put "
+                        + "your emitters, not by pipe-sizing. Lower it to make plumbing a real constraint."
         );
 
         generatorShieldBuffer = configuration.getInt(

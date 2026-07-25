@@ -313,6 +313,18 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shipFramed", emitter.isShipFramed());
                 info.put("frameReady", emitter.isFrameReady());
                 info.put("priority", emitter.getShieldPriority());
+                // P4 (D134-5/6): the emitter's domain, the priority group that lists it (if any), and its
+                // carried access credential — so a test can assert group push-down and code rotation.
+                String domainId = com.github.stannismod.affs.world.shield.ShieldDomains.forBlock(
+                        world, new BlockPos(x, y, z));
+                info.put("domainId", domainId == null ? "" : domainId);
+                info.put("accessCode", emitter.getAccessCode());
+                // peek, not configFor: reading an emitter must not create persistent domain state.
+                com.github.stannismod.affs.world.shield.ShieldDomainConfig domainConfig =
+                        com.github.stannismod.affs.world.shield.ShieldControl.peekConfig(world, new BlockPos(x, y, z));
+                com.github.stannismod.affs.world.shield.ShieldPriorityGroup owningGroup =
+                        domainConfig == null ? null : domainConfig.findGroupOf(new BlockPos(x, y, z));
+                info.put("group", owningGroup == null ? "" : owningGroup.getName());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldGenerator) {
                 com.github.stannismod.affs.te.TileEntityShieldGenerator gen =
                         (com.github.stannismod.affs.te.TileEntityShieldGenerator) tile;
@@ -320,6 +332,13 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
                 info.put("available", gen.getAvailableShieldEnergy());
+            } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldCable) {
+                // P6: a cable's transport cap, so a test can compare the two limiters (transport vs the
+                // emitter's recharge throughput) without pinning either magnitude.
+                com.github.stannismod.affs.te.TileEntityShieldCable cable =
+                        (com.github.stannismod.affs.te.TileEntityShieldCable) tile;
+                info.put("kind", "cable");
+                info.put("throughput", cable.getThroughputPerTick());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldAccumulator) {
                 com.github.stannismod.affs.te.TileEntityShieldAccumulator acc =
                         (com.github.stannismod.affs.te.TileEntityShieldAccumulator) tile;
@@ -484,6 +503,98 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
             return;
         }
+        if (args.length >= 6 && "group".equalsIgnoreCase(args[0])) {
+            // group <dim> <x> <y> <z> <op> [...] — drive the D134-5 priority-group control surface from
+            // the console position <x,y,z> (any console/block in the domain gives the same answer, which
+            // is the point of the domain-level SSOT). Ops:
+            //   list                          — the domain's groups (name/priority/memberCount)
+            //   create <name> <priority>      — create a named group
+            //   delete <name>                 — delete it (member emitters keep their own setting)
+            //   priority <name> <value>       — set the group's priority and push it into members
+            //   assign <name> <ex> <ey> <ez>  — move an emitter into the group and apply
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos at = new BlockPos(x, y, z);
+            String op = args[5];
+            if ("list".equalsIgnoreCase(op)) {
+                com.github.stannismod.affs.world.shield.ShieldDomainConfig config =
+                        com.github.stannismod.affs.world.shield.ShieldControl.configFor(world, at);
+                if (config == null) {
+                    send(sender, "{\"error\":\"no domain config\"}");
+                    return;
+                }
+                StringBuilder sb = new StringBuilder("{\"domainId\":\"").append(config.getDomainId())
+                        .append("\",\"count\":").append(config.getGroupCount()).append(",\"groups\":[");
+                boolean first = true;
+                for (com.github.stannismod.affs.world.shield.ShieldPriorityGroup g : config.getGroups()) {
+                    if (!first) {
+                        sb.append(',');
+                    }
+                    first = false;
+                    sb.append("{\"name\":\"").append(g.getName()).append("\",\"priority\":")
+                            .append(g.getPriority()).append(",\"memberCount\":").append(g.getMemberCount())
+                            .append('}');
+                }
+                sb.append("]}");
+                send(sender, sb.toString());
+                return;
+            }
+            if (args.length >= 8 && "create".equalsIgnoreCase(op)) {
+                com.github.stannismod.affs.world.shield.ShieldPriorityGroup g =
+                        com.github.stannismod.affs.world.shield.ShieldControl.createGroup(
+                                world, at, args[6], parseIntOr(args[7], 0));
+                send(sender, g == null ? "{\"ok\":false}"
+                        : "{\"ok\":true,\"name\":\"" + g.getName() + "\",\"priority\":" + g.getPriority() + "}");
+                return;
+            }
+            if (args.length >= 7 && "delete".equalsIgnoreCase(op)) {
+                boolean ok = com.github.stannismod.affs.world.shield.ShieldControl.deleteGroup(world, at, args[6]);
+                send(sender, "{\"ok\":" + ok + "}");
+                return;
+            }
+            if (args.length >= 8 && "priority".equalsIgnoreCase(op)) {
+                boolean ok = com.github.stannismod.affs.world.shield.ShieldControl.setGroupPriority(
+                        world, at, args[6], parseIntOr(args[7], 0));
+                send(sender, "{\"ok\":" + ok + "}");
+                return;
+            }
+            if (args.length >= 10 && "assign".equalsIgnoreCase(op)) {
+                BlockPos emitterPos = new BlockPos(parseIntOr(args[7], 0), parseIntOr(args[8], 0),
+                        parseIntOr(args[9], 0));
+                boolean ok = com.github.stannismod.affs.world.shield.ShieldControl.assignEmitter(
+                        world, at, args[6], emitterPos);
+                send(sender, "{\"ok\":" + ok + "}");
+                return;
+            }
+            send(sender, "{\"error\":\"unknown group op — try list | create <name> <priority> | delete <name> "
+                    + "| priority <name> <value> | assign <name> <ex> <ey> <ez>\"}");
+            return;
+        }
+        if (args.length >= 5 && "rotate-code".equalsIgnoreCase(args[0])) {
+            // rotate-code <dim> <x> <y> <z> — regenerate the domain's access credential (D134-6 Layer 3)
+            // and push it to every emitter in the domain. The leak response: the old carried code stops
+            // working at once, while identity and grouping are untouched.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            String code = com.github.stannismod.affs.world.shield.ShieldControl.rotateAccessCode(
+                    world, new BlockPos(x, y, z));
+            send(sender, "{\"ok\":true,\"code\":\"" + code + "\"}");
+            return;
+        }
         if (args.length >= 11 && "strike".equalsIgnoreCase(args[0])) {
             // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> — fire a
             // cooperative D134-2 tier-1 strike (a declared-energy beam) at the field along a ray and
@@ -526,7 +637,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind>\"}");
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------

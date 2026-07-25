@@ -14,7 +14,6 @@ import javax.annotation.Nullable;
 
 public class TileEntityShieldCable extends TileEntity implements ITickable, IShieldCable {
 
-    public static final int DEFAULT_THROUGHPUT = 4_000;
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
     private int clientSyncCountdown = -1;
@@ -95,7 +94,9 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
 
     @Override
     public int getThroughputPerTick() {
-        return DEFAULT_THROUGHPUT;
+        // Config-tunable (P6): transport is meant to be the limiter of LAST resort, so this sits well
+        // above one emitter's recharge throughput and a normal build is bound by emitter placement.
+        return com.github.stannismod.affs.config.ModConfig.cableThroughputPerTick;
     }
 
     @Override
