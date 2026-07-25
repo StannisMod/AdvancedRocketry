@@ -74,6 +74,76 @@ public class ShieldImpactAbsorptionTest extends AbstractSharedServerTest {
                         + "the shield.", drop >= ENERGY_PROJECTILE_COST - 1_000L);
     }
 
+    @Test
+    public void chargedShieldProtectsBlocksFromExplosion() throws Exception {
+        // Control first: an unshielded glass block is destroyed by the blast. Without this the shielded
+        // case proves nothing — the block might survive because the explosion is too weak, not because
+        // of the shield.
+        int cx = 940, cz = 780;
+        place("minecraft:glass", cx, cz);
+        exec("artest shield explode " + DIM + " " + (cx + 0.5D) + " " + (Y + 1.5D) + " " + (cz + 0.5D) + " 4");
+        String controlBlock = exec("artest block at " + DIM + " " + cx + " " + Y + " " + cz);
+        assertTrue("control: the explosion did not destroy an unshielded glass block — the blast is "
+                        + "not lethal here, so the shielded case would prove nothing:\n" + controlBlock,
+                controlBlock.contains("\"isAir\":true"));
+
+        // Shielded: the same block, same blast, but inside a powered field — it must survive.
+        int gx = 986, gz = 780;
+        int ex = gx + 1;
+        place("affs:shield_generator", gx, gz);
+        place("affs:field_generator", ex, gz);
+        for (int i = 0; i < 15; i++) {
+            chargeIteration(gx, gz);
+        }
+        assertTrue("emitter never powered:\n" + read(ex, gz), read(ex, gz).contains("\"powered\":true"));
+
+        int px = ex + 2, pz = gz; // inside the emitter's radius-4 field
+        place("minecraft:glass", px, pz);
+        long storedBefore = readStored(read(ex, gz));
+        exec("artest shield explode " + DIM + " " + (px + 0.5D) + " " + (Y + 1.5D) + " " + (pz + 0.5D) + " 4");
+
+        String shieldedBlock = exec("artest block at " + DIM + " " + px + " " + Y + " " + pz);
+        assertTrue("a glass block inside a powered shield was destroyed by an explosion — the field did "
+                        + "not protect it:\n" + shieldedBlock, shieldedBlock.contains("minecraft:glass"));
+        long storedAfter = readStored(read(ex, gz));
+        assertTrue("shield energy did not drop while absorbing the explosion (before=" + storedBefore
+                        + " after=" + storedAfter + "): the block may have survived for another reason.",
+                storedAfter < storedBefore);
+    }
+
+    @Test
+    public void chargedShieldDeflectsAnArrow() throws Exception {
+        int gx = 992, gz = 786;
+        int ex = gx + 1;
+        place("affs:shield_generator", gx, gz);
+        place("affs:field_generator", ex, gz);
+        for (int i = 0; i < 15; i++) {
+            chargeIteration(gx, gz);
+        }
+        assertTrue("emitter never powered:\n" + read(ex, gz), read(ex, gz).contains("\"powered\":true"));
+
+        double centerX = ex + 0.5D, centerY = Y + 0.5D, centerZ = gz + 0.5D;
+        double radius = 4.0D;
+        // An arrow on the +Z shell, aimed straight inward at the emitter.
+        double sx = centerX, sy = centerY, sz = centerZ + radius;
+        String spawn = exec("artest entity spawn " + DIM + " " + sx + " " + sy + " " + sz + " minecraft:arrow");
+        int arrowId = readEntityId(spawn);
+        exec("artest entity set-motion " + DIM + " " + arrowId + " 0 0 -0.3");
+        // Step the arrow inward once so it physically advances (pos != prevPos): the shield's deflection
+        // reads the pos->prevPos sweep, so a stationary arrow with only a motion field is never repelled.
+        exec("artest entity tick " + DIM + " " + arrowId + " 1");
+        exec("artest tile force-tick " + DIM + " " + ex + " " + Y + " " + gz + " 1");
+
+        String info = exec("artest entity info " + DIM + " " + arrowId);
+        assertTrue("the arrow is gone (absorbed/dead), not deflected — a kinetic projectile should be "
+                        + "pushed back, not consumed:\n" + info,
+                info.contains("\"isAlive\":true") && info.contains("\"isDead\":false"));
+        double px = parseD(info, "posX"), py = parseD(info, "posY"), pz = parseD(info, "posZ");
+        double dist = Math.sqrt(sq(px - centerX) + sq(py - centerY) + sq(pz - centerZ));
+        assertTrue("the arrow ended up inside the shell (dist=" + dist + " <= radius " + radius
+                        + "): it was not deflected back outside the shield:\n" + info, dist > radius);
+    }
+
     private String read(int x, int z) throws Exception {
         return exec("artest shield read " + DIM + " " + x + " " + Y + " " + z);
     }
@@ -82,6 +152,22 @@ public class ShieldImpactAbsorptionTest extends AbstractSharedServerTest {
         String resp = exec("artest place " + DIM + " " + x + " " + Y + " " + z + " " + block);
         assertTrue("failed to place " + block + " at " + x + "," + Y + "," + z + ": " + resp,
                 resp.contains("\"placed\":true"));
+    }
+
+    private void chargeIteration(int gx, int gz) throws Exception {
+        exec("artest energy inject " + DIM + " " + gx + " " + Y + " " + gz + " " + FE_PER_ITERATION);
+        exec("artest tile force-tick " + DIM + " " + gx + " " + Y + " " + gz + " 1");
+        exec("artest shield tick " + DIM);
+    }
+
+    private static double parseD(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+(?:\\.\\d+)?(?:[eE]-?\\d+)?)").matcher(json);
+        assertTrue("no " + key + " field in: " + json, m.find());
+        return Double.parseDouble(m.group(1));
+    }
+
+    private static double sq(double v) {
+        return v * v;
     }
 
     private static long readStored(String json) {

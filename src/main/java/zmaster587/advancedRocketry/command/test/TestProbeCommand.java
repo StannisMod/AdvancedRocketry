@@ -312,7 +312,25 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z>\"}");
+        if (args.length >= 5 && "explode".equalsIgnoreCase(args[0])) {
+            // explode <dim> <x> <y> <z> [strength] — set off a REAL explosion, firing
+            // ExplosionEvent.Detonate so the shield's ForceFieldExplosionHandler runs and protects
+            // blocks inside a powered field. Lets a test assert the shield keeps blocks intact.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            double x = parseDoubleOr(args[2], 0);
+            double y = parseDoubleOr(args[3], 0);
+            double z = parseDoubleOr(args[4], 0);
+            float strength = args.length >= 6 ? (float) parseDoubleOr(args[5], 4.0D) : 4.0F;
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            world.newExplosion(null, x, y, z, strength, false, true);
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"strength\":" + strength + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength]\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
@@ -12731,6 +12749,63 @@ public class TestProbeCommand extends CommandBase {
             entity.fallDistance = amt;
             send(sender, "{\"ok\":true,\"entityId\":" + id
                     + ",\"fallDistance\":" + entity.fallDistance + "}");
+            return;
+        }
+        if (args.length >= 3 && "tick".equalsIgnoreCase(args[0])) {
+            // entity tick <dim> <entityId> [n] — drive N onUpdate ticks so the entity actually moves
+            // (advancing pos vs prevPos). The shield's deflection keys on the pos->prevPos sweep, not on
+            // the motion field, so a projectile must physically step before it can be seen moving inward.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int id = parseIntOr(args[2], -1);
+            int n = args.length >= 4 ? Math.max(0, parseIntOr(args[3], 1)) : 1;
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.entity.Entity entity = world.getEntityByID(id);
+            if (entity == null) {
+                send(sender, "{\"error\":\"entity not found\",\"entityId\":" + id + "}");
+                return;
+            }
+            int ticked = 0;
+            for (int i = 0; i < n; i++) {
+                if (entity.isDead) {
+                    break;
+                }
+                entity.onUpdate();
+                ticked++;
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + id + ",\"ticked\":" + ticked
+                    + ",\"isDead\":" + entity.isDead
+                    + ",\"posX\":" + entity.posX + ",\"posY\":" + entity.posY + ",\"posZ\":" + entity.posZ + "}");
+            return;
+        }
+        if (args.length >= 6 && "set-motion".equalsIgnoreCase(args[0])) {
+            // entity set-motion <dim> <entityId> <mx> <my> <mz>
+            // give an entity a velocity so a shield can see it moving inward and deflect it (the
+            // absorb path keys on inward radial motion, so a stationary entity is never repelled).
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int id = parseIntOr(args[2], -1);
+            double mx = parseDoubleOr(args[3], 0);
+            double my = parseDoubleOr(args[4], 0);
+            double mz = parseDoubleOr(args[5], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.entity.Entity entity = world.getEntityByID(id);
+            if (entity == null) {
+                send(sender, "{\"error\":\"entity not found\",\"entityId\":" + id + "}");
+                return;
+            }
+            entity.motionX = mx;
+            entity.motionY = my;
+            entity.motionZ = mz;
+            entity.velocityChanged = true;
+            send(sender, "{\"ok\":true,\"entityId\":" + id + ",\"motionX\":" + entity.motionX
+                    + ",\"motionY\":" + entity.motionY + ",\"motionZ\":" + entity.motionZ + "}");
             return;
         }
         if (args.length >= 4 && "set-no-gravity".equalsIgnoreCase(args[0])) {
