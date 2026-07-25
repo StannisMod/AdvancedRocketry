@@ -1,8 +1,9 @@
 package com.github.stannismod.affs.client;
 
+import com.github.stannismod.affs.world.FieldFrame;
+import com.github.stannismod.affs.world.FieldFrames;
 import com.github.stannismod.affs.world.FieldSource;
 import com.github.stannismod.affs.world.FieldSurfaceMath;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
@@ -36,7 +37,7 @@ public final class ClientForceFieldRenderCache {
         if (state == null) {
             return RenderMesh.EMPTY;
         }
-        return state.getMesh();
+        return state.getMesh(world);
     }
 
     private static final class RenderState {
@@ -48,16 +49,60 @@ public final class ClientForceFieldRenderCache {
             this.sources = Collections.unmodifiableList(new ArrayList<>(sources));
         }
 
-        private RenderMesh getMesh() {
-            RenderMesh cached = mesh;
-            if (!dirty && cached != null) {
-                return cached;
+        private RenderMesh getMesh(World world) {
+            // Resolve each source's frame here (the client world is only available at draw time), so a
+            // source on a VS ship reports its hull-transformed world centre and the mesh is built there.
+            List<FieldSource> resolved = new ArrayList<>(sources.size());
+            boolean anyShip = false;
+            for (FieldSource s : sources) {
+                FieldFrame frame = FieldFrames.forBlock(world, s.getPos());
+                if (!(frame instanceof com.github.stannismod.affs.world.WorldFieldFrame)) {
+                    anyShip = true;
+                }
+                resolved.add(new FramedSource(s, frame));
             }
 
-            RenderMesh rebuilt = buildMesh(sources);
-            mesh = rebuilt;
-            dirty = false;
-            return rebuilt;
+            // A standalone field is static, so its mesh is cached until the snapshot changes. A ship's
+            // field moves every frame, so it must be rebuilt each draw (never cached).
+            if (!anyShip) {
+                RenderMesh cached = mesh;
+                if (!dirty && cached != null) {
+                    return cached;
+                }
+                RenderMesh rebuilt = buildMesh(resolved);
+                mesh = rebuilt;
+                dirty = false;
+                return rebuilt;
+            }
+            return buildMesh(resolved);
+        }
+    }
+
+    /** A client-side source that reports its world centre through a resolved frame (identity standalone,
+     *  ship-transformed on a VS hull), so the render mesh follows the flying hull. */
+    private static final class FramedSource implements FieldSource {
+        private final FieldSource delegate;
+        private final FieldFrame frame;
+
+        private FramedSource(FieldSource delegate, FieldFrame frame) {
+            this.delegate = delegate;
+            this.frame = frame;
+        }
+
+        @Override
+        public net.minecraft.util.math.BlockPos getPos() {
+            return delegate.getPos();
+        }
+
+        @Override
+        public int getRadius() {
+            return delegate.getRadius();
+        }
+
+        @Override
+        public Vec3d getWorldCenter() {
+            Vec3d c = frame.fieldToWorld(getPos().getX() + 0.5D, getPos().getY() + 0.5D, getPos().getZ() + 0.5D);
+            return c != null ? c : new Vec3d(getPos().getX() + 0.5D, getPos().getY() + 0.5D, getPos().getZ() + 0.5D);
         }
     }
 
@@ -68,12 +113,18 @@ public final class ClientForceFieldRenderCache {
 
         SetBuilder builder = new SetBuilder();
         for (FieldSource source : sources) {
-            BlockPos pos = source.getPos();
+            // Lay the marching-cubes grid around the field's WORLD centre (identity standalone,
+            // hull-transformed on a ship), on the half-unit lattice the sampler expects, so the grid and
+            // the SDF — which also reads getWorldCenter — stay consistent in both frames.
+            Vec3d wc = source.getWorldCenter();
+            int cx = (int) Math.floor(wc.x * 2.0D);
+            int cy = (int) Math.floor(wc.y * 2.0D);
+            int cz = (int) Math.floor(wc.z * 2.0D);
             int radius = source.getRadius() + 2;
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dy = -radius; dy <= radius; dy++) {
                     for (int dz = -radius; dz <= radius; dz++) {
-                        builder.add(new GridCell(pos.getX() * 2 + dx * 2, pos.getY() * 2 + dy * 2, pos.getZ() * 2 + dz * 2));
+                        builder.add(new GridCell(cx + dx * 2, cy + dy * 2, cz + dz * 2));
                     }
                 }
             }
