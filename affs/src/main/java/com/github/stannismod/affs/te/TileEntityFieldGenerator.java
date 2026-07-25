@@ -66,6 +66,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     // each tick, so an emitter assembled into a ship after placement picks up its ship frame.
     private FieldFrame fieldFrame = WorldFieldFrame.INSTANCE;
     private String accessCode = "";
+    // Redistribution priority (D134-5): higher = fed first under a deficit. The setting is emitter-owned
+    // (survives losing the console); a priority group is a domain-level named selection that pushes this
+    // value down into its members. Default 0 = normal.
+    private int priority = 0;
     private int shieldDrainPhase = 0;
     private int clientSyncCountdown = -1;
     private boolean clientSyncQueued = false;
@@ -133,6 +137,23 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     public String getAccessCode() {
         return accessCode;
+    }
+
+    @Override
+    public int getShieldPriority() {
+        return priority;
+    }
+
+    public void setPriority(int value) {
+        if (value == priority) {
+            return;
+        }
+        priority = value;
+        if (world != null && !world.isRemote) {
+            markDirty();
+            ShieldNetworkManager.markDirty(world);
+            queueClientSync(false);
+        }
     }
 
     @Override
@@ -747,6 +768,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         compound.setInteger("radius", radius);
         compound.setInteger("energy", energy.getEnergyStored());
         compound.setString("accessCode", accessCode);
+        compound.setInteger("priority", priority);
         compound.setBoolean("fieldPowered", fieldPowered);
         compound.setInteger("shieldDrainPhase", shieldDrainPhase);
         compound.setInteger("shieldReceivedThisTick", shieldReceivedThisTick);
@@ -762,6 +784,7 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         shieldReceivedThisTick = Math.max(0, compound.getInteger("shieldReceivedThisTick"));
         shieldConsumedThisTick = Math.max(0, compound.getInteger("shieldConsumedThisTick"));
         accessCode = CodeUtils.normalize(compound.getString("accessCode"));
+        priority = compound.getInteger("priority");
         fieldPowered = compound.getBoolean("fieldPowered");
         shieldDrainPhase = Math.max(0, Math.min(19, compound.getInteger("shieldDrainPhase")));
     }

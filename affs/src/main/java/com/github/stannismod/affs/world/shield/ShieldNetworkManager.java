@@ -341,6 +341,7 @@ public final class ShieldNetworkManager {
             }
 
             List<MaxFlowSolver.EdgeRef> sinkRefs = new ArrayList<>();
+            List<int[]> sinkDemand = new ArrayList<>(); // parallel to sinkRefs: [requested, priority]
             int totalSinkRequested = 0;
             int totalConsumptionPerTick = 0;
             for (SinkNode sink : sinks) {
@@ -349,7 +350,9 @@ public final class ShieldNetworkManager {
                 int requested = Math.max(0, sink.sink.getRequestedShieldEnergy());
                 totalSinkRequested += requested;
                 totalConsumptionPerTick += estimateSinkConsumptionPerTick(sink.sink);
-                sinkRefs.add(solver.addEdge(sinkNode, superSink, requested, sink.sink));
+                // Open the demand edge at capacity 0; priority tiers below raise it to `requested`.
+                sinkRefs.add(solver.addEdge(sinkNode, superSink, 0, sink.sink));
+                sinkDemand.add(new int[]{requested, sink.sink.getShieldPriority()});
             }
 
             // Link each supply port to the demand port of every adjacent node (INF): transport across
@@ -364,7 +367,23 @@ public final class ShieldNetworkManager {
                 }
             }
 
-            int maxFlow = solver.maxFlow(superSource, superSink);
+            // Priority-tiered redistribution (D134-5): open the sink demand edges in descending priority
+            // order, augmenting the flow at each tier, so a scarce supply fills the highest-priority
+            // emitters first and equal-priority emitters share what remains. With a single priority (the
+            // default — every emitter in one implicit group) this is one pass, identical to plain max-flow.
+            java.util.TreeSet<Integer> priorityTiers = new java.util.TreeSet<>(java.util.Collections.reverseOrder());
+            for (int[] d : sinkDemand) {
+                priorityTiers.add(d[1]);
+            }
+            int maxFlow = 0;
+            for (int tier : priorityTiers) {
+                for (int i = 0; i < sinkRefs.size(); i++) {
+                    if (sinkDemand.get(i)[1] == tier) {
+                        sinkRefs.get(i).setCapacity(sinkDemand.get(i)[0]);
+                    }
+                }
+                maxFlow += solver.maxFlow(superSource, superSink);
+            }
 
             boolean hasCables = !cables.isEmpty();
             int saturatedCables = 0;
@@ -616,7 +635,9 @@ public final class ShieldNetworkManager {
 
         private static final class Edge {
             private final int to;
-            private final int capacity;
+            // Not final: a sink's demand edge is opened tier-by-tier for priority redistribution, so its
+            // capacity is raised from 0 to the requested amount between max-flow augmentations.
+            private int capacity;
             private int flow;
             private int rev;
 
@@ -637,6 +658,10 @@ public final class ShieldNetworkManager {
             private EdgeRef(Edge edge, Object owner) {
                 this.edge = edge;
                 this.owner = owner;
+            }
+
+            private void setCapacity(int capacity) {
+                edge.capacity = capacity;
             }
         }
     }

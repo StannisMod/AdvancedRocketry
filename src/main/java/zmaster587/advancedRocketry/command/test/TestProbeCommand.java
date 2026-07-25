@@ -312,6 +312,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("worldZ", wc.z);
                 info.put("shipFramed", emitter.isShipFramed());
                 info.put("frameReady", emitter.isFrameReady());
+                info.put("priority", emitter.getShieldPriority());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldGenerator) {
                 com.github.stannismod.affs.te.TileEntityShieldGenerator gen =
                         (com.github.stannismod.affs.te.TileEntityShieldGenerator) tile;
@@ -457,7 +458,33 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"stored\":" + emitter.getEnergyStored() + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount>\"}");
+        if (args.length >= 5 && "priority".equalsIgnoreCase(args[0])) {
+            // priority <dim> <x> <y> <z> [value] — read (no value) or set an emitter's redistribution
+            // priority. Higher = fed first under a deficit (D134-5, "all power to the rear shields").
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityFieldGenerator)) {
+                send(sender, "{\"error\":\"not an emitter\",\"tileClass\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            com.github.stannismod.affs.te.TileEntityFieldGenerator emitter =
+                    (com.github.stannismod.affs.te.TileEntityFieldGenerator) tile;
+            if (args.length >= 6) {
+                emitter.setPriority(parseIntOr(args[5], 0));
+            }
+            send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value]\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
