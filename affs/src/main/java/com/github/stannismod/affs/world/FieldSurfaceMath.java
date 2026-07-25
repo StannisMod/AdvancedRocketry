@@ -19,12 +19,12 @@ public final class FieldSurfaceMath {
     }
 
     public static double shellDistance(FieldSource generator, Vec3d point) {
-        double cx = generator.getPos().getX() + 0.5D;
-        double cy = generator.getPos().getY() + 0.5D;
-        double cz = generator.getPos().getZ() + 0.5D;
-        double dx = point.x - cx;
-        double dy = point.y - cy;
-        double dz = point.z - cz;
+        // Centre in WORLD coordinates (identity standalone, ship-transformed on a VS hull, §4.3). A
+        // sphere is rotation-invariant, so the shell distance stays a plain world-frame radial test.
+        Vec3d c = generator.getWorldCenter();
+        double dx = point.x - c.x;
+        double dy = point.y - c.y;
+        double dz = point.z - c.z;
         double distanceToCenter = Math.sqrt(dx * dx + dy * dy + dz * dz);
         return Math.abs(distanceToCenter - generator.getRadius()) - FIELD_HALF_THICKNESS;
     }
@@ -97,13 +97,22 @@ public final class FieldSurfaceMath {
             if (!generator.isFieldPowered()) {
                 continue;
             }
+            // A ship-frame emitter whose ship is not loaded on this side cannot resolve its world
+            // centre; it contributes no shell (Q4 fail-open) rather than projecting one at the wrong place.
+            if (!generator.isFrameReady()) {
+                continue;
+            }
             generators.add(generator);
         }
         return generators;
     }
 
     public static AxisAlignedBB influenceBox(TileEntityFieldGenerator generator) {
-        return new AxisAlignedBB(generator.getPos()).grow(generator.getRadius() + FIELD_THICKNESS);
+        // Broad-phase search box in WORLD coordinates around the field's world centre — entities are
+        // always world-frame, so on a ship this box must follow the hull, not sit at the shipyard.
+        Vec3d c = generator.getWorldCenter();
+        double half = generator.getRadius() + FIELD_THICKNESS + 0.5D;
+        return new AxisAlignedBB(c.x - half, c.y - half, c.z - half, c.x + half, c.y + half, c.z + half);
     }
 
     private static double smoothMin(double a, double b, double k) {
@@ -112,20 +121,19 @@ public final class FieldSurfaceMath {
     }
 
     private static double solidDistance(FieldSource source, Vec3d point) {
-        double cx = source.getPos().getX() + 0.5D;
-        double cy = source.getPos().getY() + 0.5D;
-        double cz = source.getPos().getZ() + 0.5D;
-        double dx = point.x - cx;
-        double dy = point.y - cy;
-        double dz = point.z - cz;
+        Vec3d c = source.getWorldCenter();
+        double dx = point.x - c.x;
+        double dy = point.y - c.y;
+        double dz = point.z - c.z;
         double distanceToCenter = Math.sqrt(dx * dx + dy * dy + dz * dz);
         return distanceToCenter - source.getRadius();
     }
 
     private static boolean intersectsShell(FieldSource source, AxisAlignedBB box) {
-        double cx = source.getPos().getX() + 0.5D;
-        double cy = source.getPos().getY() + 0.5D;
-        double cz = source.getPos().getZ() + 0.5D;
+        Vec3d c = source.getWorldCenter();
+        double cx = c.x;
+        double cy = c.y;
+        double cz = c.z;
 
         double minDistanceSq = distanceSqPointToAabb(cx, cy, cz, box);
         double maxDistanceSq = maxDistanceSqPointToAabb(cx, cy, cz, box);

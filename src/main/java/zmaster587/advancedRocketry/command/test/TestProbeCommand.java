@@ -245,7 +245,11 @@ public class TestProbeCommand extends CommandBase {
      *       state (powered / stored / radius / requested / tier / throughput / maintenance), a
      *       generator's stored/available energy, or an accumulator's stored/available/free reserve;</li>
      *   <li>{@code zone <dim> <x> <y> <z>} — report which active emitter owns the surface point
-     *       (x+0.5, y+0.5, z+0.5): the nearest-emitter Voronoi partition (D134-3 responsible area).</li>
+     *       (x+0.5, y+0.5, z+0.5): the nearest-emitter Voronoi partition (D134-3 responsible area);</li>
+     *   <li>{@code emitters <dim>} — list every loaded emitter with its subspace pos, world centre,
+     *       shell velocity and frame state (the §4.3 ship-frame observability);</li>
+     *   <li>{@code charge <dim> <x> <y> <z> <amount>} — TEST ONLY: set an emitter's coil energy directly
+     *       (power a shield on an assembled ship without a generator/FE feed in the subspace hull).</li>
      * </ul>
      */
     private void handleShield(MinecraftServer server, ICommandSender sender, String[] args) {
@@ -299,6 +303,15 @@ public class TestProbeCommand extends CommandBase {
                 info.put("throughput", emitter.getRechargeThroughput());
                 info.put("maintenance", emitter.getShieldDrainThisTick());
                 info.put("receivedThisTick", emitter.getShieldReceivedThisTick());
+                // P3 (§4.3 frame seam): the field's world centre (ship-transformed on a VS hull), whether
+                // it is ship-framed, and whether the frame currently resolves — the observability a
+                // ship-frame e2e reads to confirm the shell tracks the flying hull.
+                net.minecraft.util.math.Vec3d wc = emitter.getWorldCenter();
+                info.put("worldX", wc.x);
+                info.put("worldY", wc.y);
+                info.put("worldZ", wc.z);
+                info.put("shipFramed", emitter.isShipFramed());
+                info.put("frameReady", emitter.isFrameReady());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldGenerator) {
                 com.github.stannismod.affs.te.TileEntityShieldGenerator gen =
                         (com.github.stannismod.affs.te.TileEntityShieldGenerator) tile;
@@ -374,7 +387,77 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z>\"}");
+        if (args.length >= 2 && "emitters".equalsIgnoreCase(args[0])) {
+            // emitters <dim> — list every LOADED emitter in the dimension with its subspace block pos,
+            // its world centre, and its frame state. On a VS ship the world centre is the hull-mapped
+            // centre (far from the subspace pos), which is exactly what a ship-frame e2e verifies: the
+            // shell tracks the flying ship. Uses the static registry, so it finds a ship's emitter once
+            // the ship (and its chunk) is loaded, without the test knowing the subspace coordinates.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            java.util.List<Map<String, Object>> emitters = new java.util.ArrayList<>();
+            for (com.github.stannismod.affs.te.TileEntityFieldGenerator e
+                    : com.github.stannismod.affs.te.TileEntityFieldGenerator.getActiveGenerators()) {
+                if (e == null || e.isInvalid() || e.getWorld() == null
+                        || e.getWorld().provider.getDimension() != dim) {
+                    continue;
+                }
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("posX", e.getPos().getX());
+                m.put("posY", e.getPos().getY());
+                m.put("posZ", e.getPos().getZ());
+                net.minecraft.util.math.Vec3d wc = e.getWorldCenter();
+                m.put("worldX", wc.x);
+                m.put("worldY", wc.y);
+                m.put("worldZ", wc.z);
+                net.minecraft.util.math.Vec3d vel = e.getShellVelocity();
+                m.put("velX", vel.x);
+                m.put("velY", vel.y);
+                m.put("velZ", vel.z);
+                m.put("shipFramed", e.isShipFramed());
+                m.put("frameReady", e.isFrameReady());
+                m.put("powered", e.isFieldPowered());
+                emitters.add(m);
+            }
+            StringBuilder sb = new StringBuilder("{\"dim\":").append(dim)
+                    .append(",\"count\":").append(emitters.size()).append(",\"emitters\":[");
+            for (int i = 0; i < emitters.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(jsonMap(emitters.get(i)));
+            }
+            sb.append("]}");
+            send(sender, sb.toString());
+            return;
+        }
+        if (args.length >= 6 && "charge".equalsIgnoreCase(args[0])) {
+            // charge <dim> <x> <y> <z> <amount> — TEST ONLY: set an emitter's coil energy directly, so a
+            // ship-frame e2e can power a shield on an assembled ship without a generator/FE feed in the
+            // subspace structure. The geometry, not the energy economy, is what that test exercises.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            int amount = parseIntOr(args[5], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityFieldGenerator)) {
+                send(sender, "{\"error\":\"not an emitter\",\"tileClass\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            com.github.stannismod.affs.te.TileEntityFieldGenerator emitter =
+                    (com.github.stannismod.affs.te.TileEntityFieldGenerator) tile;
+            emitter.setShieldEnergyForTest(amount);
+            send(sender, "{\"ok\":true,\"powered\":" + emitter.isFieldPowered()
+                    + ",\"stored\":" + emitter.getEnergyStored() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
@@ -9286,10 +9369,12 @@ public class TestProbeCommand extends CommandBase {
             boolean includeEngines = !"invalid-no-engine".equals(variant);
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
             boolean includeSeat = !"invalid-no-seat".equals(variant)
-                    && !"with-pilot-seat".equals(variant); // pilot seat replaces the generic seat
+                    && !"with-pilot-seat".equals(variant) // pilot seat replaces the generic seat
+                    && !"with-shield-emitter".equals(variant);
             boolean includeGuidance = !"invalid-no-guidance".equals(variant)
                     && !"advanced-flight-computer-only".equals(variant)
-                    && !"with-pilot-seat".equals(variant); // AFC is the ship's brain — no guidance
+                    && !"with-pilot-seat".equals(variant) // AFC is the ship's brain — no guidance
+                    && !"with-shield-emitter".equals(variant);
             boolean includeCargo = "with-cargo".equals(variant);
             // with-fluid-cargo: same as simple but replaces 2 of the 6 BlockFuelTank
             // positions with BlockPressurizedFluidTank (registry "liquidTank") which
@@ -9344,7 +9429,13 @@ public class TestProbeCommand extends CommandBase {
             // reaches the roof. Used by the enclosed-interior crew e2e.
             boolean includeRoofedDeck = "with-roofed-deck".equals(variant);
             boolean includePilotDeck = "with-pilot-deck".equals(variant) || includeRoofedDeck;
-            boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck;
+            // with-shield-emitter — a with-pilot-seat ship (AFC + pilot seat, so it becomes a VS ship)
+            // plus one affs:field_generator emitter block welded into the hull. The emitter rides the
+            // ship into subspace, so its field frame resolves to the ship (§4.3); the ship-frame e2e
+            // reads its world centre to confirm the shell tracks the flying hull.
+            boolean includeShieldEmitter = "with-shield-emitter".equals(variant);
+            boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck
+                    || includeShieldEmitter;
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
                     || includePilotSeat;
@@ -9386,6 +9477,8 @@ public class TestProbeCommand extends CommandBase {
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "drill"));
             net.minecraft.block.Block advancedFlightComputer =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "advancedFlightComputer"));
+            net.minecraft.block.Block shieldEmitter =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("affs", "field_generator"));
 
             if (launchpad == null || rocketBuilder == null || advEngine == null
                     || fuelTank == null || guidanceComputer == null || seat == null) {
@@ -9411,6 +9504,10 @@ public class TestProbeCommand extends CommandBase {
             }
             if (includePilotSeat && pilotSeat == null) {
                 send(sender, "{\"error\":\"missing pilotSeat block (advancedrocketry:pilotSeat)\"}");
+                return;
+            }
+            if (includeShieldEmitter && shieldEmitter == null) {
+                send(sender, "{\"error\":\"missing shield emitter block (affs:field_generator)\"}");
                 return;
             }
 
@@ -9507,6 +9604,13 @@ public class TestProbeCommand extends CommandBase {
                 int afcY = includePilotDeck ? rocketY + 4 : rocketY + 3;
                 world.setBlockState(new BlockPos(rocketX - 1, afcY, rocketZ),
                         advancedFlightComputer.getDefaultState());
+            }
+            if (includeShieldEmitter) {
+                // One emitter welded onto the hull, above the +1 fuel-tank column so it is face-adjacent
+                // to a fuel tank and the assembly flood-fill welds it into the ship (and within the
+                // tower-bounded scan). It rides the ship into subspace and resolves the ship frame.
+                world.setBlockState(new BlockPos(rocketX + 1, rocketY + 3, rocketZ),
+                        shieldEmitter.getDefaultState());
             }
             if (includeFluidCargo) {
                 // Swap 2 of the 6 fuel-tank slots for liquidTank (TileFluidTank).

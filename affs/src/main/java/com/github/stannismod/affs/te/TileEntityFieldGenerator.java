@@ -6,8 +6,11 @@ import com.github.stannismod.affs.config.ModConfig;
 import com.github.stannismod.affs.network.PacketFieldTouchEffect;
 import com.github.stannismod.affs.network.PacketSyncActiveGenerators;
 import com.github.stannismod.affs.util.CodeUtils;
+import com.github.stannismod.affs.world.FieldFrame;
+import com.github.stannismod.affs.world.FieldFrames;
 import com.github.stannismod.affs.world.FieldSource;
 import com.github.stannismod.affs.world.FieldSurfaceMath;
+import com.github.stannismod.affs.world.WorldFieldFrame;
 import com.github.stannismod.affs.world.projectile.IEnergyProjectile;
 import com.github.stannismod.affs.world.shield.IShieldSink;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
@@ -58,6 +61,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     //     intake, so a per-tick extract cap would make the coil unable to block any impact above it.
     private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, ModConfig.emitterCoilBuffer, ModConfig.emitterCoilBuffer);
     private int radius = DEFAULT_RADIUS;
+    // The frame this emitter's field lives in (§4.3): identity standalone, ship-frame on a VS hull.
+    // Resolved from the block's position (a network is entirely on one ship or standalone) and refreshed
+    // each tick, so an emitter assembled into a ship after placement picks up its ship frame.
+    private FieldFrame fieldFrame = WorldFieldFrame.INSTANCE;
     private String accessCode = "";
     private int shieldDrainPhase = 0;
     private int clientSyncCountdown = -1;
@@ -72,6 +79,8 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         if (world == null) {
             return;
         }
+
+        resolveFieldFrame();
 
         if (world.isRemote) {
             updateClientPrediction();
@@ -129,12 +138,64 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     @Override
     public void onLoad() {
         super.onLoad();
+        resolveFieldFrame();
         if (world != null && !world.isRemote) {
             ACTIVE_GENERATORS.add(this);
             ShieldNetworkRegistry.register(this);
             ShieldNetworkManager.markDirty(world);
             refreshFieldPowerState(true);
         }
+    }
+
+    /** Re-resolve this emitter's frame from its position (cheap; a map lookup when VS is present). */
+    private void resolveFieldFrame() {
+        fieldFrame = FieldFrames.forBlock(world, pos);
+    }
+
+    @Override
+    public Vec3d getWorldCenter() {
+        // The field centre mapped into world space through this emitter's frame (§4.3). Identity
+        // standalone; ship-transformed on a VS hull so the shell tracks the flying ship. Falls back to
+        // the raw block centre only if the frame momentarily cannot resolve — isFrameReady() gates the
+        // emitter out of the active set in that case, so this fallback is not used for a live shell.
+        Vec3d c = fieldFrame.fieldToWorld(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        return c != null ? c : new Vec3d(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+    }
+
+    /** True when this emitter's frame resolves — always so standalone, and only while the ship is
+     *  loaded on a VS hull. A not-ready emitter contributes no shell (Q4 fail-open). */
+    public boolean isFrameReady() {
+        return fieldFrame.isReady();
+    }
+
+    /** The shell's own world velocity at a world point (zero standalone; the hull's motion on a ship),
+     *  which impact cost and deflection are taken relative to so a cruising ship does not bill its crew. */
+    private Vec3d shellVelocityAt(Vec3d worldPoint) {
+        return fieldFrame.surfaceVelocityAt(worldPoint.x, worldPoint.y, worldPoint.z);
+    }
+
+    /** True when this emitter's field lives in a VS ship frame (its world centre is the hull-transformed
+     *  subspace centre, not the raw block centre). Test/diagnostic observability of the §4.3 seam. */
+    public boolean isShipFramed() {
+        return fieldFrame instanceof com.github.stannismod.affs.world.ShipFieldFrame;
+    }
+
+    /** The shell's current world velocity at its own centre — the relative-velocity input the ship-frame
+     *  deflection subtracts. Zero standalone; the hull's motion on a moving ship. Test observability. */
+    public Vec3d getShellVelocity() {
+        return shellVelocityAt(getWorldCenter());
+    }
+
+    /** TEST ONLY: set the coil's stored shield energy directly and refresh the powered state. Lets an
+     *  e2e power a shield on an assembled VS ship without wiring a generator/FE feed into the subspace
+     *  structure — the ship-frame geometry, not the energy economy, is what that test exercises. */
+    public void setShieldEnergyForTest(int amount) {
+        if (world == null || world.isRemote) {
+            return;
+        }
+        energy.setEnergyStored(Math.max(0, Math.min(energy.getMaxEnergyStored(), amount)));
+        markDirty();
+        refreshFieldPowerState(true);
     }
 
     @Override
@@ -219,12 +280,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private double distanceSqToCenter(double x, double y, double z) {
-        double cx = pos.getX() + 0.5D;
-        double cy = pos.getY() + 0.5D;
-        double cz = pos.getZ() + 0.5D;
-        double dx = x - cx;
-        double dy = y - cy;
-        double dz = z - cz;
+        Vec3d c = getWorldCenter();
+        double dx = x - c.x;
+        double dy = y - c.y;
+        double dz = z - c.z;
         return dx * dx + dy * dy + dz * dz;
     }
 
@@ -307,9 +366,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
             return false;
         }
 
-        double outwardX = currentCenterX - (pos.getX() + 0.5D);
-        double outwardY = currentCenterY - (pos.getY() + 0.5D);
-        double outwardZ = currentCenterZ - (pos.getZ() + 0.5D);
+        Vec3d worldCenter = getWorldCenter();
+        double outwardX = currentCenterX - worldCenter.x;
+        double outwardY = currentCenterY - worldCenter.y;
+        double outwardZ = currentCenterZ - worldCenter.z;
         double motionX = currentCenterX - (previousBox.minX + previousBox.maxX) * 0.5D;
         double motionY = currentCenterY - (previousBox.minY + previousBox.maxY) * 0.5D;
         double motionZ = currentCenterZ - (previousBox.minZ + previousBox.maxZ) * 0.5D;
@@ -362,22 +422,29 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
             return;
         }
 
-        Vec3d fieldCenter = new Vec3d(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        Vec3d fieldCenter = getWorldCenter();
         Vec3d currentCenter = getEntityCenter(entity);
-        Vec3d motion = new Vec3d(entity.posX - entity.prevPosX, entity.posY - entity.prevPosY, entity.posZ - entity.prevPosZ);
+        // Reflect the entity's motion RELATIVE to the shell (§4.3 pt 3): subtract the hull's own
+        // per-tick motion, reflect off the sphere, then add the hull motion back so the deflected body
+        // still rides the moving ship. Standalone the shell velocity is zero and this is unchanged.
+        Vec3d shellVelocity = shellVelocityAt(currentCenter);
+        Vec3d motion = FieldSurfaceMath.subtract(
+                new Vec3d(entity.posX - entity.prevPosX, entity.posY - entity.prevPosY, entity.posZ - entity.prevPosZ),
+                shellVelocity);
         Vec3d normal = FieldSurfaceMath.sphereOutwardNormal(fieldCenter, currentCenter, motion);
         Vec3d reflectedMotion = FieldSurfaceMath.reflect(motion, normal);
         if (FieldSurfaceMath.vectorLength(reflectedMotion) <= 1.0E-8D) {
             reflectedMotion = FieldSurfaceMath.scale(normal, Math.max(0.08D, FieldSurfaceMath.vectorLength(motion)));
         }
+        Vec3d committedMotion = reflectedMotion.add(shellVelocity);
 
         double entityRadius = Math.max(entity.width, entity.height) * 0.5D;
         Vec3d targetCenter = fieldCenter.add(FieldSurfaceMath.scale(normal, radius + FieldSurfaceMath.FIELD_HALF_THICKNESS + entityRadius + 0.05D));
         setEntityCenter(entity, targetCenter);
 
-        entity.motionX = reflectedMotion.x;
-        entity.motionY = reflectedMotion.y;
-        entity.motionZ = reflectedMotion.z;
+        entity.motionX = committedMotion.x;
+        entity.motionY = committedMotion.y;
+        entity.motionZ = committedMotion.z;
         entity.prevPosX = entity.posX;
         entity.prevPosY = entity.posY;
         entity.prevPosZ = entity.posZ;
@@ -521,9 +588,12 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private int estimateEntityImpactEnergy(Entity entity) {
-        Vec3d fieldCenter = new Vec3d(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        Vec3d fieldCenter = getWorldCenter();
         Vec3d currentCenter = getEntityCenter(entity);
-        Vec3d motion = new Vec3d(entity.motionX, entity.motionY, entity.motionZ);
+        // Velocity RELATIVE to the shell (§4.3 pt 3): on a moving ship, subtract the hull's own motion
+        // so the impact energy is what the entity carries toward the shell, not the whole world's speed.
+        Vec3d motion = FieldSurfaceMath.subtract(
+                new Vec3d(entity.motionX, entity.motionY, entity.motionZ), shellVelocityAt(currentCenter));
         Vec3d normal = FieldSurfaceMath.sphereOutwardNormal(fieldCenter, currentCenter, motion);
         double baseCost;
         if (isEnergyProjectile(entity)) {
@@ -595,9 +665,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private Vec3d getImpactTouchPoint(Entity entity) {
-        Vec3d fieldCenter = new Vec3d(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        Vec3d fieldCenter = getWorldCenter();
         Vec3d currentCenter = getEntityCenter(entity);
-        Vec3d motion = new Vec3d(entity.motionX, entity.motionY, entity.motionZ);
+        Vec3d motion = FieldSurfaceMath.subtract(
+                new Vec3d(entity.motionX, entity.motionY, entity.motionZ), shellVelocityAt(currentCenter));
         Vec3d normal = FieldSurfaceMath.sphereOutwardNormal(fieldCenter, currentCenter, motion);
         return fieldCenter.add(FieldSurfaceMath.scale(normal, radius + FieldSurfaceMath.FIELD_HALF_THICKNESS));
     }
