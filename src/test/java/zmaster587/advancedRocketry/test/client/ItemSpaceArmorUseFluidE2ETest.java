@@ -180,6 +180,17 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             // Make sure overworld is breathable (default density,
             // but in case a prior test left it modified).
             exec("artest atmosphere set-density 0 100");
+            // set-density lands on DimensionProperties a tick or two later; a
+            // prior vacuum test can leave the dim at 0, and the airsuit drains
+            // ~1/tick while getAtmosphereType still reads vacuum — so the
+            // "no-drain" window would bleed air until the update propagates.
+            // Gate on the dim actually reading breathable (same source planet
+            // info reads) before seeding the baseline; the drain assert below
+            // still fires if air genuinely drops in a confirmed-breathable dim.
+            ClientPoll.Result<Integer> breathable = ClientPoll.until(
+                    bot()::waitTicks, this::snapshotDensity, d -> d >= 1, 2, 20);
+            assertTrue("overworld must read breathable before the no-drain window; "
+                    + breathable, breathable.satisfied);
             String equip = exec("artest player equip-airsuit 1000");
             assertTrue("equip-airsuit must succeed: " + equip,
                     equip.contains("\"ok\":true"));

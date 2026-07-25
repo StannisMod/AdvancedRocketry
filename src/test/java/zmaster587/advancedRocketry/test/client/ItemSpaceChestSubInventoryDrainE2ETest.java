@@ -170,7 +170,14 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             assertTrue("equip-space-chest must succeed: " + equip,
                     equip.contains("\"ok\":true"));
             assertEquals("baseline chestAir", 1000, readChestAir());
-            assertEquals("client-rendered baseline must agree", 1000, clientChestAir());
+            // The client armor[2] NBT syncs a tick or two AFTER the server-side
+            // equip; sampling it immediately reads the -1 "not-synced" sentinel.
+            // Poll (load-scaled) until the synced baseline lands, event-gated
+            // rather than time-gated.
+            ClientPoll.Result<Integer> baseline = ClientPoll.until(
+                    bot()::waitTicks, this::clientChestAir, v -> v == 1000, 2, 20);
+            assertTrue("client-rendered baseline must agree (1000); " + baseline,
+                    baseline.satisfied);
 
             bot().waitTicks(80);
 
