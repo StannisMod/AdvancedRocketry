@@ -11,10 +11,14 @@ import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import zmaster587.advancedRocketry.api.Constants;
 
 import java.util.*;
 
-@Mod.EventBusSubscriber(modid = AdvancedForceFieldSystem.MODID)
+// Registered under AR's container: the vendored guest modid "affs" is not a loaded mod, so a
+// @EventBusSubscriber keyed on it is skipped by AutomaticEventSubscriber (modid must equal the
+// owning container). All AFFS runtime handlers subscribe under Constants.modId, like the block registrar.
+@Mod.EventBusSubscriber(modid = Constants.modId)
 public final class ShieldNetworkManager {
 
     private static final int INF = 1_000_000_000;
@@ -122,14 +126,20 @@ public final class ShieldNetworkManager {
                     skippedWorld++;
                     continue;
                 }
+                // Roles are not exclusive: an accumulator is both a source and a sink, so it must land
+                // in both maps. A block that is a cable is only a cable (transport, not a store).
+                BlockPos nodePos = node.getNodePos();
                 if (node instanceof IShieldCable) {
-                    cables.put(node.getNodePos(), (IShieldCable) node);
-                } else if (node instanceof IShieldSource) {
-                    sources.put(node.getNodePos(), (IShieldSource) node);
-                } else if (node instanceof IShieldSink) {
-                    sinks.put(node.getNodePos(), (IShieldSink) node);
-                } else if (node instanceof IShieldNetworkController) {
-                    controllers.put(node.getNodePos(), (IShieldNetworkController) node);
+                    cables.put(nodePos, (IShieldCable) node);
+                }
+                if (node instanceof IShieldSource) {
+                    sources.put(nodePos, (IShieldSource) node);
+                }
+                if (node instanceof IShieldSink) {
+                    sinks.put(nodePos, (IShieldSink) node);
+                }
+                if (node instanceof IShieldNetworkController) {
+                    controllers.put(nodePos, (IShieldNetworkController) node);
                 }
             }
 
@@ -147,46 +157,61 @@ public final class ShieldNetworkManager {
                 );
             }
 
+            // A network is a connected component over block-adjacency of ALL shield nodes, not just
+            // cables: two directly-adjacent nodes (e.g. a generator touching an emitter) form one
+            // network with no cable in between. Cables are a scaling/reach tool, not a requirement.
+            Set<BlockPos> allPositions = new HashSet<>();
+            allPositions.addAll(cables.keySet());
+            allPositions.addAll(sources.keySet());
+            allPositions.addAll(sinks.keySet());
+            allPositions.addAll(controllers.keySet());
+
             Set<BlockPos> visited = new HashSet<>();
-            for (BlockPos cablePos : cables.keySet()) {
-                if (!visited.add(cablePos)) {
+            for (BlockPos startPos : allPositions) {
+                if (!visited.add(startPos)) {
                     continue;
                 }
 
-                Set<BlockPos> cableComponent = new HashSet<>();
+                Set<BlockPos> component = new HashSet<>();
                 ArrayDeque<BlockPos> queue = new ArrayDeque<>();
-                queue.add(cablePos);
+                queue.add(startPos);
 
                 while (!queue.isEmpty()) {
                     BlockPos current = queue.removeFirst();
-                    cableComponent.add(current);
+                    component.add(current);
                     for (EnumFacing facing : EnumFacing.VALUES) {
                         BlockPos next = current.offset(facing);
-                        if (cables.containsKey(next) && visited.add(next)) {
+                        if (allPositions.contains(next) && visited.add(next)) {
                             queue.add(next);
                         }
                     }
                 }
 
                 List<CableNode> componentCables = new ArrayList<>();
-                for (BlockPos pos : cableComponent) {
-                    componentCables.add(new CableNode(pos, cables.get(pos)));
+                List<SourceNode> componentSources = new ArrayList<>();
+                List<SinkNode> componentSinks = new ArrayList<>();
+                List<ControllerNode> componentControllers = new ArrayList<>();
+                for (BlockPos pos : component) {
+                    IShieldCable cable = cables.get(pos);
+                    if (cable != null) {
+                        componentCables.add(new CableNode(pos, cable));
+                    }
+                    IShieldSource source = sources.get(pos);
+                    if (source != null) {
+                        componentSources.add(new SourceNode(pos, source));
+                    }
+                    IShieldSink sink = sinks.get(pos);
+                    if (sink != null) {
+                        componentSinks.add(new SinkNode(pos, sink));
+                    }
+                    IShieldNetworkController controller = controllers.get(pos);
+                    if (controller != null) {
+                        componentControllers.add(new ControllerNode(pos, controller));
+                    }
                 }
 
-                List<SourceNode> componentSources = collectAttachedSources(cableComponent, sources);
-                List<SinkNode> componentSinks = collectAttachedSinks(cableComponent, sinks);
-                List<ControllerNode> componentControllers = collectAttachedControllers(cableComponent, controllers);
-
-                List<BlockPos> componentMemberPositions = new ArrayList<>(cableComponent);
-                for (SourceNode source : componentSources) {
-                    componentMemberPositions.add(source.pos);
-                }
-                for (SinkNode sink : componentSinks) {
-                    componentMemberPositions.add(sink.pos);
-                }
-                for (ControllerNode controller : componentControllers) {
-                    componentMemberPositions.add(controller.pos);
-                }
+                List<BlockPos> componentMemberPositions = new ArrayList<>(component);
+                BlockPos anchor = componentCables.isEmpty() ? startPos : componentCables.get(0).pos;
 
                 ShieldNetworkState state = findExistingState(componentMemberPositions, previousStateByPos, consumedStates);
                 if (state == null) {
@@ -194,7 +219,7 @@ public final class ShieldNetworkManager {
                 }
                 seedShieldEnergyBiasFromControllers(state, componentControllers);
                 state.clearMembers();
-                state.setRoot(cablePos);
+                state.setRoot(anchor);
                 for (BlockPos pos : componentMemberPositions) {
                     state.addMember(pos);
                     stateByPos.put(pos, state);
@@ -204,7 +229,7 @@ public final class ShieldNetworkManager {
                 if (AdvancedForceFieldSystem.LOG != null) {
                     AdvancedForceFieldSystem.LOG.info(
                         "[ShieldNetwork] component anchor={} cables={} sources={} sinks={} controllers={}",
-                        cablePos,
+                        anchor,
                         componentCables.size(),
                         componentSources.size(),
                         componentSinks.size(),
@@ -256,48 +281,6 @@ public final class ShieldNetworkManager {
                 component.solve();
             }
         }
-
-        private List<SourceNode> collectAttachedSources(Set<BlockPos> cableComponent, Map<BlockPos, IShieldSource> sources) {
-            List<SourceNode> result = new ArrayList<>();
-            for (Map.Entry<BlockPos, IShieldSource> entry : sources.entrySet()) {
-                BlockPos pos = entry.getKey();
-                if (isAdjacentToAnyCable(pos, cableComponent)) {
-                    result.add(new SourceNode(pos, entry.getValue()));
-                }
-            }
-            return result;
-        }
-
-        private List<SinkNode> collectAttachedSinks(Set<BlockPos> cableComponent, Map<BlockPos, IShieldSink> sinks) {
-            List<SinkNode> result = new ArrayList<>();
-            for (Map.Entry<BlockPos, IShieldSink> entry : sinks.entrySet()) {
-                BlockPos pos = entry.getKey();
-                if (isAdjacentToAnyCable(pos, cableComponent)) {
-                    result.add(new SinkNode(pos, entry.getValue()));
-                }
-            }
-            return result;
-        }
-
-        private List<ControllerNode> collectAttachedControllers(Set<BlockPos> cableComponent, Map<BlockPos, IShieldNetworkController> controllers) {
-            List<ControllerNode> result = new ArrayList<>();
-            for (Map.Entry<BlockPos, IShieldNetworkController> entry : controllers.entrySet()) {
-                BlockPos pos = entry.getKey();
-                if (isAdjacentToAnyCable(pos, cableComponent)) {
-                    result.add(new ControllerNode(pos, entry.getValue()));
-                }
-            }
-            return result;
-        }
-
-        private boolean isAdjacentToAnyCable(BlockPos pos, Set<BlockPos> cables) {
-            for (EnumFacing facing : EnumFacing.VALUES) {
-                if (cables.contains(pos.offset(facing))) {
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 
     private static final class ComponentTopology {
@@ -316,10 +299,6 @@ public final class ShieldNetworkManager {
         }
 
         private void solve() {
-            if (cables.isEmpty()) {
-                publishDisconnected();
-                return;
-            }
             if (sources.isEmpty() || sinks.isEmpty()) {
                 publishDisconnected();
                 return;
@@ -329,30 +308,24 @@ public final class ShieldNetworkManager {
             int superSource = solver.addNode();
             int superSink = solver.addNode();
 
-            Map<BlockPos, Integer> cableIn = new HashMap<>();
-            Map<BlockPos, Integer> cableOut = new HashMap<>();
+            // Unified port model: every node exposes a supply port (energy leaves here) and/or a demand
+            // port (energy enters here). A cable owns both, joined internally by its throughput edge; a
+            // source owns only supply; a sink only demand; an accumulator owns both. Adjacent nodes are
+            // linked supplyOut(A) -> demandIn(B) at INF, so a source touching a sink connects with no
+            // cable, while a cable's finite in->out edge is the only throttled link.
+            Map<BlockPos, Integer> supplyOut = new HashMap<>();
+            Map<BlockPos, Integer> demandIn = new HashMap<>();
             Map<BlockPos, MaxFlowSolver.EdgeRef> cableThroughputRefs = new HashMap<>();
             int totalCableCapacity = 0;
 
             for (CableNode cable : cables) {
                 int in = solver.addNode();
                 int out = solver.addNode();
-                cableIn.put(cable.pos, in);
-                cableOut.put(cable.pos, out);
+                demandIn.put(cable.pos, in);
+                supplyOut.put(cable.pos, out);
                 int throughput = Math.max(0, cable.cable.getThroughputPerTick());
                 totalCableCapacity += throughput;
                 cableThroughputRefs.put(cable.pos, solver.addEdge(in, out, throughput, cable.cable));
-            }
-
-            for (CableNode cable : cables) {
-                int out = cableOut.get(cable.pos);
-                for (EnumFacing facing : EnumFacing.VALUES) {
-                    BlockPos nextPos = cable.pos.offset(facing);
-                    Integer nextIn = cableIn.get(nextPos);
-                    if (nextIn != null) {
-                        solver.addEdge(out, nextIn, INF, null);
-                    }
-                }
             }
 
             List<MaxFlowSolver.EdgeRef> sourceRefs = new ArrayList<>();
@@ -360,16 +333,11 @@ public final class ShieldNetworkManager {
             int totalGenerationPerTick = 0;
             for (SourceNode source : sources) {
                 int sourceNode = solver.addNode();
+                supplyOut.put(source.pos, sourceNode);
                 int available = Math.max(0, source.source.getAvailableShieldEnergy());
                 totalSourceAvailable += available;
                 totalGenerationPerTick += estimateSourceGenerationPerTick(source.source);
                 sourceRefs.add(solver.addEdge(superSource, sourceNode, available, source.source));
-                for (EnumFacing facing : EnumFacing.VALUES) {
-                    Integer adjacentIn = cableIn.get(source.pos.offset(facing));
-                    if (adjacentIn != null) {
-                        solver.addEdge(sourceNode, adjacentIn, INF, null);
-                    }
-                }
             }
 
             List<MaxFlowSolver.EdgeRef> sinkRefs = new ArrayList<>();
@@ -377,22 +345,30 @@ public final class ShieldNetworkManager {
             int totalConsumptionPerTick = 0;
             for (SinkNode sink : sinks) {
                 int sinkNode = solver.addNode();
-                for (EnumFacing facing : EnumFacing.VALUES) {
-                    Integer adjacentOut = cableOut.get(sink.pos.offset(facing));
-                    if (adjacentOut != null) {
-                        solver.addEdge(adjacentOut, sinkNode, INF, null);
-                    }
-                }
+                demandIn.put(sink.pos, sinkNode);
                 int requested = Math.max(0, sink.sink.getRequestedShieldEnergy());
                 totalSinkRequested += requested;
                 totalConsumptionPerTick += estimateSinkConsumptionPerTick(sink.sink);
                 sinkRefs.add(solver.addEdge(sinkNode, superSink, requested, sink.sink));
             }
 
+            // Link each supply port to the demand port of every adjacent node (INF): transport across
+            // touching blocks, including the direct source->sink edge that makes cables optional.
+            for (Map.Entry<BlockPos, Integer> entry : supplyOut.entrySet()) {
+                int from = entry.getValue();
+                for (EnumFacing facing : EnumFacing.VALUES) {
+                    Integer to = demandIn.get(entry.getKey().offset(facing));
+                    if (to != null) {
+                        solver.addEdge(from, to, INF, null);
+                    }
+                }
+            }
+
             int maxFlow = solver.maxFlow(superSource, superSink);
 
+            boolean hasCables = !cables.isEmpty();
             int saturatedCables = 0;
-            BlockPos bottleneckCable = cables.get(0).pos;
+            BlockPos bottleneckCable = state.getRoot();
             int bottleneckUtilizationPermille = 0;
             for (MaxFlowSolver.EdgeRef ref : sourceRefs) {
                 int used = ref.edge.flow;
@@ -426,7 +402,7 @@ public final class ShieldNetworkManager {
 
             state.setStatistics(
                 true,
-                statusFor(totalSourceAvailable, totalSinkRequested, maxFlow, totalCableCapacity),
+                statusFor(totalSourceAvailable, totalSinkRequested, maxFlow, totalCableCapacity, hasCables),
                 state.getRoot(),
                 cables.size(),
                 sources.size(),
@@ -448,7 +424,7 @@ public final class ShieldNetworkManager {
                 if (cable.cable instanceof TileEntityShieldCable) {
                     ((TileEntityShieldCable) cable.cable).setNetworkStats(
                         true,
-                        statusFor(totalSourceAvailable, totalSinkRequested, maxFlow, totalCableCapacity),
+                        statusFor(totalSourceAvailable, totalSinkRequested, maxFlow, totalCableCapacity, hasCables),
                         state.getRoot(),
                         cables.size(),
                         sources.size(),
@@ -466,11 +442,7 @@ public final class ShieldNetworkManager {
         }
 
         private void publishDisconnected() {
-            if (cables.isEmpty()) {
-                state.setStatistics(false, STATUS_DISCONNECTED, state.getRoot(), 0, sources.size(), sinks.size(), 0, 0, 0, 0, 0, state.getRoot(), 0, 0, 0);
-                return;
-            }
-            BlockPos anchor = cables.get(0).pos;
+            BlockPos anchor = state.getRoot();
             state.setStatistics(false, STATUS_DISCONNECTED, anchor, cables.size(), sources.size(), sinks.size(), 0, 0, 0, 0, 0, anchor, 0, 0, 0);
             for (CableNode cable : cables) {
                 if (cable.cable instanceof TileEntityShieldCable) {
@@ -513,12 +485,12 @@ public final class ShieldNetworkManager {
             return Math.max(0, sink.getRequestedShieldEnergy());
         }
 
-        private int statusFor(int sourceAvailable, int sinkRequested, int maxFlow, int cableCapacity) {
-            if (sourceAvailable <= 0 || sinkRequested <= 0 || cableCapacity <= 0) {
+        private int statusFor(int sourceAvailable, int sinkRequested, int maxFlow, int cableCapacity, boolean hasCables) {
+            if (sourceAvailable <= 0 || sinkRequested <= 0) {
                 return STATUS_DISCONNECTED;
             }
             int limiting = Math.min(sourceAvailable, sinkRequested);
-            if (maxFlow < limiting && maxFlow < cableCapacity) {
+            if (hasCables && maxFlow < limiting && maxFlow < cableCapacity) {
                 return STATUS_CABLE_LIMITED;
             }
             if (sourceAvailable <= sinkRequested && maxFlow >= sourceAvailable) {

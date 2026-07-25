@@ -223,12 +223,87 @@ public class TestProbeCommand extends CommandBase {
                 case "star":
                     handleStar(sender, tail(args));
                     break;
+                case "shield":
+                    handleShield(server, sender, tail(args));
+                    break;
                 default:
                     send(sender, "{\"error\":\"unknown subcommand\",\"sub\":\"" + args[0] + "\"}");
             }
         } catch (RuntimeException e) {
             send(sender, "{\"error\":\"" + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
         }
+    }
+
+    // Vendored AFFS shield probes -----------------------------------------
+
+    /**
+     * {@code /artest shield ...} — drive and observe the vendored shield network.
+     * <ul>
+     *   <li>{@code tick <dim>} — run one network solve pass (the WorldTickEvent body) so tests can
+     *       advance the max-flow deterministically without waiting on real server ticks;</li>
+     *   <li>{@code read <dim> <x> <y> <z>} — report an emitter's ({@code field_generator}) live shield
+     *       state (powered / stored / radius / requested) or a generator's stored/available energy.</li>
+     * </ul>
+     */
+    private void handleShield(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 2 && "tick".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            // Post the REAL end-phase WorldTickEvent so the shield network solves through its actual
+            // @EventBusSubscriber handler. This also guards registration: if that handler is not
+            // subscribed (wrong modid), the event fires but nothing solves and the shield stays dark.
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(
+                    new net.minecraftforge.fml.common.gameevent.TickEvent.WorldTickEvent(
+                            net.minecraftforge.fml.relauncher.Side.SERVER,
+                            net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END,
+                            world));
+            send(sender, "{\"ok\":true,\"dim\":" + dim + "}");
+            return;
+        }
+        if (args.length >= 5 && "read".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("dim", dim);
+            info.put("posX", x);
+            info.put("posY", y);
+            info.put("posZ", z);
+            if (tile instanceof com.github.stannismod.affs.te.TileEntityFieldGenerator) {
+                com.github.stannismod.affs.te.TileEntityFieldGenerator emitter =
+                        (com.github.stannismod.affs.te.TileEntityFieldGenerator) tile;
+                info.put("kind", "emitter");
+                info.put("powered", emitter.isFieldPowered());
+                info.put("shieldStored", emitter.getEnergyStored());
+                info.put("shieldMax", emitter.getMaxEnergyStored());
+                info.put("radius", emitter.getRadius());
+                info.put("requested", emitter.getRequestedShieldEnergy());
+            } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldGenerator) {
+                com.github.stannismod.affs.te.TileEntityShieldGenerator gen =
+                        (com.github.stannismod.affs.te.TileEntityShieldGenerator) tile;
+                info.put("kind", "generator");
+                info.put("shieldStored", gen.getShieldStored());
+                info.put("feStored", gen.getFeStored());
+                info.put("available", gen.getAvailableShieldEnergy());
+            } else {
+                info.put("error", "not a shield tile");
+                info.put("tileClass", tile == null ? "null" : tile.getClass().getName());
+            }
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
