@@ -1,18 +1,11 @@
 package com.github.stannismod.affs.entity;
 
-import com.github.stannismod.affs.AdvancedForceFieldSystem;
-import com.github.stannismod.affs.network.PacketFieldTouchEffect;
-import com.github.stannismod.affs.te.TileEntityFieldGenerator;
-import com.github.stannismod.affs.world.FieldSurfaceMath;
 import com.github.stannismod.affs.world.projectile.IEnergyProjectile;
-import net.minecraft.block.Block;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.projectile.EntityThrowable;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumParticleTypes;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 public class EntityLaserBolt extends EntityThrowable implements IEnergyProjectile {
@@ -42,18 +35,10 @@ public class EntityLaserBolt extends EntityThrowable implements IEnergyProjectil
 
         if (result.entityHit != null && result.entityHit.isEntityAlive()) {
             result.entityHit.attackEntityFrom(LASER_DAMAGE, 4.0F);
-        } else if (result.getBlockPos() != null) {
-            BlockPos hitPos = result.getBlockPos();
-            Block hitBlock = world.getBlockState(hitPos).getBlock();
-            if (hitBlock == AdvancedForceFieldSystem.BLOCK_PROJECTED_FIELD) {
-                for (TileEntityFieldGenerator generator : FieldSurfaceMath.getActiveGenerators(world)) {
-                    if (generator != null && generator.protects(hitPos)) {
-                        PacketFieldTouchEffect.send(world, generator.getPos(), result.hitVec == null ? new Vec3d(hitPos.getX() + 0.5D, hitPos.getY() + 0.5D, hitPos.getZ() + 0.5D) : result.hitVec);
-                        break;
-                    }
-                }
-            }
         }
+        // The modern shield is scan-based and places no blocks: a bolt aimed at a shielded volume is
+        // absorbed by the emitter's entity scan (containUnauthorizedEntities) before it reaches a block,
+        // so there is no field block to react to on block impact.
 
         world.setEntityState(this, (byte) 3);
         setDead();

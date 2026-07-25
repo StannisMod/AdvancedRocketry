@@ -60,15 +60,6 @@ public class BlockFieldGenerator extends Block implements ITileEntityProvider, I
     }
 
     @Override
-    public void breakBlock(World worldIn, BlockPos pos, IBlockState state) {
-        TileEntity te = worldIn.getTileEntity(pos);
-        if (te instanceof TileEntityFieldGenerator) {
-            ((TileEntityFieldGenerator) te).clearProjectedField();
-        }
-        super.breakBlock(worldIn, pos, state);
-    }
-
-    @Override
     public EnumBlockRenderType getRenderType(IBlockState state) {
         return EnumBlockRenderType.MODEL;
     }

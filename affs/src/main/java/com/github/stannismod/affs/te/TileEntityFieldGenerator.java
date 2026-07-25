@@ -13,7 +13,6 @@ import com.github.stannismod.affs.world.shield.IShieldSink;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
 import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
 import com.github.stannismod.affs.world.shield.ShieldNetworkState;
-import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -118,7 +117,6 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         markDirty();
 
         if (world != null && !world.isRemote) {
-            cleanupLegacyProjectedFieldBlocks(this.radius + 2);
             refreshFieldPowerState(true);
             queueClientSync(true);
         }
@@ -135,7 +133,6 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
             ACTIVE_GENERATORS.add(this);
             ShieldNetworkRegistry.register(this);
             ShieldNetworkManager.markDirty(world);
-            cleanupLegacyProjectedFieldBlocks(radius + 2);
             refreshFieldPowerState(true);
         }
     }
@@ -218,35 +215,12 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         return dx * dx + dy * dy + dz * dz;
     }
 
-    public void clearProjectedField() {
-        // Sphere-based field no longer places blocks in the world.
-    }
-
     public void applyAccessCode(String code) {
         String normalized = CodeUtils.normalize(code);
         if (!normalized.equals(accessCode)) {
             accessCode = normalized;
             markDirty();
             queueClientSync(false);
-        }
-    }
-
-    private void cleanupLegacyProjectedFieldBlocks(int scanRadius) {
-        if (world == null || world.isRemote) {
-            return;
-        }
-
-        Block legacyBlock = AdvancedForceFieldSystem.BLOCK_PROJECTED_FIELD;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int dx = -scanRadius; dx <= scanRadius; dx++) {
-            for (int dy = -scanRadius; dy <= scanRadius; dy++) {
-                for (int dz = -scanRadius; dz <= scanRadius; dz++) {
-                    cursor.setPos(pos.getX() + dx, pos.getY() + dy, pos.getZ() + dz);
-                    if (world.getBlockState(cursor).getBlock() == legacyBlock) {
-                        world.setBlockToAir(cursor);
-                    }
-                }
-            }
         }
     }
 

@@ -26,8 +26,8 @@ public class AffsVendorSmokeTest extends AbstractSharedServerTest {
     public void vendoredAffsBlocksAreRegisteredAndPlaceable() throws Exception {
         int y = 64, z = 800, baseX = 800;
 
-        // The AFFS shield core. projected_field (the legacy proxy) is deliberately excluded —
-        // it is scheduled to be dropped in the P1 trims and is not part of the live field.
+        // The AFFS shield core. The legacy projected_field proxy block was removed in the P1 trims
+        // (the modern field is scan-based and places no blocks), so it is not listed here.
         Map<String, Integer> blocks = new LinkedHashMap<>();
         blocks.put("affs:field_generator", 0);
         blocks.put("affs:shield_generator", 2);

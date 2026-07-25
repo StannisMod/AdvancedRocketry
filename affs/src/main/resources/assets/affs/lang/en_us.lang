@@ -3,7 +3,6 @@ tile.shield_generator.name=Shield Generator
 tile.shield_accumulator.name=Shield Accumulator
 tile.shield_cable.name=Shield Cable
 tile.shield_console.name=Network Console
-tile.projected_field.name=Projected Field
 tile.admin_energy_source.name=Admin Energy Source
 tile.contour_frame.name=Contour Frame
 tile.contour_injector.name=Contour Injector

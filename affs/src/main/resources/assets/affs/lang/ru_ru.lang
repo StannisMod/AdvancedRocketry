@@ -2,7 +2,6 @@ tile.field_generator.name=Щитовой инжектор
 tile.shield_generator.name=Щитовой генератор
 tile.shield_cable.name=Щитовой кабель
 tile.shield_console.name=Консоль сети
-tile.projected_field.name=Проецируемое поле
 tile.admin_energy_source.name=Админский источник энергии
 tile.contour_frame.name=Рамка контура
 tile.contour_injector.name=Инжектор контура

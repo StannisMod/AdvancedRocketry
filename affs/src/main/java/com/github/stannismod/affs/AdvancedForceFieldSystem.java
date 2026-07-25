@@ -80,7 +80,6 @@ public class AdvancedForceFieldSystem {
     public static BlockAdminEnergySource BLOCK_ADMIN_ENERGY_SOURCE;
     public static BlockContourFrame BLOCK_CONTOUR_FRAME;
     public static BlockContourInjector BLOCK_CONTOUR_INJECTOR;
-    public static BlockProjectedField BLOCK_PROJECTED_FIELD;
     public static CreativeTabs tabAffs = new CreativeTabs("tabAffs") {
         @Override
         public ItemStack getTabIconItem() {
@@ -155,7 +154,6 @@ public class AdvancedForceFieldSystem {
         BLOCK_ADMIN_ENERGY_SOURCE = new BlockAdminEnergySource("admin_energy_source", Material.IRON);
         BLOCK_CONTOUR_FRAME = new BlockContourFrame("contour_frame", Material.IRON);
         BLOCK_CONTOUR_INJECTOR = new BlockContourInjector("contour_injector", Material.IRON);
-        BLOCK_PROJECTED_FIELD = new BlockProjectedField("projected_field", Material.BARRIER);
         ITEM_CODE_DEVICE = new ItemCodeDevice();
         itemLaserGun = new ItemLaserGun();
 
@@ -168,7 +166,6 @@ public class AdvancedForceFieldSystem {
         content.add(BLOCK_ADMIN_ENERGY_SOURCE);
         content.add(BLOCK_CONTOUR_FRAME);
         content.add(BLOCK_CONTOUR_INJECTOR);
-        content.add(BLOCK_PROJECTED_FIELD);
         blocks = Collections.unmodifiableList(content);
     }
 
