@@ -1,6 +1,5 @@
 package com.github.stannismod.affs.world.contour;
 
-import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import com.github.stannismod.affs.te.TileEntityContourInjector;
 import com.github.stannismod.affs.world.shield.IShieldNetworkNode;
 import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
@@ -10,10 +9,11 @@ import net.minecraft.world.World;
 import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import zmaster587.advancedRocketry.api.Constants;
 
 import java.util.*;
 
-@Mod.EventBusSubscriber(modid = AdvancedForceFieldSystem.MODID)
+@Mod.EventBusSubscriber(modid = Constants.modId)
 public final class ContourFieldExplosionHandler {
 
     private ContourFieldExplosionHandler() {

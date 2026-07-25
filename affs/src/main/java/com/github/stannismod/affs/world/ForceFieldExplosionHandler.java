@@ -1,6 +1,5 @@
 package com.github.stannismod.affs.world;
 
-import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import com.github.stannismod.affs.te.TileEntityFieldGenerator;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.BlockPos;
@@ -8,12 +7,13 @@ import net.minecraft.world.World;
 import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import zmaster587.advancedRocketry.api.Constants;
 
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-@Mod.EventBusSubscriber(modid = AdvancedForceFieldSystem.MODID)
+@Mod.EventBusSubscriber(modid = Constants.modId)
 public final class ForceFieldExplosionHandler {
 
     private ForceFieldExplosionHandler() {

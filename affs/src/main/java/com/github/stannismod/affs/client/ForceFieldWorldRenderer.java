@@ -1,6 +1,5 @@
 package com.github.stannismod.affs.client;
 
-import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
@@ -12,8 +11,9 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import org.lwjgl.opengl.GL11;
+import zmaster587.advancedRocketry.api.Constants;
 
-@Mod.EventBusSubscriber(modid = AdvancedForceFieldSystem.MODID, value = Side.CLIENT)
+@Mod.EventBusSubscriber(modid = Constants.modId, value = Side.CLIENT)
 public final class ForceFieldWorldRenderer {
 
     private ForceFieldWorldRenderer() {
