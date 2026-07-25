@@ -16,6 +16,7 @@ import com.github.stannismod.affs.world.shield.IShieldSink;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
 import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
 import com.github.stannismod.affs.world.shield.ShieldNetworkState;
+import com.github.stannismod.affs.world.shield.ShieldStrikeKind;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -528,6 +529,42 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         return extracted;
     }
 
+    /**
+     * Graceful partial spend for a declared strike / residual ray (D134-2): extract up to {@code cost}
+     * from the coil, returning what was actually spent ({@code min(stored, cost)}). Distinct from
+     * {@link #consumeShieldEnergy} (all-or-nothing, the entity / explosion path): a beam the coil cannot
+     * fully cover is partly absorbed and its remainder passes, draining the shield toward zero — the
+     * "shields fall" degrade.
+     */
+    public int absorbShieldEnergy(int cost) {
+        if (world == null || world.isRemote || cost <= 0) {
+            return 0;
+        }
+        int spent = energy.extractEnergy(cost, false);
+        if (spent > 0) {
+            shieldConsumedThisTick += spent;
+            markDirty();
+            refreshFieldPowerState(true);
+            queueClientSync(false);
+        }
+        return spent;
+    }
+
+    /**
+     * Resistance-bias multiplier for a declared strike of the given kind (D134-2): RADIANT (energy)
+     * strikes are billed at {@code 1.5 - bias}, KINETIC (physical) at {@code 0.5 + bias}, where the bias
+     * is the network's energy/physical resistance balance. Same formula the entity scan uses per impact.
+     */
+    public double getStrikeKindMultiplier(ShieldStrikeKind kind) {
+        double bias = ModConfig.shieldEnergyResistanceBias;
+        ShieldNetworkState state = ShieldNetworkManager.getState(world, pos);
+        if (state != null) {
+            bias = state.getShieldEnergyResistanceBias();
+        }
+        bias = Math.max(0.0D, Math.min(1.0D, bias));
+        return kind == ShieldStrikeKind.RADIANT ? (1.5D - bias) : (0.5D + bias);
+    }
+
     private int estimateShieldCost(int r) {
         // Passive-maintenance draw (D134-4, the small draw): proportional to the field's surface area
         // (~r^2), tunable via the config coefficient, and spread across a 20-tick cycle by the caller.
@@ -595,6 +632,15 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     public static Set<TileEntityFieldGenerator> getActiveGenerators() {
         return ACTIVE_GENERATORS;
+    }
+
+    /**
+     * Cheap global short-circuit for the strike / residual-ray paths: true iff any emitter is loaded and
+     * active anywhere. Lets a raytrace-layer hook bail in O(1) in the common no-shields-present case
+     * before touching per-generator geometry.
+     */
+    public static boolean hasActiveGenerators() {
+        return !ACTIVE_GENERATORS.isEmpty();
     }
 
     private int getShieldDrainForPhase(int phase) {
@@ -673,16 +719,8 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
     }
 
     private double getImpactTypeMultiplier(Entity entity) {
-        double bias = ModConfig.shieldEnergyResistanceBias;
-        ShieldNetworkState state = ShieldNetworkManager.getState(world, pos);
-        if (state != null) {
-            bias = state.getShieldEnergyResistanceBias();
-        }
-        bias = Math.max(0.0D, Math.min(1.0D, bias));
-        if (isEnergyProjectile(entity)) {
-            return 1.5D - bias;
-        }
-        return 0.5D + bias;
+        return getStrikeKindMultiplier(isEnergyProjectile(entity)
+                ? ShieldStrikeKind.RADIANT : ShieldStrikeKind.KINETIC);
     }
 
     private Vec3d getImpactTouchPoint(Entity entity) {

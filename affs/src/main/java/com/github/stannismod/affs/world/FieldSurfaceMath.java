@@ -107,6 +107,47 @@ public final class FieldSurfaceMath {
         return generators;
     }
 
+    /**
+     * Nearest forward distance at which a ray entering from OUTSIDE crosses this source's world-space
+     * shell sphere (mid-shell radius = {@link FieldSource#getRadius()}), within {@code [0, maxDist]}.
+     * Returns {@code -1} when the ray does not cross the shell inward in range. Used by the cooperative
+     * strike service and the residual ray hook to find where an incoming beam meets the field.
+     */
+    public static double rayShellEntry(FieldSource source, Vec3d origin, Vec3d dir, double maxDist) {
+        return raySphereEntry(source.getWorldCenter(), source.getRadius(), origin, dir, maxDist);
+    }
+
+    /**
+     * Nearest forward distance at which a ray crosses the given sphere from OUTSIDE, within
+     * {@code [0, maxDist]}; {@code dir} must be unit length. Returns {@code -1} when the origin is
+     * already inside the sphere (an outgoing / interior ray is never intercepted — a shooter is not
+     * billed by its own shield and interaction among blocks inside the shell is unaffected), the ray
+     * points away, or the crossing is beyond {@code maxDist}.
+     */
+    public static double raySphereEntry(Vec3d center, double radius, Vec3d origin, Vec3d dir, double maxDist) {
+        if (center == null || origin == null || dir == null) {
+            return -1.0D;
+        }
+        double mx = origin.x - center.x;
+        double my = origin.y - center.y;
+        double mz = origin.z - center.z;
+        double mm = mx * mx + my * my + mz * mz;
+        double r2 = radius * radius;
+        if (mm <= r2) {
+            return -1.0D; // origin inside the shell — never intercept an outgoing/interior ray
+        }
+        double b = mx * dir.x + my * dir.y + mz * dir.z; // m . dir (dir is unit, so a == 1)
+        double disc = b * b - (mm - r2);
+        if (disc < 0.0D) {
+            return -1.0D;
+        }
+        double t = -b - Math.sqrt(disc); // near root: the outside->inside crossing
+        if (t < 0.0D || t > maxDist) {
+            return -1.0D;
+        }
+        return t;
+    }
+
     public static AxisAlignedBB influenceBox(TileEntityFieldGenerator generator) {
         // Broad-phase search box in WORLD coordinates around the field's world centre — entities are
         // always world-frame, so on a ship this box must follow the hull, not sit at the shipyard.

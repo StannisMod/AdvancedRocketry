@@ -10,6 +10,7 @@ public final class ModConfig {
     private static final String CATEGORY_SHIELD = "shield";
     private static final String CATEGORY_CONTOUR = "contour";
     private static final String CATEGORY_BUFFERS = "buffers";
+    private static final String CATEGORY_WEAPONS = "weapons";
 
     // Distinct roles for the three shield-energy buffers (each tunable):
     //  - generatorShieldBuffer: small conversion-smoothing store in the shield generator (a few ticks
@@ -53,6 +54,16 @@ public final class ModConfig {
     // draws. Regeneration (the LARGE draw) is the throughput-capped refill above. Kept small relative to
     // the throughput so maintenance never dominates the regeneration budget.
     public static double emitterMaintenanceEnergyPerSurfaceArea = 12.0D;
+
+    // D134-2 tier-1 cooperative weapon interaction (axis-G tunable, never balance-pinned):
+    //  - shieldStrikeAbsorptionRate: shield energy spent per unit of a cooperative strike's declared
+    //    impact energy. spent = min(stored, impactEnergy x rate x kindMult / tierEff).
+    //  - shieldStrikeDamageToEnergyFactor: converts a cooperating source's *damage* value to declared
+    //    impact energy when it reports damage rather than energy.
+    // The tier-2 residual hitscan-ray hook (a blanket World.rayTraceBlocks mixin) is deferred to its own
+    // task; its config lands with it, not here.
+    public static double shieldStrikeAbsorptionRate = 1.0D;
+    public static double shieldStrikeDamageToEnergyFactor = 500.0D;
 
     private ModConfig() {
     }
@@ -244,6 +255,26 @@ public final class ModConfig {
                 1,
                 Integer.MAX_VALUE,
                 "Bulk shield-energy reserve held by a shield accumulator block."
+        );
+
+        shieldStrikeAbsorptionRate = configuration.getFloat(
+                "shieldStrikeAbsorptionRate",
+                CATEGORY_WEAPONS,
+                1.0F,
+                0.0F,
+                Float.MAX_VALUE,
+                "Shield energy spent per unit of a cooperative strike's declared impact energy (tier-1). "
+                        + "The shield spends min(stored, impactEnergy x rate x kindMultiplier / tierEfficiency)."
+        );
+
+        shieldStrikeDamageToEnergyFactor = configuration.getFloat(
+                "shieldStrikeDamageToEnergyFactor",
+                CATEGORY_WEAPONS,
+                500.0F,
+                0.0F,
+                Float.MAX_VALUE,
+                "Converts a cooperating weapon's damage value into declared shield impact energy when the "
+                        + "source reports damage rather than energy."
         );
 
         if (configuration.hasChanged()) {

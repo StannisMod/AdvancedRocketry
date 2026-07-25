@@ -484,7 +484,49 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value]\"}");
+        if (args.length >= 11 && "strike".equalsIgnoreCase(args[0])) {
+            // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> — fire a
+            // cooperative D134-2 tier-1 strike (a declared-energy beam) at the field along a ray and
+            // report what the ShieldStrikeService absorbed: intercepted / fullyAbsorbed / spent shield
+            // energy / residual impact energy that passed / the shell hit point. This is the honest
+            // server-tier verification of the strike seam AR turrets will implement.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d dir = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            double maxDist = parseDoubleOr(args[8], 0);
+            int impactEnergy = parseIntOr(args[9], 0);
+            com.github.stannismod.affs.world.shield.ShieldStrikeKind kind =
+                    "KINETIC".equalsIgnoreCase(args[10])
+                            ? com.github.stannismod.affs.world.shield.ShieldStrikeKind.KINETIC
+                            : com.github.stannismod.affs.world.shield.ShieldStrikeKind.RADIANT;
+            com.github.stannismod.affs.world.shield.ShieldStrike strike =
+                    com.github.stannismod.affs.world.shield.ShieldStrike.beam(origin, dir, maxDist, impactEnergy, kind);
+            com.github.stannismod.affs.world.shield.ShieldStrikeResult result =
+                    com.github.stannismod.affs.world.shield.ShieldStrikeService.resolve(world, strike);
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("dim", dim);
+            info.put("intercepted", result.isIntercepted());
+            info.put("fullyAbsorbed", result.isFullyAbsorbed());
+            info.put("absorbed", result.getAbsorbedShieldEnergy());
+            info.put("residual", result.getResidualImpactEnergy());
+            net.minecraft.util.math.Vec3d hit = result.getHitPoint();
+            info.put("hit", hit != null);
+            if (hit != null) {
+                info.put("hitX", hit.x);
+                info.put("hitY", hit.y);
+                info.put("hitZ", hit.z);
+            }
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
