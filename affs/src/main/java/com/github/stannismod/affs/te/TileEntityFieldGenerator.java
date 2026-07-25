@@ -54,7 +54,10 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     // Coil capacity is read from config at construction (config is loaded in preInit, before any tile
     // is built). Small and fast: the field activates at shieldActivationThreshold of this capacity.
-    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, SHIELD_RECEIVE_PER_TICK, SHIELD_RECEIVE_PER_TICK);
+    // maxReceive is the per-tick recharge-throughput seed (D134-3), but extraction is UNTHROTTLED
+    // (maxExtract == capacity): absorbing one hit may need to spend far more than a tick's intake, so a
+    // per-tick extract cap would make the coil unable to block any impact larger than that cap.
+    private final ShieldEnergyStorage energy = new ShieldEnergyStorage(ModConfig.emitterCoilBuffer, SHIELD_RECEIVE_PER_TICK, ModConfig.emitterCoilBuffer);
     private int radius = DEFAULT_RADIUS;
     private String accessCode = "";
     private int shieldDrainPhase = 0;
@@ -431,6 +434,12 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
 
     public int consumeShieldEnergy(int amount) {
         if (world == null || world.isRemote || amount <= 0) {
+            return 0;
+        }
+
+        // Absorb fully or not at all. Both callers treat a short extract as "not blocked", so a hit the
+        // coil cannot fully cover must pass through WITHOUT wasting the partial charge it could spend.
+        if (energy.getEnergyStored() < amount) {
             return 0;
         }
 
