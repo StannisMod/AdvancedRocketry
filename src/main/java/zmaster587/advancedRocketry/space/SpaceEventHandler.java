@@ -199,12 +199,16 @@ public final class SpaceEventHandler {
      */
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || pendingSeats.isEmpty()) {
+        if (event.phase != TickEvent.Phase.END) {
             return;
         }
         MinecraftServer server = net.minecraftforge.fml.common.FMLCommonHandler.instance()
                 .getMinecraftServerInstance();
         if (server == null) {
+            return;
+        }
+        reconcileAboardTags(server);
+        if (pendingSeats.isEmpty()) {
             return;
         }
         Iterator<PendingSeat> it = pendingSeats.iterator();
@@ -361,6 +365,55 @@ public final class SpaceEventHandler {
     /** Whether {@code dimId} is one of the subsystem's own worlds (a pool slot or hyperspace). */
     private static boolean isSubsystemWorld(int dimId) {
         return SpaceSlotPool.slotDims().contains(dimId) || dimId == HyperspaceWorld.dimId();
+    }
+
+    /**
+     * Keep every seated crew member's durable aboard record in step with where he ACTUALLY is.
+     *
+     * <p><b>Why this is a per-tick reconciliation and not another event hook.</b> The record used to
+     * be written in exactly one place — {@link #onEntityMount} — and only when the seat was already in
+     * a slot world. That misses the most ordinary route into space there is: a pilot sits down on the
+     * PLANET, flies up, and crosses into a cell. He mounted in the overworld, so nothing stamped him,
+     * and no later event re-visits the question. He is then a player in space with no durable evidence
+     * that he is aboard anything — and the login restore, which decides purely on that evidence,
+     * correctly declines to bring him back. Measured in a real session on 2026-07-26: he logged out in
+     * orbit and returned to his overworld build site, off his ship.
+     *
+     * <p>Deriving it from STATE instead of from a transition fixes the whole family at once — the
+     * planet-boarded pilot, someone the jump's crew transfer re-seats, someone who simply walks in and
+     * sits down in a cell — and it self-heals a record that went stale while the ship moved under a
+     * different pilot. It is also idempotent: an unchanged record is not rewritten, so a seated player
+     * costs one map lookup and one comparison per tick, and only while he is in a slot world.</p>
+     */
+    private void reconcileAboardTags(MinecraftServer server) {
+        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+            if (player == null || player.world == null
+                    || !(player.world.provider instanceof WorldProviderSpaceSlot)) {
+                continue; // not in a cell: nothing here can be aboard a ship
+            }
+            net.minecraft.entity.Entity riding = player.getRidingEntity();
+            if (!(riding instanceof zmaster587.advancedRocketry.entity.EntityDummy)) {
+                continue; // standing on a deck is not a seat; only a seated crew member has an offset
+            }
+            ShipAboardTag.Aboard current = aboardRecordFor(player.world,
+                    ((zmaster587.advancedRocketry.entity.EntityDummy) riding).getSeatPos());
+            if (current == null) {
+                continue; // an unlinked seat, or a ship the ledger does not know yet
+            }
+            ShipAboardTag.Aboard existing = ShipAboardTag.of(player);
+            if (existing != null
+                    && existing.shipId.equals(current.shipId)
+                    && existing.coord.cellKey().equals(current.coord.cellKey())
+                    && existing.afcDx == current.afcDx
+                    && existing.afcDy == current.afcDy
+                    && existing.afcDz == current.afcDz) {
+                continue; // already current
+            }
+            ShipAboardTag.stamp(player, current);
+            LOGGER.info("[SPACE] aboard record {} for {}: ship {} at {}",
+                    existing == null ? "stamped" : "refreshed",
+                    player.getName(), current.shipId, current.coord.cellKey());
+        }
     }
 
     /**
