@@ -6,8 +6,12 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 
 /**
- * The per-player durable record "<i>I am aboard tier-2 ship X, seated at Y</i>", stored in the
- * player's persistent ForgeData compound so it survives a logout and a server restart.
+ * The per-player durable record "<i>I am aboard tier-2 ship X, at Y</i>", stored in the player's
+ * persistent ForgeData compound so it survives a logout and a server restart.
+ *
+ * <p><b>Aboard is not the same as seated.</b> Y is a seat for a crew member in one and a deck point
+ * for a crew member on his feet; both are aboard, and the record carries whichever applies. Reading
+ * "no seat" as "not aboard" is what used to send anyone who stood up in orbit to an ordinary spawn.</p>
  *
  * <p><b>Why this exists.</b> Nothing else can answer "which ship was this player aboard" once the
  * server has been restarted. {@link ShipLedger} is keyed by SHIP id and carries no crew and no
@@ -43,26 +47,71 @@ public final class ShipAboardTag {
     public static final String KEY = "arShipAboard";
 
     private static final String SHIP_ID = "shipId";
+    /** Present and true only for a STANDING record; its absence reads as SEATED. */
+    private static final String STANDING = "standing";
     private static final int TAG_COMPOUND = 10;
     private static final int TAG_STRING = 8;
 
+    /** How a crew member was aboard. Both are ABOARD; they differ only in what position means. */
+    public enum Posture {
+        /** In a seat: the position IS the seat, expressed as its flight-computer link offset. */
+        SEATED,
+        /** On his feet: the position is where he stood, expressed relative to the same computer. */
+        STANDING
+    }
+
     /**
      * Immutable value: the ship a player is aboard, that ship's last-known galactic coordinate, and
-     * the flight-computer link offset of the seat he occupies (see the class doc for why a seat is
-     * identified by an offset rather than a position).
+     * WHERE he was on it — either the flight-computer link offset of the seat he occupies, or, for a
+     * crew member on his feet, the point he stood at relative to that same computer.
+     *
+     * <p>Both postures measure from the flight computer for the same reason (see the class doc): it
+     * is the one landmark that survives a re-assembly into a fresh subspace. A standing position is
+     * continuous, so it is kept as doubles; a seat lands on a block and stays integral.</p>
      */
     public static final class Aboard {
 
         public final UUID shipId;
         public final GalacticCoord coord;
+        public final Posture posture;
+        /** SEATED: the seat's link offset. Zero and meaningless when {@link #posture} is STANDING. */
         public final int afcDx, afcDy, afcDz;
+        /** STANDING: where he stood, relative to the computer. Zero when the posture is SEATED. */
+        public final double standDx, standDy, standDz;
 
+        /** A crew member in a seat, identified by that seat's flight-computer link offset. */
         public Aboard(UUID shipId, GalacticCoord coord, int afcDx, int afcDy, int afcDz) {
             this.shipId = shipId;
             this.coord = coord;
+            this.posture = Posture.SEATED;
             this.afcDx = afcDx;
             this.afcDy = afcDy;
             this.afcDz = afcDz;
+            this.standDx = 0.0D;
+            this.standDy = 0.0D;
+            this.standDz = 0.0D;
+        }
+
+        private Aboard(UUID shipId, GalacticCoord coord, double dx, double dy, double dz) {
+            this.shipId = shipId;
+            this.coord = coord;
+            this.posture = Posture.STANDING;
+            this.afcDx = 0;
+            this.afcDy = 0;
+            this.afcDz = 0;
+            this.standDx = dx;
+            this.standDy = dy;
+            this.standDz = dz;
+        }
+
+        /**
+         * A crew member on his feet at {@code (dx,dy,dz)} from his ship's flight computer. Standing
+         * on the deck is a way of BEING aboard, not of having left — a distinction the restore path
+         * used to collapse, sending anyone who stood up to an ordinary spawn.
+         */
+        public static Aboard standing(UUID shipId, GalacticCoord coord,
+                                      double dx, double dy, double dz) {
+            return new Aboard(shipId, coord, dx, dy, dz);
         }
 
         @Override
@@ -74,7 +123,11 @@ public final class ShipAboardTag {
                 return false;
             }
             Aboard other = (Aboard) o;
-            return afcDx == other.afcDx && afcDy == other.afcDy && afcDz == other.afcDz
+            return posture == other.posture
+                    && afcDx == other.afcDx && afcDy == other.afcDy && afcDz == other.afcDz
+                    && Double.compare(standDx, other.standDx) == 0
+                    && Double.compare(standDy, other.standDy) == 0
+                    && Double.compare(standDz, other.standDz) == 0
                     && (shipId == null ? other.shipId == null : shipId.equals(other.shipId))
                     && (coord == null ? other.coord == null : coord.equals(other.coord));
         }
@@ -83,16 +136,23 @@ public final class ShipAboardTag {
         public int hashCode() {
             int result = shipId == null ? 0 : shipId.hashCode();
             result = 31 * result + (coord == null ? 0 : coord.hashCode());
+            result = 31 * result + posture.hashCode();
             result = 31 * result + afcDx;
             result = 31 * result + afcDy;
             result = 31 * result + afcDz;
+            result = 31 * result + Long.valueOf(Double.doubleToLongBits(standDx)).hashCode();
+            result = 31 * result + Long.valueOf(Double.doubleToLongBits(standDy)).hashCode();
+            result = 31 * result + Long.valueOf(Double.doubleToLongBits(standDz)).hashCode();
             return result;
         }
 
         @Override
         public String toString() {
-            return "Aboard[ship=" + shipId + ", coord=" + coord + ", afcOffset=("
-                    + afcDx + "," + afcDy + "," + afcDz + ")]";
+            return "Aboard[ship=" + shipId + ", coord=" + coord
+                    + (posture == Posture.SEATED
+                            ? ", seatOffset=(" + afcDx + "," + afcDy + "," + afcDz + ")"
+                            : ", standOffset=(" + standDx + "," + standDy + "," + standDz + ")")
+                    + "]";
         }
     }
 
@@ -120,6 +180,14 @@ public final class ShipAboardTag {
         sub.setInteger("afcDx", aboard.afcDx);
         sub.setInteger("afcDy", aboard.afcDy);
         sub.setInteger("afcDz", aboard.afcDz);
+        // A seated record writes nothing extra, so the common case stays exactly the shape it has
+        // always been on disk; the standing keys appear only for the posture that needs them.
+        if (aboard.posture == Posture.STANDING) {
+            sub.setBoolean(STANDING, true);
+            sub.setDouble("standDx", aboard.standDx);
+            sub.setDouble("standDy", aboard.standDy);
+            sub.setDouble("standDz", aboard.standDz);
+        }
         forgeData.setTag(KEY, sub);
     }
 
@@ -148,6 +216,12 @@ public final class ShipAboardTag {
             shipId = UUID.fromString(sub.getString(SHIP_ID));
         } catch (IllegalArgumentException bad) {
             return null; // corrupt id: treat as "not aboard" rather than fail the login
+        }
+        // Absent posture key means SEATED — the only shape that existed when the tag was introduced,
+        // and the shape a seated record still writes.
+        if (sub.getBoolean(STANDING)) {
+            return Aboard.standing(shipId, GalacticCoord.readFromNBT(sub),
+                    sub.getDouble("standDx"), sub.getDouble("standDy"), sub.getDouble("standDz"));
         }
         return new Aboard(shipId, GalacticCoord.readFromNBT(sub),
                 sub.getInteger("afcDx"), sub.getInteger("afcDy"), sub.getInteger("afcDz"));

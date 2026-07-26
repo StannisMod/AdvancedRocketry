@@ -47,6 +47,48 @@ public class ShipAboardTagTest {
     }
 
     @Test
+    public void aStandingCrewMembersPositionRoundTrips() {
+        // Standing on the deck is a way of BEING aboard, so the record has to carry where he stood.
+        // The offset is continuous and signed - he can stand anywhere on the ship relative to its
+        // flight computer, including at fractional coordinates and below it.
+        ShipAboardTag.Aboard standing =
+                ShipAboardTag.Aboard.standing(SHIP, COORD, -4.5D, -2.25D, 11.75D);
+        NBTTagCompound forgeData = new NBTTagCompound();
+        ShipAboardTag.write(forgeData, standing);
+
+        ShipAboardTag.Aboard restored = ShipAboardTag.read(forgeData);
+        assertNotNull("a standing crew member's record must survive the round-trip", restored);
+        assertEquals(standing, restored);
+        assertEquals(standing.hashCode(), restored.hashCode());
+        assertEquals(ShipAboardTag.Posture.STANDING, restored.posture);
+        assertEquals(-4.5D, restored.standDx, 0.0D);
+        assertEquals(-2.25D, restored.standDy, 0.0D);
+        assertEquals(11.75D, restored.standDz, 0.0D);
+    }
+
+    @Test
+    public void aRecordWithNoPostureReadsAsSeated() {
+        // The seated shape is what a seated record writes, and the restore must not start treating
+        // one as a standing crew member parked at the flight computer - that would put a returning
+        // pilot inside the machine instead of in his chair.
+        NBTTagCompound forgeData = new NBTTagCompound();
+        ShipAboardTag.write(forgeData, sample());
+
+        ShipAboardTag.Aboard restored = ShipAboardTag.read(forgeData);
+        assertNotNull(restored);
+        assertEquals(ShipAboardTag.Posture.SEATED, restored.posture);
+    }
+
+    @Test
+    public void seatedAndStandingAreDifferentRecordsEvenAtTheSamePoint() {
+        // The two postures are restored differently - one re-seats, one puts a body on the deck - so
+        // a writer that only refreshes on CHANGE must be able to see the difference between them.
+        ShipAboardTag.Aboard seated = new ShipAboardTag.Aboard(SHIP, COORD, 1, 2, 3);
+        ShipAboardTag.Aboard standing = ShipAboardTag.Aboard.standing(SHIP, COORD, 1.0D, 2.0D, 3.0D);
+        assertFalse("posture is part of the record's identity", seated.equals(standing));
+    }
+
+    @Test
     public void signedSeatOffsetsRoundTrip() {
         // The seat is identified by its flight-computer link offset, which is signed on every axis
         // (the computer can sit below/behind the seat). A magnitude-only encoding would re-seat a

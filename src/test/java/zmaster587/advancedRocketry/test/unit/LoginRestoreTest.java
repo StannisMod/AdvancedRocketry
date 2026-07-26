@@ -112,6 +112,24 @@ public class LoginRestoreTest {
     }
 
     @Test
+    public void aCrewMemberWhoWasOnHisFeetIsRestoredAboardJustLikeASeatedOne() {
+        // Standing on the deck is a way of being aboard, so the decision this table makes must not
+        // depend on posture: both postures name the same ship and the same cell, and the difference
+        // is only in WHERE on the ship phase 2 puts him back. A restore that branched here would
+        // send everyone who stood up to an ordinary spawn - the played-through report behind this.
+        FakeOps ops = new FakeOps();
+        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+
+        LoginRestore.Placement placed = LoginRestore.resolve(
+                ShipAboardTag.Aboard.standing(SHIP, LEDGER_COORD, 1.5D, 0.0D, -2.5D), ops, PLAYER);
+
+        assertEquals(LoginRestore.Reason.ABOARD_SETTLED, placed.reason);
+        assertTrue("a standing crew member belongs on his ship, not at a spawn", placed.aboard);
+        assertEquals(SLOT_DIM, placed.dimension);
+        assertEquals(SHIP, placed.shipId);
+    }
+
+    @Test
     public void theLedgerCoordinateWinsOverAStaleTagCoordinate() {
         // The ship kept flying under another crew member while this player was offline, so the
         // coordinate baked into his player file points at a cell the ship left long ago.
