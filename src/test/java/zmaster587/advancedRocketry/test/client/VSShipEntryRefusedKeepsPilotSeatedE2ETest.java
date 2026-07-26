@@ -61,7 +61,9 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
     private static final Pattern LEDGER = Pattern.compile("\"ledger\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-seat";
-    private static final int BX = 3000, BY = 64, BZ = 3000;
+    /** A surveyed natural site: flat, solid, unroofed plains under the pinned world seed.
+     *  Pinned by {@code HarnessFixtureSitesTest}; do not move it without re-surveying. */
+    private static final int BX = 100, BY = 64, BZ = 4100;
 
     /** The seeded atmosphere ceiling: the config key's minimum, so the climb stays short. */
     private static final int ORBIT_LINE = 255;

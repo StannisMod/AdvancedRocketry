@@ -83,7 +83,8 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
     @Test
     public void aBodyStandingOnTerrainBesideARolledShipIsNotDrawnShipAligned() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
-        final int bx = 7420, by = 64, bz = 7420;
+        // Surveyed natural site (flat plains, pinned world seed) - see HarnessFixtureSitesTest.
+        final int bx = 212, by = 64, bz = 7488;
 
         double[] ship = buildShip(bx, by, bz);
         rollShip(bx, by, bz);
@@ -210,7 +211,8 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
     @Test
     public void aBodyCarriedByARolledDeckIsStillDrawnShipAligned() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
-        final int bx = 7620, by = 64, bz = 7620;
+        // Surveyed natural site (flat plains, pinned world seed) - see HarnessFixtureSitesTest.
+        final int bx = 128, by = 63, bz = 7524;
 
         double[] ship = buildShip(bx, by, bz);
         // Put the subject on the deck BEFORE the roll: it rides the deck up with the ship, which is

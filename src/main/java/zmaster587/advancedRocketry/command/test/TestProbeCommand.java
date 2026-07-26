@@ -7679,7 +7679,316 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown worldgen subcommand — try sample <dim> <chunkX> <chunkZ> | ore-stats <dim> <cx> <cz> <radius> <blockId>\"}");
+        if (args.length >= 4 && "column".equalsIgnoreCase(args[0])) {
+            // column <dim> <x> <z> [yFrom] [yTo]
+            // The EXACT column a fixture is built in, not the chunk centre `sample` reports.
+            // A fixture anchored at a hardcoded Y needs to know what actually occupies that
+            // column: `sample` answers for (chunkX*16+8, chunkZ*16+8), which can be a different
+            // surface than the fixture's own x/z several blocks away.
+            //
+            // Force-loads and waits for population exactly like `sample` does. Reading a far
+            // column without that returns AIR for real terrain -- the chunk simply is not
+            // resident -- which reads as "there is nothing here" and is the wrong answer.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int z = parseIntOr(args[3], 0);
+            int yFrom = args.length >= 5 ? parseIntOr(args[4], 60) : 60;
+            int yTo = args.length >= 6 ? parseIntOr(args[5], 80) : 80;
+            if (yFrom > yTo) { int t = yFrom; yFrom = yTo; yTo = t; }
+            yFrom = Math.max(0, yFrom);
+            yTo = Math.min(255, yTo);
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            ensureChunkAreaLoaded(world, x, z, 1);
+            Chunk chunk = world.getChunkProvider().provideChunk(x >> 4, z >> 4);
+            for (int attempt = 0; attempt < 20 && (chunk == null || !chunk.isTerrainPopulated()); attempt++) {
+                try { Thread.sleep(50L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                chunk = world.getChunkProvider().provideChunk(x >> 4, z >> 4);
+            }
+            if (chunk == null || !chunk.isLoaded()) {
+                send(sender, "{\"error\":\"chunk failed to load\",\"pos\":[" + x + "," + z + "]}");
+                return;
+            }
+            int topY = chunk.getHeightValue(x & 15, z & 15);
+            StringBuilder stack = new StringBuilder();
+            int solidCount = 0;
+            for (int y = yFrom; y <= yTo; y++) {
+                IBlockState state = world.getBlockState(new BlockPos(x, y, z));
+                ResourceLocation rn = state.getBlock().getRegistryName();
+                String id = rn == null ? "minecraft:air" : rn.toString();
+                if (state.getBlock() != net.minecraft.init.Blocks.AIR) solidCount++;
+                if (stack.length() > 0) stack.append(',');
+                stack.append(y).append('=').append(id.replace("minecraft:", ""));
+            }
+            Biome biome = world.getBiome(new BlockPos(x, Math.max(0, topY - 1), z));
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("dim", dim);
+            info.put("x", x);
+            info.put("z", z);
+            info.put("topY", topY);                 // heightmap: first free y above the surface
+            info.put("yFrom", yFrom);
+            info.put("yTo", yTo);
+            info.put("nonAirInRange", solidCount);  // 0 = the whole sampled range is open air
+            info.put("stack", stack.toString());
+            info.put("biome", biome.getRegistryName() == null ? "unknown" : biome.getRegistryName().toString());
+            info.put("terrainPopulated", chunk.isTerrainPopulated());
+            send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 5 && "find-biome".equalsIgnoreCase(args[0])) {
+            // find-biome <dim> <x0> <z0> <range> <biome[,biome...]>
+            //
+            // Locate a biome WITHOUT generating terrain: the biome provider answers from noise
+            // alone, so this scans thousands of blocks in milliseconds where find-site must
+            // generate every chunk it looks at (~0.6 s each). Use it to pick the region, then run
+            // find-site inside that region only. Seeded with a constant so the answer is as
+            // reproducible as the world it describes.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x0 = parseIntOr(args[2], 0);
+            int z0 = parseIntOr(args[3], 0);
+            int range = parseIntOr(args[4], 2048);
+            String biomeList = args.length >= 6 ? args[5] : "minecraft:plains";
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            List<Biome> wanted = new java.util.ArrayList<Biome>();
+            for (String id : biomeList.split(",")) {
+                Biome b = ForgeRegistries.BIOMES.getValue(new ResourceLocation(id.trim()));
+                if (b != null) wanted.add(b);
+            }
+            if (wanted.isEmpty()) {
+                send(sender, "{\"error\":\"no known biome in list\",\"list\":\"" + escapeJson(biomeList) + "\"}");
+                return;
+            }
+            BlockPos found = world.getBiomeProvider().findBiomePosition(
+                    x0, z0, range, wanted, new java.util.Random(0L));
+            Map<String, Object> info = new LinkedHashMap<String, Object>();
+            info.put("dim", dim);
+            info.put("from", new int[]{x0, z0});
+            info.put("range", range);
+            info.put("wanted", biomeList);
+            if (found == null) {
+                info.put("ok", false);
+                info.put("reason", "no such biome within range");
+            } else {
+                info.put("ok", true);
+                info.put("x", found.getX());
+                info.put("z", found.getZ());
+                info.put("biome", String.valueOf(world.getBiomeProvider().getBiome(found).getRegistryName()));
+            }
+            send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 4 && "site-check".equalsIgnoreCase(args[0])) {
+            // site-check <dim> <x> <z> [padRadius] [headroom] [maxDeviation]
+            // Verify ONE known pad instead of searching for one: this is what a guard test asks,
+            // so a re-rolled seed fails as "the fixture site is no longer flat" rather than as the
+            // fixtures' own much harder-to-read symptoms.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int z = parseIntOr(args[3], 0);
+            int padRadius = args.length >= 5 ? parseIntOr(args[4], 8) : 8;
+            int headroom = args.length >= 6 ? parseIntOr(args[5], 20) : 20;
+            int maxDeviation = args.length >= 7 ? parseIntOr(args[6], 1) : 1;
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            // Load ONE CHUNK BEYOND the pad. Decorations cross chunk borders, so a chunk whose
+            // neighbours are absent reports a surface that changes once they arrive — measured:
+            // the same pad read spread 0 inside a wide scan and spread 2 when only its own chunks
+            // were resident. The guard must see the finished world, not a half-decorated one.
+            for (int cx = ((x - padRadius) >> 4) - 1; cx <= ((x + padRadius) >> 4) + 1; cx++) {
+                for (int cz = ((z - padRadius) >> 4) - 1; cz <= ((z + padRadius) >> 4) + 1; cz++) {
+                    Chunk c = world.getChunkProvider().provideChunk(cx, cz);
+                    for (int attempt = 0; attempt < 20 && (c == null || !c.isTerrainPopulated()); attempt++) {
+                        try { Thread.sleep(50L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                        c = world.getChunkProvider().provideChunk(cx, cz);
+                    }
+                }
+            }
+            int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+            for (int px = x - padRadius; px <= x + padRadius; px++) {
+                for (int pz = z - padRadius; pz <= z + padRadius; pz++) {
+                    Chunk c = world.getChunkProvider().provideChunk(px >> 4, pz >> 4);
+                    if (c == null) continue;
+                    int h = c.getHeightValue(px & 15, pz & 15);
+                    if (h < lo) lo = h;
+                    if (h > hi) hi = h;
+                }
+            }
+            boolean clear = lo != Integer.MAX_VALUE && siteIsClear(world, x, z, lo, padRadius, headroom);
+            boolean level = lo != Integer.MAX_VALUE && (hi - lo) <= maxDeviation;
+            Map<String, Object> info = new LinkedHashMap<String, Object>();
+            info.put("ok", clear && level);
+            info.put("dim", dim);
+            info.put("site", new int[]{x, z});
+            info.put("padRadius", padRadius);
+            info.put("headroom", headroom);
+            info.put("baseY", lo == Integer.MAX_VALUE ? -1 : lo);
+            info.put("spread", lo == Integer.MAX_VALUE ? -1 : hi - lo);
+            info.put("level", level);
+            info.put("clear", clear);
+            info.put("biome", String.valueOf(world.getBiome(new BlockPos(x, Math.max(0, lo), z)).getRegistryName()));
+            send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 4 && "find-site".equalsIgnoreCase(args[0])) {
+            // find-site <dim> <x0> <z0> [searchRadius] [padRadius] [headroom] [maxDeviation]
+            //
+            // Find natural ground a fixture can be built on AS IS, instead of levelling terrain
+            // to fit a hardcoded Y. With the harness world seed pinned the landscape is a
+            // constant, so a site found once stays found -- the coordinates get hardcoded into
+            // the test and a guard asserts they are still flat, which turns "the seed changed"
+            // into a loud failure instead of a fixture that quietly stops working.
+            //
+            // A site qualifies when, over the whole pad: the surface is level within
+            // maxDeviation, the surface block is solid ground (not water/lava/foliage), and
+            // there is clear air for `headroom` blocks above it (no canopy).
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x0 = parseIntOr(args[2], 0);
+            int z0 = parseIntOr(args[3], 0);
+            int searchRadius = args.length >= 5 ? parseIntOr(args[4], 128) : 128;
+            int padRadius = args.length >= 6 ? parseIntOr(args[5], 12) : 12;
+            int headroom = args.length >= 7 ? parseIntOr(args[6], 24) : 24;
+            int maxDeviation = args.length >= 8 ? parseIntOr(args[7], 1) : 1;
+            if (searchRadius < 16 || searchRadius > 256 || padRadius < 2 || padRadius > 32) {
+                send(sender, "{\"error\":\"searchRadius must be 16..256 and padRadius 2..32\"}");
+                return;
+            }
+            WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            // Heightmap for the whole search box, chunk by chunk, waiting for population --
+            // an unpopulated chunk has no trees yet and would advertise a canopy-free site
+            // that grows a forest the moment it finishes generating.
+            int minX = x0 - searchRadius, maxX = x0 + searchRadius;
+            int minZ = z0 - searchRadius, maxZ = z0 + searchRadius;
+            int width = maxX - minX + 1;
+            int[] heights = new int[width * (maxZ - minZ + 1)];
+            // TWO PASSES, and the split is load-bearing. A chunk's own populate flag flips before
+            // its NEIGHBOURS decorate, and their trees spill across the border afterwards — so a
+            // height read immediately after populating a chunk can miss trees that are about to
+            // land on it. Measured: sites this scan called dead flat (spread 0) read spread 5 once
+            // the surrounding chunks existed. Populate everything, INCLUDING a one-chunk margin,
+            // and only then read the heightmap.
+            int chunksScanned = 0;
+            for (int cx = (minX >> 4) - 1; cx <= (maxX >> 4) + 1; cx++) {
+                for (int cz = (minZ >> 4) - 1; cz <= (maxZ >> 4) + 1; cz++) {
+                    Chunk chunk = world.getChunkProvider().provideChunk(cx, cz);
+                    for (int attempt = 0; attempt < 20 && (chunk == null || !chunk.isTerrainPopulated()); attempt++) {
+                        try { Thread.sleep(25L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                        chunk = world.getChunkProvider().provideChunk(cx, cz);
+                    }
+                    if (chunk != null) chunksScanned++;
+                }
+            }
+            for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+                for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                    Chunk chunk = world.getChunkProvider().provideChunk(cx, cz);
+                    if (chunk == null) continue;
+                    for (int lx = 0; lx < 16; lx++) {
+                        for (int lz = 0; lz < 16; lz++) {
+                            int wx = (cx << 4) + lx, wz = (cz << 4) + lz;
+                            if (wx < minX || wx > maxX || wz < minZ || wz > maxZ) continue;
+                            heights[(wz - minZ) * width + (wx - minX)] = chunk.getHeightValue(lx, lz);
+                        }
+                    }
+                }
+            }
+
+            int bestX = Integer.MIN_VALUE, bestZ = Integer.MIN_VALUE, bestY = 0, bestSpread = Integer.MAX_VALUE;
+            long bestDist = Long.MAX_VALUE;
+            int step = Math.max(4, padRadius / 2);
+            for (int cxw = minX + padRadius; cxw <= maxX - padRadius; cxw += step) {
+                for (int czw = minZ + padRadius; czw <= maxZ - padRadius; czw += step) {
+                    int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+                    for (int px = cxw - padRadius; px <= cxw + padRadius && hi - lo <= maxDeviation; px++) {
+                        for (int pz = czw - padRadius; pz <= czw + padRadius; pz++) {
+                            int h = heights[(pz - minZ) * width + (px - minX)];
+                            if (h < lo) lo = h;
+                            if (h > hi) hi = h;
+                            if (hi - lo > maxDeviation) break;
+                        }
+                    }
+                    int spread = hi - lo;
+                    if (spread > maxDeviation) continue;
+                    long dist = (long) (cxw - x0) * (cxw - x0) + (long) (czw - z0) * (czw - z0);
+                    if (spread > bestSpread || (spread == bestSpread && dist >= bestDist)) continue;
+                    if (!siteIsClear(world, cxw, czw, lo, padRadius, headroom)) continue;
+                    bestX = cxw; bestZ = czw; bestY = lo; bestSpread = spread; bestDist = dist;
+                }
+            }
+
+            Map<String, Object> info = new LinkedHashMap<String, Object>();
+            info.put("dim", dim);
+            info.put("searchCenter", new int[]{x0, z0});
+            info.put("searchRadius", searchRadius);
+            info.put("padRadius", padRadius);
+            info.put("headroom", headroom);
+            info.put("chunksScanned", chunksScanned);
+            if (bestX == Integer.MIN_VALUE) {
+                info.put("ok", false);
+                info.put("reason", "no level, clear, solid-ground pad in range");
+            } else {
+                info.put("ok", true);
+                info.put("x", bestX);
+                info.put("z", bestZ);
+                info.put("baseY", bestY);          // ground level: build the fixture AT this Y
+                info.put("spread", bestSpread);
+                info.put("biome", String.valueOf(world.getBiome(new BlockPos(bestX, bestY, bestZ)).getRegistryName()));
+            }
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown worldgen subcommand — try sample <dim> <chunkX> <chunkZ> | column <dim> <x> <z> [yFrom] [yTo] | find-site <dim> <x0> <z0> [searchRadius] [padRadius] [headroom] [maxDeviation] | ore-stats <dim> <cx> <cz> <radius> <blockId>\"}");
+    }
+
+    /**
+     * A candidate pad is usable when its surface is solid ground and nothing hangs over it.
+     *
+     * <p>Checked on the pad's rim and centre rather than every column: the heightmap already
+     * proved the surface is level, so what remains is "is it ground or water" and "is there a
+     * canopy" — both of which are area properties a sparse sample catches. Full-volume scanning a
+     * 25×25×24 box per candidate would turn the search into minutes.</p>
+     */
+    private boolean siteIsClear(WorldServer world, int cx, int cz, int groundY, int padRadius, int headroom) {
+        int[][] probes = {
+                {cx, cz},
+                {cx - padRadius, cz - padRadius}, {cx + padRadius, cz - padRadius},
+                {cx - padRadius, cz + padRadius}, {cx + padRadius, cz + padRadius},
+                {cx, cz - padRadius}, {cx, cz + padRadius},
+                {cx - padRadius, cz}, {cx + padRadius, cz},
+        };
+        for (int[] p : probes) {
+            IBlockState surface = world.getBlockState(new BlockPos(p[0], Math.max(0, groundY - 1), p[1]));
+            net.minecraft.block.material.Material mat = surface.getMaterial();
+            if (!mat.isSolid() || mat == net.minecraft.block.material.Material.WATER
+                    || mat == net.minecraft.block.material.Material.LAVA
+                    || mat == net.minecraft.block.material.Material.LEAVES) {
+                return false;
+            }
+            for (int y = groundY; y <= Math.min(255, groundY + headroom); y++) {
+                // Replaceable vegetation (tall grass, flowers, snow layer) is NOT an obstruction:
+                // placing a block overwrites it, and a fixture builder does exactly that. Counting
+                // it as blocked rejects every plains column and makes the whole search answer
+                // "this world has no flat ground" — a statement about the probe, not the world.
+                IBlockState above = world.getBlockState(new BlockPos(p[0], y, p[1]));
+                if (above.getBlock() != net.minecraft.init.Blocks.AIR
+                        && !above.getMaterial().isReplaceable()) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     // Inventory hatch probe ----------------------------------------------------

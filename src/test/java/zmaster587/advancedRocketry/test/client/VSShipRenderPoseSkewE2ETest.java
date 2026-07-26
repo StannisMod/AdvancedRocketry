@@ -53,7 +53,8 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
     @Test
     public void theSurfaceABodyStandsOnIsTheSurfaceTheRendererDraws() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
-        final int bx = 7220, by = 64, bz = 7220;
+        // Surveyed natural site (flat plains, pinned world seed) - see HarnessFixtureSitesTest.
+        final int bx = 268, by = 71, bz = 6176;
 
         // ---- Leg A (control): a PARKED ship's render transform converges onto its tick pose, so
         // the skew of a body standing on its deck bounds the instrument's noise floor. A large

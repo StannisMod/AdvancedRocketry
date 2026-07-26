@@ -41,7 +41,9 @@ public class VSPilotSeatRelogControlE2ETest extends AbstractClientE2ETest {
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-seat";
-    private static final int BX = 7200, BY = 64, BZ = 7200;
+    /** A surveyed natural site: flat, solid, unroofed plains under the pinned world seed.
+     *  Pinned by {@code HarnessFixtureSitesTest}; do not move it without re-surveying. */
+    private static final int BX = 1056, BY = 67, BZ = 6116;
 
     /** A demonstrable climb: well above settle jitter, cheap to reach. */
     private static final double MIN_CLIMB = 1.0;
