@@ -82,6 +82,12 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
 
     private void resetPlayer() throws Exception {
         exec("artest place 0 8 78 8 minecraft:stone");
+        // Clear the volume the player's body occupies (y 79..81) plus a margin —
+        // (8, 79, 8) is ordinary terrain height, and on some world seeds a
+        // hillside fills it, suffocating the player ("inWall") in what the
+        // health assertions would otherwise read as a suit-protection failure.
+        String clear = exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
+        assertTrue("stand-spot pre-clear failed: " + clear, clear.contains("\"ok\":true"));
         exec("tp @a 8.5 79 8.5");
         exec("artest player clear-armor");
         exec("gamerule naturalRegeneration false");

@@ -79,6 +79,9 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
         // Spawn craft adjacent to a known stone pad so the bot is
         // close enough to be in the same world tick + chunk.
         exec("artest place 0 8 78 8 minecraft:stone");
+        // (8, 79, 8) is ordinary terrain height — clear the body volume so a
+        // hillside seed can't suffocate the player mid-test.
+        exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
         exec("tp @a 8.5 79 8.5");
         bot().waitTicks(5);
 

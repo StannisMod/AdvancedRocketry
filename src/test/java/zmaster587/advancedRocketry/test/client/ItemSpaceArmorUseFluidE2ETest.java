@@ -93,6 +93,13 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
      *  test has a clean baseline regardless of order. */
     private void resetPlayer() throws Exception {
         exec("artest place 0 8 78 8 minecraft:stone");
+        // Clear the volume the player's body occupies (y 79..81) plus a margin.
+        // (8, 79, 8) is ordinary overworld terrain height: on some world seeds a
+        // hillside fills it, the player spawns INSIDE a block and takes
+        // suffocation ("inWall") damage — which the health assertions below
+        // would otherwise misread as the space suit failing to grant immunity.
+        String clear = exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
+        assertTrue("stand-spot pre-clear failed: " + clear, clear.contains("\"ok\":true"));
         exec("tp @a 8.5 79 8.5");
         exec("artest player clear-armor");
         exec("gamerule naturalRegeneration false");
@@ -158,9 +165,15 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             // Health must hold — suit absorbed; if isImmune returned
             // false the vacuum-damage tick would have shaved hearts.
             double healthAfter = health(bot().reportState());
+            // Report the damage SOURCE alongside the health delta: health lost to
+            // anything other than vacuum (suffocation in a terrain block, fall,
+            // …) is a fixture failure, not a suit failure, and the message must
+            // say which — otherwise a red here reads as "the suit stopped
+            // protecting" when the player was simply standing inside a hillside.
             assertTrue("suited player must not take vacuum damage; "
                             + "healthStart=" + healthStart
-                            + " healthAfter=" + healthAfter,
+                            + " healthAfter=" + healthAfter
+                            + " diag=" + exec("artest player suit-diag"),
                     healthAfter >= healthStart);
         } finally {
             restoreDim(originalDensity);
