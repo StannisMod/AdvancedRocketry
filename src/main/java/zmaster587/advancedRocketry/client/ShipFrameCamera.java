@@ -35,9 +35,11 @@ public final class ShipFrameCamera {
     /** Whether the ship-frame camera was engaged on the last rendered frame. */
     public static volatile boolean shipCamActive = false;
     /** The block position the client's crosshair raytrace resolved this frame, as "x,y,z" (ship
-     *  blocks come back in SUBSPACE coordinates), or "" when it hit no block. Test-mode only -
-     *  lets a client e2e assert WHAT the crosshair actually picks (contract C10) through
-     *  {@code readStaticField}, with no live objectMouseOver access. */
+     *  blocks come back in SUBSPACE coordinates), or "" when it hit no block. Written
+     *  UNCONDITIONALLY - deliberately NOT gated on test mode, because the harness child JVMs run
+     *  without it and this static is their only window onto what the crosshair resolves. Lets a
+     *  client e2e assert WHAT the crosshair actually picks through {@code readStaticField}, with no
+     *  live objectMouseOver access. */
     public static volatile String lastMouseOverBlock = "";
     /** Where the crosshair RAY actually originates ({@code getPositionEyes}) this frame — compared
      *  by the C10 e2e against {@code shipCamEye*} (what the RENDERER recorded): the two must be one
