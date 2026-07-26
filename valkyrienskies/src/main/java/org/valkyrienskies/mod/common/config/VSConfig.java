@@ -106,12 +106,6 @@ public class VSConfig extends VSConfigTemplate {
     })
     public static boolean chairRecipes = true;
 
-    @Name("Warn If No Modules")
-    @Comment({
-        "Send a warning if no known modules are installed"
-    })
-    public static boolean warnNoModules = true;
-
     @Name("Use Vanilla Explosions")
     @Comment({
         "If CUSTOM, vanilla explosions are replaced with a custom implementation which supports ships blocking",

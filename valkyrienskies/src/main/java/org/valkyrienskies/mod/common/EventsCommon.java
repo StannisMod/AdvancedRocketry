@@ -37,7 +37,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
-import org.valkyrienskies.mod.common.config.VSConfig;
 import org.valkyrienskies.mod.common.entity.EntityMountable;
 import org.valkyrienskies.mod.common.ships.entity_interaction.EntityDraggable;
 import org.valkyrienskies.mod.common.ships.entity_interaction.IDraggable;
@@ -186,12 +185,10 @@ public class EventsCommon {
 
     @SubscribeEvent
     public static void onJoin(PlayerLoggedInEvent event) {
-        if (VSConfig.warnNoModules && !ValkyrienSkiesMod.isAnyModuleLoaded()) {
-            event.player.sendMessage(new TextComponentString("Neither Valkyrien Skies Control nor " +
-                "Valkyrien Skies World are loaded. It's recommended you install them. You can disable this message " +
-                "by typing the command '/vsc warnNoModules false'"));
-        }
-
+        // The upstream "install Valkyrien Skies Control / World" login nag is gone, along with the
+        // module detection behind it: this physics core is vendored as part of this mod, not shipped
+        // as a standalone platform for those add-ons, so recommending them was advice to install
+        // something that is not part of this game.
         if (!event.player.world.isRemote) {
             EntityPlayerMP player = (EntityPlayerMP) event.player;
             lastPositions.put(player, new double[]{0D, 256D, 0D});
