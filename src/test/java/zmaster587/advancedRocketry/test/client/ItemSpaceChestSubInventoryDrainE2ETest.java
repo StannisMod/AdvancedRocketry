@@ -82,6 +82,12 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
 
     private void resetPlayer() throws Exception {
         exec("artest place 0 8 78 8 minecraft:stone");
+        // Clear the volume the player's body occupies (y 79..81) plus a margin —
+        // (8, 79, 8) is ordinary terrain height, and on some world seeds a
+        // hillside fills it, suffocating the player ("inWall") in what the
+        // health assertions would otherwise read as a suit-protection failure.
+        String clear = exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
+        assertTrue("stand-spot pre-clear failed: " + clear, clear.contains("\"ok\":true"));
         exec("tp @a 8.5 79 8.5");
         exec("artest player clear-armor");
         exec("gamerule naturalRegeneration false");
@@ -170,7 +176,14 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             assertTrue("equip-space-chest must succeed: " + equip,
                     equip.contains("\"ok\":true"));
             assertEquals("baseline chestAir", 1000, readChestAir());
-            assertEquals("client-rendered baseline must agree", 1000, clientChestAir());
+            // The client armor[2] NBT syncs a tick or two AFTER the server-side
+            // equip; sampling it immediately reads the -1 "not-synced" sentinel.
+            // Poll (load-scaled) until the synced baseline lands, event-gated
+            // rather than time-gated.
+            ClientPoll.Result<Integer> baseline = ClientPoll.until(
+                    bot()::waitTicks, this::clientChestAir, v -> v == 1000, 2, 20);
+            assertTrue("client-rendered baseline must agree (1000); " + baseline,
+                    baseline.satisfied);
 
             bot().waitTicks(80);
 

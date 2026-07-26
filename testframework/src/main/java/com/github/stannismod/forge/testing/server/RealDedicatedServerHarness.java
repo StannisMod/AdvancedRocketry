@@ -104,6 +104,9 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
 
     private static final int MAX_PORT_BIND_ATTEMPTS = 3;
 
+    /** Fixed world seed, so harness terrain is identical from run to run. See {@link #levelSeed()}. */
+    private static final String DEFAULT_LEVEL_SEED = "forge-test-framework";
+
     private enum BootOutcome { READY, BIND_FAILED }
 
     private static BootOutcome awaitReadyOrBindFailure(Process process, List<String> transcript,
@@ -329,6 +332,32 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
                 java.util.Collections.singletonList("eula=true"), StandardCharsets.UTF_8);
     }
 
+    /**
+     * The world seed every harness world is generated from.
+     *
+     * <p>Each harness boot creates a FRESH world directory (see the temp root above), so an
+     * empty {@code level-seed} — the previous behaviour — meant vanilla rolled a NEW RANDOM
+     * seed for every single test run. Terrain under a fixture's coordinates then varied
+     * run to run: a spot that was open air in one run sat inside a hillside in the next, which
+     * surfaces as a test that "flakes" while the code under test is perfectly deterministic.
+     * That cost real diagnosis time (a player suffocating inside terrain read as a space suit
+     * failing to grant vacuum immunity).</p>
+     *
+     * <p>Pinning it makes terrain reproducible: a fixture that collides with the landscape now
+     * fails EVERY run — loud and fixable — instead of one run in five. Override with
+     * {@code -Dforge.test.level.seed=<value>} for a different (still fixed) landscape, or with
+     * {@code random} to restore vanilla's per-run roll — which is how you check that a fixture is
+     * not quietly seed-dependent, and how the determinism guard test proves it can still fail.</p>
+     */
+    private static String levelSeed() {
+        String seed = System.getProperty("forge.test.level.seed");
+        if (seed == null || seed.isEmpty()) {
+            return DEFAULT_LEVEL_SEED;
+        }
+        // An empty level-seed is vanilla's "roll a new one"; this is the explicit way to ask.
+        return "random".equalsIgnoreCase(seed.trim()) ? "" : seed;
+    }
+
     private static String buildServerProperties(int port) {
         String newline = System.lineSeparator();
         StringBuilder builder = new StringBuilder();
@@ -339,7 +368,7 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         builder.append("generate-structures=false").append(newline);
         builder.append("hardcore=false").append(newline);
         builder.append("level-name=world").append(newline);
-        builder.append("level-seed=").append(newline);
+        builder.append("level-seed=").append(levelSeed()).append(newline);
         builder.append("level-type=DEFAULT").append(newline);
         builder.append("max-tick-time=-1").append(newline);
         builder.append("motd=Forge Test").append(newline);

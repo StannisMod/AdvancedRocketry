@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.client;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 
 import org.junit.Assume;
@@ -42,6 +43,19 @@ import static org.junit.Assert.assertTrue;
  * ship-anchored legs sample reliably.
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
+ *
+ * <p><b>Known limitation, REVISIT WHEN VALKYRIEN SKIES SOURCE IS AVAILABLE.</b> Under the parallel
+ * client gate (many client JVMs contending for one GPU) leg A's subject was intermittently never
+ * DRAWN: measured, a red window rendered 543 frames yet ran {@code RenderLivingBase.applyRotations}
+ * zero times for any living body, while the same client drew leg B's carried cow fine. So a world
+ * entity standing inside a steeply-rolled ship's world AABB (leg A's precondition) is sometimes absent
+ * from the vanilla living-render dispatch. The camera→subject offset is fixed, so it is not a frustum
+ * miss; the suspected cause is Valkyrien Skies' per-frame handling of world entities that fall inside a
+ * ship's world box - but VS is jar-only here, so the exact render path was not opened. Leg A works
+ * around it by re-staging the subject until the client provably draws it (see {@link #MAX_STAGINGS});
+ * that keeps the test honest without root-causing a symptom that needs GPU contention to appear and so
+ * does not reach a single-client player. When VS is vendored as source, root-cause the render path and
+ * decide whether the re-stage workaround can be retired.</p>
  */
 public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
@@ -74,47 +88,105 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         double[] ship = buildShip(bx, by, bz);
         rollShip(bx, by, bz);
 
-        // The subject sits on WORLD TERRAIN beside the hull, close enough that the ship's grown
-        // world box covers it - that overlap IS the bug's precondition, so it is measured, never
-        // assumed: a body spawned merely "near" a ship would make a green run vacuous.
-        // The valid spot is SEARCHED FOR, not assumed: the ship's world box at a 160 deg roll is
-        // not where a hand-picked offset guesses (the first draft put the stand 3 blocks aside at
-        // y=64 and it landed clean outside containment). Both halves of validity are load-bearing:
-        //  - inside containment, or the OLD gate would never have rotated it and green is vacuous;
-        //  - ZERO standing support, or it is a carried body and belongs to leg B.
-        int subject = -1;
-        String contact = "";
+        // Collect EVERY spot beside the hull that is valid for leg A - sitting on WORLD TERRAIN, inside
+        // the ship's grown world box (the bug's precondition) with ZERO ship support (a carried body
+        // belongs to leg B). The valid set is SEARCHED FOR, not assumed: the ship's world box at a
+        // 160 deg roll is not where a hand-picked offset guesses (the first draft put the stand 3 blocks
+        // aside at y=64 and it landed clean outside containment). Both halves of validity are measured
+        // on the server, never assumed - a body merely "near" a ship, or one the ship actually carries,
+        // would make a green run vacuous. Collecting the WHOLE set (not the first match) gives the
+        // re-stage loop below fresh spots to try.
+        java.util.List<double[]> valid = new java.util.ArrayList<double[]>();
         StringBuilder tried = new StringBuilder();
         for (double[] spot : terrainSpotsBeside(ship)) {
-            // Exactly ONE stand may exist while sampling: a rejected candidate left standing
-            // somewhere supported would rotate legitimately and read as a red on the subject.
+            // Exactly ONE stand may exist while probing: a rejected candidate left standing somewhere
+            // supported would rotate legitimately and read as a red on the subject.
             exec("kill @e[type=cow]");
-            // Snap to the block grid and stand the body exactly ON the placed floor: the previous
-            // draft spawned at the raw (fractional) height with the block a full floor() below, so
-            // the subject hung ~1.7 blocks above its own support and the probe honestly reported
+            // Snap to the block grid and stand the body exactly ON the placed floor: the previous draft
+            // spawned at the raw (fractional) height with the block a full floor() below, so the subject
+            // hung ~1.7 blocks above its own support and the probe honestly reported
             // supportedByWorldTerrain=false.
             spot[1] = Math.floor(spot[1]);
             floorUnder(spot);
             int candidate = spawnSubject(spot[0], spot[1], spot[2]);
             String probe = exec("artest vs deck-capture 0 " + candidate);
-            tried.append(String.format(java.util.Locale.ROOT, "[%.1f,%.1f,%.1f contain=%s obst=%d]",
-                    spot[0], spot[1], spot[2], probe.contains("\"aboardByContainment\":true"),
-                    readInt(probe, OBSTACLES)));
-            if (probe.contains("\"aboardByContainment\":true") && readInt(probe, OBSTACLES) == 0) {
-                subject = candidate;
-                contact = probe;
+            boolean contained = probe.contains("\"aboardByContainment\":true");
+            boolean unsupported = readInt(probe, OBSTACLES) == 0;
+            boolean onTerrain = probe.contains("\"supportedByWorldTerrain\":true");
+            tried.append(String.format(java.util.Locale.ROOT,
+                    "[%.1f,%.1f,%.1f contain=%s obst=%d terr=%s]", spot[0], spot[1], spot[2],
+                    contained, readInt(probe, OBSTACLES), onTerrain));
+            if (contained && unsupported && onTerrain) {
+                valid.add(spot);
+            }
+        }
+        assertTrue("no spot beside this ship was INSIDE its containment, unsupported AND on world "
+                        + "terrain - leg A cannot be staged on this fixture; tried " + tried,
+                !valid.isEmpty());
+
+        // Stage the MEASURED body in front of an already-settled camera, and require the client to
+        // actually DRAW it before measuring the gate. That a body inside a ship's world AABB is drawn
+        // through the vanilla living path is a SETUP precondition here, not the contract under test:
+        // under concurrent-fork load it is intermittently NOT drawn at all (measured: 543 frames
+        // rendered, ZERO applyRotations on the only living body in the window), which is a
+        // render-observability gap on the subject, not the gate deciding to rotate it. The
+        // camera-to-subject offset is fixed, so this is not a framing/frustum miss; it tracks the
+        // subject's spot and VS's per-frame state for a world entity inside a ship box. Re-stage at a
+        // FRESH valid spot until one is drawn, under a bounded budget; the rotation contract below is
+        // then measured only on a body the client provably rendered. Each staging spawns AFTER the
+        // camera settles (a teleport re-streams entities; spawning in front of a settled camera removes
+        // that race at its source) and aims at the SUBJECT (the decision under test is about THIS body's
+        // model, off to one side of a steeply rolled hull).
+        long[] before = null, after = null;
+        StringBuilder staging = new StringBuilder();
+        int drawAttempts = 0;
+        for (double[] spot : valid) {
+            exec("kill @e[type=cow]");
+            lookAt(spot[0], spot[1], spot[2]);
+            int subject = spawnSubject(spot[0], spot[1], spot[2]);
+            // Re-probe the FINAL body: validity was established while probing candidates; it is this
+            // entity the assertions speak about. VS jitters a ship's world box between the collect loop
+            // and here, so a spot valid a moment ago can drift off precondition - skip it WITHOUT
+            // spending a draw attempt (no render was staged), a green here would be vacuous.
+            String contact = exec("artest vs deck-capture 0 " + subject);
+            if (!(contact.contains("\"aboardByContainment\":true") && readInt(contact, OBSTACLES) == 0)) {
+                staging.append(String.format(java.util.Locale.ROOT,
+                        "[%.1f,%.1f,%.1f precondition-drifted]", spot[0], spot[1], spot[2]));
+                System.out.println(String.format(java.util.Locale.ROOT,
+                        "[modelgate] legA spot [%.1f,%.1f,%.1f] drifted off precondition, trying next",
+                        spot[0], spot[1], spot[2]));
+                continue;
+            }
+            drawAttempts++;
+            Sampling s = awaitRemoteSampling();
+            // Print every DRAW attempt so a GREEN run still proves whether the re-stage FIRED for the
+            // render cull: a lone "DRAWN" is a natural first-try render (fix idle), while a
+            // "not drawn ...subject-culled..." line FOLLOWED by a later "DRAWN" is the re-stage
+            // recovering a would-be-red run - the direct evidence the cull is per-spot, not run-global
+            // (ledger #101). Without it a pass is silent about the fix and could be the muffler, not the cure.
+            System.out.println(String.format(java.util.Locale.ROOT,
+                    "[modelgate] legA draw attempt %d at [%.1f,%.1f,%.1f] -> %s",
+                    drawAttempts, spot[0], spot[1], spot[2], s.drawn ? "DRAWN" : "not drawn " + s.diagnostic));
+            if (s.drawn) {
+                before = remoteCounters();
+                bot().waitTicks(60);
+                after = remoteCounters();
+                break;
+            }
+            staging.append(String.format(java.util.Locale.ROOT, "[attempt %d %s]", drawAttempts, s.diagnostic));
+            if (drawAttempts >= MAX_STAGINGS) {
                 break;
             }
         }
-        assertTrue("no spot beside this ship was both INSIDE its containment and unsupported - "
-                        + "leg A cannot be staged on this fixture; tried " + tried,
-                subject >= 0);
-        assertTrue("the chosen spot must sit on world terrain: " + contact,
-                contact.contains("\"supportedByWorldTerrain\":true"));
-
-        lookAt(ship[0], ship[1], ship[2]); // the model must actually be rendered to be decided about
-        long[] before = remoteCounters();
-        long[] after = sampleUntilInstrumentFires(before);
+        // Summarise on PASS too, so a recovered cull is on the record even when the assertion is green.
+        System.out.println("[modelgate] legA staging summary: "
+                + (after != null ? "DREW after " + drawAttempts + " draw-attempt(s)" : "NEVER DREW")
+                + " | " + staging);
+        assertTrue("no valid terrain spot beside this ship had its body DRAWN by the client within the "
+                        + "load-scaled window after " + drawAttempts + " draw attempt(s) - a render-"
+                        + "observability gap for a world body inside a ship box, NOT a gate decision. "
+                        + "Per-spot: " + staging + " | client cows=" + safeReportCows(),
+                after != null);
 
         long samples = after[1] - before[1];
         long rotated = after[2] - before[2];
@@ -127,6 +199,11 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                         + clientString(SHIP_CAMERA, "remoteModelTrace"),
                 rotated == 0);
     }
+
+    /** Re-stage the subject at most this many times when the client does not draw it (ledger #101). At
+     *  the measured ~2/3 per-spot draw rate under load, three fresh spots drive a spurious "never drawn"
+     *  below ~4 %, while a run-GLOBAL cull still exhausts the budget and self-reports it. */
+    private static final int MAX_STAGINGS = 3;
 
     // ---- Leg B (control): the gate must still rotate a body the ship DOES carry ----------------
 
@@ -147,8 +224,13 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 readInt(contact, OBSTACLES) > 0);
 
         lookAt(ship[0], ship[1], ship[2]);
+        Sampling s = awaitRemoteSampling();
+        assertTrue("the carried subject was never drawn by the client, so this control proves nothing: "
+                        + s.diagnostic + " | client cows=" + safeReportCows(),
+                s.drawn);
         long[] before = remoteCounters();
-        long[] after = sampleUntilInstrumentFires(before);
+        bot().waitTicks(60);
+        long[] after = remoteCounters();
 
         long samples = after[1] - before[1];
         long rotated = after[2] - before[2];
@@ -163,19 +245,77 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
     // ---- helpers (self-contained, mirroring the other tier-2 e2e classes) ----------------------
 
-    /** Wait for the model-rotation instrument to actually SAMPLE the subject, in bounded short rounds
-     *  instead of one fixed window. Under shared-harness load (three methods, one client) the subject's
-     *  first rendered frame can lag the look, and a single 60-tick window then reads zero samples on a
-     *  client that draws models fine. Returns the counters once at least one remote sample has landed
-     *  (or after the cap - the caller's {@link #assertInstrumentFired} then reports the honest zero).
-     *  Waits for the instrument to fire; weakens no threshold. */
-    private long[] sampleUntilInstrumentFires(long[] before) throws Exception {
-        long[] after = before;
-        for (int i = 0; i < 8 && after[1] - before[1] <= 0; i++) {
-            bot().waitTicks(15);
-            after = remoteCounters();
+    /** The outcome of {@link #awaitRemoteSampling}: whether the client actually DREW the staged subject
+     *  (the model-rotation hook sampled a remote body), and — when it did not — a self-classifying
+     *  diagnostic naming which render stage was dead so a caller need not hypothesise. */
+    private static final class Sampling {
+        final boolean drawn;
+        final String diagnostic;
+
+        Sampling(boolean drawn, String diagnostic) {
+            this.drawn = drawn;
+            this.diagnostic = diagnostic;
         }
-        return after;
+    }
+
+    /** PRECONDITION gate: wait until the model-rotation hook is actually SAMPLING the staged remote
+     *  body, so the measurement window that follows opens on a subject the client is already drawing.
+     *  Under shared-harness load the subject's first rendered frame can lag the look, and a window
+     *  opened before that reads zero samples on a client that draws models perfectly well.
+     *
+     *  <p>Returns {@link Sampling#drawn}=false rather than asserting, so the caller can RE-STAGE at a
+     *  fresh spot (ledger #101: a world body inside a ship box is intermittently not drawn under load).
+     *  When it returns false the diagnostic classifies the miss over the polled window from the two
+     *  render-stage controls — {@code cameraHookCalls} (frames) and {@code modelRotationCalls} (every
+     *  living model, player included) — so a red run names its own failure stage:
+     *  frames==0 → the draw stage is dead; frames&gt;0,models==0 → frames ran but no living model was
+     *  drawn (applyRotations unreached); frames&gt;0,models&gt;0 → models ARE drawn but this subject is
+     *  not (culled / absent from the render list).
+     *
+     *  <p>Only the precondition is polled — the measurement window the caller opens afterwards stays a
+     *  FIXED wait, deliberately. The value polled here ({@code remoteModelSamples}) is NOT what either
+     *  leg asserts on: {@code remoteModelRotatedSamples} is, read from that later window. Ending it
+     *  early on a samples predicate would move what the assertion sees — leg A's {@code rotated == 0}
+     *  gets easier the fewer samples it saw, and leg B's {@code rotated > 0} can exit before the first
+     *  ROTATED frame lands. That is exactly the case in which the fixed wait must stay.</p> */
+    private Sampling awaitRemoteSampling() throws Exception {
+        // First the subject must have ARRIVED on this side. Both legs spawn it and only then move the
+        // camera, and a teleport re-streams chunks AND entities - so the body reaches the client after
+        // a race a fixed wait wins only sometimes. > 1 because the client world always holds the player.
+        ClientPoll.Result<Long> arrived = ClientPoll.until(bot()::waitTicks,
+                () -> (long) clientDouble(SHIP_CAMERA, "clientLoadedEntities"),
+                v -> v > 1, 10, 12);
+        if (!arrived.satisfied) {
+            return new Sampling(false, "[subject never reached the CLIENT world (" + arrived + ")]");
+        }
+
+        final long start = (long) clientDouble(SHIP_CAMERA, "remoteModelSamples");
+        final long framesBefore = (long) clientDouble(SHIP_CAMERA, "cameraHookCalls");
+        final long modelsBefore = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls");
+        ClientPoll.Result<Long> r = ClientPoll.until(bot()::waitTicks,
+                () -> (long) clientDouble(SHIP_CAMERA, "remoteModelSamples"),
+                v -> v > start, 15, 8);
+        if (r.satisfied) {
+            return new Sampling(true, "");
+        }
+        long frames = (long) clientDouble(SHIP_CAMERA, "cameraHookCalls") - framesBefore;
+        long models = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls") - modelsBefore;
+        long loaded = (long) clientDouble(SHIP_CAMERA, "clientLoadedEntities");
+        String verdict = frames == 0 ? "draw-stage-dead(no frames)"
+                : models == 0 ? "no-living-model-drawn(applyRotations unreached)"
+                : "subject-culled(models drawn, subject absent from render list)";
+        return new Sampling(false, String.format(java.util.Locale.ROOT,
+                "[%s %s frames+=%d models+=%d loaded=%d]", verdict, r, frames, models, loaded));
+    }
+
+    /** Client-side positions of every cow the client currently sees, for a red-run diagnostic. Best
+     *  effort: a probe failure must not mask the assertion it is annotating. */
+    private String safeReportCows() {
+        try {
+            return bot().reportEntities("Cow", 80.0).toString();
+        } catch (Exception e) {
+            return "reportEntities(Cow) failed: " + e;
+        }
     }
 
     /** {@code {modelRotationCalls, remoteModelSamples, remoteModelRotatedSamples}} as the client
@@ -357,8 +497,12 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         assertTrue("a " + VARIANT + " build must route to a ship: " + assemble,
                 assemble.contains("\"rocketCount\":0"));
 
+        // Scale the assembly-convergence window by the fork factor (load-tail family): the VS assembly
+        // queue lags past a fixed 200-tick wait on a loaded machine (measured: "was 0, now 0" red at 8
+        // forks), and the early exit means an idle run still leaves at the same iteration it always did.
+        int assembleIters = (int) Math.ceil(40 * TestTimeouts.factor());
         int all = shipsBefore;
-        for (int i = 0; i < 40 && all <= shipsBefore; i++) {
+        for (int i = 0; i < assembleIters && all <= shipsBefore; i++) {
             bot().waitTicks(5);
             all = count("ship-count-all");
         }
@@ -371,7 +515,8 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
         String info = "";
         double[] where = null;
-        for (int i = 0; i < 40 && where == null; i++) {
+        int loadIters = (int) Math.ceil(40 * TestTimeouts.factor());
+        for (int i = 0; i < loadIters && where == null; i++) {
             bot().waitTicks(5);
             info = shipInfo(bx, by, bz);
             if (!info.contains("\"managed\":true")) {

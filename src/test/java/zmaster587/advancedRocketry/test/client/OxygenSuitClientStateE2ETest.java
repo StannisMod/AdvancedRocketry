@@ -47,6 +47,11 @@ public class OxygenSuitClientStateE2ETest extends AbstractClientE2ETest {
             // Stand the player on a known solid block so leaving creative flight
             // doesn't inflict fall damage that would masquerade as vacuum damage.
             serverClient().execute("artest place 0 8 78 8 minecraft:stone");
+            // Clear the body volume too: (8, 79, 8) is ordinary terrain height,
+            // so on some seeds a hillside fills it and the player suffocates.
+            // Suffocation damage would satisfy this test's "vacuum hurts an
+            // unsuited player" assertion for the wrong reason — a false green.
+            serverClient().execute("artest fill 0 7 79 7 9 82 9 minecraft:air");
             serverClient().execute("tp @a 8.5 79 8.5");
             bot().waitTicks(10);
 

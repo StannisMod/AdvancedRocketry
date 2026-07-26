@@ -303,18 +303,30 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // airborne (doesn't auto-land mid-test).
         int rocketId = mountFreshFreeFlightRocket(3400, 64, 500);
 
-        exec("artest rocket free-flight-input " + rocketId + " 1 1 0 0 0");
         String before = exec("artest rocket info " + rocketId);
-        double xb = parseDouble(before, POS_X, "posX");
-        double zb = parseDouble(before, POS_Z, "posZ");
-        bot().waitTicks(30);
-        String after = exec("artest rocket info " + rocketId);
-        double xa = parseDouble(after, POS_X, "posX");
-        double za = parseDouble(after, POS_Z, "posZ");
+        final double xb = parseDouble(before, POS_X, "posX");
+        final double zb = parseDouble(before, POS_Z, "posZ");
+        exec("artest rocket free-flight-input " + rocketId + " 1 1 0 0 0");
+        // Server-driven displacement: the throttle reaches the flight computer a
+        // tick or two after the probe returns, and under harness load the
+        // takeoff-kick grace can delay the horizontal ramp past a fixed window.
+        // Poll (load-scaled) until it has actually travelled, then measure — an
+        // idle run still exits inside the old 30-tick budget.
+        ClientPoll.Result<String> moved = ClientPoll.until(
+                bot()::waitTicks,
+                () -> exec("artest rocket info " + rocketId),
+                info -> {
+                    double dx = parseDouble(info, POS_X, "posX") - xb;
+                    double dz = parseDouble(info, POS_Z, "posZ") - zb;
+                    return Math.sqrt(dx * dx + dz * dz) > 1.0;
+                },
+                6, 10);
+        double xa = parseDouble(moved.value, POS_X, "posX");
+        double za = parseDouble(moved.value, POS_Z, "posZ");
 
         double horiz = Math.sqrt((xa - xb) * (xa - xb) + (za - zb) * (za - zb));
-        assertTrue("forward thrust must move the rocket horizontally over 30 ticks "
-                        + "(horiz=" + horiz + ")", horiz > 1.0);
+        assertTrue("forward thrust must move the rocket horizontally "
+                        + "(horiz=" + horiz + "; " + moved + ")", horiz > 1.0);
         assertTrue("forward at yaw=0 must be predominantly +Z, got dz=" + (za - zb),
                 (za - zb) > 0);
 

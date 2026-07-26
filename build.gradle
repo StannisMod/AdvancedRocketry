@@ -442,6 +442,14 @@ def configureHarnessTest = { Test t, boolean enableClient ->
     // ceilings would turn that contention into spurious reds. See TestTimeouts.
     t.systemProperty 'forge.test.timeout.factor', String.valueOf(1.0d + harnessForks / 4.0d)
 
+    // Harness worlds are generated from a FIXED seed so terrain under a fixture's coordinates is
+    // the same every run (an unpinned seed made every fixed-coordinate fixture a coin flip).
+    // -PlevelSeed=<value> re-rolls it deliberately; -PlevelSeed=random restores vanilla's
+    // per-run random landscape, which is how you check a fixture is not seed-dependent.
+    if (project.hasProperty('levelSeed')) {
+        t.systemProperty 'forge.test.level.seed', project.property('levelSeed').toString()
+    }
+
     t.testLogging {
         events 'failed', 'skipped', 'passed'
         exceptionFormat = 'full'

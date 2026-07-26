@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.client;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 
 import org.junit.Assume;
@@ -354,7 +355,12 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         // target tops out well below that edge.
         bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
         try {
-            for (int i = 0; i < 10 && subEnd[1] - subFly[1] < 2.0; i++) {
+            // Scale the climb-sampling ceiling by the fork factor (load-tail): under client
+            // frame-starvation the held-SPACE climb reaches the +2 target in more client ticks. This
+            // loop also accumulates the per-sample tracked/cam invariants, so scale the COUNT in place
+            // (early-exit on the +2 target kept) rather than threshold-poll it (it double-duties).
+            int climbIters = (int) Math.ceil(10 * TestTimeouts.factor());
+            for (int i = 0; i < climbIters && subEnd[1] - subFly[1] < 2.0; i++) {
                 bot().waitTicks(2);
                 samples++;
                 String cap = exec("artest vs deck-capture");

@@ -13752,6 +13752,65 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"mainHandAir\":" + mainHandAir + "}");
             return;
         }
+        if ("suit-diag".equals(sub)) {
+            // /artest player suit-diag
+            //
+            // READ-ONLY snapshot of every INPUT AtmosphereNeedsSuit.isImmune
+            // consults, plus the last damage source. Deliberately does NOT call
+            // isImmune/protectsFrom — those commit an air decrement — and reads
+            // the "air" tag raw rather than via getAirRemaining (which creates a
+            // tag compound when one is absent).
+            net.minecraft.inventory.EntityEquipmentSlot[] slots = {
+                    net.minecraft.inventory.EntityEquipmentSlot.HEAD,
+                    net.minecraft.inventory.EntityEquipmentSlot.CHEST,
+                    net.minecraft.inventory.EntityEquipmentSlot.LEGS,
+                    net.minecraft.inventory.EntityEquipmentSlot.FEET};
+            StringBuilder slotJson = new StringBuilder();
+            for (int i = 0; i < slots.length; i++) {
+                net.minecraft.item.ItemStack st = player.getItemStackFromSlot(slots[i]);
+                int rawAir = (!st.isEmpty() && st.hasTagCompound())
+                        ? st.getTagCompound().getInteger("air") : -1;
+                boolean validAir = !st.isEmpty()
+                        && zmaster587.advancedRocketry.util.ItemAirUtils.INSTANCE
+                                .isStackValidAirContainer(st);
+                boolean protCap = !st.isEmpty() && st.hasCapability(
+                        zmaster587.advancedRocketry.api.capability.CapabilitySpaceArmor.PROTECTIVEARMOR, null);
+                if (i > 0) {
+                    slotJson.append(",");
+                }
+                slotJson.append("{\"slot\":\"").append(slots[i].getName()).append("\"")
+                        .append(",\"item\":\"")
+                        .append(escapeJson(st.isEmpty() ? "" : st.getItem().getRegistryName().toString()))
+                        .append("\"")
+                        .append(",\"validAirContainer\":").append(validAir)
+                        .append(",\"rawAir\":").append(rawAir)
+                        .append(",\"protCap\":").append(protCap)
+                        .append(",\"dmg\":").append(st.isEmpty() ? -1 : st.getItemDamage())
+                        .append("}");
+            }
+            String atmos = "?";
+            zmaster587.advancedRocketry.atmosphere.AtmosphereHandler ah =
+                    zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.getOxygenHandler(
+                            player.world.provider.getDimension());
+            if (ah != null) {
+                atmos = ah.getAtmosphereType(player).getUnlocalizedName();
+            }
+            net.minecraft.util.DamageSource lastDmg = player.getLastDamageSource();
+            send(sender, "{\"ok\":true"
+                    + ",\"creative\":" + player.capabilities.isCreativeMode
+                    + ",\"spectator\":" + player.isSpectator()
+                    + ",\"riding\":\""
+                    + escapeJson(player.getRidingEntity() == null ? ""
+                            : player.getRidingEntity().getClass().getSimpleName()) + "\""
+                    + ",\"grace\":" + player.getEntityData().getLong("arRocketTransferGrace")
+                    + ",\"worldTime\":" + player.world.getTotalWorldTime()
+                    + ",\"atmos\":\"" + escapeJson(atmos) + "\""
+                    + ",\"health\":" + player.getHealth()
+                    + ",\"lastDamage\":\""
+                    + escapeJson(lastDmg == null ? "" : lastDmg.getDamageType()) + "\""
+                    + ",\"slots\":[" + slotJson + "]}");
+            return;
+        }
         if ("set-fall-distance".equals(sub) && args.length >= 2) {
             // set the player's server-side fallDistance field.
             // Used to set up a non-zero baseline so AreaGravityController's
@@ -14742,7 +14801,7 @@ public class TestProbeCommand extends CommandBase {
                     + escapeJson(player.getName()) + "\"}");
             return;
         }
-        send(sender, "{\"error\":\"unknown player subcommand — try inv-bypass <add|remove|status> | open-container | health | set-health <hp> | held-air | give-suit-chest [air] | equip-airsuit [air] | clear-armor | advancement <id> | advancement reset <id> | last-chat | chat-clear | try-seal-detect <dim> <x> <y> <z> | try-atm-analyze <dim> | try-hovercraft <dim> <px> <py> <pz> <yaw> <pitch> | try-biomechanger-rclick <dim>\"}");
+        send(sender, "{\"error\":\"unknown player subcommand — try inv-bypass <add|remove|status> | open-container | health | set-health <hp> | held-air | suit-diag | give-suit-chest [air] | equip-airsuit [air] | clear-armor | advancement <id> | advancement reset <id> | last-chat | chat-clear | try-seal-detect <dim> <x> <y> <z> | try-atm-analyze <dim> | try-hovercraft <dim> <px> <py> <pz> <yaw> <pitch> | try-biomechanger-rclick <dim>\"}");
     }
 
     // ── chat-tap ──────────────────────────────────────
