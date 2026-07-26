@@ -36,6 +36,16 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
     private static final int SRC_X = 6000, SRC_Y = 80, SRC_Z = 6000;
     /** A world Y comfortably above the default orbit ceiling (ARConfiguration.orbit = 1000). */
     private static final int ABOVE_CEILING_Y = 1200;
+    /** The jump leg builds its own ship, well clear of the entry leg's region (shared server, both run). */
+    private static final int JUMP_SRC_X = 6400, JUMP_SRC_Z = 6400;
+    /**
+     * A cell key is {@code sx_sy_sz}. The jump target is derived from the ORIGIN, one sector over: the
+     * integrator steps {@code speed} blocks per tick, so the time in hyperspace is distance/speed, and a
+     * sector is enormous. An absolute far-away target (first attempt: sector 9001 from an origin at 25)
+     * leaves the ship legitimately IN_TRANSIT for thousands of ticks and the test reds on its own poll
+     * window while production is working correctly.
+     */
+    private static final Pattern CELL_KEY = Pattern.compile("^(-?\\d+)_(-?\\d+)_(-?\\d+)$");
 
     @Test
     public void aPilotedShipClimbingPastTheCeilingEntersSpaceViaTheFlightComputerTick() throws Exception {
@@ -105,6 +115,106 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         assertTrue("the settled ship's cell world is not live in a slot; status=" + status
                 + " countAll=" + exec("artest vs ship-count-all " + slotDim),
                 waitForLoadedShip(slotDim) >= 1);
+    }
+
+    /**
+     * The leg AFTER the on-ramp: a ship that reached space through the production entry path can then JUMP
+     * to another cell on the SAME live stack, driven only by the server tick.
+     *
+     * <p>Why this is not already covered: {@code VSShipTransitE2ETest} proves the transit state machine on
+     * an ISOLATED stack — its own {@code SpaceManager}, its own hard-coded origin/target, advanced by manual
+     * {@code transit-tick} calls. Nothing joined the two halves, so a ship that actually FLEW into space had
+     * never been jumped. The join is exactly where the previous hands-on tier-2 session found its blockers.</p>
+     *
+     * <p>The contract asserted here is the join, not the transit internals: a ship SETTLED by the entry path
+     * departs its cell when a jump begins, and settles in the requested target cell without anything pumping
+     * the manager by hand. CONTROL: the pre-jump cell is read from the ledger and asserted DIFFERENT from
+     * the target, so "settled at the target" cannot pass by never having moved.</p>
+     */
+    @Test
+    public void aShipThatEnteredSpaceCanJumpToAnotherCellOnTheLiveStack() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the server classpath (run with -PwithVS)", serverHasVs());
+
+        exec("artest vs permaload true");
+        String setup = exec("artest space entry-setup 2");
+        assertTrue("entry setup failed: " + setup, setup.contains("\"ok\":true"));
+
+        clearArea(JUMP_SRC_X, JUMP_SRC_Z);
+        String coords = placeFixture(JUMP_SRC_X, SRC_Y, JUMP_SRC_Z, "with-pilot-seat");
+        String asm = exec("artest rocket assemble 0 " + coords);
+        assertTrue("with VS an AFC-bearing build must route to a ship (no rocket): " + asm,
+                asm.contains("\"rocketCount\":0"));
+        assertTrue("the source VS ship never loaded", waitForLoadedShip(0) >= 1);
+
+        String srcInfo = exec("artest vs ship-info 0 " + JUMP_SRC_X + " " + SRC_Y + " " + JUMP_SRC_Z);
+        assertTrue("source ship not managed by VS: " + srcInfo, srcInfo.contains("\"managed\":true"));
+        double sx = extractDouble(srcInfo, "posX"), sy = extractDouble(srcInfo, "posY"),
+                sz = extractDouble(srcInfo, "posZ");
+        exec("artest vs ff-input 0 1 0 0 0 0");
+        assertTrue("climb teleport failed", exec("artest vs teleport-ship 0 " + (int) sx + " " + (int) sy
+                + " " + (int) sz + " " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz)
+                .contains("\"ok\":true"));
+        exec("artest vs unpark 0 " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz);
+
+        String status = "";
+        boolean settled = false;
+        for (int i = 0; i < 120; i++) {
+            status = exec("artest space entry-status");
+            if (extractInt(status, "ships") >= 1 && "SETTLED".equals(extractString(status, "state"))) {
+                settled = true;
+                break;
+            }
+            loadAllEntrySlots(setup);
+            Thread.sleep(250);
+        }
+        assertTrue("precondition: the ship never entered space, so there is nothing to jump; last status="
+                + status, settled);
+        int slotDim = extractInt(status, "slotDim");
+        String originCell = extractString(status, "cellKey");
+        assertTrue("the entered ship's cell world is not live in a slot; status=" + status,
+                waitForLoadedShip(slotDim) >= 1);
+
+        // Jump it ONE sector over. The slot dim is passed explicitly: the console sender's own world is
+        // the overworld, and the default would read that instead of the cell the ship is in.
+        Matcher origin = CELL_KEY.matcher(originCell == null ? "" : originCell);
+        assertTrue("entry-status reported no decodable origin cell key: " + status, origin.matches());
+        String jump = exec("artest space jump " + (Integer.parseInt(origin.group(1)) + 1)
+                + " " + origin.group(2) + " " + origin.group(3) + " " + slotDim);
+        assertTrue("the jump probe found no settled ship to move: " + jump, jump.contains("\"began\":true"));
+        String targetCell = extractString(jump, "toCell");
+        assertTrue("jump reported no target cell: " + jump, targetCell != null);
+        // CONTROL: a target equal to the origin would make the arrival assert vacuous.
+        assertTrue("the jump target must differ from the origin cell, else arrival proves nothing: "
+                + originCell + " -> " + targetCell, !targetCell.equals(originCell));
+
+        // Arrival is asserted on the SECTOR X the jump asked to move, NOT on the whole cell key: a
+        // settled ship's self-reported address is currently a full sector too low in Y (the arrival
+        // pastes into the block band while the flight computer inverts the POSE band — a real,
+        // ledgered production defect, measured here as `25_2_2 -> 26_2_2` settling at `26_1_2`).
+        // Asserting the exact key would bake that skew in as expected behaviour and would then FAIL
+        // when it is fixed, which is the opposite of what this test is for. The axis that was asked
+        // to move is the contract; the axis that moved on its own belongs to the bug.
+        // Nothing below pumps the manager: the live Ticker advances the transit every server tick.
+        long expectedSectorX = Long.parseLong(targetCell.split("_")[0]);
+        String arrived = "";
+        boolean done = false;
+        for (int i = 0; i < 120; i++) {
+            arrived = exec("artest space entry-status");
+            String cell = extractString(arrived, "cellKey");
+            if ("SETTLED".equals(extractString(arrived, "state")) && cell != null
+                    && !cell.equals(originCell)
+                    && Long.parseLong(cell.split("_")[0]) == expectedSectorX) {
+                done = true;
+                break;
+            }
+            loadAllEntrySlots(setup);
+            Thread.sleep(250);
+        }
+        assertTrue("the ship never arrived one sector over on the live stack; origin=" + originCell
+                + " requested=" + targetCell + " last status=" + arrived
+                + " subsystem=" + exec("artest space subsystem-status"), done);
+        assertEquals("nothing may still be in transit once the ledger reports arrival", 0,
+                extractInt(exec("artest space subsystem-status"), "transits"));
     }
 
     @After

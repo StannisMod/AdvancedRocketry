@@ -2075,8 +2075,22 @@ public class TestProbeCommand extends CommandBase {
                             new zmaster587.advancedRocketry.space.VSShipCrossingOps(),
                             new zmaster587.advancedRocketry.space.VSDescentPasteResolver(),
                             () -> (long) server.getTickCounter());
+            // A transit manager on the SAME manager + ledger, for the same reason the descent controller
+            // is here: so one e2e can enter a ship through this stack, JUMP it to another cell, and descend
+            // it again — the whole planet -> space -> jump -> space -> planet chain on one stack. The
+            // `transit-setup` probe deliberately builds a SEPARATE stack with its own hard-coded cells and
+            // manual ticking; that one cannot touch a ship this stack put into space. Registering hyperspace
+            // upfront mirrors what the production start does (idempotent; no world loads until a first jump).
+            zmaster587.advancedRocketry.space.HyperspaceWorld.register();
+            zmaster587.advancedRocketry.space.ShipTransitManager tctl =
+                    new zmaster587.advancedRocketry.space.ShipTransitManager(
+                            entryMgr,
+                            new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                            new zmaster587.advancedRocketry.space.VSShipCrosser(),
+                            entryLedger,
+                            () -> (long) server.getTickCounter());
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
-                    entryMgr, entryLedger, ctl, null, dctl);
+                    entryMgr, entryLedger, ctl, tctl, dctl);
             // Start from a clean pilot channel: a stale static FF input from a prior test would make the
             // AFC read "a pilot is flying" (in != null) and suppress the auto-takeoff autopilot branch.
             zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
@@ -2201,6 +2215,80 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.DescentController d =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
             send(sender, "{\"ok\":true,\"pending\":" + (d == null ? -1 : d.descendingCount()) + "}");
+            return;
+        }
+        // jump <targetSectorX> <targetSectorY> <targetSectorZ> [slotDim] [speedBlocksPerTick]: begin a jump on
+        // the LIVE subsystem for the SETTLED ship in <slotDim> (default: the sender's own dimension, i.e. the
+        // cell he is standing in).
+        //
+        // Why this exists next to transit-setup/transit-begin rather than instead of them: those build an
+        // ISOLATED stack - their own SpaceManager, their own hard-coded origin/target cells, advanced only by
+        // manual transit-tick calls - so they cannot move a ship a player actually flew up into. This drives
+        // the real manager, which the server tick already advances, so a jump started here completes on its
+        // own while the player sits in the seat. Until the player-facing jump trigger exists, this is the only
+        // way to fly a whole planet -> space -> jump -> space -> planet chain in one sitting.
+        //
+        // Ship + anchor are resolved the same way find-afc resolves them: the settled ledger entry bound to
+        // that slot dim, mapped to its world pose, then to the actual ship block. beginTransit captures the
+        // seated crew itself, so a pilot in the seat rides along without a second call.
+        if (args.length >= 4 && "jump".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipTransitManager tm =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.transit();
+            zmaster587.advancedRocketry.space.ShipLedger ledger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (tm == null || ledger == null) {
+                send(sender, "{\"error\":\"space subsystem not registered - see spaceRegisterUnderTestHarness\"}");
+                return;
+            }
+            int slotDim = args.length >= 5
+                    ? parseIntOr(args[4], sender.getEntityWorld().provider.getDimension())
+                    : sender.getEntityWorld().provider.getDimension();
+            net.minecraft.world.WorldServer originWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(slotDim);
+            if (originWorld == null) {
+                send(sender, "{\"error\":\"origin cell world not loaded\",\"slotDim\":" + slotDim + "}");
+                return;
+            }
+            long targetSectorX = parseIntOr(args[1], 0);
+            long targetSectorY = parseIntOr(args[2], 0);
+            long targetSectorZ = parseIntOr(args[3], 0);
+            long speed = args.length >= 6 ? Math.max(1L, parseLongOr(args[5], 5_000_000L)) : 5_000_000L;
+            for (java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> e
+                    : ledger.snapshot().entrySet()) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
+                if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
+                        || entry.slotDim != slotDim) {
+                    continue;
+                }
+                double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
+                net.minecraft.util.math.BlockPos anchor =
+                        zmaster587.advancedRocketry.integration.vs.VSIntegration
+                                .shipBlockAt(originWorld, pose[0], pose[1], pose[2]);
+                if (anchor == null) {
+                    continue;
+                }
+                // The target keeps the ORIGIN's local offsets: "jump to sector S" means the same spot one
+                // sector over, not the sector's local-(0,0,0) corner. A cell is 4M blocks on a side and
+                // locals renormalise into [-HALF_CELL, HALF_CELL), so a local-zero target is up to half a
+                // cell away from where the ship actually is on every axis - which showed up as an arrival
+                // one sector off in Y from a jump that only asked to move in X.
+                zmaster587.advancedRocketry.space.GalacticCoord target =
+                        zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                targetSectorX, targetSectorY, targetSectorZ,
+                                entry.coord.localX(), entry.coord.localY(), entry.coord.localZ());
+                boolean began = tm.beginTransit(e.getKey().toString(), entry.coord, slotDim, anchor,
+                        target, speed);
+                send(sender, "{\"ok\":true,\"began\":" + began
+                        + ",\"shipId\":\"" + e.getKey() + "\""
+                        + ",\"fromCell\":\"" + entry.coord.cellKey() + "\""
+                        + ",\"toCell\":\"" + target.cellKey() + "\""
+                        + ",\"slotDim\":" + slotDim
+                        + ",\"anchor\":[" + anchor.getX() + "," + anchor.getY() + "," + anchor.getZ() + "]"
+                        + ",\"inTransit\":" + tm.inTransitCount() + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"began\":false,\"reason\":\"no settled ship found in this cell\""
+                    + ",\"slotDim\":" + slotDim + "}");
             return;
         }
         // ledger-settle <sx> <sy> <sz> <slotDim> [shipUuid]: inject a SETTLED ledger entry at the CENTRE of
