@@ -114,6 +114,27 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         return linked;
     }
 
+    /**
+     * Whether a physics ship actually manages this seat's block right now — i.e. whether the craft
+     * this seat belongs to exists as a ship, as opposed to still being a pile of blocks.
+     *
+     * <p><b>Why this is not {@link #isLinked()}.</b> The link is a BUILD-TIME INTENTION: the
+     * assembler records it before the physics mod has confirmed anything, and it persists in NBT
+     * even when the spawn is rejected (over-size flood, bedrock contact — the mod drops those and
+     * does not retry). A craft whose assembly failed therefore stays "linked" forever, and anything
+     * that treats the link as proof of a ship will assert a flight state that does not exist.</p>
+     *
+     * <p>Works on BOTH sides and needs no extra sync: an assembled ship's blocks live in the
+     * physics mod's shipyard claim, while a craft that never assembled is still sitting in ordinary
+     * world chunks, and the lookup is keyed on exactly that. Returns false when the integration is
+     * absent, which is the correct answer there too — no ships, no ship control.</p>
+     */
+    public boolean isManagedByShip(World seatWorld) {
+        return seatWorld != null
+                && zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .shipIdManagingBlock(seatWorld, pos) != null;
+    }
+
     /** Client-side: the linked computer's Flight-Assist state, as last synced from the server.
      *  Used by the Free Flight HUD to show the true on/off value. */
     public boolean isFlightAssistOn() {

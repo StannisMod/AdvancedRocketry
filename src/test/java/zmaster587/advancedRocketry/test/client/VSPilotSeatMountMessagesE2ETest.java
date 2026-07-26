@@ -32,6 +32,8 @@ import static org.junit.Assert.assertTrue;
 public class VSPilotSeatMountMessagesE2ETest extends AbstractClientE2ETest {
 
     private static final int SEAT_X = 4200, SEAT_Y = 71, SEAT_Z = 4200;
+    /** Leg 4's own seat, clear of leg 3's NPC occupant so neither leg has to be torn down. */
+    private static final int LINKED_X = SEAT_X + 2, LINKED_Z = SEAT_Z + 2;
     private static final Pattern OCCUPANT_NAME = Pattern.compile("\"occupantName\":\"([^\"]+)\"");
 
     private String exec(String cmd) throws Exception {
@@ -107,22 +109,57 @@ public class VSPilotSeatMountMessagesE2ETest extends AbstractClientE2ETest {
         JsonObject afterRefusal = bot().reportRidingEntity();
         assertTrue("a click on an occupied seat must NOT mount the clicker: " + afterRefusal,
                 !isRiding(afterRefusal));
+
+        // ---- 4) LINKED but not a ship: the notice must STILL fire. -----------------------------
+        // This is the state a FAILED assembly leaves behind, and it is the one the notice exists
+        // for. The seat carries a flight-computer link — recorded by the assembler before the
+        // physics mod confirms the spawn, and kept when the spawn is rejected — while no ship
+        // manages it. Gating "assembled" on the link ALONE suppressed the notice here and lit the
+        // full tier-2 flight HUD on an inert pile of blocks; the gate is a live ship resolve.
+        exec("artest player dismount");
+        awaitRiding(30, false);
+        String place2 = exec("artest fill 0 " + LINKED_X + " " + SEAT_Y + " " + LINKED_Z
+                + " " + LINKED_X + " " + SEAT_Y + " " + LINKED_Z + " advancedrocketry:pilotSeat");
+        assertTrue("ARRANGEMENT: placing the second pilot seat failed: " + place2,
+                place2.contains("\"ok\":true"));
+        String linked = exec("artest vs seat-link 0 " + LINKED_X + " " + SEAT_Y + " " + LINKED_Z
+                + " " + LINKED_X + " " + (SEAT_Y + 1) + " " + LINKED_Z);
+        assertTrue("ARRANGEMENT: the seat must end up LINKED — without that this leg tests the same "
+                        + "unlinked case as leg 1 and proves nothing: " + linked,
+                linked.contains("\"linked\":true"));
+        assertTrue("ARRANGEMENT CONTROL: and it must NOT be managed by a ship, or the notice is "
+                        + "correctly absent for a reason that has nothing to do with the bug: " + linked,
+                linked.contains("\"managedByShip\":false"));
+
+        standBeside(LINKED_X, LINKED_Z);
+        awaitOverlayExpired(200);
+        bot().interactBlock(LINKED_X, SEAT_Y, LINKED_Z);
+        String linkedOverlay = awaitOverlayContaining("not assembled", 30);
+        assertTrue("sitting on a LINKED seat whose craft never became a ship must still answer with "
+                        + "the \"not assembled\" notice — the link is a build-time intention, not "
+                        + "evidence that a ship exists. overlay=\"" + linkedOverlay + "\"",
+                linkedOverlay.toLowerCase(Locale.ROOT).contains("not assembled"));
     }
 
     // ---- Arrangement helpers -------------------------------------------------------------------
 
     /** Teleport until the client OBSERVABLY stands within interaction reach of the seat. */
     private void standBesideTheSeat() throws Exception {
+        standBeside(SEAT_X, SEAT_Z);
+    }
+
+    /** Same, for any seat column on this platform. */
+    private void standBeside(int seatX, int seatZ) throws Exception {
         double distSq = Double.POSITIVE_INFINITY;
         JsonObject state = null;
         for (int attempt = 0; attempt < 6 && distSq >= 25.0; attempt++) {
-            exec("tp @a " + (SEAT_X + 0.5) + " " + SEAT_Y + " " + (SEAT_Z + 1.5) + " 0 0");
+            exec("tp @a " + (seatX + 0.5) + " " + SEAT_Y + " " + (seatZ + 1.5) + " 0 0");
             bot().waitTicks(20);
             state = bot().reportState();
             if (state.has("worldReady") && state.get("worldReady").getAsBoolean()) {
-                double dx = state.get("playerX").getAsDouble() - (SEAT_X + 0.5);
+                double dx = state.get("playerX").getAsDouble() - (seatX + 0.5);
                 double dy = state.get("playerY").getAsDouble() - SEAT_Y;
-                double dz = state.get("playerZ").getAsDouble() - (SEAT_Z + 0.5);
+                double dz = state.get("playerZ").getAsDouble() - (seatZ + 0.5);
                 distSq = dx * dx + dy * dy + dz * dz;
             }
         }

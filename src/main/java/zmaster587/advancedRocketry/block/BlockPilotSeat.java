@@ -86,8 +86,15 @@ public class BlockPilotSeat extends BlockSeat {
                 player.startRiding(dummy);
             }
             TileEntity te = world.getTileEntity(pos);
-            if ((!(te instanceof TilePilotSeat) || !((TilePilotSeat) te).isLinked())
-                    && player instanceof net.minecraft.entity.player.EntityPlayerMP) {
+            // "Assembled" means a physics ship actually manages this seat, NOT that the seat carries
+            // a link. The link is recorded by the assembler before the physics mod confirms the
+            // spawn and persists through a rejected one, so gating on it alone suppressed this very
+            // notice in the one case it exists for: a craft that failed to assemble. See
+            // TilePilotSeat#isManagedByShip.
+            boolean assembled = te instanceof TilePilotSeat
+                    && ((TilePilotSeat) te).isLinked()
+                    && ((TilePilotSeat) te).isManagedByShip(world);
+            if (!assembled && player instanceof net.minecraft.entity.player.EntityPlayerMP) {
                 // Delayed past the mount packet's tracker flush: sent immediately, the notice is
                 // overwritten by vanilla's "press X to dismount" hint before the player reads it.
                 zmaster587.advancedRocketry.util.DelayedActionBar.send(

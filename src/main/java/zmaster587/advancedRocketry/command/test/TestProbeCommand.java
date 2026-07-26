@@ -1173,6 +1173,33 @@ public class TestProbeCommand extends CommandBase {
             send(sender, sb.toString());
             return;
         }
+        // seat-link <dim> <sx> <sy> <sz> <ax> <ay> <az> — link the pilot seat at (sx,sy,sz) to a flight computer
+        // at (ax,ay,az) WITHOUT assembling anything. This reproduces the state a FAILED assembly leaves behind:
+        // the assembler links the seat before the physics mod confirms the spawn, so a rejected spawn leaves a
+        // linked seat on a craft that is not a ship. There is no other way to arrange that deterministically —
+        // making a real assembly fail means building a flood escape big enough to blow the size cap.
+        if (args.length >= 8 && "seat-link".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.util.math.BlockPos seatPos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            net.minecraft.util.math.BlockPos afcPos = new net.minecraft.util.math.BlockPos(
+                    parseIntOr(args[5], 0), parseIntOr(args[6], 0), parseIntOr(args[7], 0));
+            TileEntity seatTile = world.getTileEntity(seatPos);
+            if (!(seatTile instanceof zmaster587.advancedRocketry.tile.TilePilotSeat)) {
+                send(sender, "{\"error\":\"no pilot seat at that position\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TilePilotSeat linkSeat =
+                    (zmaster587.advancedRocketry.tile.TilePilotSeat) seatTile;
+            linkSeat.linkToFlightComputer(afcPos);
+            send(sender, "{\"ok\":true,\"linked\":" + linkSeat.isLinked()
+                    + ",\"managedByShip\":" + linkSeat.isManagedByShip(world) + "}");
+            return;
+        }
         // find-seat <dim> <x> <y> <z> — after an async ship assembly completes, locate the ship's pilot seat in
         // its (force-loaded) subspace shipyard and report the seat's SUBSPACE pos + the ship's WORLD pos, so a
         // crew test can seat a bot deterministically. Mirrors flightComputerAt's force-load-then-scan idiom.

@@ -89,7 +89,11 @@ public final class FreeFlightHudState {
                     FreeFlightPhysics.MAX_SPEED);
         }
         TilePilotSeat seat = TilePilotSeat.forRider(riding, world);
-        if (seat != null && seat.isLinked()) {
+        // The link alone is NOT evidence that a ship exists — it is a build-time intention that
+        // survives a rejected assembly, so on its own it lit this entire panel (velocity readout,
+        // Flight-Assist indicator, "in flight") for a craft that was an inert pile of blocks.
+        // Require that a ship actually manages the seat; see TilePilotSeat#isManagedByShip.
+        if (seat != null && seat.isLinked() && seat.isManagedByShip(world)) {
             // Tier-2 ship: seated = flying. Flight-Assist state is synced from the ship's computer to
             // the seat; the ship's body-frame velocity and cruise setpoint ride the seat dummy's
             // tracked data, both already in blocks/tick, so the panel reads exactly as the rocket's.
