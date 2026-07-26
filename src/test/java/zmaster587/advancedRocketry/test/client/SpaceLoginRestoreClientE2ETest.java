@@ -191,8 +191,38 @@ public class SpaceLoginRestoreClientE2ETest {
      */
     @Test
     public void aPilotWhoLoggedOutSeatedOnHisShipComesBackAboardItAfterAServerRestart() throws Exception {
-        int slotDim = seatThePilotAboardHisShip();
+        requireHeComesBackAboardHisShip(seatThePilotAboardHisShip());
+    }
 
+    /**
+     * The same contract, reached the way a player actually reaches it: the pilot takes his seat ON THE
+     * GROUND and is still in it when his ship crosses into the cell. He never sits down inside a space
+     * cell at all.
+     *
+     * <p><b>Why this is a separate leg and not a variant of the arrangement above.</b> The durable
+     * aboard record is what the restore runs on, and it was for a long time written only by the mount
+     * TRANSITION - so it existed for a pilot who sat down in a cell and did not exist for a pilot who
+     * sat down on a planet and flew up. Both pilots are equally aboard, and the leg above cannot tell
+     * them apart because its arrangement seats him after the arrival. This one is the route that was
+     * broken in real play: fly to orbit, log out, come back standing at the build site you left hours
+     * ago, with no message and your ship still in orbit without you.</p>
+     *
+     * <p>The arrangement is the witness for the mechanism as well as the setup for the restart: it
+     * requires the record to be ABSENT while he sits on the planet and PRESENT once he has arrived,
+     * so a green here cannot come from a record that was already there before the flight.</p>
+     */
+    @Test
+    public void aPilotWhoBoardedOnThePlanetAndFlewUpComesBackAboardAfterAServerRestart()
+            throws Exception {
+        requireHeComesBackAboardHisShip(seatThePilotBeforeHeLeavesTheGround());
+    }
+
+    /**
+     * The shared subject of both positive legs: whatever route put the pilot in his seat in a cell,
+     * stopping the server under him must bring him back in that seat, in his ship's cell, with a
+     * control chain that still flies. Takes the slot dimension the arrangement banked him in.
+     */
+    private void requireHeComesBackAboardHisShip(int slotDim) throws Exception {
         // CONTROL LEG (pre-restart): the seated pilot's REAL key must fly the ship in its cell
         // BEFORE the restart - without this, a dead key after the reboot could be a chain that
         // never worked in the cell at all, and the post-restart assertion could not indict the
@@ -398,10 +428,19 @@ public class SpaceLoginRestoreClientE2ETest {
      * contract in its own right: a player who left his post must not be dragged back into it by the
      * next login.</p>
      *
-     * <p>The leg is deliberately tolerant about HOW he ends up not-aboard. Standing up drops his
-     * aboard record, and from there an ordinary spawn is the only correct answer; the assertion is
-     * on the not-aboard outcome, not on the path taken to it. A test client never sleeps in a bed,
-     * so "an ordinary spawn" is the overworld one.</p>
+     * <p><b>HALF OF THIS LEG PINS A KNOWN VIOLATION, and the halves must not be confused.</b> That he
+     * comes back NOT SEATED is a real contract - a player who left his post must not be dragged back
+     * into it by the next login. That he comes back IN THE OVERWORLD is NOT: standing on the deck
+     * after leaving a linked seat is the canonical way to BE aboard a ship, and being aboard is
+     * supposed to survive a relog. This leg therefore asserts the CURRENT behaviour on that second
+     * half, so that fixing it fails here deliberately instead of silently. The fix flips exactly one
+     * assertion - "he belongs at an ordinary spawn" becomes "he belongs in his ship's cell, on his
+     * feet" - and leaves the not-seated assertion untouched.</p>
+     *
+     * <p>Fixing it also costs this leg its second job. It doubles as the falsifiability witness for
+     * the positive legs: it is what proves the oracles can answer "not aboard" at all. Once a standing
+     * crew member is restored aboard, that witness has to be re-supplied from a player who was never
+     * aboard in the first place, or the positive legs go back to being unfalsifiable.</p>
      *
      * <p>Both of the ways this leg could be green for the wrong reason are closed before it looks at
      * the client: the production subsystem must be up on the second boot, and the ship must still be
@@ -458,7 +497,14 @@ public class SpaceLoginRestoreClientE2ETest {
                 + observed, dim != NO_CLIENT_WORLD);
         assertFalse("a pilot who stood up must NOT be re-seated on the ship he left: " + observed,
                 riding.get("riding").getAsBoolean());
-        assertEquals("and with no aboard record left he belongs at an ordinary spawn: " + observed,
+        // KNOWN VIOLATION, pinned as-is on purpose (see this method's javadoc): a crew member who
+        // stood up on his own ship in orbit is still aboard it, so an ordinary spawn is the WRONG
+        // answer here. This asserts what production does today, so that correcting it lands as a
+        // deliberate red on this one line rather than passing unnoticed.
+        assertEquals("TODAY'S BEHAVIOUR, NOT THE CONTRACT: standing up drops the aboard record "
+                        + "entirely, so the restore has no evidence he was ever aboard and leaves him "
+                        + "at an ordinary spawn. When that is fixed, this line becomes 'his ship's "
+                        + "cell, standing': " + observed,
                 OVERWORLD_DIM, dim);
     }
 
@@ -645,6 +691,144 @@ public class SpaceLoginRestoreClientE2ETest {
                 + "carries the pilot's ship across the restart: " + tag,
                 tag.contains("\"tagged\":true"));
         assertTrue("and that record must name the ship the entry minted, not some other one: " + tag
+                + " (entered ship " + arrangedShipId + ")", tag.contains(arrangedShipId));
+        return slotDim;
+    }
+
+    /**
+     * Boot 1 for the planet-boarded leg: same ship, same entry, but the pilot is IN THE SEAT before
+     * the ship ever leaves the ground, and the crossing has to bring him along. Returns the slot
+     * dimension he ends up banked in, and records the ship id and cell key production chose.
+     *
+     * <p>The two record readings around the flight are the point of the arrangement, not decoration.
+     * On the ground the record must be ABSENT - being aboard means being aboard a ship in a cell, and
+     * a planet-side seat is not that. After the arrival it must be PRESENT. Together they say the
+     * record was produced BY the flight, which is the claim a green restart leg would otherwise be
+     * unable to distinguish from "it was there all along".</p>
+     */
+    private int seatThePilotBeforeHeLeavesTheGround() throws Exception {
+        serverHarness = RealDedicatedServerHarness.startWith(root, false);
+        assumeProductionSubsystemAvailable();
+
+        String status = exec("artest space subsystem-status");
+        assertTrue("the production space subsystem must be live on boot 1: " + status,
+                status.contains("\"registered\":true"));
+        assertEquals("no ship may be ledgered before the flight: " + status,
+                0, readInt(status, "ledger"));
+
+        exec("artest vs permaload true");
+        startClient();
+        bot().waitForWorld();
+
+        String launch = exec("artest space launch-cell " + LAUNCH_DIM);
+        assertTrue("the launch dimension must resolve to a galactic address: " + launch,
+                launch.contains("\"ok\":true") && !launch.contains("\"cellKey\":null"));
+
+        clearArea(SRC_X, SRC_Z);
+        String coords = placeFixture(SRC_X, SRC_Y, SRC_Z, "with-pilot-seat");
+        String assembled = exec("artest rocket assemble " + LAUNCH_DIM + " " + coords);
+        assertTrue("a build carrying a flight computer must become a ship, not a rocket: " + assembled,
+                assembled.contains("\"rocketCount\":0"));
+        assertTrue("the ship never assembled in the launch dimension",
+                waitForLoadedShip(LAUNCH_DIM) >= 1);
+
+        String srcInfo = exec("artest vs ship-info " + LAUNCH_DIM
+                + " " + SRC_X + " " + SRC_Y + " " + SRC_Z);
+        assertTrue("the assembled build is not a physics ship: " + srcInfo,
+                srcInfo.contains("\"managed\":true"));
+        int sx = (int) Math.round(readDouble(srcInfo, "posX"));
+        int sy = (int) Math.round(readDouble(srcInfo, "posY"));
+        int sz = (int) Math.round(readDouble(srcInfo, "posZ"));
+
+        // Board on the ground. The client has to be standing at the ship for its seat to be a loaded
+        // tile at all, which is what the mount probe searches.
+        exec("tp @a " + (SRC_X + 0.5) + " " + (SRC_Y + 6) + " " + (SRC_Z + 0.5) + " 0 0");
+        bot().waitTicks(20);
+        String seatMount = exec("artest vs seat-mount " + LAUNCH_DIM);
+        assertTrue("the ground-side pilot seat must offer a mount: " + seatMount,
+                readBool(seatMount, "seatFound"));
+        String mount = exec("artest player mount-entity " + readInt(seatMount, "dummyId"));
+        assertTrue("the client must take the pilot seat while still on the ground: " + mount,
+                readBool(mount, "mounted"));
+        bot().waitTicks(10);
+        assertTrue("the CLIENT must confirm it is seated on the ground: " + bot().reportRidingEntity(),
+                bot().reportRidingEntity().get("riding").getAsBoolean());
+
+        // CONTROL (the record's meaning): a seat on a planet is not "aboard". If this already reads
+        // tagged, the post-arrival reading below proves nothing about the flight.
+        String groundTag = exec("artest space aboard-tag " + BOT);
+        assertTrue("a pilot sitting on a planet must NOT yet carry an aboard record - the record "
+                        + "means 'aboard a ship in a cell', and reading it as set here would make the "
+                        + "post-arrival reading vacuous: " + groundTag,
+                groundTag.contains("\"tagged\":false"));
+
+        // Fly, with him in the chair the whole way.
+        exec("artest vs ff-input " + HELD_CLIMB);
+        String climb = exec("artest vs teleport-ship " + LAUNCH_DIM + " " + sx + " " + sy + " " + sz
+                + " " + sx + " " + ABOVE_CEILING_Y + " " + sz);
+        assertTrue("the climb past the orbit ceiling failed: " + climb, climb.contains("\"ok\":true"));
+        exec("artest vs unpark " + LAUNCH_DIM + " " + sx + " " + ABOVE_CEILING_Y + " " + sz);
+        bot().waitTicks(20);
+        assertTrue("ARRANGEMENT: the pilot must still be in his seat as the ship reaches the ceiling "
+                        + "- if the lift alone unseats him this leg never tests the crossing: "
+                        + bot().reportRidingEntity(),
+                bot().reportRidingEntity().get("riding").getAsBoolean());
+
+        String ledgerStatus = "";
+        boolean settled = false;
+        for (int attempt = 0; attempt < 160 && !settled; attempt++) {
+            bot().waitTicks(5);
+            ledgerStatus = exec("artest space subsystem-status");
+            settled = readIntOr(ledgerStatus, "ledger", 0) >= 1;
+        }
+        assertTrue("the ship never entered space through the flight computer's own tick; last "
+                + "subsystem status=" + ledgerStatus, settled);
+        exec("artest vs ff-input " + HANDS_OFF);
+
+        String[] slot = awaitSettledShipSlot();
+        assertNotNull("the ledger holds a ship, but no slot dimension owns up to it", slot);
+        int slotDim = Integer.parseInt(slot[0]);
+        arrangedShipId = slot[1];
+
+        String ledgerEntry = exec("artest space ledger-get " + arrangedShipId);
+        assertTrue("the entered ship must be in the production ledger: " + ledgerEntry,
+                ledgerEntry.contains("\"found\":true"));
+        assertEquals("and it must be settled, not mid-jump: " + ledgerEntry,
+                "SETTLED", readString(ledgerEntry, "state"));
+        arrangedCellKey = readString(ledgerEntry, "cell");
+        assertNotNull("the ledger reported no cell for the entered ship: " + ledgerEntry,
+                arrangedCellKey);
+
+        // He rode his own ship across the seam: no probe transferred him, so a wrong dimension here
+        // is the crossing failing to carry its crew, not an arrangement that walked him somewhere.
+        int dim = NO_CLIENT_WORLD;
+        for (int attempt = 0; attempt < 40 && dim != slotDim; attempt++) {
+            bot().waitTicks(10);
+            dim = clientDim();
+        }
+        assertEquals("the pilot must arrive in his ship's slot dimension by riding it there",
+                slotDim, dim);
+        assertTrue("and he must still be seated after the crossing: " + bot().reportRidingEntity(),
+                bot().reportRidingEntity().get("riding").getAsBoolean());
+
+        String serverAfterArrival = exec("artest player position-of " + BOT);
+        assertEquals("the SERVER must agree he is in the slot dimension after the crossing: "
+                + serverAfterArrival, slotDim, readInt(serverAfterArrival, "playerDim"));
+
+        // THE SUBJECT: he never sat down in a cell, so if the record is written only by the mount
+        // transition there is nothing here - and the restart leg that follows would then put him back
+        // at his overworld build site, which is precisely the played-through report.
+        String tag = "";
+        for (int attempt = 0; attempt < 40 && !tag.contains("\"tagged\":true"); attempt++) {
+            tag = exec("artest space aboard-tag " + BOT);
+            if (!tag.contains("\"tagged\":true")) {
+                bot().waitTicks(5);
+            }
+        }
+        assertTrue("a pilot who boarded on the ground and rode his ship into a cell must carry the "
+                        + "durable aboard record - it is the only evidence the restore has that he "
+                        + "was ever aboard: " + tag, tag.contains("\"tagged\":true"));
+        assertTrue("and that record must name the ship the entry minted: " + tag
                 + " (entered ship " + arrangedShipId + ")", tag.contains(arrangedShipId));
         return slotDim;
     }

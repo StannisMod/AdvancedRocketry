@@ -37,7 +37,8 @@ import static org.junit.Assert.assertTrue;
  * itself renders: (1) the client's own world is a space-subsystem slot dimension; (2) the pilot is
  * STILL riding his seat mount - crossing a dimension seam must never stand him up; (3) he is NOT
  * in free fall at the arrival pose; (4) holding the vertical-up key again lifts the arrived ship -
- * the control chain survived the crossing onto the re-assembled ship's fresh seat binding. A
+ * the control chain survived the crossing onto the re-assembled ship's fresh seat binding; (5) he
+ * carries the durable aboard record that a logout in space depends on. A
  * play-tested failure of this seam reported exactly the inverse: the pilot off his ship, falling,
  * in a black cell. Whether the cell LOOKS right on screen stays a manual check - pixels are out of
  * scope here; the mechanical claims are not.</p>
@@ -59,6 +60,9 @@ public class VSShipPoweredEntryE2ETest {
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
     private static final Pattern LEDGER = Pattern.compile("\"ledger\":(-?\\d+)");
     private static final Pattern SLOT_DIMS = Pattern.compile("\"slotDims\":\\[([0-9,\\-]*)]");
+
+    /** The account every client harness launches under; the server keys his player data by it. */
+    private static final String BOT = "ForgeTestClient";
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 2800, BY = 64, BZ = 2800;
@@ -297,6 +301,25 @@ public class VSShipPoweredEntryE2ETest {
                         + " -> " + after + " (need +" + MIN_CONTROL_CLIMB + ")"
                         + " delivery=" + exec("artest vs seat-delivery"),
                 (after - before) >= MIN_CONTROL_CLIMB);
+
+        // (5) He carries the durable aboard record. That record - not his dimension id, which is a
+        // per-boot slot number - is what a logout in space is restored from; without it the login
+        // lands him at his overworld spawn with no message while his ship stays in orbit. The pilot
+        // who boarded on the PLANET and flew up is precisely the route that never produced one while
+        // the record was written only by the mount transition. Polled: it is maintained from state on
+        // the server tick, so it becomes true some ticks after the arrival rather than at it.
+        String tag = "";
+        for (int attempt = 0; attempt < arrivalBudget && !tag.contains("\"tagged\":true"); attempt++) {
+            tag = exec("artest space aboard-tag " + BOT);
+            if (!tag.contains("\"tagged\":true")) {
+                bot().waitTicks(5);
+            }
+        }
+        assertTrue("a pilot who flew his own ship into a cell must carry a durable aboard record - "
+                        + "it is the only evidence the login restore has that he was ever aboard. "
+                        + "tag=" + tag + " riding=" + bot().reportRidingEntity()
+                        + " status=" + exec("artest space subsystem-status"),
+                tag.contains("\"tagged\":true"));
     }
 
     // ---- helpers -------------------------------------------------------------------------------
