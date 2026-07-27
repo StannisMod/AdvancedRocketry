@@ -48,8 +48,7 @@ public class WorldCommandPlayerEquippedE2ETest extends AbstractClientE2ETest {
     public void opTheBot() throws Exception {
         // Reset to a known position so /ar goto's transferPlayerToDimension
         // leaves us at a predictable destination.
-        exec("artest place 0 8 78 8 minecraft:stone");
-        exec("tp @a 8.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
         String op = exec("artest player op-self");
         assertTrue("op-self must succeed: " + op,

@@ -92,15 +92,16 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
     /** Reset the player to a known location + bare-skinned state so each
      *  test has a clean baseline regardless of order. */
     private void resetPlayer() throws Exception {
-        exec("artest place 0 8 78 8 minecraft:stone");
-        // Clear the volume the player's body occupies (y 79..81) plus a margin.
-        // (8, 79, 8) is ordinary overworld terrain height: on some world seeds a
-        // hillside fills it, the player spawns INSIDE a block and takes
-        // suffocation ("inWall") damage — which the health assertions below
-        // would otherwise misread as the space suit failing to grant immunity.
-        String clear = exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
-        assertTrue("stand-spot pre-clear failed: " + clear, clear.contains("\"ok\":true"));
-        exec("tp @a 8.5 79 8.5");
+        // Open a damage-recording window covering the WHOLE test, arrangement
+        // included: a health assertion that fails needs the damage SOURCE, and
+        // the player's own last-damage field has expired by the time an 80-tick
+        // window ends. An empty log next to a below-max health reading is itself
+        // the answer — the hearts were lost before this server booted.
+        exec("artest player damage-log reset");
+        // Natural, surveyed, flat ground (see HarnessPlayerSite) — nothing placed, nothing
+        // levelled. The health assertions below only mean "the suit protected" if the player
+        // cannot lose hearts to the arrangement itself.
+        exec(HarnessPlayerSite.tpCommand());
         exec("artest player clear-armor");
         exec("gamerule naturalRegeneration false");
         exec("gamemode survival @a");
@@ -173,7 +174,8 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             assertTrue("suited player must not take vacuum damage; "
                             + "healthStart=" + healthStart
                             + " healthAfter=" + healthAfter
-                            + " diag=" + exec("artest player suit-diag"),
+                            + " diag=" + exec("artest player suit-diag")
+                            + " damage=" + exec("artest player damage-log"),
                     healthAfter >= healthStart);
         } finally {
             restoreDim(originalDensity);
@@ -212,7 +214,13 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
             bot().waitTicks(80);
 
             int chestAirAfter = readChestAir();
-            assertEquals("client-rendered chest air must hold in breathable atmosphere",
+            // Report the SERVER value beside the client one: they disagree only
+            // if the client's copy is stale, and they agree only if the drain
+            // really ran — one number cannot tell those apart.
+            assertEquals("client-rendered chest air must hold in breathable atmosphere; "
+                            + "server=" + chestAirAfter
+                            + " diag=" + exec("artest player suit-diag")
+                            + " where=" + exec("artest player damage-log"),
                     1000, clientChestAir());
             assertEquals("chest air must be unchanged in breathable atmosphere; "
                             + "before=1000 after=" + chestAirAfter,
@@ -238,7 +246,8 @@ public class ItemSpaceArmorUseFluidE2ETest extends AbstractClientE2ETest {
                     -1, readChestAir());
 
             double healthStart = health(bot().reportState());
-            assertTrue("player must start at full health, got " + healthStart,
+            assertTrue("player must start at full health, got " + healthStart
+                            + " damage=" + exec("artest player damage-log"),
                     healthStart >= 20.0);
 
             exec("artest atmosphere set-density 0 0");

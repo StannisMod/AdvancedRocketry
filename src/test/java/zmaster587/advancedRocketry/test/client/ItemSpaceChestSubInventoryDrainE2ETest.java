@@ -81,14 +81,15 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
     }
 
     private void resetPlayer() throws Exception {
-        exec("artest place 0 8 78 8 minecraft:stone");
-        // Clear the volume the player's body occupies (y 79..81) plus a margin —
-        // (8, 79, 8) is ordinary terrain height, and on some world seeds a
-        // hillside fills it, suffocating the player ("inWall") in what the
-        // health assertions would otherwise read as a suit-protection failure.
-        String clear = exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
-        assertTrue("stand-spot pre-clear failed: " + clear, clear.contains("\"ok\":true"));
-        exec("tp @a 8.5 79 8.5");
+        // Damage-recording window over the whole test (see the twin test
+        // ItemSpaceArmorUseFluidE2ETest): a health assert that fails must say
+        // WHICH source took the hearts, and the vanilla last-damage field has
+        // expired by the end of an 80-tick window.
+        exec("artest player damage-log reset");
+        // Natural, surveyed, flat ground (see HarnessPlayerSite). A submerged player is skipped
+        // by the atmosphere tick entirely, so a fixture that ends up in water makes the drain
+        // this test measures unreachable.
+        exec(HarnessPlayerSite.tpCommand());
         exec("artest player clear-armor");
         exec("gamerule naturalRegeneration false");
         exec("gamemode survival @a");
@@ -155,7 +156,9 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             double healthAfter = health(bot().reportState());
             assertTrue("full suit must keep isImmune=true while tank has oxygen; "
                             + "healthStart=" + healthStart
-                            + " healthAfter=" + healthAfter,
+                            + " healthAfter=" + healthAfter
+                            + " diag=" + exec("artest player suit-diag")
+                            + " damage=" + exec("artest player damage-log"),
                     healthAfter >= healthStart);
         } finally {
             restoreDim(originalDensity);
@@ -216,7 +219,8 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
             assertEquals("baseline chestAir = 3", 3, readChestAir());
 
             double healthStart = health(bot().reportState());
-            assertTrue("player must start at full health: " + healthStart,
+            assertTrue("player must start at full health: " + healthStart
+                            + " damage=" + exec("artest player damage-log"),
                     healthStart >= 20.0);
 
             exec("artest atmosphere set-density 0 0");
@@ -230,8 +234,12 @@ public class ItemSpaceChestSubInventoryDrainE2ETest extends AbstractClientE2ETes
                 current = health(bot().reportState());
             }
             int chestAirAfter = readChestAir();
+            // The loop above exits as soon as ANY damage lands, so a tank that
+            // is not yet empty means the health drop came from somewhere other
+            // than the drained-suit path this test is about — name the source.
             assertEquals("tank must be fully drained after the wait window; "
-                            + "chestAir=" + chestAirAfter,
+                            + "chestAir=" + chestAirAfter
+                            + " damage=" + exec("artest player damage-log"),
                     0, chestAirAfter);
             assertTrue("vacuum damage must apply once the tank is drained; "
                             + "health held at " + current + " (started "

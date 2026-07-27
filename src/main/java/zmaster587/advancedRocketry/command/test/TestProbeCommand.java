@@ -14120,6 +14120,46 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"slots\":[" + slotJson + "]}");
             return;
         }
+        if ("damage-log".equals(sub)) {
+            // /artest player damage-log [reset]
+            //
+            // Every damage EVENT applied to a player since the last reset:
+            // source, amount, and the world state that explains it. A health
+            // delta alone says a player lost hearts; it never says to what.
+            // Suffocation in a hillside, a 4-block fall off a stand-spot and
+            // the vacuum tick all read as "health went down" — they differ
+            // only in damageType, and a fixture bug is exactly the case where
+            // the source is NOT the one the test is about.
+            //
+            // Cumulative counters + bounded history (never a snapshot static):
+            // the interesting damage is transient and a "last damage" field
+            // is empty 40 ticks later (EntityLivingBase.getLastDamageSource
+            // expires), which is how the first pass of this diagnosis read
+            // lastDamage:"" for a player that had demonstrably been hurt.
+            if (args.length >= 2 && "reset".equals(args[1].toLowerCase(java.util.Locale.ROOT))) {
+                DamageRecorder.ensureRegistered();
+                DamageRecorder.reset();
+                send(sender, "{\"ok\":true,\"action\":\"reset\""
+                        + ",\"worldTime\":" + player.world.getTotalWorldTime()
+                        + ",\"health\":" + player.getHealth() + "}");
+                return;
+            }
+            DamageRecorder.ensureRegistered();
+            send(sender, "{\"ok\":true"
+                    + ",\"registered\":true"
+                    + ",\"events\":" + DamageRecorder.eventCount
+                    + ",\"totalAmount\":" + DamageRecorder.totalAmount
+                    + ",\"worldTime\":" + player.world.getTotalWorldTime()
+                    + ",\"health\":" + player.getHealth()
+                    + ",\"posX\":" + player.posX
+                    + ",\"posY\":" + player.posY
+                    + ",\"posZ\":" + player.posZ
+                    + ",\"onGround\":" + player.onGround
+                    + ",\"inWater\":" + player.isInWater()
+                    + ",\"fallDistance\":" + player.fallDistance
+                    + ",\"log\":\"" + escapeJson(DamageRecorder.history()) + "\"}");
+            return;
+        }
         if ("set-fall-distance".equals(sub) && args.length >= 2) {
             // set the player's server-side fallDistance field.
             // Used to set up a non-zero baseline so AreaGravityController's
@@ -15110,7 +15150,7 @@ public class TestProbeCommand extends CommandBase {
                     + escapeJson(player.getName()) + "\"}");
             return;
         }
-        send(sender, "{\"error\":\"unknown player subcommand — try inv-bypass <add|remove|status> | open-container | health | set-health <hp> | held-air | suit-diag | give-suit-chest [air] | equip-airsuit [air] | clear-armor | advancement <id> | advancement reset <id> | last-chat | chat-clear | try-seal-detect <dim> <x> <y> <z> | try-atm-analyze <dim> | try-hovercraft <dim> <px> <py> <pz> <yaw> <pitch> | try-biomechanger-rclick <dim>\"}");
+        send(sender, "{\"error\":\"unknown player subcommand — try inv-bypass <add|remove|status> | open-container | health | set-health <hp> | held-air | suit-diag | damage-log [reset] | give-suit-chest [air] | equip-airsuit [air] | clear-armor | advancement <id> | advancement reset <id> | last-chat | chat-clear | try-seal-detect <dim> <x> <y> <z> | try-atm-analyze <dim> | try-hovercraft <dim> <px> <py> <pz> <yaw> <pitch> | try-biomechanger-rclick <dim>\"}");
     }
 
     // ── chat-tap ──────────────────────────────────────
@@ -16646,6 +16686,73 @@ public class TestProbeCommand extends CommandBase {
             deOrbitingCount++;
             lastDeOrbitingEntityId = e.getEntity() == null ? -1 : e.getEntity().getEntityId();
             lastDeOrbitingDim = e.world == null ? Integer.MIN_VALUE : e.world.provider.getDimension();
+        }
+    }
+
+    /**
+     * Global event-bus listener recording every damage event applied to a
+     * player, for `/artest player damage-log`. Registered lazily on first
+     * query; a test that wants a clean window calls `damage-log reset`
+     * first (which also registers, so nothing before the reset is missed
+     * afterwards).
+     *
+     * <p>Cumulative counters plus a BOUNDED history — the shape a transient
+     * needs. `getLastDamageSource()` reports only what happened within the
+     * last 40 ticks, so a snapshot read at the end of an 80-tick window
+     * says "no damage source" about a player who lost hearts at tick 3.</p>
+     */
+    public static final class DamageRecorder {
+        /** Cap: the history is carried inside a JUnit assert message. */
+        private static final int MAX_ENTRIES = 24;
+
+        public static volatile int eventCount = 0;
+        public static volatile float totalAmount = 0f;
+        private static final java.util.ArrayDeque<String> ENTRIES = new java.util.ArrayDeque<String>();
+
+        private static volatile boolean registered = false;
+
+        public static synchronized void ensureRegistered() {
+            if (registered) return;
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new DamageRecorder());
+            registered = true;
+        }
+
+        public static synchronized void reset() {
+            eventCount = 0;
+            totalAmount = 0f;
+            ENTRIES.clear();
+        }
+
+        /** Whole window on one line: `t=<worldTime> <type> -<amount> hp=<before> @y=<y> …`. */
+        public static synchronized String history() {
+            StringBuilder sb = new StringBuilder();
+            for (String e : ENTRIES) {
+                if (sb.length() > 0) sb.append(" | ");
+                sb.append(e);
+            }
+            return sb.toString();
+        }
+
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public void onDamage(net.minecraftforge.event.entity.living.LivingDamageEvent e) {
+            if (!(e.getEntityLiving() instanceof net.minecraft.entity.player.EntityPlayer)) return;
+            net.minecraft.entity.EntityLivingBase victim = e.getEntityLiving();
+            String entry = "t=" + victim.world.getTotalWorldTime()
+                    + " " + e.getSource().getDamageType()
+                    + " -" + String.format(java.util.Locale.ROOT, "%.2f", e.getAmount())
+                    + " hp=" + String.format(java.util.Locale.ROOT, "%.1f", victim.getHealth())
+                    + " pos=" + String.format(java.util.Locale.ROOT, "%.1f,%.1f,%.1f",
+                            victim.posX, victim.posY, victim.posZ)
+                    + " ground=" + victim.onGround
+                    + " water=" + victim.isInWater()
+                    + " fall=" + String.format(java.util.Locale.ROOT, "%.1f", victim.fallDistance)
+                    + " air=" + victim.getAir();
+            synchronized (DamageRecorder.class) {
+                eventCount++;
+                totalAmount += e.getAmount();
+                if (ENTRIES.size() >= MAX_ENTRIES) ENTRIES.pollFirst();
+                ENTRIES.addLast(entry);
+            }
         }
     }
 

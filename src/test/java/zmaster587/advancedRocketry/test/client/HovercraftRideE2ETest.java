@@ -76,16 +76,13 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void playerMountsHovercraftViaStartRiding() throws Exception {
-        // Spawn craft adjacent to a known stone pad so the bot is
-        // close enough to be in the same world tick + chunk.
-        exec("artest place 0 8 78 8 minecraft:stone");
-        // (8, 79, 8) is ordinary terrain height — clear the body volume so a
-        // hillside seed can't suffocate the player mid-test.
-        exec("artest fill 0 7 79 7 9 82 9 minecraft:air");
-        exec("tp @a 8.5 79 8.5");
+        // Surveyed natural ground (HarnessPlayerSite); the craft spawns two blocks in front, so
+        // the bot is in the same chunk and world tick as the entity it mounts.
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int craftId = spawnHovercraftAt(8.5, 79, 10.5);
+        int craftId = spawnHovercraftAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
 
         String mount = exec("artest player mount-entity " + craftId);
         assertTrue("mount-entity probe must succeed: " + mount,
@@ -112,11 +109,11 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void playerDismountClearsRidingEntity() throws Exception {
-        exec("artest place 0 28 78 8 minecraft:stone");
-        exec("tp @a 28.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int craftId = spawnHovercraftAt(28.5, 79, 10.5);
+        int craftId = spawnHovercraftAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
         exec("artest player mount-entity " + craftId);
         com.google.gson.JsonObject mounted = waitForClientRiding(true);
         assertEquals("arrange: client must be riding the craft first",
@@ -146,11 +143,11 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
         // next to it. The craft's onUpdate reads player.moveForward
         // each tick — setting it via probe drives acceleration in the
         // direction of the craft's yaw.
-        exec("artest place 0 48 78 8 minecraft:stone");
-        exec("tp @a 48.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int craftId = spawnHovercraftAt(48.5, 79, 10.5);
+        int craftId = spawnHovercraftAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
         exec("artest player mount-entity " + craftId);
         waitForClientRiding(true);
 
@@ -200,11 +197,11 @@ public class HovercraftRideE2ETest extends AbstractClientE2ETest {
         // getPassengerMovingForward returns 0 -> no lateral acceleration.
         // The Y position may drift (gravity/hover), but X+Z should
         // stay stable.
-        exec("artest place 0 68 78 8 minecraft:stone");
-        exec("tp @a 68.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int craftId = spawnHovercraftAt(68.5, 79, 10.5);
+        int craftId = spawnHovercraftAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
         // Confirm unmounted state.
         String riding = exec("artest player riding-entity");
         assertNotEquals("baseline: player must NOT be riding the craft "

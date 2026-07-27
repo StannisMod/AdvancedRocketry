@@ -70,14 +70,14 @@ public class ElevatorCapsuleRideE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void playerMountsElevatorCapsuleViaStartRiding() throws Exception {
-        // Pad + tp pattern is from HovercraftRideE2ETest — keeps the
+        // Site + tp pattern is from HovercraftRideE2ETest — keeps the
         // bot in the same chunk as the spawned entity so id resolution
         // through world.getEntityByID stays in-tick.
-        exec("artest place 0 108 78 8 minecraft:stone");
-        exec("tp @a 108.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int capsuleId = spawnCapsuleAt(108.5, 79, 10.5);
+        int capsuleId = spawnCapsuleAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
 
         String mount = exec("artest player mount-entity " + capsuleId);
         assertTrue("mount-entity probe must succeed: " + mount,
@@ -104,11 +104,11 @@ public class ElevatorCapsuleRideE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void playerDismountClearsRidingEntity() throws Exception {
-        exec("artest place 0 128 78 8 minecraft:stone");
-        exec("tp @a 128.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
 
-        int capsuleId = spawnCapsuleAt(128.5, 79, 10.5);
+        int capsuleId = spawnCapsuleAt(HarnessPlayerSite.standX(),
+                HarnessPlayerSite.STAND_Y, HarnessPlayerSite.frontZ());
         exec("artest player mount-entity " + capsuleId);
         com.google.gson.JsonObject mounted = waitForClientRiding(true);
         assertEquals("arrange: client must be riding the capsule first",

@@ -64,8 +64,7 @@ public class WorldCommandFetchTest extends AbstractClientE2ETest {
     public void opTheBot() throws Exception {
         // Reset position so the post-fetch coord comparison is against a
         // known baseline (not whatever the previous test left us at).
-        exec("artest place 0 8 78 8 minecraft:stone");
-        exec("tp @a 8.5 79 8.5");
+        exec(HarnessPlayerSite.tpCommand());
         bot().waitTicks(5);
         String op = exec("artest player op-self");
         assertTrue("op-self must succeed: " + op,
