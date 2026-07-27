@@ -147,10 +147,17 @@ public class BlockPilotSeat extends BlockSeat {
      * never finds it on a moving ship. Without the reuse this enables, every re-mount would spawn a
      * FRESH dummy and leave the old (empty) one behind — and an empty dummy clears the flight
      * computer's pilot input every server tick ({@link EntityDummy} telemetry), so the accumulated
-     * dummies would fight a returning pilot's input. Search the seat's live world position too, and
-     * match on the bound seat pos so a neighbouring seat's dummy is never grabbed. Every path that
-     * mounts (or spawns a mount for) a pilot seat goes through this lookup first — one seat, one
-     * dummy.
+     * dummies would fight a returning pilot's input. Every path that mounts (or spawns a mount for)
+     * a pilot seat goes through this lookup first — one seat, one dummy.
+     *
+     * <p><b>The bound seat position is the identity; proximity is only a shortcut.</b> The two boxes
+     * below are O(1) fast paths for the ordinary cases (a parked seat; a flying ship whose dummy is
+     * glued within a block of it), but a box is a bet on how far the ship travels between the
+     * dummy's glue and this lookup — and that distance is the cruise speed divided by twenty. The
+     * bet was lost the moment the cap was raised: at 40 blocks/s a ship crosses 2 blocks per tick,
+     * the one-block box missed, a second dummy was spawned, and the empty twin went straight back to
+     * clearing the pilot's input. The fallback therefore matches the dummy's own recorded seat
+     * position instead — exact, and it cannot go stale again the next time the cap moves.</p>
      */
     public static EntityDummy boundDummyAt(World world, BlockPos seatPos) {
         EntityDummy atBlock = firstBoundDummy(world,
@@ -159,12 +166,30 @@ public class BlockPilotSeat extends BlockSeat {
             return atBlock;
         }
         double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seatPos);
-        if (worldSeat == null) {
-            return null; // not on a loaded ship: the block-position search above is authoritative
+        if (worldSeat != null) {
+            AxisAlignedBB atWorld = new AxisAlignedBB(worldSeat[0], worldSeat[1], worldSeat[2],
+                    worldSeat[0], worldSeat[1], worldSeat[2]).grow(1.0);
+            EntityDummy near = firstBoundDummy(world, atWorld, seatPos);
+            if (near != null) {
+                return near;
+            }
         }
-        AxisAlignedBB atWorld = new AxisAlignedBB(worldSeat[0], worldSeat[1], worldSeat[2],
-                worldSeat[0], worldSeat[1], worldSeat[2]).grow(1.0);
-        return firstBoundDummy(world, atWorld, seatPos);
+        return boundDummyAnywhere(world, seatPos);
+    }
+
+    /**
+     * The dummy bound to {@code seatPos} wherever it currently is — the authoritative answer the
+     * boxes above only approximate. Walks the world's loaded entities, so it is kept for the miss
+     * case; every caller is a player action or a once-per-crossing step, never a per-tick path.
+     */
+    private static EntityDummy boundDummyAnywhere(World world, BlockPos seatPos) {
+        for (net.minecraft.entity.Entity e : world.loadedEntityList) {
+            if (e instanceof EntityDummy && !e.isDead
+                    && seatPos.equals(((EntityDummy) e).getSeatPos())) {
+                return (EntityDummy) e;
+            }
+        }
+        return null;
     }
 
     /** The first dummy in {@code box} bound to {@code seatPos}, or {@code null}. */
