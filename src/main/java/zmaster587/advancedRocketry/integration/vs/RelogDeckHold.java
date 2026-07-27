@@ -56,6 +56,9 @@ public final class RelogDeckHold {
         final double dx, dy, dz;
         int ticksLeft = HOLD_WINDOW_TICKS;
         int untilRetry;
+        /** Whether the returning client has been ASKED to capture yet. The hold may not conclude
+         *  before it has: see the exit rule in {@link RelogDeckHold#onPlayerTick}. */
+        boolean seedSent;
 
         /** Non-null once the ship has been found; the pin and the capture packet need this shape. */
         String shipId;
@@ -218,8 +221,13 @@ public final class RelogDeckHold {
         if (hold == null) {
             return;
         }
-        // The client seeded and the server-side follow took over: done.
-        if (ShipFrameTravel.isResolving(player)) {
+        // The server-side follow has taken the body - but that is the SERVER's own capture, and it
+        // says nothing about the client, which owns this body's movement. Concluding here before the
+        // client has even been asked to capture is what let its first-contact capture keep the
+        // position AND VELOCITY vanilla restored, so a crew member who logged out walking skated on
+        // across his own deck. The hold therefore may not end until at least one capture request has
+        // gone out; the client's own pending slot then survives its ship streaming in.
+        if (ShipFrameTravel.isResolving(player) && hold.seedSent) {
             holds.remove(player.getUniqueID());
             return;
         }
@@ -232,6 +240,15 @@ public final class RelogDeckHold {
             holds.remove(player.getUniqueID()); // ship never came back: clean vanilla handover
             return;
         }
+        // A returning body is a FRESH entity, and the physics mod arms its own per-entity drag
+        // anchor the moment that body first touches the ship. Nothing has told it about the deck
+        // capture yet, so what it holds is a stale point - and its world-tick mover then pulls the
+        // body toward it, steadily, past the resolver. Measured on the walking-relog e2e: the body
+        // sat exactly still for ten ticks and then slid ~0.04 blocks per tick along the walk it
+        // logged out on, with an external [FF-TRACE/MOVE] of (0, -0.76, +0.51) on the server. The
+        // resolved commit disarms this every tick for a body it owns (the same call); a body still
+        // being handed back needs it too, or the hold's own pin is what it fights.
+        VSIntegration.suppressShipDrag(player);
         if (!hold.resolved() && --hold.untilRetry <= 0) {
             hold.untilRetry = RESOLVE_RETRY_TICKS;
             resolve(player, hold);
@@ -257,10 +274,14 @@ public final class RelogDeckHold {
         player.motionY = 0.0;
         player.motionZ = 0.0;
         player.fallDistance = 0.0f;
+        // A RESTORE seed: it re-establishes what the durable record says, so it outranks whatever
+        // capture the returning client made for itself out of the position and velocity vanilla
+        // handed it. A dismount seed deliberately does not (contract note on PacketDeckCapture).
         zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
                 new zmaster587.advancedRocketry.network.PacketDeckCapture(
-                        hold.shipId, hold.subX, hold.subY, hold.subZ),
+                        hold.shipId, hold.subX, hold.subY, hold.subZ, true),
                 player);
+        hold.seedSent = true;
     }
 
     /**

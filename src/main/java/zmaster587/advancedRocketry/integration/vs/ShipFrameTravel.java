@@ -674,15 +674,20 @@ public final class ShipFrameTravel {
         /** {@link #CAPTURE_EPOCH} at slot creation: captures with a LARGER stamp were installed
          *  during this seed's window and are superseded by it. */
         final long epoch;
+        /** A RESTORE seed re-establishes a recorded state and outranks any capture this side made
+         *  on its own; see {@code PacketDeckCapture#restore}. */
+        final boolean restore;
         int ticksLeft;
 
-        PendingSeed(Entity body, String shipId, double subX, double subY, double subZ) {
+        PendingSeed(Entity body, String shipId, double subX, double subY, double subZ,
+                    boolean restore) {
             this.body = new java.lang.ref.WeakReference<Entity>(body);
             this.shipId = shipId;
             this.subX = subX;
             this.subY = subY;
             this.subZ = subZ;
             this.epoch = CAPTURE_EPOCH.get();
+            this.restore = restore;
             this.ticksLeft = PENDING_SEED_TTL_TICKS;
         }
     }
@@ -709,10 +714,31 @@ public final class ShipFrameTravel {
                                                           boolean captureExists,
                                                           boolean captureIsThisSeed,
                                                           boolean capturePredatesSlot) {
+        return pendingSeedDecision(excluded, ticksLeft, captureExists, captureIsThisSeed,
+                capturePredatesSlot, false);
+    }
+
+    /**
+     * As above, with {@code restore} distinguishing a seed that RE-ESTABLISHES a recorded state from
+     * one that opens a new episode.
+     *
+     * <p>Only one rule differs, and it is the one that matters at login: "a capture that predates
+     * the slot wins" is right for a dismount — the body was already legitimately captured and the
+     * seat point is merely where the contract says it should stand — and wrong for a restore, where
+     * every capture on this side is younger than the player entity itself and the durable record is
+     * the authority. Applied to a login, that rule handed the body to a first-contact capture
+     * holding the position AND VELOCITY vanilla had just restored, and the crew member skated off
+     * along the walk he logged out on.</p>
+     */
+    public static PendingSeedDecision pendingSeedDecision(boolean excluded, int ticksLeft,
+                                                          boolean captureExists,
+                                                          boolean captureIsThisSeed,
+                                                          boolean capturePredatesSlot,
+                                                          boolean restore) {
         if (captureExists && captureIsThisSeed) {
             return PendingSeedDecision.ALREADY_SEEDED;
         }
-        if (captureExists && capturePredatesSlot) {
+        if (captureExists && capturePredatesSlot && !restore) {
             return PendingSeedDecision.KEEP_PREEXISTING;
         }
         if (ticksLeft <= 0) {
@@ -731,6 +757,13 @@ public final class ShipFrameTravel {
      */
     public static void installPendingSeed(Entity entity, String shipId,
                                           double subX, double subY, double subZ) {
+        installPendingSeed(entity, shipId, subX, subY, subZ, false);
+    }
+
+    /** As above; {@code restore} marks a seed that re-establishes a recorded state (a login) rather
+     *  than opening a new episode (a dismount). See {@link #pendingSeedDecision}. */
+    public static void installPendingSeed(Entity entity, String shipId,
+                                          double subX, double subY, double subZ, boolean restore) {
         if (entity == null || shipId == null || entity.world == null || !entity.world.isRemote) {
             return;
         }
@@ -741,10 +774,11 @@ public final class ShipFrameTravel {
             return; // the seed already took; a re-send must not teleport the body again
         }
         PendingSeed slot = pendingSeed;
-        if (slot != null && slot.body.get() == entity && slot.shipId.equals(shipId)) {
+        if (slot != null && slot.body.get() == entity && slot.shipId.equals(shipId)
+                && slot.restore == restore) {
             slot.ticksLeft = PENDING_SEED_TTL_TICKS;
         } else {
-            pendingSeed = new PendingSeed(entity, shipId, subX, subY, subZ);
+            pendingSeed = new PendingSeed(entity, shipId, subX, subY, subZ, restore);
         }
         tryApplyPendingSeed(); // zero-tick fast path when nothing blocks
     }
@@ -780,7 +814,8 @@ public final class ShipFrameTravel {
         PendingSeedDecision decision = pendingSeedDecision(excluded, slot.ticksLeft,
                 st != null,
                 st != null && st.seedAnchored && slot.shipId.equals(st.shipId),
-                st != null && st.installEpoch <= slot.epoch);
+                st != null && st.installEpoch <= slot.epoch,
+                slot.restore);
         switch (decision) {
             case WAIT:
                 return;
@@ -930,6 +965,26 @@ public final class ShipFrameTravel {
         m.put("alreadyTracked", tracked);
         m.put("anchorShipId", tracked ? state.shipId : null);
         m.put("hullStand", tracked && state.hullStand);
+        // The body's committed position IN THE SHIP FRAME. Exposed because it is the only way to ask
+        // "did this body move ALONG THE DECK" without an answer contaminated by the deck's own
+        // motion: a world position has to be differenced against a separately-sampled ship pose, and
+        // the two readings are taken ticks apart, so a station-keeping ship's own step reads as the
+        // body sliding. These three come from one snapshot of the capture and cannot skew.
+        m.put("shipFrameX", tracked ? state.localX : null);
+        m.put("shipFrameY", tracked ? state.localY : null);
+        m.put("shipFrameZ", tracked ? state.localZ : null);
+        // The BODY's own position mapped into that same frame, live. The three above are the
+        // capture's bookkeeping and only change when the resolver COMMITS - so while something else
+        // holds the body (a login pin, an external move), they freeze, and a reader watching them
+        // sees "perfectly still" for a body that is being carried around. These are derived from
+        // entity.posX/Y/Z every time they are asked, so they cannot go quiet.
+        double[] bodyLocal = tracked
+                ? VSIntegration.toShipFrameFor(entity.world, state.shipId,
+                        entity.posX, entity.posY, entity.posZ)
+                : null;
+        m.put("bodyShipFrameX", bodyLocal == null ? null : bodyLocal[0]);
+        m.put("bodyShipFrameY", bodyLocal == null ? null : bodyLocal[1]);
+        m.put("bodyShipFrameZ", bodyLocal == null ? null : bodyLocal[2]);
         boolean terrain = isSupportedByWorldTerrain(entity);
         m.put("supportedByWorldTerrain", terrain);
         // The handles() verdict, replicated WITHOUT its capture/release side effects.

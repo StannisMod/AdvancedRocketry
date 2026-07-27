@@ -75,4 +75,46 @@ public class DismountPendingSeedTest {
         // cancel the seed: once the exclusion clears the seat point still wins.
         assertEquals(PendingSeedDecision.WAIT, decide(true, 20, true, false, false));
     }
+
+    // ---- RESTORE seeds: the login half of the same machine ------------------------------------
+
+    /** The restore variant of {@link #decide}: a seed that re-establishes a recorded state. */
+    private static PendingSeedDecision restore(boolean excluded, int ticksLeft,
+                                               boolean captureExists, boolean captureIsThisSeed,
+                                               boolean capturePredatesSlot) {
+        return ShipFrameTravel.pendingSeedDecision(
+                excluded, ticksLeft, captureExists, captureIsThisSeed, capturePredatesSlot, true);
+    }
+
+    @Test
+    public void aRestoreSeedOutranksTheCaptureTheClientMadeForItself() {
+        // THE login case, and the one that differs. A returning player is a FRESH entity carrying
+        // the position and velocity vanilla saved; his client captures it by first contact before
+        // the server's request arrives, so that capture predates the slot. Respecting it - correct
+        // for a dismount - hands the body back its logged-out walking velocity and it skates across
+        // the deck. The durable record is the authority here, so the seed applies anyway.
+        assertEquals(PendingSeedDecision.APPLY, restore(false, 39, true, false, true));
+    }
+
+    @Test
+    public void aRestoreSeedStillWaitsOutAnExclusionAndStillExpires() {
+        // Being authoritative about WHERE does not make it authoritative about WHEN: the same
+        // exclusion and TTL rules hold, so the old per-tick teleport war stays impossible.
+        assertEquals(PendingSeedDecision.WAIT, restore(true, 20, true, false, true));
+        assertEquals(PendingSeedDecision.EXPIRE, restore(true, 0, false, false, false));
+    }
+
+    @Test
+    public void aRestoreSeedThatAlreadyTookNoOpsLikeAnyOther() {
+        // Idempotency is not weakened by the override: the hold re-sends for its whole window.
+        assertEquals(PendingSeedDecision.ALREADY_SEEDED, restore(false, 39, true, true, true));
+    }
+
+    @Test
+    public void aDismountSeedKeepsRespectingAPreexistingCapture() {
+        // The default stays exactly as it was - this is the pin that would catch the override
+        // leaking into the dismount path, where a body captured before the window is legitimate.
+        assertEquals(PendingSeedDecision.KEEP_PREEXISTING,
+                ShipFrameTravel.pendingSeedDecision(false, 39, true, false, true, false));
+    }
 }

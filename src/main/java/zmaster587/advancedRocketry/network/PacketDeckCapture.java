@@ -34,11 +34,29 @@ public class PacketDeckCapture extends BasePacket {
     private double subY;
     private double subZ;
 
+    /**
+     * Whether this seed RESTORES a recorded state rather than opening a new one.
+     *
+     * <p>The difference decides who wins against a capture the client installed on its own. For a
+     * dismount, a pre-existing capture is respected: the body was already legitimately somewhere and
+     * the seat point is only the contractual place to stand. For a LOGIN, it is not: the fresh
+     * player entity carries the position and the velocity vanilla saved, its first-contact capture
+     * is younger than the player himself, and the durable record is the authority on where he was.
+     * Letting that capture win is what made a returning crew member skate across his own deck in the
+     * direction he logged out walking.</p>
+     */
+    private boolean restore;
+
     public PacketDeckCapture(String shipId, double subX, double subY, double subZ) {
+        this(shipId, subX, subY, subZ, false);
+    }
+
+    public PacketDeckCapture(String shipId, double subX, double subY, double subZ, boolean restore) {
         this.shipId = shipId;
         this.subX = subX;
         this.subY = subY;
         this.subZ = subZ;
+        this.restore = restore;
     }
 
     public PacketDeckCapture() {
@@ -51,6 +69,7 @@ public class PacketDeckCapture extends BasePacket {
         out.writeDouble(subX);
         out.writeDouble(subY);
         out.writeDouble(subZ);
+        out.writeBoolean(restore);
     }
 
     @Override
@@ -60,6 +79,7 @@ public class PacketDeckCapture extends BasePacket {
         subX = in.readDouble();
         subY = in.readDouble();
         subZ = in.readDouble();
+        restore = in.readBoolean();
     }
 
     @Override
@@ -76,7 +96,7 @@ public class PacketDeckCapture extends BasePacket {
         // an exclusion that persists (a pilot who flew away in creative) lets the seed expire
         // without ever snapping him.
         if (thePlayer != null) {
-            ShipFrameTravel.installPendingSeed(thePlayer, shipId, subX, subY, subZ);
+            ShipFrameTravel.installPendingSeed(thePlayer, shipId, subX, subY, subZ, restore);
         }
     }
 
