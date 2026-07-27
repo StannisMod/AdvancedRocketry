@@ -130,10 +130,22 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      *  {@link #debugTargetAttitude}. Supersedes {@link #commandedAngVel} when set. */
     public volatile double[] targetAttitude = null;
 
-    /** Ship cruise speed cap (blocks/second) mapped from full throttle. Kept modest so a
-     *  commanded velocity stays under the physics mod's "moving too fast" freeze. Public because the
-     *  flight HUD scales its velocity bars by the craft's own top speed. */
-    public static final double SHIP_MAX_SPEED = 8.0;
+    /**
+     * Ship cruise speed cap (blocks/second) mapped from full throttle. Public because the flight HUD
+     * scales its velocity bars by the craft's own top speed. {@code tunable}.
+     *
+     * <p><b>A STOPGAP.</b> Every craft has the same top speed because nothing yet derives one from
+     * what the ship is built out of; when thrust is computed from the engines and the mass, this
+     * constant is what that calculation replaces. Until then it is a flat number chosen for how long
+     * a climb to orbit takes, not for physical plausibility.</p>
+     *
+     * <p>The physics mod's own "moving too fast" freeze is not the binding constraint it was once
+     * assumed to be: it trips at {@code |v|² > 50000}, i.e. ~223 blocks/s
+     * ({@code PhysicsCalculations.isPhysicsBroken}), so this leaves a factor of five in hand. What
+     * does scale with it is collision: the ship advances {@code SHIP_MAX_SPEED/20} blocks per tick,
+     * so a cap raised far beyond this starts stepping whole blocks between physics steps.</p>
+     */
+    public static final double SHIP_MAX_SPEED = 40.0;
 
     /** Setpoint ramp (blocks/s per tick) while a throttle is held: full deflection sweeps an axis
      *  from rest to {@link #SHIP_MAX_SPEED} in 60 ticks (3 s), matching Free Flight's feel. */
