@@ -87,7 +87,6 @@ tile.nitrogenFluidBlock.name=Nitrogen
 tile.oxygenCharger.name=Gas Charge Pad
 tile.dockingPad.name=Docking Pad
 tile.stationmonitor.name=Warp Controller
-tile.warpCore.name=Warp Core
 tile.atmosphereDetector.name=Atmosphere Detector
 tile.unlittorch.name=Extinguished Torch
 tile.geode.name=Geode Block
@@ -1490,9 +1489,6 @@ tooltip.advancedrocketry.centrifuge=Separates by density
 tooltip.advancedrocketry.centrifuge.shift.1=§bUse Holo-Projector!
 
 # Warp Core
-tooltip.advancedrocketry.warpcore=Core for §6Starship
-tooltip.advancedrocketry.warpcore.shift.1=§bUse Holo-Projector!
-tooltip.advancedrocketry.warpcore.alt.1=§6Starship §7needs §4Warp Controller§7 + §4Warp Core§7
 
 # Beacon
 tooltip.advancedrocketry.beacon=Long-range signal beacon
@@ -1628,3 +1624,39 @@ msg.navcomputer.addresses=Addresses on the ship's crystal:
 msg.jumpgate.nonavcomputer=No navigation computer aboard
 msg.jumpgate.positionunknown=Position unknown - the ship must re-localize before it can jump
 msg.jumpgate.notarget=No jump target set
+
+# --- Hyperdrive family -------------------------------------------------------
+tile.hyperdriveGenerator.name=Hyperspace Field Generator
+tile.hyperdriveCoil.name=Hyperdrive Coil
+tile.jumpFieldEmitter.name=Jump Field Emitter
+tile.jumpCapacitor.name=Jump Capacitor
+tile.jumpCapacitorCell.name=Capacitor Cell
+tile.jumpHeatSink.name=Capacitor Heat Sink
+tile.gravityDampener.name=Gravity Dampener
+key.jumpTrigger=Commit jump (tier-2 ship)
+msg.jumpgate.nodrive=No hyperspace field generator aboard
+msg.jumpgate.windowundersized=Warning: the jump window does not enclose the whole hull
+msg.jumpgate.capacitorlow=Capacitor cannot open the window - not enough charge
+msg.jumpgate.energyshortfall=Warning: not enough energy aboard for the whole flight
+msg.jump.armed=Jump armed
+msg.jump.disarmed=Jump disarmed
+msg.jump.notarmed=No jump armed - arm one at the navigation computer
+msg.jump.spooling=Drive spooling up
+msg.jump.aborted=Jump aborted
+msg.jump.committed=Jump window open
+msg.jump.burstfailed=The capacitor failed to open the window
+msg.jump.nopositionrecord=The ship's position is not on record
+msg.jump.departfailed=The departure failed - the charge is spent
+msg.jump.notonship=Not aboard an assembled ship
+msg.jump.confirm=Press again to confirm
+msg.navcomputer.arm=Arm jump
+msg.navcomputer.disarm=Disarm
+msg.navcomputer.noforecast=No forecast
+msg.navcomputer.notonship=Not installed on an assembled ship
+msg.navcomputer.drivepower=Drive power:
+msg.navcomputer.burst=Capacitor:
+msg.navcomputer.cooldown=Ready in:
+msg.navcomputer.eta=Flight time:
+msg.navcomputer.flightcost=Energy for the flight:
+msg.navcomputer.hullexposed=Hull outside the window (blocks):
+msg.navcomputer.ready=Ready to jump

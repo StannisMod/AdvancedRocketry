@@ -91,6 +91,9 @@ public class TestProbeCommand extends CommandBase {
                 case "nav":
                     handleNav(server, sender, tail(args));
                     break;
+                case "drive":
+                    handleDrive(server, sender, tail(args));
+                    break;
                 case "dim":
                     handleDim(sender, tail(args));
                     break;
@@ -1726,6 +1729,219 @@ public class TestProbeCommand extends CommandBase {
      * nav crystal &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; &lt;slot&gt; &lt;addressCount&gt; [firstSector] [observedTick] ·
      * nav copy / nav status / nav link / nav target / nav gate / nav sync</p>
      */
+    /**
+     * The hyperdrive family, as a ship's own machines see it.
+     *
+     * <p>Every verb here drives PRODUCTION code and reports what production would answer — the same
+     * scan, the same charge arithmetic, the same gate, the same helm press. Nothing computes a
+     * parallel truth: a probe that re-derives what it is meant to observe can only ever agree with
+     * itself.</p>
+     *
+     * <pre>
+     *   /artest drive build   &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt; [coils] [cells] [sinks] [emitters] [dampeners]
+     *   /artest drive info    &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt;
+     *   /artest drive charge  &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt; full|empty
+     *   /artest drive arm     &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt; on|off
+     *   /artest drive press   &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt;
+     *   /artest drive hull    &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt; &lt;dx-&gt; &lt;dy-&gt; &lt;dz-&gt; &lt;dx+&gt; &lt;dy+&gt; &lt;dz+&gt;
+     * </pre>
+     */
+    private void handleDrive(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: drive build|info|charge|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
+            return;
+        }
+        String verb = args[0];
+        net.minecraft.world.WorldServer world = server.getWorld(parseIntOr(args[1], 0));
+        if (world == null) {
+            send(sender, "{\"error\":\"no such dim\"}");
+            return;
+        }
+        BlockPos afc = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                parseIntOr(args[4], 0));
+        world.getChunkProvider().provideChunk(afc.getX() >> 4, afc.getZ() >> 4);
+        java.util.UUID shipId = null;
+        net.minecraft.tileentity.TileEntity afcTe = world.getTileEntity(afc);
+        if (afcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+            shipId = ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTe)
+                    .getOrCreateShipId();
+        }
+        zmaster587.advancedRocketry.hyperdrive.ShipDrive drive =
+                new zmaster587.advancedRocketry.hyperdrive.ShipDrive(world, afc);
+        long now = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+
+        if ("build".equalsIgnoreCase(verb)) {
+            int coils = args.length > 5 ? parseIntOr(args[5], 4) : 4;
+            int cells = args.length > 6 ? parseIntOr(args[6], 4) : 4;
+            int sinks = args.length > 7 ? parseIntOr(args[7], 2) : 2;
+            int emitters = args.length > 8 ? parseIntOr(args[8], 0) : 0;
+            int dampeners = args.length > 9 ? parseIntOr(args[9], 0) : 0;
+            buildDriveFixture(world, afc, coils, cells, sinks, emitters, dampeners);
+            drive = new zmaster587.advancedRocketry.hyperdrive.ShipDrive(world, afc);
+            send(sender, "{\"ok\":true,\"drivePower\":" + drive.stats().drivePower()
+                    + ",\"capacitors\":" + drive.capacitors().size()
+                    + ",\"emitters\":" + drive.emitters().size()
+                    + ",\"dampeners\":" + drive.dampeners().size() + "}");
+            return;
+        }
+        if ("hull".equalsIgnoreCase(verb) && args.length >= 11
+                && afcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+            ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTe).setHullExtent(
+                    parseIntOr(args[5], 0), parseIntOr(args[6], 0), parseIntOr(args[7], 0),
+                    parseIntOr(args[8], 0), parseIntOr(args[9], 0), parseIntOr(args[10], 0));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("charge".equalsIgnoreCase(verb)) {
+            boolean full = args.length < 6 || !"empty".equalsIgnoreCase(args[5]);
+            for (zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor capacitor
+                    : drive.capacitors()) {
+                if (full) {
+                    capacitor.fill(now);
+                } else {
+                    capacitor.discharge(capacitor.chargeAt(now), now);
+                }
+            }
+            send(sender, "{\"ok\":true,\"charge\":" + drive.capacitorCharge(now) + "}");
+            return;
+        }
+        if ("arm".equalsIgnoreCase(verb)) {
+            zmaster587.advancedRocketry.navigation.ShipNavigation nav =
+                    new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipId);
+            zmaster587.advancedRocketry.tile.TileNavigationComputer computer = nav.findNavComputer();
+            if (computer == null) {
+                send(sender, "{\"error\":\"no navigation computer on this ship\"}");
+                return;
+            }
+            boolean on = args.length < 6 || !"off".equalsIgnoreCase(args[5]);
+            if (on) {
+                computer.arm();
+            } else {
+                computer.disarm();
+            }
+            send(sender, "{\"ok\":true,\"armed\":" + computer.isArmed() + "}");
+            return;
+        }
+        if ("press".equalsIgnoreCase(verb)) {
+            if (!(afcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"error\":\"no flight computer there\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer computer =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTe;
+            computer.onJumpKey();
+            send(sender, "{\"ok\":true,\"spooling\":" + computer.isSpooling() + "}");
+            return;
+        }
+        if ("info".equalsIgnoreCase(verb)) {
+            zmaster587.advancedRocketry.navigation.ShipNavigation nav =
+                    new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipId);
+            zmaster587.advancedRocketry.hyperdrive.ShipDriveStats stats = drive.stats();
+            zmaster587.advancedRocketry.hyperdrive.JumpWindow.Coverage coverage = drive.coverage();
+            zmaster587.advancedRocketry.navigation.JumpGate.Verdict verdict =
+                    zmaster587.advancedRocketry.navigation.JumpGate.check(nav);
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("drivePower", stats.drivePower());
+            info.put("inFlightDraw", stats.inFlightDraw());
+            info.put("burstCost", stats.burstCost());
+            info.put("capacitors", drive.capacitors().size());
+            info.put("capacity", drive.capacitorCapacity());
+            info.put("charge", drive.capacitorCharge(now));
+            info.put("cooldownTicks", drive.cooldownTicks(now));
+            info.put("emitters", drive.emitters().size());
+            info.put("dampeners", drive.dampeners().size());
+            info.put("poweredDampeners", drive.poweredDampenerPositions().size());
+            info.put("hullMeasured", coverage != null);
+            info.put("hullOutsideWindow", coverage == null ? 0L : coverage.uncoveredBlocks());
+            info.put("storedEnergy", drive.storedEnergy());
+            info.put("speedBlocksPerTick", nav.plannedSpeed());
+            info.put("transitTicks", nav.plannedTransitTicks());
+            info.put("flightEnergyCost", nav.flightEnergyCost());
+            info.put("allowed", verdict.allowed());
+            info.put("confirm", verdict.needsConfirmation());
+            info.put("message", verdict.firstMessage() == null ? "null" : verdict.firstMessage());
+            info.put("spooling", afcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    && ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTe).isSpooling());
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown drive verb\"}");
+    }
+
+    /**
+     * Stand a working drive up beside a flight computer: a generator with {@code coils} coils, a
+     * capacitor with {@code cells} cells and {@code sinks} sinks against it, and optional emitters
+     * and dampeners. Everything is linked to the flight computer the way the assembler links it,
+     * because an unlinked machine is invisible to its own ship - which is the production rule under
+     * test, not a convenience of the fixture.
+     */
+    private void buildDriveFixture(net.minecraft.world.WorldServer world, BlockPos afc,
+                                   int coils, int cells, int sinks, int emitters, int dampeners) {
+        // Clear the fixture's own footprint first. Without this a build that follows a LARGER build
+        // at the same site silently inherits the leftovers, and a test that means to compare a small
+        // drive against a big one compares a big one against itself - and passes.
+        for (int dx = -20; dx <= 20; dx++) {
+            for (int dz = -20; dz <= 20; dz++) {
+                for (int dy = 0; dy <= 1; dy++) {
+                    BlockPos at = afc.add(dx, dy, dz);
+                    if (!at.equals(afc)) {
+                        world.setBlockToAir(at);
+                    }
+                }
+            }
+        }
+        // A drive belongs to a ship, and a ship is its flight computer. Stand one up if the caller
+        // has not: every ownership rule under test is expressed as a link back to this block.
+        if (!(world.getTileEntity(afc) instanceof
+                zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+            world.setBlockState(afc, zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                    .blockAdvancedFlightComputer.getDefaultState(), 3);
+        }
+        BlockPos generatorPos = afc.add(2, 0, 0);
+        world.setBlockState(generatorPos, zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                .blockHyperdriveGenerator.getDefaultState(), 3);
+        for (int i = 0; i < coils; i++) {
+            world.setBlockState(generatorPos.add(0, 0, i + 1),
+                    zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                            .blockHyperdriveCoil.getDefaultState(), 3);
+        }
+        BlockPos capacitorPos = generatorPos.add(1, 0, 0);
+        world.setBlockState(capacitorPos, zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                .blockJumpCapacitor.getDefaultState(), 3);
+        for (int i = 0; i < cells; i++) {
+            world.setBlockState(capacitorPos.add(0, 0, i + 1),
+                    zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                            .blockJumpCapacitorCell.getDefaultState(), 3);
+        }
+        for (int i = 0; i < sinks; i++) {
+            world.setBlockState(capacitorPos.add(0, 1, i),
+                    zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                            .blockJumpHeatSink.getDefaultState(), 3);
+        }
+        for (int i = 0; i < emitters; i++) {
+            world.setBlockState(afc.add(-2 - i * 2, 0, 0),
+                    zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                            .blockJumpFieldEmitter.getDefaultState(), 3);
+        }
+        for (int i = 0; i < dampeners; i++) {
+            world.setBlockState(afc.add(0, 0, -2 - i * 2),
+                    zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                            .blockGravityDampener.getDefaultState(), 3);
+        }
+        // Link every machine that was just placed, exactly as the assembler does on the pad.
+        for (net.minecraft.tileentity.TileEntity te
+                : world.loadedTileEntityList.toArray(new net.minecraft.tileentity.TileEntity[0])) {
+            if (te instanceof zmaster587.advancedRocketry.tile.TileShipComponent
+                    && te.getPos().distanceSq(afc) < 400) {
+                ((zmaster587.advancedRocketry.tile.TileShipComponent) te).linkToFlightComputer(afc);
+                if (te instanceof zmaster587.advancedRocketry.tile.hyperdrive.TileGravityDampener) {
+                    ((zmaster587.advancedRocketry.tile.hyperdrive.TileGravityDampener) te)
+                            .charge(Integer.MAX_VALUE);
+                }
+            }
+        }
+    }
+
     private void handleNav(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length < 5) {
             send(sender, "{\"error\":\"usage: nav <verb> <dim> <x> <y> <z> [...]\"}");
@@ -4612,8 +4828,6 @@ public class TestProbeCommand extends CommandBase {
                 info.put("fuelMax", sso.getMaxFuelAmount());
                 info.put("padCount", sso.getLandingPads().size());
                 info.put("hasFreePad", sso.hasFreeLandingPad());
-                info.put("hasWarpCores", sso.hasWarpCores);
-                info.put("hasUsableWarpCore", sso.hasUsableWarpCore());
                 // surface the live state that the station
                 // controllers' update() loops walk toward their target.
                 info.put("targetOrbitalDistance", sso.targetOrbitalDistance);
@@ -4686,24 +4900,6 @@ public class TestProbeCommand extends CommandBase {
                     (zmaster587.advancedRocketry.dimension.DimensionProperties) station.getProperties();
             stationProps.setParentPlanet(parentProps, false);
             send(sender, "{\"ok\":true,\"id\":" + id + ",\"parentDim\":" + parentDim + "}");
-            return;
-        }
-        if ("add-warp-core".equalsIgnoreCase(args[0]) && args.length >= 5) {
-            // /artest station add-warp-core <id> <x> <y> <z>
-            int id = parseIntOr(args[1], Integer.MIN_VALUE);
-            int x = parseIntOr(args[2], 0);
-            int y = parseIntOr(args[3], 0);
-            int z = parseIntOr(args[4], 0);
-            ISpaceObject station = SpaceObjectManager.getSpaceManager().getSpaceStation(id);
-            if (!(station instanceof SpaceStationObject)) {
-                send(sender, "{\"error\":\"station not found or wrong type\",\"id\":" + id + "}");
-                return;
-            }
-            SpaceStationObject sso = (SpaceStationObject) station;
-            sso.addWarpCore(new zmaster587.libVulpes.util.HashedBlockPosition(x, y, z));
-            send(sender, "{\"ok\":true,\"id\":" + id + ",\"pos\":[" + x + "," + y + "," + z
-                    + "],\"hasWarpCores\":" + sso.hasWarpCores
-                    + ",\"hasUsableWarpCore\":" + sso.hasUsableWarpCore() + "}");
             return;
         }
         if ("add-pad".equalsIgnoreCase(args[0]) && args.length >= 4) {
@@ -8324,7 +8520,6 @@ public class TestProbeCommand extends CommandBase {
                 info.put("stationFuel", station.getFuelAmount());
                 info.put("stationFuelMax", station.getMaxFuelAmount());
                 info.put("stationAnchored", station.isAnchored());
-                info.put("hasUsableWarpCore", station.hasUsableWarpCore());
                 // getTravelCost is protected -> reflect.
                 try {
                     java.lang.reflect.Method tc =
@@ -8472,9 +8667,8 @@ public class TestProbeCommand extends CommandBase {
                 boolean meetsArtifact = (Boolean) meets.invoke(tile, destProps);
                 Map<String, Object> debug = new LinkedHashMap<>();
                 debug.put("hasStation", true);
+                debug.put("canTravel", sso.canTravel());
                 debug.put("isAnchored", sso.isAnchored());
-                debug.put("hasUsableWarpCore", sso.hasUsableWarpCore());
-                debug.put("hasWarpCores", sso.hasWarpCores);
                 debug.put("orbitingPlanetId", sso.getOrbitingPlanetId());
                 debug.put("destOrbitingBody", sso.getDestOrbitingBody());
                 debug.put("fuelAmount", sso.getFuelAmount());
@@ -8484,7 +8678,7 @@ public class TestProbeCommand extends CommandBase {
                 debug.put("destRequiredArtifactsEmpty", destProps != null && destProps.getRequiredArtifacts().isEmpty());
                 debug.put("wouldUseFuelReturn", cost > sso.getFuelAmount() ? 0 : cost);
                 debug.put("allGatesGreen",
-                        !sso.isAnchored() && sso.hasUsableWarpCore() && meetsArtifact
+                        !sso.isAnchored() && sso.canTravel() && meetsArtifact
                         && (cost <= sso.getFuelAmount()) && cost > 0);
                 send(sender, jsonMap(debug));
             } catch (ReflectiveOperationException e) {
@@ -10198,15 +10392,6 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 6 && "multiblock".equalsIgnoreCase(args[0])
-                && "warp-core".equalsIgnoreCase(args[1])) {
-            handleFixtureWarpCore(server, sender,
-                    parseIntOr(args[2], Integer.MIN_VALUE),
-                    parseIntOr(args[3], 0),
-                    parseIntOr(args[4], 64),
-                    parseIntOr(args[5], 0));
-            return;
-        }
-        if (args.length >= 6 && "multiblock".equalsIgnoreCase(args[0])
                 && "gravity-controller".equalsIgnoreCase(args[1])) {
             handleFixtureGravityController(server, sender,
                     parseIntOr(args[2], Integer.MIN_VALUE),
@@ -10311,7 +10496,7 @@ public class TestProbeCommand extends CommandBase {
                     spec[0], spec[1], spec[2], "structure", wildcardConfig);
             return;
         }
-        send(sender, "{\"error\":\"unknown fixture subcommand — try rocket <dim> <x> <y> <z> | machine cutting|rolling-machine|lathe|precision-assembler|electrolyser|chemical-reactor|crystallizer|arc-furnace|centrifuge|precision-laser-etcher <dim> <x> <y> <z> | multiblock blackhole-gen|beacon|observatory|railgun|warp-core|gravity-controller|planet-analyser|space-elevator|microwave-receiver|solar-array|terraformer|orbital-laser-drill <dim> <x> <y> <z>\"}");
+        send(sender, "{\"error\":\"unknown fixture subcommand — try rocket <dim> <x> <y> <z> | machine cutting|rolling-machine|lathe|precision-assembler|electrolyser|chemical-reactor|crystallizer|arc-furnace|centrifuge|precision-laser-etcher <dim> <x> <y> <z> | multiblock blackhole-gen|beacon|observatory|railgun|gravity-controller|planet-analyser|space-elevator|microwave-receiver|solar-array|terraformer|orbital-laser-drill <dim> <x> <y> <z>\"}");
     }
 
     /**
@@ -10777,124 +10962,6 @@ public class TestProbeCommand extends CommandBase {
         info.put("controllerPos", new int[]{cx, cy, cz});
         info.put("motorPos",      new int[]{cx, cy, cz + 3});
         info.put("coreTopPos",    new int[]{cx, cy + 10, cz + 3});
-        send(sender, jsonMap(info));
-    }
-
-    /**
-     * Builds a complete warp-core multiblock with controller at (cx, cy, cz)
-     * NORTH-facing. Per {@code TileWarpCore.structure} — a 3×3×3 array
-     * iterated [y][z][x] with controller 'c' at structure[2][0][1] (offset
-     * x=1, y=2, z=0). For a NORTH-facing controller the position formula
-     * simplifies to:
-     * <pre>
-     *   globalX = cx + 1 - x
-     *   globalY = cy + 2 - y
-     *   globalZ = cz + z
-     * </pre>
-     *
-     * <p>Layout:</p>
-     * <ul>
-     *   <li>y=0 (globalY = cy+2): 3×3 of {@code blockWarpCoreRim} with
-     *       {@code 'I'} input hatch at z=1, x=1.</li>
-     *   <li>y=1 (globalY = cy+1): cross of {@code blockStructureBlock}
-     *       around {@code blockWarpCoreCore} centre at z=1, x=1, with
-     *       null cells in the corners.</li>
-     *   <li>y=2 (globalY = cy): {@code 'c'} controller at z=0, x=1;
-     *       {@code blockWarpCoreCore} at z=1, x=1; remainder
-     *       {@code blockWarpCoreRim}.</li>
-     * </ul>
-     *
-     * <p>{@code blockWarpCoreRim} and {@code blockWarpCoreCore} are
-     * OreDictionary entries (registered by AR's setup —
-     * {@code AdvancedRocketry.preInit} lines 603-604, pointing to
-     * Titanium block + Gold block respectively).</p>
-     */
-    private void handleFixtureWarpCore(MinecraftServer server, ICommandSender sender,
-                                        int dim, int cx, int cy, int cz) {
-        net.minecraft.world.WorldServer world = server.getWorld(dim);
-        if (world == null) {
-            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
-            return;
-        }
-
-        net.minecraft.block.Block controller =
-                ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "warpCore"));
-        net.minecraft.block.Block structureBlock =
-                ForgeRegistries.BLOCKS.getValue(new ResourceLocation("libvulpes", "structuremachine"));
-        net.minecraft.block.Block hatch =
-                ForgeRegistries.BLOCKS.getValue(new ResourceLocation("libvulpes", "hatch"));
-
-        net.minecraft.block.state.IBlockState rim = firstOreDictBlockState("blockWarpCoreRim");
-        net.minecraft.block.state.IBlockState core = firstOreDictBlockState("blockWarpCoreCore");
-
-        if (controller == null || structureBlock == null || hatch == null
-                || rim == null || core == null) {
-            send(sender, "{\"error\":\"missing block(s)\""
-                    + ",\"controller\":" + (controller != null)
-                    + ",\"structureBlock\":" + (structureBlock != null)
-                    + ",\"hatch\":" + (hatch != null)
-                    + ",\"rim\":" + (rim != null)
-                    + ",\"core\":" + (core != null) + "}");
-            return;
-        }
-
-        net.minecraft.block.state.IBlockState controllerState = controller.getDefaultState();
-        try {
-            controllerState = controllerState.withProperty(
-                    zmaster587.libVulpes.block.RotatableBlock.FACING,
-                    net.minecraft.util.EnumFacing.NORTH);
-        } catch (IllegalArgumentException ignored) {
-            // Property absent — fall back to default.
-        }
-
-        net.minecraft.block.state.IBlockState struct = structureBlock.getDefaultState();
-        @SuppressWarnings("deprecation") net.minecraft.block.state.IBlockState inputHatchState =
-                hatch.getStateFromMeta(0);
-
-        // Pre-clear the 3×3×3 footprint to air.
-        for (int gx = cx - 1; gx <= cx + 1; gx++) {
-            for (int gy = cy; gy <= cy + 2; gy++) {
-                for (int gz = cz; gz <= cz + 2; gz++) {
-                    world.setBlockToAir(new BlockPos(gx, gy, gz));
-                }
-            }
-        }
-
-        // y=0 (top) globalY = cy + 2 — 3×3 rim with input hatch at z=1, x=1.
-        for (int z = 0; z <= 2; z++) {
-            for (int x = 0; x <= 2; x++) {
-                BlockPos p = new BlockPos(cx + 1 - x, cy + 2, cz + z);
-                world.setBlockState(p, (z == 1 && x == 1) ? inputHatchState : rim);
-            }
-        }
-
-        // y=1 (middle) globalY = cy + 1 — cross of structureBlock + core centre.
-        // Cells: (z=0,x=1), (z=1,x=0), (z=1,x=1 core), (z=1,x=2), (z=2,x=1)
-        world.setBlockState(new BlockPos(cx,     cy + 1, cz),     struct);
-        world.setBlockState(new BlockPos(cx + 1, cy + 1, cz + 1), struct);
-        world.setBlockState(new BlockPos(cx,     cy + 1, cz + 1), core);
-        world.setBlockState(new BlockPos(cx - 1, cy + 1, cz + 1), struct);
-        world.setBlockState(new BlockPos(cx,     cy + 1, cz + 2), struct);
-
-        // y=2 (bottom, controller layer) globalY = cy.
-        // Row z=0: rim, 'c', rim
-        world.setBlockState(new BlockPos(cx + 1, cy, cz),     rim);
-        world.setBlockState(new BlockPos(cx,     cy, cz),     controllerState);
-        world.setBlockState(new BlockPos(cx - 1, cy, cz),     rim);
-        // Row z=1: rim, core, rim
-        world.setBlockState(new BlockPos(cx + 1, cy, cz + 1), rim);
-        world.setBlockState(new BlockPos(cx,     cy, cz + 1), core);
-        world.setBlockState(new BlockPos(cx - 1, cy, cz + 1), rim);
-        // Row z=2: rim, rim, rim
-        for (int x = 0; x <= 2; x++) {
-            world.setBlockState(new BlockPos(cx + 1 - x, cy, cz + 2), rim);
-        }
-
-        Map<String, Object> info = new LinkedHashMap<>();
-        info.put("ok", true);
-        info.put("controllerPos", new int[]{cx, cy, cz});
-        info.put("coreCentre",    new int[]{cx, cy + 1, cz + 1});
-        info.put("inputHatchPos", new int[]{cx, cy + 2, cz + 1});
         send(sender, jsonMap(info));
     }
 

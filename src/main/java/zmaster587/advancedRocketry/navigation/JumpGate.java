@@ -21,10 +21,11 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  *       confirm anyway; flying into a bad idea on purpose is a decision the game leaves to him.</li>
  * </ul>
  *
- * <p>The gate is a <b>composite</b>: this class owns the navigation clauses (a nav computer aboard, a
- * known current position, a well-formed target) and the fixed order of the stages, while later
- * subsystems register their own predicates into the stage that belongs to them. Order matters only for
- * which message the pilot reads first — every predicate is free, so all of them run.</p>
+ * <p>The gate is a <b>composite</b>: this class owns the clauses every jump has (a nav computer
+ * aboard, a known position, a target, a drive, the burst that opens the window, the energy for the
+ * flight) and the fixed order of the stages, while later subsystems register their own predicates
+ * into the stage that belongs to them. Order matters only for which message the pilot reads first —
+ * every predicate is free, so all of them run.</p>
  */
 public final class JumpGate {
 
@@ -43,6 +44,8 @@ public final class JumpGate {
     public enum Stage {
         /** A nav computer aboard, a known position, a target — owned by this class. */
         NAVIGATION,
+        /** A field generator aboard, and a window big enough for the hull. */
+        DRIVE,
         /** The capacitor burst that opens the jump window. */
         POWER,
         /** Fuel / energy sufficiency for the path. */
@@ -87,6 +90,43 @@ public final class JumpGate {
 
         /** The target the pilot has set — from a crystal or typed by hand — or {@code null}. */
         GalacticCoord target();
+
+        // ─── What the drive can answer ─────────────────────────────────────────
+        //
+        // These are plain numbers rather than machine objects on purpose: the gate decides whether a
+        // ship may jump, and it should not have to know what a capacitor is to do that. Each default
+        // is the answer a ship with no drive at all would give, so a context that does not implement
+        // them is simply a ship that cannot jump — never one that is waved through.
+
+        /** The field generator's power, or {@code 0} when no generator is aboard. */
+        default long drivePower() {
+            return 0L;
+        }
+
+        /** The energy the capacitor must dump in one moment to open the window. */
+        default long burstCost() {
+            return 0L;
+        }
+
+        /** Charge available across every capacitor aboard, right now. */
+        default long capacitorCharge() {
+            return 0L;
+        }
+
+        /** Hull blocks the jump window fails to enclose; {@code 0} when the hull fits inside it. */
+        default long hullOutsideWindow() {
+            return 0L;
+        }
+
+        /** Energy stored aboard the ship and reachable by the drive. */
+        default long storedEnergy() {
+            return 0L;
+        }
+
+        /** Energy the drive will draw over the whole planned flight. */
+        default long flightEnergyCost() {
+            return 0L;
+        }
     }
 
     /** A registered check. Returns its objection, or {@code null} when it is satisfied. */
@@ -142,6 +182,14 @@ public final class JumpGate {
     public static final String MSG_NO_NAV_COMPUTER = "msg.jumpgate.nonavcomputer";
     public static final String MSG_POSITION_UNKNOWN = "msg.jumpgate.positionunknown";
     public static final String MSG_NO_TARGET = "msg.jumpgate.notarget";
+    /** No field generator aboard: there is no machine to open a window with. */
+    public static final String MSG_NO_DRIVE = "msg.jumpgate.nodrive";
+    /** The window does not enclose the whole hull — possible, and it will cost the hull. */
+    public static final String MSG_WINDOW_UNDERSIZED = "msg.jumpgate.windowundersized";
+    /** The capacitor cannot dump the burst that opens the window. */
+    public static final String MSG_CAPACITOR_LOW = "msg.jumpgate.capacitorlow";
+    /** Not enough energy aboard for the whole flight — possible, and it may end early. */
+    public static final String MSG_ENERGY_SHORTFALL = "msg.jumpgate.energyshortfall";
 
     private static final Map<Stage, List<Predicate>> REGISTERED = new EnumMap<>(Stage.class);
 
@@ -190,6 +238,50 @@ public final class JumpGate {
                 // reckless, destination. What is refused is having no destination at all.
                 return ship.target() != null ? null
                         : new Objection(Severity.HARD, MSG_NO_TARGET);
+            }
+        });
+        // The drive clauses are built in rather than registered by the machine subsystem, because the
+        // failure mode of a missed registration is the one that must never happen: a gate that has
+        // forgotten to ask about the drive waves through a ship with no drive, silently and forever.
+        REGISTERED.get(Stage.DRIVE).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                return ship.drivePower() > 0L ? null
+                        : new Objection(Severity.HARD, MSG_NO_DRIVE);
+            }
+        });
+        REGISTERED.get(Stage.DRIVE).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // Advisory, not a veto: a hull that pokes out of the window can still jump. What is
+                // outside when the window closes is simply not coming along in one piece.
+                return ship.hullOutsideWindow() <= 0L ? null
+                        : new Objection(Severity.ADVISORY, MSG_WINDOW_UNDERSIZED);
+            }
+        });
+        REGISTERED.get(Stage.POWER).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // Hard, because this one is physics: without the burst the window does not open at
+                // all. A capacitor too small to ever hold the burst is a ship to rebuild, not a ship
+                // to warn - which is exactly what "physically impossible" means here.
+                if (ship.drivePower() <= 0L) {
+                    return null; // already refused above; do not tell the pilot the same thing twice
+                }
+                return ship.capacitorCharge() >= ship.burstCost() ? null
+                        : new Objection(Severity.HARD, MSG_CAPACITOR_LOW);
+            }
+        });
+        REGISTERED.get(Stage.SUPPLY).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // Advisory by ruling: running out on the way is a flight that ends early, not a
+                // flight the automation is entitled to forbid.
+                if (ship.drivePower() <= 0L) {
+                    return null;
+                }
+                return ship.storedEnergy() >= ship.flightEnergyCost() ? null
+                        : new Objection(Severity.ADVISORY, MSG_ENERGY_SHORTFALL);
             }
         });
     }

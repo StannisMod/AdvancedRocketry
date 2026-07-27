@@ -18,6 +18,12 @@ public class NavigationComputerE2ETest extends AbstractSharedServerTest {
     private static final String B = "0 2410 80 2400";
     /** The flight-computer position the gate is asked about; nothing is built there. */
     private static final String AFC = "2400 82 2400";
+    /**
+     * A second flight computer that never gets a drive. It has to be a DIFFERENT site: the tests
+     * share one world, so a drive another test stood up at {@link #AFC} is still standing there when
+     * this one runs, and "no drive aboard" would quietly become "somebody else's drive aboard".
+     */
+    private static final String AFC_NO_DRIVE = "2440 82 2440";
 
     @Test
     public void copyingACrystalAddsToTheShipWithoutTakingFromTheSource() throws Exception {
@@ -77,23 +83,63 @@ public class NavigationComputerE2ETest extends AbstractSharedServerTest {
     }
 
     @Test
-    public void aLinkedComputerWithATargetClearsTheGate() throws Exception {
+    public void aComputerAndATargetAreNotEnoughWithoutADrive() throws Exception {
+        // Knowing where you want to go is not a way of getting there. Before the hyperdrive family
+        // existed this ship would have cleared the gate and then had nothing to jump WITH.
+        placeComputer(A);
+        exec("artest nav link " + A + " " + AFC_NO_DRIVE);
+        exec("artest nav target " + A + " 7 0 0");
+
+        String verdict = exec("artest nav gate 0 " + AFC_NO_DRIVE);
+
+        assertTrue("a ship with no field generator cannot jump, however well it is aimed: " + verdict,
+                verdict.contains("\"allowed\":false"));
+        assertTrue(verdict.contains("msg.jumpgate.nodrive"));
+    }
+
+    @Test
+    public void aComputerATargetAndAChargedDriveClearTheGate() throws Exception {
         placeComputer(A);
         exec("artest nav link " + A + " " + AFC);
         exec("artest nav target " + A + " 7 0 0");
+        exec("artest drive build 0 " + AFC);
+        exec("artest drive charge 0 " + AFC + " full");
 
         String verdict = exec("artest nav gate 0 " + AFC);
 
-        assertTrue("computer aboard, position known, target set - nothing refuses this: " + verdict,
-                verdict.contains("\"allowed\":true"));
+        assertTrue("computer aboard, position known, target set, a drive and the burst to open the "
+                + "window - nothing refuses this: " + verdict, verdict.contains("\"allowed\":true"));
         assertTrue("and nothing merely advises either: " + verdict,
                 verdict.contains("\"confirm\":false"));
+    }
+
+    @Test
+    public void anEmptyCapacitorRefusesTheJumpUntilItHasCharged() throws Exception {
+        placeComputer(A);
+        exec("artest nav link " + A + " " + AFC);
+        exec("artest nav target " + A + " 7 0 0");
+        exec("artest drive build 0 " + AFC);
+
+        String flat = exec("artest drive charge 0 " + AFC + " empty");
+        String refused = exec("artest nav gate 0 " + AFC);
+        exec("artest drive charge 0 " + AFC + " full");
+        String allowed = exec("artest nav gate 0 " + AFC);
+
+        assertTrue("precondition: the bank really is empty: " + flat, flat.contains("\"charge\":0"));
+        assertTrue("without the burst the window does not open at all: " + refused,
+                refused.contains("\"allowed\":false"));
+        assertTrue(refused.contains("msg.jumpgate.capacitorlow"));
+        assertTrue("and the same ship, charged, may go: " + allowed,
+                allowed.contains("\"allowed\":true"));
     }
 
     @Test
     public void aHandTypedCoordinateIsAcceptedAsATarget() throws Exception {
         placeComputer(A);
         exec("artest nav link " + A + " " + AFC);
+
+        exec("artest drive build 0 " + AFC);
+        exec("artest drive charge 0 " + AFC + " full");
 
         // Nothing has ever surveyed sector 4242: aiming there is legal, and reckless, on purpose.
         String aimed = exec("artest nav target " + A + " 4242 0 0");

@@ -251,6 +251,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (world == null || world.isRemote) {
             return;
         }
+        // The jump wind-up runs before anything else, and before the physics checks below can bail
+        // out: a spool that quietly stopped counting because the ship's attitude was momentarily
+        // unresolvable would leave a pilot waiting for a window that is never going to open.
+        tickJumpSpool();
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
@@ -640,6 +644,84 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         markDirty();
     }
 
+    // ─── Jumping ───────────────────────────────────────────────────────────────
+
+    /**
+     * The wind-up between the pilot committing and the window opening. Lives here because this
+     * computer is the ship's command authority and the only thing aboard that ticks every tick.
+     * Deliberately not persisted: a spool a restart interrupted resolves exactly like an abort, and
+     * a jump that never happened must not cost anything.
+     */
+    private final zmaster587.advancedRocketry.hyperdrive.JumpSpool jumpSpool =
+            new zmaster587.advancedRocketry.hyperdrive.JumpSpool();
+
+    /**
+     * One press of the helm's jump key. Free in every branch — it refuses, warns, winds up or stops
+     * winding up, and none of those spend anything.
+     */
+    public void onJumpKey() {
+        if (world == null || world.isRemote) {
+            return;
+        }
+        zmaster587.advancedRocketry.hyperdrive.JumpTrigger.Result result =
+                zmaster587.advancedRocketry.hyperdrive.JumpTrigger.press(world, getPos(),
+                        shipIdOrNull(), jumpSpool,
+                        zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock());
+        messageSeatedPilot(result.langKey());
+    }
+
+    /** Whether the drive is currently winding up. Read by tests and readouts, never by the flight. */
+    public boolean isSpooling() {
+        return jumpSpool.spooling(
+                zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock());
+    }
+
+    private void tickJumpSpool() {
+        long now = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+        if (!jumpSpool.ready(now)) {
+            return;
+        }
+        zmaster587.advancedRocketry.hyperdrive.JumpTrigger.Result result =
+                zmaster587.advancedRocketry.hyperdrive.JumpTrigger.commit(world, getPos(),
+                        shipIdOrNull(), jumpSpool, now);
+        messageSeatedPilot(result.langKey());
+    }
+
+    // ─── The hull's own size ───────────────────────────────────────────────────
+
+    private static final String NBT_HULL = "hullExtent";
+
+    /**
+     * The craft's bounding box, as offsets from this computer. Recorded by the assembler, which is
+     * the one moment anything knows the whole craft's extent — after assembly the blocks are a
+     * physics body and re-deriving the box means walking it.
+     *
+     * <p>Offsets rather than positions, for the same reason every other ship link is an offset: the
+     * ship moves as a rigid body, so the offsets stay true and the positions do not. {@code null}
+     * until an assembly records it.</p>
+     */
+    private int[] hullExtent;
+
+    /** Record the craft's bounding box relative to this computer. Called on the pad, once. */
+    public void setHullExtent(int minDx, int minDy, int minDz, int maxDx, int maxDy, int maxDz) {
+        this.hullExtent = new int[] {minDx, minDy, minDz, maxDx, maxDy, maxDz};
+        markDirty();
+    }
+
+    /**
+     * The hull box in world coordinates as {@code {minX,minY,minZ,maxX,maxY,maxZ}}, or {@code null}
+     * when no assembly ever recorded one.
+     */
+    public int[] hullBox() {
+        if (hullExtent == null) {
+            return null;
+        }
+        return new int[] {
+            pos.getX() + hullExtent[0], pos.getY() + hullExtent[1], pos.getZ() + hullExtent[2],
+            pos.getX() + hullExtent[3], pos.getY() + hullExtent[4], pos.getZ() + hullExtent[5]
+        };
+    }
+
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
@@ -647,6 +729,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
         if (shipId != null) {
             nbt.setString(NBT_SHIP_ID, shipId.toString());
+        }
+        if (hullExtent != null) {
+            nbt.setIntArray(NBT_HULL, hullExtent);
         }
         return nbt;
     }
@@ -659,6 +744,13 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // Absent key -> not station-keeping (a fresh, never-flown ship stays inert).
         stationKeeping = nbt.getBoolean(NBT_STATION_KEEPING);
         // Absent/malformed key -> no id yet (minted on first use); never re-mint over a valid one.
+        hullExtent = null;
+        if (nbt.hasKey(NBT_HULL)) {
+            int[] stored = nbt.getIntArray(NBT_HULL);
+            if (stored.length == 6) {
+                hullExtent = stored;
+            }
+        }
         shipId = null;
         if (nbt.hasKey(NBT_SHIP_ID)) {
             try {

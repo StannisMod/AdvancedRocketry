@@ -7,6 +7,11 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
+import zmaster587.advancedRocketry.hyperdrive.JumpSpeed;
+import zmaster587.advancedRocketry.hyperdrive.JumpWindow;
+import zmaster587.advancedRocketry.hyperdrive.ShipDrive;
+import zmaster587.advancedRocketry.hyperdrive.ShipDriveStats;
+import zmaster587.advancedRocketry.hyperdrive.ShipMassProvider;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
@@ -49,6 +54,77 @@ public final class ShipNavigation implements JumpGate.ShipContext {
     public GalacticCoord target() {
         TileNavigationComputer nav = findNavComputer();
         return nav == null ? null : nav.getTarget();
+    }
+
+    // ─── What the drive answers ────────────────────────────────────────────────
+
+    @Override
+    public long drivePower() {
+        return drive().stats().drivePower();
+    }
+
+    @Override
+    public long burstCost() {
+        return drive().stats().burstCost();
+    }
+
+    @Override
+    public long capacitorCharge() {
+        return drive().capacitorCharge(SpaceSubsystem.spaceClock());
+    }
+
+    @Override
+    public long hullOutsideWindow() {
+        JumpWindow.Coverage coverage = drive().coverage();
+        // A craft whose hull extent was never recorded is not a craft with a hull sticking out of
+        // its window - it is a craft nobody has measured. Warning about it would be inventing a
+        // fault, so an unmeasured hull raises no objection.
+        return coverage == null ? 0L : coverage.uncoveredBlocks();
+    }
+
+    @Override
+    public long storedEnergy() {
+        return drive().storedEnergy();
+    }
+
+    @Override
+    public long flightEnergyCost() {
+        ShipDriveStats stats = drive().stats();
+        if (!stats.present()) {
+            return 0L;
+        }
+        return stats.inFlightDraw() * plannedTransitTicks();
+    }
+
+    /** The ship's drive, resolved fresh — a drive is measured when asked, never remembered. */
+    public ShipDrive drive() {
+        return new ShipDrive(world, flightComputerPos);
+    }
+
+    /** Blocks per tick this ship would fly at, given its drive and its hull. */
+    public long plannedSpeed() {
+        return JumpSpeed.blocksPerTick(drive().stats().drivePower(),
+                ShipMassProvider.massOf(world, flightComputerPos, shipId));
+    }
+
+    /** How long the flight to the current target would take, in ticks. Zero without a target. */
+    public long plannedTransitTicks() {
+        GalacticCoord target = target();
+        GalacticCoord origin = currentCoord();
+        if (target == null || origin == null) {
+            return 0L;
+        }
+        return JumpSpeed.transitTicks(origin.distanceTo(target), plannedSpeed());
+    }
+
+    /** Where the ship is now, as the durable ledger records it, or {@code null}. */
+    public GalacticCoord currentCoord() {
+        ShipLedger ledger = SpaceSubsystem.ledger();
+        if (ledger == null || shipId == null) {
+            return null;
+        }
+        ShipLedger.Entry entry = ledger.get(shipId);
+        return entry == null ? null : entry.coord;
     }
 
     /**

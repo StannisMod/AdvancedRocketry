@@ -397,7 +397,6 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.TileWearable.class, "ARwearablePart");
         GameRegistry.registerTileEntity(TileRocketServiceStation.class, "ARserviceStation");
         GameRegistry.registerTileEntity(TileRocketAssemblingMachine.class, "ARrocketBuilder");
-        GameRegistry.registerTileEntity(TileWarpCore.class, "ARwarpCore");
         //GameRegistry.registerTileEntity(TileModelRender.class, "ARmodelRenderer");
         GameRegistry.registerTileEntity(TileFuelingStation.class, "ARfuelingStation");
         GameRegistry.registerTileEntity(TileRocketMonitoringStation.class, "ARmonitoringStation");
@@ -420,6 +419,10 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileAdvancedFlightComputer.class, "ARadvancedFlightComputer");
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.TileNavigationComputer.class, "ARnavigationComputer");
         GameRegistry.registerTileEntity(TilePilotSeat.class, "ARpilotSeat");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.hyperdrive.TileHyperdriveGenerator.class, "ARhyperdriveGenerator");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.hyperdrive.TileJumpFieldEmitter.class, "ARjumpFieldEmitter");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor.class, "ARjumpCapacitor");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.hyperdrive.TileGravityDampener.class, "ARgravityDampener");
         GameRegistry.registerTileEntity(TileElectricArcFurnace.class, "ARelectricArcFurnace");
         GameRegistry.registerTileEntity(TilePlanetSelector.class, "ARTilePlanetSelector");
         //GameRegistry.registerTileEntity(TileModelRenderRotatable.class, "ARTileModelRenderRotatable");
@@ -645,8 +648,6 @@ public class AdvancedRocketry {
         OreDictionary.registerOre("itemSilicon", MaterialRegistry.getItemStackFromMaterialAndType("Silicon", AllowedProducts.getProductByName("INGOT")));
         OreDictionary.registerOre("dustThermite", new ItemStack(AdvancedRocketryItems.itemThermite));
         OreDictionary.registerOre("slab", new ItemStack(Blocks.STONE_SLAB));
-        OreDictionary.registerOre("blockWarpCoreCore", new ItemStack(Blocks.GOLD_BLOCK));
-        OreDictionary.registerOre("blockWarpCoreRim", MaterialRegistry.getMaterialFromName("Titanium").getProduct(AllowedProducts.getProductByName("BLOCK")));
 
         Item.getItemFromBlock(AdvancedRocketryBlocks.blockEngine).setMaxDamage(10);
         Item.getItemFromBlock(AdvancedRocketryBlocks.blockAdvEngine).setMaxDamage(10);
@@ -699,7 +700,6 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockMicrowaveReciever = new BlockMultiblockMachine(TileMicrowaveReciever.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("microwaveReciever");
         AdvancedRocketryBlocks.blockSolarArray = new BlockMultiblockMachine(TileSolarArray.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("solararray").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Aux/huge
-        AdvancedRocketryBlocks.blockWarpCore = new BlockWarpCore(TileWarpCore.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("warpCore").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockBeacon = new BlockBeacon(TileBeacon.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("beacon").setHardness(3f);
         AdvancedRocketryBlocks.blockBiomeScanner = new BlockMultiblockMachine(TileBiomeScanner.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("biomeScanner").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockRailgun = new BlockMultiblockMachine(TileRailgun.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("railgun").setCreativeTab(tabAdvRocketry).setHardness(3f);
@@ -737,6 +737,16 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockNavigationComputer = new zmaster587.libVulpes.block.BlockTile(zmaster587.advancedRocketry.tile.TileNavigationComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("navigationComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // The hyperdrive family. The two controllers carry tile entities because they have state or
+        // are measured; the coil, cell, sink and emitter are structure — what they are worth is
+        // decided by how many of them the player welded together, not by anything they hold.
+        AdvancedRocketryBlocks.blockHyperdriveGenerator = new zmaster587.advancedRocketry.block.BlockShipMachine(zmaster587.advancedRocketry.tile.hyperdrive.TileHyperdriveGenerator.class).setUnlocalizedName("hyperdriveGenerator").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockHyperdriveCoil = new Block(Material.IRON).setUnlocalizedName("hyperdriveCoil").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockJumpFieldEmitter = new zmaster587.advancedRocketry.block.BlockShipMachine(zmaster587.advancedRocketry.tile.hyperdrive.TileJumpFieldEmitter.class).setUnlocalizedName("jumpFieldEmitter").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockJumpCapacitor = new zmaster587.advancedRocketry.block.BlockShipMachine(zmaster587.advancedRocketry.tile.hyperdrive.TileJumpCapacitor.class).setUnlocalizedName("jumpCapacitor").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockJumpCapacitorCell = new Block(Material.IRON).setUnlocalizedName("jumpCapacitorCell").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockJumpHeatSink = new Block(Material.IRON).setUnlocalizedName("jumpHeatSink").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockGravityDampener = new zmaster587.advancedRocketry.block.BlockShipMachine(zmaster587.advancedRocketry.tile.hyperdrive.TileGravityDampener.class).setUnlocalizedName("gravityDampener").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockIntake = new BlockIntake(Material.IRON).setUnlocalizedName("gasIntake").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockDrill = new BlockMiningDrill().setUnlocalizedName("drill").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockLandingFloat = new Block(Material.IRON).setUnlocalizedName("landingfloat").setCreativeTab(tabAdvRocketry).setHardness(1).setResistance(1f);
@@ -874,7 +884,6 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockMicrowaveReciever.setRegistryName("microwaveReciever"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarArray.setRegistryName("solararray"));
         //Aux/huge
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWarpCore.setRegistryName("warpCore"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBeacon.setRegistryName("beacon"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockBiomeScanner.setRegistryName("biomeScanner"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockRailgun.setRegistryName("railgun"));
@@ -907,6 +916,13 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGuidanceComputer.setRegistryName("guidanceComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAdvancedFlightComputer.setRegistryName("advancedFlightComputer"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNavigationComputer.setRegistryName("navigationComputer"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHyperdriveGenerator.setRegistryName("hyperdriveGenerator"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockHyperdriveCoil.setRegistryName("hyperdriveCoil"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockJumpFieldEmitter.setRegistryName("jumpFieldEmitter"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockJumpCapacitor.setRegistryName("jumpCapacitor"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockJumpCapacitorCell.setRegistryName("jumpCapacitorCell"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockJumpHeatSink.setRegistryName("jumpHeatSink"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGravityDampener.setRegistryName("gravityDampener"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockIntake.setRegistryName("intake"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockDrill.setRegistryName("drill"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLandingFloat.setRegistryName("landingfloat"));
@@ -1134,7 +1150,6 @@ public class AdvancedRocketry {
         ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileMicrowaveReciever(), (BlockTile) AdvancedRocketryBlocks.blockMicrowaveReciever);
         ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileSolarArray(), (BlockTile) AdvancedRocketryBlocks.blockSolarArray);
         //Auxillary machines
-        ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileWarpCore(), (BlockTile) AdvancedRocketryBlocks.blockWarpCore);
         ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileBeacon(), (BlockTile) AdvancedRocketryBlocks.blockBeacon);
         ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileBiomeScanner(), (BlockTile) AdvancedRocketryBlocks.blockBiomeScanner);
         ((ItemProjector) LibVulpesItems.itemHoloProjector).registerMachine(new TileRailgun(), (BlockTile) AdvancedRocketryBlocks.blockRailgun);

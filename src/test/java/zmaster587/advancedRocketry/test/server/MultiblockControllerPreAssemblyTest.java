@@ -8,7 +8,7 @@ import static org.junit.Assert.assertTrue;
  * Pre-assembly contract for every multiblock controller in the mod.
  *
  * <p>Each of TileOrbitalLaserDrill, TileSpaceElevator,
- * TileBlackHoleGenerator, TileWarpCore, TileObservatory, TileRailgun,
+ * TileBlackHoleGenerator, TileObservatory, TileRailgun,
  * and TilePlanetAnalyser ships as a single block — placing the block
  * creates the controller tile, but the multiblock structure isn't
  * formed until the player builds the right shape of surrounding
@@ -121,19 +121,6 @@ public class MultiblockControllerPreAssemblyTest extends AbstractSharedServerTes
     }
 
     @Test
-    public void warpCorePreAssemblyContract() throws Exception {
-        // The warp engine itself (different from the warp CONTROLLER
-        // tested in WarpControllerDepthTest). The warp core is the
-        // multiblock that consumes fuel during station warp.
-        String state = placeAndProbe("advancedrocketry:warpCore", 24, 0);
-        assertTrue("tileClass must be TileWarpCore: " + state,
-                state.contains("TileWarpCore"));
-        assertTrue("isolated warpCore must NOT be complete: " + state,
-                state.contains("\"isComplete\":false"));
-        forceTickSafely(24, 0, 5);
-    }
-
-    @Test
     public void observatoryPreAssemblyContract() throws Exception {
         // TileObservatory — for stellar data collection.
         String state = placeAndProbe("advancedrocketry:observatory", 32, 0);
@@ -180,12 +167,12 @@ public class MultiblockControllerPreAssemblyTest extends AbstractSharedServerTes
         // pin that at least one of the multiblocks places-with-canRender=false.
         // (Some classes might not have the field — the probe reports
         // "<no field>"; we tolerate either.)
-        String state = placeAndProbe("advancedrocketry:warpCore", 56, 0);
+        String state = placeAndProbe("advancedrocketry:observatory", 56, 0);
         // Accepted outcomes: explicit false OR "<no field>" (class doesn't
         // expose canRender). The bug case would be `true` on an isolated
         // controller — that would mean the multiblock is rendering as
         // formed when it isn't.
-        assertTrue("warpCore canRender must NOT be true on isolated placement: "
+        assertTrue("observatory canRender must NOT be true on isolated placement: "
                 + state, !state.contains("\"canRender\":true"));
     }
 }

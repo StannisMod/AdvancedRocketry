@@ -56,6 +56,9 @@ public class KeyBindings {
     static KeyBinding flightAssistToggle  = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.flightAssistToggle"),  Keyboard.KEY_N, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     // Tier-2 auto-takeoff autopilot (diagonal climb to orbit). K — unbound in vanilla, so no conflict.
     static KeyBinding autoTakeoffToggle   = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.autoTakeoffToggle"),   Keyboard.KEY_K, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
+    /** The helm's jump key: commits the destination armed at the navigation computer, and aborts a
+     *  wind-up already running. Both directions on one key, because they are the same decision. */
+    public static KeyBinding jumpTrigger  = new KeyBinding(LibVulpes.proxy.getLocalizedString("key.jumpTrigger"),         Keyboard.KEY_J, LibVulpes.proxy.getLocalizedString("key.controls." + Constants.modId));
     boolean prevState;
     /** Last FF input dispatched to the server. We only resend when the intent actually changes (saves bandwidth). */
     private FreeFlightInput lastSentInput = FreeFlightInput.zero();
@@ -261,6 +264,7 @@ public class KeyBindings {
         ClientRegistry.registerKeyBinding(flightVerticalDown);
         ClientRegistry.registerKeyBinding(flightAssistToggle);
         ClientRegistry.registerKeyBinding(autoTakeoffToggle);
+        ClientRegistry.registerKeyBinding(jumpTrigger);
         scopeSteeringKeysToCockpit();
     }
 
@@ -742,6 +746,12 @@ public class KeyBindings {
         if (pilotSeat != null && pilotSeat.isLinked() && autoTakeoffToggle.isPressed()) {
             PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_AUTO_TAKEOFF_TOGGLE));
             kbTrace("SHIP auto-takeoff toggle -> seat " + pilotSeat.getPos());
+        }
+        // Edge-triggered jump commit (J). Same seat gate: the destination is armed at the navigation
+        // computer, and this is the pilot at the helm saying go — or, mid-wind-up, saying no.
+        if (pilotSeat != null && pilotSeat.isLinked() && jumpTrigger.isPressed()) {
+            PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_JUMP));
+            kbTrace("SHIP jump trigger -> seat " + pilotSeat.getPos());
         }
 
         if (player.getRidingEntity() != null && player.getRidingEntity() instanceof EntityRocket) {

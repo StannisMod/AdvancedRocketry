@@ -24,7 +24,6 @@ public class PacketSpaceStationInfo extends BasePacket {
     String clazzId;
     int fuelAmt;
     NBTTagCompound nbt;
-    boolean hasWarpCores;
 
     public PacketSpaceStationInfo() {
     }
@@ -52,7 +51,6 @@ public class PacketSpaceStationInfo extends BasePacket {
                 packetBuffer.writeCompoundTag(nbt);
 
                 packetBuffer.writeInt(spaceObject.getFuelAmount());
-                packetBuffer.writeBoolean(spaceObject.hasWarpCores);
 
                 out.writeInt(spaceObject.getForwardDirection().ordinal());
 
@@ -87,8 +85,6 @@ public class PacketSpaceStationInfo extends BasePacket {
                 return;
             }
 
-            hasWarpCores = in.readBoolean();
-
             direction = in.readInt();
         }
     }
@@ -117,13 +113,11 @@ public class PacketSpaceStationInfo extends BasePacket {
 
                 SpaceObjectManager.getSpaceManager().registerSpaceObjectClient(newSpaceObject, newSpaceObject.getOrbitingPlanetId(), stationNumber);
                 ((SpaceStationObject) newSpaceObject).setFuelAmount(fuelAmt);
-                ((SpaceStationObject) newSpaceObject).hasWarpCores = hasWarpCores;
             } else {
                 spaceObject.readFromNbt(nbt);
                 //spaceObject.setProperties(DimensionProperties.createFromNBT(stationNumber, nbt));
                 ((SpaceStationObject) spaceObject).setForwardDirection(EnumFacing.values()[direction]);
                 ((SpaceStationObject) spaceObject).setFuelAmount(fuelAmt);
-                ((SpaceStationObject) spaceObject).hasWarpCores = hasWarpCores;
             }
         }
 

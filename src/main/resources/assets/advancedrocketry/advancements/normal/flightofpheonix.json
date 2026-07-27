@@ -1,7 +1,7 @@
 {
     "display": {
         "icon": {
-            "item": "advancedrocketry:warpCore"
+            "item": "advancedrocketry:hyperdriveGenerator"
         },
         "title": {
             "translate": "advancement.flightOfThePhoenix"

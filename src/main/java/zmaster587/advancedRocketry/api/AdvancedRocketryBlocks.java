@@ -39,6 +39,14 @@ public class AdvancedRocketryBlocks {
     public static Block blockGuidanceComputer;
     public static Block blockAdvancedFlightComputer;
     public static Block blockNavigationComputer;
+    /** The hyperdrive family: the machines that make a jump possible. */
+    public static Block blockHyperdriveGenerator;
+    public static Block blockHyperdriveCoil;
+    public static Block blockJumpFieldEmitter;
+    public static Block blockJumpCapacitor;
+    public static Block blockJumpCapacitorCell;
+    public static Block blockJumpHeatSink;
+    public static Block blockGravityDampener;
     public static Block blockPlanetSelector;
     public static Block blockSawBlade;
     public static Block blockConcrete;
@@ -57,7 +65,6 @@ public class AdvancedRocketryBlocks {
     public static Block blockOxygenCharger;
     public static Block blockAirLock;
     public static Block blockLandingPad;
-    public static Block blockWarpCore;
     public static Block blockWarpShipMonitor;
     public static Block blockOxygenDetection;
     public static Block blockUnlitTorch;

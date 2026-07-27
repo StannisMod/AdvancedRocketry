@@ -21,11 +21,21 @@ public class JumpGateTest {
 
     private static final GalacticCoord TARGET = GalacticCoord.ofSectorLocal(9L, 2L, 2L, 0L, 0L, 0L);
 
-    /** A ship that answers exactly what it is told to answer. */
+    /**
+     * A ship that answers exactly what it is told to answer. It starts as a ship that CAN jump —
+     * computer, position, target, a drive, a charged capacitor and the energy for the flight — so
+     * every test below changes exactly one thing and sees exactly one consequence.
+     */
     private static final class FakeShip implements JumpGate.ShipContext {
         boolean navComputer = true;
         boolean positionKnown = true;
         GalacticCoord target = TARGET;
+        long drivePower = 8_000L;
+        long burstCost = 160_000L;
+        long capacitorCharge = 160_000L;
+        long hullOutsideWindow = 0L;
+        long storedEnergy = 1_000_000L;
+        long flightEnergyCost = 400_000L;
 
         @Override
         public boolean hasNavComputer() {
@@ -40,6 +50,36 @@ public class JumpGateTest {
         @Override
         public GalacticCoord target() {
             return target;
+        }
+
+        @Override
+        public long drivePower() {
+            return drivePower;
+        }
+
+        @Override
+        public long burstCost() {
+            return burstCost;
+        }
+
+        @Override
+        public long capacitorCharge() {
+            return capacitorCharge;
+        }
+
+        @Override
+        public long hullOutsideWindow() {
+            return hullOutsideWindow;
+        }
+
+        @Override
+        public long storedEnergy() {
+            return storedEnergy;
+        }
+
+        @Override
+        public long flightEnergyCost() {
+            return flightEnergyCost;
         }
     }
 
@@ -166,5 +206,94 @@ public class JumpGateTest {
                 JumpGate.MSG_NO_NAV_COMPUTER, verdict.firstMessage());
         assertEquals("every objection is collected - the gate is free, so nothing short-circuits",
                 2, verdict.objections().size());
+    }
+
+    // ─── The drive clauses ─────────────────────────────────────────────────────
+
+    @Test
+    public void aShipWithNoFieldGeneratorCannotJump() {
+        FakeShip ship = new FakeShip();
+        ship.drivePower = 0L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        assertFalse("a jump needs a machine behind it, not just a destination", verdict.allowed());
+        assertEquals(JumpGate.MSG_NO_DRIVE, verdict.firstMessage());
+    }
+
+    @Test
+    public void aShipWithNoDriveIsToldOnlyThatOnce() {
+        FakeShip ship = new FakeShip();
+        ship.drivePower = 0L;
+        ship.capacitorCharge = 0L;
+        ship.storedEnergy = 0L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        // The capacitor and supply clauses have nothing to say about a ship with no drive: telling a
+        // pilot his capacitor is flat and his tanks are dry, when the answer is "you have no
+        // hyperdrive", buries the one thing he needs to hear under two things he does not.
+        assertEquals("a driveless ship raises exactly one objection: " + verdict,
+                1, verdict.objections().size());
+    }
+
+    @Test
+    public void aFlatCapacitorRefusesTheJump() {
+        FakeShip ship = new FakeShip();
+        ship.capacitorCharge = ship.burstCost - 1L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        assertFalse("without the burst the window does not open at all - that is physics",
+                verdict.allowed());
+        assertEquals(JumpGate.MSG_CAPACITOR_LOW, verdict.firstMessage());
+    }
+
+    @Test
+    public void exactlyEnoughChargeIsEnough() {
+        FakeShip ship = new FakeShip();
+        ship.capacitorCharge = ship.burstCost;
+
+        assertTrue("the burst costs what it costs; meeting it exactly is meeting it",
+                JumpGate.check(ship).allowed());
+    }
+
+    @Test
+    public void aHullOutsideTheWindowWarnsWithoutRefusing() {
+        FakeShip ship = new FakeShip();
+        ship.hullOutsideWindow = 40L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        assertTrue("leaving part of the ship behind is a decision, not an impossibility",
+                verdict.allowed());
+        assertTrue("but the pilot must be told he is about to make it", verdict.needsConfirmation());
+        assertEquals(JumpGate.MSG_WINDOW_UNDERSIZED, verdict.firstMessage());
+    }
+
+    @Test
+    public void tooLittleEnergyForTheFlightWarnsWithoutRefusing() {
+        FakeShip ship = new FakeShip();
+        ship.storedEnergy = ship.flightEnergyCost - 1L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        assertTrue("running out on the way ends a flight early; it does not forbid one",
+                verdict.allowed());
+        assertTrue(verdict.needsConfirmation());
+        assertEquals(JumpGate.MSG_ENERGY_SHORTFALL, verdict.firstMessage());
+    }
+
+    @Test
+    public void aHardDriveObjectionIsReportedBeforeAnAdvisorySupplyOne() {
+        FakeShip ship = new FakeShip();
+        ship.capacitorCharge = 0L;
+        ship.storedEnergy = 0L;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        assertEquals("the pilot hears what stops him before what merely worries him",
+                JumpGate.MSG_CAPACITOR_LOW, verdict.firstMessage());
+        assertEquals(2, verdict.objections().size());
     }
 }

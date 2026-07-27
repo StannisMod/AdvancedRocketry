@@ -37,7 +37,6 @@ import java.util.Map.Entry;
 
 public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     private final int MAX_FUEL = 10000;
-    public boolean hasWarpCores = false;
     public int targetOrbitalDistance;
     public int targetGravity;
     public int[] targetRotationsPerHour;
@@ -49,7 +48,6 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
     private int fuelAmount;
     private HashedBlockPosition spawnLocation;
     private List<StationLandingLocation> spawnLocations;
-    private List<HashedBlockPosition> warpCoreLocation;
     private Set<Integer> knownPlanetList;
     private HashMap<HashedBlockPosition, String> dockingPoints;
     private long transitionEta;
@@ -68,7 +66,6 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         targetRotationsPerHour = new int[]{0, 0, 0};
         targetGravity = 10;
         spawnLocations = new LinkedList<>();
-        warpCoreLocation = new LinkedList<>();
         dockingPoints = new HashMap<>();
         transitionEta = -1;
         destinationDimId = 0;
@@ -351,23 +348,21 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         return new SpacePosition().getFromSpherical(properties.getRenderSizePlanetView() * 2f, theta);
     }
 
-    public void addWarpCore(HashedBlockPosition position) {
-        warpCoreLocation.add(position);
-        hasWarpCores = true;
-    }
-
-    public void removeWarpCore(HashedBlockPosition position) {
-        warpCoreLocation.remove(position);
-        if (warpCoreLocation.size() == 0)
-            hasWarpCores = false;
-    }
-
-    public List<HashedBlockPosition> getWarpCoreLocations() {
-        return warpCoreLocation;
-    }
-
-    public boolean hasUsableWarpCore() {
-        return hasWarpCores && properties.getParentPlanet() != SpaceObjectManager.WARPDIMID && getDestOrbitingBody() != getOrbitingPlanetId();
+    /**
+     * Whether this station can move itself between bodies.
+     *
+     * <p>It cannot, and the answer is deliberately flat rather than conditional. Faster-than-light
+     * travel is one mechanic in this game, not two: the hyperdrive family — a field generator
+     * measured off its own build, a capacitor that dumps the burst opening the window, emitters that
+     * size it — is where a craft's ability to cross the galaxy now lives, and the station-only warp
+     * core it replaced fed on dropped crystals and answered to nothing else. Keeping both alive
+     * would have meant balancing two economies against each other for the same act.</p>
+     *
+     * <p>A station therefore holds its orbit until stations themselves become craft, at which point
+     * this question stops being separate from the one a ship answers.</p>
+     */
+    public boolean canTravel() {
+        return false;
     }
 
     public int getFuelAmount() {
@@ -753,14 +748,6 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
         nbt.setTag("spawnPositions", list);
 
         list = new NBTTagList();
-        for (HashedBlockPosition pos : this.warpCoreLocation) {
-            NBTTagCompound tag = new NBTTagCompound();
-            tag.setIntArray("pos", new int[]{pos.x, pos.y, pos.z});
-            list.appendTag(tag);
-        }
-        nbt.setTag("warpCorePositions", list);
-
-        list = new NBTTagList();
         for (Entry<HashedBlockPosition, String> obj : this.dockingPoints.entrySet()) {
             NBTTagCompound tag = new NBTTagCompound();
             HashedBlockPosition pos = obj.getKey();
@@ -825,17 +812,6 @@ public class SpaceStationObject implements ISpaceObject, IPlanetDefiner {
             // Read the autoLand flag from its own key; the write side stores it
             // under "autoLand". Reading "occupied" tied auto-land to docked state.
             loc.setAllowedForAutoLand(!tag.hasKey("autoLand") || tag.getBoolean("autoLand"));
-        }
-
-        list = nbt.getTagList("warpCorePositions", NBT.TAG_COMPOUND);
-        hasWarpCores = false;
-        warpCoreLocation.clear();
-        for (int i = 0; i < list.tagCount(); i++) {
-            NBTTagCompound tag = list.getCompoundTagAt(i);
-            int[] posInt = tag.getIntArray("pos");
-            HashedBlockPosition pos = new HashedBlockPosition(posInt[0], posInt[1], posInt[2]);
-            warpCoreLocation.add(pos);
-            hasWarpCores = true;
         }
 
         list = nbt.getTagList("dockingPositons", NBT.TAG_COMPOUND);

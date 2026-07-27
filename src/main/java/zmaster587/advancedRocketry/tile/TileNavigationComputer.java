@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.item.ItemMemoryCrystal;
 import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.navigation.CrystalMemory;
 import zmaster587.advancedRocketry.navigation.CrystalSync;
+import zmaster587.advancedRocketry.navigation.JumpGate;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.libVulpes.LibVulpes;
 import zmaster587.advancedRocketry.navigation.NavBodyView;
@@ -57,7 +58,8 @@ import zmaster587.libVulpes.util.INetworkMachine;
  * makes, an absolute position survives none of them.</p>
  */
 public class TileNavigationComputer extends TileInventoryHatch
-        implements IModularInventory, IButtonInventory, INetworkMachine, IGuiCallback {
+        implements IModularInventory, IButtonInventory, INetworkMachine, IGuiCallback,
+        net.minecraft.util.ITickable {
 
     /** The crystal being read FROM during a copy. */
     public static final int SLOT_SOURCE = 0;
@@ -69,6 +71,7 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final int BUTTON_CLEAR_TARGET = 2;
     private static final int BUTTON_AIM_TYPED = 3;
     private static final int BUTTON_SYNC = 4;
+    private static final int BUTTON_ARM = 5;
     /** Button id of the first listed address; the n-th address is {@code BUTTON_PICK_FIRST + n}. */
     private static final int BUTTON_PICK_FIRST = 10;
     /** How many addresses the front page lists. Beyond this the pilot copies to a station to browse. */
@@ -80,17 +83,33 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final byte NET_PICK = 3;
     private static final byte NET_AIM_TYPED = 4;
     private static final byte NET_SYNC = 5;
+    private static final byte NET_ARM = 6;
 
     private static final String NBT_TARGET = "navTarget";
     private static final String NBT_HAS_TARGET = "navHasTarget";
     private static final String NBT_AFC_OFFSET = "afcOffset";
     private static final String NBT_SYNC_CHANNEL = "syncChannel";
+    private static final String NBT_ARMED = "navArmed";
 
     /** Where the ship is aimed, or {@code null} when the pilot has not chosen. */
     private GalacticCoord target;
 
     /** Offset from this computer to its flight computer; {@code null} until the assembler links them. */
     private BlockPos flightComputerOffset;
+
+    /** Whether the pilot has armed the jump at this console. See {@link #isArmed()}. */
+    private boolean armed;
+
+    /**
+     * The pre-jump forecast, as the SERVER last computed it.
+     *
+     * <p>It is computed server-side and synced as text rather than recomputed on the client, because
+     * every number in it — where the ship is, what its capacitor holds, how far the flight is — is
+     * server-authoritative. A client that recomputed it would be guessing, and a pilot who commits to
+     * a guess has been misled by his own instruments.</p>
+     */
+    private String forecast = "";
+    private ModuleText forecastText;
 
     private ModuleText statusText;
     private ModuleText addressText;
@@ -114,12 +133,48 @@ public class TileNavigationComputer extends TileInventoryHatch
         return target;
     }
 
-    /** Aim the ship (or clear the aim with {@code null}). */
+    /** Aim the ship (or clear the aim with {@code null}). Re-aiming always disarms. */
     public void setTarget(GalacticCoord coord) {
         this.target = coord;
+        // Changing where the ship is pointed cannot leave it armed at the old answer: the whole
+        // point of arming at a console and firing at the helm is that the pilot committed to a
+        // destination he had looked at.
+        this.armed = false;
         markDirty();
         if (world != null && !world.isRemote) {
             world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    // ─── Arming ────────────────────────────────────────────────────────────────
+
+    /**
+     * Whether the pilot has committed to this destination at the console.
+     *
+     * <p>Choosing where to go and choosing to go are two different acts, and they happen in two
+     * different places. Arming is the first: it is done at the computer, with the forecast in front
+     * of you, and it does not move the ship. The second happens at the helm, where the pilot can see
+     * what is around him — which is exactly where you want somebody to be when a ship leaves.</p>
+     */
+    public boolean isArmed() {
+        return armed && target != null;
+    }
+
+    /** Commit to the current destination. Refused with no target: there is nothing to commit to. */
+    public boolean arm() {
+        if (target == null) {
+            return false;
+        }
+        armed = true;
+        markDirty();
+        return true;
+    }
+
+    /** Stand down. Called on abort, after a jump commits, and whenever the aim changes. */
+    public void disarm() {
+        if (armed) {
+            armed = false;
+            markDirty();
         }
     }
 
@@ -224,6 +279,13 @@ public class TileNavigationComputer extends TileInventoryHatch
         modules.add(statusText);
         modules.add(addressText);
 
+        forecastText = new ModuleText(20, 152, forecastLines(), 0x202020);
+        modules.add(forecastText);
+        modules.add(new ModuleButton(130, 150, BUTTON_ARM,
+                LibVulpes.proxy.getLocalizedString(
+                        isArmed() ? "msg.navcomputer.disarm" : "msg.navcomputer.arm"), this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
+
         typedX = new ModuleNumericTextbox(this, 20, 96, 34, 12, 8);
         typedY = new ModuleNumericTextbox(this, 58, 96, 34, 12, 8);
         typedZ = new ModuleNumericTextbox(this, 96, 96, 34, 12, 8);
@@ -261,6 +323,88 @@ public class TileNavigationComputer extends TileInventoryHatch
     private String addressLines() {
         int count = shipCrystal().size();
         return LibVulpes.proxy.getLocalizedString("msg.navcomputer.addresses") + " " + count;
+    }
+
+    /** The forecast the pilot reads before he arms. Never recomputed here — only displayed. */
+    private String forecastLines() {
+        return forecast == null || forecast.isEmpty()
+                ? LibVulpes.proxy.getLocalizedString("msg.navcomputer.noforecast")
+                : forecast;
+    }
+
+    // ─── The forecast ──────────────────────────────────────────────────────────
+
+    /** How often the console refreshes its numbers. Fast enough to feel live, slow enough to be free. */
+    private static final int FORECAST_INTERVAL_TICKS = 20;
+
+    @Override
+    public void update() {
+        if (world == null || world.isRemote) {
+            return; // the forecast is the server's answer; the client only ever displays it
+        }
+        if (world.getTotalWorldTime() % FORECAST_INTERVAL_TICKS != 0) {
+            return;
+        }
+        String fresh = computeForecast();
+        if (!fresh.equals(forecast)) {
+            forecast = fresh;
+            markDirty();
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+        }
+    }
+
+    /**
+     * What this ship's jump would cost and how long it would take — assembled from the ship's real
+     * machines, so a pilot reading it is reading his own drive rather than a table.
+     */
+    private String computeForecast() {
+        BlockPos afc = getFlightComputerPos();
+        if (afc == null) {
+            return LibVulpes.proxy.getLocalizedString("msg.navcomputer.notonship");
+        }
+        java.util.UUID shipId = null;
+        net.minecraft.tileentity.TileEntity afcTe = world.getTileEntity(afc);
+        if (afcTe instanceof TileAdvancedFlightComputer) {
+            shipId = ((TileAdvancedFlightComputer) afcTe).shipIdOrNull();
+        }
+        zmaster587.advancedRocketry.navigation.ShipNavigation nav =
+                new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipId);
+        zmaster587.advancedRocketry.hyperdrive.ShipDrive drive = nav.drive();
+        zmaster587.advancedRocketry.hyperdrive.ShipDriveStats stats = drive.stats();
+        long now = SpaceSubsystem.spaceClock();
+        StringBuilder out = new StringBuilder();
+        out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.drivepower"))
+                .append(' ').append(stats.drivePower()).append('\n');
+        out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.burst"))
+                .append(' ').append(drive.capacitorCharge(now))
+                .append('/').append(stats.burstCost()).append('\n');
+        long cooldown = drive.cooldownTicks(now);
+        if (cooldown > 0L) {
+            out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.cooldown"))
+                    .append(' ').append(cooldown / 20L).append("s\n");
+        }
+        if (target != null) {
+            out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.eta"))
+                    .append(' ').append(nav.plannedTransitTicks() / 20L).append("s\n");
+            out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.flightcost"))
+                    .append(' ').append(nav.storedEnergy())
+                    .append('/').append(nav.flightEnergyCost()).append('\n');
+        }
+        zmaster587.advancedRocketry.hyperdrive.JumpWindow.Coverage coverage = drive.coverage();
+        if (coverage != null && !coverage.complete()) {
+            out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.hullexposed"))
+                    .append(' ').append(coverage.uncoveredBlocks()).append('\n');
+        }
+        zmaster587.advancedRocketry.navigation.JumpGate.Verdict verdict =
+                zmaster587.advancedRocketry.navigation.JumpGate.check(nav);
+        if (!verdict.allowed()) {
+            out.append(LibVulpes.proxy.getLocalizedString(verdict.firstMessage()));
+        } else if (verdict.needsConfirmation()) {
+            out.append(LibVulpes.proxy.getLocalizedString(verdict.firstMessage()));
+        } else {
+            out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.ready"));
+        }
+        return out.toString();
     }
 
     @Override
@@ -305,6 +449,8 @@ public class TileNavigationComputer extends TileInventoryHatch
             PacketHandler.sendToServer(new PacketMachine(this, NET_AIM_TYPED));
         } else if (buttonId == BUTTON_SYNC) {
             PacketHandler.sendToServer(new PacketMachine(this, NET_SYNC));
+        } else if (buttonId == BUTTON_ARM) {
+            PacketHandler.sendToServer(new PacketMachine(this, NET_ARM));
         } else if (buttonId >= BUTTON_PICK_FIRST) {
             pickIndex = buttonId - BUTTON_PICK_FIRST;
             PacketHandler.sendToServer(new PacketMachine(this, NET_PICK));
@@ -370,6 +516,24 @@ public class TileNavigationComputer extends TileInventoryHatch
             // something already is IS the mechanic.
             setTarget(GalacticCoord.ofSectorLocal(
                     nbt.getLong("sx"), nbt.getLong("sy"), nbt.getLong("sz"), 0L, 0L, 0L));
+        } else if (id == NET_ARM) {
+            if (isArmed()) {
+                disarm();
+                tell(player, "msg.jump.disarmed");
+            } else if (arm()) {
+                tell(player, "msg.jump.armed");
+            } else {
+                tell(player, JumpGate.MSG_NO_TARGET);
+            }
+            if (world != null) {
+                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            }
+        }
+    }
+
+    private static void tell(EntityPlayer player, String langKey) {
+        if (player != null) {
+            player.sendMessage(new net.minecraft.util.text.TextComponentTranslation(langKey));
         }
     }
 
@@ -505,6 +669,8 @@ public class TileNavigationComputer extends TileInventoryHatch
             nbt.setLong(NBT_AFC_OFFSET, flightComputerOffset.toLong());
         }
         nbt.setInteger(NBT_SYNC_CHANNEL, syncChannel);
+        nbt.setBoolean(NBT_ARMED, armed);
+        nbt.setString("navForecast", forecast == null ? "" : forecast);
         return nbt;
     }
 
@@ -518,6 +684,8 @@ public class TileNavigationComputer extends TileInventoryHatch
                 ? BlockPos.fromLong(nbt.getLong(NBT_AFC_OFFSET))
                 : null;
         syncChannel = nbt.getInteger(NBT_SYNC_CHANNEL);
+        armed = nbt.getBoolean(NBT_ARMED);
+        forecast = nbt.getString("navForecast");
     }
 
     @Override

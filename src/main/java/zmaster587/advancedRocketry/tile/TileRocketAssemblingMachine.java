@@ -94,6 +94,14 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
      * it simply cannot jump — so this is recorded, never required.
      */
     private BlockPos scannedNavComputerPos;
+
+    /**
+     * Every ship machine in the build that has to know which ship it belongs to — the field
+     * generator, its capacitors, the hull emitters, the dampeners. They are collected as one list
+     * rather than one field each because they are all linked the same way and for the same reason:
+     * a machine that cannot name its own ship is a machine another ship can borrow.
+     */
+    private final java.util.List<BlockPos> scannedShipMachines = new java.util.ArrayList<>();
     protected ErrorCodes status;
     private ModuleText thrustText, weightText, fuelText, accelerationText;
     private int totalProgress;
@@ -360,6 +368,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         scannedFlightComputerPos = null; // reset tier-2 routing state each scan
         scannedPilotSeatPos = null;
         scannedNavComputerPos = null;
+        scannedShipMachines.clear();
 
         //if already a rocket exists, output their stats
 
@@ -532,6 +541,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 pilotSeatCount++;
                             } else if (tile instanceof TileNavigationComputer) {
                                 scannedNavComputerPos = currBlockPos;
+                            } else if (tile instanceof TileShipComponent) {
+                                scannedShipMachines.add(currBlockPos);
                             }
                         }
                     }
@@ -744,6 +755,16 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                     ((TileNavigationComputer) navTe).linkToFlightComputer(shipAnchor);
                 }
             }
+            // Same link again for every hyperdrive-family machine in the build. Without it a
+            // generator or a capacitor is just a block standing in space: the jump gate finds a
+            // ship's machines by asking each one which flight computer it answers to, so an
+            // unlinked one is invisible to its own ship and available to none.
+            for (BlockPos machinePos : scannedShipMachines) {
+                TileEntity machineTe = world.getTileEntity(machinePos.add(0, liftGap, 0));
+                if (machineTe instanceof TileShipComponent) {
+                    ((TileShipComponent) machineTe).linkToFlightComputer(shipAnchor);
+                }
+            }
             // Mint the ship's durable identity at assembly (before the physics mod relocates the
             // craft): tile NBT rides the relocation and every later crossing verbatim, so this id
             // is the one stable key for the ship (the physics mod's own UUID is re-minted per
@@ -752,6 +773,18 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             java.util.UUID durableShipId = null;
             if (afcTe instanceof TileAdvancedFlightComputer) {
                 durableShipId = ((TileAdvancedFlightComputer) afcTe).getOrCreateShipId();
+                // Record how big the craft is, while something still knows. After this the blocks
+                // are a physics body and its extent is only recoverable by walking it; the jump
+                // window has to be checked against the hull, and the assembler is the one place
+                // that measured the hull in the first place. Offsets from the computer, so they
+                // survive every relocation the ship will make.
+                ((TileAdvancedFlightComputer) afcTe).setHullExtent(
+                        (int) rocketBB.minX - scannedFlightComputerPos.getX(),
+                        (int) rocketBB.minY - scannedFlightComputerPos.getY(),
+                        (int) rocketBB.minZ - scannedFlightComputerPos.getZ(),
+                        (int) rocketBB.maxX - scannedFlightComputerPos.getX(),
+                        (int) rocketBB.maxY - scannedFlightComputerPos.getY(),
+                        (int) rocketBB.maxZ - scannedFlightComputerPos.getZ());
             }
             VSIntegration.assembleTier2Ship(world, shipAnchor);
             // A pilot who took the seat BEFORE assembly is riding a mount bound to the seat's

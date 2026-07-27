@@ -148,7 +148,8 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
         int    dimId;
         int    orbitingBodyId;
         boolean anchored;
-        boolean hasWarpCore;
+        /** Whether this station can move itself between bodies. */
+        boolean mobile;
         int    freePads;
     }
 
@@ -373,7 +374,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             entry.anchored       = obj.isAnchored();
 
             entry.dimId       = -1;
-            entry.hasWarpCore = false;
+            entry.mobile = false;
             entry.freePads    = 0;
 
             if (entry.orbitingBodyId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET
@@ -385,7 +386,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
 
             if (obj instanceof SpaceStationObject) {
                 SpaceStationObject station = (SpaceStationObject) obj;
-                entry.hasWarpCore = station.hasWarpCores;
+                entry.mobile = station.canTravel();
 
                 int free = 0;
                 for (StationLandingLocation pad : station.getLandingPads()) {
@@ -1006,7 +1007,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             int buttonId = STATION_LIST_OFFSET + i;
 
         // Short type text (localized)
-        String typeShort = st.hasWarpCore
+        String typeShort = st.mobile
                 ? LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.type.starshiplist")
                 : LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.type.station");
 
@@ -1079,7 +1080,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
 
         // ----- Type: <Starship/Station> -----
         String typeLabel = LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.type"); // e.g. "Type:"
-        String typeKey   = selected.hasWarpCore
+        String typeKey   = selected.mobile
                 ? LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.type.starship")
                 : LibVulpes.proxy.getLocalizedString("msg.orbitalregistry.text.type.station");
         String typeLine  = typeLabel + " " + typeKey;
@@ -1373,7 +1374,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
             tag.setInteger("dimId", e.dimId);
             tag.setInteger("orbitingBodyId", e.orbitingBodyId);
             tag.setBoolean("anchored", e.anchored);
-            tag.setBoolean("hasWarpCore", e.hasWarpCore);
+            tag.setBoolean("mobile", e.mobile);
             tag.setInteger("freePads", e.freePads);
             stationList.appendTag(tag);
         }
@@ -1416,7 +1417,7 @@ public class TileOrbitalRegistry extends TileMultiPowerConsumer
                 e.dimId          = tag.getInteger("dimId");                 // NEW
                 e.orbitingBodyId = tag.getInteger("orbitingBodyId");
                 e.anchored       = tag.getBoolean("anchored");
-                e.hasWarpCore    = tag.getBoolean("hasWarpCore");           // NEW
+                e.mobile         = tag.getBoolean("mobile");
                 e.freePads       = tag.getInteger("freePads");              // NEW
                 stationCache.add(e);
             }

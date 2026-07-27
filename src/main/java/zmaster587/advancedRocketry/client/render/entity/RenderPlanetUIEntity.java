@@ -13,7 +13,7 @@ import net.minecraftforge.fml.client.registry.IRenderFactory;
 import org.lwjgl.opengl.GL11;
 import zmaster587.advancedRocketry.backwardCompat.ModelFormatException;
 import zmaster587.advancedRocketry.backwardCompat.WavefrontObject;
-import zmaster587.advancedRocketry.client.render.multiblocks.RendererWarpCore;
+import zmaster587.advancedRocketry.client.render.SharedModels;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.entity.EntityUIPlanet;
 import zmaster587.libVulpes.render.RenderHelper;
@@ -158,12 +158,12 @@ public class RenderPlanetUIEntity extends Render<EntityUIPlanet> implements IRen
             GL11.glTranslated(0, -1.25, 0);
             GL11.glPushMatrix();
             GL11.glRotated(speedRotate * System.currentTimeMillis() % 360, 0f, 1f, 0f);
-            RendererWarpCore.model.renderOnly("Rotate1");
+            SharedModels.orbitRing().renderOnly("Rotate1");
             GL11.glPopMatrix();
 
             GL11.glPushMatrix();
             GL11.glRotated(180 + speedRotate * System.currentTimeMillis() % 360, 0f, 1f, 0f);
-            RendererWarpCore.model.renderOnly("Rotate1");
+            SharedModels.orbitRing().renderOnly("Rotate1");
             GL11.glPopMatrix();
             GlStateManager.enableTexture2D();
         }

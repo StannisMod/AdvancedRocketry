@@ -50,6 +50,8 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     public static final byte PACKET_FLIGHT_ASSIST_TOGGLE = 1;
     /** Control-packet id: toggle the linked flight computer's AUTO-TAKEOFF autopilot (no payload). */
     public static final byte PACKET_AUTO_TAKEOFF_TOGGLE = 2;
+    /** Control-packet id: commit the ship to the jump armed at its navigation computer (no payload). */
+    public static final byte PACKET_JUMP = 3;
 
     private boolean linked = false;
     private int afcDx, afcDy, afcDz;
@@ -283,6 +285,14 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
             TileAdvancedFlightComputer afc = isPilotOf(player) ? getFlightComputer() : null;
             if (afc != null) {
                 afc.toggleAutoTakeoff();
+            }
+        } else if (id == PACKET_JUMP) {
+            // Only the seated pilot may commit the ship to a jump. The destination was chosen and
+            // armed at the navigation computer; this is the moment somebody at the helm, who can see
+            // what is around the ship, decides to actually go.
+            TileAdvancedFlightComputer afc = isPilotOf(player) ? getFlightComputer() : null;
+            if (afc != null) {
+                afc.onJumpKey();
             }
         }
     }

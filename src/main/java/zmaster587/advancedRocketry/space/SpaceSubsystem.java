@@ -292,6 +292,16 @@ public final class SpaceSubsystem {
      * GC age, transit {@code arrivalTick}/{@code lastTicked}). Unlike {@code getTickCounter()} it survives
      * a restart, so a persisted age/ETA stays meaningful across reboots (universe-model §7 lazy-catch-up).
      */
+    /**
+     * The one clock every space-side elapsed-time computation reads. Public so machines that carry a
+     * lazy resource — a capacitor that is charged by arithmetic rather than by ticking — measure
+     * their elapsed time against exactly the same counter a transit does, and so a ship parked in an
+     * unloaded cell is never quietly on a different clock from one in a loaded chunk.
+     */
+    public static long spaceClock() {
+        return worldTime();
+    }
+
     private static long worldTime() {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         if (server == null) {

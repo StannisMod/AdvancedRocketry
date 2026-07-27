@@ -549,7 +549,6 @@ public class PacketSerializationTest {
      *   String clazzId (PacketBuffer)
      *   NBTTagCompound nbt
      *   int fuelAmt
-     *   bool hasWarpCores
      *   int direction.ordinal()
      * </pre>
      */
@@ -565,7 +564,6 @@ public class PacketSerializationTest {
         payload.setInteger("dim", 7777);
         pb.writeCompoundTag(payload);
         pb.writeInt(98_765);                    // fuelAmt
-        buffer.writeBoolean(true);              // hasWarpCores
         buffer.writeInt(net.minecraft.util.EnumFacing.SOUTH.ordinal());
 
         PacketSpaceStationInfo received = new PacketSpaceStationInfo();
@@ -580,7 +578,6 @@ public class PacketSerializationTest {
         assertEquals("RoundTripStation", restoredNbt.getString("name"));
         assertEquals(7777, restoredNbt.getInteger("dim"));
         assertEquals(98_765, (int) PacketSerializationTest.<Integer>getField(received, "fuelAmt"));
-        assertEquals(true, (boolean) PacketSerializationTest.<Boolean>getField(received, "hasWarpCores"));
         assertEquals(net.minecraft.util.EnumFacing.SOUTH.ordinal(),
                 (int) PacketSerializationTest.<Integer>getField(received, "direction"));
     }
