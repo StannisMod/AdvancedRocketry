@@ -1,0 +1,24 @@
+{
+    "type": "advancedrocketry:precisionassembler",
+    "itemingredients":
+    [
+        {
+            "type": "forge:ore_dict",
+            "ore": "gemDiamond"
+        },
+        {
+            "type": "forge:ore_dict",
+            "ore": "dustRedstone"
+        },
+        {
+            "item": "advancedrocketry:ic",
+            "data": 1
+        }
+    ],
+    "time": 800,
+    "energy": 120,
+    "itemresults":
+    {
+        "item": "advancedrocketry:memorycrystal"
+    }
+}

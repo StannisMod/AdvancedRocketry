@@ -187,32 +187,37 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         assertTrue("the jump target must differ from the origin cell, else arrival proves nothing: "
                 + originCell + " -> " + targetCell, !targetCell.equals(originCell));
 
-        // Arrival is asserted on the SECTOR X the jump asked to move, NOT on the whole cell key: a
-        // settled ship's self-reported address is currently a full sector too low in Y (the arrival
-        // pastes into the block band while the flight computer inverts the POSE band — a real,
-        // ledgered production defect, measured here as `25_2_2 -> 26_2_2` settling at `26_1_2`).
-        // Asserting the exact key would bake that skew in as expected behaviour and would then FAIL
-        // when it is fixed, which is the opposite of what this test is for. The axis that was asked
-        // to move is the contract; the axis that moved on its own belongs to the bug.
+        // A completed jump leaves the ship AT the cell it was aimed at — the WHOLE key, not just the
+        // axis the jump asked to move. Everything downstream of a jump reads that address: the
+        // descent proximity check looks up the bodies of the ship's own cell, so an address in the
+        // wrong cell means the destination system is not there at all.
         // Nothing below pumps the manager: the live Ticker advances the transit every server tick.
-        long expectedSectorX = Long.parseLong(targetCell.split("_")[0]);
         String arrived = "";
         boolean done = false;
         for (int i = 0; i < 120; i++) {
             arrived = exec("artest space entry-status");
-            String cell = extractString(arrived, "cellKey");
-            if ("SETTLED".equals(extractString(arrived, "state")) && cell != null
-                    && !cell.equals(originCell)
-                    && Long.parseLong(cell.split("_")[0]) == expectedSectorX) {
+            if ("SETTLED".equals(extractString(arrived, "state"))
+                    && targetCell.equals(extractString(arrived, "cellKey"))) {
                 done = true;
                 break;
             }
             loadAllEntrySlots(setup);
             Thread.sleep(250);
         }
-        assertTrue("the ship never arrived one sector over on the live stack; origin=" + originCell
+        assertTrue("the ship never arrived at the cell the jump was aimed at; origin=" + originCell
                 + " requested=" + targetCell + " last status=" + arrived
                 + " subsystem=" + exec("artest space subsystem-status"), done);
+        // ...and STAYS there. The arrival writes the target into the ledger for one tick before the
+        // ship's own flight computer starts self-reporting its address from its physical pose, so a
+        // single poll can catch that write and prove nothing about where the ship actually is. Only
+        // an address that survives seconds of self-reporting says the ship is in the cell it flew to.
+        for (int i = 0; i < 8; i++) {
+            Thread.sleep(250);
+            String held = exec("artest space entry-status");
+            assertEquals("the arrived ship's address drifted out of the cell it flew to once its"
+                            + " flight computer began self-reporting its position; status=" + held,
+                    targetCell, extractString(held, "cellKey"));
+        }
         assertEquals("nothing may still be in transit once the ledger reports arrival", 0,
                 extractInt(exec("artest space subsystem-status"), "transits"));
     }

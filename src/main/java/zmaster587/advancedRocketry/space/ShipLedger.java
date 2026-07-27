@@ -38,11 +38,22 @@ public final class ShipLedger {
         public final State state;
         /** The slot dim the ship's cell is bound to; meaningful only while {@link State#SETTLED}. */
         public final int slotDim;
+        /**
+         * Whether the SHIP knows where it is. The server always does — this is the ship's own fix,
+         * which a misjump can lose. A ship that has lost it cannot aim a jump until it re-localizes,
+         * and re-localization always succeeds eventually, so this can never strand a ship forever.
+         */
+        public final boolean positionKnown;
 
         Entry(GalacticCoord coord, State state, int slotDim) {
+            this(coord, state, slotDim, true);
+        }
+
+        Entry(GalacticCoord coord, State state, int slotDim, boolean positionKnown) {
             this.coord = coord;
             this.state = state;
             this.slotDim = slotDim;
+            this.positionKnown = positionKnown;
         }
 
         public String cellKey() {
@@ -83,6 +94,23 @@ public final class ShipLedger {
     }
 
     /** The ledger record for {@code shipId}, or {@code null} if unknown. */
+    /**
+     * Record whether {@code shipId} knows where it is. Set false by a misjump, true again by a
+     * re-localization; unknown ships are ignored rather than invented.
+     */
+    public void setPositionKnown(UUID shipId, boolean known) {
+        Entry entry = ships.get(shipId);
+        if (entry != null) {
+            ships.put(shipId, new Entry(entry.coord, entry.state, entry.slotDim, known));
+        }
+    }
+
+    /** Whether {@code shipId} knows where it is; an unknown ship is not lost, it is simply unknown. */
+    public boolean isPositionKnown(UUID shipId) {
+        Entry entry = ships.get(shipId);
+        return entry == null || entry.positionKnown;
+    }
+
     public Entry get(UUID shipId) {
         return ships.get(shipId);
     }

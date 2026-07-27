@@ -12,6 +12,8 @@ import org.lwjgl.input.Keyboard;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import zmaster587.advancedRocketry.space.GalacticCoord;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -196,6 +198,19 @@ public class VSMidTransitRelogControlE2ETest extends AbstractClientE2ETest {
                 riding.get("entityClass").getAsString().endsWith("EntityDummy"));
         assertEquals("the relogged pilot must have followed his ship into the target cell",
                 targetDim, bot().reportWeather().get("dim").getAsInt());
+
+        // ---- ASSERT 1b: he is OUT IN THE CELL, not in the paste lane. A cell realizes its
+        // coordinates in the POSE band (world Y = local Y + half a cell + the band offset), while an
+        // arrival pastes its blocks into the ordinary block band near Y=200. If the ship is left
+        // where it was pasted, the pilot rides ~2M blocks below everything the destination system
+        // holds — every body, every other ship — and his own flight computer then reports an address
+        // in the cell BELOW. The client's rendered altitude is the honest witness: a block-band
+        // arrival can never reach half a cell.
+        double arrivedY = clientPlayerY();
+        assertTrue("the arrived pilot must be in the destination cell's pose band, not the paste"
+                        + " lane: client-rendered Y=" + arrivedY + " (pose band starts at "
+                        + GalacticCoord.HALF_CELL + ", the paste lane sits near 200)",
+                arrivedY >= GalacticCoord.HALF_CELL);
 
         // ---- ASSERT 2 (load-bearing): control RESUMES on arrival — the held key flies the -------
         // arrived ship. A restored seat with a dead key is a broken chain, and it is exactly what

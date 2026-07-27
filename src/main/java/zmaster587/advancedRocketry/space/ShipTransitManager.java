@@ -61,10 +61,28 @@ public final class ShipTransitManager {
 
         /**
          * Arrive: cross the parked ship at {@code hyperAnchor} (lane {@code tile}) into the target cell's
-         * slot world {@code targetSlotDim}, and UNPARK it (physics on). Returns the ship's anchor in the
-         * target cell, or {@code null} if the crossing failed.
+         * slot world {@code targetSlotDim}. Returns the ship's PASTE anchor in the target cell, or
+         * {@code null} if the crossing failed. The ship stays parked in the paste lane until
+         * {@link #settleArrivedPose} moves it onto the coordinate it was aimed at.
          */
         BlockPos arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor, int targetSlotDim);
+
+        /**
+         * Settle an arrived ship (live or restored) onto the world pose realizing its TARGET coordinate:
+         * rigid-teleport it there carrying its riders, then unpark it (physics on). Returns the ship's
+         * anchor at that final pose, or {@code null} while the asynchronous re-assembly is not queryable
+         * yet - the caller retries next tick and never re-crosses. This is the arrival's half of the
+         * paste-then-settle shape the entry on-ramp and the descent already use; without it a ship
+         * arrives in the destination's BLOCK band while every reader of its address works in the POSE
+         * band, so the settled coordinate lands in a neighbouring cell.
+         *
+         * <p>The default returns {@code pasteAnchor} unchanged - the pure state-machine tests have no
+         * world to realize a pose in.</p>
+         */
+        default BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+                                           double px, double py, double pz) {
+            return pasteAnchor;
+        }
 
         /**
          * Re-cut the parked ship in hyperspace (lane {@code tile}, anchor {@code hyperAnchor}) as a
@@ -134,7 +152,8 @@ public final class ShipTransitManager {
         ShipTransit integrator;
         boolean targetMaterialized; // the target cell has been loaded (refcount handoff, half 2, done once)
         int targetSlotDim;          // the slot the target cell is bound to (valid once targetMaterialized)
-        int arrivalAttempts;        // retries of a stalled arrival crossing (async VS assembly)
+        int arrivalAttempts;        // retries of a stalled arrival crossing / pose settle (async VS assembly)
+        BlockPos pasteAnchor;       // the arrival paste landed here; set once, so a retried settle never re-crosses
         final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
         NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace at save points
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
@@ -284,9 +303,22 @@ public final class ShipTransitManager {
             }
             // A live transit crosses its parked hyperspace ship into the target; a RESTORED transit has no
             // hyperspace ship (that world is wiped on restart) - it pastes its persisted snapshot in.
-            BlockPos arrivedAt = t.restored
-                    ? crosser.completeRestored(t.snapshot, t.targetSlotDim)
-                    : crosser.arriveFromHyperspace(t.tile, t.hyperAnchor, t.targetSlotDim);
+            // The paste happens EXACTLY ONCE: once it lands, only the pose settle is retried.
+            if (t.pasteAnchor == null) {
+                t.pasteAnchor = t.restored
+                        ? crosser.completeRestored(t.snapshot, t.targetSlotDim)
+                        : crosser.arriveFromHyperspace(t.tile, t.hyperAnchor, t.targetSlotDim);
+            }
+            // Realize the target COORDINATE as a world pose and move the pasted ship onto it. Skipping
+            // this leaves the ship in the paste lane's block band, and the flight computer's first
+            // self-report then inverts the pose mapping against a block-band position - settling the
+            // ship's address in a neighbouring cell, where the destination's bodies are not.
+            BlockPos arrivedAt = null;
+            if (t.pasteAnchor != null) {
+                double[] pose = CellWorldMapper.poseWorldOf(t.target);
+                arrivedAt = crosser.settleArrivedPose(
+                        t.targetSlotDim, t.pasteAnchor, pose[0], pose[1], pose[2]);
+            }
             if (arrivedAt != null) {
                 freeLane(t);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
@@ -301,16 +333,31 @@ public final class ShipTransitManager {
                     reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt));
                 }
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
-                // The hyperspace ship never became crossable (should not happen - assembly is async but
-                // completes in a few ticks), or a restored snapshot could not be pasted. Give up: undo the
-                // target materialization, free any lane.
-                space.dematerialize(t.target);
                 freeLane(t);
                 it.remove();
-                LOGGER.error("[SPACE] transit arrival crossing never succeeded for ship {} after {} ticks - "
-                        + "ship stranded in hyperspace", entry.getKey(), MAX_ARRIVAL_ATTEMPTS);
+                if (t.pasteAnchor == null) {
+                    // The hyperspace ship never became crossable (should not happen - assembly is async but
+                    // completes in a few ticks), or a restored snapshot could not be pasted. Nothing landed
+                    // in the target: give up and undo the target materialization.
+                    space.dematerialize(t.target);
+                    LOGGER.error("[SPACE] transit arrival crossing never succeeded for ship {} after {} ticks - "
+                            + "ship stranded in hyperspace", entry.getKey(), MAX_ARRIVAL_ATTEMPTS);
+                } else {
+                    // The ship IS in the target cell, just never became movable onto its pose. Settle it
+                    // where it lies rather than spin forever - dematerializing here would discard a cell
+                    // that physically holds a ship. Its address will read the paste lane's band.
+                    ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
+                    space.markDirty(t.target);
+                    if (!t.crew.isEmpty()) {
+                        reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
+                    }
+                    LOGGER.error("[SPACE] transit arrival never reached its pose for ship {} after {} ticks - "
+                            + "settled at the paste lane in slot {}", entry.getKey(), MAX_ARRIVAL_ATTEMPTS,
+                            t.targetSlotDim);
+                }
             }
-            // else: retry the arrival crossing next tick (target stays materialized, lane stays held).
+            // else: retry the arrival (paste once, then the pose settle) next tick - the target stays
+            // materialized and the lane stays held.
         }
     }
 

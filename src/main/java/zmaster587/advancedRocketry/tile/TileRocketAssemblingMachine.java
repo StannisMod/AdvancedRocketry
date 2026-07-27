@@ -88,6 +88,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
      * seat can route pilot input to the flight computer once the craft becomes a ship.
      */
     private BlockPos scannedPilotSeatPos;
+
+    /**
+     * The navigation computer found in the build, if any. A ship without one flies perfectly well —
+     * it simply cannot jump — so this is recorded, never required.
+     */
+    private BlockPos scannedNavComputerPos;
     protected ErrorCodes status;
     private ModuleText thrustText, weightText, fuelText, accelerationText;
     private int totalProgress;
@@ -353,6 +359,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         stats = new StatsRocket(); // reset stats
         scannedFlightComputerPos = null; // reset tier-2 routing state each scan
         scannedPilotSeatPos = null;
+        scannedNavComputerPos = null;
 
         //if already a rocket exists, output their stats
 
@@ -523,6 +530,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                             } else if (tile instanceof TilePilotSeat) {
                                 scannedPilotSeatPos = currBlockPos;
                                 pilotSeatCount++;
+                            } else if (tile instanceof TileNavigationComputer) {
+                                scannedNavComputerPos = currBlockPos;
                             }
                         }
                     }
@@ -725,6 +734,14 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                 TileEntity seatTe = world.getTileEntity(scannedPilotSeatPos.add(0, liftGap, 0));
                 if (seatTe instanceof TilePilotSeat) {
                     ((TilePilotSeat) seatTe).linkToFlightComputer(shipAnchor);
+                }
+            }
+            // Same relative-offset link for the navigation computer: the jump gate finds it from the
+            // flight computer, and the offset is what survives the ship's relocation into subspace.
+            if (scannedNavComputerPos != null) {
+                TileEntity navTe = world.getTileEntity(scannedNavComputerPos.add(0, liftGap, 0));
+                if (navTe instanceof TileNavigationComputer) {
+                    ((TileNavigationComputer) navTe).linkToFlightComputer(shipAnchor);
                 }
             }
             // Mint the ship's durable identity at assembly (before the physics mod relocates the

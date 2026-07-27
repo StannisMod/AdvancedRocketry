@@ -88,6 +88,9 @@ public class TestProbeCommand extends CommandBase {
                 case "space":
                     handleSpace(server, sender, tail(args));
                     break;
+                case "nav":
+                    handleNav(server, sender, tail(args));
+                    break;
                 case "dim":
                     handleDim(sender, tail(args));
                     break;
@@ -1713,6 +1716,151 @@ public class TestProbeCommand extends CommandBase {
     private static zmaster587.advancedRocketry.space.SpaceManager entryMgr;
     private static zmaster587.advancedRocketry.space.ShipLedger entryLedger;
     private static int[] entrySlotDims;
+
+    /**
+     * Navigation-computer probes: place a computer, stock it with crystals, drive its crystal
+     * operations, and ask the jump gate what it would say. Everything here drives PRODUCTION code -
+     * the probe only arranges the world and reports what production answered.
+     *
+     * <p>nav place &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; ·
+     * nav crystal &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; &lt;slot&gt; &lt;addressCount&gt; [firstSector] [observedTick] ·
+     * nav copy / nav status / nav link / nav target / nav gate / nav sync</p>
+     */
+    private void handleNav(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: nav <verb> <dim> <x> <y> <z> [...]\"}");
+            return;
+        }
+        String verb = args[0];
+        net.minecraft.world.WorldServer world = server.getWorld(parseIntOr(args[1], 0));
+        if (world == null) {
+            send(sender, "{\"error\":\"no such dim\"}");
+            return;
+        }
+        BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+
+        if ("place".equalsIgnoreCase(verb)) {
+            world.getChunkProvider().provideChunk(pos.getX() >> 4, pos.getZ() >> 4);
+            world.setBlockState(pos, zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                    .blockNavigationComputer.getDefaultState(), 3);
+            send(sender, "{\"ok\":" + (navAt(world, pos) != null) + "}");
+            return;
+        }
+
+        if ("gate".equalsIgnoreCase(verb)) {
+            // Asked about the ship whose FLIGHT computer sits at the given position - exactly the
+            // production path, including finding the nav computer from it. Deliberately answerable for
+            // a ship that has no navigation computer at all: that is the refusal under test.
+            BlockPos afc = pos;
+            java.util.UUID shipId = null;
+            net.minecraft.tileentity.TileEntity te = world.getTileEntity(afc);
+            if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+                shipId = ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te).getOrCreateShipId();
+            }
+            zmaster587.advancedRocketry.navigation.ShipNavigation ship =
+                    new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipId);
+            zmaster587.advancedRocketry.navigation.JumpGate.Verdict verdict =
+                    zmaster587.advancedRocketry.navigation.JumpGate.check(ship);
+            send(sender, "{\"ok\":true,\"allowed\":" + verdict.allowed()
+                    + ",\"confirm\":" + verdict.needsConfirmation()
+                    + ",\"navComputer\":" + ship.hasNavComputer()
+                    + ",\"message\":" + (verdict.firstMessage() == null
+                            ? "null" : "\"" + verdict.firstMessage() + "\"") + "}");
+            return;
+        }
+
+        zmaster587.advancedRocketry.tile.TileNavigationComputer nav = navAt(world, pos);
+        if (nav == null) {
+            send(sender, "{\"error\":\"no navigation computer at that position\"}");
+            return;
+        }
+
+        if ("crystal".equalsIgnoreCase(verb) && args.length >= 7) {
+            int slot = parseIntOr(args[5], 0);
+            int count = parseIntOr(args[6], 0);
+            long firstSector = args.length >= 8 ? parseIntOr(args[7], 100) : 100;
+            long observed = args.length >= 9 ? parseIntOr(args[8], 1) : 1;
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemMemoryCrystal);
+            // Mark it seeded FIRST: this probe stocks an exactly-known set, and the starter
+            // addresses would make the counts a test asserts depend on the world's planet list.
+            zmaster587.advancedRocketry.navigation.CrystalMemory memory =
+                    new zmaster587.advancedRocketry.navigation.CrystalMemory();
+            for (int i = 0; i < count; i++) {
+                memory.record(new zmaster587.advancedRocketry.navigation.CrystalEntry(
+                        zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                firstSector + i, 0L, 0L, 0L, 0L, 0L),
+                        "probe-" + (firstSector + i),
+                        zmaster587.advancedRocketry.universe.SystemBodyKind.PLANET,
+                        zmaster587.advancedRocketry.universe.InfoTier.TELESCOPE, observed));
+            }
+            net.minecraft.nbt.NBTTagCompound tag = new net.minecraft.nbt.NBTTagCompound();
+            tag.setBoolean("navSeeded", true);
+            stack.setTagCompound(tag);
+            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack, memory);
+            nav.setInventorySlotContents(slot, stack);
+            send(sender, "{\"ok\":true,\"slot\":" + slot + ",\"addresses\":"
+                    + zmaster587.advancedRocketry.item.ItemMemoryCrystal
+                            .memoryOf(nav.getStackInSlot(slot)).size() + "}");
+            return;
+        }
+        if ("copy".equalsIgnoreCase(verb)) {
+            int changed = nav.copySourceIntoShipCrystal();
+            send(sender, "{\"ok\":true,\"changed\":" + changed + ",\"ship\":" + nav.shipCrystal().size()
+                    + ",\"source\":" + zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
+                            nav.getStackInSlot(zmaster587.advancedRocketry.tile.TileNavigationComputer.SLOT_SOURCE))
+                            .size() + "}");
+            return;
+        }
+        if ("erase".equalsIgnoreCase(verb)) {
+            nav.eraseSourceCrystal();
+            send(sender, "{\"ok\":true,\"source\":"
+                    + zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
+                            nav.getStackInSlot(zmaster587.advancedRocketry.tile.TileNavigationComputer.SLOT_SOURCE))
+                            .size() + "}");
+            return;
+        }
+        if ("sync".equalsIgnoreCase(verb) && args.length >= 6) {
+            nav.setSyncChannel(parseIntOr(args[5], 0));
+            int changed = nav.syncOnChannel();
+            send(sender, "{\"ok\":true,\"changed\":" + changed
+                    + ",\"ship\":" + nav.shipCrystal().size() + "}");
+            return;
+        }
+        if ("link".equalsIgnoreCase(verb) && args.length >= 8) {
+            nav.linkToFlightComputer(new BlockPos(parseIntOr(args[5], 0), parseIntOr(args[6], 0),
+                    parseIntOr(args[7], 0)));
+            send(sender, "{\"ok\":true,\"linked\":" + nav.isLinked() + "}");
+            return;
+        }
+        if ("target".equalsIgnoreCase(verb) && args.length >= 8) {
+            nav.setTarget(zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                    parseIntOr(args[5], 0), parseIntOr(args[6], 0), parseIntOr(args[7], 0), 0L, 0L, 0L));
+            send(sender, "{\"ok\":true,\"target\":\"" + nav.getTarget().cellKey() + "\"}");
+            return;
+        }
+        if ("cleartarget".equalsIgnoreCase(verb)) {
+            nav.setTarget(null);
+            send(sender, "{\"ok\":true,\"target\":null}");
+            return;
+        }
+        if ("status".equalsIgnoreCase(verb)) {
+            send(sender, "{\"ok\":true,\"linked\":" + nav.isLinked()
+                    + ",\"target\":" + (nav.getTarget() == null ? "null" : "\"" + nav.getTarget().cellKey() + "\"")
+                    + ",\"ship\":" + nav.shipCrystal().size()
+                    + ",\"channel\":" + nav.getSyncChannel() + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown nav verb\"}");
+    }
+
+    /** The navigation computer at {@code pos}, or {@code null}. */
+    private static zmaster587.advancedRocketry.tile.TileNavigationComputer navAt(
+            net.minecraft.world.World world, BlockPos pos) {
+        net.minecraft.tileentity.TileEntity te = world.getTileEntity(pos);
+        return te instanceof zmaster587.advancedRocketry.tile.TileNavigationComputer
+                ? (zmaster587.advancedRocketry.tile.TileNavigationComputer) te : null;
+    }
 
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
         // --- PRODUCTION-wiring probes. Unlike every other verb here these deliberately touch the real
@@ -9742,9 +9890,10 @@ public class TestProbeCommand extends CommandBase {
             boolean includeShieldEmitter = "with-shield-emitter".equals(variant);
             boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck
                     || includeShieldEmitter;
+            boolean includeNavComputer = "with-nav-computer".equals(variant);
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
-                    || includePilotSeat;
+                    || includePilotSeat || includeNavComputer;
             boolean replaceEnginesWithNuclear = includeNuclearStack || includeNuclearMisplaced;
 
             net.minecraft.world.WorldServer world = server.getWorld(dim);
@@ -9910,6 +10059,17 @@ public class TestProbeCommand extends CommandBase {
                 int afcY = includePilotDeck ? rocketY + 4 : rocketY + 3;
                 world.setBlockState(new BlockPos(rocketX - 1, afcY, rocketZ),
                         advancedFlightComputer.getDefaultState());
+                if (includeNavComputer) {
+                    // Face-adjacent to the flight computer (one cell along Z), so the assembly
+                    // flood-fill welds it into the same ship and the build scan sees both. Inside the
+                    // tower-bounded scan box, and it displaces no structural block.
+                    net.minecraft.block.Block navComputer = ForgeRegistries.BLOCKS.getValue(
+                            new ResourceLocation("advancedrocketry", "navigationComputer"));
+                    if (navComputer != null) {
+                        world.setBlockState(new BlockPos(rocketX - 1, afcY, rocketZ + 1),
+                                navComputer.getDefaultState());
+                    }
+                }
             }
             if (includeShieldEmitter) {
                 // One emitter welded onto the hull, above the +1 fuel-tank column so it is face-adjacent

@@ -38,6 +38,7 @@ public class AdvancedRocketryBlocks {
     public static Block blockLightwoodWood, sblockLightwoodLeaves, blockLightwoodSapling;
     public static Block blockGuidanceComputer;
     public static Block blockAdvancedFlightComputer;
+    public static Block blockNavigationComputer;
     public static Block blockPlanetSelector;
     public static Block blockSawBlade;
     public static Block blockConcrete;

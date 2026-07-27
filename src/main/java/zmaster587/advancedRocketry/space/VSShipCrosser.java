@@ -27,6 +27,10 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     /** Per-lane X offset for arrivals, so ships arriving into one cell from different lanes never overlap. */
     private static final int ARRIVAL_LANE_STRIDE = 64;
 
+    /** The shared crossing primitives (readiness-gated pose teleport, rider carry, unpark) the entry
+     *  on-ramp and the descent already settle through. Stateless. */
+    private final VSShipCrossingOps ops = new VSShipCrossingOps();
+
     /** Monotonic per-boot counter for RESTORED arrivals (imported only at server start), spreading them
      *  across the NEGATIVE-X paste band so they never overlap each other or a live arrival. */
     private int restoredLane;
@@ -69,12 +73,21 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 hyper, hyperAnchor.getX() + 0.5, hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5,
                 dst, dstX, ARRIVAL_Y, 0);
-        if (!res.ok()) {
-            return null;
+        // The paste lands in the destination's BLOCK band; the ship is moved onto its real pose (and
+        // unparked there) by the settle step, once the asynchronous re-assembly is queryable.
+        return res.ok() ? res.anchor : null;
+    }
+
+    @Override
+    public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+                                      double px, double py, double pz) {
+        // The same recipe the entry/descent settle uses (readiness gates, rider carry, unpark last) —
+        // an arrival is the third crossing, not a different kind of move.
+        if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, px, py, pz)) {
+            return null; // re-assembly not queryable yet: retry next tick, the ship stays pasted
         }
-        // Unpark: hand the ship back to free VS physics now that it is in the destination bubble.
-        VSIntegration.unparkShipAt(dst, res.anchor.getX() + 0.5, res.anchor.getY() + 0.5, res.anchor.getZ() + 0.5);
-        return res.anchor;
+        ops.unparkAt(targetSlotDim, px, py, pz);
+        return new BlockPos(px, py, pz);
     }
 
     @Override

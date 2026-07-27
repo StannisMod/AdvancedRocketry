@@ -1,0 +1,35 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+        "ctc",
+        "mbm",
+        "ctc"
+    ],
+    "key":
+    {
+        "c":
+        {
+            "item": "advancedrocketry:ic",
+            "data": 1
+        },
+        "b":
+        {
+            "item": "libvulpes:structuremachine"
+        },
+        "m":
+        {
+            "item": "advancedrocketry:memorycrystal"
+        },
+        "t":
+        {
+            "type": "forge:ore_dict",
+            "ore": "plateTitanium"
+        }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:navigationcomputer",
+        "count": 1
+    }
+}
