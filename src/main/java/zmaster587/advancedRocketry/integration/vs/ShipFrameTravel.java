@@ -372,7 +372,9 @@ public final class ShipFrameTravel {
                 if (!interior) {
                     if (hullContactFor(entity, state.shipId)) {
                         state.hullStand = true;
-                        clearPersistedAnchor(entity); // hull-stand is world semantics; only ABOARD relogs
+                        // Hull-stand is world semantics, not a deck position - so this body stops
+                        // answering as aboard ({@link #aboardShipId}), and the durable record's one
+                        // writer drops it on its next pass. Nothing is written from here.
                         logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
                         return true;
                     }
@@ -534,43 +536,32 @@ public final class ShipFrameTravel {
     private static void release(Entity entity, String reason) {
         if (STATE.remove(entity) != null) {
             lastDropReason = reason;
-            clearPersistedAnchor(entity);
+            // Nothing durable is written here. The "this player is aboard ship X, at Y" record is
+            // derived from state by ONE writer on its own cadence, and that writer runs OUTSIDE the
+            // world's entity tick - which is where this runs. Editing the record from here would be
+            // a second writer, and its clear has to look a ship up over the world's tile entities:
+            // a scan this call site cannot make safely.
             logDrop(entity, reason);
         }
     }
 
-    /** NBT key of the persisted ABOARD anchor on a server player ({@code getEntityData}, which
-     *  Forge saves with the player): the capture itself is in-memory only, so without this a
-     *  relog hands the returning player to world gravity - on a non-upright ship world-down
-     *  points away from the deck and he falls off before any first-contact gate can fire
-     *  (any-attitude crew contract C14). Written per resolved aboard tick (the anchor must be
-     *  where he STOOD at save time, not where the episode began); cleared on release and on the
-     *  hull-stand transition. Read back by the login deck hold. */
-    public static final String PERSISTED_ANCHOR_TAG = "advrocketry_deck_anchor";
-
-    /** Refresh the persisted ABOARD anchor for a real server player. */
-    private static void persistAnchor(Entity entity, String shipId,
-                                      double localX, double localY, double localZ) {
-        if (entity.world == null || entity.world.isRemote
-                || !(entity instanceof net.minecraft.entity.player.EntityPlayerMP)
-                || entity instanceof net.minecraftforge.common.util.FakePlayer) {
-            return;
+    /**
+     * The SUBSPACE point this class last committed for {@code entity} on its anchor ship, or
+     * {@code null} when it is not aboard one (never captured, or held in HULL-STAND mode, which is
+     * world semantics and not a deck position).
+     *
+     * <p>This is the durable record's view of an aboard body: the point is read from the capture
+     * rather than re-derived from the entity's world position, so the position that survives a
+     * logout is exactly the one the deck resolver committed — no second conversion to disagree
+     * with. Pair it with {@link #aboardShipId} for the ship the point is expressed against.</p>
+     */
+    public static double[] aboardShipFramePoint(Entity entity) {
+        if (entity == null) {
+            return null;
         }
-        net.minecraft.nbt.NBTTagCompound tag = new net.minecraft.nbt.NBTTagCompound();
-        tag.setString("ship", shipId);
-        tag.setDouble("x", localX);
-        tag.setDouble("y", localY);
-        tag.setDouble("z", localZ);
-        entity.getEntityData().setTag(PERSISTED_ANCHOR_TAG, tag);
-    }
-
-    /** Drop the persisted ABOARD anchor (release / hull-stand transition). */
-    private static void clearPersistedAnchor(Entity entity) {
-        if (entity.world == null || entity.world.isRemote
-                || !(entity instanceof net.minecraft.entity.player.EntityPlayerMP)) {
-            return;
-        }
-        entity.getEntityData().removeTag(PERSISTED_ANCHOR_TAG);
+        ShipFrameState state = STATE.get(entity);
+        return state == null || state.hullStand
+                ? null : new double[]{state.localX, state.localY, state.localZ};
     }
 
     /**
@@ -1616,9 +1607,6 @@ public final class ShipFrameTravel {
         }
         remember(entity, shipId, sweep.x, sweep.y, sweep.z,
                 worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
-        // The relog anchor follows the body: persisted per resolved ABOARD tick so a save catches
-        // the deck spot he is standing on NOW (contract C14), not the episode's first contact.
-        persistAnchor(entity, shipId, sweep.x, sweep.y, sweep.z);
         sampleRenderSkew(world, shipId, sweep.x, sweep.y, sweep.z, worldPos, "aboard");
         double fallenAlongDeck = sweep.wantY < 0.0 ? -(sweep.y - (sweep.startY)) : 0.0;
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
@@ -1739,7 +1727,6 @@ public final class ShipFrameTravel {
         worldMotion[2] += carryZ;
         remember(entity, shipId, sweep.x, sweep.y, sweep.z,
                 worldPos[0], worldPos[1], worldPos[2], carryX, carryY, carryZ);
-        persistAnchor(entity, shipId, sweep.x, sweep.y, sweep.z);
         entity.setPosition(worldPos[0], worldPos[1], worldPos[2]);
         entity.motionX = worldMotion[0];
         entity.motionY = worldMotion[1];

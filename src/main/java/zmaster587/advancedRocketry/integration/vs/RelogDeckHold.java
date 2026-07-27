@@ -1,7 +1,6 @@
 package zmaster587.advancedRocketry.integration.vs;
 
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
@@ -14,11 +13,17 @@ import java.util.UUID;
 /**
  * Re-seats a returning player on the deck he logged out on (any-attitude crew contract C14).
  *
- * <p>The ABOARD capture is in-memory; what survives the relog is the persisted anchor
- * ({@link ShipFrameTravel#PERSISTED_ANCHOR_TAG}: ship id + subspace deck point, refreshed per
- * resolved tick). Without this hold the returning player is a fresh entity under WORLD gravity
- * from his first tick - on a non-upright ship world-down points away from the deck and he falls
- * off (or through) before any first-contact gate could fire.</p>
+ * <p>The ABOARD capture is in-memory; what survives the relog is the durable aboard record
+ * ({@link zmaster587.advancedRocketry.space.ShipAboardTag}: the ship's DURABLE id plus his deck
+ * point relative to its flight computer). Without this hold the returning player is a fresh entity
+ * under WORLD gravity from his first tick - on a non-upright ship world-down points away from the
+ * deck and he falls off (or through) before any first-contact gate could fire.</p>
+ *
+ * <p><b>Why the hold resolves lazily.</b> The record names the ship by the id that outlives a
+ * re-assembly, not by the physics mod's own (re-minted) one, so the deck point cannot be turned
+ * into a subspace triple until that ship's flight computer is loaded - and after a restart into a
+ * space cell the ship is still being rebuilt on the tick the player logs in. The hold therefore
+ * starts unresolved, pins the body where it is, and re-tries until the ship answers.</p>
  *
  * <p>The hold mirrors the dismount deck hold ({@code EntityDummy}): crew movement is
  * client-authoritative, so the server cannot capture him directly - instead it pins the body
@@ -36,16 +41,50 @@ public final class RelogDeckHold {
      *  simply times the hold out into vanilla. */
     private static final int HOLD_WINDOW_TICKS = 200;
 
-    private static final class Hold {
-        final String shipId;
-        final double subX, subY, subZ;
-        int ticksLeft = HOLD_WINDOW_TICKS;
+    /** How often an unresolved hold re-tries to find its ship, in ticks. The lookup walks the
+     *  world's loaded tile entities, which is cheap but not free; the ship it waits for takes tens
+     *  of ticks to come up, so a quarter-second retry loses nothing. {@code tunable}. */
+    private static final int RESOLVE_RETRY_TICKS = 5;
 
-        Hold(String shipId, double subX, double subY, double subZ) {
+    /**
+     * One returning player's hold. It starts as a DURABLE ship id plus a flight-computer-relative
+     * deck point - the only shape that survives a re-assembly - and becomes a physics-mod ship id
+     * plus a subspace point once that ship is loaded and can be asked where its computer is.
+     */
+    private static final class Hold {
+        final UUID durableShipId;
+        final double dx, dy, dz;
+        int ticksLeft = HOLD_WINDOW_TICKS;
+        int untilRetry;
+
+        /** Non-null once the ship has been found; the pin and the capture packet need this shape. */
+        String shipId;
+        double subX, subY, subZ;
+
+        Hold(UUID durableShipId, double dx, double dy, double dz) {
+            this.durableShipId = durableShipId;
+            this.dx = dx;
+            this.dy = dy;
+            this.dz = dz;
+        }
+
+        boolean resolved() {
+            return shipId != null;
+        }
+
+        void resolveOn(String shipId, double subX, double subY, double subZ) {
             this.shipId = shipId;
             this.subX = subX;
             this.subY = subY;
             this.subZ = subZ;
+        }
+
+        /** A hold whose ship is already known — the displaced-pilot case, where the seat itself
+         *  answered which ship it belongs to and no lookup is needed. */
+        static Hold on(String shipId, double subX, double subY, double subZ) {
+            Hold hold = new Hold(null, 0.0, 0.0, 0.0);
+            hold.resolveOn(shipId, subX, subY, subZ);
+            return hold;
         }
     }
 
@@ -57,14 +96,14 @@ public final class RelogDeckHold {
                 || event.player.world == null || event.player.world.isRemote) {
             return;
         }
-        NBTTagCompound data = event.player.getEntityData();
-        if (data.hasKey(ShipFrameTravel.PERSISTED_ANCHOR_TAG)) {
-            NBTTagCompound tag = data.getCompoundTag(ShipFrameTravel.PERSISTED_ANCHOR_TAG);
-            String shipId = tag.getString("ship");
-            if (!shipId.isEmpty()) {
-                holds.put(event.player.getUniqueID(),
-                        new Hold(shipId, tag.getDouble("x"), tag.getDouble("y"), tag.getDouble("z")));
-            }
+        // Only a crew member who was ON HIS FEET needs holding: a seated one comes back on his
+        // mount (vanilla re-spawns it, and reconcileSeatMount below settles who owns the chair).
+        zmaster587.advancedRocketry.space.ShipAboardTag.Aboard aboard =
+                zmaster587.advancedRocketry.space.ShipAboardTag.of(event.player);
+        if (aboard != null
+                && aboard.posture == zmaster587.advancedRocketry.space.ShipAboardTag.Posture.STANDING) {
+            holds.put(event.player.getUniqueID(),
+                    new Hold(aboard.shipId, aboard.standDx, aboard.standDy, aboard.standDz));
         }
         // AFTER the anchor hold: a displaced pilot's hold below must win over the (older) anchor.
         reconcileSeatMount((EntityPlayerMP) event.player);
@@ -125,8 +164,8 @@ public final class RelogDeckHold {
                 player.setPositionAndUpdate(deck[0], deck[1], deck[2]);
             }
             // The same hold a standing relog gets: pin against gravity, ask his client to
-            // capture the deck point. Wins over any (older) anchor hold registered above.
-            holds.put(player.getUniqueID(), new Hold(shipId, subX, subY, subZ));
+            // capture the deck point. Wins over any (older) record hold registered above.
+            holds.put(player.getUniqueID(), Hold.on(shipId, subX, subY, subZ));
         } else {
             // Not on a managed ship (e.g. the craft was disassembled meanwhile): stand him at
             // the seat block itself, plain world frame.
@@ -193,11 +232,15 @@ public final class RelogDeckHold {
             holds.remove(player.getUniqueID()); // ship never came back: clean vanilla handover
             return;
         }
-        double[] world = VSIntegration.toWorldFrameFor(
-                player.world, hold.shipId, hold.subX, hold.subY, hold.subZ);
+        if (!hold.resolved() && --hold.untilRetry <= 0) {
+            hold.untilRetry = RESOLVE_RETRY_TICKS;
+            resolve(player, hold);
+        }
+        double[] world = hold.resolved() ? VSIntegration.toWorldFrameFor(
+                player.world, hold.shipId, hold.subX, hold.subY, hold.subZ) : null;
         if (world == null) {
-            // The anchor ship is not loaded (yet): hold the body still where it is so gravity
-            // cannot ratchet it off the deck spot while the ship streams in.
+            // The ship is not loaded (yet), or has not been found: hold the body still where it is
+            // so gravity cannot ratchet it off the deck spot while the ship streams in.
             player.setPositionAndUpdate(player.posX, player.posY, player.posZ);
             player.motionX = 0.0;
             player.motionY = 0.0;
@@ -218,5 +261,32 @@ public final class RelogDeckHold {
                 new zmaster587.advancedRocketry.network.PacketDeckCapture(
                         hold.shipId, hold.subX, hold.subY, hold.subZ),
                 player);
+    }
+
+    /**
+     * Try to turn a durable hold into a live one: find the flight computer carrying the recorded
+     * ship id, and express the record's computer-relative deck point as a subspace triple on the
+     * ship that computer belongs to.
+     *
+     * <p>The ships are queued for load first, the way the login re-seat does it: a headless server
+     * (or one whose returning player has not streamed the ship's chunks yet) keeps a ship in the
+     * registry without ticking it, and an unloaded ship carries no loaded tile entities to find.</p>
+     */
+    private static void resolve(EntityPlayerMP player, Hold hold) {
+        if (hold.durableShipId == null) {
+            return;
+        }
+        VSIntegration.loadAllShips(player.world);
+        net.minecraft.util.math.BlockPos afcPos = zmaster587.advancedRocketry.space
+                .ShipRelativePoint.flightComputerOfDurableShip(player.world, hold.durableShipId);
+        if (afcPos == null) {
+            return;
+        }
+        String shipId = VSIntegration.shipIdManagingBlock(player.world, afcPos);
+        double[] sub = zmaster587.advancedRocketry.space.ShipRelativePoint.subspacePointOf(
+                afcPos, hold.dx, hold.dy, hold.dz);
+        if (shipId != null && sub != null) {
+            hold.resolveOn(shipId, sub[0], sub[1], sub[2]);
+        }
     }
 }

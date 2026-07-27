@@ -62,18 +62,6 @@ public final class CrewTransfer {
     private CrewTransfer() { }
 
     /**
-     * True while {@link #capture} is dismounting riders as part of a crossing, so listeners can tell
-     * a crossing's mechanical dismount apart from a player choosing to stand up.
-     *
-     * <p>The two look identical to Minecraft — both fire a dismount — but they mean opposite things:
-     * standing up ends a player's association with the ship, whereas being lifted out of a seat so
-     * the seat block can be cut and rebuilt somewhere else preserves it. Anything that records "this
-     * player is aboard that ship" must not be torn down by the second kind. Server main thread only,
-     * which is what makes a plain flag sufficient.</p>
-     */
-    static boolean crossingCapture;
-
-    /**
      * Enumerate the seated crew of the ship whose flight computer sits at subspace {@code afcPos},
      * with the ship's live world position {@code shipWorldPos}. Records each seated player against
      * its seat's link offset, dismounts it, and retires the now-orphaned dummy. Call BEFORE the
@@ -81,12 +69,11 @@ public final class CrewTransfer {
      * the crew, so a crossing that can still be refused must {@link #peek} instead.
      */
     public static List<Crew> capture(WorldServer world, BlockPos afcPos, double[] shipWorldPos) {
-        crossingCapture = true;
-        try {
-            return walk(world, afcPos, shipWorldPos, true);
-        } finally {
-            crossingCapture = false;
-        }
+        // A crossing's dismount is NOT the player leaving his post, and his durable aboard record
+        // must survive it. Nothing special is needed here for that any more: the record is derived
+        // from state by one writer, which drops a record only on positive evidence that the player
+        // is off a ship that is present — and mid-crossing the ship is not present to judge by.
+        return walk(world, afcPos, shipWorldPos, true);
     }
 
     /**
@@ -273,14 +260,10 @@ public final class CrewTransfer {
             return RebindOutcome.NOT_READY; // ship not up yet - retry
         }
         // Atomic swap, one tick: a mechanical dismount (not the player leaving his post - the
-        // aboard record must survive it), the stale mount retired, then the standard mount recipe
-        // on the seat's current subspace binding.
-        crossingCapture = true;
-        try {
-            player.dismountRidingEntity();
-        } finally {
-            crossingCapture = false;
-        }
+        // aboard record must survive it, and does: it is re-derived from state, and the state one
+        // tick later is "seated on the relocated seat"), the stale mount retired, then the standard
+        // mount recipe on the seat's current subspace binding.
+        player.dismountRidingEntity();
         riding.setDead();
         player.setPositionAndUpdate(seatWorld[0], seatWorld[1], seatWorld[2]);
         EntityDummy dummy = boundDummyForMount(world, seat.getPos(),

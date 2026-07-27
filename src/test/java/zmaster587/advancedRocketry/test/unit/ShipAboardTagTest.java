@@ -151,12 +151,29 @@ public class ShipAboardTagTest {
         badId.setTag(ShipAboardTag.KEY, badSub);
         assertNull(ShipAboardTag.read(badId));
 
-        // A ship id with no coordinate.
-        NBTTagCompound noCoord = new NBTTagCompound();
-        NBTTagCompound coordless = new NBTTagCompound();
-        coordless.setString("shipId", SHIP.toString());
-        noCoord.setTag(ShipAboardTag.KEY, coordless);
-        assertNull(ShipAboardTag.read(noCoord));
+    }
+
+    @Test
+    public void aShipInNoCellStillProducesAnAboardRecord() {
+        // A ship parked on a planet is in no cell at all, and a crew member aboard it still has to
+        // be put back on its deck after a relog - so the coordinate is optional and its absence is
+        // not corruption. What it must NOT do is answer the question "which world does he belong
+        // in": a record with no cell says nothing about that, and hasPresence() is how a reader
+        // asks. (A ship at the galactic ORIGIN is a different thing entirely and stays present.)
+        ShipAboardTag.Aboard cellless = ShipAboardTag.Aboard.standing(SHIP, null, 1.5D, 0.0D, -2.5D);
+        assertFalse("no coordinate means no presence", cellless.hasPresence());
+
+        NBTTagCompound forgeData = new NBTTagCompound();
+        ShipAboardTag.write(forgeData, cellless);
+        ShipAboardTag.Aboard restored = ShipAboardTag.read(forgeData);
+        assertNotNull("a ship-relative-only record must survive the round-trip", restored);
+        assertEquals(cellless, restored);
+        assertNull("the coordinate must come back absent, not as some default cell", restored.coord);
+        assertFalse(restored.hasPresence());
+        assertEquals(1.5D, restored.standDx, 0.0D);
+        assertEquals(-2.5D, restored.standDz, 0.0D);
+
+        assertTrue("a record that names a cell HAS presence", sample().hasPresence());
     }
 
     @Test
@@ -221,10 +238,10 @@ public class ShipAboardTagTest {
         ShipAboardTag.write(forgeData, null);
         assertNull(ShipAboardTag.read(forgeData));
 
-        // Likewise for a record whose ship or coordinate went missing upstream.
+        // Likewise for a record whose SHIP went missing upstream - the one field the record cannot
+        // be missing, since it is the whole binding. (A missing coordinate is not that: see
+        // aShipInNoCellStillProducesAnAboardRecord.)
         ShipAboardTag.write(forgeData, new ShipAboardTag.Aboard(null, COORD, 0, 0, 0));
-        assertNull(ShipAboardTag.read(forgeData));
-        ShipAboardTag.write(forgeData, new ShipAboardTag.Aboard(SHIP, null, 0, 0, 0));
         assertNull(ShipAboardTag.read(forgeData));
     }
 }

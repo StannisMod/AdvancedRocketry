@@ -47,7 +47,9 @@ import zmaster587.libVulpes.network.PacketHandler;
  *       already the right one, so the client is never sent anywhere else.</li>
  *   <li><b>Seating</b>, once he is in the world — mounting him back on his seat. This cannot happen
  *       in phase one because a ship re-assembles asynchronously; its seat blocks may not exist yet
- *       on the tick he logs in, so the seating retries for a few ticks.</li>
+ *       on the tick he logs in, so the seating retries for a few ticks. Only a crew member who was
+ *       SEATED is re-seated: one who was on his feet is put back on his deck point by the deck
+ *       hold, which also has to pin him against world gravity while his client re-captures.</li>
  * </ol>
  *
  * <p>Phase one only ever intervenes for a player whose saved dimension is one of the subsystem's own
@@ -67,6 +69,16 @@ public final class SpaceEventHandler {
 
     /** How many ticks to keep retrying a seating before giving up and leaving the player standing. */
     private static final int MAX_SEAT_ATTEMPTS = 200;
+
+    /**
+     * How often the durable aboard records are brought into line with where players actually are.
+     * One second: crashes are rare enough that a one-second staleness bound is the right price for
+     * a record that is small, fixed-shape, and re-derived from scratch every pass. A clean logout
+     * pays nothing at all — it refreshes on its own event. {@code tunable}.
+     */
+    private static final int RECORD_REFRESH_TICKS = 20;
+
+    private int sinceRecordRefresh;
 
     /** A player who has been placed aboard and is waiting for his seat to exist. */
     private static final class PendingSeat {
@@ -125,8 +137,15 @@ public final class SpaceEventHandler {
         // case this hook exists for. The aboard record is the durable evidence: it names the ship and
         // its galactic coordinate, neither of which is transient. So the record opens the restore, and
         // the dimension id is only a fallback for someone who was in a subsystem world without one.
+        //
+        // A record with NO cell in it opens nothing: it is ship-relative only - a crew member aboard
+        // a ship parked on a planet - and says which SHIP he is on, not which world he belongs in.
+        // The dimension he was saved in is already right for him, and the deck hold is what puts him
+        // back on his ship once it loads.
         ShipAboardTag.Aboard aboard = ShipAboardTag.of(player);
-        if (aboard == null && !isSubsystemWorld(player.dimension)) {
+        boolean spaceborne = (aboard != null && aboard.hasPresence())
+                || isSubsystemWorld(player.dimension);
+        if (!spaceborne) {
             return; // saved in an ordinary world: vanilla's own restore is correct, leave it alone
         }
         LoginRestore.Placement placement =
@@ -137,7 +156,12 @@ public final class SpaceEventHandler {
                 player.rotationYaw, player.rotationPitch);
 
         if (placement.aboard && aboard != null) {
-            pendingSeats.add(new PendingSeat(player.getUniqueID(), aboard, placement.dimension));
+            if (aboard.posture == ShipAboardTag.Posture.SEATED) {
+                // A seat is re-taken by mounting it; a crew member who was on his feet is not
+                // "seated late", he is placed on his deck point - which the deck hold owns, because
+                // it must also pin him against world gravity while his client re-captures.
+                pendingSeats.add(new PendingSeat(player.getUniqueID(), aboard, placement.dimension));
+            }
             if (placement.reason == LoginRestore.Reason.ABOARD_SETTLED) {
                 // The materialize above took an occupant refcount on his behalf; remember it so his
                 // logout gives it back. Without the pairing the cell is pinned to a pool slot for the
@@ -165,6 +189,9 @@ public final class SpaceEventHandler {
         if (event.player == null) {
             return;
         }
+        // Forge fires this BEFORE the player file is written, so a record refreshed here is the one
+        // his next login reads back - the writer's one-second cadence never costs a clean logout.
+        AboardRecord.reconcile(event.player);
         UUID playerId = event.player.getUniqueID();
         releaseHeldCell(playerId);
         // He is gone; a queued seating for him is dead work.
@@ -207,7 +234,12 @@ public final class SpaceEventHandler {
         if (server == null) {
             return;
         }
-        reconcileAboardTags(server);
+        if (++sinceRecordRefresh >= RECORD_REFRESH_TICKS) {
+            sinceRecordRefresh = 0;
+            for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+                AboardRecord.reconcile(player);
+            }
+        }
         if (pendingSeats.isEmpty()) {
             return;
         }
@@ -257,74 +289,6 @@ public final class SpaceEventHandler {
                 pending.aboard.shipId);
     }
 
-    // --- keeping the aboard record true ----------------------------------------------------------
-
-    /**
-     * Maintain a player's durable "aboard ship X, in the seat Y blocks from its flight computer"
-     * record as he sits down and stands up. Every way of taking a tier-2 seat ends in a mount, so
-     * hooking the mount itself covers sitting down by hand and being re-seated by a crossing alike —
-     * and, crucially, it records the binding at the moment it becomes true rather than at logout,
-     * so a server that dies without a clean shutdown still leaves the record correct.
-     */
-    @SubscribeEvent
-    public void onEntityMount(net.minecraftforge.event.entity.EntityMountEvent event) {
-        if (event.getWorldObj() == null || event.getWorldObj().isRemote
-                || !(event.getEntityMounting() instanceof EntityPlayer)) {
-            return;
-        }
-        EntityPlayer player = (EntityPlayer) event.getEntityMounting();
-        if (event.isDismounting()) {
-            // A crossing lifts its crew out of their seats before cutting the ship apart. That is not
-            // the player leaving his post, so his aboard record must survive it — otherwise a jump
-            // erases the very binding that would put him back in the seat on the far side.
-            if (!CrewTransfer.crossingCapture) {
-                ShipAboardTag.clear(player);
-            }
-            return;
-        }
-        if (!(event.getEntityBeingMounted() instanceof zmaster587.advancedRocketry.entity.EntityDummy)) {
-            return; // an ordinary vehicle, nothing to do with a ship's crew
-        }
-        ShipAboardTag.Aboard aboard = aboardRecordFor(event.getWorldObj(),
-                ((zmaster587.advancedRocketry.entity.EntityDummy) event.getEntityBeingMounted()).getSeatPos());
-        if (aboard != null) {
-            ShipAboardTag.stamp(player, aboard);
-        }
-    }
-
-    /**
-     * Build the aboard record for the seat at {@code seatPos}, or {@code null} when that seat is not
-     * part of a ledgered tier-2 ship (an unlinked seat, a seat outside a space cell, a ship whose
-     * flight computer has never minted an id).
-     */
-    private static ShipAboardTag.Aboard aboardRecordFor(World world, BlockPos seatPos) {
-        if (seatPos == null || !(world.provider instanceof WorldProviderSpaceSlot)) {
-            return null;
-        }
-        net.minecraft.tileentity.TileEntity seatTile = world.getTileEntity(seatPos);
-        if (!(seatTile instanceof zmaster587.advancedRocketry.tile.TilePilotSeat)) {
-            return null;
-        }
-        BlockPos afcPos = ((zmaster587.advancedRocketry.tile.TilePilotSeat) seatTile).getFlightComputerPos();
-        if (afcPos == null) {
-            return null;
-        }
-        net.minecraft.tileentity.TileEntity afcTile = world.getTileEntity(afcPos);
-        if (!(afcTile instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
-            return null;
-        }
-        UUID shipId = ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTile).shipIdOrNull();
-        GalacticCoord coord =
-                GalacticCoord.fromCellKey(SpaceSlotPool.cellKeyFor(world.provider.getDimension()));
-        if (shipId == null || coord == null) {
-            return null;
-        }
-        return new ShipAboardTag.Aboard(shipId, coord,
-                afcPos.getX() - seatPos.getX(),
-                afcPos.getY() - seatPos.getY(),
-                afcPos.getZ() - seatPos.getZ());
-    }
-
     // --- the divergence hook ---------------------------------------------------------------------
 
     /**
@@ -365,55 +329,6 @@ public final class SpaceEventHandler {
     /** Whether {@code dimId} is one of the subsystem's own worlds (a pool slot or hyperspace). */
     private static boolean isSubsystemWorld(int dimId) {
         return SpaceSlotPool.slotDims().contains(dimId) || dimId == HyperspaceWorld.dimId();
-    }
-
-    /**
-     * Keep every seated crew member's durable aboard record in step with where he ACTUALLY is.
-     *
-     * <p><b>Why this is a per-tick reconciliation and not another event hook.</b> The record used to
-     * be written in exactly one place — {@link #onEntityMount} — and only when the seat was already in
-     * a slot world. That misses the most ordinary route into space there is: a pilot sits down on the
-     * PLANET, flies up, and crosses into a cell. He mounted in the overworld, so nothing stamped him,
-     * and no later event re-visits the question. He is then a player in space with no durable evidence
-     * that he is aboard anything — and the login restore, which decides purely on that evidence,
-     * correctly declines to bring him back. Measured in a real session on 2026-07-26: he logged out in
-     * orbit and returned to his overworld build site, off his ship.
-     *
-     * <p>Deriving it from STATE instead of from a transition fixes the whole family at once — the
-     * planet-boarded pilot, someone the jump's crew transfer re-seats, someone who simply walks in and
-     * sits down in a cell — and it self-heals a record that went stale while the ship moved under a
-     * different pilot. It is also idempotent: an unchanged record is not rewritten, so a seated player
-     * costs one map lookup and one comparison per tick, and only while he is in a slot world.</p>
-     */
-    private void reconcileAboardTags(MinecraftServer server) {
-        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
-            if (player == null || player.world == null
-                    || !(player.world.provider instanceof WorldProviderSpaceSlot)) {
-                continue; // not in a cell: nothing here can be aboard a ship
-            }
-            net.minecraft.entity.Entity riding = player.getRidingEntity();
-            if (!(riding instanceof zmaster587.advancedRocketry.entity.EntityDummy)) {
-                continue; // standing on a deck is not a seat; only a seated crew member has an offset
-            }
-            ShipAboardTag.Aboard current = aboardRecordFor(player.world,
-                    ((zmaster587.advancedRocketry.entity.EntityDummy) riding).getSeatPos());
-            if (current == null) {
-                continue; // an unlinked seat, or a ship the ledger does not know yet
-            }
-            ShipAboardTag.Aboard existing = ShipAboardTag.of(player);
-            if (existing != null
-                    && existing.shipId.equals(current.shipId)
-                    && existing.coord.cellKey().equals(current.coord.cellKey())
-                    && existing.afcDx == current.afcDx
-                    && existing.afcDy == current.afcDy
-                    && existing.afcDz == current.afcDz) {
-                continue; // already current
-            }
-            ShipAboardTag.stamp(player, current);
-            LOGGER.info("[SPACE] aboard record {} for {}: ship {} at {}",
-                    existing == null ? "stamped" : "refreshed",
-                    player.getName(), current.shipId, current.coord.cellKey());
-        }
     }
 
     /**

@@ -1768,8 +1768,9 @@ public class TestProbeCommand extends CommandBase {
             }
             return;
         }
-        // aboard-tag <playerName>: read back the durable "this player is aboard ship X, in the seat Y
-        // blocks from its flight computer" record carried by a CONNECTED player. Strictly READ-ONLY -
+        // aboard-tag <playerName>: read back the durable "this player is aboard ship X, at Y" record
+        // carried by a CONNECTED player - Y being a seat's flight-computer link offset for a seated
+        // crew member and a deck point relative to that same computer for one on his feet. READ-ONLY -
         // it never stamps, clears or mints anything - because it is the witness a restart test uses to
         // prove the record existed BEFORE the logout; a witness with side effects would be measuring
         // its own footprint. The seat is reported as the flight-computer link OFFSET the record
@@ -1791,18 +1792,28 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"ok\":true,\"tagged\":false}");
                 return;
             }
-            if (aboard.shipId == null || aboard.coord == null) {
-                // Unreachable through the reader (it rejects a half-formed record rather than
+            if (aboard.shipId == null) {
+                // Unreachable through the reader (it rejects a record with no ship rather than
                 // returning one), but a named error beats an NPE rendered as a JSON blob.
                 send(sender, "{\"error\":\"aboard record incomplete\",\"player\":\""
                         + escapeJson(target.getName()) + "\"}");
                 return;
             }
+            // The POSTURE is reported because the two shapes are restored differently - one is
+            // re-seated, the other is put back on a deck point - so a test that cannot see it
+            // cannot tell "aboard on his feet" from "aboard in his chair". The cell is absent for a
+            // ship that is in none (a ship on a planet), which is a legitimate record and not an
+            // error: it says which SHIP, not which world.
             send(sender, "{\"ok\":true,\"tagged\":true,\"shipId\":\"" + aboard.shipId
-                    + "\",\"cell\":\"" + aboard.coord.cellKey()
-                    + "\",\"afcDx\":" + aboard.afcDx
+                    + "\",\"posture\":\"" + aboard.posture + "\""
+                    + ",\"cell\":" + (aboard.coord == null
+                            ? "null" : "\"" + aboard.coord.cellKey() + "\"")
+                    + ",\"afcDx\":" + aboard.afcDx
                     + ",\"afcDy\":" + aboard.afcDy
-                    + ",\"afcDz\":" + aboard.afcDz + "}");
+                    + ",\"afcDz\":" + aboard.afcDz
+                    + ",\"standDx\":" + aboard.standDx
+                    + ",\"standDy\":" + aboard.standDy
+                    + ",\"standDz\":" + aboard.standDz + "}");
             return;
         }
         // ledger-settle <shipUuid> <sx> <sy> <sz> <lx> <ly> <lz>: record a settled ship in the

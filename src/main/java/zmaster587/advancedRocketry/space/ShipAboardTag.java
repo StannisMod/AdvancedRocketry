@@ -28,10 +28,14 @@ import net.minecraft.nbt.NBTTagCompound;
  * invariant under the rigid relocation. It is the same identity {@link CrewTransfer} matches seats
  * by after a crossing, which is what lets a restored player be put back in the seat he left.</p>
  *
- * <p><b>Why the coordinate is only a diagnostic.</b> The galactic coordinate stamped here is the
- * ship's position at the moment the player sat down. It may be stale by the time he logs back in
- * (the ship can keep flying under another crew member), so the ledger's coordinate wins wherever
- * the two disagree; this one is kept for logging and cross-checks.</p>
+ * <p><b>Why the coordinate is only a diagnostic, and why it may be absent.</b> The galactic
+ * coordinate stamped here is the ship's position at the moment the record was written. It may be
+ * stale by the time he logs back in (the ship can keep flying under another crew member), so the
+ * ledger's coordinate wins wherever the two disagree; this one is kept for logging and cross-checks.
+ * It is also OPTIONAL: a ship parked on a planet is in no cell at all, and a crew member aboard it
+ * still needs the ship-relative half of this record to be put back on its deck after a relog. A
+ * record with no coordinate therefore means "aboard, nowhere in particular" — it says nothing about
+ * which dimension the player belongs in, and the dimension decision must not consult it.</p>
  *
  * <p>The NBT half ({@link #write}, {@link #read}, {@link #clear(NBTTagCompound)}) touches no world,
  * server or player type, so it is exercisable against a bare compound. The player-facing wrappers
@@ -72,6 +76,7 @@ public final class ShipAboardTag {
     public static final class Aboard {
 
         public final UUID shipId;
+        /** The cell the ship was in, or {@code null} when it is in none (a ship on a planet). */
         public final GalacticCoord coord;
         public final Posture posture;
         /** SEATED: the seat's link offset. Zero and meaningless when {@link #posture} is STANDING. */
@@ -112,6 +117,15 @@ public final class ShipAboardTag {
         public static Aboard standing(UUID shipId, GalacticCoord coord,
                                       double dx, double dy, double dz) {
             return new Aboard(shipId, coord, dx, dy, dz);
+        }
+
+        /**
+         * Whether this record also says WHERE IN SPACE the ship was. A record without it is
+         * ship-relative only: it can put a crew member back on his deck, but it must never be used
+         * to decide which dimension he belongs in — the ship it names is in no cell.
+         */
+        public boolean hasPresence() {
+            return coord != null;
         }
 
         @Override
@@ -164,19 +178,22 @@ public final class ShipAboardTag {
      * ship cannot leave behind a record {@link #read} would have to reject.
      *
      * <p>The coordinate is encoded with {@link GalacticCoord#writeToNBT} on the sub-compound — the
-     * one shared encoding, so any reader of a galactic coordinate decodes this one too.</p>
+     * one shared encoding, so any reader of a galactic coordinate decodes this one too — and is
+     * omitted entirely for a ship that is in no cell.</p>
      */
     public static void write(NBTTagCompound forgeData, Aboard aboard) {
         if (forgeData == null) {
             return;
         }
-        if (aboard == null || aboard.shipId == null || aboard.coord == null) {
+        if (aboard == null || aboard.shipId == null) {
             forgeData.removeTag(KEY);
             return;
         }
         NBTTagCompound sub = new NBTTagCompound();
         sub.setString(SHIP_ID, aboard.shipId.toString());
-        aboard.coord.writeToNBT(sub); // writes the "galacticCoord" sub-tag
+        if (aboard.coord != null) {
+            aboard.coord.writeToNBT(sub); // writes the "galacticCoord" sub-tag
+        }
         sub.setInteger("afcDx", aboard.afcDx);
         sub.setInteger("afcDy", aboard.afcDy);
         sub.setInteger("afcDz", aboard.afcDz);
@@ -193,22 +210,22 @@ public final class ShipAboardTag {
 
     /**
      * The record written by {@link #write}, or {@code null} when there is none to be had — no tag,
-     * a tag of the wrong shape, a missing or unparseable ship id, or a missing coordinate. Never
-     * throws and never returns a partially-populated {@link Aboard}: this runs inside the login
-     * path, where an exception would be a failed login and a half-read record would place a player
-     * at a coordinate he was never at.
+     * a tag of the wrong shape, or a missing or unparseable ship id. Never throws and never returns
+     * a partially-populated {@link Aboard}: this runs inside the login path, where an exception
+     * would be a failed login and a half-read record would place a player at a coordinate he was
+     * never at.
      *
-     * <p>The coordinate is checked for presence explicitly because
+     * <p>The coordinate's presence is decided by the sub-tag's own presence, not by its value:
      * {@link GalacticCoord#readFromNBT} is deliberately lenient and answers {@code ORIGIN} for an
-     * absent sub-tag — which is a legitimate position, so it cannot be used to detect absence. A
-     * ship genuinely parked at the origin therefore still reads back as {@code ORIGIN}.</p>
+     * absent sub-tag, which is a legitimate cell — so a ship genuinely parked at the origin reads
+     * back as {@code ORIGIN}, while a ship in no cell at all reads back as {@code null}.</p>
      */
     public static Aboard read(NBTTagCompound forgeData) {
         if (forgeData == null || !forgeData.hasKey(KEY, TAG_COMPOUND)) {
             return null;
         }
         NBTTagCompound sub = forgeData.getCompoundTag(KEY);
-        if (!sub.hasKey(SHIP_ID, TAG_STRING) || !sub.hasKey("galacticCoord", TAG_COMPOUND)) {
+        if (!sub.hasKey(SHIP_ID, TAG_STRING)) {
             return null;
         }
         UUID shipId;
@@ -217,13 +234,15 @@ public final class ShipAboardTag {
         } catch (IllegalArgumentException bad) {
             return null; // corrupt id: treat as "not aboard" rather than fail the login
         }
+        GalacticCoord coord = sub.hasKey("galacticCoord", TAG_COMPOUND)
+                ? GalacticCoord.readFromNBT(sub) : null;
         // Absent posture key means SEATED — the only shape that existed when the tag was introduced,
         // and the shape a seated record still writes.
         if (sub.getBoolean(STANDING)) {
-            return Aboard.standing(shipId, GalacticCoord.readFromNBT(sub),
+            return Aboard.standing(shipId, coord,
                     sub.getDouble("standDx"), sub.getDouble("standDy"), sub.getDouble("standDz"));
         }
-        return new Aboard(shipId, GalacticCoord.readFromNBT(sub),
+        return new Aboard(shipId, coord,
                 sub.getInteger("afcDx"), sub.getInteger("afcDy"), sub.getInteger("afcDz"));
     }
 
