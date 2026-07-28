@@ -44,18 +44,23 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
  *
- * <p><b>Known limitation, REVISIT WHEN VALKYRIEN SKIES SOURCE IS AVAILABLE.</b> Under the parallel
- * client gate (many client JVMs contending for one GPU) leg A's subject was intermittently never
- * DRAWN: measured, a red window rendered 543 frames yet ran {@code RenderLivingBase.applyRotations}
- * zero times for any living body, while the same client drew leg B's carried cow fine. So a world
- * entity standing inside a steeply-rolled ship's world AABB (leg A's precondition) is sometimes absent
- * from the vanilla living-render dispatch. The camera→subject offset is fixed, so it is not a frustum
- * miss; the suspected cause is Valkyrien Skies' per-frame handling of world entities that fall inside a
- * ship's world box - but VS is jar-only here, so the exact render path was not opened. Leg A works
- * around it by re-staging the subject until the client provably draws it (see {@link #MAX_STAGINGS});
- * that keeps the test honest without root-causing a symptom that needs GPU contention to appear and so
- * does not reach a single-client player. When VS is vendored as source, root-cause the render path and
- * decide whether the re-stage workaround can be retired.</p>
+ * <p><b>On the re-stage loop.</b> Under the parallel client gate (many client JVMs contending for one
+ * GPU) leg A's subject was once intermittently never DRAWN: a red window rendered 543 frames yet ran
+ * {@code RenderLivingBase.applyRotations} zero times for any living body, while the same client drew
+ * leg B's carried cow fine. That was read as Valkyrien Skies doing something per-frame with world
+ * entities inside a ship's world box. Re-examined against the VS sources, no such path exists: VS's
+ * {@code Frustum} overwrite is the identity for anything outside the ship-chunk region, its
+ * {@code RenderGlobal} mixin touches neither {@code setupTerrain} nor {@code renderEntities}, and its
+ * entity drag needs a real collision against ship blocks rather than mere containment in the box. The
+ * symptom was also measured on a fixture at other coordinates, before the harness pinned its world
+ * seed - i.e. on terrain that was regenerated per run. On the surveyed site this class uses now, 15
+ * staged subjects across serial and 8-fork gate runs were drawn every time, with the render-stage
+ * probe green on every gate ({@link #subjectRenderStage}) and zero drift from the spot.
+ *
+ * <p>So the re-stage loop stays (see {@link #MAX_STAGINGS}) as cheap insurance against a symptom that
+ * cannot be shown absent, not as a workaround for a known defect - and it is no longer silent: every
+ * attempt prints which render stage the subject passed and where the client held it, so a recurrence
+ * names its own cause instead of needing this investigation again.</p>
  */
 public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
 
@@ -128,12 +133,11 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
         // Stage the MEASURED body in front of an already-settled camera, and require the client to
         // actually DRAW it before measuring the gate. That a body inside a ship's world AABB is drawn
         // through the vanilla living path is a SETUP precondition here, not the contract under test:
-        // under concurrent-fork load it is intermittently NOT drawn at all (measured: 543 frames
-        // rendered, ZERO applyRotations on the only living body in the window), which is a
-        // render-observability gap on the subject, not the gate deciding to rotate it. The
-        // camera-to-subject offset is fixed, so this is not a framing/frustum miss; it tracks the
-        // subject's spot and VS's per-frame state for a world entity inside a ship box. Re-stage at a
-        // FRESH valid spot until one is drawn, under a bounded budget; the rotation contract below is
+        // it was once measured NOT drawn at all under concurrent-fork load (543 frames rendered, ZERO
+        // applyRotations on the only living body in the window), which is a render-observability gap on
+        // the subject, not the gate deciding to rotate it. That measurement is not reproducible on this
+        // surveyed site (see the class javadoc), but absence cannot be shown, and staging costs little.
+        // Re-stage at a FRESH valid spot until one is drawn, under a bounded budget; the contract is
         // then measured only on a body the client provably rendered. Each staging spawns AFTER the
         // camera settles (a teleport re-streams entities; spawning in front of a settled camera removes
         // that race at its source) and aims at the SUBJECT (the decision under test is about THIS body's
@@ -159,22 +163,26 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 continue;
             }
             drawAttempts++;
-            Sampling s = awaitRemoteSampling();
+            Sampling s = awaitRemoteSampling(subject, spot);
             // Print every DRAW attempt so a GREEN run still proves whether the re-stage FIRED for the
             // render cull: a lone "DRAWN" is a natural first-try render (fix idle), while a
             // "not drawn ...subject-culled..." line FOLLOWED by a later "DRAWN" is the re-stage
-            // recovering a would-be-red run - the direct evidence the cull is per-spot, not run-global
-            // (ledger #101). Without it a pass is silent about the fix and could be the muffler, not the cure.
+            // recovering a would-be-red run - the direct evidence the cull is per-spot, not run-global.
+            // Without it a pass is silent about the staging and could be the muffler, not the cure.
+            // The sightline prints on BOTH outcomes on purpose: a DRAWN attempt's near-zero drift is
+            // the control that makes a not-drawn attempt's drift mean something.
             System.out.println(String.format(java.util.Locale.ROOT,
-                    "[modelgate] legA draw attempt %d at [%.1f,%.1f,%.1f] -> %s",
-                    drawAttempts, spot[0], spot[1], spot[2], s.drawn ? "DRAWN" : "not drawn " + s.diagnostic));
+                    "[modelgate] legA draw attempt %d at [%.1f,%.1f,%.1f] -> %s %s",
+                    drawAttempts, spot[0], spot[1], spot[2],
+                    s.drawn ? "DRAWN" : "not drawn " + s.diagnostic, s.sightline));
             if (s.drawn) {
                 before = remoteCounters();
                 bot().waitTicks(60);
                 after = remoteCounters();
                 break;
             }
-            staging.append(String.format(java.util.Locale.ROOT, "[attempt %d %s]", drawAttempts, s.diagnostic));
+            staging.append(String.format(java.util.Locale.ROOT, "[attempt %d %s %s]",
+                    drawAttempts, s.diagnostic, s.sightline));
             if (drawAttempts >= MAX_STAGINGS) {
                 break;
             }
@@ -201,9 +209,12 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 rotated == 0);
     }
 
-    /** Re-stage the subject at most this many times when the client does not draw it (ledger #101). At
-     *  the measured ~2/3 per-spot draw rate under load, three fresh spots drive a spurious "never drawn"
-     *  below ~4 %, while a run-GLOBAL cull still exhausts the budget and self-reports it. */
+    /** Re-stage the subject at most this many times when the client does not draw it. Sized when the
+     *  per-spot draw rate under load measured ~2/3: three fresh spots drove a spurious "never drawn"
+     *  below ~4 %, while a run-GLOBAL cull still exhausts the budget and self-reports it. On the
+     *  surveyed site the class uses now, 12 consecutive staged spots under an 8-fork gate were all
+     *  drawn, so the budget is slack rather than load-bearing - kept because a rate measured on one
+     *  fixture is not a guarantee about a machine under different contention. */
     private static final int MAX_STAGINGS = 3;
 
     // ---- Leg B (control): the gate must still rotate a body the ship DOES carry ----------------
@@ -226,9 +237,12 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 readInt(contact, OBSTACLES) > 0);
 
         lookAt(ship[0], ship[1], ship[2]);
-        Sampling s = awaitRemoteSampling();
+        // The reference point here is the SHIP, not a fixed stand spot: this subject rides the deck
+        // through the roll, so "drift" reads as where the client holds it relative to the hull it is
+        // aimed at - the same sightline question, asked of a body that is supposed to move.
+        Sampling s = awaitRemoteSampling(subject, ship);
         assertTrue("the carried subject was never drawn by the client, so this control proves nothing: "
-                        + s.diagnostic + " | client cows=" + safeReportCows(),
+                        + s.diagnostic + " " + s.sightline + " | client cows=" + safeReportCows(),
                 s.drawn);
         long[] before = remoteCounters();
         bot().waitTicks(60);
@@ -253,10 +267,15 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
     private static final class Sampling {
         final boolean drawn;
         final String diagnostic;
+        /** Where the CLIENT held the subject when the window closed - see {@link #subjectSightline}.
+         *  Carried on BOTH outcomes: the drawn case is the control that gives the not-drawn case its
+         *  meaning ("when it IS drawn the subject sits on its spot"). */
+        final String sightline;
 
-        Sampling(boolean drawn, String diagnostic) {
+        Sampling(boolean drawn, String diagnostic, String sightline) {
             this.drawn = drawn;
             this.diagnostic = diagnostic;
+            this.sightline = sightline;
         }
     }
 
@@ -266,7 +285,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
      *  opened before that reads zero samples on a client that draws models perfectly well.
      *
      *  <p>Returns {@link Sampling#drawn}=false rather than asserting, so the caller can RE-STAGE at a
-     *  fresh spot (ledger #101: a world body inside a ship box is intermittently not drawn under load).
+     *  fresh spot (a world body inside a ship box was once intermittently not drawn under load).
      *  When it returns false the diagnostic classifies the miss over the polled window from the two
      *  render-stage controls — {@code cameraHookCalls} (frames) and {@code modelRotationCalls} (every
      *  living model, player included) — so a red run names its own failure stage:
@@ -280,7 +299,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
      *  early on a samples predicate would move what the assertion sees — leg A's {@code rotated == 0}
      *  gets easier the fewer samples it saw, and leg B's {@code rotated > 0} can exit before the first
      *  ROTATED frame lands. That is exactly the case in which the fixed wait must stay.</p> */
-    private Sampling awaitRemoteSampling() throws Exception {
+    private Sampling awaitRemoteSampling(int subjectId, double[] stagedAt) throws Exception {
         // First the subject must have ARRIVED on this side. Both legs spawn it and only then move the
         // camera, and a teleport re-streams chunks AND entities - so the body reaches the client after
         // a race a fixed wait wins only sometimes. > 1 because the client world always holds the player.
@@ -288,7 +307,8 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 () -> (long) clientDouble(SHIP_CAMERA, "clientLoadedEntities"),
                 v -> v > 1, 10, 12);
         if (!arrived.satisfied) {
-            return new Sampling(false, "[subject never reached the CLIENT world (" + arrived + ")]");
+            return new Sampling(false, "[subject never reached the CLIENT world (" + arrived + ")]",
+                    subjectSightline(subjectId, stagedAt));
         }
 
         final long start = (long) clientDouble(SHIP_CAMERA, "remoteModelSamples");
@@ -298,7 +318,7 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 () -> (long) clientDouble(SHIP_CAMERA, "remoteModelSamples"),
                 v -> v > start, 15, 8);
         if (r.satisfied) {
-            return new Sampling(true, "");
+            return new Sampling(true, "", subjectSightline(subjectId, stagedAt));
         }
         long frames = (long) clientDouble(SHIP_CAMERA, "cameraHookCalls") - framesBefore;
         long models = (long) clientDouble(SHIP_CAMERA, "modelRotationCalls") - modelsBefore;
@@ -307,7 +327,79 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractClientE2ETest {
                 : models == 0 ? "no-living-model-drawn(applyRotations unreached)"
                 : "subject-culled(models drawn, subject absent from render list)";
         return new Sampling(false, String.format(java.util.Locale.ROOT,
-                "[%s %s frames+=%d models+=%d loaded=%d]", verdict, r, frames, models, loaded));
+                "[%s %s frames+=%d models+=%d loaded=%d]", verdict, r, frames, models, loaded),
+                subjectSightline(subjectId, stagedAt));
+    }
+
+    /** Where the CLIENT actually holds the staged subject right now, how far that is from the spot it
+     *  was staged at, and how far off the camera's own axis it sits.
+     *
+     *  <p>This is the DISCRIMINATOR a "not drawn" window was missing. The standing reading of that
+     *  window - "the camera-to-spot offset is fixed, so a zero draw count cannot be a framing miss" -
+     *  holds only while the subject STAYS on its spot, and nothing here ever measured that. Three
+     *  mechanisms move it without any render path being at fault: a cow spawned on a ONE-BLOCK floor
+     *  beside a rolled hull can walk off it and fall; VS drags any body whose recent move touched a
+     *  ship ({@code EntityDraggable.tickAddedVelocityForWorld}, applied every world tick to a body
+     *  whose {@code lastTouchedShip} is younger than {@code VSConfig.ticksToStickToShip}) by the
+     *  ship's between-tick transform, which for a steeply ROLLING hull is a swing about its centre;
+     *  and a body pushed out of the hull leaves the aimed cone in a few ticks. An {@code offAxis}
+     *  beyond ~45 deg is outside any sane FOV, so a zero needs no render explanation at all.
+     *
+     *  <p>Read from the CLIENT (the only side whose render list matters) and best effort: a probe
+     *  failure must never mask the measurement it annotates. */
+    private String subjectSightline(int subjectId, double[] stagedAt) {
+        return subjectRenderStage(subjectId) + " " + subjectPosition(subjectId, stagedAt);
+    }
+
+    /** Which stage of the vanilla entity-render dispatch the subject passes on the client RIGHT NOW.
+     *  The sightline above answers "is it where we aimed"; this answers "and if it is, why was it not
+     *  drawn". Vanilla draws entities per VISIBLE render-chunk section, not from the loaded-entity
+     *  list, so a body can be loaded, in frame and still never dispatched because its section is not
+     *  in the visible set - three causes one model counter cannot separate. */
+    private String subjectRenderStage(int subjectId) {
+        try {
+            return "[" + bot().invokeStaticInt(SHIP_CAMERA, "renderStageReport", subjectId)
+                    .get("returned").getAsString() + "]";
+        } catch (Exception e) {
+            return "[render-stage probe failed: " + e + "]";
+        }
+    }
+
+    private String subjectPosition(int subjectId, double[] stagedAt) {
+        try {
+            com.google.gson.JsonObject report = bot().reportEntities("Cow", 160.0);
+            com.google.gson.JsonArray seen = report.getAsJsonArray("entities");
+            for (int i = 0; i < seen.size(); i++) {
+                com.google.gson.JsonObject e = seen.get(i).getAsJsonObject();
+                if (e.get("id").getAsInt() != subjectId) {
+                    continue;
+                }
+                double x = e.get("x").getAsDouble(), y = e.get("y").getAsDouble(), z = e.get("z").getAsDouble();
+                double dx = x - stagedAt[0], dy = y - stagedAt[1], dz = z - stagedAt[2];
+
+                com.google.gson.JsonObject st = bot().reportState();
+                double px = st.get("playerX").getAsDouble(), py = st.get("playerY").getAsDouble(),
+                        pz = st.get("playerZ").getAsDouble();
+                double ry = Math.toRadians(st.get("playerYaw").getAsDouble());
+                double rp = Math.toRadians(st.get("playerPitch").getAsDouble());
+                // The camera forward vector in MC's yaw/pitch convention, and the angle between it
+                // and the line to the subject's body centre.
+                double fx = -Math.sin(ry) * Math.cos(rp), fy = -Math.sin(rp), fz = Math.cos(ry) * Math.cos(rp);
+                double tx = x - px, ty = (y + 0.7) - py, tz = z - pz;
+                double dist = Math.sqrt(tx * tx + ty * ty + tz * tz);
+                double off = dist < 1.0E-6 ? 0.0 : Math.toDegrees(Math.acos(
+                        Math.max(-1.0, Math.min(1.0, (fx * tx + fy * ty + fz * tz) / dist))));
+                return String.format(java.util.Locale.ROOT,
+                        "[client-pos=%.2f,%.2f,%.2f staged=%.2f,%.2f,%.2f drift=%.2f,%.2f,%.2f "
+                                + "|drift|=%.2f dist=%.1f offAxis=%.1fdeg]",
+                        x, y, z, stagedAt[0], stagedAt[1], stagedAt[2], dx, dy, dz,
+                        Math.sqrt(dx * dx + dy * dy + dz * dz), dist, off);
+            }
+            return "[subject id=" + subjectId + " ABSENT from the client world within 160 blocks; "
+                    + "cows the client sees=" + report.get("count") + "]";
+        } catch (Exception e) {
+            return "[sightline probe failed: " + e + "]";
+        }
     }
 
     /** Client-side positions of every cow the client currently sees, for a red-run diagnostic. Best
