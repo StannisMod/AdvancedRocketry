@@ -286,19 +286,28 @@ public class TileNavigationComputer extends TileInventoryHatch
                         isArmed() ? "msg.navcomputer.disarm" : "msg.navcomputer.arm"), this,
                 zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
 
-        typedX = new ModuleNumericTextbox(this, 20, 96, 34, 12, 8);
-        typedY = new ModuleNumericTextbox(this, 58, 96, 34, 12, 8);
-        typedZ = new ModuleNumericTextbox(this, 96, 96, 34, 12, 8);
-        modules.add(typedX);
-        modules.add(typedY);
-        modules.add(typedZ);
+        // The text boxes are CLIENT-ONLY, and this list is built on BOTH sides: the server builds it
+        // too, to assemble the container behind the window. A text box's backing GuiTextField is a
+        // client-side field that is stripped from the dedicated server, so touching one here — even
+        // just to seed it with the current value — throws before the container is ever made, and the
+        // console then refuses to open with no error the player can see. Same guard as the docking
+        // port and the railgun; only the SLOT-bearing modules must exist on both sides.
+        if (world.isRemote) {
+            typedX = new ModuleNumericTextbox(this, 20, 96, 34, 12, 8);
+            typedY = new ModuleNumericTextbox(this, 58, 96, 34, 12, 8);
+            typedZ = new ModuleNumericTextbox(this, 96, 96, 34, 12, 8);
+            modules.add(typedX);
+            modules.add(typedY);
+            modules.add(typedZ);
+
+            channelBox = new ModuleNumericTextbox(this, 20, 132, 34, 12, 5);
+            channelBox.setText(Integer.toString(syncChannel));
+            modules.add(channelBox);
+        }
         modules.add(new ModuleButton(20, 112, BUTTON_AIM_TYPED,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.aimtyped"), this,
                 zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 110, 20));
 
-        channelBox = new ModuleNumericTextbox(this, 20, 132, 34, 12, 5);
-        channelBox.setText(Integer.toString(syncChannel));
-        modules.add(channelBox);
         modules.add(new ModuleButton(58, 130, BUTTON_SYNC,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.sync"), this,
                 zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 72, 20));

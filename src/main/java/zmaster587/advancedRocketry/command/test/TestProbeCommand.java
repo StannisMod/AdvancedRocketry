@@ -2061,10 +2061,31 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"target\":null}");
             return;
         }
+        // modules — build the console's GUI module list ON THIS (server) side, the way
+        // GuiHandler.getServerGuiElement does when a player right-clicks it, and report what came
+        // back. A GUI that fails to open leaves NO trace a test can read: the interaction returns
+        // SUCCESS, the screen simply never appears, and the child JVM's log dies with the harness.
+        // This turns that silence into an answer.
+        if ("modules".equalsIgnoreCase(verb)) {
+            try {
+                java.util.List<zmaster587.libVulpes.inventory.modules.ModuleBase> modules =
+                        nav.getModules(0, sender instanceof EntityPlayerMP ? (EntityPlayerMP) sender : null);
+                send(sender, "{\"ok\":true,\"built\":true,\"modules\":"
+                        + (modules == null ? -1 : modules.size()) + "}");
+            } catch (Throwable failure) {
+                send(sender, "{\"ok\":true,\"built\":false,\"error\":\""
+                        + escapeJson(failure.getClass().getName() + ": " + failure.getMessage()) + "\"}");
+            }
+            return;
+        }
         if ("status".equalsIgnoreCase(verb)) {
             send(sender, "{\"ok\":true,\"linked\":" + nav.isLinked()
                     + ",\"target\":" + (nav.getTarget() == null ? "null" : "\"" + nav.getTarget().cellKey() + "\"")
                     + ",\"ship\":" + nav.shipCrystal().size()
+                    + ",\"source\":" + zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
+                            nav.getStackInSlot(
+                                    zmaster587.advancedRocketry.tile.TileNavigationComputer.SLOT_SOURCE)).size()
+                    + ",\"armed\":" + nav.isArmed()
                     + ",\"channel\":" + nav.getSyncChannel() + "}");
             return;
         }
