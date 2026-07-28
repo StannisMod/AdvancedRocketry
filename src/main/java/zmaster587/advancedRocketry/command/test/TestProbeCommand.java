@@ -1014,6 +1014,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true"
                     + ",\"received\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.pilotInputPacketsReceived
                     + ",\"delivered\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.pilotInputPacketsDelivered
+                    + ",\"commandsReceived\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.pilotCommandPacketsReceived
                     + ",\"lastVerdict\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastPilotInputVerdict + "\""
                     + ",\"riderResolveCount\":" + zmaster587.advancedRocketry.tile.TilePilotSeat.riderResolveCount
                     + ",\"lastRiderResolve\":\"" + zmaster587.advancedRocketry.tile.TilePilotSeat.lastRiderResolve + "\""

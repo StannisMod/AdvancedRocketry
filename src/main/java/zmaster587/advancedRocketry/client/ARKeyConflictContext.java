@@ -80,10 +80,10 @@ public enum ARKeyConflictContext implements IKeyConflictContext {
         if (riding instanceof EntityRocketBase || riding instanceof EntityHoverCraft) {
             return true;
         }
-        // Tier-2 ship: the pilot sits on a seat (a dummy mount), so recognise a linked pilot
-        // seat under the mount as "piloting" too — otherwise the shared steering keys stay
-        // scoped OFF and fall through to their vanilla actions while flying the ship.
-        TilePilotSeat seat = TilePilotSeat.forRider(riding, mc.world);
-        return seat != null && seat.isLinked();
+        // Tier-2 ship: the pilot sits on a seat (a dummy mount), so recognise the seat of a ship
+        // under the mount as "piloting" too — otherwise the shared steering keys stay scoped OFF
+        // and fall through to their vanilla actions while flying the ship. Sitting on a craft that
+        // never became a ship is NOT piloting: the keys must keep their vanilla meaning there.
+        return TilePilotSeat.forShipPilot(riding, mc.world) != null;
     }
 }

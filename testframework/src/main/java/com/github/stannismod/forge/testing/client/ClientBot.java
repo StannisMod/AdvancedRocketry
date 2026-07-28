@@ -209,10 +209,15 @@ public final class ClientBot implements Closeable {
 
     /**
      * Injects a real key-binding press/release on the client, exactly as the
-     * keyboard would. Drives {@code KeyBinding.isKeyDown()} (held movement keys)
-     * and a single {@code isPressed()} edge, so mod input handlers that poll key
-     * state on {@code ClientTickEvent}/{@code KeyInputEvent} fire their real
-     * packet path — not a server-side shortcut.
+     * keyboard would. Drives {@code KeyBinding.isKeyDown()} (held movement keys),
+     * a single {@code isPressed()} edge, and Forge's {@code InputEvent.KeyInputEvent}
+     * (fired per key event by the real keyboard loop), so mod input handlers fire
+     * their real packet path whether they poll on {@code ClientTickEvent} or
+     * subscribe to {@code KeyInputEvent} — not a server-side shortcut.
+     *
+     * <p>The event carries no key code (it never did): a handler that reads
+     * {@code Keyboard.getEventKey()} directly instead of polling its own
+     * {@code KeyBinding} sees LWJGL's empty event state and stays unreachable.</p>
      *
      * @param keyCode LWJGL key code (e.g. {@link org.lwjgl.input.Keyboard#KEY_Z})
      * @param pressed true to hold the key down, false to release it

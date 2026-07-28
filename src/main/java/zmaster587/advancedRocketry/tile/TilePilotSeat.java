@@ -78,6 +78,10 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
     public static volatile int pilotInputPacketsDelivered;
     /** The last received pilot-input packet's gate outcome (seat pos, pilot guard, AFC resolve). */
     public static volatile String lastPilotInputVerdict = "";
+    /** Pilot COMMAND packets (Flight-Assist, auto-takeoff, jump) that reached a seat in this JVM.
+     *  The mirror image of the counters above: they attribute a command that was EATEN, this one
+     *  attributes a command that ARRIVED — which for a craft that is not a ship it never should. */
+    public static volatile int pilotCommandPacketsReceived;
 
     /**
      * Client-only cache of the linked computer's Flight-Assist state, synced from the server via
@@ -169,6 +173,29 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
         return seat;
     }
 
+    /**
+     * The pilot seat a {@code riding} entity belongs to, but ONLY when that seat actually steers a
+     * ship right now. This is the single oracle behind every "is this player piloting a tier-2
+     * ship" gate — input dispatch, the edge-triggered command keys, the camera lock, the key-conflict
+     * scope and the flight HUD all ask it, and none of them re-spells the condition.
+     *
+     * <p>Both halves are load-bearing. {@link #isLinked()} says the craft was BUILT as a ship, and
+     * carries the flight computer's offset; {@link #isManagedByShip(World)} says a ship EXISTS. A
+     * rejected assembly leaves the first true forever, so a gate that asks the link alone asserts a
+     * flight state that is not there: the client locks the camera to a ship nobody flies and ships
+     * control packets into the void, and the seat's own "not assembled" notice is suppressed by the
+     * same flag that makes it necessary.</p>
+     *
+     * <p>Resolving it in ONE place is half the fix. The gates sat next to each other and were
+     * written by copying each other, so each new control key inherited the wrong oracle by looking
+     * consistent with its neighbours; with the condition named once, matching the neighbours is
+     * finally the correct move.</p>
+     */
+    public static TilePilotSeat forShipPilot(Entity riding, World world) {
+        TilePilotSeat seat = forRider(riding, world);
+        return seat != null && seat.isLinked() && seat.isManagedByShip(world) ? seat : null;
+    }
+
     /** Compact {@code (x,y,z)} for the diagnostic strings above. */
     private static String xyz(BlockPos pos) {
         return "(" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ")";
@@ -242,6 +269,13 @@ public class TilePilotSeat extends TileEntity implements INetworkMachine {
 
     @Override
     public void useNetworkData(EntityPlayer player, Side side, byte id, NBTTagCompound nbt) {
+        // Delivery diagnostics for the edge-triggered commands, counted once for all three (see the
+        // statics' javadoc). Ungated on purpose: a command arriving from a client that should never
+        // have sent it is exactly the state that is otherwise invisible from outside the JVM.
+        if (id == PACKET_FLIGHT_ASSIST_TOGGLE || id == PACKET_AUTO_TAKEOFF_TOGGLE
+                || id == PACKET_JUMP) {
+            pilotCommandPacketsReceived++;
+        }
         if (id == PACKET_PILOT_INPUT) {
             boolean pilot = isPilotOf(player);
             TileAdvancedFlightComputer afc = pilot ? getFlightComputer() : null;

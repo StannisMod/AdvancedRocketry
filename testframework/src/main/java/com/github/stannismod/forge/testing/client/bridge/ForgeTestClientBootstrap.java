@@ -648,6 +648,17 @@ public final class ForgeTestClientBootstrap {
                     if (pressed) {
                         net.minecraft.client.settings.KeyBinding.onTick(keyCode);
                     }
+                    // ...and fire Forge's KeyInputEvent, exactly where the real keyboard fires it:
+                    // Minecraft.runTickKeyboard calls FMLCommonHandler.fireKeyInput() at the end of
+                    // EVERY iteration of its `while (Keyboard.next())` loop — press and release
+                    // alike. Without this, an injected key drives only handlers that POLL key state
+                    // on ClientTickEvent; every edge-triggered handler subscribed to
+                    // InputEvent.KeyInputEvent (the idiomatic place for a one-shot toggle key) is
+                    // unreachable from a test, and a test that "presses" such a key silently
+                    // asserts nothing. Note the event carries no key: a handler that reads
+                    // Keyboard.getEventKey()/getEventKeyState() directly still sees LWJGL's own
+                    // (here: empty) event state, so it must poll its KeyBinding instead.
+                    net.minecraftforge.fml.common.FMLCommonHandler.instance().fireKeyInput();
                     JsonObject response = ok();
                     response.addProperty("keyCode", keyCode);
                     response.addProperty("pressed", pressed);

@@ -170,8 +170,7 @@ public final class ShipFrameCamera {
             return null;
         }
         Minecraft mc = Minecraft.getMinecraft();
-        TilePilotSeat seat = TilePilotSeat.forRider(view.getRidingEntity(), view.world);
-        if (seat != null && seat.isLinked() && view == mc.player) {
+        if (TilePilotSeat.forShipPilot(view.getRidingEntity(), view.world) != null && view == mc.player) {
             return FreeFlightPhysics.slerp(KeyBindings.shipPrevQuat(), KeyBindings.shipQuat(), partialTicks);
         }
         // The LOCAL player's eye/camera/model gate on the MOVEMENT truth - resolved ABOARD a deck -

@@ -183,8 +183,7 @@ public class KeyBindings {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null) return null;
         if (!mc.isCallingFromMinecraftThread()) return null;
-        TilePilotSeat seat = TilePilotSeat.forRider(mc.player.getRidingEntity(), mc.world);
-        if (seat == null || !seat.isLinked()) return null;
+        if (TilePilotSeat.forShipPilot(mc.player.getRidingEntity(), mc.world) == null) return null;
         return FreeFlightPhysics.eulerFromQuat(shipQuat);
     }
 
@@ -578,9 +577,11 @@ public class KeyBindings {
      */
     private boolean handleShipPilotInput(Minecraft mc, EntityPlayerSP player) {
         // Resolve the pilot seat via the dummy's BOUND seat position (its own world position does
-        // not locate the seat tile on a physics-mod ship — the seat lives in a distant subspace).
-        TilePilotSeat seat = TilePilotSeat.forRider(player.getRidingEntity(), mc.world);
-        if (seat == null || !seat.isLinked()) {
+        // not locate the seat tile on a physics-mod ship — the seat lives in a distant subspace),
+        // and only accept it while a ship really manages it: a craft whose assembly was rejected
+        // keeps its link forever, and steering one sends input at a ship that does not exist.
+        TilePilotSeat seat = TilePilotSeat.forShipPilot(player.getRidingEntity(), mc.world);
+        if (seat == null) {
             // Diagnostics: count only ticks where the player IS on a seat mount - that is the
             // silent "seated but not piloting" state worth attributing (walking ticks are noise).
             if (player.getRidingEntity() instanceof EntityDummy) {
@@ -705,8 +706,7 @@ public class KeyBindings {
         if (dx == 0 && dy == 0) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.currentScreen != null) return;
-        TilePilotSeat seat = TilePilotSeat.forRider(mc.player.getRidingEntity(), mc.world);
-        if (seat == null || !seat.isLinked()) return;
+        if (TilePilotSeat.forShipPilot(mc.player.getRidingEntity(), mc.world) == null) return;
         // Vanilla's raw-delta to degrees mapping (EntityRenderer sensitivity curve x Entity.turn).
         float f = mc.gameSettings.mouseSensitivity * 0.6F + 0.2F;
         float degPerUnit = f * f * f * 8.0F * 0.15F;
@@ -734,22 +734,23 @@ public class KeyBindings {
 			}*/
  
         // Tier-2 ship pilot: the flight keys are sampled per-tick in onClientTick's
-        // handleShipPilotInput; only the edge-triggered Flight-Assist toggle (N) lives here. Guarded
-        // by forRider==linked seat, so isPressed() is never consumed for a non-ship pilot (the
-        // rocket branch below still gets the N press when riding a rocket).
-        TilePilotSeat pilotSeat = TilePilotSeat.forRider(player.getRidingEntity(), minecraft.world);
-        if (pilotSeat != null && pilotSeat.isLinked() && flightAssistToggle.isPressed()) {
+        // handleShipPilotInput; only the edge-triggered command keys live here. Guarded by the
+        // seat of a REAL ship, so isPressed() is never consumed for a non-ship pilot (the rocket
+        // branch below still gets the N press when riding a rocket) and a craft that never
+        // assembled is never handed a command to answer.
+        TilePilotSeat pilotSeat = TilePilotSeat.forShipPilot(player.getRidingEntity(), minecraft.world);
+        if (pilotSeat != null && flightAssistToggle.isPressed()) {
             PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_FLIGHT_ASSIST_TOGGLE));
             kbTrace("SHIP flight-assist toggle -> seat " + pilotSeat.getPos());
         }
         // Edge-triggered auto-takeoff toggle (K), same seat-gated dispatch as the FA toggle.
-        if (pilotSeat != null && pilotSeat.isLinked() && autoTakeoffToggle.isPressed()) {
+        if (pilotSeat != null && autoTakeoffToggle.isPressed()) {
             PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_AUTO_TAKEOFF_TOGGLE));
             kbTrace("SHIP auto-takeoff toggle -> seat " + pilotSeat.getPos());
         }
         // Edge-triggered jump commit (J). Same seat gate: the destination is armed at the navigation
         // computer, and this is the pilot at the helm saying go — or, mid-wind-up, saying no.
-        if (pilotSeat != null && pilotSeat.isLinked() && jumpTrigger.isPressed()) {
+        if (pilotSeat != null && jumpTrigger.isPressed()) {
             PacketHandler.sendToServer(new PacketMachine(pilotSeat, TilePilotSeat.PACKET_JUMP));
             kbTrace("SHIP jump trigger -> seat " + pilotSeat.getPos());
         }
