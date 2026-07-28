@@ -29,10 +29,20 @@ public final class TestProbeCommandRegistration {
      */
     private static final String HARNESS_FLAG = "forge.test.server";
 
+    /**
+     * The same signal on a harness-spawned CLIENT JVM. It is NOT optional: {@link #FLAG} is set on
+     * the test JVM and forwarded to the server child, but never to the client, so without this every
+     * client-side test-gated diagnostic AR has — the {@code [FF-TRACE/*]} lines, the per-tick
+     * ship-frame history — was silently dead. An empty client-side diagnostic then reads exactly
+     * like "the code never ran", which is the one reading a diagnostic must never be able to fake.
+     */
+    private static final String HARNESS_CLIENT_FLAG = "forge.test.client";
+
     private TestProbeCommandRegistration() {}
 
     public static boolean isTestMode() {
-        return Boolean.getBoolean(FLAG) || Boolean.getBoolean(HARNESS_FLAG);
+        return Boolean.getBoolean(FLAG) || Boolean.getBoolean(HARNESS_FLAG)
+                || Boolean.getBoolean(HARNESS_CLIENT_FLAG);
     }
 
     public static void registerIfTestMode(FMLServerStartingEvent event) {

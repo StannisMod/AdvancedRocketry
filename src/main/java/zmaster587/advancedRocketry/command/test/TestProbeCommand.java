@@ -1597,6 +1597,26 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropAllowed);
             m.put("dragSuppressions",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.dragSuppressions);
+            // The no-input-drift discriminator: the ship-RELATIVE motion the last resolved tick was
+            // handed, the walk inputs that came with it, and the carry that tick held. A body that
+            // creeps along a deck with lastInStrafe/lastInForward at 0 is being moved by one of
+            // these two, and which one is nonzero names the writer.
+            m.put("lastInStrafe",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastInStrafe);
+            m.put("lastInForward",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastInForward);
+            m.put("lastMotionShipX",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipX);
+            m.put("lastMotionShipY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipY);
+            m.put("lastMotionShipZ",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipZ);
+            m.put("lastCarryX",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryX);
+            m.put("lastCarryY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryY);
+            m.put("lastCarryZ",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryZ);
             send(sender, jsonMap(m));
             return;
         }

@@ -184,6 +184,11 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         assertTrue("after the relog he must be captured ABOARD the deck again, or 'he did not "
                 + "drift' would just mean he is standing on something else: " + capNow, aboard);
 
+        // Everything the tight pins below measure is taken from the CLIENT's own per-tick record,
+        // which starts here: the client owns this body's movement, and the server-side probe reads
+        // the server's copy of it.
+        long fromTick = lastClientTick();
+
         // Measured in the SHIP FRAME, one snapshot per sample (see deckPoint's note on the three
         // instruments that were wrong before it). The whole observation is TRACED rather than
         // sampled at two points: what a residual velocity looks like - a decaying slide - and what a
@@ -205,6 +210,8 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         }
         System.out.println("[walk-relog] logoutDeckPoint=" + fmt(logoutOffset) + " seedOutcome="
                 + clientString(SHIP_FRAME_TRAVEL, "lastSeedOutcome") + " trace:" + path);
+        System.out.println("[walk-relog] CLIENT per-tick history (B = the client body's own "
+                + "ship-frame point):\n" + clientTickHistory());
 
         double[] justAfter = trace[0];
         double[] oneSecondLater = trace[4];
@@ -228,20 +235,44 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
                 Math.abs(justAfter[1] - oneSecondLater[1]) < 0.75);
 
         // And he must STAY put - not merely have stopped by then.
-        // TODAY'S BEHAVIOUR, PINNED ON PURPOSE - NOT THE CONTRACT. About a second after the login a
-        // slow creep along the deck sets in, and it is the RESTORE's doing, not the deck's: the
-        // control above puts the same body, on the same deck, over the same window, at 0.0 without a
-        // relog. Everything the restore was supposed to fix is asserted tightly above (he lands on
-        // the recorded point, and for the first second he neither slides nor sinks); this residual
-        // is a separate defect with its own ledger entry. It is pinned at today's magnitude so that
-        // fixing it fails HERE, deliberately, instead of passing unnoticed - the fix tightens this
-        // bound to the control's.
         double afterCreep = alongDeck(oneSecondLater, later);
-        assertTrue("the post-login creep along the deck has grown beyond what was measured when it "
-                + "was logged as a known defect (after the relog he moved " + afterCreep
+        assertTrue("a restored crew member must not creep along the deck once he has landed on it "
+                + "(after the relog he moved " + afterCreep
                 + " blocks along the deck in 30 ticks; the same body before the relog moved "
-                + idleCreep + " over the same window - THAT is what this must eventually equal)"
-                + path, afterCreep < 1.5);
+                + idleCreep + " over the same window)" + path, afterCreep < 0.35);
+
+        // The two CLIENT-side pins, and the reason they exist alongside the sampled trace above.
+        //
+        // (1) ONE deck point. The client is where this body's movement is decided, and what it
+        // decides each tick is a ship-frame point. Held still, that point must not travel: a body
+        // given a recorded position keeps it. The reading is the client's own committed point, so
+        // it carries none of the ship-transform skew that contaminates any position re-derived from
+        // world coordinates while the ship is moving - and the ship IS moving here, for the first
+        // second or so after a rejoin, which is exactly when this used to break.
+        //
+        // (2) ONE capture mode. Standing on a deck is ABOARD (deck gravity, deck camera, deck walk
+        // basis); the world-frame HULL mode is for a body on the ship's outer skin. A body that
+        // alternates between them is in neither contract, and the alternation is what produced (1):
+        // the hull mode re-bases the held deck point onto the body's current world position, so
+        // every flip banked the skew and the crew member ratcheted along his own deck.
+        String history = clientTickHistory();
+        assertTrue("the client's per-tick record must exist, or these pins measure nothing "
+                + "(is the client JVM in test mode?)", history.contains("|B="));
+        double heldTravel = heldPointTravel(history, fromTick);
+        int hullTicks = hullStandTicks(history, fromTick);
+        int covered = resolvedSince(history, fromTick);
+        System.out.println("[walk-relog] CLIENT held-point travel along the deck = " + heldTravel
+                + " over " + covered + " resolved ticks, hullStand ticks = " + hullTicks);
+        // WITNESS: "it did not travel" and "nothing was recorded" are the same number otherwise.
+        assertTrue("the client must have resolved the body through the observation window, or the "
+                + "two pins below cannot fail (" + covered + " ticks recorded)\n" + history,
+                covered > 20);
+        assertTrue("the deck point the client holds him at must not travel along the deck with no "
+                + "input (moved " + heldTravel + " blocks)\n" + history, heldTravel < 0.2);
+        assertTrue("a crew member standing on a deck must stay in ABOARD capture semantics - "
+                + "flipping to the world-frame hull mode re-bases his deck point onto wherever the "
+                + "world thinks he is (" + hullTicks + " hull-stand ticks)\n" + history,
+                hullTicks == 0);
 
         // Gross-misplacement bound: he has to come back on the deck spot he left, not somewhere
         // else on the ship. Loose on purpose - the reference is read one command before the logout
@@ -284,13 +315,101 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         String st = exec("artest vs shipframe-stats");
         return "SRV[resolved=" + readLong(st, "resolvedTicks")
                 + " declined=" + readLong(st, "declinedTicks")
-                + " worldMoves=" + readLong(st, "worldMoveApplies") + "]"
+                + " worldMoves=" + readLong(st, "worldMoveApplies")
+                + " in=" + readString2(st, "lastInStrafe") + "/" + readString2(st, "lastInForward")
+                + " mShip=(" + readString2(st, "lastMotionShipX") + ","
+                + readString2(st, "lastMotionShipY") + "," + readString2(st, "lastMotionShipZ") + ")"
+                + " carry=(" + readString2(st, "lastCarryX") + "," + readString2(st, "lastCarryY")
+                + "," + readString2(st, "lastCarryZ") + ")"
+                + " guardCarry=" + readString2(st, "lastGuardCarry") + "]"
+                // The client side is deliberately THIN here — every field costs a round trip, and
+                // the round trips stretch the very timeline this trace is sampling. The client's
+                // own per-tick record is read once, at the end (clientTickHistory).
                 + " CLI[resolved=" + clientString(SHIP_FRAME_TRAVEL, "resolvedTicks")
                 + " declined=" + clientString(SHIP_FRAME_TRAVEL, "declinedTicks")
                 + " worldMoves=" + clientString(SHIP_FRAME_TRAVEL, "worldMoveApplies")
                 + " extDrops=" + clientString(SHIP_FRAME_TRAVEL, "externalMoveDrops")
                 + " lastDrop=" + clientString(SHIP_FRAME_TRAVEL, "lastDropReason") + "]"
                 + " srvLastMove=" + readString(st, "lastWorldMove");
+    }
+
+    /**
+     * The CLIENT's own per-tick record of the resolution, read as one field. The sampled trace above
+     * cannot answer this leg's question on its own: it costs a round trip per field, so its
+     * "5 ticks" are really 5 ticks plus the reads, and anything that settles between two samples is
+     * invisible. This is the client body's ship-frame point every tick it was resolved.
+     */
+    private String clientTickHistory() throws Exception {
+        return clientString(SHIP_FRAME_TRAVEL, "tickHistory");
+    }
+
+    /** One line of that record: the resolved-tick number, which capture path produced it, and the
+     *  ship-frame point the client COMMITTED for the body that tick. */
+    private static final Pattern HISTORY_LINE = Pattern.compile(
+            "(\\d+)([afh])\\|B=[^|]*\\|H=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)\\|");
+
+    /** The most recent resolved-tick number in the client's record — the mark an observation starts
+     *  from, so the pins never read ticks from before the window (the record survives the relog:
+     *  the harness reuses one client JVM). */
+    private long lastClientTick() throws Exception {
+        Matcher m = HISTORY_LINE.matcher(clientTickHistory());
+        long last = -1;
+        while (m.find()) {
+            last = Long.parseLong(m.group(1));
+        }
+        return last;
+    }
+
+    /** How far the committed deck point travelled ALONG the deck across the window — first commit
+     *  after {@code fromTick} to the farthest one, not merely the last, so a body that wanders out
+     *  and back cannot pass. */
+    private double heldPointTravel(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        double[] first = null;
+        double worst = 0.0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) <= fromTick) {
+                continue;
+            }
+            double[] held = {Double.parseDouble(m.group(3)), Double.parseDouble(m.group(4)),
+                    Double.parseDouble(m.group(5))};
+            if (first == null) {
+                first = held;
+            } else {
+                worst = Math.max(worst, alongDeck(first, held));
+            }
+        }
+        return worst;
+    }
+
+    private int hullStandTicks(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        int hull = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick && "h".equals(m.group(2))) {
+                hull++;
+            }
+        }
+        return hull;
+    }
+
+    /** How many ticks the window actually covers — a witness that the pins above had something to
+     *  look at, since "no travel" and "no ticks recorded" read the same. */
+    private int resolvedSince(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        int n = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** A numeric JSON field as text (the probe writes doubles unquoted). */
+    private static String readString2(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\":(-?[0-9.EN\\-]+)").matcher(json);
+        return m.find() ? m.group(1) : "?";
     }
 
     private static long readLong(String json, String key) {
