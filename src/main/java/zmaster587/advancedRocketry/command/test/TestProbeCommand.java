@@ -1579,6 +1579,12 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.externalMoveDrops);
             m.put("lastDropReason",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropReason);
+            m.put("lastDropGapTicks",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropGapTicks);
+            m.put("declinedNoLocalOrMotion",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.declinedNoLocalOrMotion);
+            m.put("declinedTransformGone",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.declinedTransformGone);
             m.put("worldMoveApplies",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.worldMoveApplies);
             m.put("lastWorldMove",
@@ -16488,7 +16494,53 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks>\"}");
+        // Block the server's TICK LOOP for a while, the way a real overloaded server does.
+        //
+        // Probe handlers do not run on the server thread (the wait verb above polls the world clock
+        // from a command thread and would deadlock otherwise), so the block has to be scheduled ONTO
+        // that thread. Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes,
+        // which is the whole point: a per-tick threshold anywhere in the codebase means something
+        // different across a tick that really took three seconds, and until now nothing in the harness
+        // could produce one. Bounded to 10 s so it can never approach the harness's command timeout.
+        if (args.length >= 2 && "stall".equalsIgnoreCase(args[0])) {
+            long ms = parseIntOr(args[1], 0);
+            if (ms <= 0L || ms > 10_000L) {
+                send(sender, "{\"error\":\"stallMs must be in (0, 10000]\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            long before = overworld == null ? -1L : overworld.getTotalWorldTime();
+            long wallStart = System.currentTimeMillis();
+            final long blockFor = ms;
+            java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+            server.addScheduledTask(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Thread.sleep(blockFor);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        done.countDown();
+                    }
+                }
+            });
+            try {
+                done.await(blockFor + 5000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            long after = overworld == null ? -1L : overworld.getTotalWorldTime();
+            // ticksAdvanced is the witness: the whole point is that FEWER ticks ran than wall time
+            // would suggest. A caller that sees ticksAdvanced ~= wallMs/50 did not stall anything.
+            send(sender, "{\"ok\":true,\"requestedMs\":" + ms
+                    + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart)
+                    + ",\"startTick\":" + before
+                    + ",\"endTick\":" + after
+                    + ",\"ticksAdvanced\":" + (after - before) + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | /artest server stall <ms>\"}");
     }
 
     /** True if the {@code <slashed>.class} resource is reachable via the
