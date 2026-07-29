@@ -799,6 +799,48 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("count", entities.size());
                     return response;
                 });
+            case "report_mouse_over":
+                // What the client's own crosshair is pointing at: mc.objectMouseOver,
+                // refreshed every tick by Minecraft.runTick (entityRenderer.getMouseOver),
+                // which is the SAME field vanilla's rightClickMouse() reads to decide what a
+                // right-click hits. Without it, "the bot aimed at nothing" and "the click was
+                // aimed correctly but refused" are indistinguishable — so a red key-press test
+                // cannot say which hop failed. Read-only.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    net.minecraft.util.math.RayTraceResult hit = mc.objectMouseOver;
+                    response.addProperty("present", hit != null);
+                    response.addProperty("typeOfHit", hit == null ? "" : hit.typeOfHit.name());
+                    if (hit != null) {
+                        BlockPos hitPos = hit.getBlockPos();
+                        response.addProperty("hasBlockPos", hitPos != null);
+                        if (hitPos != null) {
+                            response.addProperty("blockX", hitPos.getX());
+                            response.addProperty("blockY", hitPos.getY());
+                            response.addProperty("blockZ", hitPos.getZ());
+                            // The block AT that position in the CLIENT world. On a physics-mod
+                            // ship the raytrace reports the ship's own (subspace) position, so
+                            // this is what tells a test whether the pos it got back names the
+                            // block it meant to aim at.
+                            response.addProperty("block", mc.world == null ? ""
+                                    : String.valueOf(mc.world.getBlockState(hitPos)
+                                            .getBlock().getRegistryName()));
+                        }
+                        response.addProperty("sideHit",
+                                hit.sideHit == null ? "" : hit.sideHit.name());
+                        if (hit.hitVec != null) {
+                            response.addProperty("hitX", hit.hitVec.x);
+                            response.addProperty("hitY", hit.hitVec.y);
+                            response.addProperty("hitZ", hit.hitVec.z);
+                        }
+                        response.addProperty("entityClass", hit.entityHit == null ? ""
+                                : hit.entityHit.getClass().getName());
+                        response.addProperty("entityId",
+                                hit.entityHit == null ? -1 : hit.entityHit.getEntityId());
+                    }
+                    return response;
+                });
             case "interact_block":
                 // Real right-click: PlayerControllerMP.processRightClickBlock
                 // sends CPacketPlayerTryUseItemOnBlock, so the server's

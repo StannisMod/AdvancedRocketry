@@ -2079,8 +2079,40 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if ("status".equalsIgnoreCase(verb)) {
+            // The target is reported as the pair it actually is: WHICH BODY the ship is aimed at
+            // (targetDim, the durable half) and WHERE the computer predicts that body will be when
+            // the ship arrives (target, which moves while the body orbits). A caller that wants to
+            // know whether the destination is somewhere a ship can put down must ask about the BODY
+            // - the predicted cell holds it only at arrival, so reading `cell-info` on it now says
+            // nothing. Everything below is read back out of production, never recomputed here.
+            int targetDim = nav.getTargetDim();
+            String targetKind = "null";
+            String descend = "false";
+            boolean slotWorld = false;
+            if (targetDim != zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                slotWorld = zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().contains(targetDim);
+                zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                        zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+                java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> where =
+                        reg == null ? java.util.Optional.<zmaster587.advancedRocketry.space.GalacticCoord>empty()
+                                : reg.coordForPlanet(targetDim);
+                if (where.isPresent()) {
+                    for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(where.get())) {
+                        if (b.dimId() == targetDim) {
+                            targetKind = "\"" + b.kind() + "\"";
+                            descend = Boolean.toString(b.isDescendTarget());
+                            break;
+                        }
+                    }
+                }
+            }
             send(sender, "{\"ok\":true,\"linked\":" + nav.isLinked()
                     + ",\"target\":" + (nav.getTarget() == null ? "null" : "\"" + nav.getTarget().cellKey() + "\"")
+                    + ",\"targetDim\":" + targetDim
+                    + ",\"targetResolved\":" + nav.isTargetResolved()
+                    + ",\"targetKind\":" + targetKind
+                    + ",\"targetDescendTarget\":" + descend
+                    + ",\"targetSlotWorld\":" + slotWorld
                     + ",\"ship\":" + nav.shipCrystal().size()
                     + ",\"source\":" + zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(
                             nav.getStackInSlot(
@@ -2090,6 +2122,20 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown nav verb\"}");
+    }
+
+    /** One body of a {@code space cell-info} list. */
+    private static void appendCellInfoBody(StringBuilder out,
+                                           zmaster587.advancedRocketry.universe.SystemBody b) {
+        out.append("{\"dim\":").append(b.dimId()).append(",\"kind\":\"").append(b.kind())
+                .append("\",\"cell\":\"").append(b.address().cellKey())
+                .append("\",\"descendTarget\":").append(b.isDescendTarget())
+                // Whether that dimension is one of the space subsystem's own SLOT worlds rather than
+                // a real planet. Reported without loading the world, so it is safe to ask about a
+                // body a caller has not decided to visit yet.
+                .append(",\"slotWorld\":").append(
+                        zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().contains(b.dimId()))
+                .append('}');
     }
 
     /** The navigation computer at {@code pos}, or {@code null}. */
@@ -2176,10 +2222,27 @@ public class TestProbeCommand extends CommandBase {
                 }
                 slots.append(d);
             }
+            // Slot dims that Advanced Rocketry ALSO holds a body for. Must always be empty: a slot
+            // world is a void the subsystem rebinds at will, and a body is a place in the universe
+            // registry that a crystal can name and a ship can be flown to. One id owned by both
+            // makes the second a lie - the registry describes a planet whose world is empty space.
+            // Forge's free-id scan cannot see AR's body ids (a gas giant is never registered with
+            // Forge), which is exactly how the two collided.
+            StringBuilder collisions = new StringBuilder();
+            for (Integer d : zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims()) {
+                if (zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                        .getDimensionPropertiesOrNull(d) != null) {
+                    if (collisions.length() > 0) {
+                        collisions.append(',');
+                    }
+                    collisions.append(d);
+                }
+            }
             send(sender, "{\"registered\":"
                     + (zmaster587.advancedRocketry.space.SpaceSubsystem.get() != null)
                     + ",\"pool\":" + zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().size()
                     + ",\"slotDims\":[" + slots + "]"
+                    + ",\"slotDimsAlsoBodies\":[" + collisions + "]"
                     + ",\"ledger\":" + (led == null ? -1 : led.size())
                     + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount()) + "}");
             return;
@@ -2824,6 +2887,66 @@ public class TestProbeCommand extends CommandBase {
             reg.addPoi(body);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + coord.cellKey() + "\",\"descendTarget\":"
                     + body.isDescendTarget() + "}");
+            return;
+        }
+        // cell-info <sx> <sy> <sz> [dimId]: what the universe registry says is AT one cell, and by which
+        // route. Read-only. Exists because "the ship is in a cell with nothing in it" has three very
+        // different causes that look identical from outside: the cell really is void; the cell hosts a
+        // body but the member->anchor attribution (anchorForCell) cannot reach its system; or the system
+        // resolves but its content list is empty. Reporting the anchor alongside the two body counts
+        // separates them. The optional dimId also reports where the registry thinks THAT dimension is,
+        // which is the address a navigation crystal is seeded with — so a disagreement between "the
+        // address of dim N" and "what is at that address" is visible in one call.
+        if (args.length >= 4 && "cell-info".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> anchor =
+                    reg.anchorForCell(cell);
+            StringBuilder out = new StringBuilder("{\"ok\":true,\"cellKey\":\"")
+                    .append(cell.cellKey()).append("\",\"anchor\":")
+                    .append(anchor.isPresent() ? "\"" + anchor.get().cellKey() + "\"" : "null")
+                    .append(",\"bodiesAt\":").append(reg.bodiesAt(cell).size())
+                    .append(",\"systemBodies\":").append(reg.systemBodiesAt(cell).size())
+                    .append(",\"hasOverride\":").append(reg.hasOverrideAt(cell))
+                    .append(",\"bodies\":[");
+            int n = 0;
+            for (zmaster587.advancedRocketry.universe.SystemBody b : reg.systemBodiesAt(cell)) {
+                if (n++ > 0) {
+                    out.append(',');
+                }
+                appendCellInfoBody(out, b);
+            }
+            out.append(']');
+            // The bodies AT THIS CELL, separately from the whole system's. The two are easy to
+            // confuse and the difference decides everything: "is there somewhere to land here" is a
+            // question about this cell, and answering it off the system-wide list says yes as long
+            // as the system has a planet ANYWHERE in it.
+            out.append(",\"cellBodies\":[");
+            n = 0;
+            for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                if (n++ > 0) {
+                    out.append(',');
+                }
+                appendCellInfoBody(out, b);
+            }
+            out.append(']');
+            if (args.length >= 5) {
+                int dimId = parseIntOr(args[4], Integer.MIN_VALUE);
+                java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> forDim =
+                        reg.coordForPlanet(dimId);
+                out.append(",\"dim\":").append(dimId).append(",\"dimCell\":")
+                        .append(forDim.isPresent() ? "\"" + forDim.get().cellKey() + "\"" : "null");
+            }
+            out.append('}');
+            send(sender, out.toString());
             return;
         }
         // find-afc <dim>: report a subspace block position + durable ship id of the settled ship in slot
@@ -10143,11 +10266,13 @@ public class TestProbeCommand extends CommandBase {
             boolean includeFuelTanks = !"invalid-no-fuel-tank".equals(variant);
             boolean includeSeat = !"invalid-no-seat".equals(variant)
                     && !"with-pilot-seat".equals(variant) // pilot seat replaces the generic seat
-                    && !"with-shield-emitter".equals(variant);
+                    && !"with-shield-emitter".equals(variant)
+                    && !"with-jump-drive".equals(variant);
             boolean includeGuidance = !"invalid-no-guidance".equals(variant)
                     && !"advanced-flight-computer-only".equals(variant)
                     && !"with-pilot-seat".equals(variant) // AFC is the ship's brain — no guidance
-                    && !"with-shield-emitter".equals(variant);
+                    && !"with-shield-emitter".equals(variant)
+                    && !"with-jump-drive".equals(variant);
             boolean includeCargo = "with-cargo".equals(variant);
             // with-fluid-cargo: same as simple but replaces 2 of the 6 BlockFuelTank
             // positions with BlockPressurizedFluidTank (registry "liquidTank") which
@@ -10200,15 +10325,28 @@ public class TestProbeCommand extends CommandBase {
             // cockpit is open air over a deck, exactly what the enclosure term exists to exclude.
             // The structure tower is raised so the assembly scan (bounded by tower height)
             // reaches the roof. Used by the enclosed-interior crew e2e.
+            // "with-jump-drive" - with-pilot-DECK plus the hyperjump stack (navigation computer,
+            // field generator, capacitor, heat sinks, hull emitter): the craft a player builds to
+            // cross a system rather than to reach orbit. Placed only, never linked - the assembling
+            // machine welds a ship's machines to its flight computer, and a fixture that did that
+            // itself would hide the failure a jump-capable-ship test is looking for.
             boolean includeRoofedDeck = "with-roofed-deck".equals(variant);
-            boolean includePilotDeck = "with-pilot-deck".equals(variant) || includeRoofedDeck;
+            boolean includeJumpDrive = "with-jump-drive".equals(variant);
+            boolean includePilotDeck = "with-pilot-deck".equals(variant) || includeRoofedDeck
+                    || includeJumpDrive;
             // with-shield-emitter — a with-pilot-seat ship (AFC + pilot seat, so it becomes a VS ship)
             // plus one affs:field_generator emitter block welded into the hull. The emitter rides the
             // ship into subspace, so its field frame resolves to the ship (§4.3); the ship-frame e2e
             // reads its world centre to confirm the shell tracks the flying hull.
             boolean includeShieldEmitter = "with-shield-emitter".equals(variant);
+            // with-jump-drive — a with-pilot-DECK ship carrying the whole hyperjump stack: a
+            // navigation computer, a field generator (no coils, so the drive asks for the smallest
+            // burst there is), the capacitor that opens the window, the heat sinks that refill it and
+            // one hull emitter to wrap the craft. Nothing is linked here: welding a ship's machines
+            // to its flight computer is the assembling machine's job, and a fixture that pre-linked
+            // them would hide the very failure a jump-capable-ship test exists to catch.
             boolean includePilotSeat = "with-pilot-seat".equals(variant) || includePilotDeck
-                    || includeShieldEmitter;
+                    || includeShieldEmitter || includeJumpDrive;
             boolean includeNavComputer = "with-nav-computer".equals(variant);
             boolean includeAdvancedFlightComputer = "with-advanced-flight-computer".equals(variant)
                     || "advanced-flight-computer-only".equals(variant)
@@ -10237,8 +10375,12 @@ public class TestProbeCommand extends CommandBase {
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "seat"));
             net.minecraft.block.Block pilotSeat =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "pilotSeat"));
+            // libVulpes' creative power plug: a real tile entity that pushes energy into every
+            // adjacent energy-accepting tile every tick. `advStructureMachine` used to stand here
+            // and is NOT a power source — it is a plain decorative block with no tile entity and no
+            // energy capability, so a fixture built with it came up with an assembler on zero RF.
             net.minecraft.block.Block creativePlug =
-                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("libvulpes", "advStructureMachine"));
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("libvulpes", "creativePowerBattery"));
             net.minecraft.block.Block liquidTank =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "liquidTank"));
             net.minecraft.block.Block nuclearMotor =
@@ -10253,6 +10395,16 @@ public class TestProbeCommand extends CommandBase {
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "advancedFlightComputer"));
             net.minecraft.block.Block shieldEmitter =
                     ForgeRegistries.BLOCKS.getValue(new ResourceLocation("affs", "field_generator"));
+            net.minecraft.block.Block navComputer =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "navigationComputer"));
+            net.minecraft.block.Block hyperdriveGenerator =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "hyperdriveGenerator"));
+            net.minecraft.block.Block jumpCapacitor =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "jumpCapacitor"));
+            net.minecraft.block.Block jumpHeatSink =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "jumpHeatSink"));
+            net.minecraft.block.Block jumpFieldEmitter =
+                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation("advancedrocketry", "jumpFieldEmitter"));
 
             if (launchpad == null || rocketBuilder == null || advEngine == null
                     || fuelTank == null || guidanceComputer == null || seat == null) {
@@ -10284,6 +10436,11 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"missing shield emitter block (affs:field_generator)\"}");
                 return;
             }
+            if (includeJumpDrive && (navComputer == null || hyperdriveGenerator == null
+                    || jumpCapacitor == null || jumpHeatSink == null || jumpFieldEmitter == null)) {
+                send(sender, "{\"error\":\"missing hyperdrive block(s) (advancedrocketry:navigationComputer / hyperdriveGenerator / jumpCapacitor / jumpHeatSink / jumpFieldEmitter)\"}");
+                return;
+            }
 
             int padSize = 5;
             // Launchpad (5×5).
@@ -10294,8 +10451,10 @@ public class TestProbeCommand extends CommandBase {
                 }
             }
             // Structure tower. The assembly scan tops out at the tower's height, so the roofed
-            // variant raises it far enough to take the roof (rocketY+8 = baseY+9) into the ship.
-            int towerTop = includeRoofedDeck ? 9 : 6;
+            // variant raises it far enough to take the roof (rocketY+8 = baseY+9) into the ship, and
+            // the jump-drive variant gets one spare course above its highest machine (rocketY+5) so
+            // the top of the drive bay is not sitting exactly on the scan ceiling.
+            int towerTop = includeRoofedDeck ? 9 : (includeJumpDrive ? 7 : 6);
             if (structureTower != null) {
                 for (int dy = 0; dy <= towerTop; dy++) {
                     world.setBlockState(new BlockPos(baseX - 1, baseY + dy, baseZ + padSize / 2),
@@ -10316,7 +10475,8 @@ public class TestProbeCommand extends CommandBase {
                 // Property absent on this block variant — fall back to default state.
             }
             world.setBlockState(builderPos, builderState);
-            // Creative energy source above builder.
+            // Creative energy source above the builder — it feeds the assembler from the side it
+            // touches, so a fixture-built assembler is actually powered.
             if (creativePlug != null) {
                 world.setBlockState(builderPos.up(), creativePlug.getDefaultState());
             }
@@ -10382,8 +10542,6 @@ public class TestProbeCommand extends CommandBase {
                     // Face-adjacent to the flight computer (one cell along Z), so the assembly
                     // flood-fill welds it into the same ship and the build scan sees both. Inside the
                     // tower-bounded scan box, and it displaces no structural block.
-                    net.minecraft.block.Block navComputer = ForgeRegistries.BLOCKS.getValue(
-                            new ResourceLocation("advancedrocketry", "navigationComputer"));
                     if (navComputer != null) {
                         world.setBlockState(new BlockPos(rocketX - 1, afcY, rocketZ + 1),
                                 navComputer.getDefaultState());
@@ -10396,6 +10554,54 @@ public class TestProbeCommand extends CommandBase {
                 // tower-bounded scan). It rides the ship into subspace and resolves the ship frame.
                 world.setBlockState(new BlockPos(rocketX + 1, rocketY + 3, rocketZ),
                         shieldEmitter.getDefaultState());
+            }
+            if (includeJumpDrive) {
+                // The hyperjump bay, standing on the pilot DECK (rocketY+3, placed further down).
+                // Everything here sits either directly on that deck or on a block that does, because
+                // the craft becomes a ship by a flood fill out of the flight computer: a machine
+                // reachable only diagonally is cut off the pad and then silently dropped from the
+                // ship. The deck is one connected slab, so a block resting on it is aboard by
+                // construction. Nothing rises above rocketY+5 and nothing leaves the pad footprint
+                // (dx, dz in [-3, +2] around the craft centre).
+                //
+                // The bay is laid out around ONE place to stand — (rocketX, rocketY+4, rocketZ+1),
+                // the deck cell immediately south of the pilot seat. From there the seat is one
+                // block north and the navigation console one block south, both face-on with nothing
+                // between: the two blocks a pilot has to reach by hand are the two that are within
+                // arm's reach of the same square. The drive machinery is kept on the +X side so it
+                // neither blocks that sightline nor stands where the pilot walks.
+                //
+                // The generator carries NO coils on purpose: drive power is the generator's own
+                // base, which is the smallest burst any drive asks for, and the capacitor's own
+                // base capacity is exactly that burst — so the bank needs no cells to open a window.
+                // Four heat sinks put the charge rate at base + 4 sinks at the current tuning, which
+                // refills that burst from empty in a cooldown a test can wait out in a couple of
+                // seconds.
+                world.setBlockState(new BlockPos(rocketX, rocketY + 4, rocketZ + 2),
+                        navComputer.getDefaultState());
+                world.setBlockState(new BlockPos(rocketX + 2, rocketY + 4, rocketZ),
+                        hyperdriveGenerator.getDefaultState());
+                // Directly ON the generator: a bank is only this drive's bank while it touches the
+                // generator's footprint, which is where the drive goes looking for one.
+                world.setBlockState(new BlockPos(rocketX + 2, rocketY + 5, rocketZ),
+                        jumpCapacitor.getDefaultState());
+                // Sinks are counted by the capacitor's own walk outward through sink/cell blocks, so
+                // three hang straight off the bank and the fourth off a sink.
+                world.setBlockState(new BlockPos(rocketX + 1, rocketY + 5, rocketZ),
+                        jumpHeatSink.getDefaultState());
+                world.setBlockState(new BlockPos(rocketX + 2, rocketY + 5, rocketZ - 1),
+                        jumpHeatSink.getDefaultState());
+                world.setBlockState(new BlockPos(rocketX + 2, rocketY + 5, rocketZ + 1),
+                        jumpHeatSink.getDefaultState());
+                world.setBlockState(new BlockPos(rocketX + 2, rocketY + 4, rocketZ - 1),
+                        jumpHeatSink.getDefaultState());
+                // One hull emitter is enough for a craft this size, and it is not optional: the
+                // generator holds up only a small cube around itself, which misses the engine row at
+                // the foot of the hull, while one emitter's envelope wraps the whole hull box — so
+                // the jump gate returns a clean verdict instead of the undersized-window advisory.
+                // It stands on the flight computer, out of the walkway.
+                world.setBlockState(new BlockPos(rocketX - 1, rocketY + 5, rocketZ),
+                        jumpFieldEmitter.getDefaultState());
             }
             if (includeFluidCargo) {
                 // Swap 2 of the 6 fuel-tank slots for liquidTank (TileFluidTank).

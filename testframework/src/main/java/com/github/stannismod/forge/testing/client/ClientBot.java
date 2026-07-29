@@ -407,6 +407,26 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * What the client's crosshair is currently pointing at — {@code mc.objectMouseOver},
+     * the very field vanilla's {@code rightClickMouse()} reads to decide what a
+     * right-click hits. Reports {@code present}, {@code typeOfHit}
+     * ({@code MISS}/{@code BLOCK}/{@code ENTITY}), and when a block position is
+     * carried: {@code hasBlockPos}, {@code blockX}/{@code blockY}/{@code blockZ},
+     * {@code block} (registry id at that position in the client world),
+     * {@code sideHit} and {@code hitX}/{@code hitY}/{@code hitZ}; for an entity hit,
+     * {@code entityClass} / {@code entityId}.
+     *
+     * <p>The honest observation for "the bot is actually AIMED at the thing" before it
+     * presses use — without it, an aim that missed and a click the server refused are
+     * indistinguishable. Note the raytrace runs in whatever coordinate space the world's
+     * collision hooks provide, so on a physics-mod ship the reported position is the
+     * ship's own block position, not the rendered world one.</p>
+     */
+    public JsonObject reportMouseOver() throws IOException {
+        return assertOk(execute(command("report_mouse_over")));
+    }
+
+    /**
      * Forge mod registry as the CLIENT sees it: {@code loadedCount} /
      * {@code activeCount} (the two numbers the vanilla main menu renders as
      * "N mods loaded, M mods active" via {@code FMLCommonHandler.getBrandings})

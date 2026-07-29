@@ -299,10 +299,11 @@ compileTestJava {
 //   ./gradlew testIntegration  → MC-bootstrap integ.  (fast, no harness)
 //   ./gradlew test             → both of the above (umbrella)
 //
-// The dedicated-server / real-client harness layers (testServer / testClient)
-// are NOT wired here: their FG6 launcher/RunConfig integration must be rewritten
-// for RetroFuturaGradle first (tracked separately). Their sources are not yet
-// imported either.
+// The harness layers are wired further down, off configureHarnessTest:
+//   ./gradlew testServer       → dedicated-server scenario e2e
+//   ./gradlew testClient       → real client + server e2e
+//   ./gradlew testMilestone    → one full playable loop on the real client
+// Only the two harness-free layers above run as part of `check` / `build`.
 def configureHeadlessTest = { Test t, String packageGlob ->
     t.group = 'verification'
     t.useJUnit()
@@ -469,6 +470,17 @@ tasks.register('testClient', Test) {
     configureHarnessTest(it, true)
     include 'zmaster587/advancedRocketry/test/client/**'
     mustRunAfter 'testServer'
+}
+
+tasks.register('testMilestone', Test) {
+    // A milestone test walks ONE playable loop end to end on the real client, driving only the
+    // inputs a human has (keys, GUI clicks, seat mount) — its own tier because it is long, because
+    // it fails for reasons no single-mechanic e2e can, and because it is the gate for calling a
+    // milestone reachable. Needs -PwithVS.
+    description = 'Milestone e2e — one full playable loop on the real client (src/test/.../test/milestone).'
+    configureHarnessTest(it, true)
+    include 'zmaster587/advancedRocketry/test/milestone/**'
+    mustRunAfter 'testClient'
 }
 
 String parserChangelog() {
