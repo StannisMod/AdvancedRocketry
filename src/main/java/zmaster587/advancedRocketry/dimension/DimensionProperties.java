@@ -2191,10 +2191,26 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
                 && Temps.getTempFromValue(this.averageTemperature).isInRange(Temps.COLD, Temps.HOT);
     }
 
+    /**
+     * This body's position in its system, in orbit-units: {@code (d·cos θ, d·sin φ, d·sin θ)}.
+     *
+     * <p>The angles are stored in DEGREES — measured across the shipped catalogue,
+     * {@code orbitalTheta} spans 0…357 and {@code orbitalPhi} −343…289 — while
+     * {@code Math.cos}/{@code Math.sin} take radians. Feeding the stored value straight in therefore
+     * spun each body through ~57 revolutions per unit and put it somewhere unrelated to what an XML
+     * author wrote. That matters now in a way it never did before: this position is what
+     * {@code SystemContent} turns into a body's CELL, and a cell is the address a player aims a jump
+     * at. An author who writes an orbit must get the orbit he wrote.</p>
+     *
+     * <p>Scope: {@code SystemContent} is this method's only caller. The sky/map renderers read
+     * {@code orbitTheta}/{@code orbitalPhi} directly and are inconsistent between themselves about
+     * the unit (theta as radians, phi as degrees) — untouched here; that is appearance, this is
+     * addressing.</p>
+     */
     public double[] getPlanetPosition() {
         double orbitalDistance = this.orbitalDist;
-        double theta = this.orbitTheta;
-        double phi = this.orbitalPhi;
+        double theta = Math.toRadians(this.orbitTheta);
+        double phi = Math.toRadians(this.orbitalPhi);
 
         return new double[]{orbitalDistance * Math.cos(theta), orbitalDistance * Math.sin(phi), orbitalDistance * Math.sin(theta)};
     }

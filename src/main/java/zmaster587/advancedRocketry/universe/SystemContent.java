@@ -1,7 +1,12 @@
 package zmaster587.advancedRocketry.universe;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -94,7 +99,55 @@ public final class SystemContent {
                 bodies.add(new SystemBody(moonAddr, SystemBodyKind.MOON, moon.getId(), starId));
             }
         }
+        auditOneRealBodyPerCell(bodies, starId);
         return bodies;
+    }
+
+    /**
+     * Layout problems already reported. This derivation runs on EVERY query — the console's forecast
+     * once a second, the render broadcast, the entry resolver, every probe — so an unguarded report
+     * is a flood, not a diagnostic: a 28-minute playtest produced 28,061 clamp warnings and drowned
+     * the log it was needed in. One report per distinct problem, per session.
+     */
+    private static final Set<String> REPORTED = Collections.synchronizedSet(new HashSet<String>());
+
+    /**
+     * INVARIANT: at most ONE real body per cell. A star and a planet are real bodies and each owns its
+     * own cell; moons are exempt by construction — a moon lives in its parent planet's cell, which is
+     * what makes a planet-and-its-moons one destination.
+     *
+     * <p>Two real bodies in one cell is not a cosmetic problem. A cell is what a jump can be aimed at
+     * and what a ship arrives into, so a collision means two destinations the player cannot tell apart
+     * or choose between, and an arrival that cannot say which body it came for. It is reported, not
+     * repaired: silently moving an authored body would make the address a player wrote down mean
+     * something else, and the honest repair belongs where the layout is decided.</p>
+     */
+    private static void auditOneRealBodyPerCell(List<SystemBody> bodies, int starId) {
+        Map<String, List<Integer>> realBodiesByCell = new LinkedHashMap<>();
+        for (SystemBody body : bodies) {
+            if (body.kind() == SystemBodyKind.MOON) {
+                continue; // exempt: a moon shares its parent's cell on purpose
+            }
+            String cell = body.address().cellKey();
+            List<Integer> occupants = realBodiesByCell.get(cell);
+            if (occupants == null) {
+                occupants = new ArrayList<>();
+                realBodiesByCell.put(cell, occupants);
+            }
+            occupants.add(body.dimId());
+        }
+        for (Map.Entry<String, List<Integer>> e : realBodiesByCell.entrySet()) {
+            if (e.getValue().size() < 2) {
+                continue;
+            }
+            if (REPORTED.add("collision:" + starId + ':' + e.getKey() + ':' + e.getValue())) {
+                LOGGER.error("system {}: cell {} holds {} REAL bodies (dims {}) - a cell may hold at "
+                        + "most one, moons excepted. They are one indistinguishable destination: a jump "
+                        + "aimed at that address cannot say which body it meant, and an arrival cannot "
+                        + "either. Spread the authored orbits, or give the bodies explicit cells.",
+                        starId, e.getKey(), e.getValue().size(), e.getValue());
+            }
+        }
     }
 
     /**
@@ -108,7 +161,8 @@ public final class SystemContent {
         long cx = clampAxis(bodyCell.sectorX(), anchor.sectorX(), s, margin);
         long cy = clampAxis(bodyCell.sectorY(), anchor.sectorY(), s, margin);
         long cz = clampAxis(bodyCell.sectorZ(), anchor.sectorZ(), s, margin);
-        if (cx != bodyCell.sectorX() || cy != bodyCell.sectorY() || cz != bodyCell.sectorZ()) {
+        if ((cx != bodyCell.sectorX() || cy != bodyCell.sectorY() || cz != bodyCell.sectorZ())
+                && REPORTED.add("clamp:" + dimId + ':' + bodyCell.cellKey())) {
             LOGGER.warn("orbit of dim {} exceeds the system neighbourhood bound (minSpacing {} cells); "
                     + "clamping its cell from ({},{},{}) into the anchor's super-cell",
                     dimId, s, bodyCell.sectorX(), bodyCell.sectorY(), bodyCell.sectorZ());
@@ -116,10 +170,28 @@ public final class SystemContent {
         return GalacticCoord.ofSectorLocal(cx, cy, cz, 0L, 0L, 0L);
     }
 
+    /**
+     * The per-axis bound: {@code half - margin} cells either side OF THE ANCHOR.
+     *
+     * <p>This used to snap to the GRID super-cell containing the anchor —
+     * {@code [floorDiv(anchor,s)*s + margin, … + s-1-margin]} — which is a different box, and for the
+     * home system a disastrous one: with the anchor at sector 0 and {@code s = 512} the legal range
+     * was {@code [2, 509]}, i.e. the POSITIVE OCTANT ONLY. Every body with a negative offset was
+     * clamped flat onto the faces {@code x=2}/{@code y=2}, so half of every orbit collapsed into a
+     * handful of cells and several real bodies ended up sharing one address (INV-UNI-01, ledger
+     * #118). Measured 2026-07-28: dim 0's own cell derived as {@code (-3,0,25)} and clamped to
+     * {@code (2,2,25)} — which is exactly the cell a ship entering space from Earth then settled in.
+     * Centring the box on the anchor is also what this class's javadoc and
+     * {@code ClusteredGalaxyGenerator} ("minSpacing/2 - margin") always claimed it did.</p>
+     */
     private static long clampAxis(long sector, long anchorSector, long s, long margin) {
-        long sup = Math.floorDiv(anchorSector, s);
-        long lo = sup * s + margin;
-        long hi = sup * s + s - 1L - margin;
+        long half = s / 2L;
+        long reach = half - margin;
+        if (reach < 0L) {
+            reach = 0L;
+        }
+        long lo = anchorSector - reach;
+        long hi = anchorSector + reach;
         if (sector < lo) {
             return lo;
         }

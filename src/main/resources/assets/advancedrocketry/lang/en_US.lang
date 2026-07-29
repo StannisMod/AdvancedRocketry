@@ -1621,9 +1621,11 @@ msg.navcomputer.sync=Sync channel
 msg.navcomputer.target=Target:
 msg.navcomputer.notarget=none set
 msg.navcomputer.addresses=Addresses on the ship's crystal:
+msg.navcomputer.noshipcrystal=No ship crystal - put one in the LOWER slot
 msg.jumpgate.nonavcomputer=No navigation computer aboard
 msg.jumpgate.positionunknown=Position unknown - the ship must re-localize before it can jump
 msg.jumpgate.notarget=No jump target set
+msg.jumpgate.alreadythere=The ship is already in that cell - there is nothing to fly
 
 # --- Hyperdrive family -------------------------------------------------------
 tile.hyperdriveGenerator.name=Hyperspace Field Generator

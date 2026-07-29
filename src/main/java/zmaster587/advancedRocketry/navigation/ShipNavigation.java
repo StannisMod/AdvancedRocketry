@@ -56,6 +56,12 @@ public final class ShipNavigation implements JumpGate.ShipContext {
         return nav == null ? null : nav.getTarget();
     }
 
+    /** Where the ledger says this ship is — the gate's "am I already there?" clause reads this. */
+    @Override
+    public GalacticCoord currentCell() {
+        return currentCoord();
+    }
+
     // ─── What the drive answers ────────────────────────────────────────────────
 
     @Override

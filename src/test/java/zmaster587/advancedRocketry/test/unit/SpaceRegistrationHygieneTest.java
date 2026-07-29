@@ -15,9 +15,11 @@ import static org.junit.Assert.assertTrue;
  * ({@link SpaceSlotPool#unboundSlotSubfolder}). Pure — no server, no world.
  *
  * <p>The gate contract (a mechanic behind a config flag must, when off, register NOTHING): each guard
- * — the config flag, Valkyrien Skies presence, the test-harness stand-down, and once-per-session
- * idempotence — must independently veto registration. The OFF-flag pin is the regression guard: it
- * fails the moment the flag stops fully disabling the subsystem.</p>
+ * — the config flag, Valkyrien Skies presence, and once-per-session idempotence — must independently
+ * veto registration. The OFF-flag pin is the regression guard: it fails the moment the flag stops
+ * fully disabling the subsystem. Note what is deliberately NOT a guard: the JVM's test property.
+ * Space registers wherever the mod runs, so a diagnostic session cannot disable the subsystem it is
+ * diagnosing.</p>
  *
  * <p>The folder pin fixes the on-disk path the hyperspace wipe deletes, so it can never target the
  * wrong directory, and so the path stays stable (it is also what {@code WorldProviderSpaceSlot}
@@ -25,37 +27,31 @@ import static org.junit.Assert.assertTrue;
  */
 public class SpaceRegistrationHygieneTest {
 
-    // ---- enable-gate: shouldRegister(testMode, enabled, vsAvailable, alreadyBuilt) ----------
+    // ---- enable-gate: shouldRegister(enabled, vsAvailable, alreadyBuilt) --------------------
 
     @Test
     public void registersOnlyWhenEveryConditionIsMet() {
-        assertTrue("live server, flag on, VS present, not yet built -> register",
-                SpaceSubsystem.shouldRegister(false, true, true, false));
+        assertTrue("flag on, VS present, not yet built -> register",
+                SpaceSubsystem.shouldRegister(true, true, false));
     }
 
     @Test
     public void theDisabledFlagFullyStandsDown() {
         // Regression guard: with the enable flag off, NOTHING registers, whatever else is true.
         assertFalse("enableSpaceSubsystem=false must veto registration",
-                SpaceSubsystem.shouldRegister(false, false, true, false));
+                SpaceSubsystem.shouldRegister(false, true, false));
     }
 
     @Test
     public void noValkyrienSkiesMeansNothingToHost() {
         assertFalse("without VS the subsystem has no tier-2 ships to host -> do not register",
-                SpaceSubsystem.shouldRegister(false, true, false, false));
-    }
-
-    @Test
-    public void theTestHarnessStandsDownSoItsOwnPoolIsNotStacked() {
-        assertFalse("in test mode the probe registers its own pool; production must stand down",
-                SpaceSubsystem.shouldRegister(true, true, true, false));
+                SpaceSubsystem.shouldRegister(true, false, false));
     }
 
     @Test
     public void anAlreadyBuiltSessionDoesNotReRegister() {
         assertFalse("a single-player re-open reuses the JVM-global registration",
-                SpaceSubsystem.shouldRegister(false, true, true, true));
+                SpaceSubsystem.shouldRegister(true, true, true));
     }
 
     // ---- ephemeral hyperspace: the wipe targets exactly the unbound-slot folder ------------

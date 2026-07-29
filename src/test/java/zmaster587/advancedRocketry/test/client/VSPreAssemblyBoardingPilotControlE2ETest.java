@@ -1,6 +1,5 @@
 package zmaster587.advancedRocketry.test.client;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -177,15 +176,6 @@ public class VSPreAssemblyBoardingPilotControlE2ETest {
                         AbstractClientE2ETest.PROP_CLIENT_ENABLED, "false")));
 
         root = Files.createTempDirectory("forge-preassembly-boarding-");
-        Path arConfigDir = root.resolve("config").resolve("advRocketry");
-        Files.createDirectories(arConfigDir);
-        // Opt the production space subsystem back in: without this the subsystem detects the harness
-        // and stands down, and then this test would not be running the configuration a player runs.
-        String cfg = "# seeded by VSPreAssemblyBoardingPilotControlE2ETest\n"
-                + "performance {\n"
-                + "    B:spaceRegisterUnderTestHarness=true\n"
-                + "}\n";
-        Files.write(arConfigDir.resolve("advancedRocketry.cfg"), cfg.getBytes(StandardCharsets.UTF_8));
 
         serverHarness = RealDedicatedServerHarness.startWith(root, false);
         try {

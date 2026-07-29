@@ -7,19 +7,19 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.ARConfiguration;
-import zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 /**
  * Production lifecycle for the movable-ship space subsystem: owns the single server-side
  * {@link SpaceManager} instance, registers the slot pool once per JVM, and drives the GC cadence.
  *
- * <p>Registration is an <b>explicit server-start hook</b> that <b>no-ops under the test harness</b>
- * ({@link TestProbeCommandRegistration#isTestMode()}). The spike/probe tests register their OWN pool
- * through the {@code /artest space manager} probe, and {@link SpaceSlotPool#registerPool(int)} appends
- * to a global static list with no idempotence guard - so a harness-side auto-register would stack
- * pools and shift slot ids out from under the green spike tests. Guarding the production register
- * behind {@code isTestMode()} keeps the two worlds apart.</p>
+ * <p>Registration is an <b>explicit server-start hook</b> and runs wherever the mod runs: it is NOT
+ * conditioned on the JVM's test property. Space is the mod's subject, so a session that can fly is
+ * the only useful default - conditioning it on a diagnostic property once disabled the very
+ * subsystem a playtest was diagnosing, with the ship stopping dead at the physics clamp and no
+ * feedback. Probe-driven tests that want scratch cells of their own take them from
+ * {@link SpaceSlotPool#registerAdditionalSlots(int)}, which APPENDS fresh dimensions, while
+ * {@link SpaceSlotPool#registerPool(int)} is idempotent - so the two cannot fight over slot ids.</p>
  *
  * <p>GC cadence (maintainer-ratified): a periodic tick sweep ({@link #GC_TICK_INTERVAL}) plus a
  * pool-pressure trigger. A single WARN fires only when the pool is saturated and a live bubble slot is
@@ -85,17 +85,16 @@ public final class SpaceSubsystem {
 
     /**
      * Whether the production subsystem should register the space dimensions on server start. Pure decision
-     * surface — factored out so the gate (test harness, {@code enableSpaceSubsystem} flag, Valkyrien Skies
-     * presence, once-per-session idempotence) is unit-testable without booting a server.
+     * surface — factored out so the gate ({@code enableSpaceSubsystem} flag, Valkyrien Skies presence,
+     * once-per-session idempotence) is unit-testable without booting a server.
+     *
+     * <p>The decision deliberately does NOT consider whether the JVM runs in test mode. Space is the
+     * point of this mod, so it registers wherever the mod runs — an interactive session launched with
+     * the probe property is a session that wants to fly, and a harness run that needs scratch cells
+     * takes them from {@link SpaceSlotPool#registerAdditionalSlots(int)}, which APPENDS to the pool
+     * and therefore cannot disturb what production already registered.</p>
      *
      * <ul>
-     *   <li>{@code testMode} — the spike/probe tests register their OWN pool via {@code /artest space
-     *       manager}; the production register must stand down or it stacks pools and shifts slot ids.
-     *       {@code forceUnderTestHarness} overrides exactly this one gate, so a test that wants to
-     *       drive the REAL server-start path can opt in. Note test mode is a JVM property, NOT a
-     *       harness detection: an interactive dev-client session launched with the property (the
-     *       usual way to get the probe commands in a playtest) trips this gate too - which is why
-     *       the standdown is logged at WARN and the override flag matters outside CI.</li>
      *   <li>{@code enabled} — the {@code enableSpaceSubsystem} config flag; when off the subsystem is fully
      *       disabled, registering no dimensions at all (a config toggle must return the vanilla baseline).</li>
      *   <li>{@code vsAvailable} — the subsystem only hosts tier-2 Valkyrien Skies ships; without VS there
@@ -103,14 +102,8 @@ public final class SpaceSubsystem {
      *   <li>{@code alreadyBuilt} — a single-player re-open reuses the JVM-global registration.</li>
      * </ul>
      */
-    public static boolean shouldRegister(boolean testMode, boolean enabled, boolean vsAvailable,
-                                         boolean alreadyBuilt) {
-        return shouldRegister(testMode, enabled, vsAvailable, alreadyBuilt, false);
-    }
-
-    public static boolean shouldRegister(boolean testMode, boolean enabled, boolean vsAvailable,
-                                         boolean alreadyBuilt, boolean forceUnderTestHarness) {
-        return (!testMode || forceUnderTestHarness) && enabled && vsAvailable && !alreadyBuilt;
+    public static boolean shouldRegister(boolean enabled, boolean vsAvailable, boolean alreadyBuilt) {
+        return enabled && vsAvailable && !alreadyBuilt;
     }
 
     /** Extra headroom above the cells' topmost realizable pose, so a ship can maneuver at the very
@@ -129,30 +122,20 @@ public final class SpaceSubsystem {
 
     /**
      * Server-start hook. Registers the pool (once per JVM) and builds the production
-     * {@link SpaceManager}, unless {@link #shouldRegister} says to stand down (test harness, the
+     * {@link SpaceManager}, unless {@link #shouldRegister} says to stand down (the
      * {@code enableSpaceSubsystem} flag off, Valkyrien Skies absent, or already built).
      */
     public static void onServerStarting() {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
-        boolean testMode = TestProbeCommandRegistration.isTestMode();
         boolean vsAvailable = VSIntegration.isAvailable();
-        boolean forced = cfg.spaceRegisterUnderTestHarness;
-        if (!shouldRegister(testMode, cfg.enableSpaceSubsystem, vsAvailable, instance != null, forced)) {
+        if (!shouldRegister(cfg.enableSpaceSubsystem, vsAvailable, instance != null)) {
             // Log the operator-facing reason (already-built is an internal, expected no-op that
-            // must stay quiet). The test-mode standdown is a WARN, not an INFO: it also fires in
-            // an interactive dev-client session launched with the test property (the usual way to
-            // get the probe commands in a playtest), where it silently disables the very subsystem
-            // being play-tested - the operator must be able to see WHY space never engages.
+            // must stay quiet).
             if (instance == null) {
-                if (testMode && cfg.enableSpaceSubsystem && vsAvailable) {
-                    AdvancedRocketry.logger.warn("[SPACE] test mode detected - space subsystem "
-                            + "STANDING DOWN (no space dimensions registered, ship entry will never "
-                            + "fire). This also affects interactive sessions launched with the test "
-                            + "property; set spaceRegisterUnderTestHarness=true to register anyway.");
-                } else if (!testMode && !cfg.enableSpaceSubsystem) {
+                if (!cfg.enableSpaceSubsystem) {
                     AdvancedRocketry.logger.info("[SPACE] subsystem disabled (enableSpaceSubsystem=false) - "
                             + "no space dimensions registered");
-                } else if (!testMode && !vsAvailable) {
+                } else if (!vsAvailable) {
                     AdvancedRocketry.logger.info("[SPACE] Valkyrien Skies not installed - space subsystem "
                             + "not registered (no tier-2 ships to host)");
                 }

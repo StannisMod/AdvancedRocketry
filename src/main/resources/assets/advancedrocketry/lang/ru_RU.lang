@@ -501,9 +501,11 @@ msg.navcomputer.sync=Канал синхронизации
 msg.navcomputer.target=Цель:
 msg.navcomputer.notarget=не задана
 msg.navcomputer.addresses=Адресов на кристалле корабля:
+msg.navcomputer.noshipcrystal=Нет кристалла корабля - положите его в НИЖНИЙ слот
 msg.jumpgate.nonavcomputer=На борту нет навигационного компьютера
 msg.jumpgate.positionunknown=Положение неизвестно - кораблю нужно заново определиться
 msg.jumpgate.notarget=Цель прыжка не задана
+msg.jumpgate.alreadythere=Корабль уже в этой ячейке - лететь некуда
 
 # --- Гипердвигатель ----------------------------------------------------------
 tile.hyperdriveGenerator.name=Генератор поля гиперпространства

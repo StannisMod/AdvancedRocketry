@@ -93,12 +93,8 @@ public class VSShipPoweredEntryE2ETest {
         root = Files.createTempDirectory("forge-powered-entry-");
         Path arConfigDir = root.resolve("config").resolve("advRocketry");
         Files.createDirectories(arConfigDir);
-        // Opt the production space subsystem back in (it stands down under the harness), and pull
-        // the orbit line down to the config minimum so the powered climb is seconds, not minutes.
+        // Pull the orbit line down to the config minimum so the powered climb is seconds, not minutes.
         String cfg = "# seeded by VSShipPoweredEntryE2ETest\n"
-                + "performance {\n"
-                + "    B:spaceRegisterUnderTestHarness=true\n"
-                + "}\n"
                 + "rockets {\n"
                 + "    I:orbitHeight=" + ORBIT_LINE + "\n"
                 + "}\n";

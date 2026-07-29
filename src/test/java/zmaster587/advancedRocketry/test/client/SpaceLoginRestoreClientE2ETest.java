@@ -14,7 +14,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.lwjgl.input.Keyboard;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
@@ -167,17 +166,6 @@ public class SpaceLoginRestoreClientE2ETest {
                         AbstractClientE2ETest.PROP_CLIENT_ENABLED, "false")));
 
         root = Files.createTempDirectory("forge-client-space-login-restore-");
-        Path arConfigDir = root.resolve("config").resolve("advRocketry");
-        Files.createDirectories(arConfigDir);
-        // Opt the production space subsystem back in under the harness. Written as a whole config
-        // file rather than patched in, because on the first boot none exists yet; the mod fills in
-        // every other key with its default and preserves this one. Without it the subsystem stands
-        // down, nothing persists the ledger, and the whole test would be vacuous.
-        String cfg = "# seeded by SpaceLoginRestoreClientE2ETest\n"
-                + "performance {\n"
-                + "    B:spaceRegisterUnderTestHarness=true\n"
-                + "}\n";
-        Files.write(arConfigDir.resolve("advancedRocketry.cfg"), cfg.getBytes(StandardCharsets.UTF_8));
     }
 
     @After

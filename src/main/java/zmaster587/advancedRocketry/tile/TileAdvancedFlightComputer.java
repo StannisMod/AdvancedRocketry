@@ -680,6 +680,14 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                         shipIdOrNull(), jumpSpool,
                         zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock());
         messageSeatedPilot(result.langKey());
+        if (result.outcome() == zmaster587.advancedRocketry.hyperdrive.JumpTrigger.Outcome.WARNED) {
+            // An ADVISORY is a question, and a question the game never asks reads as a refusal: the
+            // pilot is told "the window does not enclose the whole hull" and nothing says the press
+            // that raised it is also the press that can be repeated to go anyway. The confirm line
+            // existed unused - measured in playtest 2026-07-28, where an advisory was reported as a
+            // blocker.
+            messageSeatedPilot(zmaster587.advancedRocketry.hyperdrive.JumpTrigger.MSG_CONFIRM);
+        }
     }
 
     /** Whether the drive is currently winding up. Read by tests and readouts, never by the flight. */

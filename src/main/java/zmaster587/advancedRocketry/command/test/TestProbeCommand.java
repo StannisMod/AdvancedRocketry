@@ -2104,7 +2104,60 @@ public class TestProbeCommand extends CommandBase {
         // --- PRODUCTION-wiring probes. Unlike every other verb here these deliberately touch the real
         //     SpaceSubsystem rather than a probe-local stack, so a restart test can prove the shipped
         //     server-start / world-save path actually persists and restores. They are only useful when
-        //     the subsystem registered (config spaceRegisterUnderTestHarness).
+        //     the subsystem registered (enableSpaceSubsystem, plus Valkyrien Skies present).
+
+        // bodies: what the sky in a slot world is BEING TOLD to draw, read from the server side.
+        //
+        // The client store the renderer reads (PacketSystemBodiesSync.CLIENT_BODIES) is a private
+        // static that only the test harness can reach, so a player looking at an empty sky has no
+        // way to tell WHICH half is empty: the ledger (no settled ship -> nothing is produced for
+        // anyone), the registry (a cell with genuinely nothing in it), or the drawing. This reports
+        // the first two exactly, so "I see no planet" stops being a guess. Read-only.
+        if (args.length >= 1 && "bodies".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"space subsystem not registered - see enableSpaceSubsystem\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            StringBuilder out = new StringBuilder("{\"ok\":true,\"ships\":[");
+            int shipCount = 0;
+            for (java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry>
+                    shipEntry : led.snapshot().entrySet()) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry e = shipEntry.getValue();
+                if (e == null || e.coord == null) {
+                    continue;
+                }
+                if (shipCount++ > 0) {
+                    out.append(',');
+                }
+                out.append("{\"ship\":\"").append(shipEntry.getKey())
+                        .append("\",\"state\":\"").append(e.state)
+                        .append("\",\"slotDim\":").append(e.slotDim)
+                        .append(",\"cell\":\"").append(e.coord.cellKey()).append("\",\"bodies\":[");
+                int bodyCount = 0;
+                if (reg != null) {
+                    for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(e.coord)) {
+                        if (bodyCount++ > 0) {
+                            out.append(',');
+                        }
+                        out.append("{\"dim\":").append(b.dimId())
+                                .append(",\"kind\":\"").append(b.kind())
+                                .append("\",\"descendTarget\":").append(b.isDescendTarget())
+                                .append(",\"distance\":")
+                                .append((long) Math.sqrt(e.coord.distanceSqTo(b.address())))
+                                .append('}');
+                    }
+                }
+                out.append("],\"bodyCount\":").append(bodyCount).append('}');
+            }
+            out.append("],\"shipCount\":").append(shipCount)
+                    .append(",\"registry\":").append(reg != null).append('}');
+            send(sender, out.toString());
+            return;
+        }
 
         // subsystem-status: is the production subsystem live, and what does it hold?
         if (args.length >= 1 && "subsystem-status".equalsIgnoreCase(args[0])) {
@@ -2282,7 +2335,8 @@ public class TestProbeCommand extends CommandBase {
         // polls transit-tick until arrival.
         if (args.length >= 1 && "transit-setup".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
-            // Register hyperspace upfront too (SpaceSubsystem no-ops in test mode, so mirror its order).
+            // Register hyperspace upfront too, mirroring the production start order. Idempotent, so it
+            // costs nothing when the server-start hook has already registered it.
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
             transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
                     new zmaster587.advancedRocketry.space.PoolSlotBinder(),
@@ -2661,7 +2715,7 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.ShipLedger ledger =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
             if (tm == null || ledger == null) {
-                send(sender, "{\"error\":\"space subsystem not registered - see spaceRegisterUnderTestHarness\"}");
+                send(sender, "{\"error\":\"space subsystem not registered - see enableSpaceSubsystem\"}");
                 return;
             }
             int slotDim = args.length >= 5
@@ -2841,10 +2895,59 @@ public class TestProbeCommand extends CommandBase {
             // dirty-cell flush + reload (store round-trip through the manager), clean-cell isolation,
             // and GC deletion of an idle stored cell's on-disk folder. Pool of 1 forces an eviction
             // on every fresh materialize, so a single slot cycles A -> B -> A -> B.
-            zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1);
+            //
+            // The "pool of 1" is the whole arrangement, so this manager must see ONE slot - its own.
+            // `PoolSlotBinder.slotDims()` answers with EVERY registered slot, which now includes the
+            // production pool (the subsystem registers wherever the mod runs). Scratch dims are
+            // appended, never renumbered, so the scratch slot's id stays valid; what has to be
+            // narrowed is the SET this manager is allowed to bind. Without the narrowing there are
+            // enough free slots that nothing is ever evicted, and the probe reports pass=false while
+            // measuring nothing - the eviction it exists to test never happens.
+            final int[] scratchSlot =
+                    zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(1);
+            zmaster587.advancedRocketry.space.SlotBinder ownSlotOnly =
+                    new zmaster587.advancedRocketry.space.SlotBinder() {
+                        private final zmaster587.advancedRocketry.space.PoolSlotBinder real =
+                                new zmaster587.advancedRocketry.space.PoolSlotBinder();
+
+                        @Override
+                        public int[] slotDims() {
+                            return scratchSlot.clone();
+                        }
+
+                        @Override
+                        public void load(int dimId, String cellKey) {
+                            real.load(dimId, cellKey);
+                        }
+
+                        @Override
+                        public void unload(int dimId) {
+                            real.unload(dimId);
+                        }
+
+                        @Override
+                        public void discard(int dimId) {
+                            real.discard(dimId);
+                        }
+
+                        @Override
+                        public void deleteStore(String cellKey) {
+                            real.deleteStore(cellKey);
+                        }
+
+                        @Override
+                        public boolean hasStored(String cellKey) {
+                            return real.hasStored(cellKey);
+                        }
+
+                        @Override
+                        public java.util.List<String> storedCells() {
+                            return real.storedCells();
+                        }
+                    };
             zmaster587.advancedRocketry.space.SpaceManager mgr =
                     new zmaster587.advancedRocketry.space.SpaceManager(
-                            new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                            ownSlotOnly,
                             () -> 0L,
                             new zmaster587.advancedRocketry.space.SpaceManager.Config(
                                     zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.COUNT, 0L, 0));

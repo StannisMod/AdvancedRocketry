@@ -736,7 +736,11 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockNuclearCore = new BlockNuclearCore(Material.IRON).setUnlocalizedName("nuclearcore").setCreativeTab(tabAdvRocketry).setHardness(2f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
-        AdvancedRocketryBlocks.blockNavigationComputer = new zmaster587.libVulpes.block.BlockTile(zmaster587.advancedRocketry.tile.TileNavigationComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("navigationComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // MODULARNOINV, not MODULAR: the console needs the whole panel for its own controls, and a
+        // MODULAR window spends y 89..143 on the player's inventory grid - which is exactly where
+        // half of this console's buttons used to be drawn, unclickable. NOINV keeps the hotbar, so a
+        // crystal can still be dragged into the two slots.
+        AdvancedRocketryBlocks.blockNavigationComputer = new zmaster587.libVulpes.block.BlockTile(zmaster587.advancedRocketry.tile.TileNavigationComputer.class, GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("navigationComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         // The hyperdrive family. The two controllers carry tile entities because they have state or
         // are measured; the coil, cell, sink and emitter are structure — what they are worth is
         // decided by how many of them the player welded together, not by anything they hold.

@@ -74,8 +74,12 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final int BUTTON_ARM = 5;
     /** Button id of the first listed address; the n-th address is {@code BUTTON_PICK_FIRST + n}. */
     private static final int BUTTON_PICK_FIRST = 10;
-    /** How many addresses the front page lists. Beyond this the pilot copies to a station to browse. */
-    private static final int LISTED_ADDRESSES = 8;
+    /**
+     * How many addresses the front page lists. Four is what FITS the window's right column above the
+     * clear/arm pair (y 18..96 at 20 px a row); the old value of 8 put rows 7 and 8 at y 178 and 200,
+     * off the panel entirely. Beyond this the pilot copies to a station to browse.
+     */
+    private static final int LISTED_ADDRESSES = 4;
 
     private static final byte NET_COPY = 0;
     private static final byte NET_ERASE_SOURCE = 1;
@@ -113,6 +117,10 @@ public class TileNavigationComputer extends TileInventoryHatch
 
     private ModuleText statusText;
     private ModuleText addressText;
+    /** The arm/disarm button, kept so its caption can follow the armed state in an open window. */
+    private ModuleButton armButton;
+    /** All {@link #LISTED_ADDRESSES} address buttons, shown or hidden as the crystal's list changes. */
+    private final java.util.List<ModuleButton> pickButtons = new java.util.ArrayList<>();
     /** Hand-typed sector coordinate: the pilot may aim at an address nobody has surveyed. */
     private ModuleNumericTextbox typedX;
     private ModuleNumericTextbox typedY;
@@ -189,6 +197,45 @@ public class TileNavigationComputer extends TileInventoryHatch
         markDirty();
     }
 
+    /** How often an UNLINKED console looks for a flight computer to adopt. Cheap and only while unlinked. */
+    private static final int LINK_SCAN_INTERVAL_TICKS = 20;
+
+    /**
+     * Adopt the flight computer of the ship this console is standing in, when nothing linked one.
+     *
+     * <p>The assembler is what normally binds the pair, at the one moment it holds the whole craft —
+     * so a console <b>added to a ship that is already assembled</b> was never linked to anything and
+     * stayed inert forever, with no way for the player to bind it short of rebuilding the craft. That
+     * is the only thing this covers: the console adopts the flight computer that shares its ship's
+     * subspace claim, which is the same region {@code ShipNavigation} searches in the other
+     * direction.</p>
+     *
+     * <p>Off a ship there is no claim and nothing is adopted — a console standing on a planet next to
+     * a flight computer must NOT silently bind itself to it.</p>
+     */
+    private void adoptShipFlightComputer() {
+        net.minecraft.util.math.AxisAlignedBB yard =
+                zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(
+                        world, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        if (yard == null) {
+            return;
+        }
+        for (net.minecraft.tileentity.TileEntity te
+                : world.loadedTileEntityList.toArray(new net.minecraft.tileentity.TileEntity[0])) {
+            if (!(te instanceof TileAdvancedFlightComputer)) {
+                continue;
+            }
+            BlockPos afc = te.getPos();
+            if (afc.getX() < yard.minX || afc.getX() > yard.maxX
+                    || afc.getZ() < yard.minZ || afc.getZ() > yard.maxZ) {
+                continue; // another ship's flight computer
+            }
+            linkToFlightComputer(afc);
+            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            return;
+        }
+    }
+
     /** The linked flight computer's position, or {@code null} when this computer is not on a ship. */
     public BlockPos getFlightComputerPos() {
         return flightComputerOffset == null ? null : pos.add(flightComputerOffset);
@@ -261,30 +308,62 @@ public class TileNavigationComputer extends TileInventoryHatch
     @Override
     public List<ModuleBase> getModules(int ID, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();
-        modules.add(new ModuleSlotArray(20, 20, this, SLOT_SOURCE, SLOT_SOURCE + 1));
-        modules.add(new ModuleSlotArray(20, 50, this, SLOT_SHIP, SLOT_SHIP + 1));
+        pickButtons.clear();
+        // GEOMETRY. This window is MODULARNOINV: the player's 3x9 inventory grid (which a MODULAR
+        // window draws at y 89..143) is absent and only the hotbar (y 147..165) remains, so the free
+        // band is x 8..168, y 18..146 and every module below stays inside it. The previous layout put
+        // half the console -- the coordinate boxes, the aim, sync and ARM buttons -- on top of the
+        // inventory grid, where a button cannot be clicked at all.
+        modules.add(new ModuleSlotArray(8, 18, this, SLOT_SOURCE, SLOT_SOURCE + 1));
+        modules.add(new ModuleSlotArray(8, 38, this, SLOT_SHIP, SLOT_SHIP + 1));
 
-        modules.add(new ModuleButton(50, 18, BUTTON_COPY,
+        modules.add(new ModuleButton(30, 18, BUTTON_COPY,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.copy"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
-        modules.add(new ModuleButton(50, 48, BUTTON_ERASE_SOURCE,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 58, 18));
+        modules.add(new ModuleButton(30, 38, BUTTON_ERASE_SOURCE,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.erase"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
-        modules.add(new ModuleButton(50, 78, BUTTON_CLEAR_TARGET,
-                LibVulpes.proxy.getLocalizedString("msg.navcomputer.cleartarget"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 58, 18));
 
-        statusText = new ModuleText(130, 20, targetLine(), 0x00FF00);
-        addressText = new ModuleText(130, 34, addressLines(), 0xAAAAAA);
+        statusText = new ModuleText(8, 58, targetLine(), 0x00FF00);
+        addressText = new ModuleText(8, 70, addressLines(), 0xAAAAAA);
         modules.add(statusText);
         modules.add(addressText);
 
-        forecastText = new ModuleText(20, 152, forecastLines(), 0x202020);
+        // The forecast's LAST line is the jump gate's own verdict - the one line that answers "why
+        // can I not jump", which until now the pilot could only get by pressing the helm key.
+        forecastText = new ModuleText(8, 82, verdictLine(), 0x404040);
         modules.add(forecastText);
-        modules.add(new ModuleButton(130, 150, BUTTON_ARM,
+
+        // The address buttons are ALWAYS built, then shown or hidden per tick, so a crystal inserted
+        // while the window is open still produces something to click. Building them from the list
+        // once meant an empty ship slot rendered no buttons at all and no way to discover why.
+        List<CrystalEntry> known = shipCrystal().list();
+        for (int i = 0; i < LISTED_ADDRESSES; i++) {
+            // Caption seeded through the CONSTRUCTOR, never through setVisible/setText here: this
+            // method runs on the dedicated server too, and ModuleButton.setVisible dereferences the
+            // @SideOnly(Side.CLIENT) GuiImageButton it wraps. Touching it here throws
+            // NoSuchFieldError before the container exists and the console then refuses to open with
+            // nothing the player can see - the same failure this file's world.isRemote guard below
+            // already exists for. Visibility is settled on the first client tick instead.
+            String caption = "";
+            if (i < known.size()) {
+                CrystalEntry entry = known.get(i);
+                caption = entry.name().isEmpty() ? entry.coord().cellKey() : entry.name();
+            }
+            ModuleButton pick = new ModuleButton(96, 18 + i * 20, BUTTON_PICK_FIRST + i, caption,
+                    this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 72, 18);
+            pickButtons.add(pick);
+            modules.add(pick);
+        }
+
+        armButton = new ModuleButton(96, 120, BUTTON_ARM,
                 LibVulpes.proxy.getLocalizedString(
                         isArmed() ? "msg.navcomputer.disarm" : "msg.navcomputer.arm"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 64, 20));
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, forecastLines(), 72, 18);
+        modules.add(armButton);
+        modules.add(new ModuleButton(96, 98, BUTTON_CLEAR_TARGET,
+                LibVulpes.proxy.getLocalizedString("msg.navcomputer.cleartarget"), this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 72, 18));
 
         // The text boxes are CLIENT-ONLY, and this list is built on BOTH sides: the server builds it
         // too, to assemble the container behind the window. A text box's backing GuiTextField is a
@@ -293,33 +372,71 @@ public class TileNavigationComputer extends TileInventoryHatch
         // console then refuses to open with no error the player can see. Same guard as the docking
         // port and the railgun; only the SLOT-bearing modules must exist on both sides.
         if (world.isRemote) {
-            typedX = new ModuleNumericTextbox(this, 20, 96, 34, 12, 8);
-            typedY = new ModuleNumericTextbox(this, 58, 96, 34, 12, 8);
-            typedZ = new ModuleNumericTextbox(this, 96, 96, 34, 12, 8);
+            typedX = new ModuleNumericTextbox(this, 8, 94, 24, 12, 8);
+            typedY = new ModuleNumericTextbox(this, 36, 94, 24, 12, 8);
+            typedZ = new ModuleNumericTextbox(this, 64, 94, 24, 12, 8);
             modules.add(typedX);
             modules.add(typedY);
             modules.add(typedZ);
 
-            channelBox = new ModuleNumericTextbox(this, 20, 132, 34, 12, 5);
+            channelBox = new ModuleNumericTextbox(this, 8, 130, 24, 12, 5);
             channelBox.setText(Integer.toString(syncChannel));
             modules.add(channelBox);
         }
-        modules.add(new ModuleButton(20, 112, BUTTON_AIM_TYPED,
+        modules.add(new ModuleButton(8, 108, BUTTON_AIM_TYPED,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.aimtyped"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 110, 20));
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 84, 18));
 
-        modules.add(new ModuleButton(58, 130, BUTTON_SYNC,
+        modules.add(new ModuleButton(36, 128, BUTTON_SYNC,
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.sync"), this,
-                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 72, 20));
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 52, 18));
 
-        List<CrystalEntry> known = shipCrystal().list();
-        for (int i = 0; i < known.size() && i < LISTED_ADDRESSES; i++) {
-            modules.add(new ModuleButton(130, 46 + i * 22, BUTTON_PICK_FIRST + i,
-                    known.get(i).name().isEmpty()
-                            ? known.get(i).coord().cellKey() : known.get(i).name(),
-                    this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 80, 20));
-        }
         return modules;
+    }
+
+    /**
+     * Bring every readout in the OPEN window up to date with this tile's current state.
+     *
+     * <p>Called every client tick. Without it each readout kept whatever value it was built with:
+     * picking an address left the target line reading "none set", arming left the button still
+     * offering to arm, and the forecast froze at the moment the window opened — so a console whose
+     * server side was working perfectly read as a row of dead buttons.</p>
+     *
+     * <p>The address buttons are shown/hidden here rather than built from the list, so inserting the
+     * ship's crystal with the window open makes them appear.</p>
+     */
+    private void refreshDisplay() {
+        if (world == null || !world.isRemote) {
+            // CLIENT ONLY, and the guard belongs here rather than only at the call site:
+            // ModuleButton.setVisible dereferences a @SideOnly(Side.CLIENT) field, so one careless
+            // server-side call takes the whole GUI down with a NoSuchFieldError and no visible cause.
+            return;
+        }
+        if (statusText != null) {
+            statusText.setText(targetLine());
+        }
+        if (addressText != null) {
+            addressText.setText(addressLines());
+        }
+        if (forecastText != null) {
+            forecastText.setText(verdictLine());
+        }
+        if (armButton != null) {
+            armButton.setText(LibVulpes.proxy.getLocalizedString(
+                    isArmed() ? "msg.navcomputer.disarm" : "msg.navcomputer.arm"));
+            armButton.setToolTipText(forecastLines());
+        }
+        List<CrystalEntry> known = shipCrystal().list();
+        for (int i = 0; i < pickButtons.size(); i++) {
+            ModuleButton pick = pickButtons.get(i);
+            if (i < known.size()) {
+                CrystalEntry entry = known.get(i);
+                pick.setText(entry.name().isEmpty() ? entry.coord().cellKey() : entry.name());
+                pick.setVisible(true);
+            } else {
+                pick.setVisible(false);
+            }
+        }
     }
 
     private String targetLine() {
@@ -330,8 +447,26 @@ public class TileNavigationComputer extends TileInventoryHatch
     }
 
     private String addressLines() {
+        // The two slots are NOT interchangeable and nothing else on the panel says so: the upper one
+        // is the crystal being copied FROM, while every jump target comes from the lower one. A pilot
+        // with a single crystal puts it in the upper slot, gets an empty list, and has no way to tell
+        // why - so the empty case names the slot instead of just reporting zero.
+        if (!ItemMemoryCrystal.isCrystal(getStackInSlot(SLOT_SHIP))) {
+            return LibVulpes.proxy.getLocalizedString("msg.navcomputer.noshipcrystal");
+        }
         int count = shipCrystal().size();
         return LibVulpes.proxy.getLocalizedString("msg.navcomputer.addresses") + " " + count;
+    }
+
+    /**
+     * The forecast's LAST line — the jump gate's own verdict ("ready to jump", or the first thing
+     * refusing it). Until this was on the panel, the only way to learn why a jump would be refused
+     * was to sit in the helm and press the key.
+     */
+    private String verdictLine() {
+        String full = forecastLines();
+        int lastBreak = full.lastIndexOf('\n');
+        return lastBreak < 0 ? full : full.substring(lastBreak + 1);
     }
 
     /** The forecast the pilot reads before he arms. Never recomputed here — only displayed. */
@@ -348,11 +483,21 @@ public class TileNavigationComputer extends TileInventoryHatch
 
     @Override
     public void update() {
-        if (world == null || world.isRemote) {
-            return; // the forecast is the server's answer; the client only ever displays it
+        if (world == null) {
+            return;
+        }
+        if (world.isRemote) {
+            // The forecast is the server's answer; the client only ever DISPLAYS it - but it must
+            // display the current one. Every readout is refreshed from this tile's synced state each
+            // tick, which is what makes a click on the panel visibly do something.
+            refreshDisplay();
+            return;
         }
         if (world.getTotalWorldTime() % FORECAST_INTERVAL_TICKS != 0) {
             return;
+        }
+        if (!isLinked() && world.getTotalWorldTime() % LINK_SCAN_INTERVAL_TICKS == 0) {
+            adoptShipFlightComputer();
         }
         String fresh = computeForecast();
         if (!fresh.equals(forecast)) {
@@ -700,5 +845,29 @@ public class TileNavigationComputer extends TileInventoryHatch
     @Override
     public NBTTagCompound getUpdateTag() {
         return writeToNBT(super.getUpdateTag());
+    }
+
+    /**
+     * Ship this tile's state to the client whenever it changes.
+     *
+     * <p>{@code getUpdateTag} alone only covers the moment the CHUNK is sent — the initial load. A
+     * later {@code notifyBlockUpdate} is delivered through {@code getUpdatePacket}, and vanilla's
+     * default returns {@code null}: nothing in this tile's ancestry
+     * ({@code TileInventoryHatch} → {@code TilePointer} → {@code TileEntity}) overrides it. So every
+     * server-side change this console makes — the target it was aimed at, the armed flag, the
+     * forecast it recomputes every second — reached the client exactly never, and the panel showed
+     * whatever was true when the player walked up to it. Refreshing the readouts from client state
+     * (which this class also does) cannot help while that state is frozen; this is the half that
+     * unfreezes it.</p>
+     */
+    @Override
+    public net.minecraft.network.play.server.SPacketUpdateTileEntity getUpdatePacket() {
+        return new net.minecraft.network.play.server.SPacketUpdateTileEntity(pos, 0, getUpdateTag());
+    }
+
+    @Override
+    public void onDataPacket(net.minecraft.network.NetworkManager net,
+                             net.minecraft.network.play.server.SPacketUpdateTileEntity packet) {
+        readFromNBT(packet.getNbtCompound());
     }
 }

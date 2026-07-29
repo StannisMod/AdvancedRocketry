@@ -91,6 +91,14 @@ public final class JumpGate {
         /** The target the pilot has set — from a crystal or typed by hand — or {@code null}. */
         GalacticCoord target();
 
+        /**
+         * Where the ship is NOW, as the ledger records it, or {@code null} when nothing records it.
+         * Defaulted so a context that predates this clause still compiles and simply never trips it.
+         */
+        default GalacticCoord currentCell() {
+            return null;
+        }
+
         // ─── What the drive can answer ─────────────────────────────────────────
         //
         // These are plain numbers rather than machine objects on purpose: the gate decides whether a
@@ -182,6 +190,8 @@ public final class JumpGate {
     public static final String MSG_NO_NAV_COMPUTER = "msg.jumpgate.nonavcomputer";
     public static final String MSG_POSITION_UNKNOWN = "msg.jumpgate.positionunknown";
     public static final String MSG_NO_TARGET = "msg.jumpgate.notarget";
+    /** The target resolves to the cell the ship is already in — there is nothing to fly. */
+    public static final String MSG_ALREADY_THERE = "msg.jumpgate.alreadythere";
     /** No field generator aboard: there is no machine to open a window with. */
     public static final String MSG_NO_DRIVE = "msg.jumpgate.nodrive";
     /** The window does not enclose the whole hull — possible, and it will cost the hull. */
@@ -238,6 +248,22 @@ public final class JumpGate {
                 // reckless, destination. What is refused is having no destination at all.
                 return ship.target() != null ? null
                         : new Objection(Severity.HARD, MSG_NO_TARGET);
+            }
+        });
+        REGISTERED.get(Stage.NAVIGATION).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // A jump to the cell the ship is ALREADY in is not a short trip - it is not a trip.
+                // Nothing refused it before, so it ran in full: the burst was spent, the ship parked
+                // in hyperspace and came back to where it started, and anything that did not travel
+                // WITH it (its crew) was simply left behind. Measured in the 2026-07-28 playtest,
+                // where the destinations shared a cell because the layout had collapsed them
+                // (INV-UNI-01, ledger #118) - which is precisely when a pilot picks "another planet"
+                // and gets his own address.
+                GalacticCoord here = ship.currentCell();
+                GalacticCoord there = ship.target();
+                return here == null || there == null || !here.sameCell(there) ? null
+                        : new Objection(Severity.HARD, MSG_ALREADY_THERE);
             }
         });
         // The drive clauses are built in rather than registered by the machine subsystem, because the

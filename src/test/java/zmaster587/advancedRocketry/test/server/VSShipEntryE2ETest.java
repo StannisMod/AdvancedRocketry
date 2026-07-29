@@ -1,5 +1,7 @@
 package zmaster587.advancedRocketry.test.server;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
+
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Test;
@@ -31,6 +33,13 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
+
+    /**
+     * Poll iterations (250 ms apart) allowed for an async crossing to finish settling, stretched by
+     * the build's fork factor. 120 was the single-fork sizing; under load the same arrangement needs
+     * proportionally longer wall-clock for the same amount of work.
+     */
+    private static final int SETTLE_POLLS = (int) Math.ceil(120 * TestTimeouts.factor());
 
     /** Where the piloted ship is built (a loaded overworld region, well clear of other tests). */
     private static final int SRC_X = 6000, SRC_Y = 80, SRC_Z = 6000;
@@ -94,7 +103,13 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         // Poll the ledger: the flight-computer tick fires the entry, the entry crosses + settles the ship.
         String status = "";
         boolean settled = false;
-        for (int i = 0; i < 120; i++) {   // ~30 s ceiling: async crossing + re-assembly + settle
+        // The window is ARRANGEMENT, not the contract: what is asserted is that the ship settles, not
+        // that it settles inside 30 s. A fixed ceiling around an async crossing turns machine load
+        // into a red - measured 2026-07-28, when a ~10% heavier server boot (the space subsystem now
+        // registers on every boot) tipped this loop over on the FULL suite while every subset of it,
+        // up to 385 tests, stayed green. Scale with the fork factor the build already publishes;
+        // the loop still exits the moment the ship is SETTLED, so a healthy run costs nothing extra.
+        for (int i = 0; i < SETTLE_POLLS; i++) {
             status = exec("artest space entry-status");
             if (extractInt(status, "ships") >= 1 && "SETTLED".equals(extractString(status, "state"))) {
                 settled = true;
@@ -158,7 +173,7 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
 
         String status = "";
         boolean settled = false;
-        for (int i = 0; i < 120; i++) {
+        for (int i = 0; i < SETTLE_POLLS; i++) {
             status = exec("artest space entry-status");
             if (extractInt(status, "ships") >= 1 && "SETTLED".equals(extractString(status, "state"))) {
                 settled = true;
@@ -194,7 +209,7 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         // Nothing below pumps the manager: the live Ticker advances the transit every server tick.
         String arrived = "";
         boolean done = false;
-        for (int i = 0; i < 120; i++) {
+        for (int i = 0; i < SETTLE_POLLS; i++) {
             arrived = exec("artest space entry-status");
             if ("SETTLED".equals(extractString(arrived, "state"))
                     && targetCell.equals(extractString(arrived, "cellKey"))) {

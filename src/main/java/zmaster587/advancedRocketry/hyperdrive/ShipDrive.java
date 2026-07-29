@@ -240,6 +240,16 @@ public final class ShipDrive {
             if (!withinXZ(yard, component.getPos())) {
                 continue; // some other ship's machine, or one standing on a planet
             }
+            // A component standing INSIDE this ship's own subspace claim but linked to nothing was
+            // built onto an already-assembled ship: the assembler is what normally binds the pair,
+            // and it only ever runs once, on the pad. Without adopting it here a drive block added
+            // to a finished ship is invisible forever - the ship reports "no field generator
+            // aboard" while the player is looking straight at one, and the only cure is rebuilding
+            // the whole craft. The claim is the ownership test; a block outside it was already
+            // skipped above, so nothing on a planet or on a neighbouring ship can be adopted.
+            if (!component.isLinked() && !world.isRemote) {
+                component.linkToFlightComputer(flightComputerPos);
+            }
             if (component.belongsTo(flightComputerPos)) {
                 found.add(component);
             }

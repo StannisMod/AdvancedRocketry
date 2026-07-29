@@ -89,12 +89,10 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
         root = Files.createTempDirectory("forge-entry-refused-");
         Path arConfigDir = root.resolve("config").resolve("advRocketry");
         Files.createDirectories(arConfigDir);
-        // Opt the production space subsystem back in (it stands down under the harness), pull the
-        // orbit line down to the config minimum so the climb is seconds, and shrink the cell pool
-        // to a SINGLE slot so one probe-held occupant exhausts it.
+        // Pull the orbit line down to the config minimum so the climb is seconds, and shrink the cell
+        // pool to a SINGLE slot so one probe-held occupant exhausts it.
         String cfg = "# seeded by VSShipEntryRefusedKeepsPilotSeatedE2ETest\n"
                 + "performance {\n"
-                + "    B:spaceRegisterUnderTestHarness=true\n"
                 + "    I:spaceCellPoolSize=1\n"
                 + "}\n"
                 + "rockets {\n"
