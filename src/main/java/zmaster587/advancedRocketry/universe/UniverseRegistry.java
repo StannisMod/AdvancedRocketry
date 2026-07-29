@@ -161,11 +161,69 @@ public final class UniverseRegistry extends WorldSavedData {
         if (byCell.containsKey(cell.cellKey())) {
             return Optional.of(cell);
         }
-        GalacticCoord stored = anchorsBySuperIndex().get(superKey(cell, generator.minSpacingCells()));
+        GalacticCoord stored = storedAnchorNear(cell);
         if (stored != null) {
             return Optional.of(stored);
         }
         return generator.anchorAt(worldSeed, cell);
+    }
+
+    /**
+     * The stored anchor whose NEIGHBOURHOOD contains {@code cell}, or {@code null}.
+     *
+     * <p>A system's neighbourhood is the box CENTRED on its anchor, {@code minSpacing/2} cells to each
+     * side — that is where {@code SystemContent} clamps every body, and what {@link IGalaxyGenerator}
+     * documents. Attribution has to ask the same question. Looking the cell up in a fixed
+     * {@code floorDiv} GRID of super-cells asks a different one, and the two answers differ for every
+     * body that sits on the far side of a grid line from its own anchor: the home system's anchor is at
+     * sector 0, so the entire negative half of every one of its orbits fell into the neighbouring grid
+     * cube and could not be attributed to any system at all. Those bodies then had no
+     * {@link #bodiesAt}, no {@link #systemBodiesAt} and no {@link #isSystemKnown} — the console offered
+     * addresses with nothing at them, the slot sky drew nothing, and a descent could never fire.</p>
+     *
+     * <p>The index stays keyed by super-cell for speed; only the QUERY widens, to the 27 super-cells
+     * around the cell. It cannot need more: a body is at most {@code minSpacing/2} cells from its
+     * anchor, so the anchor is never more than one super-cell away on any axis. Ties (anchors closer
+     * together than the spacing guarantee — already warned about when the index is built) go to the
+     * nearest, then to the lowest cell key, so attribution is deterministic.</p>
+     */
+    private GalacticCoord storedAnchorNear(GalacticCoord cell) {
+        int s = generator.minSpacingCells();
+        long reach = Math.max(1L, s) / 2L;
+        Map<String, GalacticCoord> index = anchorsBySuperIndex();
+        GalacticCoord best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    GalacticCoord candidate = index.get(neighbourSuperKey(cell, s, dx, dy, dz));
+                    if (candidate == null || !withinNeighbourhood(cell, candidate, reach)) {
+                        continue;
+                    }
+                    double distance = cell.distanceSqTo(candidate);
+                    if (best == null || distance < bestDistance
+                            || (distance == bestDistance
+                                && candidate.cellKey().compareTo(best.cellKey()) < 0)) {
+                        best = candidate;
+                        bestDistance = distance;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private static boolean withinNeighbourhood(GalacticCoord cell, GalacticCoord anchor, long reach) {
+        return Math.abs(cell.sectorX() - anchor.sectorX()) <= reach
+                && Math.abs(cell.sectorY() - anchor.sectorY()) <= reach
+                && Math.abs(cell.sectorZ() - anchor.sectorZ()) <= reach;
+    }
+
+    private static String neighbourSuperKey(GalacticCoord cell, int spacing, int dx, int dy, int dz) {
+        long s = Math.max(1, spacing);
+        return (Math.floorDiv(cell.sectorX(), s) + dx) + "_"
+                + (Math.floorDiv(cell.sectorY(), s) + dy) + "_"
+                + (Math.floorDiv(cell.sectorZ(), s) + dz);
     }
 
     /** The system AT a known anchor cell: pinned content &rarr; catalogued star &rarr; procedural generator. */
@@ -315,6 +373,16 @@ public final class UniverseRegistry extends WorldSavedData {
 
     /** The full body list of the system anchored at {@code anchor}: pinned &rarr; authored &rarr; generator. */
     private List<SystemBody> allSystemBodies(GalacticCoord anchor) {
+        return allSystemBodies(anchor, SystemContent.NOW);
+    }
+
+    /**
+     * The system's bodies as they stand at world tick {@code atTick} ({@link SystemContent#NOW} for
+     * the present). Pinned and procedural content is time-INVARIANT by construction — a pinned
+     * snapshot is exactly a frozen system and the generator fabricates static bodies — so only the
+     * authored/catalogued path takes the tick.
+     */
+    private List<SystemBody> allSystemBodies(GalacticCoord anchor, long atTick) {
         String key = anchor.cellKey();
         PinnedSystem pinned = pinnedSystems.get(key);
         if (pinned != null) {
@@ -325,7 +393,7 @@ public final class UniverseRegistry extends WorldSavedData {
             StellarBody star = starLookup.apply(id);
             return star == null
                     ? new ArrayList<SystemBody>()
-                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells());
+                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(), atTick);
         }
         return new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
     }
@@ -408,6 +476,16 @@ public final class UniverseRegistry extends WorldSavedData {
      * dim to the system's anchor. Falls back to the anchor when the body is not derivable.
      */
     public Optional<GalacticCoord> coordForPlanet(DimensionProperties props) {
+        return coordForPlanet(props, SystemContent.NOW);
+    }
+
+    /**
+     * Where the body will BE at world tick {@code atTick} ({@link SystemContent#NOW} for the present)
+     * — the ephemeris a navigation computer aims with. A body orbits, so its cell is a function of
+     * time; asking for "now" and then flying for two minutes is how a ship arrives at an address its
+     * destination has already left.
+     */
+    public Optional<GalacticCoord> coordForPlanet(DimensionProperties props, long atTick) {
         if (props == null) {
             return Optional.empty();
         }
@@ -424,7 +502,7 @@ public final class UniverseRegistry extends WorldSavedData {
         if (!anchor.isPresent()) {
             return Optional.empty();
         }
-        for (SystemBody body : allSystemBodies(anchor.get())) {
+        for (SystemBody body : allSystemBodies(anchor.get(), atTick)) {
             if (body.dimId() == props.getId()) {
                 return Optional.of(body.address().cellCentre()); // the body's OWN cell (moon: the parent's)
             }
@@ -432,12 +510,56 @@ public final class UniverseRegistry extends WorldSavedData {
         return anchor; // body not derivable from content — lenient anchor fallback
     }
 
+    /**
+     * The FULL address of a body at world tick {@code atTick} — its cell AND its position inside that
+     * cell — or empty when the body is not derivable from its system's content.
+     *
+     * <p>This is what a jump AIMS at, and it is deliberately not {@link #coordForPlanet}. That answers
+     * "which cell is this body in", snapped to the cell centre, which is the right answer for
+     * attribution, for the home-cell skip and for anything that compares cell keys. It is the wrong
+     * answer for flying: a moon shares its parent's cell but sits tens of thousands of blocks off its
+     * centre, so a ship aimed at the cell arrives at the PARENT and is left short of the moon by ~50
+     * descent radii — it can never put down on the body the pilot actually chose. A body target aims
+     * at the body.</p>
+     *
+     * <p>Empty rather than the lenient anchor fallback {@link #coordForPlanet} makes: aiming a ship at
+     * a system's star because its planet could not be resolved is exactly the silent
+     * flown-somewhere-else failure this exists to prevent. The caller surfaces it instead.</p>
+     */
+    public Optional<GalacticCoord> addressForPlanet(DimensionProperties props, long atTick) {
+        if (props == null || props.isStar()) {
+            return props == null ? Optional.<GalacticCoord>empty()
+                    : coordForSystem(props.getId() - Constants.STAR_ID_OFFSET);
+        }
+        Optional<GalacticCoord> anchor = coordForSystem(props.getStarId());
+        if (!anchor.isPresent() && props.isMoon()) {
+            DimensionProperties parent = props.getParentProperties();
+            if (parent != null) {
+                anchor = coordForSystem(parent.getStarId());
+            }
+        }
+        if (!anchor.isPresent()) {
+            return Optional.empty();
+        }
+        for (SystemBody body : allSystemBodies(anchor.get(), atTick)) {
+            if (body.dimId() == props.getId()) {
+                return Optional.of(body.address());
+            }
+        }
+        return Optional.empty();
+    }
+
     /** Server-side convenience: resolves the dimension via {@link DimensionManager} then delegates. */
     public Optional<GalacticCoord> coordForPlanet(int dimId) {
+        return coordForPlanet(dimId, SystemContent.NOW);
+    }
+
+    /** {@link #coordForPlanet(DimensionProperties, long)} by dimension id. */
+    public Optional<GalacticCoord> coordForPlanet(int dimId, long atTick) {
         if (dimId >= Constants.STAR_ID_OFFSET) {
             return coordForSystem(dimId - Constants.STAR_ID_OFFSET);
         }
-        return coordForPlanet(DimensionManager.getInstance().getDimensionProperties(dimId));
+        return coordForPlanet(DimensionManager.getInstance().getDimensionProperties(dimId), atTick);
     }
 
     /**

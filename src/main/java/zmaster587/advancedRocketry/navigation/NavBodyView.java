@@ -57,9 +57,12 @@ public final class NavBodyView {
     }
 
     private static DimensionProperties propsOf(SystemBody body) {
-        if (!body.isDescendTarget()) {
+        if (body.dimId() == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
             return null; // a star, a belt or a station slot has no dimension to read
         }
-        return DimensionManager.getInstance().getDimensionProperties(body.dimId());
+        // Having a dimension is the question, NOT being landable: a gas giant is a body a survey can
+        // report an atmosphere and a temperature for, and is exactly the kind of thing a pilot wants
+        // the numbers on before he decides he cannot put down there.
+        return DimensionManager.getInstance().getDimensionPropertiesOrNull(body.dimId());
     }
 }

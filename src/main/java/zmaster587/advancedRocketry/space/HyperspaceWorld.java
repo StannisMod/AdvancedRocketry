@@ -36,7 +36,9 @@ public final class HyperspaceWorld {
                     SpaceSlotPool.nextFreeDimensionTypeId(), WorldProviderSpaceSlot.class, false);
         }
         if (dimId == Integer.MIN_VALUE) {
-            dimId = DimensionManager.getNextFreeDimId();
+            // Same combined free-id scan the pool uses: an id Forge calls free may still belong to a
+            // surface-less Advanced Rocketry body (see SpaceSlotPool#nextFreeDimensionId).
+            dimId = SpaceSlotPool.nextFreeDimensionId();
             DimensionManager.registerDimension(dimId, type);
         }
     }

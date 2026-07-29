@@ -48,6 +48,31 @@ public final class SpaceSlotPool {
         return max + 1;
     }
 
+    /**
+     * A dimension id nothing in this game already owns — the id every space dimension (a pool slot,
+     * hyperspace) is minted from.
+     *
+     * <p>Forge's own {@code getNextFreeDimId} is not enough, because Advanced Rocketry keeps a SECOND
+     * id space Forge cannot see: every catalogued body has a dimension id, but only the ones with a
+     * surface are registered with Forge — a gas giant is a real body, addressable and jumpable to,
+     * whose id Forge therefore reports as free. Taking it hands one number to two owners: the
+     * universe registry goes on describing dim 3 as a body of the home system while the world behind
+     * dim 3 is an empty space slot, so a ship that flies to that body "lands" in a void. Asking AR's
+     * own {@code DimensionManager} asks BOTH registries at once, which is the only way to get an
+     * honest answer.</p>
+     *
+     * <p>Server thread only, and non-reserving: the caller must register the id it is handed before
+     * asking again.</p>
+     */
+    public static int nextFreeDimensionId() {
+        int id = zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().getNextFreeDim(2);
+        if (id == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+            // AR's scan is bounded; fall back rather than refuse to register a pool at all.
+            return DimensionManager.getNextFreeDimId();
+        }
+        return id;
+    }
+
     /** dimId &rarr; cell key currently bound to that slot ({@code null} = unbound scratch). */
     private static final Map<Integer, String> DIM_TO_CELL = new ConcurrentHashMap<>();
 
@@ -121,7 +146,7 @@ public final class SpaceSlotPool {
         }
         int[] ids = new int[n];
         for (int i = 0; i < n; i++) {
-            int id = DimensionManager.getNextFreeDimId();
+            int id = nextFreeDimensionId();
             DimensionManager.registerDimension(id, slotType);
             SLOT_DIMS.add(id);
             ids[i] = id;

@@ -544,6 +544,21 @@ public class DimensionManager implements IGalaxy {
     }
 
     /**
+     * The properties of the body registered as {@code dimId}, or {@code null} when there is no such
+     * body.
+     *
+     * <p>{@link #getDimensionProperties(int)} answers an unknown id with the OVERWORLD, which is the
+     * right lenience for rendering and for the many callers that only need something to read a colour
+     * off. It is the wrong answer for anything that has to know whether a body EXISTS: a saved jump
+     * target naming a dimension a pack update removed would resolve, silently, to Earth, and the ship
+     * would fly to a destination the pilot never chose. Callers that must be able to say "gone" ask
+     * this one.</p>
+     */
+    public DimensionProperties getDimensionPropertiesOrNull(int dimId) {
+        return dimensionList.get(dimId);
+    }
+
+    /**
      * @param id star id for which to get the object
      * @return the {@link StellarBody} object
      */

@@ -53,7 +53,7 @@ public final class CrystalSeeding {
         GalacticCoord home = coordOf(registry, 0);
         if (home != null) {
             memory.record(new CrystalEntry(home, nameOf(0), SystemBodyKind.PLANET,
-                    InfoTier.TELESCOPE, now));
+                    InfoTier.TELESCOPE, now, 0));
         }
 
         DimensionManager dims = DimensionManager.getInstance();
@@ -88,8 +88,10 @@ public final class CrystalSeeding {
             if (home != null && home.cellKey().equals(coord.cellKey())) {
                 continue;
             }
+            // The dim id is the entry's IDENTITY: bodies orbit, so the coordinate recorded here is
+            // where this one stood at seeding time and nothing more. A pick aims at the body.
             memory.record(new CrystalEntry(coord, nameOf(dimId), SystemBodyKind.PLANET,
-                    InfoTier.TELESCOPE, now));
+                    InfoTier.TELESCOPE, now, dimId));
         }
         return memory;
     }

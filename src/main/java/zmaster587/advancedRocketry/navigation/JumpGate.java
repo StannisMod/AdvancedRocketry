@@ -92,6 +92,19 @@ public final class JumpGate {
         GalacticCoord target();
 
         /**
+         * Whether the ship can currently say where its target IS.
+         *
+         * <p>Only a BODY target can fail this: a destination picked off a crystal is a place that
+         * moves, so the aim is a prediction the computer makes from the body's orbit, and it cannot
+         * be made for a body that is no longer registered. Defaulted to {@code true} so a context
+         * that predates the clause — and every hand-typed coordinate, which needs no prediction —
+         * simply never trips it.</p>
+         */
+        default boolean targetResolved() {
+            return true;
+        }
+
+        /**
          * Where the ship is NOW, as the ledger records it, or {@code null} when nothing records it.
          * Defaulted so a context that predates this clause still compiles and simply never trips it.
          */
@@ -192,6 +205,8 @@ public final class JumpGate {
     public static final String MSG_NO_TARGET = "msg.jumpgate.notarget";
     /** The target resolves to the cell the ship is already in — there is nothing to fly. */
     public static final String MSG_ALREADY_THERE = "msg.jumpgate.alreadythere";
+    /** The ship is aimed at a body it can no longer locate — there is nowhere to aim. */
+    public static final String MSG_TARGET_LOST = "msg.jumpgate.targetlost";
     /** No field generator aboard: there is no machine to open a window with. */
     public static final String MSG_NO_DRIVE = "msg.jumpgate.nodrive";
     /** The window does not enclose the whole hull — possible, and it will cost the hull. */
@@ -248,6 +263,18 @@ public final class JumpGate {
                 // reckless, destination. What is refused is having no destination at all.
                 return ship.target() != null ? null
                         : new Objection(Severity.HARD, MSG_NO_TARGET);
+            }
+        });
+        REGISTERED.get(Stage.NAVIGATION).add(new Predicate() {
+            @Override
+            public Objection check(ShipContext ship) {
+                // HARD, and deliberately not a mere advisory: the alternative is to fly at the
+                // target's LAST KNOWN coordinate, which is a place the destination has left. That
+                // spends the burst, drops the ship in void, and gives the pilot no descent and no
+                // way back - exactly the paid failure this gate exists to prevent. A refusal here
+                // is free, and it names its reason.
+                return ship.target() == null || ship.targetResolved() ? null
+                        : new Objection(Severity.HARD, MSG_TARGET_LOST);
             }
         });
         REGISTERED.get(Stage.NAVIGATION).add(new Predicate() {

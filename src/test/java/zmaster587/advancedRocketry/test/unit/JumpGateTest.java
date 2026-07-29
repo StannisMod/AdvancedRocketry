@@ -30,6 +30,7 @@ public class JumpGateTest {
         boolean navComputer = true;
         boolean positionKnown = true;
         GalacticCoord target = TARGET;
+        boolean targetResolved = true;
         long drivePower = 8_000L;
         long burstCost = 160_000L;
         long capacitorCharge = 160_000L;
@@ -50,6 +51,11 @@ public class JumpGateTest {
         @Override
         public GalacticCoord target() {
             return target;
+        }
+
+        @Override
+        public boolean targetResolved() {
+            return targetResolved;
         }
 
         @Override
@@ -147,6 +153,21 @@ public class JumpGateTest {
 
         assertFalse(verdict.allowed());
         assertEquals(JumpGate.MSG_NO_TARGET, verdict.firstMessage());
+    }
+
+    @Test
+    public void aTargetTheShipCannotLocateRefusesTheJump() {
+        FakeShip ship = new FakeShip();
+        ship.targetResolved = false;
+
+        JumpGate.Verdict verdict = JumpGate.check(ship);
+
+        // Not an advisory. The only alternative to refusing is to fly at the target's LAST KNOWN
+        // coordinate — a place a moving body has left — which spends the burst and leaves the ship
+        // in void with nothing to descend onto. Refusing is free and says why.
+        assertFalse("a ship that cannot say where its target IS must not be allowed to fly at it",
+                verdict.allowed());
+        assertEquals(JumpGate.MSG_TARGET_LOST, verdict.firstMessage());
     }
 
     @Test

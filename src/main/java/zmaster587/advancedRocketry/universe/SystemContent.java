@@ -51,16 +51,35 @@ public final class SystemContent {
     private SystemContent() {
     }
 
-    /** Legacy-spacing overload: derives with the default super-cell edge. */
+    /**
+     * Sentinel for "read each body's LIVE orbital angle" — as opposed to a world tick to project the
+     * whole system forward to. A jump takes long enough for the destination to move, so navigation
+     * asks the same derivation for a FUTURE system state; everything else asks for the present.
+     */
+    public static final long NOW = Long.MIN_VALUE;
+
+    /** Legacy-spacing overload: derives with the default super-cell edge, as of now. */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord) {
         return bodiesOf(star, systemCoord, GalaxyGenConfig.DEFAULT_MIN_SPACING);
     }
 
     /**
-     * The system's bodies, per-body-cell (A#1a). {@code minSpacingCells} is the active generator's
-     * super-cell edge — the box every body cell is clamped into.
+     * The system's bodies, per-body-cell (A#1a), as of now. {@code minSpacingCells} is the active
+     * generator's super-cell edge — the box every body cell is clamped into.
      */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells) {
+        return bodiesOf(star, systemCoord, minSpacingCells, NOW);
+    }
+
+    /**
+     * The system's bodies as they stand at world tick {@code atTick} ({@link #NOW} for the present).
+     *
+     * <p>The system is derived at ONE instant, never body-by-body from whatever each one's live field
+     * happens to hold: a jump is aimed at a snapshot of a system, and mixing two instants would give
+     * the pilot a chart no moment ever looked like.</p>
+     */
+    public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells,
+                                            long atTick) {
         List<SystemBody> bodies = new ArrayList<>();
         if (star == null) {
             return bodies;
@@ -74,33 +93,62 @@ public final class SystemContent {
                 continue;
             }
             DimensionProperties planet = (DimensionProperties) p;
-            double[] pos = planet.getPlanetPosition();
-            long px = Math.round(pos[0] * ORBIT_UNIT_BLOCKS);
-            long py = Math.round(pos[1] * ORBIT_UNIT_BLOCKS);
-            long pz = Math.round(pos[2] * ORBIT_UNIT_BLOCKS);
-            // The planet's address is its OWN cell's centre; the cell is clamped into the anchor's
-            // super-cell box so the neighbourhood can never reach a neighbouring system's territory.
-            GalacticCoord planetAddr = clampIntoBox(
-                    anchor.plusLocal(px, py, pz).cellCentre(), anchor, minSpacingCells, planet.getId());
-            bodies.add(new SystemBody(planetAddr, SystemBodyKind.PLANET, planet.getId(), starId));
+            GalacticCoord planetAddr = addressOf(planet, anchor, minSpacingCells, atTick);
+            bodies.add(new SystemBody(planetAddr, kindOf(planet, SystemBodyKind.PLANET),
+                    planet.getId(), starId));
 
             for (int moonId : planet.getChildPlanets()) {
                 DimensionProperties moon = DimensionManager.getInstance().getDimensionProperties(moonId);
                 if (moon == null) {
                     continue;
                 }
-                double[] moonPos = moon.getPlanetPosition();
-                long mx = clampMoonLocal(Math.round(moonPos[0] * MOON_UNIT_BLOCKS));
-                long my = clampMoonLocal(Math.round(moonPos[1] * MOON_UNIT_BLOCKS));
-                long mz = clampMoonLocal(Math.round(moonPos[2] * MOON_UNIT_BLOCKS));
-                // Moons stay LOCAL: same cell as the parent planet, small offset from its centre.
-                GalacticCoord moonAddr = GalacticCoord.ofSectorLocal(
-                        planetAddr.sectorX(), planetAddr.sectorY(), planetAddr.sectorZ(), mx, my, mz);
-                bodies.add(new SystemBody(moonAddr, SystemBodyKind.MOON, moon.getId(), starId));
+                bodies.add(new SystemBody(moonAddressOf(moon, planetAddr, atTick),
+                        kindOf(moon, SystemBodyKind.MOON), moon.getId(), starId));
             }
         }
         auditOneRealBodyPerCell(bodies, starId);
         return bodies;
+    }
+
+    /**
+     * The cell a PLANET-level body occupies, at {@code atTick}. Its address is its OWN cell's centre;
+     * the cell is clamped into the anchor's super-cell box so the neighbourhood can never reach a
+     * neighbouring system's territory.
+     */
+    static GalacticCoord addressOf(DimensionProperties planet, GalacticCoord anchor, int minSpacingCells,
+                                   long atTick) {
+        double[] pos = positionOf(planet, atTick);
+        long px = Math.round(pos[0] * ORBIT_UNIT_BLOCKS);
+        long py = Math.round(pos[1] * ORBIT_UNIT_BLOCKS);
+        long pz = Math.round(pos[2] * ORBIT_UNIT_BLOCKS);
+        return clampIntoBox(anchor.plusLocal(px, py, pz).cellCentre(), anchor, minSpacingCells,
+                planet.getId());
+    }
+
+    /** A moon stays LOCAL: same cell as the parent planet, a small offset from its centre. */
+    private static GalacticCoord moonAddressOf(DimensionProperties moon, GalacticCoord planetAddr,
+                                               long atTick) {
+        double[] moonPos = positionOf(moon, atTick);
+        long mx = clampMoonLocal(Math.round(moonPos[0] * MOON_UNIT_BLOCKS));
+        long my = clampMoonLocal(Math.round(moonPos[1] * MOON_UNIT_BLOCKS));
+        long mz = clampMoonLocal(Math.round(moonPos[2] * MOON_UNIT_BLOCKS));
+        return GalacticCoord.ofSectorLocal(
+                planetAddr.sectorX(), planetAddr.sectorY(), planetAddr.sectorZ(), mx, my, mz);
+    }
+
+    private static double[] positionOf(DimensionProperties body, long atTick) {
+        return atTick == NOW ? body.getPlanetPosition() : body.getPlanetPositionAt(atTick);
+    }
+
+    /**
+     * What a dimensioned body IS, for the purposes of aiming at it. A body with no surface is not a
+     * place a ship can put down — the descent resolver has no terrain to find and no world to paste
+     * into — so it must not be advertised as one. That answer belongs HERE, at the one place bodies
+     * are made, rather than as an extra filter at the descent trigger: the nav GUI, the render
+     * channel and the flight computer all read {@code isDescendTarget()} and must agree.
+     */
+    private static SystemBodyKind kindOf(DimensionProperties body, SystemBodyKind ifWalkable) {
+        return body.hasSurface() ? ifWalkable : SystemBodyKind.GAS_GIANT;
     }
 
     /**

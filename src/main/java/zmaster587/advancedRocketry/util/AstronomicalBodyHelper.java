@@ -48,9 +48,25 @@ public class AstronomicalBodyHelper {
      * @return the current angle around the star in radians
      */
     public static double getOrbitalTheta(int orbitalDistance, float solarSize) {
-        double orbitalPeriod = getOrbitalPeriod(orbitalDistance, solarSize);
-        //Returns angle, relative to 0, of a planet at any given time
-        return ((AdvancedRocketry.proxy.getWorldTimeUniversal(0) % (24000d * orbitalPeriod)) / (24000d * orbitalPeriod)) * (2d * Math.PI);
+        return getOrbitalThetaAt(orbitalDistance, solarSize, AdvancedRocketry.proxy.getWorldTimeUniversal(0));
+    }
+
+    /**
+     * The orbital theta a body at {@code orbitalDistance} around a star of {@code solarSize} has at
+     * world tick {@code worldTick} — the same law as {@link #getOrbitalTheta}, evaluated at an
+     * arbitrary time. Navigation extrapolates with this: a jump takes long enough for the
+     * destination to move, so the computer has to aim where the body WILL be.
+     *
+     * @return the angle around the star in RADIANS
+     */
+    public static double getOrbitalThetaAt(int orbitalDistance, float solarSize, long worldTick) {
+        double periodTicks = 24000d * getOrbitalPeriod(orbitalDistance, solarSize);
+        if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
+            // A degenerate orbit (zero distance, or a star with no size recorded) does not move.
+            // Answering 0 keeps it addressable instead of handing every caller a NaN coordinate.
+            return 0d;
+        }
+        return ((worldTick % periodTicks) / periodTicks) * (2d * Math.PI);
     }
 
     /**
@@ -61,10 +77,24 @@ public class AstronomicalBodyHelper {
      * @return the current angle around the planet in radians
      */
     public static double getMoonOrbitalTheta(int orbitalDistance, float parentGravitationalMultiplier) {
+        return getMoonOrbitalThetaAt(orbitalDistance, parentGravitationalMultiplier,
+                AdvancedRocketry.proxy.getWorldTimeUniversal(0));
+    }
+
+    /**
+     * A moon's orbital theta around its parent at world tick {@code worldTick} — the moon half of
+     * {@link #getOrbitalThetaAt}.
+     *
+     * @return the angle around the parent planet in RADIANS
+     */
+    public static double getMoonOrbitalThetaAt(int orbitalDistance, float parentGravitationalMultiplier,
+                                               long worldTick) {
         //Because the function is still in AU and solar mass, some correctional factors to convert to those units
-        double orbitalPeriod = getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier);
-        //Returns angle, relative to 0, of a moon at any given time
-        return ((AdvancedRocketry.proxy.getWorldTimeUniversal(0) % (24000d * orbitalPeriod)) / (24000d * orbitalPeriod)) * (2d * Math.PI);
+        double periodTicks = 24000d * getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier);
+        if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
+            return 0d;
+        }
+        return ((worldTick % periodTicks) / periodTicks) * (2d * Math.PI);
     }
 
     /**

@@ -20,10 +20,12 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * ships, never for capacity management. (The platform's item-NBT wire limit is the only ceiling, and it
  * sits tens of thousands of entries above realistic play.)</p>
  *
- * <p><b>One entry per address.</b> The store is keyed by {@link GalacticCoord}, so copying a crystal
- * into another can never duplicate an address; where both sides know one, the records are merged by
- * FRESHNESS ({@link CrystalEntry#mergeWith}). Copy is therefore <b>add-only</b>: it never removes an
- * address from either side, and it never replaces a newer observation with an older one.</p>
+ * <p><b>One entry per BODY.</b> The store is keyed by {@link CrystalEntry#identityKey()} — the body's
+ * dimension where there is one, the coordinate otherwise — so copying a crystal into another can never
+ * duplicate a destination; where both sides know one, the records are merged by FRESHNESS
+ * ({@link CrystalEntry#mergeWith}). Keying by coordinate instead would give a planet one entry per
+ * observation, because a planet moves. Copy is <b>add-only</b>: it never removes an address from either
+ * side, and it never replaces a newer observation with an older one.</p>
  *
  * <p>Insertion order is preserved so the nav GUI lists addresses in the order they were learned.</p>
  */
@@ -32,7 +34,7 @@ public final class CrystalMemory {
     /** The item-NBT key the whole address list lives under. Same-version wire/save contract. */
     public static final String NBT_KEY = "navAddresses";
 
-    private final Map<GalacticCoord, CrystalEntry> entries = new LinkedHashMap<>();
+    private final Map<String, CrystalEntry> entries = new LinkedHashMap<>();
 
     /** An empty crystal — a blank, never a broken one. */
     public CrystalMemory() {
@@ -40,23 +42,24 @@ public final class CrystalMemory {
 
     /**
      * Record {@code entry}, merging by freshness against any record this crystal already holds for the
-     * same address. Returns {@code true} when the crystal changed (a new address, or a fresher record
-     * of a known one) — a caller writing back to an item can skip the write when nothing moved.
+     * same body. Returns {@code true} when the crystal changed (a new body, or a fresher record of a
+     * known one) — a caller writing back to an item can skip the write when nothing moved.
      */
     public boolean record(CrystalEntry entry) {
         if (entry == null) {
             return false;
         }
-        CrystalEntry known = entries.get(entry.coord());
+        String key = entry.identityKey();
+        CrystalEntry known = entries.get(key);
         if (known == null) {
-            entries.put(entry.coord(), entry);
+            entries.put(key, entry);
             return true;
         }
         CrystalEntry merged = known.mergeWith(entry);
         if (merged.equals(known)) {
             return false;
         }
-        entries.put(entry.coord(), merged);
+        entries.put(key, merged);
         return true;
     }
 
@@ -78,9 +81,10 @@ public final class CrystalMemory {
         return changed;
     }
 
-    /** Forget one address. Returns {@code true} if it was known. */
+    /** Forget one address, by the coordinate it was last observed at. Returns {@code true} if known. */
     public boolean erase(GalacticCoord coord) {
-        return coord != null && entries.remove(coord) != null;
+        CrystalEntry found = get(coord);
+        return found != null && entries.remove(found.identityKey()) != null;
     }
 
     /** Forget every address — a blanked crystal, ready to be written again. */
@@ -88,12 +92,26 @@ public final class CrystalMemory {
         entries.clear();
     }
 
+    /** The record whose OBSERVED coordinate is {@code coord}, or {@code null}. */
     public CrystalEntry get(GalacticCoord coord) {
-        return coord == null ? null : entries.get(coord);
+        if (coord == null) {
+            return null;
+        }
+        for (CrystalEntry e : entries.values()) {
+            if (coord.equals(e.coord())) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /** The record for the body in dimension {@code dimId}, or {@code null}. */
+    public CrystalEntry forBody(int dimId) {
+        return entries.get(CrystalEntry.bodyIdentityKey(dimId));
     }
 
     public boolean knows(GalacticCoord coord) {
-        return coord != null && entries.containsKey(coord);
+        return get(coord) != null;
     }
 
     public int size() {

@@ -147,6 +147,12 @@ public final class JumpTrigger {
         if (computer == null || !computer.isArmed()) {
             return new Result(Outcome.NOT_ARMED, MSG_NOT_ARMED);
         }
+        // Aim once more, HERE, at the instant of departure. The spool is long enough for the
+        // destination to have moved, and the aim is a prediction of where it will be when this
+        // particular flight ends - so it has to be made from where the ship is now, with the drive
+        // it has now. Free (pure arithmetic over the body's orbit), and it runs before the gate so
+        // a target that has become unlocatable is refused rather than flown at.
+        computer.refreshTarget();
         JumpGate.Verdict verdict = JumpGate.check(nav);
         if (!verdict.allowed()) {
             return new Result(Outcome.REFUSED, verdict.firstMessage());

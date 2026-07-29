@@ -506,6 +506,7 @@ msg.jumpgate.nonavcomputer=На борту нет навигационного �
 msg.jumpgate.positionunknown=Положение неизвестно - кораблю нужно заново определиться
 msg.jumpgate.notarget=Цель прыжка не задана
 msg.jumpgate.alreadythere=Корабль уже в этой ячейке - лететь некуда
+msg.jumpgate.targetlost=Целевое тело не найдено - задайте цель заново
 
 # --- Гипердвигатель ----------------------------------------------------------
 tile.hyperdriveGenerator.name=Генератор поля гиперпространства

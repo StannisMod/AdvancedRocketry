@@ -45,6 +45,39 @@ public class CrystalMemoryTest {
     }
 
     @Test
+    public void twoSightingsOfOneBodyAreOneRecord() {
+        // A planet orbits, so two observations of it are at two different coordinates. What makes
+        // them the same knowledge is the BODY. Keyed by coordinate instead, a crystal would collect
+        // one entry per sighting of the same planet and the console's list would fill with copies of
+        // it — each one aimed at a point the planet had already left.
+        CrystalMemory crystal = new CrystalMemory();
+        crystal.record(new CrystalEntry(coord(5), "Kepler", SystemBodyKind.PLANET,
+                InfoTier.TELESCOPE, 100L, 42));
+        crystal.record(new CrystalEntry(coord(9), "Kepler", SystemBodyKind.PLANET,
+                InfoTier.ORBIT, 500L, 42));
+
+        assertEquals("one body, one record — wherever it was standing when it was seen",
+                1, crystal.size());
+        assertNotNull(crystal.forBody(42));
+        assertEquals("the fresher sighting wins, and it is the fresher POSITION too",
+                coord(9), crystal.forBody(42).coord());
+        assertEquals(InfoTier.ORBIT, crystal.forBody(42).detail());
+    }
+
+    @Test
+    public void aBodyAndABareCoordinateAtTheSamePointAreDifferentKnowledge() {
+        // A hand-noted point is not a claim about a body: nothing says the planet that happens to be
+        // passing through it now is what the pilot wrote down.
+        CrystalMemory crystal = new CrystalMemory();
+        crystal.record(new CrystalEntry(coord(5), "scratch", SystemBodyKind.PLANET,
+                InfoTier.TELESCOPE, 100L));
+        crystal.record(new CrystalEntry(coord(5), "Kepler", SystemBodyKind.PLANET,
+                InfoTier.TELESCOPE, 100L, 42));
+
+        assertEquals(2, crystal.size());
+    }
+
+    @Test
     public void oneAddressIsHeldOnce() {
         CrystalMemory crystal = new CrystalMemory();
         crystal.record(entry(5, "Kepler", InfoTier.TELESCOPE, 100L));

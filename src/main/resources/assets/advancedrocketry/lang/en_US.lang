@@ -1626,6 +1626,7 @@ msg.jumpgate.nonavcomputer=No navigation computer aboard
 msg.jumpgate.positionunknown=Position unknown - the ship must re-localize before it can jump
 msg.jumpgate.notarget=No jump target set
 msg.jumpgate.alreadythere=The ship is already in that cell - there is nothing to fly
+msg.jumpgate.targetlost=The target body cannot be located - re-aim before jumping
 
 # --- Hyperdrive family -------------------------------------------------------
 tile.hyperdriveGenerator.name=Hyperspace Field Generator

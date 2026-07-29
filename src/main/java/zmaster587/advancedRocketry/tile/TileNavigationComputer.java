@@ -13,7 +13,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.fml.relauncher.Side;
 
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
+import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.item.ItemMemoryCrystal;
+import zmaster587.advancedRocketry.navigation.TargetPrediction;
 import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.navigation.CrystalMemory;
 import zmaster587.advancedRocketry.navigation.CrystalSync;
@@ -91,12 +93,40 @@ public class TileNavigationComputer extends TileInventoryHatch
 
     private static final String NBT_TARGET = "navTarget";
     private static final String NBT_HAS_TARGET = "navHasTarget";
+    private static final String NBT_TARGET_DIM = "navTargetDim";
+    private static final String NBT_TARGET_RESOLVED = "navTargetResolved";
     private static final String NBT_AFC_OFFSET = "afcOffset";
     private static final String NBT_SYNC_CHANNEL = "syncChannel";
     private static final String NBT_ARMED = "navArmed";
 
-    /** Where the ship is aimed, or {@code null} when the pilot has not chosen. */
+    /**
+     * The cell the ship is currently aimed at, or {@code null} when the pilot has not chosen.
+     *
+     * <p>For a BODY target this is a DERIVED value — the computer's own prediction of where the body
+     * will be when the ship comes out of hyperspace — and it is recomputed on the server every
+     * {@link #FORECAST_INTERVAL_TICKS} and again at the moment the jump commits. For a hand-typed
+     * CELL target it is simply what the pilot typed.</p>
+     */
     private GalacticCoord target;
+
+    /**
+     * The body this ship is aimed at, or {@link Constants#INVALID_PLANET} when the target is a
+     * hand-typed cell.
+     *
+     * <p>These are the two kinds of destination, and they are not the same kind. An address picked
+     * off a crystal names a BODY: the pilot chose a planet, and a planet is somewhere that moves, so
+     * the ship must stay aimed at the planet rather than at the point the planet was standing on.
+     * A coordinate typed by hand names a CELL and nothing else — aiming at an unsurveyed point is a
+     * deliberate leap of faith, and there is no body there to track.</p>
+     */
+    private int targetDim = Constants.INVALID_PLANET;
+
+    /**
+     * Whether the computer can currently say where its target IS. Only ever false for a BODY target
+     * whose body it cannot locate — a dimension a pack update removed, or a registry that is not up.
+     * Synced, because it is the reason the panel and the gate give the pilot.
+     */
+    private boolean targetResolved = true;
 
     /** Offset from this computer to its flight computer; {@code null} until the assembler links them. */
     private BlockPos flightComputerOffset;
@@ -141,17 +171,122 @@ public class TileNavigationComputer extends TileInventoryHatch
         return target;
     }
 
-    /** Aim the ship (or clear the aim with {@code null}). Re-aiming always disarms. */
+    /**
+     * Aim the ship at a bare CELL (or clear the aim with {@code null}) — the hand-typed mode. Nothing
+     * is tracked: the coordinate is the destination. Re-aiming always disarms.
+     */
     public void setTarget(GalacticCoord coord) {
+        aim(coord, Constants.INVALID_PLANET, true);
+    }
+
+    /**
+     * Aim the ship at a BODY. {@code observed} is where that body was last seen — used as the shown
+     * aim until the first prediction lands, and as the honest last word if the body cannot be
+     * located. Re-aiming always disarms.
+     */
+    public void setTargetBody(int dimId, GalacticCoord observed) {
+        if (dimId == Constants.INVALID_PLANET) {
+            setTarget(observed);
+            return;
+        }
+        aim(observed, dimId, true);
+        refreshTarget();
+    }
+
+    private void aim(GalacticCoord coord, int dimId, boolean disarming) {
         this.target = coord;
-        // Changing where the ship is pointed cannot leave it armed at the old answer: the whole
-        // point of arming at a console and firing at the helm is that the pilot committed to a
-        // destination he had looked at.
-        this.armed = false;
+        this.targetDim = coord == null ? Constants.INVALID_PLANET : dimId;
+        this.targetResolved = true;
+        if (disarming) {
+            // Changing where the ship is pointed cannot leave it armed at the old answer: the whole
+            // point of arming at a console and firing at the helm is that the pilot committed to a
+            // destination he had looked at.
+            this.armed = false;
+        }
         markDirty();
         if (world != null && !world.isRemote) {
             world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
         }
+    }
+
+    /** The body this ship is aimed at, or {@link Constants#INVALID_PLANET} for a hand-typed cell. */
+    public int getTargetDim() {
+        return targetDim;
+    }
+
+    /** Whether the computer can say where its target is. See {@link #targetResolved}. */
+    public boolean isTargetResolved() {
+        return targetResolved;
+    }
+
+    /**
+     * Re-aim at the target BODY: predict where it will be when a jump started now would end, and
+     * make that the ship's aim point. A no-op for a hand-typed cell (there is no body to follow) and
+     * on the client (the aim is the server's answer; the client displays it).
+     *
+     * <p>Called on the console's own tick so the pilot watches a live aim, and again at the instant
+     * the jump commits so the flight is priced from the freshest possible answer. Free — pure
+     * arithmetic over the body's orbit.</p>
+     */
+    public void refreshTarget() {
+        if (world == null || world.isRemote || targetDim == Constants.INVALID_PLANET) {
+            return;
+        }
+        final UniverseRegistry registry = UniverseRegistry.get(world.getMinecraftServer());
+        final zmaster587.advancedRocketry.dimension.DimensionManager dims =
+                zmaster587.advancedRocketry.dimension.DimensionManager.getInstance();
+        BlockPos afc = getFlightComputerPos();
+        zmaster587.advancedRocketry.navigation.ShipNavigation nav = afc == null ? null
+                : new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipIdOf(afc));
+        GalacticCoord origin = nav == null ? null : nav.currentCoord();
+        final long speed = nav == null ? 0L : nav.plannedSpeed();
+        long now = zmaster587.advancedRocketry.AdvancedRocketry.proxy.getWorldTimeUniversal(0);
+
+        GalacticCoord aimed = registry == null ? null : TargetPrediction.aimAt(targetDim, origin, now,
+                new TargetPrediction.Ephemeris() {
+                    @Override
+                    public GalacticCoord cellAt(int dimId, long worldTick) {
+                        // The STRICT lookup: a lenient one answers an unknown dimension with the
+                        // overworld, which would quietly re-aim the ship at Earth.
+                        zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                                dims.getDimensionPropertiesOrNull(dimId);
+                        if (props == null) {
+                            return null;
+                        }
+                        // The body's FULL address, not merely its cell: a moon shares its parent's
+                        // cell but sits tens of thousands of blocks off its centre, and a ship
+                        // dropped at the centre has not arrived at the moon.
+                        java.util.Optional<GalacticCoord> at =
+                                registry.addressForPlanet(props, worldTick);
+                        return at.isPresent() ? at.get() : null;
+                    }
+                },
+                new TargetPrediction.Flight() {
+                    @Override
+                    public long ticksFor(double distanceBlocks) {
+                        return zmaster587.advancedRocketry.hyperdrive.JumpSpeed
+                                .transitTicks(distanceBlocks, speed);
+                    }
+                });
+
+        boolean resolved = aimed != null;
+        // A target that cannot be located keeps its LAST KNOWN coordinate rather than being wiped:
+        // the pilot's choice is not the computer's to discard over a registry that is momentarily
+        // down, and the gate refuses the jump anyway while resolution is false.
+        GalacticCoord next = resolved ? aimed : target;
+        if (resolved == targetResolved && (next == null ? target == null : next.equals(target))) {
+            return;
+        }
+        targetResolved = resolved;
+        target = next;
+        markDirty();
+        world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+    }
+
+    private java.util.UUID shipIdOf(BlockPos afc) {
+        net.minecraft.tileentity.TileEntity te = world.getTileEntity(afc);
+        return te instanceof TileAdvancedFlightComputer
+                ? ((TileAdvancedFlightComputer) te).shipIdOrNull() : null;
     }
 
     // ─── Arming ────────────────────────────────────────────────────────────────
@@ -499,6 +634,9 @@ public class TileNavigationComputer extends TileInventoryHatch
         if (!isLinked() && world.getTotalWorldTime() % LINK_SCAN_INTERVAL_TICKS == 0) {
             adoptShipFlightComputer();
         }
+        // Follow the target body before the forecast is priced, so the ETA and the flight cost the
+        // pilot reads describe the flight the ship would actually make.
+        refreshTarget();
         String fresh = computeForecast();
         if (!fresh.equals(forecast)) {
             forecast = fresh;
@@ -658,7 +796,9 @@ public class TileNavigationComputer extends TileInventoryHatch
             int index = nbt.getInteger("pick");
             if (index >= 0 && index < known.size()) {
                 CrystalEntry entry = known.get(index);
-                setTarget(entry.coord());
+                // A listed address names a BODY. Picking it aims at that body, not at the point the
+                // body was standing on when the crystal was written.
+                setTargetBody(entry.dimId(), entry.coord());
                 answerBodyInfo(player, entry);
             }
         } else if (id == NET_SYNC) {
@@ -777,9 +917,15 @@ public class TileNavigationComputer extends TileInventoryHatch
         if (registry == null) {
             return;
         }
+        // Found by IDENTITY where the entry has one: the body has moved since the entry was written,
+        // so looking it up by the recorded coordinate would find nothing exactly when the pilot most
+        // wants to be told what he just aimed at.
         SystemBody body = null;
-        for (SystemBody candidate : registry.bodiesAt(entry.coord())) {
-            if (entry.coord().equals(candidate.address())) {
+        GalacticCoord where = entry.namesBody() && target != null ? target : entry.coord();
+        for (SystemBody candidate : registry.bodiesAt(where)) {
+            if (entry.namesBody()
+                    ? candidate.dimId() == entry.dimId()
+                    : where.equals(candidate.address())) {
                 body = candidate;
                 break;
             }
@@ -822,6 +968,8 @@ public class TileNavigationComputer extends TileInventoryHatch
         if (flightComputerOffset != null) {
             nbt.setLong(NBT_AFC_OFFSET, flightComputerOffset.toLong());
         }
+        nbt.setInteger(NBT_TARGET_DIM, targetDim);
+        nbt.setBoolean(NBT_TARGET_RESOLVED, targetResolved);
         nbt.setInteger(NBT_SYNC_CHANNEL, syncChannel);
         nbt.setBoolean(NBT_ARMED, armed);
         nbt.setString("navForecast", forecast == null ? "" : forecast);
@@ -837,6 +985,9 @@ public class TileNavigationComputer extends TileInventoryHatch
         flightComputerOffset = nbt.hasKey(NBT_AFC_OFFSET)
                 ? BlockPos.fromLong(nbt.getLong(NBT_AFC_OFFSET))
                 : null;
+        targetDim = nbt.hasKey(NBT_TARGET_DIM)
+                ? nbt.getInteger(NBT_TARGET_DIM) : Constants.INVALID_PLANET;
+        targetResolved = !nbt.hasKey(NBT_TARGET_RESOLVED) || nbt.getBoolean(NBT_TARGET_RESOLVED);
         syncChannel = nbt.getInteger(NBT_SYNC_CHANNEL);
         armed = nbt.getBoolean(NBT_ARMED);
         forecast = nbt.getString("navForecast");

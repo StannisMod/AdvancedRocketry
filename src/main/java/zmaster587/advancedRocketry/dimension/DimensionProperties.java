@@ -1139,13 +1139,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         this.water_source_locked_positions.add(new watersourcelocked(pos));
     }
 
+    /**
+     * Advance the live orbital angle to this tick. One law, {@link #orbitThetaAt}, evaluated at now:
+     * the sky a player looks at and the address a navigation computer extrapolates to must be the
+     * same orbit, or the ship arrives somewhere the planet is not drawn.
+     */
     public void updateOrbit() {
         this.prevOrbitalTheta = this.orbitTheta;
-        if (this.isMoon()) {
-            this.orbitTheta = (AstronomicalBodyHelper.getMoonOrbitalTheta(orbitalDist, getParentProperties().gravitationalMultiplier) + baseOrbitTheta) * (isRetrograde ? -1 : 1);
-        } else if (!this.isMoon()) {
-            this.orbitTheta = (AstronomicalBodyHelper.getOrbitalTheta(orbitalDist, getStar().getSize()) + baseOrbitTheta) * (isRetrograde ? -1 : 1);
-        }
+        this.orbitTheta = orbitThetaAt(AdvancedRocketry.proxy.getWorldTimeUniversal(0));
     }
 
     /**
@@ -2192,27 +2193,60 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     /**
-     * This body's position in its system, in orbit-units: {@code (d·cos θ, d·sin φ, d·sin θ)}.
-     *
-     * <p>The angles are stored in DEGREES — measured across the shipped catalogue,
-     * {@code orbitalTheta} spans 0…357 and {@code orbitalPhi} −343…289 — while
-     * {@code Math.cos}/{@code Math.sin} take radians. Feeding the stored value straight in therefore
-     * spun each body through ~57 revolutions per unit and put it somewhere unrelated to what an XML
-     * author wrote. That matters now in a way it never did before: this position is what
-     * {@code SystemContent} turns into a body's CELL, and a cell is the address a player aims a jump
-     * at. An author who writes an orbit must get the orbit he wrote.</p>
-     *
-     * <p>Scope: {@code SystemContent} is this method's only caller. The sky/map renderers read
-     * {@code orbitTheta}/{@code orbitalPhi} directly and are inconsistent between themselves about
-     * the unit (theta as radians, phi as degrees) — untouched here; that is appearance, this is
-     * addressing.</p>
+     * This body's position in its system RIGHT NOW, in orbit-units:
+     * {@code (d·cos θ, d·sin φ, d·sin θ)}, read from the live angle {@link #updateOrbit()} maintains.
+     * Same formula and same units as {@link #getPlanetPositionAt} — see there for both.
      */
     public double[] getPlanetPosition() {
+        return positionFor(this.orbitTheta);
+    }
+
+    /**
+     * Where this body sits at world tick {@code worldTick}, in orbit-units — the ephemeris the
+     * navigation computer extrapolates with, and what {@code SystemContent} turns into the body's
+     * addressable CELL.
+     *
+     * <p><b>Units.</b> {@code orbitTheta} and {@code baseOrbitTheta} are RADIANS —
+     * {@link #updateOrbit()} writes {@link AstronomicalBodyHelper#getOrbitalTheta} straight into the
+     * field, and the XML loader converts its degrees-valued {@code <orbitalTheta>} element on the way
+     * in. {@code orbitalPhi} is DEGREES (the loader stores it verbatim). So exactly ONE of the two
+     * angles is converted here. Running theta through {@code Math.toRadians} as well — which this
+     * did — squeezed a whole orbit into 6.3&deg;, so every body in a system sat within a thin wedge
+     * of its anchor's +X axis at {@code x ≈ orbitalDist}. Since generation only guarantees neighbours
+     * 4 orbit-units apart, and a cell IS 4 orbit-units wide, that put consecutive planets exactly one
+     * cell apart with each one parked against a cell boundary: a body's address then flipped cells
+     * under the slightest orbital motion, and two bodies could share one address outright.</p>
+     */
+    public double[] getPlanetPositionAt(long worldTick) {
+        return positionFor(orbitThetaAt(worldTick));
+    }
+
+    /** The orbit-unit position this body has at orbital angle {@code theta} (radians). */
+    private double[] positionFor(double theta) {
         double orbitalDistance = this.orbitalDist;
-        double theta = Math.toRadians(this.orbitTheta);
         double phi = Math.toRadians(this.orbitalPhi);
 
         return new double[]{orbitalDistance * Math.cos(theta), orbitalDistance * Math.sin(phi), orbitalDistance * Math.sin(theta)};
+    }
+
+    /**
+     * This body's orbital angle (radians) at world tick {@code worldTick} — the same law
+     * {@link #updateOrbit()} applies to the live field, evaluated at an arbitrary time instead of
+     * now. This is what lets a navigation computer aim at where a body WILL BE when the ship leaves
+     * hyperspace rather than where it was when the pilot pressed the button.
+     */
+    public double orbitThetaAt(long worldTick) {
+        double theta = 0d;
+        if (isMoon() && getParentProperties() != null) {
+            theta = AstronomicalBodyHelper.getMoonOrbitalThetaAt(orbitalDist,
+                    getParentProperties().gravitationalMultiplier, worldTick);
+        } else {
+            StellarBody host = getStar();
+            if (host != null) {
+                theta = AstronomicalBodyHelper.getOrbitalThetaAt(orbitalDist, host.getSize(), worldTick);
+            }
+        }
+        return (theta + baseOrbitTheta) * (isRetrograde ? -1 : 1);
     }
 
     public int getStarId() {
