@@ -81,8 +81,16 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     @Override
     public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
                                       double px, double py, double pz) {
-        // The same recipe the entry/descent settle uses (readiness gates, rider carry, unpark last) —
-        // an arrival is the third crossing, not a different kind of move.
+        // Keep the target cell's ships load-queued for as long as the settle is retried. VS only loads
+        // a ship when a player is near it, and a jump arrives with nobody aboard into a cell world that
+        // was materialized for it — so the freshly-pasted ship stays registered-but-unloaded, the pose
+        // teleport's "ship is loaded" readiness gate never opens, and the arrival gives up in the paste
+        // lane's block band. Every reader of the ship's address then inverts a block-band position
+        // through the pose mapping and places it in the cell below. The entry/descent settle pumps the
+        // same load queue for the same reason; an arrival is the third crossing, not a different kind
+        // of move.
+        ops.loadShips(targetSlotDim);
+        // The same recipe the entry/descent settle uses (readiness gates, rider carry, unpark last).
         if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, px, py, pz)) {
             return null; // re-assembly not queryable yet: retry next tick, the ship stays pasted
         }

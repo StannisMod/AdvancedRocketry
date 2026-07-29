@@ -2,6 +2,8 @@ package zmaster587.advancedRocketry.test.server;
 
 import com.github.stannismod.forge.testing.TestTimeouts;
 
+import zmaster587.advancedRocketry.space.GalacticCoord;
+
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Test;
@@ -206,7 +208,14 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         // axis the jump asked to move. Everything downstream of a jump reads that address: the
         // descent proximity check looks up the bodies of the ship's own cell, so an address in the
         // wrong cell means the destination system is not there at all.
-        // Nothing below pumps the manager: the live Ticker advances the transit every server tick.
+        // Nobody rides a jump today, so the destination cell has NO observer — and VS loads a ship
+        // only for one. Drop the headless keep-loaded crutch for the whole arrival: with it on, the
+        // pasted ship becomes live for free and the arrival's own readiness gate is never tested,
+        // which is how this leg stayed green while the same jump, flown by hand, gave up in the
+        // paste lane. From here the arrival must make its own ship loadable.
+        exec("artest vs permaload false");
+
+        // Nothing below pumps the manager either: the live Ticker advances the transit every tick.
         String arrived = "";
         boolean done = false;
         for (int i = 0; i < SETTLE_POLLS; i++) {
@@ -216,23 +225,40 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
                 done = true;
                 break;
             }
-            loadAllEntrySlots(setup);
             Thread.sleep(250);
         }
         assertTrue("the ship never arrived at the cell the jump was aimed at; origin=" + originCell
                 + " requested=" + targetCell + " last status=" + arrived
                 + " subsystem=" + exec("artest space subsystem-status"), done);
-        // ...and STAYS there. The arrival writes the target into the ledger for one tick before the
-        // ship's own flight computer starts self-reporting its address from its physical pose, so a
-        // single poll can catch that write and prove nothing about where the ship actually is. Only
-        // an address that survives seconds of self-reporting says the ship is in the cell it flew to.
+
+        // A ledger row written by the arrival itself proves only what the arrival BELIEVES. The
+        // player's reading comes later, when he walks up to his ship: his presence loads it, its
+        // flight computer starts ticking, and the address he sees is inverted from the ship's REAL
+        // pose. An arrival that gave up in the paste lane still stamps the requested cell above and
+        // only slips a sector once that first tick lands. So bring the observer in now — after the
+        // jump, never during it — and read the address again.
+        int arrivedSlot = extractInt(arrived, "slotDim");
+        exec("artest vs load-ships " + arrivedSlot);
+        String pose = "";
         for (int i = 0; i < 8; i++) {
             Thread.sleep(250);
+            exec("artest vs load-ships " + arrivedSlot);
+            pose = exec("artest vs ship-info " + arrivedSlot + " 0 200 0");
             String held = exec("artest space entry-status");
             assertEquals("the arrived ship's address drifted out of the cell it flew to once its"
-                            + " flight computer began self-reporting its position; status=" + held,
+                            + " flight computer began self-reporting its position; status=" + held
+                            + " ship=" + pose,
                     targetCell, extractString(held, "cellKey"));
         }
+        // And the same fact read off the ship rather than off the ledger: a cell realizes its
+        // contents in the pose band, while an arrival that never settled is left in the paste lane's
+        // ordinary block Y. The band floor is the discriminator — no exact pose is pinned.
+        assertTrue("the arrived ship was never loaded in its destination cell: " + pose,
+                pose.contains("\"managed\":true"));
+        assertTrue("the arrived ship is not in its cell's pose band, so it never reached the"
+                        + " coordinate the jump was aimed at (band floor " + GalacticCoord.HALF_CELL
+                        + ", the paste lane sits near ordinary block Y): " + pose,
+                extractDouble(pose, "posY") > GalacticCoord.HALF_CELL);
         assertEquals("nothing may still be in transit once the ledger reports arrival", 0,
                 extractInt(exec("artest space subsystem-status"), "transits"));
     }
