@@ -18,12 +18,19 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Server-side producer for the {@link PacketSystemBodiesSync} render channel: turns the live
- * {@link ShipLedger} into the per-slot-dim list of bodies the client draws in the slot-world sky
- * ({@code BoundarySky}). One settled ship contributes the bodies of its OWN cell
- * ({@link UniverseRegistry#bodiesAt}) under its slot dim id; each body is carried as the
- * ship&rarr;body DIRECTION (see {@link #buildByDim}). Sent to a player at login and rebroadcast on a
- * throttle so the boundary/bodies track the ship as it flies within the cell.
+ * Server-side producer for the {@link PacketSystemBodiesSync} render channel: turns the set of
+ * MATERIALIZED CELLS into the per-slot-dim list of bodies the client draws in the slot-world sky
+ * ({@code BoundarySky}). Every live cell contributes its own contents
+ * ({@link UniverseRegistry#bodiesAt}) under the slot dim it is bound to; each body is carried as a
+ * DIRECTION from the observer point in that cell (see {@link #buildByDim}). Sent to a player at login
+ * and rebroadcast on a throttle so the boundary/bodies track a ship as it flies within the cell.
+ *
+ * <p><b>The sky belongs to the cell, not to a ship.</b> The feed is keyed off the cell&rarr;slot
+ * bindings ({@link SpaceManager#loadedCells}) and never off a ship's lifecycle state. A world that is
+ * a live cell has that cell's surroundings in its sky for everyone in it: a pilot whose ship is
+ * mid-jump, a passenger, a crew member who walked off the hull, or someone left behind by a ship that
+ * departed. Deriving the feed from settled ships instead made all of those skies blank &mdash; and the
+ * blank was indistinguishable from an empty cell.</p>
  *
  * <p>No discovery / {@code isSystemKnown} gate (by design, presence is the gate); the same
  * payload goes to everyone, so the rebroadcast is a single {@link PacketHandler#sendToAll}.
@@ -47,50 +54,54 @@ public final class SystemBodiesProducer {
     }
 
     /**
-     * The cell&rarr;slot-dimension source. Production passes {@link SpaceManager#slotDimOf}, which is
-     * the one place that binding is decided; a ship whose cell is bound to no slot answers
-     * {@link SpaceManager#UNBOUND_SLOT} and is left out of the feed entirely rather than keyed under
-     * a dimension nobody is looking at.
-     */
-    public interface SlotLookup {
-        int slotDimOf(GalacticCoord cell);
-    }
-
-    /**
-     * Pure builder: map every SETTLED ship's slot dim to the render bodies of its cell. IN_TRANSIT
-     * ships are skipped (parked in hyperspace, no slot). A settled ship in a void cell still gets a
-     * (present, empty) entry so the client clears any stale bodies for that dim and draws just the ring.
+     * Pure builder: map every materialized cell's slot dim to the render bodies of that cell. A live
+     * cell that holds no body still gets a (present, empty) entry, so the client clears any stale
+     * bodies for that dim and draws just the ring; a cell bound to no slot keys nothing, because there
+     * is no world whose sky it would be.
      *
-     * <p>Each body's {@code localX/Y/Z} is the ship&rarr;body vector (body absolute minus ship
+     * <p>Each body's {@code localX/Y/Z} is the observer&rarr;body vector (body absolute minus observer
      * absolute, component-wise exactly like {@link GalacticCoord#distanceSqTo}); {@code BoundarySky}
-     * reads it as a direction, so a body sitting at its OWN cell centre (a planet, local {@code 0,0,0})
-     * still points away from a ship parked off-centre. {@link UniverseRegistry#bodiesAt} only returns
-     * same-cell bodies, so the sector term is normally zero, but the full delta stays correct if a
-     * cross-cell POI ever surfaces.</p>
+     * reads it as a direction, so a body sitting at its OWN cell centre (a planet, local
+     * {@code 0,0,0}) still points away from an observer parked off-centre.
+     * {@link UniverseRegistry#bodiesAt} only returns same-cell bodies, so the sector term is normally
+     * zero, but the full delta stays correct if a cross-cell POI ever surfaces.</p>
+     *
+     * <p>The observer point is {@link #observerIn}: the position of a ship the ledger places in that
+     * cell when there is one, else the cell centre. The bearing to a body only a few thousand blocks
+     * away swings by tens of degrees across a cell, and the descent trigger needs the pilot to be able
+     * to FLY at it, so the feed follows the ship that is there rather than the geometric centre. It is
+     * one direction set per dimension either way &mdash; the sky is camera-centred, so every viewer in
+     * the cell shares it.</p>
+     *
+     * @param loadedCells {@code cellKey -> slot dim} for the cells that are live right now
+     *                    ({@link SpaceManager#loadedCells})
+     * @param snapshot    the ship ledger, used ONLY to refine the observer point inside a cell
      */
-    public static Map<Integer, List<RenderBody>> buildByDim(Map<UUID, ShipLedger.Entry> snapshot,
-                                                            BodyLookup lookup, SlotLookup slots) {
+    public static Map<Integer, List<RenderBody>> buildByDim(Map<String, Integer> loadedCells,
+                                                           Map<UUID, ShipLedger.Entry> snapshot,
+                                                           BodyLookup lookup) {
         Map<Integer, List<RenderBody>> byDim = new LinkedHashMap<>();
-        if (snapshot == null || lookup == null || slots == null) {
+        if (loadedCells == null || lookup == null) {
             return byDim;
         }
-        for (ShipLedger.Entry e : snapshot.values()) {
-            if (e == null || e.state != ShipLedger.State.SETTLED) {
+        for (Map.Entry<String, Integer> bound : loadedCells.entrySet()) {
+            Integer slotDim = bound.getValue();
+            GalacticCoord cell = GalacticCoord.fromCellKey(bound.getKey());
+            if (slotDim == null || slotDim == SpaceManager.UNBOUND_SLOT || cell == null) {
                 continue;
             }
-            GalacticCoord ship = e.coord;
-            int slotDim = slots.slotDimOf(ship);
-            if (slotDim == SpaceManager.UNBOUND_SLOT) {
-                continue; // its cell is in no slot world right now: nobody is looking at that sky
-            }
+            GalacticCoord observer = observerIn(cell, snapshot);
             List<RenderBody> bodies = new ArrayList<>();
-            List<SystemBody> found = lookup.bodiesAt(ship);
+            List<SystemBody> found = lookup.bodiesAt(cell);
             if (found != null) {
                 for (SystemBody b : found) {
                     GalacticCoord a = b.address();
-                    long dx = (a.sectorX() - ship.sectorX()) * GalacticCoord.CELL + (a.localX() - ship.localX());
-                    long dy = (a.sectorY() - ship.sectorY()) * GalacticCoord.CELL + (a.localY() - ship.localY());
-                    long dz = (a.sectorZ() - ship.sectorZ()) * GalacticCoord.CELL + (a.localZ() - ship.localZ());
+                    long dx = (a.sectorX() - observer.sectorX()) * GalacticCoord.CELL
+                            + (a.localX() - observer.localX());
+                    long dy = (a.sectorY() - observer.sectorY()) * GalacticCoord.CELL
+                            + (a.localY() - observer.localY());
+                    long dz = (a.sectorZ() - observer.sectorZ()) * GalacticCoord.CELL
+                            + (a.localZ() - observer.localZ());
                     bodies.add(new RenderBody(b.kind().ordinal(), dx, dy, dz, b.dimId(), b.isDescendTarget()));
                 }
             }
@@ -99,16 +110,42 @@ public final class SystemBodiesProducer {
         return byDim;
     }
 
-    /** Build the live packet from the production ledger + universe registry, or an empty packet. */
+    /**
+     * Where the bodies of {@code cell} are seen FROM: a ship the ledger places in that cell, preferring
+     * a {@link ShipLedger.State#SETTLED} one (it is the one that is really parked there), else the cell
+     * centre. A ship whose state is anything else still beats the centre when it is the only thing
+     * known to be in the cell &mdash; its coordinate is a real point in that cell, and the alternative
+     * is a bearing measured from up to half a cell away.
+     */
+    private static GalacticCoord observerIn(GalacticCoord cell, Map<UUID, ShipLedger.Entry> snapshot) {
+        if (snapshot == null) {
+            return cell;
+        }
+        GalacticCoord fallback = null;
+        for (ShipLedger.Entry e : snapshot.values()) {
+            if (e == null || e.coord == null || !e.coord.sameCell(cell)) {
+                continue;
+            }
+            if (e.state == ShipLedger.State.SETTLED) {
+                return e.coord;
+            }
+            if (fallback == null) {
+                fallback = e.coord;
+            }
+        }
+        return fallback == null ? cell : fallback;
+    }
+
+    /** Build the live packet from the production cell bindings + universe registry, or an empty packet. */
     public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
         SpaceManager space = SpaceSubsystem.get();
-        if (ledger == null || reg == null || space == null) {
+        if (reg == null || space == null) {
             return PacketSystemBodiesSync.forDims(null);
         }
-        return PacketSystemBodiesSync.forDims(
-                buildByDim(ledger.snapshot(), reg::bodiesAt, space::slotDimOf));
+        return PacketSystemBodiesSync.forDims(buildByDim(space.loadedCells(),
+                ledger == null ? null : ledger.snapshot(), reg::bodiesAt));
     }
 
     /** Login send: give a joining player the current bodies (skip when there is nothing to render). */
@@ -129,8 +166,8 @@ public final class SystemBodiesProducer {
 
     /**
      * Throttled rebroadcast tick: every {@link #BROADCAST_INTERVAL_TICKS}, push the current bodies to
-     * all players so the boundary/bodies track ship motion. Stays silent while nothing is settled,
-     * apart from ONE clearing broadcast the tick the last ship leaves.
+     * all players so the boundary/bodies track ship motion. Stays silent while no cell is live at all,
+     * apart from ONE clearing broadcast the tick the last cell goes away.
      */
     public static void onBroadcastTick(MinecraftServer server) {
         if (++tickCounter < BROADCAST_INTERVAL_TICKS) {

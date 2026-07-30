@@ -244,6 +244,20 @@ public final class SpaceManager {
         return slot == null ? UNBOUND_SLOT : slot;
     }
 
+    /**
+     * Every cell materialized right now, as {@code cellKey -> slot dim id} (snapshot copy).
+     *
+     * <p>This is the set of worlds that ARE cells, and it is the only honest answer to "whose sky is
+     * being looked at": a slot world is live because a cell was bound to it, and everyone inside it
+     * sees that cell's surroundings regardless of what any ship in it happens to be doing. Anything
+     * that renders or reports per-cell content derives its keys from here rather than from the ship
+     * ledger &mdash; a ship's lifecycle state says where the SHIP is in its journey, not whether the
+     * world it is sitting in exists.</p>
+     */
+    public Map<String, Integer> loadedCells() {
+        return new HashMap<>(loadedCellToSlot);
+    }
+
     /** Pick a free slot, else LRU-evict a refcount-0 loaded cell to free one. */
     private int acquireSlot(String incomingCellKey) {
         int free = firstFreeSlot();

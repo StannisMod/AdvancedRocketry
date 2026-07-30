@@ -2181,11 +2181,14 @@ public class TestProbeCommand extends CommandBase {
                 }
                 zmaster587.advancedRocketry.space.SpaceManager bodiesMgr =
                         zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                int shipSlot = bodiesMgr == null
+                        ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                        : bodiesMgr.slotDimOf(e.coord);
                 out.append("{\"ship\":\"").append(shipEntry.getKey())
                         .append("\",\"state\":\"").append(e.state)
-                        .append("\",\"slotDim\":").append(bodiesMgr == null
-                                ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
-                                : bodiesMgr.slotDimOf(e.coord))
+                        .append("\",\"slotDim\":").append(slotDimJson(shipSlot))
+                        .append(",\"slotBound\":").append(shipSlot
+                                != zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT)
                         .append(",\"cell\":\"").append(e.coord.cellKey()).append("\",\"bodies\":[");
                 int bodyCount = 0;
                 if (reg != null) {
@@ -2204,7 +2207,48 @@ public class TestProbeCommand extends CommandBase {
                 out.append("],\"bodyCount\":").append(bodyCount).append('}');
             }
             out.append("],\"shipCount\":").append(shipCount)
-                    .append(",\"registry\":").append(reg != null).append('}');
+                    .append(",\"registry\":").append(reg != null);
+            // The FEED itself, exactly as the broadcast would build it: one entry per live cell, keyed
+            // by the slot dim whose sky it is. The ships array above cannot answer "why is my sky
+            // empty" on its own - a ship is not what the feed is derived from, and a cell can be live
+            // with no ship in it at all (a passenger left behind, a ship mid-jump). Reported straight
+            // off the production packet so the probe cannot drift from what is actually sent.
+            out.append(",\"feed\":[");
+            int feedCount = 0;
+            java.util.Map<Integer, java.util.List<
+                    zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody>> feed =
+                    zmaster587.advancedRocketry.space.SystemBodiesProducer.currentPacket(server).payload();
+            for (java.util.Map.Entry<Integer, java.util.List<
+                    zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody>> f
+                    : feed.entrySet()) {
+                if (feedCount++ > 0) {
+                    out.append(',');
+                }
+                out.append("{\"slotDim\":").append(f.getKey())
+                        .append(",\"bodyCount\":").append(f.getValue().size())
+                        .append(",\"bodies\":[");
+                int fb = 0;
+                for (zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody b
+                        : f.getValue()) {
+                    if (fb++ > 0) {
+                        out.append(',');
+                    }
+                    // The DIRECTION as sent, not a re-derivation: a render test that has to aim a
+                    // camera at a body needs the bearing from the same numbers the client was given,
+                    // or it is testing its own arithmetic against the renderer's.
+                    out.append("{\"dim\":").append(b.dimId)
+                            .append(",\"kind\":").append(b.kindOrdinal)
+                            .append(",\"descend\":").append(b.descendTarget)
+                            .append(",\"dir\":[").append(b.localX).append(',').append(b.localY)
+                            .append(',').append(b.localZ).append(']')
+                            .append(",\"distance\":").append((long) Math.sqrt(
+                                    (double) b.localX * b.localX + (double) b.localY * b.localY
+                                            + (double) b.localZ * b.localZ))
+                            .append('}');
+                }
+                out.append("]}");
+            }
+            out.append("],\"feedDims\":").append(feedCount).append('}');
             send(sender, out.toString());
             return;
         }
@@ -2390,10 +2434,19 @@ public class TestProbeCommand extends CommandBase {
                     : getMgr.slotDimOf(e.coord);
             String boundTo = zmaster587.advancedRocketry.space.SpaceSlotPool.cellKeyFor(attributed);
             send(sender, "{\"found\":true,\"cell\":\"" + e.cellKey() + "\",\"state\":\"" + e.state
-                    + "\",\"slotDim\":" + attributed
+                    + "\",\"slotDim\":" + slotDimJson(attributed)
+                    + ",\"slotBound\":" + (attributed
+                            != zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT)
                     + ",\"slotCell\":\"" + (boundTo == null ? "" : escapeJson(boundTo))
+                    // The world lookup is asked ONLY when the cell really is bound. Handing the
+                    // "no world" sentinel to getWorld happens to answer null, i.e. the right thing
+                    // for the wrong reason - it is a dimension lookup performed with a number that
+                    // is deliberately not a dimension, and the next reader of this line would copy
+                    // the pattern somewhere it does not degrade so kindly.
                     + "\",\"slotWorldLoaded\":"
-                    + (net.minecraftforge.common.DimensionManager.getWorld(attributed) != null) + "}");
+                    + (attributed != zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                            && net.minecraftforge.common.DimensionManager.getWorld(attributed) != null)
+                    + "}");
             return;
         }
         // pool-idempotence: call the PRODUCTION registerPool entry point again and report whether the
@@ -2736,9 +2789,12 @@ public class TestProbeCommand extends CommandBase {
                 sb.append(",\"lz\":").append(e.coord.localZ());
                 zmaster587.advancedRocketry.space.SpaceManager entryMgrRead =
                         zmaster587.advancedRocketry.space.SpaceSubsystem.get();
-                sb.append(",\"slotDim\":").append(entryMgrRead == null
+                int entrySlot = entryMgrRead == null
                         ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
-                        : entryMgrRead.slotDimOf(e.coord));
+                        : entryMgrRead.slotDimOf(e.coord);
+                sb.append(",\"slotDim\":").append(slotDimJson(entrySlot));
+                sb.append(",\"slotBound\":").append(entrySlot
+                        != zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT);
             }
             send(sender, sb.append('}').toString());
             return;
@@ -2911,6 +2967,39 @@ public class TestProbeCommand extends CommandBase {
                     + "\",\"slotDim\":" + boundSlot
                     + ",\"expectedSlotDim\":" + expectedSlot
                     + ",\"slotAsExpected\":" + (boundSlot == expectedSlot) + "}");
+            return;
+        }
+        // ledger-transit <sx> <sy> <sz> [shipUuid]: mark a ship IN_TRANSIT toward cell (sx,sy,sz) in the
+        // live ledger, moving NOTHING. Reproduces the state a jump leaves a ship in - including the one
+        // a stranded arrival leaves behind for good - without a real drive, a real crossing or a real
+        // hyperspace lane, none of which a headless render/feed test can arrange.
+        //
+        // The cell is NOT materialized here: whether it is live is exactly the variable such a test
+        // controls, so it is left to the caller (ledger-settle / occupy). Requires an installed stack.
+        if (args.length >= 4 && "ledger-transit".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"ledger not set up\"}");
+                return;
+            }
+            java.util.UUID shipId;
+            zmaster587.advancedRocketry.space.GalacticCoord target;
+            try {
+                target = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        Long.parseLong(args[1]), Long.parseLong(args[2]), Long.parseLong(args[3]),
+                        0L, 0L, 0L);
+                shipId = args.length >= 5
+                        ? java.util.UUID.fromString(args[4]) : java.util.UUID.randomUUID();
+            } catch (IllegalArgumentException bad) {
+                send(sender, "{\"error\":\"bad arguments\"}");
+                return;
+            }
+            led.beginTransit(shipId, target);
+            zmaster587.advancedRocketry.space.ShipLedger.Entry after = led.get(shipId);
+            send(sender, "{\"ok\":true,\"shipId\":\"" + shipId + "\",\"cellKey\":\""
+                    + target.cellKey() + "\",\"state\":\"" + (after == null ? "" : after.state)
+                    + "\",\"ledger\":" + led.size() + "}");
             return;
         }
         // add-poi <sx> <sy> <sz> <lx> <ly> <lz> <kind> <dimId> <starId>: register a POI SystemBody at cell
@@ -12162,6 +12251,18 @@ public class TestProbeCommand extends CommandBase {
 
     private static long parseLongOr(String s, long fallback) {
         try { return Long.parseLong(s); } catch (NumberFormatException e) { return fallback; }
+    }
+
+    /**
+     * A slot dim rendered for a reader: the id when the cell really is bound to a world, and JSON
+     * {@code null} when it is bound to none. The "no world" answer is a sentinel
+     * ({@code Integer.MIN_VALUE}) precisely so nothing can mistake it for a dimension, and printing
+     * that number in a report hands the reader the one thing the sentinel exists to prevent - it looks
+     * like an id. Pair it with a {@code "slotBound"} flag so a consumer can test the fact directly.
+     */
+    private static String slotDimJson(int slotDim) {
+        return slotDim == zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                ? "null" : Integer.toString(slotDim);
     }
 
     /** The slot world a cell is bound to right now, from the one place that decides it. */

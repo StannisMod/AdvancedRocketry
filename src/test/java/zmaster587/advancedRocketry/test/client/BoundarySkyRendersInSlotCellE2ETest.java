@@ -31,7 +31,24 @@ import static org.junit.Assert.assertTrue;
  * <p>Honest client e2e: the stimulus is a real look ({@code set_look}) on the real client and the
  * observation is a real capture of the real framebuffer ({@code screenshot}). Delete the client and there
  * are no pixels to count. Server probes only arrange (register the slot, settle a ship, register the
- * body) and act as the cross-side oracle for what SHOULD be drawn.</p>
+ * bodies) and act as the cross-side oracle for what SHOULD be drawn, and where.</p>
+ *
+ * <h2>The subject is a real system, at real distances, on real bearings</h2>
+ * The defect this test exists for was reported from a cell holding SIX bodies between 3 000 and 60 000
+ * blocks on six different bearings, and an earlier version of this test proved only that ONE synthetic
+ * body 1 000 blocks straight up could be drawn — a subject that could not exhibit the report. The bodies
+ * below are the measured live set: five descend-target moons and a gas giant that is not one, at the live
+ * distances, spread so that no two are within 45 degrees of each other. Two of them are then aimed at
+ * INDIVIDUALLY, using the bearing the SERVER reports for them rather than one this test computed for
+ * itself, because "the client drew something in the sky" and "the client drew the body where the server
+ * put it" are different claims and only the second one lets a pilot fly at a moon.
+ *
+ * <h2>Which world the pilot is in is the SERVER's answer, not this test's</h2>
+ * A cell is bound to a slot world by materializing it, and that binding is what the render feed is keyed
+ * with. The slot the binding lands in is therefore read back off the settle, never chosen here: a number
+ * picked by the test is a guess, and a guess that happens to agree would still pass on a build that keyed
+ * the feed to the wrong world. (An earlier version guessed, put the pilot in a world its ship's cell was
+ * not bound to, and reported the resulting blank sky as a production defect.)
  *
  * <h2>Why the harness needs three settings changed</h2>
  * <ul>
@@ -71,34 +88,67 @@ import static org.junit.Assert.assertTrue;
  *       across the middle of the frame, against the SAME measurement in a strip near the top. The ring
  *       is a band at the camera's horizon, so a uniformly tinted frame scores equally in both strips and
  *       fails the difference.</li>
- *   <li><b>Body billboard, exact cancellation</b> — two captures from the IDENTICAL camera direction,
- *       one before the body exists and one after. The sky here is camera-centred, so every other pixel
- *       (stars, ring) is bit-identical between them and the differing pixels are the billboard and
- *       nothing else. A far-corner control box must stay unchanged.</li>
- *   <li><b>Body billboard, aimed vs aimed away</b> — the same body, camera on its bearing vs 180 degrees
- *       off it, compared inside a box the billboard covers.</li>
- *   <li><b>Starfield</b> — pixels differing from the background in the upper part of a frame that holds
- *       no ring and no body, i.e. the cell is not an empty void.</li>
+ *   <li><b>Each aimed body, by exact cancellation</b> — two captures from the IDENTICAL camera
+ *       direction, one before any body exists and one after all six do. The sky here is camera-centred,
+ *       so every other pixel (stars, ring) is bit-identical between them and the differing pixels are
+ *       the billboards and nothing else.</li>
+ *   <li><b>The same aim vs an empty bearing</b> — a direction more than 100 degrees from every body in
+ *       the cell (chosen by geometry, not by hope) must NOT gain a billboard when the bodies are
+ *       registered, and must not look like the aimed frames do.</li>
+ *   <li><b>Starfield</b> — pixels differing from the background in the upper part of the empty-bearing
+ *       frame, which holds no ring and no body, i.e. the cell is not an empty void.</li>
  * </ol>
  *
  * <h2>Setup shortcuts, and what human action each replaces</h2>
  * A player reaches this view by flying a ship into space; the arrival settles it in the ledger and the
  * cell's contents come from the generated universe. Here {@code ledger-settle} injects the settled entry
- * and {@code add-poi} registers the body. Both change only WHICH data the producer has, not which
- * object, frame or lifecycle stage the renderer reads — the renderer is fed through the identical
- * production broadcast — so the rendering path under test is the real one.
+ * and {@code add-poi} registers the bodies in the real universe registry. Both change only WHICH data the
+ * producer has, not which object, frame or lifecycle stage the renderer reads — the renderer is fed
+ * through the identical production broadcast — so the rendering path under test is the real one.
  */
 public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
-    private static final Pattern FIRST_DIM = Pattern.compile("\"dims\":\\[(-?\\d+)");
+    /** The slot the settle actually bound the cell to — the one place that decides it. */
+    private static final Pattern BOUND_DIM = Pattern.compile("\"slotDim\":(-?\\d+)");
     private static final String CLIENT_BODIES_CLASS =
             "zmaster587.advancedRocketry.network.PacketSystemBodiesSync";
 
     /** Cell the ship settles in. sy=5000 dodges the fallback stars (all at sy=sz=0). */
     private static final String CELL = "0 5000 0";
-    /** The body sits straight UP from the ship, so aiming at it is a pitch and nothing else. */
-    private static final String BODY_LOCAL = "0 1000 0";
+
+    /**
+     * The cell's contents: {@code localX localY localZ kind dimId}. The ship settles at the cell CENTRE,
+     * so each body's local offset IS the ship&rarr;body direction the producer sends.
+     *
+     * <p>Distances and count are the live set (2 961 / 28 275 / 34 985 / 39 050 / 54 713 / 59 255 blocks);
+     * the bearings are spread so that the closest pair is 45 degrees apart and every body sits at least
+     * 20 degrees off the horizon, i.e. clear of the boundary ring band. A gas giant with no dimension of
+     * its own is included because it is NOT a descend target and takes the other billboard size — the
+     * feed carries both kinds and so must the subject.</p>
+     */
+    private static final String[][] SYSTEM = {
+            {"768", "-1072", "-2652", "MOON", "0"},           // ~2 961 - the nearest descend target
+            {"-23443", "11940", "10363", "MOON", "0"},        // ~28 275
+            {"-30108", "-13988", "11037", "MOON", "0"},       // ~34 985
+            {"7644", "34614", "-16382", "GAS_GIANT", "-1"},   // ~39 050 - not a descend target
+            {"-42912", "-23517", "-24475", "MOON", "0"},      // ~54 713
+            {"-39818", "28442", "-33418", "MOON", "0"},       // ~59 255
+    };
+
+    /** The nearest descend target: the body a pilot has to find and fly at to descend at all. */
+    private static final int NEAREST = 0;
+    /** The gas giant: a non-descend body, drawn at the smaller billboard size. */
+    private static final int GIANT = 3;
+
+    /**
+     * A bearing with nothing in it: more than 100 degrees from every body above, and 22 degrees off the
+     * horizon so the boundary ring cannot reach the middle of the frame. This is the "aimed away"
+     * control, and it has to be derived from the same geometry as the bodies — with six of them in the
+     * sky, the antipode of one body can easily be another.
+     */
+    private static final float EMPTY_YAW = -48f;
+    private static final float EMPTY_PITCH = 22f;
 
     /** Per-channel delta above which two pixels count as different. Well above PNG/GL noise. */
     private static final int DIFF = 24;
@@ -117,6 +167,9 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      */
     private static final int OVERWORLD_CAPTURE_Y = 400;
 
+    /** Capture altitude inside the slot cell (well clear of the void-death floor). */
+    private static final int CELL_CAPTURE_Y = 200;
+
     private Path outDir;
     private String botName;
 
@@ -133,7 +186,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void aPilotInASlotCellSeesTheRingTheBodyAndStars() throws Exception {
+    public void aPilotInASlotCellSeesTheRingTheBodiesAndStars() throws Exception {
         outDir = Paths.get(System.getProperty("forge.test.client.screenshotDir", "build/test-screenshots"))
                 .toAbsolutePath();
         Files.createDirectories(outDir);
@@ -165,13 +218,14 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
 
         BufferedImage overworldZenith;
         BufferedImage horizon;
-        BufferedImage zenithNoBody;
-        BufferedImage zenithBody;
-        BufferedImage nadirBody;
+        BufferedImage[] before = new BufferedImage[SYSTEM.length];
+        BufferedImage[] after = new BufferedImage[SYSTEM.length];
+        BufferedImage emptyBefore;
+        BufferedImage emptyAfter;
         int slotDim;
         try {
             // --- Control FIRST: is the sky pass running at all? Above the clouds so nothing but sky is
-            // in frame, at noon so the sun is at the zenith.
+            // in frame.
             overworldZenith = capture(0, OVERWORLD_CAPTURE_Y, 0f, -90f, "overworld_zenith");
             int owBackground = modalColour(overworldZenith, 0, overworldZenith.getWidth(),
                     0, overworldZenith.getHeight());
@@ -187,58 +241,81 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                     + ". Nothing below this line could mean anything. renderDistance=" + rd
                     + " (" + outDir.resolve("overworld_zenith.png") + ")", owSky >= 200);
 
-            // Arrange the space stack + a slot dim the client will be told about (runtime pool growth).
+            // Arrange the space stack, then settle a ship in the cell. The settle MATERIALIZES the cell,
+            // and the slot it lands in is the answer this test uses everywhere below: the feed is keyed
+            // with it and the pilot is put into it.
             String setup = exec("artest space entry-setup 1");
-            Matcher dimM = FIRST_DIM.matcher(setup);
-            assertTrue("entry-setup must return a slot dim: " + setup, dimM.find());
-            slotDim = Integer.parseInt(dimM.group(1));
-            exec("artest space load " + slotDim + " skycell");
-
-            // A settled ship in the cell, so the producer has a slotDim -> bodies mapping to broadcast.
-            String settle = exec("artest space ledger-settle " + CELL + " " + slotDim);
+            assertTrue("entry-setup must install the stack: " + setup, setup.contains("\"ok\":true"));
+            String settle = exec("artest space ledger-settle " + CELL + " 0");
             assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
+            Matcher boundM = BOUND_DIM.matcher(settle);
+            assertTrue("the settle must report which slot the cell was bound to: " + settle, boundM.find());
+            slotDim = Integer.parseInt(boundM.group(1));
 
             // Night, so the cell's fog clear is dark and a white starfield can be seen against it.
             exec("time set 18000");
 
-            enterHigh(slotDim);
+            seat(slotDim, CELL_CAPTURE_Y);
             bot().waitTicks(20);
 
             JsonObject clientWorld = bot().reportWeather();
             assertTrue("client must have a world after the transfer",
                     clientWorld.get("worldReady").getAsBoolean());
-            assertEquals("the client must be rendering the slot dim itself", slotDim,
-                    clientWorld.get("dim").getAsInt());
+            assertEquals("the client must be rendering the very world the ship's cell is bound to",
+                    slotDim, clientWorld.get("dim").getAsInt());
 
-            // No body has been registered yet: the client store must be empty for this slot, or the
-            // "before" capture is not a before.
+            // No body has been registered yet: the client store must hold none for this slot, or the
+            // "before" captures are not befores.
             assertTrue("no body may be synced for the slot yet, got: " + clientBodies(),
                     !clientBodies().contains(slotDim + "=[RenderBody{"));
 
-            horizon = capture(slotDim, 200, 90f, 0f, "horizon_ring");
-            zenithNoBody = capture(slotDim, 200, 0f, -90f, "zenith_no_body");
+            horizon = capture(slotDim, CELL_CAPTURE_Y, 90f, 0f, "horizon_ring");
+            // A before-frame on each body's bearing, plus one on the empty bearing. Only the two aimed
+            // bodies are measured, but capturing all of them costs one frame each and makes a later
+            // "which body failed" question answerable from the artefacts.
+            for (int i : new int[] {NEAREST, GIANT}) {
+                float[] aim = aimAt(local(i, 0), local(i, 1), local(i, 2));
+                before[i] = capture(slotDim, CELL_CAPTURE_Y, aim[0], aim[1], "before_body" + i);
+            }
+            emptyBefore = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "before_empty");
 
-            String poi = exec("artest space add-poi " + CELL + " " + BODY_LOCAL + " PLANET 0 7");
-            assertTrue("add-poi must register a descend target: " + poi,
-                    poi.contains("\"ok\":true") && poi.contains("\"descendTarget\":true"));
+            for (String[] body : SYSTEM) {
+                String poi = exec("artest space add-poi " + CELL + " " + body[0] + " " + body[1] + " "
+                        + body[2] + " " + body[3] + " " + body[4] + " 7");
+                assertTrue("add-poi must register the body: " + poi, poi.contains("\"ok\":true"));
+            }
 
+            // The whole set has to reach the client's own store before any frame can be blamed on the
+            // renderer. Gated on the COUNT, so a partially-arrived feed is not read as a drawing bug.
             String bodies = null;
             boolean got = false;
             for (int i = 0; i < 24 && !got; i++) {
                 bot().waitTicks(5);
                 bodies = clientBodies();
-                got = bodies.contains(slotDim + "=[") && bodies.contains("dir=0,1000,0");
+                got = countBodies(bodies, slotDim) == SYSTEM.length;
             }
-            assertTrue("the client must have the body before it can be asked to draw it, got: " + bodies,
-                    got);
+            assertTrue("the client must have all " + SYSTEM.length + " bodies of the cell before it can"
+                    + " be asked to draw them, got: " + bodies, got);
 
-            // Cross-side oracle: the SERVER agrees this ship has exactly one body to draw.
-            String serverBodies = exec("artest space bodies");
-            assertTrue("the server must report one body for the settled ship: " + serverBodies,
-                    serverBodies.contains("\"bodyCount\":1"));
+            // Cross-side oracle: the SERVER's own feed, for this slot dim, carries exactly these bodies
+            // on exactly these bearings. Everything below aims with the server's numbers.
+            String feed = exec("artest space bodies");
+            assertEquals("the server feed must carry the whole system for this slot dim: " + feed,
+                    SYSTEM.length, feedBodyCount(feed, slotDim));
+            for (int i = 0; i < SYSTEM.length; i++) {
+                String dir = "\"dir\":[" + SYSTEM[i][0] + "," + SYSTEM[i][1] + "," + SYSTEM[i][2] + "]";
+                assertTrue("the server must report body " + i + " on its own bearing " + dir
+                        + " (a body drawn on a bearing nobody sent is a body a pilot cannot fly at): "
+                        + feed, feed.contains(dir));
+                assertTrue("and the client must hold the identical direction: " + bodies,
+                        bodies.contains("dir=" + SYSTEM[i][0] + "," + SYSTEM[i][1] + "," + SYSTEM[i][2]));
+            }
 
-            zenithBody = capture(slotDim, 200, 0f, -90f, "zenith_body");
-            nadirBody = capture(slotDim, 200, 0f, 90f, "nadir_body");
+            for (int i : new int[] {NEAREST, GIANT}) {
+                float[] aim = aimAt(local(i, 0), local(i, 1), local(i, 2));
+                after[i] = capture(slotDim, CELL_CAPTURE_Y, aim[0], aim[1], "after_body" + i);
+            }
+            emptyAfter = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "after_empty");
         } finally {
             bot().setHudHidden(previousHud);
             bot().setFramebuffer(previousFbo);
@@ -266,61 +343,120 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         assertTrue("the ring must be a BAND, not a uniformly tinted frame; " + ringWitness,
                 ringBand - ringAbove >= 0.20);
 
-        // ------------------------------------------- Leg 2: the body, against an exact-cancellation control.
+        // ------------------------------------------- Leg 2: each aimed body, by exact cancellation.
         // Same camera, same starfield, same ring - only the body data changed, so any pixel that differs
-        // is the billboard. The bottom rows stay excluded as belt-and-braces against any HUD element that
+        // is a billboard. The bottom rows stay excluded as belt-and-braces against any HUD element that
         // outlives the hide (they are all anchored to the bottom of the screen).
-        long appeared = diffCount(zenithNoBody, zenithBody, 0, w, 0, (int) (0.62 * h));
-        // The billboard: TARGET_HALF_SIZE/BODY_DISTANCE subtends about 6.3 degrees, so a disc of radius
-        // about 9% of the frame height - roughly 5900px at 640x480. Require a quarter of that.
-        long minBillboard = Math.round(0.25 * Math.PI * Math.pow(0.09 * h, 2));
-        String bodyWitness = "changed=" + appeared + "px, required>=" + minBillboard
-                + " (" + outDir.resolve("zenith_no_body.png") + " vs "
-                + outDir.resolve("zenith_body.png") + ")";
-        assertTrue("registering a body must change what the client draws in that direction; " + bodyWitness,
-                appeared >= minBillboard);
+        // The billboard's angular radius is half/BODY_DISTANCE, i.e. 6.3 degrees for a descend target
+        // (half 10) and 3.8 for a plain body (half 6); on a 70-degree vertical FOV that is 9.1% and 5.4%
+        // of the frame height. Each aim therefore has its own expected disc and its own sample box.
+        assertBodyDrawn(NEAREST, before[NEAREST], after[NEAREST], emptyAfter, 0.091, 0.045);
+        assertBodyDrawn(GIANT, before[GIANT], after[GIANT], emptyAfter, 0.054, 0.025);
 
-        // …and the change is where the body is, not everywhere: a far corner box is untouched.
-        int boxHalf = (int) (0.045 * h);
-        double centreChanged = diffFraction(zenithNoBody, zenithBody,
-                w / 2 - boxHalf, w / 2 + boxHalf, h / 2 - boxHalf, h / 2 + boxHalf);
-        double cornerChanged = diffFraction(zenithNoBody, zenithBody,
-                (int) (0.05 * w), (int) (0.05 * w) + 2 * boxHalf,
-                (int) (0.10 * h), (int) (0.10 * h) + 2 * boxHalf);
-        String localWitness = "centre=" + pct(centreChanged) + " corner=" + pct(cornerChanged);
-        assertTrue("the billboard must cover the aimed centre of the frame; " + localWitness,
-                centreChanged >= 0.40);
-        assertTrue("nothing outside the billboard may change; " + localWitness, cornerChanged <= 0.05);
-
-        // ------------------------------------------------- Leg 3: aimed at the body vs aimed away from it.
-        double aimedVsAway = diffFraction(zenithBody, nadirBody,
-                w / 2 - boxHalf, w / 2 + boxHalf, h / 2 - boxHalf, h / 2 + boxHalf);
-        double awayCorner = diffFraction(zenithBody, nadirBody,
-                (int) (0.05 * w), (int) (0.05 * w) + 2 * boxHalf,
-                (int) (0.10 * h), (int) (0.10 * h) + 2 * boxHalf);
-        String aimWitness = "aimed-vs-away centre=" + pct(aimedVsAway) + " corner=" + pct(awayCorner)
-                + " (" + outDir.resolve("nadir_body.png") + ")";
-        assertTrue("aiming at the body must not look like aiming away from it; " + aimWitness,
-                aimedVsAway >= 0.40);
-        assertTrue("the two aims must differ WHERE THE BODY IS, not across the whole frame; " + aimWitness,
-                aimedVsAway - awayCorner >= 0.30);
+        // ------------------------------------------------- Leg 3: the empty bearing gains nothing.
+        // Every body is more than 100 degrees away from this aim, so registering all six must leave this
+        // frame alone. Without this the "something changed" legs above could be satisfied by a build that
+        // smeared a billboard across the whole sky.
+        int emptyHalf = (int) (0.045 * h);
+        double emptyCentre = diffFraction(emptyBefore, emptyAfter,
+                w / 2 - emptyHalf, w / 2 + emptyHalf, h / 2 - emptyHalf, h / 2 + emptyHalf);
+        double emptyFrame = diffFraction(emptyBefore, emptyAfter, 0, w, 0, (int) (0.62 * h));
+        assertTrue("a bearing with no body within 100 degrees must not gain one; centre="
+                + pct(emptyCentre) + " frame=" + pct(emptyFrame)
+                + " (" + outDir.resolve("before_empty.png") + " vs "
+                + outDir.resolve("after_empty.png") + ")", emptyCentre <= 0.05);
 
         // ------------------------------------------------------------------------ Leg 4: the starfield.
-        // The nadir frame holds no ring (the band is at the horizon, outside a straight-down FOV) and no
-        // body, and the HUD is hidden - so anything that is not the background up here is the sky itself.
-        int nadirTop = (int) (0.40 * h);
-        int starBackground = modalColour(nadirBody, 0, w, 0, nadirTop);
-        long stars = differsCount(nadirBody, 0, w, 0, nadirTop, starBackground);
+        // The empty-bearing frame holds no body, and at 22 degrees of pitch the ring band is well below
+        // the upper part of it - so anything that is not the background up here is the sky itself.
+        int starTop = (int) (0.40 * h);
+        int starBackground = modalColour(emptyAfter, 0, w, 0, starTop);
+        long stars = differsCount(emptyAfter, 0, w, 0, starTop, starBackground);
         assertTrue("an orbit cell must not be an empty void - the sky must carry stars; differing="
-                + stars + "px against background " + rgb(starBackground) + " " + describe(nadirBody)
-                + " (" + outDir.resolve("nadir_body.png") + ")", stars >= 25);
+                + stars + "px against background " + rgb(starBackground) + " " + describe(emptyAfter)
+                + " (" + outDir.resolve("after_empty.png") + ")", stars >= 25);
     }
 
     // ------------------------------------------------------------------------------------ helpers
 
-    /** Re-seat the falling player, so no capture is taken near the void-death floor. */
-    private void enterHigh(int dim) throws Exception {
-        seat(dim, 200);
+    /**
+     * One body's three legs: it appeared where the server said it is, it covers the aimed centre, and
+     * aiming at it does not look like aiming at empty sky.
+     *
+     * @param discRadius   the billboard's expected radius as a fraction of the frame height
+     * @param sampleRadius half-size of the centre sample box, inside that disc
+     */
+    private void assertBodyDrawn(int index, BufferedImage beforeFrame, BufferedImage afterFrame,
+                                 BufferedImage emptyFrame, double discRadius, double sampleRadius) {
+        int w = afterFrame.getWidth();
+        int h = afterFrame.getHeight();
+        float[] aim = aimAt(local(index, 0), local(index, 1), local(index, 2));
+        String where = "body " + index + " (" + SYSTEM[index][3] + " at "
+                + Math.round(Math.sqrt(
+                        (double) local(index, 0) * local(index, 0)
+                                + (double) local(index, 1) * local(index, 1)
+                                + (double) local(index, 2) * local(index, 2)))
+                + " blocks, aim yaw=" + aim[0] + " pitch=" + aim[1] + ")";
+
+        long appeared = diffCount(beforeFrame, afterFrame, 0, w, 0, (int) (0.62 * h));
+        long minBillboard = Math.round(0.25 * Math.PI * Math.pow(discRadius * h, 2));
+        assertTrue("registering the cell's bodies must change what the client draws towards " + where
+                + "; changed=" + appeared + "px, required>=" + minBillboard + " ("
+                + outDir.resolve("before_body" + index + ".png") + " vs "
+                + outDir.resolve("after_body" + index + ".png") + ")", appeared >= minBillboard);
+
+        int box = (int) (sampleRadius * h);
+        double centreChanged = diffFraction(beforeFrame, afterFrame,
+                w / 2 - box, w / 2 + box, h / 2 - box, h / 2 + box);
+        assertTrue("the billboard must cover the frame centre when the camera is on the bearing the"
+                + " SERVER reports for " + where + "; centre=" + pct(centreChanged),
+                centreChanged >= 0.40);
+
+        double vsEmpty = diffFraction(afterFrame, emptyFrame,
+                w / 2 - box, w / 2 + box, h / 2 - box, h / 2 + box);
+        assertTrue("aiming at " + where + " must not look like aiming at empty sky; centre difference="
+                + pct(vsEmpty), vsEmpty >= 0.40);
+    }
+
+    /** One component of a configured body's local offset (its direction from the settled ship). */
+    private static long local(int index, int axis) {
+        return Long.parseLong(SYSTEM[index][axis]);
+    }
+
+    /**
+     * The client look ({@code yaw}, {@code pitch}) that points a camera along {@code (dx,dy,dz)}.
+     * Minecraft's view vector is {@code (-sin(yaw)cos(pitch), -sin(pitch), cos(yaw)cos(pitch))}, which
+     * inverts to this; {@code BoundarySky} places a billboard along the raw direction in world axes, so
+     * the two meet only if both conversions are right.
+     */
+    private static float[] aimAt(long dx, long dy, long dz) {
+        double len = Math.sqrt((double) dx * dx + (double) dy * dy + (double) dz * dz);
+        float yaw = (float) Math.toDegrees(Math.atan2(-(double) dx, (double) dz));
+        float pitch = (float) -Math.toDegrees(Math.asin(dy / len));
+        return new float[] {yaw, pitch};
+    }
+
+    /** How many bodies the CLIENT store holds for {@code slotDim}. */
+    private static int countBodies(String clientBodies, int slotDim) {
+        int start = clientBodies.indexOf(slotDim + "=[");
+        if (start < 0) {
+            return 0;
+        }
+        int end = clientBodies.indexOf(']', start);
+        String list = end < 0 ? clientBodies.substring(start) : clientBodies.substring(start, end);
+        int count = 0;
+        int at = list.indexOf("RenderBody{");
+        while (at >= 0) {
+            count++;
+            at = list.indexOf("RenderBody{", at + 1);
+        }
+        return count;
+    }
+
+    /** How many bodies the SERVER's own feed carries for {@code slotDim}; -1 when the dim is absent. */
+    private static int feedBodyCount(String json, int slotDim) {
+        Matcher m = Pattern.compile("\\{\"slotDim\":" + slotDim + ",\"bodyCount\":(\\d+)").matcher(json);
+        return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
     /** Put the player at a known altitude in {@code dim} through the production transfer path. */
@@ -431,11 +567,6 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     private static double differsFrom(BufferedImage img, int x0, int x1, int y0, int y1, int reference) {
         long area = (long) (x1 - x0) * (y1 - y0);
         return area == 0 ? 0 : (double) differsCount(img, x0, x1, y0, y1, reference) / area;
-    }
-
-    /** Fraction of a whole frame that is not its own most common colour. */
-    private static double nonBackgroundFraction(BufferedImage img, int x0, int x1, int y0, int y1) {
-        return differsFrom(img, x0, x1, y0, y1, modalColour(img, x0, x1, y0, y1));
     }
 
     private static int channelDelta(int p, int q) {
