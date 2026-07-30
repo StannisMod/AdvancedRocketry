@@ -144,6 +144,15 @@ public final class SpaceManager {
 
         Integer slot = loadedCellToSlot.get(cellKey);
         if (slot != null) {
+            // A binding this controller still holds is not a promise that a world is behind it: Forge
+            // removes a player-less, chunk-less dimension at tick end without going through the binder,
+            // which is precisely the state a cell sits in between its last occupant leaving and its
+            // eviction. Re-initialise the slot against the SAME cell rather than hand out a dimension id
+            // with nothing behind it — every consumer resolves a ship's world through this binding, and
+            // a dead one reads downstream as "the ship is not there".
+            if (!binder.isLive(slot)) {
+                binder.load(slot, cellKey);
+            }
             refCount.merge(cellKey, 1, Integer::sum);
             return slot;
         }

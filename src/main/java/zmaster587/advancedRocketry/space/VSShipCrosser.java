@@ -43,6 +43,25 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
      *  restored transit's stash is empty after a restart - its reseat is a no-op, deferred to login-restore. */
     private final Map<String, List<CrewTransfer.Crew>> crewStash = new HashMap<>();
 
+    /**
+     * Target slot dim &rarr; the arrival-guard cause last reported for it. An arrival is retried every
+     * tick, so an un-deduplicated line would be 200 copies of itself; keeping the last cause still
+     * reports a SECOND, different cause for the same slot, which is the case where repetition carries
+     * information. Cleared when that slot's arrival gets past the guard.
+     */
+    private final Map<Integer, String> arrivalGuardWarned = new HashMap<>();
+
+    /** Report an arrival that stopped at its own guard - once per target slot, per distinct cause. */
+    private void warnArrivalGuardOnce(int targetSlotDim, String cause) {
+        if (cause.equals(arrivalGuardWarned.put(targetSlotDim, cause))) {
+            return;
+        }
+        LOGGER.warn("[SPACE] arrival into slot dim {} stopped BEFORE the crossing was attempted: {}. "
+                        + "Nothing has moved; the arrival retries next tick. If the transit later gives "
+                        + "up on this ship, this is the cause of it.",
+                targetSlotDim, cause);
+    }
+
     @Override
     public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
         WorldServer src = DimensionManager.getWorld(srcSlotDim);
@@ -84,11 +103,23 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         WorldServer hyper = HyperspaceWorld.getOrCreate();
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (hyper == null || dst == null || hyperAnchor == null) {
+            // An arrival that never even reaches the crossing used to be a bare null, repeated once per
+            // tick until the state machine gave up. crossShip logs each of ITS four failures, so the
+            // absence of any line meant the crossing had not been attempted - but nothing said so, and
+            // the only surviving evidence was "arrival never succeeded" 200 ticks later, which names no
+            // cause at all. Three separate causes hid behind that silence; say which.
+            warnArrivalGuardOnce(targetSlotDim,
+                    hyper == null ? "the shared hyperspace world could not be created"
+                            : dst == null ? "the target cell is bound to this slot but the slot has no "
+                                    + "world - nothing was crossed and nothing was lost"
+                            : "the ship has no anchor in hyperspace");
             return null;
         }
-        // Pin the target cell world loaded across the crossing: a freshly-materialized pool slot with no
-        // occupant auto-unloads at tick end, which would discard the ship VS is still assembling. Once the
-        // ship loads there (permaload / a nearby player) it keeps the world loaded on its own.
+        arrivalGuardWarned.remove(targetSlotDim);
+        // Redundant since the pool took to holding every slot a cell is bound to, and kept anyway: this is
+        // the call site that can least afford to lose the world, because VS is still assembling the ship
+        // here and an unload would discard it mid-flight. Stating the hold locally costs nothing and does
+        // not rely on the caller having materialized the cell through the pool.
         DimensionManager.keepDimensionLoaded(targetSlotDim, true);
         int dstX = tile.index * ARRIVAL_LANE_STRIDE;
         VSIntegration.CrossResult res = VSIntegration.crossShip(
@@ -146,10 +177,17 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     public BlockPos completeRestored(net.minecraft.nbt.NBTTagCompound snapshot, int targetSlotDim) {
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (dst == null || snapshot == null) {
+            // Same silence as the live arrival's guard, and the same retry-per-tick shape: discriminate,
+            // once. A restored transit has no hyperspace ship to blame, so the two causes are the target
+            // world and the snapshot the restore was supposed to carry.
+            warnArrivalGuardOnce(targetSlotDim,
+                    dst == null ? "the target cell is bound to this slot but the slot has no world"
+                            : "the restored transit carries no block snapshot, so there is no ship to "
+                                    + "paste");
             return null;
         }
-        // Pin the target cell world loaded across the paste + async assembly (same reason as an arrival):
-        // a freshly-materialized pool slot with no occupant would auto-unload at tick end.
+        arrivalGuardWarned.remove(targetSlotDim);
+        // Same local hold, same reason, as the live arrival above.
         DimensionManager.keepDimensionLoaded(targetSlotDim, true);
         // A restored transit holds no hyperspace lane. Paste it in the NEGATIVE-X band, DISJOINT from live
         // arrivals (which use tile.index*STRIDE, always >= 0), so a restored ship can never collide with a

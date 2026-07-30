@@ -48,4 +48,9 @@ public final class PoolSlotBinder implements SlotBinder {
     public List<String> storedCells() {
         return SpaceSlotPool.storedCellKeys();
     }
+
+    @Override
+    public boolean isLive(int dimId) {
+        return net.minecraftforge.common.DimensionManager.getWorld(dimId) != null;
+    }
 }

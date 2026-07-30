@@ -50,9 +50,17 @@ public class SpaceManagerTest {
 
         @Override public int[] slotDims() { return dims; }
 
+        /**
+         * Slots whose world was removed from outside this seam — what Forge's tick-end sweep does to a
+         * player-less, chunk-less dimension. Modelled because the controller keeps a cell bound after
+         * its last occupant leaves, so this is the ordinary state of an idle cell, not an exotic one.
+         */
+        final java.util.Set<Integer> worldRemovedBehindOurBack = new java.util.LinkedHashSet<>();
+
         @Override public void load(int dimId, String cellKey) {
             loads.add(dimId + ":" + cellKey);
             bound.put(dimId, cellKey);
+            worldRemovedBehindOurBack.remove(dimId); // a load builds the world back
         }
 
         @Override public void unload(int dimId) {
@@ -76,6 +84,10 @@ public class SpaceManagerTest {
         @Override public boolean hasStored(String cellKey) { return stored.contains(cellKey); }
 
         @Override public List<String> storedCells() { return new ArrayList<>(stored); }
+
+        @Override public boolean isLive(int dimId) {
+            return !worldRemovedBehindOurBack.contains(dimId);
+        }
     }
 
     /** Mutable tick source. */
@@ -107,6 +119,24 @@ public class SpaceManagerTest {
         assertEquals(dim + ":" + cell(5).cellKey(), binder.loads.get(0));
         assertTrue(m.isLoaded(cell(5)));
         assertEquals(1, m.loadedCellCount());
+    }
+
+    @Test
+    public void materializeRebuildsTheWorldOfACellWhoseSlotLostItWhileIdle() {
+        FakeBinder binder = new FakeBinder(10, 11);
+        SpaceManager m = mgr(binder, new Clock(), never());
+
+        int slot = m.materialize(cell(5));
+        m.dematerialize(cell(5));               // idle: still bound, eviction is lazy
+        binder.worldRemovedBehindOurBack.add(slot);
+
+        int again = m.materialize(cell(5));
+
+        assertEquals("an idle cell keeps the slot it was bound to", slot, again);
+        assertTrue("materialize must hand back a slot that has a world, not just one it has a record of",
+                binder.isLive(again));
+        assertEquals("the slot is re-initialised against the SAME cell (a rebind would lose its content)",
+                slot + ":" + cell(5).cellKey(), binder.loads.get(binder.loads.size() - 1));
     }
 
     @Test

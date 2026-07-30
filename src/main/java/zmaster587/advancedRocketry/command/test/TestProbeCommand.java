@@ -2311,11 +2311,86 @@ public class TestProbeCommand extends CommandBase {
                             0L, 0L, 0L);
             try {
                 int dim = mgr.materialize(coord);
+                // worldLoaded is the whole point of a materialize, and the only part of it a test can
+                // otherwise not see: the manager's own bookkeeping says "this cell is live in slot N",
+                // but that is a record, not the world. When the two disagree every consumer that
+                // resolves a ship's world through the binding gets a dimension id with nothing behind it.
                 send(sender, "{\"ok\":true,\"slotDim\":" + dim
+                        + ",\"worldLoaded\":"
+                        + (net.minecraftforge.common.DimensionManager.getWorld(dim) != null)
                         + ",\"cellKey\":\"" + coord.cellKey() + "\"}");
             } catch (zmaster587.advancedRocketry.space.SpaceManager.PoolExhaustedException full) {
                 send(sender, "{\"ok\":false,\"exhausted\":true}");
             }
+            return;
+        }
+        // release <sx> <sy> <sz> [drop-hold]: drop this test's occupant on cell (sx,sy,sz) and queue the
+        // slot world's chunks for unload, offering it to Forge's own tick-end sweep.
+        //
+        // occupy -> release -> (let ticks pass) -> cell-slot is the only sequence that can observe a
+        // cell which is BOUND to a slot but has no occupant ACROSS TICKS. Every other space probe
+        // collapses its scenario into one synchronous call precisely so that the auto-unload cannot
+        // intervene - which is also why none of them can see what happens when it does.
+        //
+        // drop-hold additionally clears the pool's keep-loaded hold, so the sweep really can take the
+        // world. This is FAULT INJECTION, not a convenience: the hold is what stops this happening in
+        // production, and a test that only ever ran with it in place could never exercise the
+        // controller's repair of a binding whose world went away by some other route. It is also the
+        // positive control for the opposite assertion - "a held slot keeps its world" measures nothing
+        // unless the same sequence is shown to remove an unheld one.
+        if (args.length >= 4 && "release".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceManager mgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            if (mgr == null) {
+                send(sender, "{\"error\":\"space subsystem not registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord coord =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            boolean dropHold = args.length >= 5 && "drop-hold".equalsIgnoreCase(args[4]);
+            mgr.dematerialize(coord);
+            int dim = mgr.slotDimOf(coord);
+            if (dropHold) {
+                net.minecraftforge.common.DimensionManager.keepDimensionLoaded(dim, false);
+            }
+            net.minecraft.world.WorldServer w =
+                    net.minecraftforge.common.DimensionManager.getWorld(dim);
+            boolean queued = false;
+            if (w != null) {
+                // Forge queues a dimension for unload from ChunkProviderServer.tick(), once the world
+                // holds no chunks at all. Queueing them here reaches that state within a few ticks
+                // instead of the minute a natural drain takes: the same drop set, the same sweep, only
+                // the waiting is shortened.
+                w.getChunkProvider().queueUnloadAll();
+                queued = true;
+            }
+            send(sender, "{\"ok\":true,\"slotDim\":" + dim + ",\"chunksQueued\":" + queued
+                    + ",\"holdDropped\":" + dropHold
+                    + ",\"cellKey\":\"" + coord.cellKey() + "\"}");
+            return;
+        }
+        // cell-slot <sx> <sy> <sz>: the three answers about a cell that are supposed to agree - which
+        // slot the manager has it bound to, whether the manager counts it as loaded, and whether a world
+        // for that slot actually exists. A test polls this to watch them come apart.
+        if (args.length >= 4 && "cell-slot".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.SpaceManager mgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            if (mgr == null) {
+                send(sender, "{\"error\":\"space subsystem not registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord coord =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            int dim = mgr.slotDimOf(coord);
+            send(sender, "{\"ok\":true,\"slotDim\":" + dim
+                    + ",\"managerLoaded\":" + mgr.isLoaded(coord)
+                    + ",\"worldLoaded\":"
+                    + (net.minecraftforge.common.DimensionManager.getWorld(dim) != null)
+                    + ",\"cellKey\":\"" + coord.cellKey() + "\"}");
             return;
         }
         // aboard-tag <playerName>: read back the durable "this player is aboard ship X, at Y" record

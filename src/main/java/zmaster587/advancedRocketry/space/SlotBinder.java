@@ -61,4 +61,20 @@ public interface SlotBinder {
     default java.util.List<String> storedCells() {
         return java.util.Collections.emptyList();
     }
+
+    /**
+     * Whether slot {@code dimId} has a world right now.
+     *
+     * <p>A binding is not self-enforcing. The controller keeps a cell bound to its slot after the last
+     * occupant leaves, so a revisit is cheap — but on 1.12.2 Forge queues a player-less, chunk-less
+     * dimension for unload from {@code ChunkProviderServer.tick()} and removes its world at tick end,
+     * with no call through this seam. The controller therefore ASKS before handing out a slot it
+     * already believes in, instead of treating its own record as proof of a world.</p>
+     *
+     * <p>Defaults to {@code true}: a recording test fake models no worlds, so every slot it has ever
+     * been asked to load is live for as long as the binding exists.</p>
+     */
+    default boolean isLive(int dimId) {
+        return true;
+    }
 }

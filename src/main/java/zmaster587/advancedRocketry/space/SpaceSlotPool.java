@@ -136,8 +136,11 @@ public final class SpaceSlotPool {
     public static synchronized int[] registerAdditionalSlots(int n) {
         if (slotType == null) {
             // keepLoaded = false: no spawn-chunk force-load (which lagged the server). Lifecycle is
-            // controlled EXPLICITLY (load / synchronous unload); callers must not leave a slot loaded
-            // across ticks with no occupant, or Forge's auto-unload discards unsaved changes.
+            // controlled EXPLICITLY (load / synchronous unload). This used to carry a warning that a slot
+            // left loaded across ticks with no occupant would be taken by Forge's auto-unload - which is
+            // exactly what the controller does, on purpose, because eviction there is lazy. The warning
+            // described a real hazard nobody could obey; load() now takes a per-dimension keep-loaded hold
+            // instead, so a bound slot is not eligible for that sweep at all.
             // Dynamic type id (scan-max) instead of a hardcoded one, so it never collides with another
             // mod's DimensionType.
             slotType = DimensionType.register(
@@ -186,6 +189,13 @@ public final class SpaceSlotPool {
     public static WorldServer load(int dimId, String cellKey) {
         setCell(dimId, cellKey);
         DimensionManager.initDimension(dimId);
+        // Hold the world for as long as the cell is bound to this slot. Without the hold, Forge's
+        // tick-end sweep takes any slot that is player-less and has run out of chunks - which is the
+        // ordinary state of a cell whose last occupant has left, since eviction here is deliberately
+        // lazy. The controller's binding then names a dimension with no world, and every reader that
+        // derives a ship's world from it gets null. Cleared again by unload / discard, so the pool's
+        // own rebind still works; the shared hyperspace world holds itself the same way.
+        DimensionManager.keepDimensionLoaded(dimId, true);
         return DimensionManager.getWorld(dimId);
     }
 
