@@ -357,6 +357,49 @@ public class ShipTransitManagerTest {
         assertTrue("the arrived cell is marked dirty so an eviction flushes it", space.isDirty(cell(2)));
     }
 
+    /**
+     * The invariant that makes the ledger usable at all: a ship is in the transit map exactly when its
+     * ledger entry says IN_TRANSIT. An arrival that cannot complete may take as long as it needs, but it
+     * may never leave the two disagreeing — a ship the manager has forgotten while the ledger still calls
+     * it in flight is unreachable by every player action. The descent refuses it (it demands SETTLED) and
+     * the next jump is not even refused: the recorded target cell is still bound to a slot, so the burst
+     * is spent before the departure discovers there is no ship to cut.
+     */
+    @Test
+    public void anArrivalThatNeverCompletesNeverLeavesTheLedgerDisagreeingWithTheTransitMap() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        ShipLedger ledger = new ShipLedger();
+        FakeCrosser crosser = new FakeCrosser();
+        // The crossing never produces a paste anchor, for longer than any budget the manager may hold.
+        crosser.arriveFailCount = Integer.MAX_VALUE;
+        crosser.completeRestoredFailCount = Integer.MAX_VALUE;
+        crosser.sourceSnapshotToReturn = new NBTTagCompound(); // the depart-time floor snapshot exists
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, ledger, () -> 0L);
+        UUID ship = UUID.randomUUID();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship.toString(), cell(1), originDim, new BlockPos(0, 64, 0), cell(2),
+                ARRIVE_IN_ONE_TICK);
+        assertEquals("departure marks the ledger in flight",
+                ShipLedger.State.IN_TRANSIT, ledger.get(ship).state);
+
+        // Well past any give-up budget: the arrival has been retried and retried.
+        for (int i = 0; i < 400; i++) {
+            mgr.tick();
+        }
+
+        ShipLedger.Entry entry = ledger.get(ship);
+        assertNotNull("the ship must still be ledgered at all", entry);
+        if (mgr.isInTransit(ship.toString())) {
+            assertEquals("still flying, so the ledger must still say so",
+                    ShipLedger.State.IN_TRANSIT, entry.state);
+        } else {
+            assertEquals("no longer flying, so the ledger must name a place the player can act on",
+                    ShipLedger.State.SETTLED, entry.state);
+        }
+    }
+
     @Test
     public void importTransitIsANoOpForAShipAlreadyInTransit() {
         SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());

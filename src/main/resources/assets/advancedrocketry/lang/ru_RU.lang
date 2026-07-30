@@ -489,6 +489,8 @@ msg.pilotseat.afcdestroyed=§cПолётный компьютер уничтож
 msg.shipdescent.refused=§cСнижение не началось — точка прибытия ещё не готова. Подождите немного и попробуйте снова.
 msg.shipdescent.failed=§cСпуск не удался — корабль не смог перейти на планету.
 msg.shipdescent.arrived=§aСнижение выполнено — корабль в небе над планетой. Ведите его вниз.
+msg.shiptransit.arrivalrecovered=§eПрыжок завершён, но не чисто — корабль стоит в точке прибытия, а не на курсе. Он цел; сообщите об этом.
+msg.shiptransit.arrivalstalled=§cПрыжок сейчас не может завершиться. Корабль не потерян — он остаётся в полёте и прибудет. Сообщите об этом.
 
 tile.navigationComputer.name=Навигационный компьютер
 item.advancedrocketry:memoryCrystal.name=Кристалл памяти

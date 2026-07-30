@@ -252,6 +252,27 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         return false;
     }
 
+    @Override
+    public void messageCrew(List<UUID> crew, String translationKey) {
+        if (crew == null || crew.isEmpty()) {
+            return;
+        }
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server == null) {
+            return;
+        }
+        // The transit carries player UUIDs, not the crew records the crossing ops message: an aboard
+        // player who logged out mid-jump is simply absent here, which is the right outcome — there is
+        // nobody to tell, and his ship's state is on the ledger for when he returns.
+        for (UUID id : crew) {
+            net.minecraft.entity.player.EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
+            if (p != null && !p.hasDisconnected()) {
+                p.sendMessage(new net.minecraft.util.text.TextComponentTranslation(translationKey));
+            }
+        }
+    }
+
     /** The transit keys ships by the AR ship UUID string; a non-UUID key (test fixtures) carries
      *  no durable identity, so the re-seat runs without the wrong-ship filter there. */
     private static java.util.UUID toUuid(String shipId) {

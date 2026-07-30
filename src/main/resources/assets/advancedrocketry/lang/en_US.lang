@@ -884,6 +884,8 @@ msg.pilotseat.afcdestroyed=§cFlight computer destroyed - the ship is adrift.
 msg.shipdescent.refused=§cThe descent could not start - the destination is not ready yet. Wait a moment and try again.
 msg.shipdescent.failed=§cThe descent failed - the ship could not cross onto the planet.
 msg.shipdescent.arrived=§aDescent complete - the ship is in the sky over the planet. Take her down.
+msg.shiptransit.arrivalrecovered=§eThe jump completed, but not cleanly - your ship is at its arrival point rather than on course. It is safe; report this.
+msg.shiptransit.arrivalstalled=§cThe jump cannot finish right now. Your ship is not lost - it stays in transit and will arrive. Report this.
 
 #########################
 ##### TOOLTIP STUFF #####

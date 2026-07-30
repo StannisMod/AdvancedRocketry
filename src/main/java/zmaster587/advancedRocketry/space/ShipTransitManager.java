@@ -138,6 +138,15 @@ public final class ShipTransitManager {
         default boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
             return true;
         }
+
+        /**
+         * Tell the aboard crew something, by translation key. Used only where the subsystem does
+         * something the pilot would otherwise have to infer from his ship not behaving — an arrival that
+         * had to be finished the hard way is the case that exists today. The default says nothing (the
+         * pure state-machine tests have no players).
+         */
+        default void messageCrew(List<UUID> crew, String translationKey) {
+        }
     }
 
     /** Per-ship in-flight state. */
@@ -157,6 +166,7 @@ public final class ShipTransitManager {
         final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
         NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace at save points
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
+        boolean lastResortReported; // the "not even the snapshot landed" line is said once, not per retry
 
         Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
                 long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
@@ -343,28 +353,56 @@ public final class ShipTransitManager {
                     reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt));
                 }
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
-                freeLane(t);
-                it.remove();
+                // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
+                // An arrival is a block paste into a cell; it has no right to fail, and every branch
+                // below is a recovery from something that should have been impossible. Each one is
+                // logged at ERROR and told to the crew for that reason: reaching here is a DEFECT
+                // REPORT, not a mode of operation. If you find yourself tuning the budget above to make
+                // a symptom go away, the bug is upstream of this block - the arrival is waiting on
+                // something it does not need.
                 if (t.pasteAnchor == null) {
-                    // The hyperspace ship never became crossable (should not happen - assembly is async but
-                    // completes in a few ticks), or a restored snapshot could not be pasted. Nothing landed
-                    // in the target: give up and undo the target materialization.
-                    space.dematerialize(t.target);
-                    LOGGER.error("[SPACE] transit arrival crossing never succeeded for ship {} after {} ticks - "
-                            + "ship stranded in hyperspace", entry.getKey(), MAX_ARRIVAL_ATTEMPTS);
-                } else {
-                    // The ship IS in the target cell, just never became movable onto its pose. Settle it
-                    // where it lies rather than spin forever - dematerializing here would discard a cell
-                    // that physically holds a ship. Its address will read the paste lane's band.
-                    ledgerSettle(entry.getKey(), t.target);
-                    space.markDirty(t.target);
-                    if (!t.crew.isEmpty()) {
-                        reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
-                    }
-                    LOGGER.error("[SPACE] transit arrival never reached its pose for ship {} after {} ticks - "
-                            + "settled at the paste lane in slot {}", entry.getKey(), MAX_ARRIVAL_ATTEMPTS,
-                            t.targetSlotDim);
+                    // Last resort: finish through the SNAPSHOT the transit already carries. That path
+                    // asks VS nothing - it writes blocks and finds its anchor among the blocks it just
+                    // wrote - so unlike the live crossing it cannot stall. The snapshot is always
+                    // present (the depart-time floor cut, and a restored transit without one is refused
+                    // at import), so this is a recovery with no precondition left to fail.
+                    t.pasteAnchor = crosser.completeRestored(t.snapshot, t.targetSlotDim);
                 }
+                if (t.pasteAnchor == null) {
+                    // Not even the snapshot landed. The ONE thing that must not happen now is losing the
+                    // ship: keep the transit, keep the lane, keep the ledger saying IN_TRANSIT. The
+                    // record therefore keeps being persisted, and a restart resumes the jump through the
+                    // same snapshot path - which is the restart behaviour the persistence design already
+                    // specifies. Retry from a fresh budget; say so once, not once per tick.
+                    t.arrivalAttempts = 0;
+                    if (!t.lastResortReported) {
+                        t.lastResortReported = true;
+                        LOGGER.error("[SPACE] transit arrival for ship {} could not be completed even from "
+                                + "its snapshot (target cell {}, slot {}). The ship is NOT lost: it stays "
+                                + "in transit and the jump resumes on restart. This state should be "
+                                + "unreachable - treat it as a bug report.",
+                                entry.getKey(), t.target.cellKey(), t.targetSlotDim);
+                        crosser.messageCrew(t.crew, "msg.shiptransit.arrivalstalled");
+                    }
+                    continue; // stays in the map: the ledger and the transit map must never disagree
+                }
+                // Landed, one way or the other. A live hyperspace hull may still be sitting in the lane
+                // (the cut that would have removed it is exactly what failed), so the lane is RETIRED
+                // rather than freed - a freed one is handed to the next departure, which would then be
+                // pasted into an abandoned ship.
+                tiles.retire(t.tile);
+                it.remove();
+                ledgerSettle(entry.getKey(), t.target);
+                space.markDirty(t.target);
+                if (!t.crew.isEmpty()) {
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
+                }
+                LOGGER.error("[SPACE] transit arrival for ship {} did not complete normally after {} ticks "
+                        + "and was finished the hard way - the ship is in cell {} (slot {}) at its paste "
+                        + "site, NOT on its intended pose, so its address reads the paste band. This state "
+                        + "should be unreachable - treat it as a bug report.",
+                        entry.getKey(), MAX_ARRIVAL_ATTEMPTS, t.target.cellKey(), t.targetSlotDim);
+                crosser.messageCrew(t.crew, "msg.shiptransit.arrivalrecovered");
             }
             // else: retry the arrival (paste once, then the pose settle) next tick - the target stays
             // materialized and the lane stays held.

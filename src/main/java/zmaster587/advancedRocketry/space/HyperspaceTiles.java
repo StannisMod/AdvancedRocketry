@@ -53,7 +53,21 @@ public final class HyperspaceTiles {
         }
     }
 
-    /** Number of lanes currently in use (allocated minus freed). */
+    /**
+     * Give up {@code tile} WITHOUT returning it to the free set, so no later transit is ever parked
+     * there. For a lane whose ship could not be cut back out: the blocks may still be lying in it, and
+     * {@link #allocate()} hands out the lowest free index first, so releasing such a lane would paste the
+     * next departing ship straight into an abandoned hull. Retiring costs an index out of a supply the
+     * class doc calls effectively unbounded, and the hyperspace world is wiped on restart anyway — which
+     * is the cheapest sound answer available, and cheaper than clearing blocks VS no longer claims.
+     */
+    public void retire(Tile tile) {
+        // Deliberately nothing: not adding the index back to `free` IS the retirement. Written as a
+        // method rather than a comment at the call site so the intent survives a later reader who sees
+        // an allocate() with no matching free() and assumes a leak.
+    }
+
+    /** Number of lanes currently in use (allocated minus freed, counting retired lanes as in use). */
     public int inUseCount() {
         return next - free.size();
     }
