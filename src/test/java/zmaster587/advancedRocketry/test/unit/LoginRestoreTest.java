@@ -97,7 +97,7 @@ public class LoginRestoreTest {
     @Test
     public void settledShipRestoresThePlayerAboardInItsSlotWorld() {
         FakeOps ops = new FakeOps();
-        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+        ops.ledger.settle(SHIP, LEDGER_COORD);
 
         LoginRestore.Placement placed = LoginRestore.resolve(tag(LEDGER_COORD), ops, PLAYER);
 
@@ -118,7 +118,7 @@ public class LoginRestoreTest {
         // is only in WHERE on the ship phase 2 puts him back. A restore that branched here would
         // send everyone who stood up to an ordinary spawn - the played-through report behind this.
         FakeOps ops = new FakeOps();
-        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+        ops.ledger.settle(SHIP, LEDGER_COORD);
 
         LoginRestore.Placement placed = LoginRestore.resolve(
                 ShipAboardTag.Aboard.standing(SHIP, LEDGER_COORD, 1.5D, 0.0D, -2.5D), ops, PLAYER);
@@ -134,7 +134,7 @@ public class LoginRestoreTest {
         // The ship kept flying under another crew member while this player was offline, so the
         // coordinate baked into his player file points at a cell the ship left long ago.
         FakeOps ops = new FakeOps();
-        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+        ops.ledger.settle(SHIP, LEDGER_COORD);
 
         LoginRestore.Placement placed = LoginRestore.resolve(tag(STALE_COORD), ops, PLAYER);
 
@@ -165,7 +165,7 @@ public class LoginRestoreTest {
     public void aSilentShipStillRestoresAboardAtAProvisionalPosition() {
         // Re-assembly is asynchronous: the ship can still be building on the tick he logs in.
         FakeOps ops = new FakeOps();
-        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+        ops.ledger.settle(SHIP, LEDGER_COORD);
         ops.shipPoseReadable = false;
 
         LoginRestore.Placement placed = LoginRestore.resolve(tag(LEDGER_COORD), ops, PLAYER);
@@ -227,7 +227,7 @@ public class LoginRestoreTest {
     @Test
     public void anExhaustedSlotPoolDegradesToSpawnInsteadOfBreakingTheLogin() {
         FakeOps ops = new FakeOps();
-        ops.ledger.settle(SHIP, LEDGER_COORD, SLOT_DIM);
+        ops.ledger.settle(SHIP, LEDGER_COORD);
         ops.materializeDim = -1; // the pool had no slot for his cell
 
         LoginRestore.Placement placed = LoginRestore.resolve(tag(LEDGER_COORD), ops, PLAYER);

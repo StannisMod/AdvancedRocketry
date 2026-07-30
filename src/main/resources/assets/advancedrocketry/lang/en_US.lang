@@ -881,9 +881,9 @@ msg.pilotseat.notassembled=§eShip not assembled - assemble it to fly.
 msg.pilotseat.occupied=§e%s is already in this seat.
 msg.pilotseat.taken=§eYour seat was taken by %s while you were away.
 msg.pilotseat.afcdestroyed=§cFlight computer destroyed - the ship is adrift.
-msg.shipdescent.refused=§cNo clear landing on the surface below - the ship is too tall to fit there. Move and try again.
+msg.shipdescent.refused=§cThe descent could not start - the destination is not ready yet. Wait a moment and try again.
 msg.shipdescent.failed=§cThe descent failed - the ship could not cross onto the planet.
-msg.shipdescent.arrived=§aDescent complete - the ship has dropped to the surface.
+msg.shipdescent.arrived=§aDescent complete - the ship is in the sky over the planet. Take her down.
 
 #########################
 ##### TOOLTIP STUFF #####
@@ -1649,7 +1649,8 @@ msg.jump.aborted=Jump aborted
 msg.jump.committed=Jump window open
 msg.jump.burstfailed=The capacitor failed to open the window
 msg.jump.nopositionrecord=The ship's position is not on record
-msg.jump.departfailed=The departure failed - the charge is spent
+msg.jump.departfailed=The drive fired but the ship did not leave - check the hull is one assembled craft, then try again
+msg.jump.cellnotlive=The ship's position has not settled yet - wait a moment and try again
 msg.jump.notonship=Not aboard an assembled ship
 msg.jump.confirm=Press again to confirm
 msg.navcomputer.arm=Arm jump

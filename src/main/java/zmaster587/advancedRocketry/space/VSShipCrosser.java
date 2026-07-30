@@ -22,6 +22,9 @@ import zmaster587.advancedRocketry.integration.vs.VSIntegration;
  */
 public final class VSShipCrosser implements ShipTransitManager.Crosser {
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("advancedrocketry/space");
+
     /** Clear-sky Y the target-cell arrival pastes at (cells are void; a high column avoids any floor). */
     private static final int ARRIVAL_Y = 200;
     /** Per-lane X offset for arrivals, so ships arriving into one cell from different lanes never overlap. */
@@ -44,13 +47,31 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
         WorldServer src = DimensionManager.getWorld(srcSlotDim);
         WorldServer hyper = HyperspaceWorld.getOrCreate();
-        if (src == null || hyper == null || srcAnchor == null) {
+        // Three different reasons a departure never even starts, told apart. Rolled into one null they
+        // are indistinguishable from a crossing that ran and failed, and the caller's log then blames
+        // the cut for something that happened before it.
+        if (src == null) {
+            LOGGER.warn("[SPACE] depart aborted: no world for origin slot dim {} (the ship's cell is "
+                    + "not bound to a live slot, or the id is from another session)", srcSlotDim);
+            return null;
+        }
+        if (hyper == null) {
+            LOGGER.warn("[SPACE] depart aborted: the shared hyperspace world could not be created "
+                    + "(origin slot dim {})", srcSlotDim);
+            return null;
+        }
+        if (srcAnchor == null) {
+            LOGGER.warn("[SPACE] depart aborted: no origin anchor for the ship in slot dim {}",
+                    srcSlotDim);
             return null;
         }
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 src, srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5,
                 hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
         if (!res.ok()) {
+            LOGGER.warn("[SPACE] depart aborted: the crossing out of slot dim {} at anchor {} produced "
+                    + "no ship in hyperspace (source deregistered: {})",
+                    srcSlotDim, srcAnchor, res.removed);
             return null;
         }
         // Park the just-assembled ship so it holds its lane while ShipTransit advances its coord logically.

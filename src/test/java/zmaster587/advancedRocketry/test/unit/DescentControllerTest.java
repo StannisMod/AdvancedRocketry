@@ -17,6 +17,9 @@ import zmaster587.advancedRocketry.space.ShipEntryController;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.SlotBinder;
 import zmaster587.advancedRocketry.space.SpaceManager;
+import zmaster587.advancedRocketry.space.SpaceSubsystem;
+import zmaster587.advancedRocketry.space.TerrainHeightFinder;
+import zmaster587.advancedRocketry.space.VSDescentPasteResolver;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -29,8 +32,8 @@ import static org.junit.Assert.assertTrue;
  * with a recording fake {@link ShipCrossingService.Ops} + a fake {@link DescentController.PasteResolver}
  * (the entry-controller test discipline). Pins the decisions: only a ship genuinely in space (a SETTLED
  * ledger entry) may descend (the INVERSE of entry's guard); a successful cut releases the source cell
- * and drops the ledger entry; an unfittable landing REFUSES the descent (message + cooldown, ship stays
- * in space); a failed crossing leaves the ship in space.
+ * and drops the ledger entry; an arrival that cannot be resolved at all REFUSES the descent (message +
+ * cooldown, ship stays in space); a failed crossing leaves the ship in space.
  */
 public class DescentControllerTest {
 
@@ -63,6 +66,9 @@ public class DescentControllerTest {
         int crossings;
         int captures;
         int peeks;
+        final List<Integer> latchedDims = new ArrayList<>();
+        /** The crossing count at each latch call — so a test can say the latch preceded the cut. */
+        final List<Integer> latchedBeforeCross = new ArrayList<>();
         List<CrewTransfer.Crew> lastCaptured;
         List<CrewTransfer.Crew> lastReseated;
 
@@ -109,6 +115,11 @@ public class DescentControllerTest {
         @Override public void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args) {
             messages.add(langKey);
         }
+
+        @Override public void latchEntryUntilBelowTheLine(int dimId, BlockPos afcPos) {
+            latchedDims.add(dimId);
+            latchedBeforeCross.add(crossings);
+        }
     }
 
     /** Recording paste resolver: a fixed landing, or null when {@code fail} is set (unfittable). */
@@ -131,7 +142,7 @@ public class DescentControllerTest {
                                                      GalacticCoord cell, int... dims) {
         SpaceManager space = new SpaceManager(new FakeBinder(dims), clock::get, never());
         int slot = space.materialize(cell); // the ship holds one occupant on its cell
-        ledger.settle(SHIP, cell, slot);
+        ledger.settle(SHIP, cell);
         return space;
     }
 
@@ -179,13 +190,13 @@ public class DescentControllerTest {
     }
 
     @Test
-    public void anUnfittableLandingRefusesTheDescentAndKeepsTheShipInSpace() {
+    public void anUnresolvableArrivalRefusesTheDescentAndKeepsTheShipInSpace() {
         AtomicLong clock = new AtomicLong();
         ShipLedger ledger = new ShipLedger();
         SpaceManager space = spaceWithSettledShip(ledger, clock, body(5), SLOT_DIM);
         FakeOps ops = new FakeOps();
         FakeResolver resolver = new FakeResolver();
-        resolver.fail = true; // no clear landing above the terrain
+        resolver.fail = true; // the destination's arrival could not be resolved at all
         DescentController ctl = new DescentController(space, ledger, ops, resolver, clock::get);
 
         assertFalse(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
@@ -247,6 +258,93 @@ public class DescentControllerTest {
         assertFalse("an in-flight descent is not restarted",
                 ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
         assertEquals(1, ops.crossings);
+    }
+
+    /**
+     * A committed descent holds the entry on-ramp off the ship, and does it on the SOURCE computer
+     * BEFORE the cut — the crossing carries tile NBT verbatim, so that is what puts the latch on the
+     * ship that arrives. Latching after the cut would target a computer that no longer exists.
+     */
+    @Test
+    public void aCommittedDescentLatchesEntryOnTheSourceShipBeforeTheCut() {
+        AtomicLong clock = new AtomicLong();
+        ShipLedger ledger = new ShipLedger();
+        SpaceManager space = spaceWithSettledShip(ledger, clock, body(5), SLOT_DIM);
+        FakeOps ops = new FakeOps();
+        DescentController ctl = new DescentController(space, ledger, ops, new FakeResolver(), clock::get);
+
+        assertTrue(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
+
+        assertEquals("a descent must latch entry exactly once", 1, ops.latchedDims.size());
+        assertEquals("the latch is set on the ship in its SLOT world — the source computer, whose "
+                        + "NBT the crossing carries to the destination",
+                SLOT_DIM, (int) ops.latchedDims.get(0));
+        assertEquals("the latch must be set BEFORE the cut: after it, the source computer is gone "
+                        + "and the write lands on nothing",
+                0, (int) ops.latchedBeforeCross.get(0));
+    }
+
+    /** A refused descent never latches: the ship did not go anywhere, so nothing may hold its entry
+     *  on-ramp off — that would strand it in space with no way to re-arm. */
+    @Test
+    public void aRefusedDescentDoesNotLatchEntry() {
+        AtomicLong clock = new AtomicLong();
+        ShipLedger ledger = new ShipLedger();
+        SpaceManager space = spaceWithSettledShip(ledger, clock, body(5), SLOT_DIM);
+        FakeOps ops = new FakeOps();
+        FakeResolver resolver = new FakeResolver();
+        resolver.fail = true;
+        DescentController ctl = new DescentController(space, ledger, ops, resolver, clock::get);
+
+        assertFalse(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
+        assertTrue("a descent that never happened must leave entry armed", ops.latchedDims.isEmpty());
+    }
+
+    /**
+     * The arrival altitude contract. A descent brings the ship out in the AIR over the destination,
+     * so the only thing that has to be true of the altitude is a set of RELATIONS — never a
+     * particular number, which is a balance knob: it must clear everything the world can build, and
+     * it must stay clear, by the declared hysteresis, of both ceilings a planet-side ship is subject
+     * to (the physics pose clamp, and the entry line that would take the ship straight back off the
+     * planet).
+     */
+    @Test
+    public void theArrivalComesOutAboveTheGroundAndClearOfBothCeilings() {
+        // A representative orbit line for a planet (the shipped default). Not a pin — the relations
+        // below are what the test is about; any orbit line well above the block band behaves the same.
+        int orbit = 1000;
+        // The clamp as PRODUCTION leaves it: the space subsystem raises it at server start to cover
+        // the realized cell pose band, so this — not the physics mod's stock value — is what the
+        // resolver actually reads on a live server.
+        double clamp = SpaceSubsystem.requiredShipCeiling();
+        int hysteresis = VSDescentPasteResolver.ARRIVAL_HYSTERESIS_BLOCKS;
+
+        double arrival = VSDescentPasteResolver.arrivalAltitude(orbit, clamp);
+
+        assertTrue("a ship arriving at or below the build height can materialize inside terrain — the "
+                        + "whole point of arriving in the air is that no ground fit is needed; "
+                        + "arrival=" + arrival + " buildHeight=" + TerrainHeightFinder.MAX_BUILD_Y,
+                arrival > TerrainHeightFinder.MAX_BUILD_Y);
+        assertTrue("the physics clamp pins a ship's pose every step, so the arrival must sit at least "
+                        + "the hysteresis below it; arrival=" + arrival + " clamp=" + clamp,
+                arrival <= clamp - hysteresis);
+        int entryLine = ShipEntryController.effectiveEntryCeiling(orbit, clamp);
+        assertTrue("arriving at or above the entry line would bounce the ship back into space on the "
+                        + "tick it arrived — the descent must land INSIDE the on-ramp's hysteresis, "
+                        + "not on top of it; arrival=" + arrival + " entryLine=" + entryLine
+                        + " hysteresis=" + hysteresis,
+                arrival <= entryLine - hysteresis);
+    }
+
+    /** The altitude floor holds even for a destination whose orbit line is pushed to its minimum:
+     *  an arrival never sinks into the block band, where the ship could come out inside a mountain. */
+    @Test
+    public void theArrivalNeverSinksIntoTheBlockBand() {
+        double arrival = VSDescentPasteResolver.arrivalAltitude(
+                TerrainHeightFinder.MAX_BUILD_Y, SpaceSubsystem.requiredShipCeiling());
+        assertTrue("the lowest orbit line a dimension may declare still must not put the arrival "
+                        + "inside the world's blocks; arrival=" + arrival,
+                arrival > TerrainHeightFinder.MAX_BUILD_Y);
     }
 
     @Test

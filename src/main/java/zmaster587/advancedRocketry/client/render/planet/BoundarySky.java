@@ -27,8 +27,15 @@ import java.util.List;
  * {@link PacketSystemBodiesSync.RenderBody#descendTarget} are highlighted so the pilot can see which
  * body the ship will descend into once inside its proximity radius.</p>
  *
- * <p>Appearance is playtest-verified; this class only needs to be structurally correct. The static
- * boundary ring is baked into a display list in the constructor -- it is never rebuilt per frame.
+ * <p>This provider replaces the ENTIRE sky rather than adding to one, so whatever is not drawn here is
+ * not drawn at all -- hence the starfield alongside the ring and the billboards.</p>
+ *
+ * <p>Everything emitted here is wound to face the camera and drawn with vanilla's back-face culling
+ * left on, matching {@link RenderPlanetarySky}. That is a hard requirement, not a style choice: the sky
+ * pass runs immediately after {@code EntityRenderer.renderWorldPass} enables {@code GL_CULL_FACE} with
+ * {@code GL_BACK}, so a primitive wound the other way is silently discarded and the pilot sees an empty
+ * sky with no error anywhere. The static geometry is baked into display lists in the constructor -- it
+ * is never rebuilt per frame.
  * Body billboards are cheap (a handful of quads) and are streamed inline, exactly as
  * {@link RenderSpaceSky} streams its planet quads.</p>
  */
@@ -43,13 +50,19 @@ public class BoundarySky extends IRenderHandler {
     private static final float BODY_HALF_SIZE = 6.0F;
     private static final float TARGET_HALF_SIZE = 10.0F;
 
+    private static final float STAR_ALPHA = 0.9F;
+
     private final Minecraft mc = Minecraft.getMinecraft();
 
     // Cached static geometry: the descent boundary ring (position-only; colour set at call time).
     private final int glBoundaryList;
+    // Cached static geometry: the shared starfield, so empty space is not a black void.
+    private final int glStarList;
 
     public BoundarySky() {
-        this.glBoundaryList = GLAllocation.generateDisplayLists(1);
+        int lists = GLAllocation.generateDisplayLists(2);
+        this.glBoundaryList = lists;
+        this.glStarList = lists + 1;
 
         BufferBuilder buffer = Tessellator.getInstance().getBuffer();
         GL11.glNewList(this.glBoundaryList, GL11.GL_COMPILE);
@@ -58,10 +71,24 @@ public class BoundarySky extends IRenderHandler {
             double ang = (Math.PI * 2.0D * i) / BOUNDARY_SEGMENTS;
             float x = (float) (Math.cos(ang) * BOUNDARY_RADIUS);
             float z = (float) (Math.sin(ang) * BOUNDARY_RADIUS);
-            buffer.pos(x, -BOUNDARY_HEIGHT, z).endVertex();
+            // TOP vertex before BOTTOM. The strip advances anticlockwise around +Y, so this pairing is
+            // what makes each quad wind anticlockwise -- i.e. front-facing -- as seen from INSIDE the
+            // cylinder. The camera is always inside it: the ring is drawn in the camera-centred sky
+            // frame, at a radius no viewpoint can leave. Emitting bottom-first faces the ring outwards
+            // and vanilla's GL_CULL_FACE/GL_BACK (enabled in EntityRenderer.renderWorldPass just before
+            // the sky pass, and never turned off here) discards every quad of it.
             buffer.pos(x, BOUNDARY_HEIGHT, z).endVertex();
+            buffer.pos(x, -BOUNDARY_HEIGHT, z).endVertex();
         }
         Tessellator.getInstance().draw();
+        GL11.glEndList();
+
+        // The starfield is the mod's existing one, compiled into a list of our own rather than
+        // duplicated: same seed, same 2000 quads, same radius as every other AR sky. Without it a slot
+        // cell has no sky at all -- this provider replaces the whole sky renderer rather than adding to
+        // it, so nothing else here draws stars or a sun.
+        GL11.glNewList(this.glStarList, GL11.GL_COMPILE);
+        RenderPlanetarySky.emitBaselineStars();
         GL11.glEndList();
     }
 
@@ -77,8 +104,13 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.enableBlend();
         GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
 
-        // Descent boundary ring (untextured colour band).
         GlStateManager.disableTexture2D();
+
+        // Stars first: the ring and the billboards are meant to sit in front of them.
+        GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
+        GL11.glCallList(this.glStarList);
+
+        // Descent boundary ring (untextured colour band).
         GlStateManager.color(0.35F, 0.65F, 1.0F, 0.35F);
         GL11.glCallList(this.glBoundaryList);
         GlStateManager.enableTexture2D();
@@ -133,11 +165,17 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.rotate(-pitch, 1.0F, 0.0F, 0.0F);
         GlStateManager.translate(0.0F, 0.0F, BODY_DISTANCE);
 
+        // The billboard is pushed out to +Z and must face back down -Z, at the camera. The four corners
+        // and their UVs are unchanged; only the traversal order is reversed, which flips the winding
+        // without touching the texture mapping. Emitting them the other way round points the normal
+        // along +Z, away from the viewer, and vanilla's back-face culling drops the quad -- the same
+        // defect the ring had. RenderPlanetarySky.renderPlanetPubHelper draws its planet quads
+        // viewer-facing with culling on for exactly this reason; this now matches it.
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
-        buffer.pos(-half, -half, 0.0D).tex(0.0D, 1.0D).endVertex();
-        buffer.pos(half, -half, 0.0D).tex(1.0D, 1.0D).endVertex();
-        buffer.pos(half, half, 0.0D).tex(1.0D, 0.0D).endVertex();
         buffer.pos(-half, half, 0.0D).tex(0.0D, 0.0D).endVertex();
+        buffer.pos(half, half, 0.0D).tex(1.0D, 0.0D).endVertex();
+        buffer.pos(half, -half, 0.0D).tex(1.0D, 1.0D).endVertex();
+        buffer.pos(-half, -half, 0.0D).tex(0.0D, 1.0D).endVertex();
         Tessellator.getInstance().draw();
 
         GlStateManager.popMatrix();

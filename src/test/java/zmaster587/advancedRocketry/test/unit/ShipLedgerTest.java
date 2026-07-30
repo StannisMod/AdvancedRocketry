@@ -25,22 +25,21 @@ public class ShipLedgerTest {
     }
 
     @Test
-    public void settleRecordsCoordinateStateAndSlot() {
+    public void settleRecordsCoordinateAndState() {
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(SHIP, coord(3, 100), 42);
+        ledger.settle(SHIP, coord(3, 100));
 
         ShipLedger.Entry e = ledger.get(SHIP);
         assertNotNull(e);
         assertEquals(coord(3, 100), e.coord);
         assertEquals(ShipLedger.State.SETTLED, e.state);
-        assertEquals(42, e.slotDim);
         assertEquals(coord(3, 0).cellKey(), e.cellKey());
     }
 
     @Test
     public void positionReportRefreshesASettledShip() {
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(SHIP, coord(3, 100), 42);
+        ledger.settle(SHIP, coord(3, 100));
 
         ledger.updatePosition(SHIP, coord(3, 2500));
 
@@ -67,14 +66,13 @@ public class ShipLedgerTest {
         // The transit-arrival amnesia fix: after a jump the ship's coordinate must survive in the
         // ledger instead of vanishing with the finished transit record.
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(SHIP, coord(1, 0), 10);
+        ledger.settle(SHIP, coord(1, 0));
         ledger.beginTransit(SHIP, coord(2, 0));
-        ledger.settle(SHIP, coord(2, 0), 11);
+        ledger.settle(SHIP, coord(2, 0));
 
         ShipLedger.Entry e = ledger.get(SHIP);
         assertEquals(coord(2, 0), e.coord);
         assertEquals(ShipLedger.State.SETTLED, e.state);
-        assertEquals(11, e.slotDim);
     }
 
     @Test
@@ -84,7 +82,7 @@ public class ShipLedgerTest {
         ledger.updatePosition(SHIP, coord(1, 1)); // reporting an unknown ship is a safe no-op
         assertNull(ledger.get(SHIP));
 
-        ledger.settle(SHIP, coord(1, 0), 10);
+        ledger.settle(SHIP, coord(1, 0));
         ledger.remove(SHIP);
         assertNull(ledger.get(SHIP));
         assertEquals(0, ledger.size());

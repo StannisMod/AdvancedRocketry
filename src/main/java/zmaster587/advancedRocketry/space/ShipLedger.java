@@ -6,7 +6,14 @@ import java.util.UUID;
 
 /**
  * The authoritative server-side record of every tier-2 ship known to the space subsystem:
- * {@code shipId -> (galactic coordinate, cell, lifecycle state, slot dim)}.
+ * {@code shipId -> (galactic coordinate, cell, lifecycle state)}.
+ *
+ * <p><b>Where a ship is, not which world it is in.</b> The ledger deliberately holds no slot
+ * dimension id. A slot id is minted per boot and re-used as cells come and go, so a copy of one
+ * stored here would be a cache of {@link SpaceManager}'s cell&rarr;slot map — and a cache that
+ * nothing refreshes, since the coordinate can be updated without the binding changing and the
+ * binding can change without the coordinate moving. Ask {@link SpaceManager#slotDimOf} for the
+ * dimension; it is derived from the coordinate this ledger owns.</p>
  *
  * <p><b>Key discipline:</b> the key is the ship's DURABLE id — the UUID minted at tier-2 assembly
  * and persisted in the Advanced Flight Computer's tile NBT (crossings carry tile NBT verbatim, so
@@ -36,8 +43,6 @@ public final class ShipLedger {
     public static final class Entry {
         public final GalacticCoord coord;
         public final State state;
-        /** The slot dim the ship's cell is bound to; meaningful only while {@link State#SETTLED}. */
-        public final int slotDim;
         /**
          * Whether the SHIP knows where it is. The server always does — this is the ship's own fix,
          * which a misjump can lose. A ship that has lost it cannot aim a jump until it re-localizes,
@@ -45,14 +50,13 @@ public final class ShipLedger {
          */
         public final boolean positionKnown;
 
-        Entry(GalacticCoord coord, State state, int slotDim) {
-            this(coord, state, slotDim, true);
+        Entry(GalacticCoord coord, State state) {
+            this(coord, state, true);
         }
 
-        Entry(GalacticCoord coord, State state, int slotDim, boolean positionKnown) {
+        Entry(GalacticCoord coord, State state, boolean positionKnown) {
             this.coord = coord;
             this.state = state;
-            this.slotDim = slotDim;
             this.positionKnown = positionKnown;
         }
 
@@ -64,11 +68,13 @@ public final class ShipLedger {
     private final Map<UUID, Entry> ships = new HashMap<>();
 
     /**
-     * Record {@code shipId} as settled at {@code coord} in slot {@code slotDim}. The caller has
-     * just materialized the cell (or handed over an existing refcount); the entry now owns it.
+     * Record {@code shipId} as settled at {@code coord}. The caller has just materialized that cell
+     * (or handed over an existing refcount); the entry now owns it. The slot the cell landed in is
+     * not recorded — {@link SpaceManager#slotDimOf} answers that from the binding it already keeps,
+     * and is right even after the pool has re-shuffled its ids.
      */
-    public void settle(UUID shipId, GalacticCoord coord, int slotDim) {
-        ships.put(shipId, new Entry(coord, State.SETTLED, slotDim));
+    public void settle(UUID shipId, GalacticCoord coord) {
+        ships.put(shipId, new Entry(coord, State.SETTLED));
     }
 
     /**
@@ -77,7 +83,7 @@ public final class ShipLedger {
      * stays with the transit machinery; the ledger answers "where is/will be this ship".
      */
     public void beginTransit(UUID shipId, GalacticCoord target) {
-        ships.put(shipId, new Entry(target, State.IN_TRANSIT, Integer.MIN_VALUE));
+        ships.put(shipId, new Entry(target, State.IN_TRANSIT));
     }
 
     /**
@@ -90,7 +96,7 @@ public final class ShipLedger {
         if (e == null || e.state != State.SETTLED) {
             return;
         }
-        ships.put(shipId, new Entry(coord, State.SETTLED, e.slotDim));
+        ships.put(shipId, new Entry(coord, State.SETTLED));
     }
 
     /** The ledger record for {@code shipId}, or {@code null} if unknown. */
@@ -101,7 +107,7 @@ public final class ShipLedger {
     public void setPositionKnown(UUID shipId, boolean known) {
         Entry entry = ships.get(shipId);
         if (entry != null) {
-            ships.put(shipId, new Entry(entry.coord, entry.state, entry.slotDim, known));
+            ships.put(shipId, new Entry(entry.coord, entry.state, known));
         }
     }
 

@@ -67,6 +67,7 @@ public class ShipEntryControllerTest {
         int crossings;
         int captures;
         int peeks;
+        int latches;
         List<CrewTransfer.Crew> lastCaptured;
         List<CrewTransfer.Crew> lastReseated;
 
@@ -117,6 +118,9 @@ public class ShipEntryControllerTest {
         @Override public void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args) {
             messages.add(langKey);
         }
+
+        /** Descent-only op; an entry never latches. Counted so the test can say so. */
+        @Override public void latchEntryUntilBelowTheLine(int dimId, BlockPos afcPos) { latches++; }
     }
 
     private static SpaceManager.Config never() {
@@ -158,6 +162,9 @@ public class ShipEntryControllerTest {
         assertEquals("ship unparked after the pose write", 1, ops.unparks);
         assertEquals("crew told they arrived", "msg.shipentry.arrived",
                 ops.messages.get(ops.messages.size() - 1));
+        // The post-descent entry latch belongs to the descent alone. An entry that latched would
+        // hold its own on-ramp off the next time the ship came back down and tried to leave again.
+        assertEquals("an entry never latches the entry on-ramp", 0, ops.latches);
     }
 
     @Test

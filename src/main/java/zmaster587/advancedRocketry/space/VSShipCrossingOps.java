@@ -47,6 +47,19 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
+    public void latchEntryUntilBelowTheLine(int dimId, BlockPos afcPos) {
+        WorldServer world = DimensionManager.getWorld(dimId);
+        if (world == null || afcPos == null) {
+            return;
+        }
+        net.minecraft.tileentity.TileEntity te = world.getTileEntity(afcPos);
+        if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+            ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
+                    .latchEntryUntilBelowTheLine();
+        }
+    }
+
+    @Override
     public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
                           int pasteX, int pasteY, int pasteZ) {
         WorldServer src = DimensionManager.getWorld(srcDimId);

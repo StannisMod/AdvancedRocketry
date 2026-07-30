@@ -18,6 +18,13 @@ import net.minecraft.world.WorldServer;
  * bounds can genuinely conflict: a ship taller than the gap between the terrain and the build ceiling
  * cannot fit here at all. In that case {@link #pasteY} returns {@code -1} and the caller aborts the
  * descent rather than pasting a clipped ship.</p>
+ *
+ * <p><b>Status.</b> {@link #MAX_BUILD_Y} is this class's live contribution — it is the single owner of
+ * "the top of the vanilla block band", and the descent paste band is derived from it. The terrain-fit
+ * pair ({@link #pasteY} and {@link #terrainTopOfFootprint}) has no production caller any more: a
+ * descent arrives in the AIR over the destination and the pilot flies it down, so no ground fit is
+ * computed and no descent is refused for not fitting one. The pair is kept, with its tests, for a
+ * future mechanic that genuinely needs to place a structure on a surface.</p>
  */
 public final class TerrainHeightFinder {
 

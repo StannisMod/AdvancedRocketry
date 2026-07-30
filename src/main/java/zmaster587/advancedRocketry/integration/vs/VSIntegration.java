@@ -219,11 +219,19 @@ public final class VSIntegration {
      */
     public static CrossResult crossShip(World srcWorld, double sx, double sy, double sz,
                                         World dstWorld, int dstX, int dstY, int dstZ) {
+        // Four different ways this returns "no ship", each with its own cause and its own cost. They
+        // used to be one silent null, so a caller could only report that a crossing failed - never
+        // which half of it, and never that the ship had already been cut.
         if (!isAvailable()) {
+            LOGGER.warn("[SPACE] crossShip: Valkyrien Skies absent - nothing crossed (src dim {})",
+                    srcWorld == null ? "null" : srcWorld.provider.getDimension());
             return new CrossResult(null, false, 0, 0);
         }
         AxisAlignedBB yard = shipyardBoundsAt(srcWorld, sx, sy, sz);
         if (yard == null) {
+            LOGGER.warn("[SPACE] crossShip: no ship claims ({},{},{}) in dim {} - nothing to cross, "
+                            + "the source is untouched",
+                    sx, sy, sz, srcWorld.provider.getDimension());
             return new CrossResult(null, false, 0, 0);
         }
         int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
@@ -232,6 +240,10 @@ public final class VSIntegration {
         // ship's real Y band (the claim gives only XZ; the full-height column would clip on paste).
         int[] band = scanShipBlockYBand(srcWorld, yMinX, yMaxX, yMinZ, yMaxZ);
         if (band == null) {
+            LOGGER.warn("[SPACE] crossShip: the subspace shipyard [{}..{}]x[{}..{}] of the ship at "
+                            + "({},{},{}) in dim {} holds no blocks - nothing to cross, the source is "
+                            + "untouched",
+                    yMinX, yMaxX, yMinZ, yMaxZ, sx, sy, sz, srcWorld.provider.getDimension());
             return new CrossResult(null, false, 0, 0); // source shipyard empty
         }
         int minShipY = band[0], maxShipY = band[1];
@@ -270,6 +282,17 @@ public final class VSIntegration {
         }
         if (anchor != null) {
             assembleTier2Ship(dstWorld, anchor);
+        } else {
+            // The only DESTRUCTIVE failure of the four: the source has already been deregistered and
+            // cut by this point, so the ship exists as loose blocks at the paste site and nowhere else.
+            // Logged at ERROR with the exact box that was searched, because a silent null here reads
+            // downstream as "the jump did not happen" while a ship has in fact been taken apart.
+            LOGGER.error("[SPACE] crossShip: pasted the ship from dim {} into dim {} at ({},{},{}) but "
+                            + "the anchor scan of the {}x{}x{} paste box found only air - the source was "
+                            + "ALREADY cut (deregistered: {}), so the ship is now loose blocks at the "
+                            + "paste site and is registered nowhere",
+                    srcWorld.provider.getDimension(), dstWorld.provider.getDimension(),
+                    dstX, dstY, dstZ, width, height, depth, removed);
         }
         return new CrossResult(anchor, removed, minShipY, maxShipY);
     }

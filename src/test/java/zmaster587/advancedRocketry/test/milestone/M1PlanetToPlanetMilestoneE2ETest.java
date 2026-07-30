@@ -21,6 +21,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.lwjgl.input.Keyboard;
 
+import zmaster587.advancedRocketry.space.TerrainHeightFinder;
+
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -120,6 +122,14 @@ public class M1PlanetToPlanetMilestoneE2ETest {
      * which asks whether the ship is above the line, not where the line is.
      */
     private static final int ORBIT_LINE = 255;
+
+    /**
+     * How many 10-tick samples the post-descent leg watches for a bounce back into space. The entry
+     * on-ramp is evaluated on every flight-computer tick, so an unheld trigger fires within a tick
+     * or two of the ship being above the line under power — this is many times the window it needs,
+     * so a green means "it did not happen", not "we did not look long enough".
+     */
+    private static final int LATCH_WATCH_SAMPLES = 40;
 
     /** Seat and standing square, as offsets from the ship's FLIGHT COMPUTER (the deck layout). */
     private static final int[] OFF_SEAT = {1, 0, 0};
@@ -788,15 +798,122 @@ public class M1PlanetToPlanetMilestoneE2ETest {
             seatedThroughDescent = prevLanded && isRiding(landedRiding);
             prevLanded = isRiding(landedRiding);
         }
-        assertTrue("and the pilot must still be flying his ship when it reaches the ground of the "
-                        + "planet he set out for — the loop is only closed if the man who took off is "
-                        + "the man who lands. riding=" + landedRiding + " clientDim=" + descentDim
+        assertTrue("and the pilot must still be flying his ship when it comes out over the planet he "
+                        + "set out for — the loop is only closed if the man who took off is the man "
+                        + "who arrives. riding=" + landedRiding + " clientDim=" + descentDim
                         + " serverRiding=" + exec("artest player riding-entity")
                         + " delivery=" + exec("artest vs seat-delivery"),
                 seatedThroughDescent);
+
+        // CONTRACT (changed): a descent no longer hunts for a clear pad and sets the ship down. It
+        // brings the ship out HIGH IN THE AIR over the destination and hands it back to the pilot to
+        // fly down — which is why no arrival can be refused for "nothing fits below". So the arrival
+        // is asserted where it now happens: the CLIENT's own altitude, above everything the world is
+        // able to build. This is a strictly stronger reading than the old leg made (which never
+        // checked altitude at all), not a relaxed one.
+        double arrivalY = Double.NEGATIVE_INFINITY;
+        for (int attempt = 0; attempt < budget
+                && arrivalY <= TerrainHeightFinder.MAX_BUILD_Y; attempt++) {
+            bot().waitTicks(5);
+            JsonObject state = bot().reportState();
+            if (state.has("playerY")) {
+                arrivalY = state.get("playerY").getAsDouble();
+            }
+        }
+        assertTrue("…and he must come out IN THE SKY over it, not on the ground and never inside it. "
+                        + "The arrival pose is placed above the whole vanilla block band on purpose: "
+                        + "a ship's blocks cannot exist above the build height, so an arrival that "
+                        + "reads at or below it means the pose teleport never carried the ship (and "
+                        + "its rider) up off the paste band, and the pilot is sitting in the terrain "
+                        + "he was supposed to fly down to. clientY=" + arrivalY
+                        + " buildHeight=" + TerrainHeightFinder.MAX_BUILD_Y
+                        + " clientDim=" + descentDim + " riding=" + landedRiding
+                        + " serverRiding=" + exec("artest player riding-entity"),
+                arrivalY > TerrainHeightFinder.MAX_BUILD_Y);
+
         System.out.println("[M1] leg 8 (descent onto the planet) " + elapsed(tLeg)
-                + " landedDim=" + descentDim + " nearestBodyDim=" + nearestDim
-                + " riding=" + landedRiding);
+                + " arrivedDim=" + descentDim + " nearestBodyDim=" + nearestDim
+                + " arrivalY=" + arrivalY + " riding=" + landedRiding);
+
+        // ---- LEG 9: he stays put, and can still leave later. ------------------------------------
+        // The descent puts the ship down IN THE AIR, and that can be above this body's own orbit
+        // line (this run seeds the line to the config minimum, so it certainly is). The entry
+        // on-ramp fires on "a piloted ship is above the orbit line" — the arrival matches it
+        // exactly. Without a hysteresis the ship is taken straight back to space on the tick it
+        // arrives and the body can never be reached at all.
+        //
+        // The key stays DOWN for this whole leg: `flying` is what arms the entry trigger, so a leg
+        // that let go of it would prove nothing — the trigger it is watching for would be switched
+        // off. Leg 8 released the key, which is exactly why leg 8's green was never evidence here.
+        tLeg = System.currentTimeMillis();
+        int bounceDim = descentDim;
+        bot().holdKey(Keyboard.KEY_R);          // vertical-up: still flying, still climbing
+        try {
+            for (int attempt = 0; attempt < LATCH_WATCH_SAMPLES && bounceDim == descentDim; attempt++) {
+                bot().waitTicks(10);
+                JsonObject weather = bot().reportWeather();
+                if (weather.has("dim")) {
+                    bounceDim = weather.get("dim").getAsInt();
+                }
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_R);
+        }
+        assertTrue("a ship that has just been PUT somewhere by a descent must stay there while its "
+                        + "pilot flies, even though the arrival is above this body's orbit line. The "
+                        + "on-ramp reads altitude alone, so the arrival looks exactly like a climb to "
+                        + "orbit unless the descent holds it off until the ship has been below the "
+                        + "line once. A dim that flipped to a space cell here is that bounce: the "
+                        + "pilot crossed a system to reach this body and was thrown back off it "
+                        + "without touching anything. dimAfterArrival=" + bounceDim
+                        + " arrivedDim=" + descentDim + " slotDims=[" + sdj.group(1) + "]"
+                        + " arrivalY=" + arrivalY + " orbitLine=" + ORBIT_LINE,
+                bounceDim == descentDim);
+
+        // …and the hold must RELEASE. A latch that never clears turns "bounces off instantly" into
+        // "can never leave this planet again", which is strictly worse. Fly down through the line,
+        // which is the release condition, then climb back through it and entry must fire normally.
+        double downY = arrivalY;
+        bot().holdKey(Keyboard.KEY_F);          // vertical-down
+        try {
+            for (int attempt = 0; attempt < budget && downY > ORBIT_LINE; attempt++) {
+                bot().waitTicks(10);
+                JsonObject state = bot().reportState();
+                if (state.has("playerY")) {
+                    downY = state.get("playerY").getAsDouble();
+                }
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_F);
+        }
+        assertTrue("ARRANGEMENT: the pilot must actually get the ship back below the orbit line, or "
+                        + "the release half of this leg never gets its stimulus. downY=" + downY
+                        + " orbitLine=" + ORBIT_LINE,
+                downY <= ORBIT_LINE);
+
+        int releasedDim = descentDim;
+        bot().holdKey(Keyboard.KEY_R);          // climb back through the line under power
+        try {
+            for (int attempt = 0; attempt < budget && releasedDim == descentDim; attempt++) {
+                bot().waitTicks(10);
+                JsonObject weather = bot().reportWeather();
+                if (weather.has("dim")) {
+                    releasedDim = weather.get("dim").getAsInt();
+                }
+            }
+        } finally {
+            bot().releaseKey(Keyboard.KEY_R);
+        }
+        assertTrue("…and once he HAS been below the line, the on-ramp must work again — a ship that "
+                        + "landed on a planet has to be able to leave it. If this stays on the planet "
+                        + "the hold never released and the descent has stranded him instead of "
+                        + "bouncing him. dimAfterSecondClimb=" + releasedDim
+                        + " arrivedDim=" + descentDim + " slotDims=[" + sdj.group(1) + "]"
+                        + " downY=" + downY + " orbitLine=" + ORBIT_LINE,
+                jumpSlotDims.contains("," + releasedDim + ","));
+        System.out.println("[M1] leg 9 (stays put, then can leave) " + elapsed(tLeg)
+                + " dimAfterArrival=" + bounceDim + " downY=" + downY
+                + " dimAfterSecondClimb=" + releasedDim);
     }
 
     // ---- legs 6-8: the console, the jump key and the descent ------------------------------------

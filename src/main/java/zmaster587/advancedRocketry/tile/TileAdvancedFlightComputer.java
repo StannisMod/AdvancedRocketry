@@ -38,6 +38,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private static final String NBT_FLIGHT_ASSIST = "faEnabled";
     private static final String NBT_STATION_KEEPING = "stationKeeping";
     private static final String NBT_SHIP_ID = "shipId";
+    private static final String NBT_ENTRY_LATCHED = "entryLatched";
 
     /**
      * The ship's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
@@ -65,6 +66,31 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      * yet, and a parked ship holding position (in the air, or resting on the ground) is the intent.
      */
     private boolean stationKeeping = false;
+
+    /**
+     * Entry-trigger hysteresis after a descent. A descent puts the ship down in the AIR, well above
+     * the destination's terrain — which can be ABOVE that dimension's own orbit line. The entry
+     * on-ramp fires on "a piloted ship is above the orbit line", so without this the ship would be
+     * taken straight back into space on the tick it arrived, and the pilot could never reach the
+     * surface of a body whose orbit line sits low.
+     *
+     * <p>Set true by the descent as it commits the crossing, and cleared the first time this ship is
+     * observed AT OR BELOW the effective entry line. It is a LATCH, not a countdown: a timer would
+     * expire while the ship was still up high and let the bounce happen anyway. The clear condition
+     * is the exact complement of the trigger condition ({@code y > line}), so one evaluation can
+     * never both re-arm and fire.</p>
+     *
+     * <p>Persisted, and for the same reason {@link #stationKeeping} is: the state has to outlive a
+     * relog, a server restart and the ship being unloaded and re-loaded, or a player who logs out
+     * over a body and back in is bounced on his first tick of flight. It lives HERE rather than in
+     * the ship ledger because a descended ship has LEFT the ledger (the descent drops its entry when
+     * the crossing cuts it out of its cell), and because crossings carry tile NBT verbatim — so the
+     * latch set on the source ship rides the crossing to the destination on its own.</p>
+     *
+     * <p>Absent key -&gt; false: an unmanned or newly assembled ship starts with entry ARMED. Only a
+     * descent arrival ever latches it.</p>
+     */
+    private boolean entryLatched = false;
 
     /**
      * Bring-up command for the force-mode flight controller: the desired world-frame
@@ -358,18 +384,25 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             }
         }
 
+        // RE-ARM the post-descent entry latch. Runs whether or not anyone is flying: a ship that
+        // drifts or is carried back down below the line has satisfied the condition just as much as
+        // one that was flown down, and the pilot must not have to be at the controls at the exact
+        // tick it happens. Costs a position read only while the latch is actually set, which is the
+        // rare case (it is set by a descent arrival and cleared on the way down).
+        if (onPlanetSide && entryLatched) {
+            double[] latchPos = VSIntegration.getShipWorldPosition(world, getPos());
+            if (latchPos != null && latchPos[1] <= entryCeiling()) {
+                entryLatched = false;
+                markDirty();
+            }
+        }
+
         if (flying && onPlanetSide) {
             zmaster587.advancedRocketry.space.ShipEntryController entryCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
             double[] shipPos = VSIntegration.getShipWorldPosition(world, getPos());
-            zmaster587.advancedRocketry.dimension.DimensionProperties props =
-                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
-                            .getDimensionProperties(world.provider.getDimension());
-            int ceiling = zmaster587.advancedRocketry.space.ShipEntryController.effectiveEntryCeiling(
-                    props != null ? props.getOrbitHeight()
-                            : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit,
-                    VSIntegration.shipYPositionMaximum());
-            if (entryCtl != null && shipPos != null
+            int ceiling = entryCeiling();
+            if (entryCtl != null && shipPos != null && !entryLatched
                     && zmaster587.advancedRocketry.space.ShipEntryController
                             .shouldTriggerEntry(false, true, shipPos[1], ceiling)
                     && entryCtl.requestEntry(world.provider.getDimension(), getPos(),
@@ -623,6 +656,38 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     }
 
     /**
+     * The altitude this dimension's entry on-ramp fires above: the dimension's own orbit line (or the
+     * global config value when it declares none), capped below the physics mod's pose clamp. ONE
+     * owner, so the trigger and the latch's re-arm can never read a different line.
+     */
+    private int entryCeiling() {
+        zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                        .getDimensionProperties(world.provider.getDimension());
+        return zmaster587.advancedRocketry.space.ShipEntryController.effectiveEntryCeiling(
+                props != null ? props.getOrbitHeight()
+                        : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit,
+                VSIntegration.shipYPositionMaximum());
+    }
+
+    /**
+     * Hold the entry on-ramp off this ship until it has next been at or below the entry line — what a
+     * descent calls as it commits, so its own in-air arrival cannot be read as a climb to orbit. See
+     * {@link #entryLatched}. Idempotent.
+     */
+    public void latchEntryUntilBelowTheLine() {
+        if (!entryLatched) {
+            entryLatched = true;
+            markDirty();
+        }
+    }
+
+    /** Whether the entry on-ramp is currently held off this ship. Read-only; for probes and tests. */
+    public boolean isEntryLatched() {
+        return entryLatched;
+    }
+
+    /**
      * The ship's durable id, minting one if this computer has none yet (see {@link #shipId}).
      * Server-side; the mint is persisted immediately.
      */
@@ -747,6 +812,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         super.writeToNBT(nbt);
         nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
         nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
+        nbt.setBoolean(NBT_ENTRY_LATCHED, entryLatched);
         if (shipId != null) {
             nbt.setString(NBT_SHIP_ID, shipId.toString());
         }
@@ -763,6 +829,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         flightAssistEnabled = !nbt.hasKey(NBT_FLIGHT_ASSIST) || nbt.getBoolean(NBT_FLIGHT_ASSIST);
         // Absent key -> not station-keeping (a fresh, never-flown ship stays inert).
         stationKeeping = nbt.getBoolean(NBT_STATION_KEEPING);
+        // Absent key -> entry ARMED. Only a descent arrival latches it; a fresh or unmanned ship
+        // must never load latched, or it could never leave the planet it was built on.
+        entryLatched = nbt.getBoolean(NBT_ENTRY_LATCHED);
         // Absent/malformed key -> no id yet (minted on first use); never re-mint over a valid one.
         hullExtent = null;
         if (nbt.hasKey(NBT_HULL)) {

@@ -21,8 +21,9 @@ import net.minecraft.util.math.BlockPos;
  * <ol>
  *   <li>guards that the ship is genuinely in space (a SETTLED ledger entry — the INVERSE of entry's
  *       "not already in space" guard);</li>
- *   <li>resolves a terrain-aware paste + landing in the target planet dimension through the injected
- *       {@link PasteResolver} (an unfittable ship — too tall for the terrain — is REFUSED cleanly);</li>
+ *   <li>resolves the arrival in the target planet dimension through the injected
+ *       {@link PasteResolver} — the ship arrives HIGH IN THE AIR and the pilot flies it down, so no
+ *       ground fit is attempted and only an unresolvable destination is REFUSED;</li>
  *   <li>hands the momentary crossing + async settle to the shared {@link ShipCrossingService}, then,
  *       once the ship is physically cut from its space cell, releases that cell (dirty + dematerialize)
  *       and drops the ledger entry — the ship has left the subsystem;</li>
@@ -44,16 +45,17 @@ public final class DescentController {
     /** Number of paste lanes: simultaneous descents onto one planet spread across them. */
     private static final int DESCENT_LANE_COUNT = 8;
 
-    /** Resolves where to paste + land a descending ship in the target planet dimension, or {@code null}
-     *  when the ship cannot fit above the terrain there / the world is missing. Production wires the
-     *  terrain height finder + the VS ship-geometry read; fakeable in tests. */
+    /** Resolves where to paste a descending ship's blocks in the target planet dimension and the
+     *  in-air pose it arrives at, or {@code null} when the destination cannot be resolved (world
+     *  missing / VS lost the ship). Production wires the VS ship-geometry read; fakeable in tests. */
     public interface PasteResolver {
         Landing resolve(int slotDim, double[] shipWorldPos, int destPlanetDim, int laneIndex);
     }
 
-    /** A resolved descent target: the block paste corner (clear sky above terrain) and the world pose
-     *  the settle rigid-teleports the re-assembled ship to. For descent the two coincide (the ship
-     *  arrives above the terrain it was pasted over), unlike entry's void-slot paste + far cell pose. */
+    /** A resolved descent target: the block paste corner (clear sky inside the destination's block
+     *  band) and the world pose the settle rigid-teleports the re-assembled ship to. The two do NOT
+     *  coincide — the pose sits far above the build height, where blocks cannot go — exactly as
+     *  entry's void-slot paste and far cell pose do not coincide. */
     public static final class Landing {
         public final int pasteX;
         public final int pasteY;
@@ -101,7 +103,7 @@ public final class DescentController {
      * Begin a descent for the SETTLED ship whose flight computer sits at {@code afcPos} in slot
      * dimension {@code slotDim}, onto {@code targetPlanetDim}. Returns {@code true} if the crossing
      * was started (the ship has left its space cell). A ship not currently in space, or one already
-     * crossing, or one that cannot fit above the target terrain, is refused (message + cooldown).
+     * crossing, or one whose arrival cannot be resolved, is refused (message + cooldown).
      */
     public boolean requestDescent(int slotDim, BlockPos afcPos, UUID shipId, int targetPlanetDim) {
         if (shipId == null || crossing.isCrossing(shipId)) {
@@ -127,16 +129,28 @@ public final class DescentController {
         int laneIndex = (laneCounter++ % DESCENT_LANE_COUNT);
         Landing landing = pasteResolver.resolve(slotDim, shipPos, targetPlanetDim, laneIndex);
         if (landing == null) {
-            // No clear landing above the terrain (the ship is too tall for it) — a surfaced
+            // The arrival could not be resolved at all — the destination world is not loaded, or VS
+            // no longer has the ship. (Terrain cannot cause this: the ship arrives in the air, so
+            // there is no ground fit to fail.) The resolver logs WHICH of those it was. A surfaced
             // outcome, and the pilot KEEPS HIS SEAT: the crew is only READ here (a capture would
             // dismount it), so a refusal costs the crew nothing but the message.
-            LOGGER.warn("[SPACE] descent refused for ship {}: no landing fits in dim {}",
+            LOGGER.warn("[SPACE] descent refused for ship {}: no arrival could be resolved in dim {}",
                     shipId, targetPlanetDim);
             crossing.ops().messageCrew(crossing.ops().peekCrew(slotDim, afcPos, shipPos),
                     "msg.shipdescent.refused");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;
         }
+
+        // Hold the ENTRY on-ramp off this ship until it has next been below the destination's entry
+        // line. The arrival is IN THE AIR and can sit above that line, and entry fires on exactly
+        // "a piloted ship is above the line" — so without this the ship is taken straight back to
+        // space on the tick it arrives, and a body whose orbit line is low can never be reached.
+        // Set on the SOURCE computer, before the cut: a crossing carries tile NBT verbatim, so the
+        // latch arrives on the destination ship by itself, with no second lookup to get wrong. A
+        // crossing that then fails leaves the latch set on a ship still in space, where entry cannot
+        // fire anyway, and the first descent that does land clears it on the way down.
+        crossing.ops().latchEntryUntilBelowTheLine(slotDim, afcPos);
 
         // Capture only now, with the landing RESOLVED — the last refusal is behind — and still
         // before the cut: the crossing cuts the seat blocks, and a post-cut capture finds nothing.

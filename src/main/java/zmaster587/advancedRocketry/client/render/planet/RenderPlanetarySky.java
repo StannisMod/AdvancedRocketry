@@ -383,6 +383,17 @@ GL11.glPopMatrix();
     }
 
     private void renderStars() {
+        emitBaselineStars();
+    }
+
+    /**
+     * The mod's baseline starfield: 2000 camera-facing quads on a sphere of radius 100, from a fixed
+     * seed so every sky that draws it shows the same stars. Package-visible and static so a sibling sky
+     * renderer can compile it into a display list of its own instead of growing a second starfield.
+     * (It cannot simply call {@code renderStars}: two subclasses here declare a same-named private
+     * method of their own, which a static of that name would collide with.)
+     */
+    static void emitBaselineStars() {
         Random random = new Random(10842L);
         BufferBuilder buffer = Tessellator.getInstance().getBuffer();
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION);

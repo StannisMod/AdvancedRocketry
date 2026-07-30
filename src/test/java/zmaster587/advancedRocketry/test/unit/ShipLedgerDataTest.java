@@ -38,8 +38,8 @@ public class ShipLedgerDataTest {
         GalacticCoord coordB = coord(-7, 2, 0, 0, -40, 0);
 
         ShipLedger live = new ShipLedger();
-        live.settle(a, coordA, 5);
-        live.settle(b, coordB, 7);
+        live.settle(a, coordA);
+        live.settle(b, coordB);
         live.beginTransit(UUID.randomUUID(), coord(9, 0, 0, 0, 0, 0)); // in-transit: must be skipped
 
         ShipLedgerData src = new ShipLedgerData();
@@ -56,12 +56,32 @@ public class ShipLedgerDataTest {
 
         assertNotNull("ship A present", read.get(a));
         assertEquals("A coord survives", coordA, read.get(a).coord);
-        assertEquals("A slot dim survives", 5, read.get(a).slotDim);
         assertEquals("A restored as SETTLED", ShipLedger.State.SETTLED, read.get(a).state);
 
         assertNotNull("ship B present", read.get(b));
         assertEquals("B coord survives", coordB, read.get(b).coord);
-        assertEquals("B slot dim survives", 7, read.get(b).slotDim);
+    }
+
+    @Test
+    public void theStoreWritesNoSlotDimension() {
+        // A slot dim is minted per boot and re-used as cells come and go, so an id written here names
+        // a different cell — or no world at all — on the next start. Persisting one is persisting an
+        // answer that expires with the process, and the reader has no way to tell an expired one from
+        // a live one. The coordinate is what survives a restart; the dimension is re-derived from it.
+        UUID a = UUID.randomUUID();
+        ShipLedger live = new ShipLedger();
+        live.settle(a, coord(3, 0, -1, 100, 0, 50));
+
+        ShipLedgerData data = new ShipLedgerData();
+        data.saveFrom(live);
+        NBTTagCompound nbt = data.writeToNBT(new NBTTagCompound());
+
+        NBTTagCompound ship = nbt.getTagList("ships", 10).getCompoundTagAt(0);
+        assertEquals("sanity: the one settled ship was written", 1,
+                nbt.getTagList("ships", 10).tagCount());
+        assertTrue("its galactic coordinate IS written — that is what survives a restart",
+                ship.hasKey("galacticCoord"));
+        assertFalse("no per-boot slot dimension may be written alongside it", ship.hasKey("slotDim"));
     }
 
     @Test
@@ -85,7 +105,7 @@ public class ShipLedgerDataTest {
         GalacticCoord coordA = coord(2, -3, 4, 10, 20, -30);
 
         ShipLedger source = new ShipLedger();
-        source.settle(a, coordA, 11);
+        source.settle(a, coordA);
 
         ShipLedgerData data = new ShipLedgerData();
         data.saveFrom(source);
@@ -101,7 +121,6 @@ public class ShipLedgerDataTest {
         ShipLedger.Entry en = live.get(a);
         assertNotNull("ship A restored", en);
         assertEquals(coordA, en.coord);
-        assertEquals(11, en.slotDim);
         assertEquals(ShipLedger.State.SETTLED, en.state);
         assertFalse("live ledger snapshot is a copy", live.snapshot() == restored.snapshot());
     }

@@ -26,6 +26,8 @@ import static org.junit.Assert.assertTrue;
 public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern FIRST_DIM = Pattern.compile("\"dims\":\\[(-?\\d+)");
+    /** The slot the settle actually bound the cell to — the one place that decides it. */
+    private static final Pattern BOUND_DIM = Pattern.compile("\"slotDim\":(-?\\d+)");
     private static final String CLIENT_BODIES_CLASS =
             "zmaster587.advancedRocketry.network.PacketSystemBodiesSync";
 
@@ -48,7 +50,6 @@ public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
         String setup = exec("artest space entry-setup 1");
         Matcher dimM = FIRST_DIM.matcher(setup);
         assertTrue("entry-setup must return a slot dim: " + setup, dimM.find());
-        int slotDim = Integer.parseInt(dimM.group(1));
 
         // A descend-target PLANET at cell (0,5000,0), local (1000,500,-300). sy=5000 dodges the fallback
         // stars (all at sy=sz=0), so bodiesAt returns ONLY this POI.
@@ -56,10 +57,18 @@ public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
         assertTrue("add-poi must register a descend target: " + poi,
                 poi.contains("\"ok\":true") && poi.contains("\"descendTarget\":true"));
 
-        // A settled ship at that cell's CENTRE bound to the slot dim: the producer maps slotDim -> [the
-        // planet], carried as the ship->body direction (planet.local - ship.local = 1000,500,-300).
-        String settle = exec("artest space ledger-settle 0 5000 0 " + slotDim);
+        // A settled ship at that cell's CENTRE: the producer maps its slot dim -> [the planet], carried
+        // as the ship->body direction (planet.local - ship.local = 1000,500,-300).
+        //
+        // The dimension under test is the one the subsystem ACTUALLY bound the cell to, read back from
+        // the settle. It is not the test's to choose: slot ids are minted per boot and handed out as
+        // cells come and go, so a number picked here is only a guess at the binding — and a guess that
+        // happens to agree would still pass on a build that keyed the feed to the wrong world.
+        String settle = exec("artest space ledger-settle 0 5000 0 " + dimM.group(1));
         assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
+        Matcher boundM = BOUND_DIM.matcher(settle);
+        assertTrue("the settle must report which slot the cell was bound to: " + settle, boundM.find());
+        int slotDim = Integer.parseInt(boundM.group(1));
 
         // The throttled broadcast (~20 ticks) reaches the REAL client; poll its OWN CLIENT_BODIES static.
         String value = null;

@@ -247,7 +247,17 @@ public final class ShipTransitManager {
             // dismounted the crew - re-seat them onto the still-present origin ship so an aborted jump does
             // not silently eject the pilot.
             crosser.reseatCrew(originSlotDim, originAnchor, shipId);
-            LOGGER.warn("[SPACE] transit depart crossing failed for ship {} - jump aborted", shipId);
+            // Say what DISCRIMINATES. One generic line for every null return is how a departure that
+            // never found its origin world got read as a crossing that failed, and the wrong subsystem
+            // was blamed for it. The origin slot and whether that dimension resolves at all separate
+            // "the ship was not where we looked" from "the cut itself failed"; the origin cell tells
+            // you which of the two ids is the wrong one.
+            LOGGER.warn("[SPACE] transit depart crossing failed for ship {} - jump aborted"
+                            + " (origin cell {}, originSlotDim {}, that world resolved: {},"
+                            + " originAnchor {}, crew captured {})",
+                    shipId, origin == null ? "null" : origin.cellKey(), originSlotDim,
+                    net.minecraftforge.common.DimensionManager.getWorld(originSlotDim) != null,
+                    originAnchor, crew.size());
             return false;
         }
         // Refcount handoff, half 1: the ship has left the origin cell.
@@ -324,7 +334,7 @@ public final class ShipTransitManager {
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
                 // Record the arrival in the durable ledger (no longer amnesiac) and mark the arrived cell
                 // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #79).
-                ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
+                ledgerSettle(entry.getKey(), t.target);
                 space.markDirty(t.target);
                 // Hand any aboard crew to the best-effort reseat retry. The transit is already settled and
                 // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
@@ -346,7 +356,7 @@ public final class ShipTransitManager {
                     // The ship IS in the target cell, just never became movable onto its pose. Settle it
                     // where it lies rather than spin forever - dematerializing here would discard a cell
                     // that physically holds a ship. Its address will read the paste lane's band.
-                    ledgerSettle(entry.getKey(), t.target, t.targetSlotDim);
+                    ledgerSettle(entry.getKey(), t.target);
                     space.markDirty(t.target);
                     if (!t.crew.isEmpty()) {
                         reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
@@ -531,13 +541,13 @@ public final class ShipTransitManager {
         }
     }
 
-    private void ledgerSettle(String shipId, GalacticCoord coord, int slotDim) {
+    private void ledgerSettle(String shipId, GalacticCoord coord) {
         if (ledger == null) {
             return;
         }
         UUID id = toUuid(shipId);
         if (id != null) {
-            ledger.settle(id, coord, slotDim);
+            ledger.settle(id, coord);
         }
     }
 

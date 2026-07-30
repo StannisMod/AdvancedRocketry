@@ -17,10 +17,13 @@ import java.util.UUID;
 
 /**
  * Durable backing for the wave-1 {@link ShipLedger}: persists, per ship UUID, WHERE a settled tier-2
- * ship is (its {@link GalacticCoord} + the cell + the slot dim it was bound to). Slot dim ids are
- * transient (minted in registration order each start, they shift when planets are added/removed), so
- * only the {@code GalacticCoord} is meaningful across a restart — the login restore re-materializes
- * the cell and ignores MC's stale slot-dim placement.
+ * ship is — its {@link GalacticCoord}, and nothing else about its whereabouts.
+ *
+ * <p>The slot dimension is deliberately NOT persisted. Slot ids are minted in registration order each
+ * start and re-used as cells come and go, so an id written on one boot names a different cell (or no
+ * world at all) on the next. Writing one down would be writing down an answer that expires with the
+ * process: the coordinate is what survives, and {@link SpaceManager#slotDimOf} re-derives the
+ * dimension from it once the cell is materialized again.</p>
  *
  * <p>Hosting + accessor mirror {@code UniverseRegistry} exactly: a {@link WorldSavedData} on the
  * overworld global {@link MapStorage}, server-side only, persisted by MC whenever it is {@code
@@ -101,7 +104,7 @@ public final class ShipLedgerData extends WorldSavedData {
     public void loadInto(ShipLedger live) {
         for (Map.Entry<UUID, ShipLedger.Entry> e : entries.entrySet()) {
             ShipLedger.Entry en = e.getValue();
-            live.settle(e.getKey(), en.coord, en.slotDim);
+            live.settle(e.getKey(), en.coord);
         }
     }
 
@@ -154,8 +157,7 @@ public final class ShipLedgerData extends WorldSavedData {
                 continue; // corrupt id: drop the entry rather than crash the load
             }
             GalacticCoord coord = GalacticCoord.readFromNBT(c); // reads the "galacticCoord" sub-tag
-            int slotDim = c.getInteger("slotDim");
-            entries.put(id, new ShipLedger.Entry(coord, ShipLedger.State.SETTLED, slotDim));
+            entries.put(id, new ShipLedger.Entry(coord, ShipLedger.State.SETTLED));
         }
         transits.clear();
         NBTTagList transitList = nbt.getTagList("transits", 10);
@@ -180,7 +182,6 @@ public final class ShipLedgerData extends WorldSavedData {
         for (Map.Entry<UUID, ShipLedger.Entry> e : entries.entrySet()) {
             NBTTagCompound c = new NBTTagCompound();
             c.setString("shipId", e.getKey().toString());
-            c.setInteger("slotDim", e.getValue().slotDim);
             e.getValue().coord.writeToNBT(c); // writes the "galacticCoord" sub-tag
             list.appendTag(c);
         }

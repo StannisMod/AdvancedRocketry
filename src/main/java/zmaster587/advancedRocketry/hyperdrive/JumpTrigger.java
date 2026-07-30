@@ -10,6 +10,7 @@ import zmaster587.advancedRocketry.navigation.ShipNavigation;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.ShipTransitManager;
+import zmaster587.advancedRocketry.space.SpaceManager;
 import zmaster587.advancedRocketry.space.SpaceSubsystem;
 import zmaster587.advancedRocketry.tile.TileNavigationComputer;
 
@@ -81,7 +82,12 @@ public final class JumpTrigger {
     public static final String MSG_BURST_FAILED = "msg.jump.burstfailed";
     public static final String MSG_NO_POSITION = "msg.jump.nopositionrecord";
     public static final String MSG_DEPART_FAILED = "msg.jump.departfailed";
+    /** The ship's own cell is bound to no slot world, so there is nothing to depart from. Free. */
+    public static final String MSG_CELL_NOT_LIVE = "msg.jump.cellnotlive";
     public static final String MSG_CONFIRM = "msg.jump.confirm";
+
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("advancedrocketry/space");
 
     private JumpTrigger() {
     }
@@ -172,14 +178,36 @@ public final class JumpTrigger {
         long speed = JumpSpeed.blocksPerTick(nav.drive().stats().drivePower(),
                 ShipMassProvider.massOf(world, flightComputerPos, shipId));
 
+        // Which world the ship must be cut out of is asked of the thing that binds cells to slots,
+        // never remembered next to the coordinate: a slot id is minted per boot and re-used, so a
+        // stored one names a different cell after a restart. A cell bound to no slot at all means the
+        // ship is not in a world the departure could reach — refused HERE, above the commit line, so
+        // it stays free. Nothing that can refuse belongs below it.
+        SpaceManager space = SpaceSubsystem.get();
+        int originSlotDim = space == null
+                ? SpaceManager.UNBOUND_SLOT : space.slotDimOf(entry.coord);
+        if (originSlotDim == SpaceManager.UNBOUND_SLOT) {
+            LOGGER.warn("[SPACE] jump refused for ship {}: its cell {} is bound to no slot world "
+                    + "(the ship is flying in dim {})",
+                    shipId, entry.coord.cellKey(), world.provider.getDimension());
+            return new Result(Outcome.FAILED, MSG_CELL_NOT_LIVE);
+        }
+
         // ── the commit point: everything above this line is free, nothing below it is ──
         if (!nav.drive().fireBurst(now)) {
             return new Result(Outcome.FAILED, MSG_BURST_FAILED);
         }
-        boolean departed = transit.beginTransit(shipId.toString(), entry.coord, entry.slotDim,
+        boolean departed = transit.beginTransit(shipId.toString(), entry.coord, originSlotDim,
                 flightComputerPos, target, speed);
         computer.disarm();
         if (!departed) {
+            // The pilot has paid for this one, so say enough in the log to tell WHICH departure step
+            // refused him. The ship's own live dimension is here and nowhere below, so it is logged
+            // here: an origin slot that disagrees with it means the ledger and the world have drifted.
+            LOGGER.warn("[SPACE] jump departed=false for ship {}: cell {} -> slot dim {}, ship is "
+                    + "flying in dim {}, anchor {}",
+                    shipId, entry.coord.cellKey(), originSlotDim,
+                    world.provider.getDimension(), flightComputerPos);
             return new Result(Outcome.FAILED, MSG_DEPART_FAILED);
         }
         return new Result(Outcome.COMMITTED, MSG_COMMITTED);

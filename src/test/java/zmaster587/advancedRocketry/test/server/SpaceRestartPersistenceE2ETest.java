@@ -3,6 +3,8 @@ package zmaster587.advancedRocketry.test.server;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.github.stannismod.forge.testing.junit.AbstractHeadlessServerTest;
 import com.github.stannismod.forge.testing.server.RealDedicatedServerHarness;
@@ -12,6 +14,8 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -128,6 +132,94 @@ public class SpaceRestartPersistenceE2ETest {
                 restored.contains("\"cell\":\"" + SECTOR_X + "_" + SECTOR_Y + "_" + SECTOR_Z + "\""));
         assertTrue("and it must come back settled, not in some default state: " + restored,
                 restored.contains("\"state\":\"SETTLED\""));
+    }
+
+    /**
+     * The slot dimension the subsystem attributes to a restored ship must name the world its cell is
+     * ACTUALLY bound to on THIS boot.
+     *
+     * <p>Slot dim ids are minted per boot and handed out in whatever order cells happen to be
+     * materialized, so the id a ship's cell held last session says nothing about this one. A record
+     * that carries one across a restart points the departure crossing at a world that either does not
+     * exist or holds somebody else's cell — and the pilot pays a capacitor charge for a jump that
+     * never leaves. Persisting the galactic coordinate is not enough on its own: the coordinate is
+     * what survives a restart, the dimension is what has to be re-derived from it.</p>
+     *
+     * <p>The reboot alone does not produce the divergence. The pool hands out the same ids in the
+     * same order, so a ship whose cell is materialized first on boot 2 lands back on the id it had
+     * and the assertion below would pass without ever exercising the staleness. Boot 2 therefore
+     * materializes a DIFFERENT cell first, which takes the slot the ship used to hold and forces its
+     * cell onto another one — the same cross-session shift a real server produces when its players
+     * do not happen to reach their ships in the order they left them. The shift is asserted rather
+     * than assumed, so a pool that stopped shifting fails here instead of quietly making this test
+     * vacuous.</p>
+     */
+    @Test
+    public void aRestoredShipsSlotDimNamesTheWorldItsCellIsActuallyIn() throws Exception {
+        // --- boot 1: settle the ship; its cell is materialized into whatever slot is free first ----
+        harness = RealDedicatedServerHarness.startWith(root, false);
+        assumeProductionSubsystemAvailable();
+
+        String status = exec("artest space subsystem-status");
+        assertTrue("the production space subsystem must be live on boot 1 — without it nothing below "
+                + "is exercising the shipped wiring: " + status, status.contains("\"registered\":true"));
+
+        String settled = exec("artest space ledger-settle " + SHIP_ID + " "
+                + SECTOR_X + " " + SECTOR_Y + " " + SECTOR_Z + " 0 0 0");
+        assertTrue("the ship must be recorded in the production ledger: " + settled,
+                settled.contains("\"ok\":true"));
+        int slotBeforeReboot = jsonInt(settled, "slotDim");
+
+        // --- the reboot: this process really exits -----------------------------------------------
+        harness.close();
+        harness = null;
+
+        // --- boot 2: a brand new JVM, same world directory ---------------------------------------
+        harness = RealDedicatedServerHarness.startWith(root, false);
+
+        String statusAfter = exec("artest space subsystem-status");
+        assertTrue("the production subsystem must come up again on boot 2: " + statusAfter,
+                statusAfter.contains("\"registered\":true"));
+
+        // Take the ship's old slot with an unrelated cell BEFORE its own cell is made live, so the
+        // ship's cell is forced onto a different slot than it held last session.
+        String decoy = exec("artest space occupy 1 1 1");
+        int decoySlot = jsonInt(decoy, "slotDim");
+        assertEquals("the decoy must land on the slot the ship's cell held before the reboot — that is "
+                + "what makes the ship's own cell move: " + decoy, slotBeforeReboot, decoySlot);
+
+        String live = exec("artest space occupy " + SECTOR_X + " " + SECTOR_Y + " " + SECTOR_Z);
+        int liveSlot = jsonInt(live, "slotDim");
+        assertNotEquals("the arrangement must actually move the ship's cell onto a different slot; "
+                + "if it did not, this test proves nothing about a stale id: " + live,
+                slotBeforeReboot, liveSlot);
+
+        String restored = exec("artest space ledger-get " + SHIP_ID);
+        assertTrue("a ship settled before the reboot must still be known after it: " + restored,
+                restored.contains("\"found\":true"));
+        assertEquals("the slot dim attributed to the restored ship must be the one its cell is live "
+                + "in now, not the one it happened to occupy last session — a departure resolves its "
+                + "origin world from this id: " + restored,
+                liveSlot, jsonInt(restored, "slotDim"));
+        assertEquals("and that dimension must be bound to the ship's OWN cell. This is the assertion "
+                + "that fails loudest in play: a stale id can still resolve to a live world, and the "
+                + "crossing would then cut a ship out of a cell belonging to somebody else: "
+                + restored,
+                SECTOR_X + "_" + SECTOR_Y + "_" + SECTOR_Z, jsonString(restored, "slotCell"));
+    }
+
+    /** The value of a numeric JSON field in a probe response. Fails the test if it is absent. */
+    private static int jsonInt(String json, String field) {
+        Matcher m = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*(-?\\d+)").matcher(json);
+        assertTrue("probe response carries no numeric \"" + field + "\": " + json, m.find());
+        return Integer.parseInt(m.group(1));
+    }
+
+    /** The value of a string JSON field in a probe response. Fails the test if it is absent. */
+    private static String jsonString(String json, String field) {
+        Matcher m = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        assertTrue("probe response carries no string \"" + field + "\": " + json, m.find());
+        return m.group(1);
     }
 
     @Test

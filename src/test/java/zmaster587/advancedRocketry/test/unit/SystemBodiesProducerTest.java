@@ -7,7 +7,9 @@ import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.SystemBodiesProducer;
+import zmaster587.advancedRocketry.space.SpaceManager;
 import zmaster587.advancedRocketry.space.SystemBodiesProducer.BodyLookup;
+import zmaster587.advancedRocketry.space.SystemBodiesProducer.SlotLookup;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
@@ -33,6 +35,20 @@ import static org.junit.Assert.assertTrue;
  */
 public class SystemBodiesProducerTest {
 
+    /** A cell->slot binding, standing in for {@link SpaceManager#slotDimOf}: anything not bound
+     *  answers UNBOUND_SLOT, exactly as a cell that is in no slot world does in production. */
+    private static SlotLookup slots(final GalacticCoord cell, final int dim) {
+        final Map<GalacticCoord, Integer> bound = new HashMap<>();
+        bound.put(cell, dim);
+        return new SlotLookup() {
+            @Override
+            public int slotDimOf(GalacticCoord c) {
+                Integer d = bound.get(c);
+                return d == null ? SpaceManager.UNBOUND_SLOT : d;
+            }
+        };
+    }
+
     /** A lookup that answers a fixed body list for one exact coordinate, empty for anything else. */
     private static BodyLookup lookupAt(final GalacticCoord at, final SystemBody... bodies) {
         final Map<GalacticCoord, List<SystemBody>> byCoord = new HashMap<>();
@@ -55,10 +71,10 @@ public class SystemBodiesProducerTest {
 
         ShipLedger ledger = new ShipLedger();
         UUID shipId = UUID.randomUUID();
-        ledger.settle(shipId, ship, 42);
+        ledger.settle(shipId, ship);
 
         Map<Integer, List<RenderBody>> byDim =
-                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, body));
+                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, body), slots(ship, 42));
 
         assertEquals("only the ship's slot dim is keyed", 1, byDim.size());
         List<RenderBody> bodies = byDim.get(42);
@@ -86,10 +102,10 @@ public class SystemBodiesProducerTest {
 
         ShipLedger ledger = new ShipLedger();
         UUID shipId = UUID.randomUUID();
-        ledger.settle(shipId, ship, 9);
+        ledger.settle(shipId, ship);
 
         Map<Integer, List<RenderBody>> byDim =
-                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, star));
+                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, star), slots(ship, 9));
 
         RenderBody rb = byDim.get(9).get(0);
         assertEquals("dx carries one CELL step minus the local offset", GalacticCoord.CELL - 100L, rb.localX);
@@ -104,10 +120,10 @@ public class SystemBodiesProducerTest {
         SystemBody belt = new SystemBody(beltCoord, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7);
 
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(UUID.randomUUID(), ship, 3);
+        ledger.settle(UUID.randomUUID(), ship);
 
         Map<Integer, List<RenderBody>> byDim =
-                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, belt));
+                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, belt), slots(ship, 3));
 
         RenderBody rb = byDim.get(3).get(0);
         assertEquals("kind propagated", SystemBodyKind.ASTEROID_BELT.ordinal(), rb.kindOrdinal);
@@ -129,7 +145,8 @@ public class SystemBodiesProducerTest {
             }
         };
 
-        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), always);
+        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), always,
+                slots(GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L), 5));
         assertTrue("a parked (in-transit) ship contributes no slot", byDim.isEmpty());
     }
 
@@ -140,7 +157,7 @@ public class SystemBodiesProducerTest {
         GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 12L, 0L, 0L);
 
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(UUID.randomUUID(), ship, 8);
+        ledger.settle(UUID.randomUUID(), ship);
 
         BodyLookup empty = new BodyLookup() {
             @Override
@@ -149,7 +166,7 @@ public class SystemBodiesProducerTest {
             }
         };
 
-        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), empty);
+        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), empty, slots(ship, 8));
         assertEquals("the void-cell ship still keys its slot dim", 1, byDim.size());
         assertNotNull("slot dim 8 present", byDim.get(8));
         assertTrue("with an empty body list", byDim.get(8).isEmpty());
@@ -165,8 +182,8 @@ public class SystemBodiesProducerTest {
                 SystemBodyKind.MOON, 4, 7);
 
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(UUID.randomUUID(), shipA, 100);
-        ledger.settle(UUID.randomUUID(), shipB, 200);
+        ledger.settle(UUID.randomUUID(), shipA);
+        ledger.settle(UUID.randomUUID(), shipB);
 
         final Map<GalacticCoord, List<SystemBody>> byCoord = new HashMap<>();
         byCoord.put(shipA, Collections.singletonList(planetA));
@@ -179,17 +196,56 @@ public class SystemBodiesProducerTest {
             }
         };
 
-        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), lookup);
+        final Map<GalacticCoord, Integer> bound = new HashMap<>();
+        bound.put(shipA, 100);
+        bound.put(shipB, 200);
+        SlotLookup twoSlots = new SlotLookup() {
+            @Override
+            public int slotDimOf(GalacticCoord c) {
+                Integer d = bound.get(c);
+                return d == null ? SpaceManager.UNBOUND_SLOT : d;
+            }
+        };
+
+        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(ledger.snapshot(), lookup, twoSlots);
         assertEquals("both settled ships keyed", 2, byDim.size());
         assertEquals(3, byDim.get(100).get(0).dimId);
         assertEquals(4, byDim.get(200).get(0).dimId);
     }
 
     @Test
-    public void nullInputsYieldEmptyMap() {
-        assertTrue(SystemBodiesProducer.buildByDim(null, lookupAt(GalacticCoord.ORIGIN)).isEmpty());
+    public void aSettledShipWhoseCellIsInNoSlotContributesNothing() {
+        // A ship can be settled — the server knows exactly where it is — while its cell is bound to no
+        // slot world at all (evicted, or not yet re-materialized after a restart). There is then no
+        // dimension to key its sky under, and the only wrong answer is to invent one: keying the feed
+        // to a stale or borrowed id points a cell's bodies at a world holding somebody else's cell.
+        GalacticCoord ship = GalacticCoord.ofSectorLocal(4L, 0L, 0L, 0L, 0L, 0L);
+        SystemBody planet = new SystemBody(ship, SystemBodyKind.PLANET, 3, 7);
+
         ShipLedger ledger = new ShipLedger();
-        ledger.settle(UUID.randomUUID(), GalacticCoord.ORIGIN, 1);
-        assertTrue(SystemBodiesProducer.buildByDim(ledger.snapshot(), null).isEmpty());
+        ledger.settle(UUID.randomUUID(), ship);
+
+        // Bound: it is keyed. The same fixture with the binding removed is the control.
+        assertEquals("control: with its cell in a slot the ship IS keyed", 1,
+                SystemBodiesProducer.buildByDim(ledger.snapshot(), lookupAt(ship, planet),
+                        slots(ship, 12)).size());
+
+        Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(
+                ledger.snapshot(), lookupAt(ship, planet),
+                slots(GalacticCoord.ofSectorLocal(99L, 0L, 0L, 0L, 0L, 0L), 12));
+        assertTrue("a settled ship whose cell is in no slot keys no dimension at all", byDim.isEmpty());
+    }
+
+    @Test
+    public void nullInputsYieldEmptyMap() {
+        assertTrue(SystemBodiesProducer.buildByDim(null, lookupAt(GalacticCoord.ORIGIN),
+                slots(GalacticCoord.ORIGIN, 1)).isEmpty());
+        ShipLedger ledger = new ShipLedger();
+        ledger.settle(UUID.randomUUID(), GalacticCoord.ORIGIN);
+        assertTrue(SystemBodiesProducer.buildByDim(ledger.snapshot(), null,
+                slots(GalacticCoord.ORIGIN, 1)).isEmpty());
+        assertTrue("no slot source means no feed at all",
+                SystemBodiesProducer.buildByDim(ledger.snapshot(),
+                        lookupAt(GalacticCoord.ORIGIN), null).isEmpty());
     }
 }

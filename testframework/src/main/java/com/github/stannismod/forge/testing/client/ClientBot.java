@@ -335,10 +335,53 @@ public final class ClientBot implements Closeable {
      * back buffer whose contents the driver may discard at the swap. The harness leaves it off for
      * driver safety, so a test that means to LOOK at the frame enables it, renders a few
      * ({@link #waitTicks}), captures, and puts it back.</p>
+     *
+     * <p><b>Known limit — enabling it here does NOT reliably capture the WORLD.</b> Measured 2026-07-29:
+     * after a runtime enable, the recreated framebuffer receives the HUD pass but not the world pass, so
+     * a capture comes back as the framebuffer's own clear colour (opaque WHITE) with only the HUD drawn
+     * over it. It looks exactly like "the world rendered nothing", which is how it cost a session: three
+     * runs read an empty instrument as a verdict about a renderer. A test that measures WORLD pixels must
+     * start the client with the FBO already on ({@code -PclientFbo=true}, i.e.
+     * {@code -Dforge.test.client.fbo=true}) and carry a control frame from a scene it knows is
+     * non-empty.</p>
      */
     public JsonObject setFramebuffer(boolean enabled) throws IOException {
         JsonObject command = command("set_framebuffer");
         command.addProperty("enabled", enabled);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Set the client's render distance in chunks at runtime, returning its {@code previous} value.
+     *
+     * <p>The sibling of {@link #setFramebuffer}, and needed for the same kind of reason: vanilla runs the
+     * whole SKY pass - and therefore a dimension's custom {@code IRenderHandler} - only when
+     * {@code renderDistanceChunks >= 4}. The harness pins it at 2, so a test that captures a sky must
+     * raise it first (and restore it after), or it will screenshot an empty frame for a reason that has
+     * nothing to do with what it is testing. The value also drives the sky projection's far plane
+     * ({@code farPlaneDistance * 2}), so pick one that clears the geometry's radius.</p>
+     *
+     * @return {@code previous}, {@code chunks}, and {@code skyPassEnabled} (whether the new value passes
+     *         vanilla's sky gate)
+     */
+    public JsonObject setRenderDistance(int chunks) throws IOException {
+        JsonObject command = command("set_render_distance");
+        command.addProperty("chunks", chunks);
+        return assertOk(execute(command));
+    }
+
+    /**
+     * Hide or show the whole in-game HUD (vanilla's F1), returning its {@code previous} value.
+     *
+     * <p>Required before a {@link #screenshot} that MEASURES the rendered world. The chat overlay carries
+     * this harness's own per-command completion markers, so it changes between two captures; the
+     * crosshair inverts to white over a dark background. Both are frame differences the test did not
+     * cause. Hiding also drains the toast queue, because toasts are drawn outside vanilla's hideGUI gate
+     * - so call this immediately before each capture, not once at the start.</p>
+     */
+    public JsonObject setHudHidden(boolean hidden) throws IOException {
+        JsonObject command = command("set_hud_hidden");
+        command.addProperty("hidden", hidden);
         return assertOk(execute(command));
     }
 

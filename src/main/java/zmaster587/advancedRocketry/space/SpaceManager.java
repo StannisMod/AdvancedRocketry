@@ -222,6 +222,28 @@ public final class SpaceManager {
         return loadedCellToSlot.containsKey(coord.cellKey());
     }
 
+    /** Answer for a cell bound to no slot: there is no world to name, and saying so beats naming one
+     *  at random. Chosen to be a dimension id nothing can ever register. */
+    public static final int UNBOUND_SLOT = Integer.MIN_VALUE;
+
+    /**
+     * The slot dim {@code coord}'s cell is materialized in right now, or {@link #UNBOUND_SLOT} if it
+     * is bound to no slot.
+     *
+     * <p>This is the ONE place the cell&rarr;slot binding is decided, and every consumer that needs a
+     * ship's dimension reads it from here. Slot ids are minted per boot and re-used as cells come and
+     * go, so a copy of one kept anywhere else — in a ledger entry, in a tile, on disk — is a cache
+     * that goes stale the first time the pool hands that id to a different cell. What survives is the
+     * {@link GalacticCoord}; the dimension is DERIVED from it, never carried alongside it.</p>
+     */
+    public int slotDimOf(GalacticCoord coord) {
+        if (coord == null) {
+            return UNBOUND_SLOT;
+        }
+        Integer slot = loadedCellToSlot.get(coord.cellKey());
+        return slot == null ? UNBOUND_SLOT : slot;
+    }
+
     /** Pick a free slot, else LRU-evict a refcount-0 loaded cell to free one. */
     private int acquireSlot(String incomingCellKey) {
         int free = firstFreeSlot();

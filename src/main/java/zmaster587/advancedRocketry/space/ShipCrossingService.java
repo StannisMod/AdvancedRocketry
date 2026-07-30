@@ -76,6 +76,15 @@ public final class ShipCrossingService {
 
         /** Player-facing message to the captured crew (a refusal, a failure, an arrival). */
         void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args);
+
+        /** Hold the ENTRY on-ramp off the ship whose flight computer is at {@code afcPos} until it
+         *  has next been at or below that dimension's entry line. Called by the descent just before
+         *  the cut: a descent arrives in the AIR, which can be above the destination's own orbit
+         *  line, and entry fires on exactly that condition — so without this the arriving ship is
+         *  taken straight back to space. The latch rides the crossing in the tile's NBT, so setting
+         *  it on the SOURCE ship is what arms the destination one. A no-op when no computer is
+         *  there. */
+        void latchEntryUntilBelowTheLine(int dimId, BlockPos afcPos);
     }
 
     /** The direction-specific finalizer, invoked from {@link #tick()} once a queued crossing resolves.

@@ -2179,9 +2179,13 @@ public class TestProbeCommand extends CommandBase {
                 if (shipCount++ > 0) {
                     out.append(',');
                 }
+                zmaster587.advancedRocketry.space.SpaceManager bodiesMgr =
+                        zmaster587.advancedRocketry.space.SpaceSubsystem.get();
                 out.append("{\"ship\":\"").append(shipEntry.getKey())
                         .append("\",\"state\":\"").append(e.state)
-                        .append("\",\"slotDim\":").append(e.slotDim)
+                        .append("\",\"slotDim\":").append(bodiesMgr == null
+                                ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                                : bodiesMgr.slotDimOf(e.coord))
                         .append(",\"cell\":\"").append(e.coord.cellKey()).append("\",\"bodies\":[");
                 int bodyCount = 0;
                 if (reg != null) {
@@ -2320,27 +2324,47 @@ public class TestProbeCommand extends CommandBase {
         }
         // ledger-settle <shipUuid> <sx> <sy> <sz> <lx> <ly> <lz>: record a settled ship in the
         // PRODUCTION ledger, so a save + reboot can be asserted to bring it back.
+        //
+        // The cell is MATERIALIZED first, exactly as every production settle does (the entry on-ramp
+        // and a transit arrival both materialize and then settle). A settled ship whose cell is bound
+        // to no slot is a state production never reaches, and a probe that manufactured one would let
+        // a restart test read back a slot binding no real ship could ever have had.
         if (args.length >= 8 && "ledger-settle".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.ShipLedger led =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
-            if (led == null) {
+            zmaster587.advancedRocketry.space.SpaceManager settleMgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            if (led == null || settleMgr == null) {
                 send(sender, "{\"error\":\"production ledger not live\"}");
                 return;
             }
+            int settledSlot;
+            zmaster587.advancedRocketry.space.GalacticCoord settleCoord;
             try {
-                led.settle(java.util.UUID.fromString(args[1]),
-                        zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
-                                Long.parseLong(args[2]), Long.parseLong(args[3]), Long.parseLong(args[4]),
-                                Long.parseLong(args[5]), Long.parseLong(args[6]), Long.parseLong(args[7])),
-                        0);
+                settleCoord = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        Long.parseLong(args[2]), Long.parseLong(args[3]), Long.parseLong(args[4]),
+                        Long.parseLong(args[5]), Long.parseLong(args[6]), Long.parseLong(args[7]));
+                settledSlot = settleMgr.materialize(settleCoord);
+                led.settle(java.util.UUID.fromString(args[1]), settleCoord);
             } catch (IllegalArgumentException bad) {
                 send(sender, "{\"error\":\"bad arguments\"}");
                 return;
+            } catch (zmaster587.advancedRocketry.space.SpaceManager.PoolExhaustedException full) {
+                send(sender, "{\"ok\":false,\"exhausted\":true}");
+                return;
             }
-            send(sender, "{\"ok\":true,\"ledger\":" + led.size() + "}");
+            send(sender, "{\"ok\":true,\"ledger\":" + led.size()
+                    + ",\"slotDim\":" + settledSlot
+                    + ",\"cellKey\":\"" + settleCoord.cellKey() + "\"}");
             return;
         }
         // ledger-get <shipUuid>: read the PRODUCTION ledger back.
+        //
+        // `slotDim` is the dimension the subsystem ATTRIBUTES to this ship — the id a departure hands
+        // to DimensionManager.getWorld to find the world it must cut the ship out of. `slotCell` is the
+        // cell that dimension is REALLY bound to right now, straight from the slot pool. The two are
+        // reported side by side because the interesting failure is not "no world": it is a slot dim
+        // that resolves to a world holding somebody else's cell, which reads as success everywhere.
         if (args.length >= 2 && "ledger-get".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.ShipLedger led =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
@@ -2355,8 +2379,21 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"bad uuid\"}");
                 return;
             }
-            send(sender, e == null ? "{\"found\":false}"
-                    : "{\"found\":true,\"cell\":\"" + e.cellKey() + "\",\"state\":\"" + e.state + "\"}");
+            if (e == null) {
+                send(sender, "{\"found\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.SpaceManager getMgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            int attributed = getMgr == null
+                    ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                    : getMgr.slotDimOf(e.coord);
+            String boundTo = zmaster587.advancedRocketry.space.SpaceSlotPool.cellKeyFor(attributed);
+            send(sender, "{\"found\":true,\"cell\":\"" + e.cellKey() + "\",\"state\":\"" + e.state
+                    + "\",\"slotDim\":" + attributed
+                    + ",\"slotCell\":\"" + (boundTo == null ? "" : escapeJson(boundTo))
+                    + "\",\"slotWorldLoaded\":"
+                    + (net.minecraftforge.common.DimensionManager.getWorld(attributed) != null) + "}");
             return;
         }
         // pool-idempotence: call the PRODUCTION registerPool entry point again and report whether the
@@ -2697,7 +2734,11 @@ public class TestProbeCommand extends CommandBase {
                 sb.append(",\"lx\":").append(e.coord.localX());
                 sb.append(",\"ly\":").append(e.coord.localY());
                 sb.append(",\"lz\":").append(e.coord.localZ());
-                sb.append(",\"slotDim\":").append(e.slotDim);
+                zmaster587.advancedRocketry.space.SpaceManager entryMgrRead =
+                        zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                sb.append(",\"slotDim\":").append(entryMgrRead == null
+                        ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
+                        : entryMgrRead.slotDimOf(e.coord));
             }
             send(sender, sb.append('}').toString());
             return;
@@ -2798,7 +2839,7 @@ public class TestProbeCommand extends CommandBase {
                     : ledger.snapshot().entrySet()) {
                 zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
                 if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
-                        || entry.slotDim != slotDim) {
+                        || slotDimOfCell(entry.coord) != slotDim) {
                     continue;
                 }
                 double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
@@ -2833,25 +2874,43 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         // ledger-settle <sx> <sy> <sz> <slotDim> [shipUuid]: inject a SETTLED ledger entry at the CENTRE of
-        // cell (sx,sy,sz) bound to <slotDim>, bypassing the crossing - so a render/producer e2e has a
-        // settled ship without a real VS entry. Requires an installed ledger (entry-setup).
+        // cell (sx,sy,sz), bypassing the crossing - so a render/producer e2e has a settled ship without a
+        // real VS entry. Requires an installed stack (entry-setup).
+        //
+        // The cell is MATERIALIZED, because that - not a number written next to the entry - is what binds
+        // it to a slot world, and it is what every reader of a ship's dimension consults. <slotDim> is
+        // therefore the slot the caller EXPECTS; the response reports the one the cell actually landed in
+        // and whether the two agree, so a probe pool that hands out a different slot shows up in the
+        // response instead of silently producing a feed keyed to a world nobody is in.
         if (args.length >= 5 && "ledger-settle".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.ShipLedger led =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
-            if (led == null) {
+            zmaster587.advancedRocketry.space.SpaceManager injectMgr =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            if (led == null || injectMgr == null) {
                 send(sender, "{\"error\":\"ledger not set up\"}");
                 return;
             }
             long sx = parseIntOr(args[1], 0);
             long sy = parseIntOr(args[2], 0);
             long sz = parseIntOr(args[3], 0);
-            int slotDim = parseIntOr(args[4], Integer.MIN_VALUE);
+            int expectedSlot = parseIntOr(args[4], Integer.MIN_VALUE);
             java.util.UUID shipId = args.length >= 6
                     ? java.util.UUID.fromString(args[5]) : java.util.UUID.randomUUID();
             zmaster587.advancedRocketry.space.GalacticCoord coord =
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, 0L, 0L, 0L);
-            led.settle(shipId, coord, slotDim);
-            send(sender, "{\"ok\":true,\"shipId\":\"" + shipId + "\",\"cellKey\":\"" + coord.cellKey() + "\"}");
+            int boundSlot;
+            try {
+                boundSlot = injectMgr.materialize(coord);
+            } catch (zmaster587.advancedRocketry.space.SpaceManager.PoolExhaustedException full) {
+                send(sender, "{\"ok\":false,\"exhausted\":true}");
+                return;
+            }
+            led.settle(shipId, coord);
+            send(sender, "{\"ok\":true,\"shipId\":\"" + shipId + "\",\"cellKey\":\"" + coord.cellKey()
+                    + "\",\"slotDim\":" + boundSlot
+                    + ",\"expectedSlotDim\":" + expectedSlot
+                    + ",\"slotAsExpected\":" + (boundSlot == expectedSlot) + "}");
             return;
         }
         // add-poi <sx> <sy> <sz> <lx> <ly> <lz> <kind> <dimId> <starId>: register a POI SystemBody at cell
@@ -2966,7 +3025,7 @@ public class TestProbeCommand extends CommandBase {
                     : ledger.snapshot().entrySet()) {
                 zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
                 if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
-                        || entry.slotDim != slotDim) {
+                        || slotDimOfCell(entry.coord) != slotDim) {
                     continue;
                 }
                 double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
@@ -12103,6 +12162,14 @@ public class TestProbeCommand extends CommandBase {
 
     private static long parseLongOr(String s, long fallback) {
         try { return Long.parseLong(s); } catch (NumberFormatException e) { return fallback; }
+    }
+
+    /** The slot world a cell is bound to right now, from the one place that decides it. */
+    private static int slotDimOfCell(zmaster587.advancedRocketry.space.GalacticCoord cell) {
+        zmaster587.advancedRocketry.space.SpaceManager mgr =
+                zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+        return mgr == null
+                ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT : mgr.slotDimOf(cell);
     }
 
     /**

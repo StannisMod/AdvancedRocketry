@@ -47,6 +47,16 @@ public final class SystemBodiesProducer {
     }
 
     /**
+     * The cell&rarr;slot-dimension source. Production passes {@link SpaceManager#slotDimOf}, which is
+     * the one place that binding is decided; a ship whose cell is bound to no slot answers
+     * {@link SpaceManager#UNBOUND_SLOT} and is left out of the feed entirely rather than keyed under
+     * a dimension nobody is looking at.
+     */
+    public interface SlotLookup {
+        int slotDimOf(GalacticCoord cell);
+    }
+
+    /**
      * Pure builder: map every SETTLED ship's slot dim to the render bodies of its cell. IN_TRANSIT
      * ships are skipped (parked in hyperspace, no slot). A settled ship in a void cell still gets a
      * (present, empty) entry so the client clears any stale bodies for that dim and draws just the ring.
@@ -59,9 +69,9 @@ public final class SystemBodiesProducer {
      * cross-cell POI ever surfaces.</p>
      */
     public static Map<Integer, List<RenderBody>> buildByDim(Map<UUID, ShipLedger.Entry> snapshot,
-                                                            BodyLookup lookup) {
+                                                            BodyLookup lookup, SlotLookup slots) {
         Map<Integer, List<RenderBody>> byDim = new LinkedHashMap<>();
-        if (snapshot == null || lookup == null) {
+        if (snapshot == null || lookup == null || slots == null) {
             return byDim;
         }
         for (ShipLedger.Entry e : snapshot.values()) {
@@ -69,6 +79,10 @@ public final class SystemBodiesProducer {
                 continue;
             }
             GalacticCoord ship = e.coord;
+            int slotDim = slots.slotDimOf(ship);
+            if (slotDim == SpaceManager.UNBOUND_SLOT) {
+                continue; // its cell is in no slot world right now: nobody is looking at that sky
+            }
             List<RenderBody> bodies = new ArrayList<>();
             List<SystemBody> found = lookup.bodiesAt(ship);
             if (found != null) {
@@ -80,7 +94,7 @@ public final class SystemBodiesProducer {
                     bodies.add(new RenderBody(b.kind().ordinal(), dx, dy, dz, b.dimId(), b.isDescendTarget()));
                 }
             }
-            byDim.put(e.slotDim, bodies);
+            byDim.put(slotDim, bodies);
         }
         return byDim;
     }
@@ -89,10 +103,12 @@ public final class SystemBodiesProducer {
     public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
-        if (ledger == null || reg == null) {
+        SpaceManager space = SpaceSubsystem.get();
+        if (ledger == null || reg == null || space == null) {
             return PacketSystemBodiesSync.forDims(null);
         }
-        return PacketSystemBodiesSync.forDims(buildByDim(ledger.snapshot(), reg::bodiesAt));
+        return PacketSystemBodiesSync.forDims(
+                buildByDim(ledger.snapshot(), reg::bodiesAt, space::slotDimOf));
     }
 
     /** Login send: give a joining player the current bodies (skip when there is nothing to render). */

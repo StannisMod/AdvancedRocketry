@@ -998,6 +998,56 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("supported", OpenGlHelper.framebufferSupported);
                     return response;
                 });
+            case "set_render_distance":
+                // The sky pass is GATED on the render distance: EntityRenderer.renderWorldPass only
+                // calls RenderGlobal.renderSky (and therefore a dimension's custom IRenderHandler) when
+                // gameSettings.renderDistanceChunks >= 4. The harness pins it at 2 for speed, so a sky
+                // renderer never runs here by default and a screenshot of it would be honestly empty for
+                // the wrong reason. A test that means to LOOK at the sky raises it for itself and puts it
+                // back, exactly as set_framebuffer does - the render path every other test runs is
+                // unchanged. The distance also sets the sky projection's far plane (farPlaneDistance * 2),
+                // so it must clear whatever radius the sky geometry is drawn at.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    int chunks = request.get("chunks").getAsInt();
+                    int previous = mc.gameSettings.renderDistanceChunks;
+                    mc.gameSettings.renderDistanceChunks = chunks;
+                    // What vanilla's own GameSettings.setOptionFloatValue does for RENDER_DISTANCE.
+                    if (mc.renderGlobal != null) {
+                        mc.renderGlobal.setDisplayListEntitiesDirty();
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("previous", previous);
+                    response.addProperty("chunks", chunks);
+                    // The gate the sky pass itself tests, reported so a caller never has to re-derive it.
+                    // Read the field BACK rather than echoing the argument: this is the field the sky
+                    // gate tests, and a caller that only sees its own request reflected has learned
+                    // nothing about whether the write stuck.
+                    response.addProperty("renderDistance", mc.gameSettings.renderDistanceChunks);
+                    response.addProperty("skyPassEnabled", mc.gameSettings.renderDistanceChunks >= 4);
+                    return response;
+                });
+            case "set_hud_hidden":
+                // F1. A test that MEASURES the rendered world has to get the HUD out of the frame first:
+                // the chat overlay carries this harness's own per-command completion markers, which scroll
+                // through the middle of the screen and CHANGE between two captures, and the crosshair
+                // inverts to white over a dark background - both are differences the test did not cause.
+                // Toasts are drawn OUTSIDE vanilla's hideGUI gate (Minecraft.runGameLoop calls
+                // drawToast after updateCameraAndRender), so hiding also drains the toast queue; call this
+                // immediately before each capture, since a new toast can arrive at any tick.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    boolean hidden = request.get("hidden").getAsBoolean();
+                    boolean previous = mc.gameSettings.hideGUI;
+                    mc.gameSettings.hideGUI = hidden;
+                    if (hidden && mc.getToastGui() != null) {
+                        mc.getToastGui().clear();
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("previous", previous);
+                    response.addProperty("hidden", hidden);
+                    return response;
+                });
             case "screenshot":
                 // The only way a headless test can see what the client actually DREW. Vanilla's F2
                 // cannot be driven: it is dispatched off the raw LWJGL key-event queue, which

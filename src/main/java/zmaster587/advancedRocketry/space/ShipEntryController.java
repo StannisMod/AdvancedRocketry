@@ -170,7 +170,7 @@ public final class ShipEntryController {
                 new ShipCrossingService.Completion() {
                     @Override
                     public void settled(UUID id) {
-                        ledger.settle(id, entryCoord, slotDim);
+                        ledger.settle(id, entryCoord);
                         crossing.ops().messageCrew(crew, "msg.shipentry.arrived");
                         LOGGER.info("[SPACE] entry settled: ship {} at {} (slot {})",
                                 id, entryCoord, slotDim);
@@ -181,7 +181,7 @@ public final class ShipEntryController {
                         // The re-assembled ship never became workable. The blocks are in the slot
                         // world (the cell is dirty, so it flushes); settle it cleanly rather than
                         // spin forever. The pilot flies out on the spawn ring.
-                        ledger.settle(id, entryCoord, slotDim);
+                        ledger.settle(id, entryCoord);
                         crossing.ops().messageCrew(crew, "msg.shipentry.failed");
                         LOGGER.error("[SPACE] entry settle never completed for ship {} - ship left "
                                 + "at the paste site in slot {}", id, slotDim);
