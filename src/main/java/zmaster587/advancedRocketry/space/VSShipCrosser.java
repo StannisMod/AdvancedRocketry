@@ -133,16 +133,14 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     @Override
     public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
                                       double px, double py, double pz) {
-        // Keep the target cell's ships load-queued for as long as the settle is retried. VS only loads
-        // a ship when a player is near it, and a jump arrives with nobody aboard into a cell world that
-        // was materialized for it — so the freshly-pasted ship stays registered-but-unloaded, the pose
-        // teleport's "ship is loaded" readiness gate never opens, and the arrival gives up in the paste
-        // lane's block band. Every reader of the ship's address then inverts a block-band position
-        // through the pose mapping and places it in the cell below. The entry/descent settle pumps the
-        // same load queue for the same reason; an arrival is the third crossing, not a different kind
-        // of move.
-        ops.loadShips(targetSlotDim);
-        // The same recipe the entry/descent settle uses (readiness gates, rider carry, unpark last).
+        // NOTE: no load pump here on purpose. This used to force-load every ship in the target cell
+        // each retry, because the pose teleport's readiness gate asked whether a ship was LOADED —
+        // and a jump arrives with nobody aboard, which is the one case the physics mod never loads
+        // for. So AR queued a load every tick while the physics mod queued an unload every tick, and
+        // the settle went through only when the two happened to interleave in its favour. The gate now
+        // asks about the crossing's own progress instead, which needs no load at all; the crew re-seat
+        // still pumps the queue for itself (it genuinely needs a live ship to resolve seat positions).
+        // The same recipe the entry/descent settle uses (readiness gate, rider carry, unpark last).
         if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, px, py, pz)) {
             return null; // re-assembly not queryable yet: retry next tick, the ship stays pasted
         }

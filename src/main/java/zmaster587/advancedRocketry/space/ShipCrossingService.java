@@ -55,7 +55,11 @@ public final class ShipCrossingService {
         /** Pin {@code dimId} loaded across the crossing (the arrival pin pattern). */
         void pinDim(int dimId);
 
-        /** Queue every ship in the destination world loaded (async assembly may lack a player yet). */
+        /** Queue every ship in the destination world loaded. Pumped ONLY while the crew re-seat is
+         *  pending: the re-seat resolves each seat's world position through the ship that manages it
+         *  and so needs a live one, whereas the pose teleport writes the durable ship record and does
+         *  not. Pumping it for the pose as well made AR the second writer in a per-tick tug of war
+         *  with the physics mod's own unload of a ship no player is near. */
         void loadShips(int destDim);
 
         /** Re-seat the captured crew on the re-assembled ship. Runs AFTER the pose teleport, so
@@ -65,10 +69,13 @@ public final class ShipCrossingService {
          *  offset must never claim the crew). {@code false} = retry next tick. */
         boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew, UUID shipId);
 
-        /** Rigid-teleport the ship near {@code anchor} to the pose position, carrying riders.
+        /** Rigid-teleport the ship pasted at {@code anchor} to the pose position, carrying riders.
          *  Runs FIRST in the settle (before the re-seat), so it owns its own proof that the
-         *  asynchronous re-assembly is complete. The ship comes out PARKED. {@code false} = ship
-         *  not up yet, retry. */
+         *  re-assembly is complete — which it reads off {@code anchor} itself, the block it seeded
+         *  the assembly on: the physics mod removes every block it claims from this world, so the
+         *  anchor going to air IS "my ship has been claimed". Deliberately not a question about
+         *  whether any ship is loaded. The ship comes out PARKED. {@code false} = not claimed yet,
+         *  retry. */
         boolean teleportPoseWithRiders(int destDim, BlockPos anchor, double px, double py, double pz);
 
         /** Re-enable physics on the ship at the (post-teleport) pose position. */
@@ -95,7 +102,11 @@ public final class ShipCrossingService {
         void settled(UUID shipId);
 
         /** The re-assembly never became workable within {@link #MAX_SETTLE_ATTEMPTS} — the blocks
-         *  are at the paste site; finalize cleanly rather than spin forever. */
+         *  are at the paste site; finalize cleanly rather than spin forever. Since the settle's gate
+         *  is "the anchor block has been claimed", reaching here has exactly ONE cause: the physics
+         *  mod never took the pasted structure, which it refuses outright when the structure exceeds
+         *  its max ship size or touches bedrock. It is not a timing outcome and must not be treated
+         *  as one — widening the budget cannot help. */
         void abandoned(UUID shipId);
     }
 
@@ -170,7 +181,14 @@ public final class ShipCrossingService {
         Iterator<Map.Entry<UUID, Pending>> it = pending.entrySet().iterator();
         while (it.hasNext()) {
             Pending e = it.next().getValue();
-            ops.loadShips(e.destDim);
+            if (e.poseDone) {
+                // Only the re-seat needs the destination's ships LOADED (it resolves each seat's world
+                // position through the ship that manages it). The pose teleport does not — it writes
+                // the durable ship record — and pumping the load queue for it fought the physics mod's
+                // own per-tick unload of a ship no player is near, which is what made an unmanned
+                // arrival's readiness a coin flip rather than a fact about its progress.
+                ops.loadShips(e.destDim);
+            }
             if (!e.poseDone) {
                 e.poseDone = ops.teleportPoseWithRiders(
                         e.destDim, e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2]);

@@ -911,6 +911,18 @@ public final class VSIntegration {
     }
 
     /**
+     * DIAGNOSTIC: the transform positions of every queryable ship in {@code world}, as
+     * {@code "x,y,z;x,y,z"}. Asks about no point, so a caller can find out WHERE a ship is rather than
+     * only whether one answers for a place it guessed. Empty when VS is absent or holds no ships.
+     */
+    public static String queryableShipPositions(World world) {
+        if (!isAvailable()) {
+            return "";
+        }
+        return VSBridge.queryableShipPositions(world);
+    }
+
+    /**
      * Force every known ship in {@code world} loaded and physics-enabled (headless/no-observer
      * equivalent of a nearby player loading it); returns the number requested, or -1 when VS
      * is absent.

@@ -2718,7 +2718,41 @@ public class TestProbeCommand extends CommandBase {
                 targetDim = transitMgr.materialize(transitTarget);
                 transitMgr.dematerialize(transitTarget);
             }
-            send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim + "}");
+            // Where the arrived ship ACTUALLY is, as the two answers that can disagree. An arrival is
+            // only complete when the ship sits on the world pose realizing its target coordinate; if it
+            // is still in the paste band, its address inverts through the pose mapping into a
+            // NEIGHBOURING cell. Both are asked through the queryable registry (shipBlockAt), which
+            // answers for an UNLOADED ship too - so a test can observe this without force-loading
+            // anything, and therefore without supplying the very state the arrival is supposed to
+            // establish for itself.
+            double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(transitTarget);
+            long shipY = Long.MIN_VALUE, poseDist = -1L;
+            net.minecraft.world.WorldServer tw = targetDim < 0 ? null
+                    : net.minecraftforge.common.DimensionManager.getWorld(targetDim);
+            if (tw != null) {
+                // Ask for the ship's OWN transform position, not "is a ship near this point": the
+                // nearest-ship lookup underneath shipBlockAt is UNBOUNDED, so asking it about two
+                // different points in a world that holds one ship answers yes to both. A pair of such
+                // questions looks like a discriminator and is not one.
+                net.minecraft.util.math.BlockPos sub = zmaster587.advancedRocketry.integration.vs
+                        .VSIntegration.shipBlockAt(tw, pose[0], pose[1], pose[2]);
+                double[] sp = sub == null ? null : zmaster587.advancedRocketry.integration.vs
+                        .VSIntegration.getShipWorldPosition(tw, sub);
+                if (sp != null) {
+                    shipY = (long) sp[1];
+                    double dx = sp[0] - pose[0], dy = sp[1] - pose[1], dz = sp[2] - pose[2];
+                    poseDist = (long) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                }
+            }
+            // Point-free witness: where the ships in this world actually ARE. Without it, a null from the
+            // point-keyed lookup above cannot be told from "the ship is not where I asked".
+            String ships = tw == null ? "" : zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .queryableShipPositions(tw);
+            send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
+                    + ",\"poseX\":" + (long) pose[0] + ",\"poseY\":" + (long) pose[1]
+                    + ",\"poseZ\":" + (long) pose[2]
+                    + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
+                    + ",\"ships\":\"" + ships + "\"}");
             return;
         }
         // transit-export: re-cut every in-flight transit's block snapshot from hyperspace and stash the

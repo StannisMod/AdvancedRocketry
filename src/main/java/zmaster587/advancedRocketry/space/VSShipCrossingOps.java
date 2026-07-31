@@ -98,20 +98,24 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
         if (world == null) {
             return false;
         }
-        // Readiness gate: only teleport a LOADED ship (the crossing-spike criterion). Moving the
-        // ShipData transform while VS is still relocating the pasted blocks into the shipyard
-        // would re-map them against the moved pose; the controller simply retries next tick.
-        if (VSIntegration.loadedShipCount(world) <= 0) {
+        // Readiness gate. The thing that must be true before the pose is written is that the physics
+        // mod has finished relocating the blocks we pasted into the ship's subspace shipyard —
+        // writing the transform mid-relocation re-maps the remaining blocks against the moved pose.
+        // That is a statement about THIS crossing's progress, and it is readable at the one point we
+        // own: the anchor we pasted on and seeded the assembly with. The assembly deletes every block
+        // it claims from this world (the anchor is always in its found set, it is the seed), so the
+        // anchor going to air is exactly "my ship has been claimed" — an exact test on one position,
+        // not a nearest-ship lookup, and independent of whether the ship happens to be loaded.
+        //
+        // It deliberately does NOT ask whether a ship is loaded. Loadedness is re-decided every tick
+        // from player proximity: with nobody aboard and nobody nearby, an unmanned arrival is exactly
+        // the case such a gate can never satisfy on its own, and it only ever passed because the
+        // settle force-loaded the ship itself — a coin flip against the unload the physics mod queues
+        // on the same tick, not a readiness check.
+        if (!world.isAirBlock(anchor)) {
             return false;
         }
         double sx = anchor.getX() + 0.5, sy = anchor.getY() + 0.5, sz = anchor.getZ() + 0.5;
-        // Second gate, relocation COMPLETE: the pose teleport runs before the crew re-seat now, so
-        // the "seats are managed by a live ship" proof the re-seat used to provide implicitly must
-        // be established here — a block at the paste anchor is managed only once VS has finished
-        // relocating the pasted blocks into the shipyard.
-        if (VSIntegration.shipBlockAt(world, sx, sy, sz) == null) {
-            return false;
-        }
         // Capture riders at the CURRENT pose before the write, then carry them by the same delta
         // (the proven teleport-ship recipe; a carried dummy's seated player follows as passenger).
         List<EntityDummy> riders = world.getEntitiesWithinAABB(EntityDummy.class,

@@ -285,11 +285,41 @@ final class VSBridge {
     }
 
     /**
+     * DIAGNOSTIC: every queryable ship in {@code world} as {@code "x,y,z"} transform positions joined by
+     * {@code ";"}. Deliberately asks about NO point — a lookup keyed on a position cannot tell "the ship
+     * is not where I asked" from "the lookup cannot see it", and breaking that ambiguity is the whole
+     * job. It earned its place immediately: it showed a ship sitting EXACTLY on the pose that a
+     * containment-matched lookup had just failed to resolve, which is how that lookup was found wrong.
+     * Empty string when VS holds no ships here.
+     */
+    static String queryableShipPositions(World world) {
+        StringBuilder out = new StringBuilder();
+        for (ShipData ship : ValkyrienUtils.getQueryableData(world).getShips()) {
+            Vec3d p = ship.getShipTransform().getShipPositionVec3d();
+            if (out.length() > 0) {
+                out.append(';');
+            }
+            out.append((long) p.x).append(',').append((long) p.y).append(',').append((long) p.z);
+        }
+        return out.toString();
+    }
+
+    /**
      * The ship in {@code world}'s QUERYABLE registry (loaded OR not) whose transform position is nearest
      * to {@code (x,y,z)}, or {@code null} if the registry is empty. The crossing works off the queryable
      * registry, not the loaded-physo set, so it does not race VS's headless auto-unload: a ship's chunk
      * claim, UUID and transform live in {@link ShipData} whether or not a physics object is loaded.
      */
+    // NOTE: this lookup is UNBOUNDED and that is a live defect - it returns the globally nearest ship
+    // for any point in the world, so four callers documented as "the ship at this point" answer for any
+    // ship anywhere. Two fixes were tried and both measured wrong, so it stands as it is:
+    //  - containment against getShipBB(): that box is seeded as a DEGENERATE POINT by
+    //    ValkyrienUtils.createNewShip (new AxisAlignedBB(pos,pos)) and nothing grows it to the hull, so
+    //    a ship sitting exactly on the queried pose matched nothing;
+    //  - a distance bound (512 blocks): it broke the departure, because callers reach here with SUBSPACE
+    //    positions (a flight computer's block) while a ship's transform position is WORLD-frame, and the
+    //    two are megablocks apart. The unbounded scan was masking that frame mismatch entirely.
+    // So the real prerequisite is frame discipline at the CALLERS, not a cleverer match here.
     private static ShipData nearestQueryableShip(World world, double x, double y, double z) {
         ShipData best = null;
         double bestSq = Double.MAX_VALUE;
