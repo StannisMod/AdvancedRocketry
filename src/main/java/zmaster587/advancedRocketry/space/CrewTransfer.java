@@ -154,8 +154,12 @@ public final class CrewTransfer {
         boolean allSeated = true;
         for (Crew rider : crew) {
             TilePilotSeat seat = matchSeat(seats, rider, expectedShipId, DURABLE_SHIP_ID);
+            // Registry-keyed, NOT physo-keyed: an arriving ship has nobody near it — the crew who would
+            // load it are the ones this method is carrying across — so asking a question only a LOADED
+            // ship can answer made the re-seat wait on AR force-loading the ship against VS's own unload.
+            // The seat's position is on the ship's durable record and needs no live physics object.
             double[] seatWorld = seat == null
-                    ? null : VSIntegration.getSeatWorldPosition(dstWorld, seat.getPos());
+                    ? null : VSIntegration.getRegisteredSeatWorldPosition(dstWorld, seat.getPos());
             if (seat == null || seatWorld == null) {
                 allSeated = false; // seat tile or ship transform not up yet — retry
                 continue;
@@ -283,6 +287,19 @@ public final class CrewTransfer {
         List<TilePilotSeat> seats = new ArrayList<>();
         AxisAlignedBB yard = VSIntegration.shipyardBoundsAt(world,
                 anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5);
+        // Force-load the shipyard's chunks before reading the world's tile list — the same
+        // force-load-then-scan idiom shipBlockAt/flightComputerAt use. Unloading a ship queues its
+        // shipyard chunks for unload, and a seat tile in an unloaded chunk is absent from
+        // loadedTileEntityList, so without this the scan silently finds nothing on exactly the ship
+        // that has nobody near it. Loading a CHUNK is not loading the ship: it costs no physics
+        // object and does not fight VS's own load policy.
+        if (yard != null) {
+            for (int cx = ((int) yard.minX) >> 4; cx <= (((int) yard.maxX) >> 4); cx++) {
+                for (int cz = ((int) yard.minZ) >> 4; cz <= (((int) yard.maxZ) >> 4); cz++) {
+                    world.getChunkProvider().provideChunk(cx, cz);
+                }
+            }
+        }
         for (TileEntity te : world.loadedTileEntityList) {
             if (!(te instanceof TilePilotSeat)) {
                 continue;

@@ -96,7 +96,7 @@ public class ShipEntryControllerTest {
 
         @Override public void pinDim(int dimId) { pinned.add(dimId); }
 
-        @Override public void loadShips(int slotDim) { }
+
 
         @Override public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
                 java.util.UUID shipId) {

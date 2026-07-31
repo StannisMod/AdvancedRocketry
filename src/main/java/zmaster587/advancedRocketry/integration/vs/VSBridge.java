@@ -137,10 +137,35 @@ final class VSBridge {
      */
     static double[] seatWorldPosition(World world, BlockPos seatPos) {
         Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, seatPos);
-        if (!managing.isPresent()) {
-            return null;
-        }
-        ShipTransform transform = managing.get().getShipData().getShipTransform();
+        return managing.isPresent()
+                ? seatWorldFrom(managing.get().getShipData().getShipTransform(), seatPos)
+                : null;
+    }
+
+    /**
+     * The WORLD position of the seat block at ship-subspace {@code seatPos} on a ship the REGISTRY knows —
+     * loaded or not — or {@code null} if no registered ship owns that block. It gives the same answer as
+     * {@link #seatWorldPosition} whenever that one answers at all; only the lookup differs, because a
+     * ship's pose lives on its {@code ShipData} and outlives every load and unload.
+     *
+     * <p>It exists because a ship's LOADED state is not a fact about the ship: VS re-decides it every tick
+     * from player proximity. A crew re-seat on arrival is exactly the case with nobody near yet — the crew
+     * are carried across BY the re-seat — so keying the seat's position on a loaded physics object made
+     * the re-seat depend on AR force-loading the ship against VS's own unload of it. It does not need to.
+     *
+     * <p>NOT a drop-in replacement: a caller that reads {@code null} as "this rider is no longer on a LIVE
+     * ship" (the dismount hold) is asking the physo-keyed question and must keep asking it. What both
+     * share — and what the "a seat still lying at the paste site must not pass" discrimination actually
+     * rests on — is that neither lookup resolves anything outside the shipyard region.
+     */
+    static double[] registeredSeatWorldPosition(World world, BlockPos seatPos) {
+        Optional<ShipData> ship = ValkyrienUtils.getShipManagingBlock(world, seatPos);
+        return ship.isPresent() ? seatWorldFrom(ship.get().getShipTransform(), seatPos) : null;
+    }
+
+    /** The one place a seat's subspace block is mapped through a ship transform. The {@code +0.2}
+     *  vertical offset mirrors the mount point {@code BlockPilotSeat} spawns at. */
+    private static double[] seatWorldFrom(ShipTransform transform, BlockPos seatPos) {
         Vec3d subspaceSeat = new Vec3d(seatPos.getX() + 0.5, seatPos.getY() + 0.2, seatPos.getZ() + 0.5);
         Vec3d worldSeat = transform.transform(subspaceSeat, TransformType.SUBSPACE_TO_GLOBAL);
         return new double[]{worldSeat.x, worldSeat.y, worldSeat.z};

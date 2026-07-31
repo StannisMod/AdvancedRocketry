@@ -96,7 +96,7 @@ public class DescentControllerTest {
         }
 
         @Override public void pinDim(int dimId) { }
-        @Override public void loadShips(int destDim) { }
+
 
         @Override public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
                 java.util.UUID shipId) {

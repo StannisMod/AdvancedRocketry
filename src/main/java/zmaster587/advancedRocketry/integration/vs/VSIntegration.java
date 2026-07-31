@@ -798,6 +798,21 @@ public final class VSIntegration {
     }
 
     /**
+     * The world position {@code [x, y, z]} of the pilot seat at ship-subspace {@code seatPos} on a ship the
+     * registry knows — <b>loaded or not</b> — or {@code null} when VS is absent or no registered ship owns
+     * that block. Use this wherever the question is "where is this seat" rather than "is this rider still
+     * on a live ship": a ship's loaded state is decided by player proximity and re-decided every tick, so a
+     * step that has nobody near it yet (a crew re-seat on arrival carries the crew there itself) must not
+     * be gated on it. See {@link #getSeatWorldPosition} for the liveness-sensitive variant.
+     */
+    public static double[] getRegisteredSeatWorldPosition(World world, BlockPos seatPos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.registeredSeatWorldPosition(world, seatPos);
+    }
+
+    /**
      * Whether Valkyrien Skies ship support (its per-world ship manager) is attached to
      * {@code world}. Used by the space slot-pool spike to confirm VS lights up on a
      * dynamically-created pool world, not just the vanilla/AR dimensions. {@code false} when VS

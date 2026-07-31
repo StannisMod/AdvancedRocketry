@@ -55,13 +55,6 @@ public final class ShipCrossingService {
         /** Pin {@code dimId} loaded across the crossing (the arrival pin pattern). */
         void pinDim(int dimId);
 
-        /** Queue every ship in the destination world loaded. Pumped ONLY while the crew re-seat is
-         *  pending: the re-seat resolves each seat's world position through the ship that manages it
-         *  and so needs a live one, whereas the pose teleport writes the durable ship record and does
-         *  not. Pumping it for the pose as well made AR the second writer in a per-tick tug of war
-         *  with the physics mod's own unload of a ship no player is near. */
-        void loadShips(int destDim);
-
         /** Re-seat the captured crew on the re-assembled ship. Runs AFTER the pose teleport, so
          *  {@code anchor} is a world point on the ship at its FINAL pose (the paste anchor no
          *  longer resolves the moved ship). {@code shipId} is the crossing ship's durable id —
@@ -181,14 +174,12 @@ public final class ShipCrossingService {
         Iterator<Map.Entry<UUID, Pending>> it = pending.entrySet().iterator();
         while (it.hasNext()) {
             Pending e = it.next().getValue();
-            if (e.poseDone) {
-                // Only the re-seat needs the destination's ships LOADED (it resolves each seat's world
-                // position through the ship that manages it). The pose teleport does not — it writes
-                // the durable ship record — and pumping the load queue for it fought the physics mod's
-                // own per-tick unload of a ship no player is near, which is what made an unmanned
-                // arrival's readiness a coin flip rather than a fact about its progress.
-                ops.loadShips(e.destDim);
-            }
+            // NOTE: no load pump. Neither half of the settle needs the destination's ships LOADED any
+            // more — the pose teleport writes the durable ship record, and the re-seat reads the seats'
+            // positions off it and force-loads only the shipyard CHUNKS it scans. Pumping the queue here
+            // put AR in a per-tick tug of war with the physics mod's unload of a ship nobody is near,
+            // which is precisely the state a crossing arrives in: the crew who would keep it loaded are
+            // the ones the re-seat is carrying across.
             if (!e.poseDone) {
                 e.poseDone = ops.teleportPoseWithRiders(
                         e.destDim, e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2]);

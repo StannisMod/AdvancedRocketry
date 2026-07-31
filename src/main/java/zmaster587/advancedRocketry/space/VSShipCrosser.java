@@ -240,9 +240,11 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         if (dst == null || arrivalAnchor == null) {
             return false; // target world not up yet - retry next tick
         }
-        // Keep the destination's ships load-queued so the re-assembled seat tiles become resolvable (the
-        // proven entry/descent reseat path, VSShipCrossingOps.loadShips).
-        VSIntegration.loadAllShips(dst);
+        // NOTE: no load pump here on purpose (see settleArrivedPose for the other half of this). The
+        // re-seat used to force-load every ship in the target cell each retry so the re-assembled seat
+        // tiles would resolve, which put AR in a per-tick tug of war with VS's unload of a ship nobody is
+        // near. It reads the seats' positions off the ships' durable records now, and force-loads only the
+        // shipyard CHUNKS it has to scan — neither of which needs a live physics object.
         if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId))) {
             crewStash.remove(shipId);
             return true;

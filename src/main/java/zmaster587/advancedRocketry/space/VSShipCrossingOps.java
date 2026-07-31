@@ -78,14 +78,6 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
-    public void loadShips(int destDim) {
-        WorldServer world = DimensionManager.getWorld(destDim);
-        if (world != null) {
-            VSIntegration.loadAllShips(world);
-        }
-    }
-
-    @Override
     public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
             java.util.UUID shipId) {
         WorldServer world = DimensionManager.getWorld(destDim);
