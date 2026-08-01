@@ -6,6 +6,7 @@ import zmaster587.advancedRocketry.space.CellWorldMapper;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -71,5 +72,63 @@ public class CellWorldMapperTest {
         GalacticCoord past = CellWorldMapper.coordOfPose(cell,
                 GalacticCoord.HALF_CELL + 10.0, centrePose[1], 0.0);
         assertEquals(1L, past.sectorX());
+    }
+
+    /**
+     * The other reading of the same pose, and the one a ship REPORTING its position must use: it
+     * stays in the cell it is in.
+     *
+     * <p>The two are not interchangeable. A cell name is not a position — it names a world, a slot
+     * binding and the ledger row that keeps that cell from being collected — and none of those follow
+     * a pose over a cell face. A ship that renames itself by drifting ends up addressed in a cell
+     * nobody loaded: its own cell's bodies vanish from its sky, its descent finds nothing to descend
+     * to, and its jumps are refused for being somewhere it is not.</p>
+     */
+    @Test
+    public void aReportedPosePastTheCellEdgeStaysInItsOwnCell() {
+        GalacticCoord cell = at(0, 0, 0, 0, 0, 0);
+        double[] centrePose = CellWorldMapper.poseWorldOf(cell);
+
+        GalacticCoord held = CellWorldMapper.coordOfPoseWithin(cell,
+                GalacticCoord.HALF_CELL + 10.0, centrePose[1], 0.0);
+
+        assertEquals("a reported pose may not rename the cell", cell.cellKey(), held.cellKey());
+        assertTrue("...and it is held at the boundary, not wrapped to the far side",
+                held.localX() > 0L);
+    }
+
+    /**
+     * The case that makes the clamp worth having, rather than a theoretical bound: an arrival paste
+     * lands in a fixed block band near Y=200, while a cell's pose band starts at HALF_CELL + 256.
+     * Inverting that pose gives a local Y just BELOW the cell's range — so a ship that reported
+     * itself between the paste and the pose settle named the cell one sector down. It is reachable on
+     * every single arrival, unlike the +X face, which takes hours of flight to reach.
+     */
+    @Test
+    public void anArrivalPasteBandPoseDoesNotDropTheShipASectorDown() {
+        GalacticCoord cell = at(57, 0, 5, 0, 0, 0);
+        double pasteBandY = 200.0; // the arrival paste lane, far below the cell's own pose band
+
+        assertTrue("the fixture must actually be outside the cell's local range",
+                CellWorldMapper.poseEscapesCell(0.0, pasteBandY, 0.0));
+        assertEquals("a paste-band pose must not name a neighbouring cell",
+                cell.cellKey(),
+                CellWorldMapper.coordOfPoseWithin(cell, 0.0, pasteBandY, 0.0).cellKey());
+        assertEquals("...while the honest inverse still says it is out of range",
+                cell.sectorY() - 1L,
+                CellWorldMapper.coordOfPose(cell, 0.0, pasteBandY, 0.0).sectorY());
+    }
+
+    /** A pose inside the cell is not "escaping" — the detector must not fire on ordinary flight. */
+    @Test
+    public void anOrdinaryPoseInsideTheCellIsNotAnEscape() {
+        GalacticCoord cell = at(1, 2, 3, 0, 0, 0);
+        double[] pose = CellWorldMapper.poseWorldOf(at(1, 2, 3, 120_000L, -80_000L, 5L));
+
+        assertFalse("a pose well inside the cell must not read as an escape",
+                CellWorldMapper.poseEscapesCell(pose[0], pose[1], pose[2]));
+        assertEquals("...and it round-trips unchanged through the held reading",
+                CellWorldMapper.coordOfPose(cell, pose[0], pose[1], pose[2]),
+                CellWorldMapper.coordOfPoseWithin(cell, pose[0], pose[1], pose[2]));
     }
 }

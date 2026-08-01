@@ -109,6 +109,40 @@ public final class GalacticCoord {
     }
 
     /**
+     * This coordinate shifted by a local block delta, <b>saturated inside its own cell</b> instead of
+     * carrying into a neighbouring sector.
+     *
+     * <p>Use this wherever the cell is already the answer and the offset is only a position within
+     * it: a placement ring, a flight clamp, anything that has decided which cell it is talking about.
+     * {@link #plusLocal} is the opposite tool &mdash; it is for INTEGRATING a path, where crossing
+     * into the next sector is the whole point.</p>
+     *
+     * <p>Choosing the wrong one is not a rounding difference. A carried offset renames the cell, and
+     * the caller is then holding a coordinate in a cell nobody materialized, nobody bound to a slot
+     * world, and nobody told the ledger about. Saturating costs at most the few blocks by which the
+     * offset would have overshot the cell face.</p>
+     */
+    public GalacticCoord plusLocalSaturating(long dx, long dy, long dz) {
+        return new GalacticCoord(sectorX, sectorY, sectorZ,
+                (int) saturateLocal(localX + dx),
+                (int) saturateLocal(localY + dy),
+                (int) saturateLocal(localZ + dz));
+    }
+
+    /** {@code true} iff {@code local} is a canonical in-cell offset, i.e. one that would not carry. */
+    public static boolean localWithinCell(long local) {
+        return local >= -HALF_CELL && local < HALF_CELL;
+    }
+
+    /** {@code local} held inside {@code [-HALF_CELL, HALF_CELL)} — the range that does not carry. */
+    private static long saturateLocal(long local) {
+        if (local >= HALF_CELL) {
+            return HALF_CELL - 1L;
+        }
+        return local < -HALF_CELL ? -HALF_CELL : local;
+    }
+
+    /**
      * Squared absolute distance to {@code other}, in blocks&sup2;, as a {@code double}. Computed from
      * the sector delta plus the local delta so nearby positions are exact even at galactic magnitude.
      */

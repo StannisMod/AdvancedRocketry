@@ -213,10 +213,7 @@ public final class ShipEntryController {
         if (body == null) {
             body = GalacticCoord.ORIGIN;
         }
-        double angle = ((shipId.hashCode() & 0xFF) / 256.0) * Math.PI * 2.0;
-        long dx = Math.round(Math.cos(angle) * ENTRY_RING_BLOCKS);
-        long dz = Math.round(Math.sin(angle) * ENTRY_RING_BLOCKS);
-        return body.plusLocal(dx, 0L, dz);
+        return StandoffRing.pointAround(body, ENTRY_RING_BLOCKS, shipId.hashCode());
     }
 
     /** Advance every in-flight entry one tick (the shared crossing settle loop). */

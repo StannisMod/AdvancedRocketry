@@ -44,9 +44,18 @@ public class SystemContentTest {
         UniverseRegistry.setGenerator(null);
     }
 
+    /**
+     * A body at orbital angle {@code theta}. BOTH angle fields are set, and that is the physically
+     * consistent state rather than belt-and-braces: {@code baseOrbitTheta} is the authored angle a
+     * body's durable cell name is derived from, {@code orbitTheta} is the live angle the world
+     * advances every tick, and at tick zero the live one IS the base one. A fixture that set only the
+     * live field described a body whose AUTHORED position was the +X axis whatever angle it asked
+     * for — invisible while an address was derived live, and decisive once it is not.
+     */
     private static DimensionProperties planet(int dimId, int orbitalDist, double theta) {
         DimensionProperties p = new DimensionProperties(dimId);
         p.orbitalDist = orbitalDist;
+        p.baseOrbitTheta = theta;
         p.orbitTheta = theta;
         p.orbitalPhi = 0;
         return p;
@@ -200,23 +209,30 @@ public class SystemContentTest {
     }
 
     /**
-     * A body's address is a function of TIME, and the derivation can be asked for any moment. This is
-     * what a navigation computer aims with: a jump takes long enough for the destination to travel,
-     * so the computer projects the system forward to the tick the ship would arrive and aims there.
-     * Without it a pilot arms an address, flies to it, and finds the planet has moved on — with the
-     * capacitor burst already spent and nothing to descend onto.
+     * A body's cell does NOT move with time. Half an orbit later — the moment its position is as far
+     * from where it started as that body ever gets — it is still addressed by the same cell.
+     *
+     * <p>This test used to assert the opposite, in as many words: "half an orbit later the body is
+     * somewhere else — an address is a moment". That was the model, and it was the bug. An address is
+     * how a pilot names a destination, how a ship's arrival is recorded and what the sky of a cell is
+     * built from; a name that expires while its owner is still there took planets out of a parked
+     * ship's sky every few minutes and sent jumps to cells their target had left.</p>
+     *
+     * <p>What is still a function of time — a moon's position INSIDE its parent's cell, which is what
+     * a navigation computer leads its aim by — is pinned by
+     * {@link #aMoonIsAimedAtWhereItIsNotAtItsParentsCellCentre}.</p>
      */
     @Test
-    public void aSystemCanBeDerivedAsOfAFutureMoment() {
+    public void aBodysCellIsTheSameCellHalfAnOrbitLater() {
         StellarBody star = new StellarBody();
         star.setId(4246);
         star.setSize(1f);
         DimensionProperties p = planet(740, 100, 0.0);
         p.setStar(star);
 
-        // Half an orbital period later the body is on the far side of its star. Which tick that is
-        // comes from the body's own orbit, so this pins the ADDRESSABILITY of a future moment, never
-        // a particular period.
+        // Half an orbital period: the far side of the star, i.e. the largest displacement this body
+        // ever has from where it began. Which tick that is comes from the body's own orbit, so this
+        // pins the DURABILITY of a name, never a particular period.
         long halfPeriodTicks = (long) (24000d
                 * AstronomicalBodyHelper.getOrbitalPeriod(100, 1f) / 2d);
 
@@ -227,8 +243,63 @@ public class SystemContentTest {
 
         assertNotNull(nowCell);
         assertNotNull(laterCell);
-        assertFalse("half an orbit later the body is somewhere else — an address is a moment",
+        assertTrue("half an orbit later the body is still addressed by the same cell",
                 nowCell.sameCell(laterCell));
+    }
+
+    /**
+     * The negative leg of the clause above, and the reason it is not satisfiable by a constant: a
+     * durable name is derived from the body's AUTHORED orbit, so authoring a different orbit gives a
+     * different name. Without this, "the name never changes" would be passed by a derivation that
+     * returned the same cell for every body in the universe.
+     */
+    @Test
+    public void aDifferentAuthoredOrbitIsADifferentCell() {
+        StellarBody star = new StellarBody();
+        star.setId(4256);
+        star.setSize(1f);
+        planet(745, 100, 0.0).setStar(star);
+        planet(746, 100, Math.PI).setStar(star);
+
+        GalacticCoord first = cellOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN), 745);
+        GalacticCoord second = cellOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN), 746);
+
+        assertNotNull(first);
+        assertNotNull(second);
+        assertFalse("two bodies authored on opposite sides of one star are not one address",
+                first.sameCell(second));
+    }
+
+    /**
+     * A recorded name WINS over the derivation, for every later query.
+     *
+     * <p>This is what makes a name durable in the only sense that matters to a player: a coordinate
+     * he wrote down still denotes his planet after the authored data has been re-saved (the angles
+     * round-trip through the world's XML), after a spacing change, and after any later edit to the
+     * derivation itself. A name that is merely re-derived consistently is only as stable as its
+     * inputs, and those inputs are known to move.</p>
+     */
+    @Test
+    public void aRecordedNameBeatsAFreshDerivation() {
+        StellarBody star = new StellarBody();
+        star.setId(4257);
+        star.setSize(1f);
+        planet(747, 100, 0.0).setStar(star);
+
+        final GalacticCoord recorded = GalacticCoord.ofSectorLocal(77L, -3L, 12L, 0L, 0L, 0L);
+        List<SystemBody> bodies = SystemContent.bodiesOf(star, GalacticCoord.ORIGIN,
+                GalaxyGenConfig.DEFAULT_MIN_SPACING, SystemContent.NOW,
+                new SystemContent.CellNames() {
+                    @Override
+                    public GalacticCoord nameFor(int dimId, GalacticCoord derived) {
+                        return dimId == 747 ? recorded : derived;
+                    }
+                });
+
+        GalacticCoord actual = cellOf(bodies, 747);
+        assertNotNull(actual);
+        assertTrue("the store's name is the body's name, whatever the derivation would have said",
+                recorded.sameCell(actual));
     }
 
     /**

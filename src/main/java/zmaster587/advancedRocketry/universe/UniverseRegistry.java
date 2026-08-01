@@ -72,6 +72,14 @@ public final class UniverseRegistry extends WorldSavedData {
      * config/seed/XML edits. Authored systems never pin (they are already in the store).
      */
     private final Map<String, PinnedSystem> pinnedSystems = new HashMap<>();
+    /**
+     * dimension id -&gt; the body's DURABLE cell name. Written on a body's first derivation and never
+     * again, so an address a player wrote down keeps denoting the same thing for the life of the
+     * save — through an XML round-trip that quantizes the authored angles, through a spacing change,
+     * and through any later edit to the derivation. A cell name is an identifier, like a registry
+     * name or an NBT key; it is not a snapshot of where a planet happened to be.
+     */
+    private final Map<Integer, GalacticCoord> namesByDim = new HashMap<>();
     /** Latch: authored anchors drain into the store exactly once (unless a config XML reset is forced). */
     private boolean anchorsSeeded = false;
 
@@ -393,9 +401,38 @@ public final class UniverseRegistry extends WorldSavedData {
             StellarBody star = starLookup.apply(id);
             return star == null
                     ? new ArrayList<SystemBody>()
-                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(), atTick);
+                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(), atTick,
+                            this::durableName);
         }
         return new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
+    }
+
+    /**
+     * The recorded cell name for a dimension, recording this derivation the first time one is asked
+     * for. Once written a name is never re-derived: the whole point is that it stops depending on
+     * anything that can change — the world time it used to be derived from, the precision of the
+     * authored angles as they round-trip through XML, or a later edit to the derivation itself.
+     *
+     * <p>Bodies with no dimension of their own — the star proxy, belts, POIs — carry
+     * {@link Constants#INVALID_PLANET} and share it, so there is no identity to key a name on; they
+     * keep the derivation, which for them is already time-invariant.</p>
+     */
+    private GalacticCoord durableName(int dimId, GalacticCoord derived) {
+        if (dimId == Constants.INVALID_PLANET || derived == null) {
+            return derived;
+        }
+        GalacticCoord recorded = namesByDim.get(dimId);
+        if (recorded != null) {
+            return recorded;
+        }
+        namesByDim.put(dimId, derived);
+        markDirty();
+        return derived;
+    }
+
+    /** The recorded cell name for {@code dimId}, or empty when nothing has derived one yet. */
+    public Optional<GalacticCoord> recordedName(int dimId) {
+        return Optional.ofNullable(namesByDim.get(dimId));
     }
 
     /**
@@ -628,6 +665,10 @@ public final class UniverseRegistry extends WorldSavedData {
      * Drain authored anchors into the store, once. On a fresh world this places every anchor; on a restart
      * (anchors already seeded) it is a no-op so the persisted store — including player edits — wins. A config
      * XML reset ({@code reset == true}) forces re-application.
+     *
+     * <p>A reset re-places ANCHORS and deliberately leaves the recorded body cell NAMES alone. Those
+     * are what makes a written-down coordinate keep denoting its body; clearing them here would mean
+     * exactly the guarantee the store exists to give fails in the one case it is needed most.</p>
      */
     public void applyAnchors(Map<Integer, GalacticCoord> anchors, boolean reset) {
         if (anchorsSeeded && !reset) {
@@ -781,8 +822,14 @@ public final class UniverseRegistry extends WorldSavedData {
         byStar.clear();
         poiOverrides.clear();
         pinnedSystems.clear();
+        namesByDim.clear();
         anchorsBySuper = null;
         anchorsSeeded = nbt.getBoolean("anchorsSeeded");
+        NBTTagList names = nbt.getTagList("cellNames", 10 /* NBTTagCompound */);
+        for (int i = 0; i < names.tagCount(); i++) {
+            NBTTagCompound e = names.getCompoundTagAt(i);
+            namesByDim.put(e.getInteger("dimId"), GalacticCoord.readFromNBT(e).cellCentre());
+        }
         NBTTagList list = nbt.getTagList("placements", 10 /* NBTTagCompound */);
         for (int i = 0; i < list.tagCount(); i++) {
             NBTTagCompound e = list.getCompoundTagAt(i);
@@ -828,6 +875,14 @@ public final class UniverseRegistry extends WorldSavedData {
             list.appendTag(entry);
         }
         nbt.setTag("placements", list);
+        NBTTagList names = new NBTTagList();
+        for (Map.Entry<Integer, GalacticCoord> e : namesByDim.entrySet()) {
+            NBTTagCompound entry = new NBTTagCompound();
+            entry.setInteger("dimId", e.getKey());
+            e.getValue().writeToNBT(entry); // nested sub-tag "galacticCoord"
+            names.appendTag(entry);
+        }
+        nbt.setTag("cellNames", names);
         NBTTagList pois = new NBTTagList();
         for (List<SystemBody> cellPois : poiOverrides.values()) {
             for (SystemBody poi : cellPois) {

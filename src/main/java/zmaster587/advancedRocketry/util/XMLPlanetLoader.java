@@ -395,8 +395,12 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_SKYCOLOR, properties.skyColor[0] + "," + properties.skyColor[1] + "," + properties.skyColor[2]));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_GRAVITY, (int) (properties.getGravitationalMultiplier() * 100f)));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_DISTANCE, properties.getOrbitalDist()));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_BASEORBITTHETA, (int) (properties.baseOrbitTheta * 180f / Math.PI)));
-        nodePlanet.appendChild(createTextNode(doc, ELEMENT_PHI, (int) (properties.orbitalPhi)));
+        // Written as fractional degrees, not truncated to whole ones: these two angles are the only
+        // authored inputs a body's durable CELL NAME is derived from, and one degree at a large
+        // orbital radius is more than a cell across. A whole-degree round-trip could therefore rename
+        // a body on a reload. Integer-valued files parse unchanged.
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_BASEORBITTHETA, Math.toDegrees(properties.baseOrbitTheta)));
+        nodePlanet.appendChild(createTextNode(doc, ELEMENT_PHI, properties.orbitalPhi));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_RETROGRADE, properties.isRetrograde));
         nodePlanet.appendChild(createTextNode(doc, AVG_TEMPERATURE, properties.averageTemperature));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_PERIOD, properties.rotationalPeriod));
@@ -785,7 +789,10 @@ public class XMLPlanetLoader {
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_BASEORBITTHETA)) {
 
                 try {
-                    properties.baseOrbitTheta = (Integer.parseInt(planetPropertyNode.getTextContent()) % 360) * Math.PI / 180f;
+                    // Fractional degrees accepted, so the angle survives a save/load round-trip; a
+                    // whole-degree file from an older world parses to exactly the same value.
+                    properties.baseOrbitTheta = Math.toRadians(
+                            Double.parseDouble(planetPropertyNode.getTextContent()) % 360d);
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid orbitalTheta specified"); //TODO: more detailed error msg
                 }
@@ -989,7 +996,7 @@ public class XMLPlanetLoader {
                 }
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_PHI)) {
                 try {
-                    properties.orbitalPhi = (Integer.parseInt(planetPropertyNode.getTextContent()) % 360);
+                    properties.orbitalPhi = Double.parseDouble(planetPropertyNode.getTextContent()) % 360d;
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid orbitalPhi specified"); //TODO: more detailed error msg
                 }

@@ -93,6 +93,13 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private boolean entryLatched = false;
 
     /**
+     * Said once per tile, not once per tick: a ship sitting against its cell's boundary would
+     * otherwise report it twenty times a second. Not persisted — a fresh tile after a relocation
+     * genuinely should say it again if the ship is still there.
+     */
+    private transient boolean cellEdgeReported = false;
+
+    /**
      * Bring-up command for the force-mode flight controller: the desired world-frame
      * velocity {@code {x,y,z}} (blocks/s), or {@code null} when nothing is commanded.
      * Written from the GAME thread (a test probe today; the seated pilot's input later);
@@ -328,8 +335,21 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             if (ledger != null && cell != null) {
                 double[] pose = VSIntegration.getShipWorldPosition(world, getPos());
                 if (pose != null) {
+                    // A ship reports its position WITHIN its cell. It may not rename the cell by moving:
+                    // the name is the world it is in, the slot it is bound to and the ledger row that
+                    // protects that cell from collection, and none of those follow a pose over a cell
+                    // face. A pose outside the local range is therefore saturated, not carried.
                     ledger.updatePosition(shipId, zmaster587.advancedRocketry.space.CellWorldMapper
-                            .coordOfPose(cell, pose[0], pose[1], pose[2]));
+                            .coordOfPoseWithin(cell, pose[0], pose[1], pose[2]));
+                    if (!cellEdgeReported && zmaster587.advancedRocketry.space.CellWorldMapper
+                            .poseEscapesCell(pose[0], pose[1], pose[2])) {
+                        cellEdgeReported = true;
+                        zmaster587.advancedRocketry.AdvancedRocketry.logger.warn(
+                                "[SPACE] ship {} reached the edge of cell {} (pose {},{},{}) - its position "
+                                        + "is held at the boundary. Leaving a neighbourhood is a jump, not a "
+                                        + "flight.",
+                                shipId, cellKey, pose[0], pose[1], pose[2]);
+                    }
                 }
             }
         }

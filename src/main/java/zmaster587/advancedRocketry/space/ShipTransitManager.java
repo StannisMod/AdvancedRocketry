@@ -149,6 +149,25 @@ public final class ShipTransitManager {
         }
     }
 
+    /**
+     * Where inside its target cell an arrival actually puts the ship.
+     *
+     * <p>Production stands the ship off the cell's descend-target bodies, because a jump aimed at a
+     * planet is aimed at that planet's ADDRESS, which is its cell centre &mdash; arriving exactly
+     * there puts the ship at distance zero from the body, well inside the descent trigger, so the
+     * pilot's first control input drops him onto the surface he had just flown to orbit. The default
+     * is the identity: arrive exactly on the coordinate the jump was aimed at.</p>
+     *
+     * <p>The tick is part of the seam even though the first implementation ignores it: a flight can
+     * be paused indefinitely by the offline-progress gate, so the stamped {@code arrivalTick} is not
+     * the tick the ship actually settles, and a placement computed against anything that moves must
+     * be told which moment it is answering for.</p>
+     */
+    @FunctionalInterface
+    public interface ArrivalPlacement {
+        GalacticCoord arrivalCoordFor(String shipId, GalacticCoord target, long worldTick);
+    }
+
     /** Per-ship in-flight state. */
     private static final class Transit {
         final GalacticCoord origin;
@@ -163,6 +182,8 @@ public final class ShipTransitManager {
         int targetSlotDim;          // the slot the target cell is bound to (valid once targetMaterialized)
         int arrivalAttempts;        // retries of a stalled arrival crossing / pose settle (async VS assembly)
         BlockPos pasteAnchor;       // the arrival paste landed here; set once, so a retried settle never re-crosses
+        GalacticCoord arrivalCoord; // where in the target cell the ship is actually put down; resolved ONCE
+                                    // (a re-rolled ring would hand each settle retry a different point)
         final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
         NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace at save points
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
@@ -209,6 +230,8 @@ public final class ShipTransitManager {
     private final LongSupplier clock;
     /** Offline-progress gate; {@code null} = always advance (state-machine unit tests). */
     private OfflineProgress offlineProgress;
+    /** Arrival placement policy; {@code null} = arrive exactly on the aimed coordinate. */
+    private ArrivalPlacement arrivalPlacement;
     private final Map<String, Transit> transits = new LinkedHashMap<>();
     /** Arrived ships whose crew reseat is still retrying (best-effort, not persisted). See {@link PendingReseat}. */
     private final List<PendingReseat> reseating = new ArrayList<>();
@@ -333,9 +356,19 @@ public final class ShipTransitManager {
             // this leaves the ship in the paste lane's block band, and the flight computer's first
             // self-report then inverts the pose mapping against a block-band position - settling the
             // ship's address in a neighbouring cell, where the destination's bodies are not.
+            // Where in the target cell the ship is actually put down. Resolved ONCE and kept: the
+            // settle below is retried for up to MAX_ARRIVAL_ATTEMPTS ticks, and a placement re-rolled
+            // per retry would hand each attempt a different point to aim the same ship at.
+            if (t.arrivalCoord == null) {
+                t.arrivalCoord = arrivalPlacement == null ? t.target
+                        : arrivalPlacement.arrivalCoordFor(entry.getKey(), t.target, now);
+                if (t.arrivalCoord == null) {
+                    t.arrivalCoord = t.target; // a policy that cannot answer never loses the ship
+                }
+            }
             BlockPos arrivedAt = null;
             if (t.pasteAnchor != null) {
-                double[] pose = CellWorldMapper.poseWorldOf(t.target);
+                double[] pose = CellWorldMapper.poseWorldOf(t.arrivalCoord);
                 arrivedAt = crosser.settleArrivedPose(
                         t.targetSlotDim, t.pasteAnchor, pose[0], pose[1], pose[2]);
             }
@@ -344,7 +377,10 @@ public final class ShipTransitManager {
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
                 // Record the arrival in the durable ledger (no longer amnesiac) and mark the arrived cell
                 // diverged so an eviction FLUSHES it rather than discarding the ship (closes ledger #79).
-                ledgerSettle(entry.getKey(), t.target);
+                // The ledger takes the PLACED coordinate, not the aimed one: the descent trigger reads
+                // the ledger (not the pose), so a ring applied to the pose alone would leave the
+                // trigger measuring from the cell centre and firing anyway.
+                ledgerSettle(entry.getKey(), t.arrivalCoord);
                 space.markDirty(t.target);
                 // Hand any aboard crew to the best-effort reseat retry. The transit is already settled and
                 // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
@@ -392,7 +428,7 @@ public final class ShipTransitManager {
                 // pasted into an abandoned ship.
                 tiles.retire(t.tile);
                 it.remove();
-                ledgerSettle(entry.getKey(), t.target);
+                ledgerSettle(entry.getKey(), t.arrivalCoord); // same coordinate as the normal path
                 space.markDirty(t.target);
                 if (!t.crew.isEmpty()) {
                     reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
@@ -493,6 +529,15 @@ public final class ShipTransitManager {
     /** Install the offline-progress gate (config mode + online check). {@code null} restores always-advance. */
     public void setOfflineProgress(OfflineProgress policy) {
         this.offlineProgress = policy;
+    }
+
+    /**
+     * Install the {@link ArrivalPlacement} policy. {@code null} restores "arrive exactly on the
+     * coordinate the jump was aimed at" — which is also what every state-machine unit test wants,
+     * and is why this is set after construction rather than taken as a constructor argument.
+     */
+    public void setArrivalPlacement(ArrivalPlacement placement) {
+        this.arrivalPlacement = placement;
     }
 
     /** Record the aboard crew captured at depart (option A) on an in-flight ship — for the gate + reseat. */

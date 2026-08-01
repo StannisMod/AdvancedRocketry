@@ -52,4 +52,32 @@ public final class CellWorldMapper {
                 Math.round(wy) - GalacticCoord.HALF_CELL - POSE_BAND_Y,
                 Math.round(wz));
     }
+
+    /**
+     * {@link #coordOfPose} held inside {@code cell} — the reading for a pose that is REPORTING where a
+     * ship is, as opposed to one integrating a path.
+     *
+     * <p>The difference matters because a cell name is not a position: it names a world, a slot
+     * binding and a ledger row. A ship whose pose sits a little outside its own cell's local range —
+     * which the arrival paste band does routinely, since a paste at world Y 200 inverts to a local Y
+     * of {@code -HALF_CELL - 56} — would otherwise report itself into the NEXT sector, a cell nobody
+     * materialized and nobody bound. It then cannot descend (its cell holds no bodies), its jumps are
+     * refused, and the cell it is really in loses the ledger's garbage-collection protection.</p>
+     *
+     * <p>Saturating instead makes the report wrong by at most the overshoot, in the one axis that
+     * overshot, and keeps every name-keyed lookup pointing at the world the ship is actually in.</p>
+     */
+    public static GalacticCoord coordOfPoseWithin(GalacticCoord cell, double wx, double wy, double wz) {
+        return cell.cellCentre().plusLocalSaturating(
+                Math.round(wx),
+                Math.round(wy) - GalacticCoord.HALF_CELL - POSE_BAND_Y,
+                Math.round(wz));
+    }
+
+    /** Whether {@code pose} lies outside {@code cell}, i.e. whether {@link #coordOfPoseWithin} clamped. */
+    public static boolean poseEscapesCell(double wx, double wy, double wz) {
+        return !GalacticCoord.localWithinCell(Math.round(wx))
+                || !GalacticCoord.localWithinCell(Math.round(wy) - GalacticCoord.HALF_CELL - POSE_BAND_Y)
+                || !GalacticCoord.localWithinCell(Math.round(wz));
+    }
 }

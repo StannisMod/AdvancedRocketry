@@ -55,8 +55,45 @@ public final class SystemContent {
      * Sentinel for "read each body's LIVE orbital angle" — as opposed to a world tick to project the
      * whole system forward to. A jump takes long enough for the destination to move, so navigation
      * asks the same derivation for a FUTURE system state; everything else asks for the present.
+     *
+     * <p>Since a body's CELL became durable this selects only a moon's offset inside its parent's
+     * cell, which is the one piece of a system's layout that is still a function of time.</p>
      */
     public static final long NOW = Long.MIN_VALUE;
+
+    /**
+     * The reference moment a cell name is derived at. Zero, and it must stay zero: the orbital law is
+     * {@code ((tick % period) / period) · 2π} (AstronomicalBodyHelper), so tick 0 is the one instant
+     * whose time term is exactly zero for every body regardless of its period — the name then depends
+     * on the AUTHORED elements alone (distance, base angle, inclination, retrograde) and on nothing
+     * that ticks.
+     */
+    static final long NAME_TICK = 0L;
+
+    /**
+     * Where a body's durable cell name comes from.
+     *
+     * <p>A name is derived once and then RECORDED, because a name that is only ever re-derived is
+     * hostage to the precision of its inputs and to every later change of this derivation: the
+     * authored angles round-trip through the world's XML, and one degree at a large orbital radius is
+     * more than a cell. A recorded name survives all of that; a re-derived one silently renames a
+     * coordinate a player wrote down.</p>
+     *
+     * <p>{@link #DERIVED_NAMES} is the identity — "no store, take the derivation" — which is what a
+     * pure unit test wants and what any caller without a registry gets.</p>
+     */
+    public interface CellNames {
+        /** The recorded name for {@code dimId}, or {@code derived} if this is its first derivation. */
+        GalacticCoord nameFor(int dimId, GalacticCoord derived);
+    }
+
+    /** The no-store resolver: every body keeps the name this derivation just computed. */
+    public static final CellNames DERIVED_NAMES = new CellNames() {
+        @Override
+        public GalacticCoord nameFor(int dimId, GalacticCoord derived) {
+            return derived;
+        }
+    };
 
     /** Legacy-spacing overload: derives with the default super-cell edge, as of now. */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord) {
@@ -80,6 +117,17 @@ public final class SystemContent {
      */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells,
                                             long atTick) {
+        return bodiesOf(star, systemCoord, minSpacingCells, atTick, DERIVED_NAMES);
+    }
+
+    /**
+     * The system's bodies, with each body's cell name taken from {@code names} rather than from this
+     * derivation alone. {@code atTick} now selects only the LIVE part of the layout — a moon's offset
+     * inside its parent's cell; a planet's cell is a function of the authored elements and of nothing
+     * that ticks.
+     */
+    public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells,
+                                            long atTick, CellNames names) {
         List<SystemBody> bodies = new ArrayList<>();
         if (star == null) {
             return bodies;
@@ -93,7 +141,7 @@ public final class SystemContent {
                 continue;
             }
             DimensionProperties planet = (DimensionProperties) p;
-            GalacticCoord planetAddr = addressOf(planet, anchor, minSpacingCells, atTick);
+            GalacticCoord planetAddr = addressOf(planet, anchor, minSpacingCells, names);
             bodies.add(new SystemBody(planetAddr, kindOf(planet, SystemBodyKind.PLANET),
                     planet.getId(), starId));
 
@@ -111,18 +159,27 @@ public final class SystemContent {
     }
 
     /**
-     * The cell a PLANET-level body occupies, at {@code atTick}. Its address is its OWN cell's centre;
-     * the cell is clamped into the anchor's super-cell box so the neighbourhood can never reach a
-     * neighbouring system's territory.
+     * The cell a PLANET-level body occupies — its DURABLE name, not a snapshot of where it is now.
+     *
+     * <p>Derived from the body's orbital elements evaluated at {@link #NAME_TICK}, snapped to that
+     * cell's centre and clamped into the anchor's super-cell box so a neighbourhood can never reach a
+     * neighbouring system's territory. The store is consulted AFTER the clamp, so a later change to
+     * the spacing — or to this arithmetic — can never move a name that has already been recorded.</p>
+     *
+     * <p>It used to be derived from the LIVE orbital angle, which made a body's address a function of
+     * world time: one orbit unit is a quarter of a cell, an orbit is hundreds of units, so a planet
+     * left the cell a parked ship was sitting in every few minutes and simply vanished from its sky.
+     * Orbital motion moves a body WITHIN its cell; it does not move it between cells.</p>
      */
     static GalacticCoord addressOf(DimensionProperties planet, GalacticCoord anchor, int minSpacingCells,
-                                   long atTick) {
-        double[] pos = positionOf(planet, atTick);
+                                   CellNames names) {
+        double[] pos = positionOf(planet, NAME_TICK);
         long px = Math.round(pos[0] * ORBIT_UNIT_BLOCKS);
         long py = Math.round(pos[1] * ORBIT_UNIT_BLOCKS);
         long pz = Math.round(pos[2] * ORBIT_UNIT_BLOCKS);
-        return clampIntoBox(anchor.plusLocal(px, py, pz).cellCentre(), anchor, minSpacingCells,
-                planet.getId());
+        GalacticCoord derived = clampIntoBox(anchor.plusLocal(px, py, pz).cellCentre(), anchor,
+                minSpacingCells, planet.getId());
+        return names == null ? derived : names.nameFor(planet.getId(), derived);
     }
 
     /** A moon stays LOCAL: same cell as the parent planet, a small offset from its centre. */
@@ -158,6 +215,16 @@ public final class SystemContent {
      * the log it was needed in. One report per distinct problem, per session.
      */
     private static final Set<String> REPORTED = Collections.synchronizedSet(new HashSet<String>());
+
+    /**
+     * Forget what has already been reported (server stop). Without this the set outlives the world it
+     * described: a second world in the same JVM — a dev restart, or every test class after the first
+     * in one fork — has a genuine layout fault swallowed because an earlier, unrelated world already
+     * minted that key.
+     */
+    public static void reset() {
+        REPORTED.clear();
+    }
 
     /**
      * INVARIANT: at most ONE real body per cell. A star and a planet are real bodies and each owns its

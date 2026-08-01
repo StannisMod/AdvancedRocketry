@@ -172,6 +172,7 @@ public final class SpaceSubsystem {
                 shipLedger, SpaceSubsystem::worldTime);
         transitManager.setOfflineProgress(new OfflineProgress(
                 OfflineProgress.parseMode(cfg.spaceTransitOfflineProgress), SpaceSubsystem::isPlayerOnline));
+        transitManager.setArrivalPlacement(SpaceSubsystem::arrivalStandoff);
         entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
                 SpaceSubsystem::launchBodyAddress, SpaceSubsystem::worldTime);
         descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
@@ -244,6 +245,43 @@ public final class SpaceSubsystem {
                 : zmaster587.advancedRocketry.universe.UniverseRegistry.parseAnchor(cfg.spaceHomeSystemCoord);
     }
 
+    /**
+     * Where a jump aimed at {@code target} actually ends: standing the ship off every descend-target
+     * body of the target's own cell, by the same ring an entry uses.
+     *
+     * <p>Without this an arrival lands ON its destination. A planet's address IS its cell centre, and
+     * the arrival settles the ship exactly onto the coordinate it aimed at, so the ship comes out of
+     * hyperspace at distance zero from the body — well inside the descent radius — and the pilot's
+     * first control input drops him onto the surface he had just spent a jump reaching. The entry
+     * path has said this for as long as it has existed ({@link ShipEntryController#ENTRY_RING_BLOCKS}
+     * is twice the descent radius for exactly this reason); the arrival path never had a counterpart.
+     *
+     * <p>A cell with no descend-target body — deep space, a hand-typed coordinate — is returned
+     * UNTOUCHED. There is nothing to stand off from, and displacing a destination the pilot chose
+     * rather than derived would be its own kind of wrong. Public for the same reason
+     * {@link #launchBodyAddress(int)} is: a probe-built stack wires the production resolver.
+     */
+    public static GalacticCoord arrivalStandoff(String shipId, GalacticCoord target, long worldTick) {
+        if (target == null) {
+            return null;
+        }
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            return target;
+        }
+        java.util.List<GalacticCoord> occupied = new java.util.ArrayList<>();
+        for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(target)) {
+            if (body.isDescendTarget()) {
+                occupied.add(body.address());
+            }
+        }
+        return StandoffRing.standoffFrom(target, occupied, ShipEntryController.ENTRY_RING_BLOCKS,
+                ShipEntryController.DESCENT_RADIUS_BLOCKS,
+                shipId == null ? 0 : shipId.hashCode());
+    }
+
     /** Server-stop teardown. The slot dimensions stay registered (JVM-global); only the controller resets. */
     public static void onServerStopped() {
         instance = null;
@@ -254,6 +292,7 @@ public final class SpaceSubsystem {
         gcTickCounter = 0;
         pressureGcRequested = false;
         SystemBodiesProducer.reset();
+        zmaster587.advancedRocketry.universe.SystemContent.reset();
         HyperspaceWorld.reset();
     }
 
