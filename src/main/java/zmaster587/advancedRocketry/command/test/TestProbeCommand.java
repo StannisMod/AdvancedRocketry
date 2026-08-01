@@ -2189,7 +2189,12 @@ public class TestProbeCommand extends CommandBase {
                         .append("\",\"slotDim\":").append(slotDimJson(shipSlot))
                         .append(",\"slotBound\":").append(shipSlot
                                 != zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT)
-                        .append(",\"cell\":\"").append(e.coord.cellKey()).append("\",\"bodies\":[");
+                        // cellBodies, not "bodies": what follows is the content of the CELL this ship
+                        // stands in, asked per ship only because a ship is how we got a cell to ask
+                        // about. Bodies belong to a cell and are delivered per slot dim; a field named
+                        // "bodies" inside a ship object invents a per-ship notion that does not exist,
+                        // and a reader of this output did exactly that.
+                        .append(",\"cell\":\"").append(e.coord.cellKey()).append("\",\"cellBodies\":[");
                 int bodyCount = 0;
                 if (reg != null) {
                     for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(e.coord)) {
@@ -2204,7 +2209,7 @@ public class TestProbeCommand extends CommandBase {
                                 .append('}');
                     }
                 }
-                out.append("],\"bodyCount\":").append(bodyCount).append('}');
+                out.append("],\"cellBodyCount\":").append(bodyCount).append('}');
             }
             out.append("],\"shipCount\":").append(shipCount)
                     .append(",\"registry\":").append(reg != null);
@@ -3617,6 +3622,44 @@ public class TestProbeCommand extends CommandBase {
                 info.put("orbitalDistance", props.orbitalDist);
             }
             send(sender, jsonMap(info));
+            return;
+        }
+        // dim here — everything that decides what the SENDER's own world is and what sky it draws,
+        // in one answer. A sky complaint has two opposite causes and they are indistinguishable by
+        // eye: the right world drawing the wrong sky, or a SLOT world drawing its (correct) cell sky
+        // over terrain it should not be reading. The pair that splits them is providerClass + saveDir
+        // — a slot provider names a `advRocketry/spacepool/...` folder and a bound cell key, a planet
+        // provider names neither — so both are reported side by side rather than one at a time.
+        if ("here".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.World world = sender.getEntityWorld();
+            int dim = world.provider.getDimension();
+            Map<String, Object> here = new LinkedHashMap<>();
+            here.put("dim", dim);
+            here.put("providerClass", world.provider.getClass().getName());
+            here.put("dimensionType", world.provider.getDimensionType().getName());
+            here.put("saveDir", world.provider.getSaveFolder() == null
+                    ? "null" : world.provider.getSaveFolder());
+            here.put("chunkGeneratorClass", chunkGeneratorClassOf(
+                    world instanceof net.minecraft.world.WorldServer
+                            ? (net.minecraft.world.WorldServer) world : null));
+            here.put("isARPlanet", DimensionManager.getInstance().isDimensionCreated(dim));
+            here.put("isSlotProvider",
+                    world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
+            String boundCell = zmaster587.advancedRocketry.space.SpaceSlotPool.cellKeyFor(dim);
+            here.put("boundCell", boundCell == null ? "null" : boundCell);
+            here.put("worldTime", world.getWorldInfo().getWorldTime());
+            here.put("biome", world.getBiome(sender.getPosition()).getRegistryName() == null
+                    ? "null" : world.getBiome(sender.getPosition()).getRegistryName().toString());
+            // Whether the body feed keys THIS dim at all. Read off the server-side producer, not the
+            // client render map (that one is @SideOnly(CLIENT) and does not exist on a dedicated
+            // server). The cell sky draws its boundary ring unconditionally, so a keyed entry is not
+            // required for the ring to appear — but a dim that is keyed while not being a cell is a
+            // defect of its own, and it is worth seeing beside the rest.
+            zmaster587.advancedRocketry.space.SpaceManager spaceHere =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+            here.put("feedKeysThisDim", spaceHere != null
+                    && spaceHere.loadedCells().containsValue(dim));
+            send(sender, jsonMap(here));
             return;
         }
         if ("celestial-angle".equalsIgnoreCase(args[0]) && args.length >= 3) {
