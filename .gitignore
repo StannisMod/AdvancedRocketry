@@ -34,10 +34,11 @@ logs/
 /run/
 
 # Navigator / agent meta repository — tracked separately in a private repo
-# (.AdvancedRocketry-navigator.git; see .agent/sops/development/agent-meta-repo.md).
+# (.AdvancedRocketry-navigator.git) that shares this working tree.
 # These paths are owned by the meta repo and must NOT be tracked by main.
 .agent/
 /CLAUDE.md
 /AGENTS.md
+/SETUP-AR.md
 .claude/
 .AdvancedRocketry-navigator.git/
