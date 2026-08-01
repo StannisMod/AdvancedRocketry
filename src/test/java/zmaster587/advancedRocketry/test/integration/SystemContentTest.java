@@ -45,18 +45,22 @@ public class SystemContentTest {
     }
 
     /**
-     * A body at orbital angle {@code theta}. BOTH angle fields are set, and that is the physically
-     * consistent state rather than belt-and-braces: {@code baseOrbitTheta} is the authored angle a
-     * body's durable cell name is derived from, {@code orbitTheta} is the live angle the world
-     * advances every tick, and at tick zero the live one IS the base one. A fixture that set only the
-     * live field described a body whose AUTHORED position was the +X axis whatever angle it asked
-     * for — invisible while an address was derived live, and decisive once it is not.
+     * A body authored at orbital angle {@code theta}, and CURRENTLY somewhere else on that orbit.
+     *
+     * <p>The two angle fields are set to different values on purpose. {@code baseOrbitTheta} is the
+     * authored angle a durable cell name is derived from; {@code orbitTheta} is the live angle the
+     * world rewrites every tick. Setting them equal — the physically honest state at tick zero, and
+     * the first thing one reaches for — makes every test in this file blind to the defect the file
+     * exists to guard: with the two identical, reading the live field and reading the authored one
+     * produce the same answer, so a derivation that went back to the live field would keep the whole
+     * suite green while restoring exactly the bug that took planets out of a parked ship's sky. A
+     * unit test never ticks the world, so the drift has to be authored in.</p>
      */
     private static DimensionProperties planet(int dimId, int orbitalDist, double theta) {
         DimensionProperties p = new DimensionProperties(dimId);
         p.orbitalDist = orbitalDist;
         p.baseOrbitTheta = theta;
-        p.orbitTheta = theta;
+        p.orbitTheta = theta + 1.0; // the body has moved since; a NAME must not notice
         p.orbitalPhi = 0;
         return p;
     }

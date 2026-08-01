@@ -2834,6 +2834,12 @@ public class TestProbeCommand extends CommandBase {
                             new zmaster587.advancedRocketry.space.VSShipCrosser(),
                             entryLedger,
                             () -> (long) server.getTickCounter());
+            // This stack REPLACES the production one, so anything production installs on the transit
+            // manager has to be installed here too or the whole entry/descent suite quietly measures a
+            // different game. The arrival placement is the one that matters: without it a jump on this
+            // stack lands exactly on its destination, which is the pre-ring behaviour, and a test
+            // written to check the standoff would report that as current.
+            tctl.setArrivalPlacement(zmaster587.advancedRocketry.space.SpaceSubsystem::arrivalStandoff);
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
                     entryMgr, entryLedger, ctl, tctl, dctl);
             // Start from a clean pilot channel: a stale static FF input from a prior test would make the

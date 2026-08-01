@@ -271,11 +271,14 @@ public final class SpaceSubsystem {
         if (reg == null) {
             return target;
         }
+        // EVERY body, not only the ones a ship can land on. The question here is "is something there",
+        // not "could I descend to it": arriving on top of a gas giant trips no descent trigger, but it
+        // does put the ship at zero distance from the body, and an observer→body vector of zero is
+        // dropped by the sky renderer — so the pilot spends a jump and arrives at a destination his
+        // own sky does not draw.
         java.util.List<GalacticCoord> occupied = new java.util.ArrayList<>();
         for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(target)) {
-            if (body.isDescendTarget()) {
-                occupied.add(body.address());
-            }
+            occupied.add(body.address());
         }
         return StandoffRing.standoffFrom(target, occupied, ShipEntryController.ENTRY_RING_BLOCKS,
                 ShipEntryController.DESCENT_RADIUS_BLOCKS,

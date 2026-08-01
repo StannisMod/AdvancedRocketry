@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
+import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
@@ -107,6 +108,57 @@ public class UniverseRegistryTest {
         assertEquals(Optional.of(GalacticCoord.ofSectorLocal(-9, 0, 42, 0, 0, 0)), round.coordForSystem(8));
         assertEquals(5, round.starIdForCoord(GalacticCoord.ofSectorLocal(1, 1, 1, 0, 0, 0)).getAsInt());
         assertEquals(8, round.starIdForCoord(GalacticCoord.ofSectorLocal(-9, 0, 42, 0, 0, 0)).getAsInt());
+    }
+
+    /**
+     * A body's cell NAME survives a save, and the loaded name beats what a fresh derivation would
+     * now say.
+     *
+     * <p>This is the guarantee the whole store exists for, and it is the one with the worst failure:
+     * a coordinate reads back as {@code ORIGIN} when its sub-tag is missing, so a broken write does
+     * not throw — it silently addresses every body in the galaxy at one cell, forever, on the next
+     * restart. The authored angle is CHANGED between save and load so a re-derivation would give a
+     * different answer; without that the test would pass against a registry that persisted nothing
+     * and simply re-derived the same value.</p>
+     */
+    @Test
+    public void cellNamesRoundTripThroughNbtAndBeatALaterDerivation() {
+        StellarBody host = star(4321);
+        host.setSize(1f);
+        DimensionProperties body = new DimensionProperties(4322);
+        body.orbitalDist = 120;
+        body.baseOrbitTheta = 0.4;
+        body.orbitalPhi = 0;
+        body.setStar(host);
+        UniverseRegistry.setStarLookup(id -> id == 4321 ? host : null);
+
+        UniverseRegistry source = new UniverseRegistry();
+        source.place(GalacticCoord.ORIGIN, 4321);
+        Optional<GalacticCoord> namedAtFirstDerivation = source.coordForPlanet(body);
+        assertTrue("the fixture must derive a name at all", namedAtFirstDerivation.isPresent());
+
+        NBTTagCompound tag = new NBTTagCompound();
+        source.writeToNBT(tag);
+
+        // The authored orbit changes under it — a re-save of the world's XML, an author's edit, a
+        // change to this arithmetic. A recorded name must not notice.
+        body.baseOrbitTheta = 2.9;
+
+        UniverseRegistry round = new UniverseRegistry();
+        round.readFromNBT(tag);
+        round.place(GalacticCoord.ORIGIN, 4321);
+
+        assertEquals("a recorded name must survive the save and win over a fresh derivation",
+                namedAtFirstDerivation, round.coordForPlanet(body));
+        assertEquals("...and it must be the recorded one, not a coincidence of re-derivation",
+                namedAtFirstDerivation, round.recordedName(4322));
+
+        // The negative leg: a registry that loaded nothing derives from the CHANGED orbit instead,
+        // which is what proves the assertion above is about persistence and not about determinism.
+        UniverseRegistry fresh = new UniverseRegistry();
+        fresh.place(GalacticCoord.ORIGIN, 4321);
+        assertFalse("a fresh registry must derive the CHANGED orbit's name, or this test proves nothing",
+                namedAtFirstDerivation.equals(fresh.coordForPlanet(body)));
     }
 
     @Test

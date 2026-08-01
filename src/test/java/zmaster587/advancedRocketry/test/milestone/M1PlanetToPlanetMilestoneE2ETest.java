@@ -764,56 +764,85 @@ public class M1PlanetToPlanetMilestoneE2ETest {
         // never established that a pilot can reach a body at all — it measured the arrival, not the
         // approach. If the range never falls now, the assertion below says so before the descent
         // assertion gets a chance to blame the trigger.
-        long range = nearestDescendTargetDistance(bodies);
+        // The craft flies a STRAIGHT LINE on a held key — the pilot commands no rotation here — so a
+        // heading is only useful while it is still closing. Its closest approach is r·sin θ against
+        // the body, and the descent needs 512 of a 1024-block standoff, i.e. θ ≤ 30°; but "the range
+        // fell over one burst" admits anything under ~88°. Picking a heading once and holding it
+        // therefore passes the search and misses the body on most bearings, and the bearing is drawn
+        // fresh every run from the ship's id. So this re-probes whenever the current heading stops
+        // paying, which is what a pilot does when the range readout stalls, and which converges from
+        // any starting geometry instead of gambling on the first draw.
+        long rangeAtArrival = nearestDescendTargetDistance(bodies);
+        long range = rangeAtArrival;
         final int[] translationKeys = {Keyboard.KEY_W, Keyboard.KEY_S, Keyboard.KEY_Q, Keyboard.KEY_E};
+        final int burstTicks = (int) (60 * TestTimeouts.factor());
+        final int cutTicks = (int) (40 * TestTimeouts.factor());
         int heading = -1;
-        long rangeAtArrival = range;
-        for (int k = 0; k < translationKeys.length && heading < 0; k++) {
-            long before = range;
-            bot().holdKey(translationKeys[k]);
-            try {
-                bot().waitTicks((int) (60 * TestTimeouts.factor()));
-            } finally {
-                bot().releaseKey(translationKeys[k]);
-            }
-            bot().holdKey(Keyboard.KEY_X); // throttle cut: stop, so the next probe starts from rest
-            try {
-                bot().waitTicks((int) (40 * TestTimeouts.factor()));
-            } finally {
-                bot().releaseKey(Keyboard.KEY_X);
-            }
-            range = nearestDescendTargetDistance(exec("artest space bodies"));
-            if (range < before) {
-                heading = translationKeys[k];
-            }
-        }
-        assertTrue("a pilot who has arrived beside a body must be able to FLY AT IT. He holds a "
-                        + "translation key and the range to the body falls; that is the whole of it, "
-                        + "and it is the only way a tier-2 craft ever gets close enough to descend "
-                        + "now that an arrival deliberately stands off. None of the four translation "
-                        + "keys moved him closer, which means either the craft does not answer its "
-                        + "controls in a space cell or the range readout does not follow it. "
-                        + "rangeAtArrival=" + rangeAtArrival + " rangeAfterProbing=" + range
-                        + " ledger=" + exec("artest space ledger-get " + shipId)
-                        + " bodies=" + exec("artest space bodies"),
-                heading >= 0);
-
-        // He flies. The descent trigger is PROXIMITY under power, not altitude — the ship has to be
-        // under a pilot's hand for the computer to look for a body at all, so the key stays down.
+        boolean everClosed = false;
         int descentDim = jumpDim;
-        int descentBudget = (int) (600 * TestTimeouts.factor());
-        bot().holdKey(heading);
-        try {
-            for (int attempt = 0; attempt < descentBudget && descentDim == jumpDim; attempt++) {
-                bot().waitTicks(5);
-                JsonObject weather = bot().reportWeather();
-                if (weather.has("dim")) {
-                    descentDim = weather.get("dim").getAsInt();
+        int cycles = (int) (40 * TestTimeouts.factor());
+
+        for (int cycle = 0; cycle < cycles && descentDim == jumpDim; cycle++) {
+            if (heading < 0) {
+                // Re-pick: try each translation in turn and keep the first that closes the range.
+                // A probe is real flight — four bursts cover more ground than the standoff — so the
+                // descent can fire DURING the search, and the ship is then gone from the cell and its
+                // range reads "no body at all". That is this leg SUCCEEDING, and a search that did not
+                // look at the client would report it as the exact opposite: every heading failing.
+                for (int k = 0; k < translationKeys.length && heading < 0; k++) {
+                    long before = range;
+                    long after = flyBurst(translationKeys[k], burstTicks, cutTicks);
+                    descentDim = clientDim(descentDim);
+                    if (descentDim != jumpDim) {
+                        everClosed = true;
+                        break;
+                    }
+                    range = after;
+                    if (range < before) {
+                        heading = translationKeys[k];
+                        everClosed = true;
+                    }
                 }
+                if (descentDim != jumpDim) {
+                    break;
+                }
+                assertTrue("a pilot who has arrived beside a body must be able to FLY AT IT: he holds "
+                                + "a translation key and the range falls. That is the only way a "
+                                + "tier-2 craft gets close enough to descend now that an arrival "
+                                + "deliberately stands off, and none of the four translations moved "
+                                + "him closer on cycle " + cycle + " — so either the craft does not "
+                                + "answer its controls in a space cell, or the range readout does not "
+                                + "follow it. rangeAtArrival=" + rangeAtArrival + " rangeNow=" + range
+                                + " ledger=" + exec("artest space ledger-get " + shipId)
+                                + " bodies=" + exec("artest space bodies"),
+                        heading >= 0);
             }
-        } finally {
-            bot().releaseKey(heading);
+            // Fly the chosen heading while it still pays, watching the client for the descent.
+            long before = range;
+            bot().holdKey(heading);
+            try {
+                for (int slice = 0; slice < 5 && descentDim == jumpDim; slice++) {
+                    bot().waitTicks(burstTicks / 5);
+                    JsonObject weather = bot().reportWeather();
+                    if (weather.has("dim")) {
+                        descentDim = weather.get("dim").getAsInt();
+                    }
+                }
+            } finally {
+                bot().releaseKey(heading);
+            }
+            if (descentDim != jumpDim) {
+                break;
+            }
+            range = cutThrottle(cutTicks);
+            if (range >= before) {
+                heading = -1; // this heading has passed its closest approach — pick another
+            }
         }
+        assertTrue("ARRANGEMENT: the approach must actually have closed the range at least once, or "
+                        + "this leg never flew and whatever it says about the descent is about "
+                        + "nothing. rangeAtArrival=" + rangeAtArrival + " rangeNow=" + range,
+                everClosed);
         assertTrue("a piloted ship that has CLOSED ON a body must be taken DOWN off the space cell — "
                         + "that entry is the only way a tier-2 craft reaches a surface, and the pilot's "
                         + "whole input is flying at the body he arrived beside. The CLIENT's own "
@@ -1145,6 +1174,38 @@ public class M1PlanetToPlanetMilestoneE2ETest {
             }
         }
         return best;
+    }
+
+    /**
+     * Hold one translation key for a burst, then cut the throttle, and report the range that follows.
+     * The cut matters: flight assist ramps a velocity SETPOINT rather than thrusting directly, so a
+     * released key leaves the craft coasting and the next burst would measure the previous one.
+     */
+    private long flyBurst(int key, int burstTicks, int cutTicks) throws Exception {
+        bot().holdKey(key);
+        try {
+            bot().waitTicks(burstTicks);
+        } finally {
+            bot().releaseKey(key);
+        }
+        return cutThrottle(cutTicks);
+    }
+
+    /** The dimension the CLIENT believes it is in, or {@code fallback} when it does not say. */
+    private int clientDim(int fallback) throws Exception {
+        JsonObject weather = bot().reportWeather();
+        return weather.has("dim") ? weather.get("dim").getAsInt() : fallback;
+    }
+
+    /** Brake to a stop and report the range from rest. */
+    private long cutThrottle(int cutTicks) throws Exception {
+        bot().holdKey(Keyboard.KEY_X);
+        try {
+            bot().waitTicks(cutTicks);
+        } finally {
+            bot().releaseKey(Keyboard.KEY_X);
+        }
+        return nearestDescendTargetDistance(exec("artest space bodies"));
     }
 
     /**

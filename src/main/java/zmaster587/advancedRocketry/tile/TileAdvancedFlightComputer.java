@@ -341,7 +341,16 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                     // face. A pose outside the local range is therefore saturated, not carried.
                     ledger.updatePosition(shipId, zmaster587.advancedRocketry.space.CellWorldMapper
                             .coordOfPoseWithin(cell, pose[0], pose[1], pose[2]));
-                    if (!cellEdgeReported && zmaster587.advancedRocketry.space.CellWorldMapper
+                    // Only a SETTLED ship can be at its cell's edge by flying there. A ship mid-crossing
+                    // sits in the paste band — far below the cell's own pose range — for the few ticks
+                    // between the paste and the settle, which reads as an escape on every single
+                    // arrival. Reporting it there would spend this tile's one report on a ship that has
+                    // not moved a block, and the real edge would then pass in silence.
+                    zmaster587.advancedRocketry.space.ShipLedger.Entry settledHere = ledger.get(shipId);
+                    if (!cellEdgeReported
+                            && settledHere != null
+                            && settledHere.state == zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
+                            && zmaster587.advancedRocketry.space.CellWorldMapper
                             .poseEscapesCell(pose[0], pose[1], pose[2])) {
                         cellEdgeReported = true;
                         zmaster587.advancedRocketry.AdvancedRocketry.logger.warn(
