@@ -749,11 +749,60 @@ public class M1PlanetToPlanetMilestoneE2ETest {
                         + "or the resolver refuses quietly and the leg measures nothing: " + loaded,
                 loaded.contains("\"loaded\":true"));
 
+        // He CLOSES THE RANGE, then descends. A jump does not end on top of its destination: it ends
+        // on a standoff ring around it, outside the descent trigger on purpose, because arriving in a
+        // system is not the same act as landing on a world. Flying that last stretch is the pilot's,
+        // and it is part of the loop this test exists to walk.
+        //
+        // His instruments are the range readout and four translation keys, and that is all this leg
+        // uses: try one, watch the range, keep the one that closes it. Flight assist ramps a velocity
+        // SETPOINT rather than thrusting directly, so each probe is followed by a throttle cut —
+        // without it the ship keeps coasting and the next probe measures the previous one.
+        //
+        // The search doubles as this leg's positive control. Under the old arrangement the ship
+        // arrived at zero range and the descent fired on the first tick of any input, so the leg
+        // never established that a pilot can reach a body at all — it measured the arrival, not the
+        // approach. If the range never falls now, the assertion below says so before the descent
+        // assertion gets a chance to blame the trigger.
+        long range = nearestDescendTargetDistance(bodies);
+        final int[] translationKeys = {Keyboard.KEY_W, Keyboard.KEY_S, Keyboard.KEY_Q, Keyboard.KEY_E};
+        int heading = -1;
+        long rangeAtArrival = range;
+        for (int k = 0; k < translationKeys.length && heading < 0; k++) {
+            long before = range;
+            bot().holdKey(translationKeys[k]);
+            try {
+                bot().waitTicks((int) (60 * TestTimeouts.factor()));
+            } finally {
+                bot().releaseKey(translationKeys[k]);
+            }
+            bot().holdKey(Keyboard.KEY_X); // throttle cut: stop, so the next probe starts from rest
+            try {
+                bot().waitTicks((int) (40 * TestTimeouts.factor()));
+            } finally {
+                bot().releaseKey(Keyboard.KEY_X);
+            }
+            range = nearestDescendTargetDistance(exec("artest space bodies"));
+            if (range < before) {
+                heading = translationKeys[k];
+            }
+        }
+        assertTrue("a pilot who has arrived beside a body must be able to FLY AT IT. He holds a "
+                        + "translation key and the range to the body falls; that is the whole of it, "
+                        + "and it is the only way a tier-2 craft ever gets close enough to descend "
+                        + "now that an arrival deliberately stands off. None of the four translation "
+                        + "keys moved him closer, which means either the craft does not answer its "
+                        + "controls in a space cell or the range readout does not follow it. "
+                        + "rangeAtArrival=" + rangeAtArrival + " rangeAfterProbing=" + range
+                        + " ledger=" + exec("artest space ledger-get " + shipId)
+                        + " bodies=" + exec("artest space bodies"),
+                heading >= 0);
+
         // He flies. The descent trigger is PROXIMITY under power, not altitude — the ship has to be
         // under a pilot's hand for the computer to look for a body at all, so the key stays down.
         int descentDim = jumpDim;
         int descentBudget = (int) (600 * TestTimeouts.factor());
-        bot().holdKey(Keyboard.KEY_R);
+        bot().holdKey(heading);
         try {
             for (int attempt = 0; attempt < descentBudget && descentDim == jumpDim; attempt++) {
                 bot().waitTicks(5);
@@ -763,12 +812,16 @@ public class M1PlanetToPlanetMilestoneE2ETest {
                 }
             }
         } finally {
-            bot().releaseKey(Keyboard.KEY_R);
+            bot().releaseKey(heading);
         }
-        assertTrue("a piloted ship that is close to a body must be taken DOWN off the space cell — that "
-                        + "entry is the only way a tier-2 craft reaches a surface, and the pilot's whole "
-                        + "input is holding one key near the body he flew to. The CLIENT's own dimension "
-                        + "is what answers. clientDim=" + descentDim + " cellDim=" + jumpDim
+        assertTrue("a piloted ship that has CLOSED ON a body must be taken DOWN off the space cell — "
+                        + "that entry is the only way a tier-2 craft reaches a surface, and the pilot's "
+                        + "whole input is flying at the body he arrived beside. The CLIENT's own "
+                        + "dimension is what answers. If the range fell but the trigger never fired, "
+                        + "read the two ranges below against the descent radius before suspecting the "
+                        + "approach. clientDim=" + descentDim + " cellDim=" + jumpDim
+                        + " rangeAtArrival=" + rangeAtArrival
+                        + " rangeNow=" + nearestDescendTargetDistance(exec("artest space bodies"))
                         + " nearestBodyDim=" + nearestDim + " dimLoad=" + loaded
                         + " descentStatus=" + exec("artest space descent-status")
                         + " ledger=" + exec("artest space ledger-get " + shipId)
@@ -1092,6 +1145,26 @@ public class M1PlanetToPlanetMilestoneE2ETest {
             }
         }
         return best;
+    }
+
+    /**
+     * The RANGE to that same body — the readout a pilot closing on a planet watches, and this test's
+     * only measure of whether he is getting anywhere. {@link Long#MAX_VALUE} when the cell reports no
+     * body to descend onto, which keeps "no target" from reading as "range zero".
+     */
+    private static long nearestDescendTargetDistance(String bodies) {
+        Matcher m = BODY.matcher(bodies);
+        long bestDistance = Long.MAX_VALUE;
+        while (m.find()) {
+            if (!"true".equals(m.group(3))) {
+                continue;
+            }
+            long distance = Long.parseLong(m.group(4));
+            if (distance < bestDistance) {
+                bestDistance = distance;
+            }
+        }
+        return bestDistance;
     }
 
     /**
