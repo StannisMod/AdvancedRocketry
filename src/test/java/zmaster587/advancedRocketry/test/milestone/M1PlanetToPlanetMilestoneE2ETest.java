@@ -88,7 +88,7 @@ public class M1PlanetToPlanetMilestoneE2ETest {
     /** One body of a {@code space bodies} ship entry, in the order the probe writes its keys. */
     private static final Pattern BODY = Pattern.compile(
             "\\{\"dim\":(-?\\d+),\"kind\":\"([A-Z_]+)\",\"descendTarget\":(true|false),"
-                    + "\"distance\":(\\d+)}");
+                    + "\"bearing\":\\[(-?\\d+),(-?\\d+),(-?\\d+)],\"distance\":(\\d+)}");
     /**
      * The console is aimed at somewhere a ship can put down: the BODY it names may be descended to,
      * and its dimension is a real world rather than one of the space subsystem's own slot worlds.
@@ -754,95 +754,138 @@ public class M1PlanetToPlanetMilestoneE2ETest {
         // system is not the same act as landing on a world. Flying that last stretch is the pilot's,
         // and it is part of the loop this test exists to walk.
         //
-        // His instruments are the range readout and four translation keys, and that is all this leg
-        // uses: try one, watch the range, keep the one that closes it. Flight assist ramps a velocity
-        // SETPOINT rather than thrusting directly, so each probe is followed by a throttle cut —
-        // without it the ship keeps coasting and the next probe measures the previous one.
+        // His instruments are the ones his own cell sky gives him — WHICH WAY the body lies (the sky
+        // draws each body along the observer→body direction) and HOW FAR (waves 2-3 put the range on
+        // its label) — and the six translation keys: nose (W/S), lateral (Q/E), vertical (R/F). He
+        // points at the largest part of the offset and flies it off, then looks again. Flight assist
+        // ramps a velocity SETPOINT rather than thrusting directly, so every burst is followed by a
+        // throttle cut — without it the ship keeps coasting and the next reading measures the
+        // previous burst.
         //
         // The search doubles as this leg's positive control. Under the old arrangement the ship
         // arrived at zero range and the descent fired on the first tick of any input, so the leg
         // never established that a pilot can reach a body at all — it measured the arrival, not the
         // approach. If the range never falls now, the assertion below says so before the descent
         // assertion gets a chance to blame the trigger.
-        // The craft flies a STRAIGHT LINE on a held key — the pilot commands no rotation here — so a
-        // heading is only useful while it is still closing. Its closest approach is r·sin θ against
-        // the body, and the descent needs 512 of a 1024-block standoff, i.e. θ ≤ 30°; but "the range
-        // fell over one burst" admits anything under ~88°. Picking a heading once and holding it
-        // therefore passes the search and misses the body on most bearings, and the bearing is drawn
-        // fresh every run from the ship's id. So this re-probes whenever the current heading stops
-        // paying, which is what a pilot does when the range readout stalls, and which converges from
-        // any starting geometry instead of gambling on the first draw.
-        long rangeAtArrival = nearestDescendTargetDistance(bodies);
+        //
+        // WHY THE DIRECTION AND NOT JUST THE RANGE — three refuted designs' worth of reason.
+        //
+        // The craft flies a STRAIGHT LINE on a held key (the pilot commands no rotation here), so one
+        // key can only ever null its OWN component of the offset. A search that keeps "whichever key
+        // still closes the range" never LEAVES the first axis it tried: once past that axis's closest
+        // approach, the opposite key of the SAME axis closes the range again, so the two ping-pong
+        // across the foot of the perpendicular forever. The residual they never attack is
+        // 1024·sin(bearing) against a 512-block trigger, and the bearing is drawn fresh each run from
+        // the ship's id — that shape reaches the body on about a third of the draws and orbits at
+        // ~740 blocks on the rest.
+        //
+        // Working the three axes in TURN fixes that for a body that HOLDS STILL, and only for one.
+        // The destination generally does not: a moon orbits its planet at up to 0.75 blocks/tick
+        // (`6.545·√(g/orbitalDist)`, with the generator drawing orbitalDist from [100,199] and a
+        // parent gravity of at most 1.3). The craft out-runs that comfortably — 240 blocks a burst
+        // against at most 157 — but a blind search cannot SPEND that speed: while it takes ten
+        // bursts to close the lateral component, the body's own motion re-opens the nose component by
+        // more than the next pass can recover, and the range settles into a limit cycle around
+        // 740-1100 blocks. Measured, not argued: that is exactly what the fourth design did.
+        //
+        // So the pilot does what a pilot does — he LOOKS. The direction to the body is not a
+        // privileged reading: the cell sky draws every body along it, and since waves 2-3 the label
+        // carries the range too. Each burst he takes the largest remaining component, flies about
+        // half of it, and looks again; because the reading is refreshed every burst, a body that
+        // moves is simply a body whose bearing has changed, and the chase converges for the same
+        // reason the foot race does.
+        //
+        // The burst is a count of GAME ticks, sized from the component it is flying. {@code
+        // TestTimeouts.factor()} stretches WALL-CLOCK ceilings so concurrent forks do not time out; a
+        // tick count is not one. Scaling the burst by it made each step three times LONGER on an
+        // 8-fork box than on a 1-fork box — it made this leg's geometry a function of machine load.
+        //
+        // What that does NOT remove: the ship is integrated on the physics mod's own wall-clock
+        // thread while the body's position advances on server ticks, so how far a burst of N client
+        // ticks actually carries the craft still moves with load. The leg survives that by re-sizing
+        // every burst from the component it can still see rather than from a plan — a burst that
+        // fell short is simply a larger component next time round.
+        String feed = bodies;
+        long[] aim = nearestDescendTargetVector(feed);
+        assertTrue("ARRANGEMENT: the arrived cell must report WHERE its descend-target body is, not "
+                        + "only how far — the pilot's own sky draws it along that direction: " + feed,
+                aim != null);
+        long rangeAtArrival = aim[3];
         long range = rangeAtArrival;
-        final int[] translationKeys = {Keyboard.KEY_W, Keyboard.KEY_S, Keyboard.KEY_Q, Keyboard.KEY_E};
-        final int burstTicks = (int) (60 * TestTimeouts.factor());
-        final int cutTicks = (int) (40 * TestTimeouts.factor());
-        int heading = -1;
-        boolean everClosed = false;
+        // One entry per world axis of the offset, each as the key that REDUCES a positive component
+        // and the key that reduces a negative one. A crossing re-assembles a ship at the identity
+        // attitude and this leg commands no rotation, so the craft's own axes are the world's: nose
+        // is +Z, its right is +X, its up is +Y.
+        final int[][] axisKeys = {
+                {Keyboard.KEY_Q, Keyboard.KEY_E},   // dx — lateral (strafe left commands +right)
+                {Keyboard.KEY_R, Keyboard.KEY_F},   // dy — vertical
+                {Keyboard.KEY_W, Keyboard.KEY_S},   // dz — nose
+        };
+        // Long enough for the deadbeat to actually stop the ship, so a reading is taken from rest.
+        final int cutTicks = 60;
+        // The whole approach costs at most this many bursts. Sized off the geometry, not off a
+        // timeout: each burst takes out about half of the largest component, so a 1024-block standoff
+        // is a handful, and a chase still running after this many is not converging — which is a
+        // finding, and the trace below is how it gets read.
+        final int burstBudget = 40;
+        int bursts = 0;
+        int stalled = 0;
+        long bestRange = Long.MAX_VALUE;
         int descentDim = jumpDim;
-        int cycles = (int) (40 * TestTimeouts.factor());
+        // The whole approach, burst by burst, so a red says which component was left standing.
+        StringBuilder flown = new StringBuilder();
 
-        for (int cycle = 0; cycle < cycles && descentDim == jumpDim; cycle++) {
-            if (heading < 0) {
-                // Re-pick: try each translation in turn and keep the first that closes the range.
-                // A probe is real flight — four bursts cover more ground than the standoff — so the
-                // descent can fire DURING the search, and the ship is then gone from the cell and its
-                // range reads "no body at all". That is this leg SUCCEEDING, and a search that did not
-                // look at the client would report it as the exact opposite: every heading failing.
-                for (int k = 0; k < translationKeys.length && heading < 0; k++) {
-                    long before = range;
-                    long after = flyBurst(translationKeys[k], burstTicks, cutTicks);
+        while (bursts < burstBudget && descentDim == jumpDim) {
+            aim = nearestDescendTargetVector(feed);
+            if (aim == null) {
+                // No body left in this cell: the descent has cut the ship out of it. That is this
+                // leg SUCCEEDING — but the crossing settles over several ticks and the CLIENT is
+                // carried at the end of it, so wait for him. Breaking on the dimension he was in
+                // when the trigger fired reads a completed descent as a failed approach.
+                for (int settle = 0; settle < budget && descentDim == jumpDim; settle++) {
+                    bot().waitTicks(5);
                     descentDim = clientDim(descentDim);
-                    if (descentDim != jumpDim) {
-                        everClosed = true;
-                        break;
-                    }
-                    range = after;
-                    if (range < before) {
-                        heading = translationKeys[k];
-                        everClosed = true;
-                    }
                 }
-                if (descentDim != jumpDim) {
-                    break;
-                }
-                assertTrue("a pilot who has arrived beside a body must be able to FLY AT IT: he holds "
-                                + "a translation key and the range falls. That is the only way a "
-                                + "tier-2 craft gets close enough to descend now that an arrival "
-                                + "deliberately stands off, and none of the four translations moved "
-                                + "him closer on cycle " + cycle + " — so either the craft does not "
-                                + "answer its controls in a space cell, or the range readout does not "
-                                + "follow it. rangeAtArrival=" + rangeAtArrival + " rangeNow=" + range
-                                + " ledger=" + exec("artest space ledger-get " + shipId)
-                                + " bodies=" + exec("artest space bodies"),
-                        heading >= 0);
-            }
-            // Fly the chosen heading while it still pays, watching the client for the descent.
-            long before = range;
-            bot().holdKey(heading);
-            try {
-                for (int slice = 0; slice < 5 && descentDim == jumpDim; slice++) {
-                    bot().waitTicks(burstTicks / 5);
-                    JsonObject weather = bot().reportWeather();
-                    if (weather.has("dim")) {
-                        descentDim = weather.get("dim").getAsInt();
-                    }
-                }
-            } finally {
-                bot().releaseKey(heading);
-            }
-            if (descentDim != jumpDim) {
                 break;
             }
-            range = cutThrottle(cutTicks);
-            if (range >= before) {
-                heading = -1; // this heading has passed its closest approach — pick another
+            range = aim[3];
+            if (range < bestRange) {
+                bestRange = range;
+                stalled = 0;
+            } else {
+                stalled++;
             }
+            assertTrue("a pilot who has arrived beside a body must be able to FLY AT IT: he points at "
+                            + "the largest part of the offset, holds a translation key, and the range "
+                            + "falls. It has now failed to beat its own best over " + stalled
+                            + " consecutive bursts, so he is not closing on anything: either the craft "
+                            + "does not answer its controls in a space cell, or the readout does not "
+                            + "follow it, or the body is out-running him — the trace gives the aim and "
+                            + "the range on both sides of every burst. rangeAtArrival=" + rangeAtArrival
+                            + " best=" + bestRange + " rangeNow=" + range + " bursts=" + bursts
+                            + " flown=" + flown
+                            + " ledger=" + exec("artest space ledger-get " + shipId)
+                            + " bodies=" + feed,
+                    stalled < 6);
+
+            int comp = 0;
+            for (int i = 1; i < 3; i++) {
+                if (Math.abs(aim[i]) > Math.abs(aim[comp])) {
+                    comp = i;
+                }
+            }
+            int key = aim[comp] > 0 ? axisKeys[comp][0] : axisKeys[comp][1];
+            // Take about HALF the component: enough that no burst can overshoot what it aims at, and
+            // — through the floor — never so little that the body covers more ground than the ship.
+            int burstTicks = (int) Math.max(80L, Math.min(300L, 30L + Math.abs(aim[comp]) / 4L));
+            flown.append(" aim(").append(aim[0]).append(',').append(aim[1]).append(',')
+                    .append(aim[2]).append(")=").append(range)
+                    .append(" fly[c=").append(comp).append(",b=").append(burstTicks).append(']');
+            feed = flyBurst(key, burstTicks, cutTicks);
+            bursts++;
+            descentDim = clientDim(descentDim);
         }
-        assertTrue("ARRANGEMENT: the approach must actually have closed the range at least once, or "
-                        + "this leg never flew and whatever it says about the descent is about "
-                        + "nothing. rangeAtArrival=" + rangeAtArrival + " rangeNow=" + range,
-                everClosed);
+        range = nearestDescendTargetDistance(feed);
         assertTrue("a piloted ship that has CLOSED ON a body must be taken DOWN off the space cell — "
                         + "that entry is the only way a tier-2 craft reaches a surface, and the pilot's "
                         + "whole input is flying at the body he arrived beside. The CLIENT's own "
@@ -851,6 +894,7 @@ public class M1PlanetToPlanetMilestoneE2ETest {
                         + "approach. clientDim=" + descentDim + " cellDim=" + jumpDim
                         + " rangeAtArrival=" + rangeAtArrival
                         + " rangeNow=" + nearestDescendTargetDistance(exec("artest space bodies"))
+                        + " flown=" + flown
                         + " nearestBodyDim=" + nearestDim + " dimLoad=" + loaded
                         + " descentStatus=" + exec("artest space descent-status")
                         + " ledger=" + exec("artest space ledger-get " + shipId)
@@ -1155,9 +1199,15 @@ public class M1PlanetToPlanetMilestoneE2ETest {
     }
 
     /**
-     * The dimension of the NEAREST body in this cell the ship may descend onto, or MIN_VALUE — the
-     * same choice the flight computer makes when it scans, so the test judges production's pick
-     * rather than substituting one of its own.
+     * The dimension of the NEAREST body in this cell the ship may descend onto, or MIN_VALUE.
+     *
+     * <p>Nearest is the pilot's choice, not production's: the flight computer walks its cell's
+     * bodies in registry order and takes the FIRST descend-target inside the radius, which is a
+     * different body whenever a cell holds more than one — a planet and its moons share a cell. The
+     * two coincide on this loop's arrivals because a jump stands the ship off around the body it was
+     * armed at, leaving that one an order of magnitude nearer than any sibling; they would not
+     * coincide in a cell whose bodies are close together, and the leg would then load one world and
+     * be descended into another.</p>
      */
     private static int nearestDescendTargetDim(String bodies) {
         Matcher m = BODY.matcher(bodies);
@@ -1167,10 +1217,36 @@ public class M1PlanetToPlanetMilestoneE2ETest {
             if (!"true".equals(m.group(3))) {
                 continue;
             }
-            long distance = Long.parseLong(m.group(4));
+            long distance = Long.parseLong(m.group(7));
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = Integer.parseInt(m.group(1));
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Where the nearest descend-target body is FROM THE SHIP: {@code {dx, dy, dz, range}}, or
+     * {@code null} when the cell reports no such body — which, mid-approach, means the descent has
+     * already taken the ship out of the cell.
+     *
+     * <p>This is the range readout with its three components still separate. The pilot has both:
+     * the cell sky draws each body along this very direction and labels it with this very range, so
+     * reading them together is what he does when he looks out of the cockpit, and reading only the
+     * scalar is the one thing he cannot do.</p>
+     */
+    private static long[] nearestDescendTargetVector(String bodies) {
+        Matcher m = BODY.matcher(bodies);
+        long[] best = null;
+        while (m.find()) {
+            if (!"true".equals(m.group(3))) {
+                continue;
+            }
+            long distance = Long.parseLong(m.group(7));
+            if (best == null || distance < best[3]) {
+                best = new long[]{Long.parseLong(m.group(4)), Long.parseLong(m.group(5)),
+                        Long.parseLong(m.group(6)), distance};
             }
         }
         return best;
@@ -1181,7 +1257,7 @@ public class M1PlanetToPlanetMilestoneE2ETest {
      * The cut matters: flight assist ramps a velocity SETPOINT rather than thrusting directly, so a
      * released key leaves the craft coasting and the next burst would measure the previous one.
      */
-    private long flyBurst(int key, int burstTicks, int cutTicks) throws Exception {
+    private String flyBurst(int key, int burstTicks, int cutTicks) throws Exception {
         bot().holdKey(key);
         try {
             bot().waitTicks(burstTicks);
@@ -1197,15 +1273,15 @@ public class M1PlanetToPlanetMilestoneE2ETest {
         return weather.has("dim") ? weather.get("dim").getAsInt() : fallback;
     }
 
-    /** Brake to a stop and report the range from rest. */
-    private long cutThrottle(int cutTicks) throws Exception {
+    /** Brake to a stop and read the cell back, from rest. */
+    private String cutThrottle(int cutTicks) throws Exception {
         bot().holdKey(Keyboard.KEY_X);
         try {
             bot().waitTicks(cutTicks);
         } finally {
             bot().releaseKey(Keyboard.KEY_X);
         }
-        return nearestDescendTargetDistance(exec("artest space bodies"));
+        return exec("artest space bodies");
     }
 
     /**
@@ -1214,18 +1290,8 @@ public class M1PlanetToPlanetMilestoneE2ETest {
      * body to descend onto, which keeps "no target" from reading as "range zero".
      */
     private static long nearestDescendTargetDistance(String bodies) {
-        Matcher m = BODY.matcher(bodies);
-        long bestDistance = Long.MAX_VALUE;
-        while (m.find()) {
-            if (!"true".equals(m.group(3))) {
-                continue;
-            }
-            long distance = Long.parseLong(m.group(4));
-            if (distance < bestDistance) {
-                bestDistance = distance;
-            }
-        }
-        return bestDistance;
+        long[] vector = nearestDescendTargetVector(bodies);
+        return vector == null ? Long.MAX_VALUE : vector[3];
     }
 
     /**

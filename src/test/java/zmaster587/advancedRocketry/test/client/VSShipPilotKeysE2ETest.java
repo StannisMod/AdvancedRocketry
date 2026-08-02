@@ -43,7 +43,9 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
+    private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
     private static final Pattern QW = Pattern.compile("\"qw\":(-?[0-9.E\\-]+)");
@@ -149,6 +151,74 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
                         + (riderYAfter - riderYBefore) + " server=" + (serverYAfter - yBefore) + ")",
                 Math.abs((riderYAfter - riderYBefore) - (serverYAfter - yBefore)) < 3.0);
 
+        // --- The OTHER TWO translation axes, in world coordinates. The vertical key above proves
+        // exactly ONE channel of the pilot path; nose and lateral are separate fields of the same
+        // packet and separate components of the body-frame setpoint, so a channel that never leaves
+        // the client — a binding whose conflict context is off, a field dropped on the wire — is
+        // invisible to a vertical-only test. Q/E in particular share their default keys with vanilla
+        // drop/inventory and reach the craft only because the pilot-seat conflict context suppresses
+        // the vanilla action, a gate the always-active W/S do not carry.
+        //
+        // A freshly assembled VS ship carries the IDENTITY attitude and nothing above has commanded a
+        // rotation, so its nose is world +Z and its right is world +X: which axis a key drives can be
+        // read straight off the world position, without asking the ship where it is pointing. It is
+        // checked PER AXIS on purpose — "the ship moved" would go green on a key that drove the wrong
+        // axis entirely. (This runs BEFORE the mouse leg below, which commands roll and would take
+        // body-right off world +X.)
+        //
+        // Climb clear of the terrain first and then CUT: Flight Assist is a cruise control, so
+        // releasing the vertical key leaves the ship climbing, and a horizontal leg flown at pad
+        // height could be stopped by a hillside rather than by the ship's own controls.
+        bot().holdKey(Keyboard.KEY_R);
+        bot().waitTicks(60);
+        bot().releaseKey(Keyboard.KEY_R);
+        cutAndSettle();
+
+        final double xBeforeNose = readDouble(shipInfo(), POS_X);
+        final double zBeforeNose = readDouble(shipInfo(), POS_Z);
+        ClientPoll.Result<Double> nose;
+        bot().holdKey(Keyboard.KEY_W);          // keyBindForward -> body forward
+        try {
+            nose = ClientPoll.until(bot()::waitTicks, () -> readDouble(shipInfo(), POS_Z),
+                    z -> z - zBeforeNose > 2.0, 2, 60);
+        } finally {
+            bot().releaseKey(Keyboard.KEY_W);
+        }
+        double xAfterNose = readDouble(shipInfo(), POS_X);
+        cutAndSettle();
+        assertTrue("holding the FORWARD key while seated must drive the ship along its NOSE — world "
+                        + "+Z on an identity-attitude ship — through the full client path. "
+                        + "zBefore=" + zBeforeNose + " poll=" + nose,
+                nose.value - zBeforeNose > 1.0);
+        assertTrue("…and it must be the NOSE axis it drives, not merely some motion: the world-Z "
+                        + "travel must dominate the world-X travel. dz=" + (nose.value - zBeforeNose)
+                        + " dx=" + (xAfterNose - xBeforeNose),
+                Math.abs(nose.value - zBeforeNose) > Math.abs(xAfterNose - xBeforeNose));
+
+        final double xBeforeStrafe = readDouble(shipInfo(), POS_X);
+        final double zBeforeStrafe = readDouble(shipInfo(), POS_Z);
+        ClientPoll.Result<Double> strafe;
+        bot().holdKey(Keyboard.KEY_Q);          // strafeLeft -> +right -> world +X at identity
+        try {
+            strafe = ClientPoll.until(bot()::waitTicks, () -> readDouble(shipInfo(), POS_X),
+                    x -> x - xBeforeStrafe > 2.0, 2, 60);
+        } finally {
+            bot().releaseKey(Keyboard.KEY_Q);
+        }
+        double zAfterStrafe = readDouble(shipInfo(), POS_Z);
+        cutAndSettle();
+        assertTrue("holding the STRAFE key while seated must drive the ship along its LATERAL axis — "
+                        + "world +X on an identity-attitude ship. That key is Q, which vanilla binds "
+                        + "to drop and which reaches the craft only because the pilot-seat conflict "
+                        + "context suppresses the vanilla action; a red here is that suppression, the "
+                        + "strafe field on the wire, or the axis it lands on. xBefore=" + xBeforeStrafe
+                        + " poll=" + strafe,
+                strafe.value - xBeforeStrafe > 1.0);
+        assertTrue("…and it must be the LATERAL axis it drives: the world-X travel must dominate "
+                        + "the world-Z travel. dx=" + (strafe.value - xBeforeStrafe)
+                        + " dz=" + (zAfterStrafe - zBeforeStrafe),
+                Math.abs(strafe.value - xBeforeStrafe) > Math.abs(zAfterStrafe - zBeforeStrafe));
+
         // --- The mouse must STEER the ship, never free-look the camera (the FF cockpit contract).
         // The ship is now hovering roughly upright. Inject a hard SIDEWAYS mouse look each tick
         // (horizontal mouse -> roll cursor; pure roll leaves the nose direction fixed). A camera that
@@ -172,6 +242,22 @@ public class VSShipPilotKeysE2ETest extends AbstractClientE2ETest {
                 angDiff(camYawAfter, shipNoseYaw) < 12.0);
 
         exec("artest player dismount");
+    }
+
+    /** The ship as the server sees it: position, attitude quaternion, velocity. */
+    private String shipInfo() throws Exception {
+        return exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
+    }
+
+    /**
+     * Zero the cruise setpoint and let the ship come to rest. Flight Assist RETAINS a released
+     * throttle, so without this each leg would measure the one before it still coasting.
+     */
+    private void cutAndSettle() throws Exception {
+        bot().holdKey(Keyboard.KEY_X);          // throttle cut
+        bot().waitTicks(40);
+        bot().releaseKey(Keyboard.KEY_X);
+        bot().waitTicks(10);
     }
 
     /** The ship nose heading (MC yaw, degrees) from the attitude quaternion in {@code vs ship-info},

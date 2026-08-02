@@ -2201,13 +2201,28 @@ public class TestProbeCommand extends CommandBase {
                         if (bodyCount++ > 0) {
                             out.append(',');
                         }
+                        // Where the body is FROM THIS SHIP, as a vector and as its length. The two
+                        // are one reading, not two: the length is what the descent trigger compares
+                        // against its radius, and the vector is the same difference before it is
+                        // collapsed. Reporting only the scalar hid a stalled approach for
+                        // twenty-five minutes once — a range that will not fall says nothing about
+                        // WHICH way the ship is failing to move, and the direction is exactly what
+                        // the pilot can see, since the cell sky draws each body along this vector.
+                        zmaster587.advancedRocketry.space.GalacticCoord bodyAt =
+                                b.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
+                                        .spaceClock());
                         out.append("{\"dim\":").append(b.dimId())
                                 .append(",\"kind\":\"").append(b.kind())
                                 .append("\",\"descendTarget\":").append(b.isDescendTarget())
+                                // "bearing", not "dir": the feed below already emits a "dir" per
+                                // body, measured from the CELL's observer for the sky, and a reader
+                                // matching on the substring could not tell the two apart.
+                                .append(",\"bearing\":[")
+                                .append(bodyAt.absoluteX() - e.coord.absoluteX()).append(',')
+                                .append(bodyAt.absoluteY() - e.coord.absoluteY()).append(',')
+                                .append(bodyAt.absoluteZ() - e.coord.absoluteZ()).append(']')
                                 .append(",\"distance\":")
-                                .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(
-                                        b.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
-                                                .spaceClock()))))
+                                .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(bodyAt)))
                                 .append('}');
                     }
                 }
