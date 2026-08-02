@@ -2,6 +2,7 @@ package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import com.google.gson.JsonObject;
+import zmaster587.advancedRocketry.client.render.planet.ApparentSize;
 import org.junit.After;
 import org.junit.Test;
 
@@ -113,6 +114,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     private static final Pattern BOUND_DIM = Pattern.compile("\"slotDim\":(-?\\d+)");
     private static final String CLIENT_BODIES_CLASS =
             "zmaster587.advancedRocketry.network.PacketSystemBodiesSync";
+    private static final String SKY_CLASS =
+            "zmaster587.advancedRocketry.client.render.planet.BoundarySky";
 
     /** Cell the ship settles in. sy=5000 dodges the fallback stars (all at sy=sz=0). */
     private static final String CELL = "0 5000 0";
@@ -138,8 +141,20 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
 
     /** The nearest descend target: the body a pilot has to find and fly at to descend at all. */
     private static final int NEAREST = 0;
-    /** The gas giant: a non-descend body, drawn at the smaller billboard size. */
+    /** The gas giant: a non-descend body, which takes the other tint and no texture of its own. */
     private static final int GIANT = 3;
+    /**
+     * The FARTHEST body, and deliberately the same KIND as {@link #NEAREST}: a moon of dim 0, so the
+     * two are drawn with the same texture and the same tint and differ in nothing but distance.
+     *
+     * <p>The obvious pairing — nearest against the gas giant — cannot measure size at all. The giant
+     * has no dimension of its own, so it is drawn as a flat untextured quad in which EVERY pixel
+     * differs from the sky, while a textured Earth billboard has interior texels that match a dark
+     * sky and do not count. Measured: the giant at 39 050 blocks changed 9 702 px and the moon at
+     * 2 962 blocks changed 7 684 px, i.e. an area comparison there measures FILL and reports the
+     * size relation backwards.</p>
+     */
+    private static final int FARTHEST = 5;
 
     /**
      * A bearing with nothing in it: more than 100 degrees from every body above, and 22 degrees off the
@@ -223,6 +238,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         BufferedImage emptyBefore;
         BufferedImage emptyAfter;
         int slotDim;
+        int labelsWithNoBodies = -1;
+        int labelsWithBodies = -1;
         try {
             // --- Control FIRST: is the sky pass running at all? Above the clouds so nothing but sky is
             // in frame.
@@ -270,10 +287,14 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                     !clientBodies().contains(slotDim + "=[RenderBody{"));
 
             horizon = capture(slotDim, CELL_CAPTURE_Y, 90f, 0f, "horizon_ring");
+            // How many body labels the client's LAST FRAME wrote, with no body in the cell yet. The
+            // control for the label leg: a counter that is non-zero here is counting something other
+            // than this cell's bodies.
+            labelsWithNoBodies = labelsDrawn();
             // A before-frame on each body's bearing, plus one on the empty bearing. Only the two aimed
             // bodies are measured, but capturing all of them costs one frame each and makes a later
             // "which body failed" question answerable from the artefacts.
-            for (int i : new int[] {NEAREST, GIANT}) {
+            for (int i : new int[] {NEAREST, GIANT, FARTHEST}) {
                 float[] aim = aimAt(local(i, 0), local(i, 1), local(i, 2));
                 before[i] = capture(slotDim, CELL_CAPTURE_Y, aim[0], aim[1], "before_body" + i);
             }
@@ -311,11 +332,12 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                         bodies.contains("dir=" + SYSTEM[i][0] + "," + SYSTEM[i][1] + "," + SYSTEM[i][2]));
             }
 
-            for (int i : new int[] {NEAREST, GIANT}) {
+            for (int i : new int[] {NEAREST, GIANT, FARTHEST}) {
                 float[] aim = aimAt(local(i, 0), local(i, 1), local(i, 2));
                 after[i] = capture(slotDim, CELL_CAPTURE_Y, aim[0], aim[1], "after_body" + i);
             }
             emptyAfter = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "after_empty");
+            labelsWithBodies = labelsDrawn();
         } finally {
             bot().setHudHidden(previousHud);
             bot().setFramebuffer(previousFbo);
@@ -350,8 +372,36 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         // The billboard's angular radius is half/BODY_DISTANCE, i.e. 6.3 degrees for a descend target
         // (half 10) and 3.8 for a plain body (half 6); on a 70-degree vertical FOV that is 9.1% and 5.4%
         // of the frame height. Each aim therefore has its own expected disc and its own sample box.
-        assertBodyDrawn(NEAREST, before[NEAREST], after[NEAREST], emptyAfter, 0.091, 0.045);
-        assertBodyDrawn(GIANT, before[GIANT], after[GIANT], emptyAfter, 0.054, 0.025);
+        // The billboard's angular radius is halfSizeFor(distance)/BODY_DISTANCE, and since
+        // CON-C14-16 made the half-size a function of distance, the expected disc is derived from
+        // that law rather than from a constant. It is used only to SIZE the sample box - the
+        // assertion is still "a disc was drawn at the bearing the server reported", which a build
+        // that drew nothing fails whatever the box is.
+        assertBodyDrawn(NEAREST, before[NEAREST], after[NEAREST], emptyAfter);
+        assertBodyDrawn(GIANT, before[GIANT], after[GIANT], emptyAfter);
+
+        // ------------------- Leg 2b: apparent size FALLS with distance (C14 CON-C14-16), in pixels.
+        // The player-visible half of the clause: two bodies a pilot can see in the same cell, one
+        // twenty times further away than the other, must not look the same size. Before this every
+        // body was drawn at one of two fixed sizes, so a moon at 3 km and one at 59 km were
+        // indistinguishable and "the planet is crawling away" was not something the sky could show.
+        //
+        // The two are the same KIND on purpose (see FARTHEST): same texture, same tint, so the only
+        // thing that can differ is the disc. Counted inside a box sized on the NEARER body's own
+        // expected disc and centred on the aim, which the far body's smaller disc cannot fill and
+        // which no other body reaches - the fixture spreads them 45 degrees apart at least.
+        int sizeBox = (int) Math.ceil(discRadiusOf(NEAREST) * h);
+        long nearArea = diffCount(before[NEAREST], after[NEAREST],
+                w / 2 - sizeBox, w / 2 + sizeBox, h / 2 - sizeBox, h / 2 + sizeBox);
+        long farArea = diffCount(before[FARTHEST], after[FARTHEST],
+                w / 2 - sizeBox, w / 2 + sizeBox, h / 2 - sizeBox, h / 2 + sizeBox);
+        assertTrue("the nearer body must be drawn LARGER than the far one; near("
+                        + Math.round(distanceOf(NEAREST)) + " blocks)=" + nearArea + "px far("
+                        + Math.round(distanceOf(FARTHEST)) + " blocks)=" + farArea + "px in a "
+                        + (2 * sizeBox) + "px box ("
+                        + outDir.resolve("after_body" + NEAREST + ".png") + " vs "
+                        + outDir.resolve("after_body" + FARTHEST + ".png") + ")",
+                nearArea > farArea);
 
         // ------------------------------------------------- Leg 3: the empty bearing gains nothing.
         // Every body is more than 100 degrees away from this aim, so registering all six must leave this
@@ -375,6 +425,25 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         assertTrue("an orbit cell must not be an empty void - the sky must carry stars; differing="
                 + stars + "px against background " + rgb(starBackground) + " " + describe(emptyAfter)
                 + " (" + outDir.resolve("after_empty.png") + ")", stars >= 25);
+
+        // ------------------------------------------------- Leg 5: every body says what it is (C14
+        // CON-C14-17). Read off the CLIENT's own per-frame counter rather than off pixels, because
+        // "is that text or is it a star" is not a question a pixel count can answer - and because
+        // the clause is "one label per body", which a count states exactly. The before-sample is the
+        // control: with no body in the cell the counter must be zero, so a non-zero after-sample is
+        // attributable to the bodies and to nothing else.
+        assertEquals("no body is registered yet, so the sky can have labelled nothing",
+                0, labelsWithNoBodies);
+        assertEquals("the sky must label every body it draws, by default and with no configuration",
+                SYSTEM.length, labelsWithBodies);
+    }
+
+    /** How many body labels the client's last rendered frame wrote. */
+    private int labelsDrawn() throws Exception {
+        JsonObject sf = bot().readStaticField(SKY_CLASS, "labelsDrawnLastFrame");
+        assertTrue("the sky renderer must expose its per-frame label count: " + sf,
+                !sf.get("isNull").getAsBoolean());
+        return Integer.parseInt(sf.get("value").getAsString().trim());
     }
 
     // ------------------------------------------------------------------------------------ helpers
@@ -387,9 +456,11 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      * @param sampleRadius half-size of the centre sample box, inside that disc
      */
     private void assertBodyDrawn(int index, BufferedImage beforeFrame, BufferedImage afterFrame,
-                                 BufferedImage emptyFrame, double discRadius, double sampleRadius) {
+                                 BufferedImage emptyFrame) {
         int w = afterFrame.getWidth();
         int h = afterFrame.getHeight();
+        double discRadius = discRadiusOf(index);
+        double sampleRadius = discRadius / 2.0;
         float[] aim = aimAt(local(index, 0), local(index, 1), local(index, 2));
         String where = "body " + index + " (" + SYSTEM[index][3] + " at "
                 + Math.round(Math.sqrt(
@@ -416,6 +487,24 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 w / 2 - box, w / 2 + box, h / 2 - box, h / 2 + box);
         assertTrue("aiming at " + where + " must not look like aiming at empty sky; centre difference="
                 + pct(vsEmpty), vsEmpty >= 0.40);
+    }
+
+    /**
+     * The billboard's expected radius as a fraction of the frame HEIGHT: its half-size (which C14
+     * CON-C14-16 makes a function of distance) subtends {@code atan(half / BODY_DISTANCE)} on a
+     * 70-degree vertical FOV. Used only to SIZE sample boxes; every assertion is still about what
+     * the client actually drew, so a build that drew nothing fails whatever the box is.
+     */
+    private static double discRadiusOf(int index) {
+        return Math.toDegrees(Math.atan(ApparentSize.halfSizeFor(distanceOf(index)) / 90.0)) / 70.0;
+    }
+
+    /** How far the configured body {@code index} is from the settled ship, in blocks. */
+    private static double distanceOf(int index) {
+        double dx = local(index, 0);
+        double dy = local(index, 1);
+        double dz = local(index, 2);
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /** One component of a configured body's local offset (its direction from the settled ship). */

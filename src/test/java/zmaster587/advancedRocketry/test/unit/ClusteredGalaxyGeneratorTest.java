@@ -314,22 +314,22 @@ public class ClusteredGalaxyGeneratorTest {
             assertFalse("an occupied system must have bodies", a.isEmpty());
 
             assertEquals("first body is the star at the anchor", SystemBodyKind.STAR, a.get(0).kind());
-            assertTrue(a.get(0).address().sameCell(anchor));
-            assertEquals(0, a.get(0).address().localX());
+            assertTrue(a.get(0).name().sameCell(anchor));
+            assertEquals(0, a.get(0).name().localX());
 
             boolean sawOwnCell = false;
             for (SystemBody body : a) {
                 assertEquals("every body belongs to the system's star", a.get(0).starId(), body.starId());
                 assertFalse("procedural bodies are not descend targets yet", body.isDescendTarget());
                 // Snapped to its own cell's centre.
-                assertEquals(0, body.address().localX());
-                assertEquals(0, body.address().localY());
-                assertEquals(0, body.address().localZ());
+                assertEquals(0, body.name().localX());
+                assertEquals(0, body.name().localY());
+                assertEquals(0, body.name().localZ());
                 // Inside the anchor's super-cell (member attribution by floorDiv stays exact).
-                assertEquals(Math.floorDiv(anchor.sectorX(), s), Math.floorDiv(body.address().sectorX(), s));
-                assertEquals(Math.floorDiv(anchor.sectorY(), s), Math.floorDiv(body.address().sectorY(), s));
-                assertEquals(Math.floorDiv(anchor.sectorZ(), s), Math.floorDiv(body.address().sectorZ(), s));
-                if (body.kind() != SystemBodyKind.STAR && !body.address().sameCell(anchor)) {
+                assertEquals(Math.floorDiv(anchor.sectorX(), s), Math.floorDiv(body.name().sectorX(), s));
+                assertEquals(Math.floorDiv(anchor.sectorY(), s), Math.floorDiv(body.name().sectorY(), s));
+                assertEquals(Math.floorDiv(anchor.sectorZ(), s), Math.floorDiv(body.name().sectorZ(), s));
+                if (body.kind() != SystemBodyKind.STAR && !body.name().sameCell(anchor)) {
                     sawOwnCell = true;
                 }
             }
@@ -353,7 +353,7 @@ public class ClusteredGalaxyGeneratorTest {
             }
             checkedAny = true;
             for (SystemBody body : gen.bodiesFor(SEED, c)) {
-                assertTrue("with s=1 every body stays in the anchor cell", body.address().sameCell(c));
+                assertTrue("with s=1 every body stays in the anchor cell", body.name().sameCell(c));
             }
         }
         assertTrue(checkedAny);

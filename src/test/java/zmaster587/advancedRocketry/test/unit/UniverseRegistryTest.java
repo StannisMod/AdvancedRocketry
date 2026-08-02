@@ -12,7 +12,9 @@ import java.util.Optional;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
@@ -287,7 +289,7 @@ public class UniverseRegistryTest {
             for (SystemBody b : reg.systemBodiesAt(
                     GalacticCoord.ofSectorLocal(sup * cfg.minSpacing, 0, 0, 0, 0, 0))) {
                 if (b.kind() == SystemBodyKind.STAR) {
-                    anchor = b.address();
+                    anchor = b.name();
                 } else if (planet == null) {
                     planet = b;
                 }
@@ -295,23 +297,23 @@ public class UniverseRegistryTest {
         }
         assertNotNull("need a procedural system with a non-star body", planet);
         assertNotNull(anchor);
-        assertFalse("the sampled body must sit in its OWN cell", planet.address().sameCell(anchor));
+        assertFalse("the sampled body must sit in its OWN cell", planet.name().sameCell(anchor));
 
         // The body's cell resolves to the same system (member attribution).
-        Optional<StarSystem> atBody = reg.systemForCoord(planet.address());
+        Optional<StarSystem> atBody = reg.systemForCoord(planet.name());
         assertTrue(atBody.isPresent());
         assertEquals(planet.starId(), atBody.get().starId());
 
         // Zone read at the body's cell returns the body; at the anchor it returns the star, not the body.
-        List<SystemBody> zone = reg.bodiesAt(planet.address());
+        List<SystemBody> zone = reg.bodiesAt(planet.name());
         assertTrue("the zone read must contain the cell's own body", zone.contains(planet));
         for (SystemBody b : reg.bodiesAt(anchor)) {
-            assertTrue("the anchor's zone holds only anchor-cell bodies", b.address().sameCell(anchor));
+            assertTrue("the anchor's zone holds only anchor-cell bodies", b.name().sameCell(anchor));
         }
 
         // System read from the member cell returns the whole neighbourhood (star included).
         boolean sawStar = false;
-        for (SystemBody b : reg.systemBodiesAt(planet.address())) {
+        for (SystemBody b : reg.systemBodiesAt(planet.name())) {
             if (b.kind() == SystemBodyKind.STAR) {
                 sawStar = true;
             }
@@ -523,6 +525,216 @@ public class UniverseRegistryTest {
             }
         }
         assertTrue("the player POI must appear in bodiesAt", sawStation);
+    }
+
+    // ── A recorded name has a LIFECYCLE (ledger #154, #155) ─────────────────────────────────────
+
+    /** A catalogued star's authored planet, wired through the lookup seam. */
+    private static DimensionProperties bodyOfStar(StellarBody host, int dimId, int dist, double theta) {
+        DimensionProperties body = new DimensionProperties(dimId);
+        body.orbitalDist = dist;
+        body.baseOrbitTheta = theta;
+        body.orbitalPhi = 0;
+        body.setStar(host);
+        return body;
+    }
+
+    /**
+     * Ledger #155. A dimension id goes straight back into circulation when a planet is deleted, so a
+     * name kept on the id alone is inherited by whatever is generated next. The two bodies then
+     * belong to DIFFERENT systems, so nothing downstream ever compares them: the collision audit is
+     * per-system, and attribution answers happily with the wrong anchor. The name has to know which
+     * system it was recorded for.
+     */
+    @Test
+    public void aRecycledDimensionIdDoesNotInheritTheOldBodysName() {
+        StellarBody sol = star(6001);
+        sol.setSize(1f);
+        StellarBody other = star(6002);
+        other.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6001 ? sol : (id == 6002 ? other : null));
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6001);
+        reg.place(GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0), 6002);
+
+        DimensionProperties original = bodyOfStar(sol, 6100, 150, 0.3);
+        Optional<GalacticCoord> firstName = reg.coordForPlanet(original);
+        assertTrue(firstName.isPresent());
+        assertTrue("control: the first body's name is recorded", reg.recordedName(6100).isPresent());
+
+        // The planet is deleted and its id reissued to a body of a DIFFERENT star.
+        sol.removePlanet(original);
+        DimensionProperties reissued = bodyOfStar(other, 6100, 150, 0.3);
+        Optional<GalacticCoord> secondName = reg.coordForPlanet(reissued);
+
+        assertTrue(secondName.isPresent());
+        assertFalse("a recycled id must not inherit the deleted body's cell",
+                firstName.get().sameCell(secondName.get()));
+        assertTrue("the new body's name must lie in ITS system's neighbourhood",
+                reg.anchorForCell(secondName.get()).isPresent());
+        assertEquals("...which is its own star's anchor",
+                GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0),
+                reg.anchorForCell(secondName.get()).get());
+    }
+
+    /** Deleting a dimension drops its recorded name outright — the direct half of the same defect. */
+    @Test
+    public void forgettingADimensionDropsItsRecordedName() {
+        StellarBody sol = star(6003);
+        sol.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6003 ? sol : null);
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6003);
+        reg.coordForPlanet(bodyOfStar(sol, 6101, 150, 0.3));
+
+        assertTrue("control: the name was recorded", reg.recordedName(6101).isPresent());
+        assertTrue("forgetting reports that it held one", reg.forgetName(6101));
+        assertFalse("...and the name is gone", reg.recordedName(6101).isPresent());
+        assertFalse("forgetting twice is a no-op, not a lie", reg.forgetName(6101));
+    }
+
+    /**
+     * Ledger #154. Containment is what makes member&rarr;anchor attribution work, so a recorded name
+     * that no longer lies inside its own system's box names a cell that attributes to nothing: the
+     * body stays listed and jumpable and can never be arrived at. Moving a star's anchor does exactly
+     * that to every name recorded under the old layout, and nothing said so.
+     */
+    @Test
+    public void aRecordedNameThatLeftItsSystemsBoxIsReDerivedRatherThanServed() {
+        StellarBody host = star(6004);
+        host.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6004 ? host : null);
+        DimensionProperties body = bodyOfStar(host, 6102, 150, 0.3);
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6004);
+        Optional<GalacticCoord> underOldAnchor = reg.coordForPlanet(body);
+        assertTrue(underOldAnchor.isPresent());
+
+        // The star is re-placed a long way off — an XML edit, a re-authored layout. The recorded name
+        // is now nowhere near the system it belongs to.
+        GalacticCoord newAnchor = GalacticCoord.ofSectorLocal(9000, 0, 0, 0, 0, 0);
+        reg.place(newAnchor, 6004);
+
+        Optional<GalacticCoord> served = reg.coordForPlanet(body);
+        assertTrue(served.isPresent());
+        assertFalse("a name outside its own system's box may not be served",
+                served.get().sameCell(underOldAnchor.get()));
+        assertTrue("what is served must attribute back to the system it belongs to",
+                reg.anchorForCell(served.get()).isPresent());
+        assertEquals(newAnchor, reg.anchorForCell(served.get()).get());
+        assertFalse("...and the cell must report the body standing in it",
+                reg.bodiesAt(served.get()).isEmpty());
+        assertEquals("the re-derived name replaces the stale record", Optional.of(served.get()),
+                reg.recordedName(6102));
+    }
+
+    /** A name that is still inside its box is served unchanged — the control for the clause above. */
+    @Test
+    public void aRecordedNameInsideItsBoxSurvivesASmallAnchorMove() {
+        StellarBody host = star(6005);
+        host.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6005 ? host : null);
+        DimensionProperties body = bodyOfStar(host, 6103, 150, 0.3);
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6005);
+        Optional<GalacticCoord> first = reg.coordForPlanet(body);
+        assertTrue(first.isPresent());
+
+        // One cell over: the recorded name is still well inside the neighbourhood box.
+        reg.place(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0), 6005);
+        assertEquals("a name that still names a cell of its own system is not disturbed",
+                first, reg.coordForPlanet(body));
+    }
+
+    // ── Frames: where a cell IS (C15 ADDR-6 / ADDR-7) ────────────────────────────────────────────
+
+    /**
+     * ADDR-6 and ADDR-7 together. A cell with a primary rides it; a cell with none is static at
+     * {@code sector * CELL}. The void half is the control — without it "the frame moves" would pass
+     * against a lookup that returned an arbitrary function of the tick for everything.
+     */
+    @Test
+    public void aBodyCellRidesItsPrimaryWhileAVoidCellStandsStill() {
+        StellarBody host = star(6006);
+        host.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6006 ? host : null);
+        DimensionProperties body = bodyOfStar(host, 6104, 150, 0.3);
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6006);
+        Optional<GalacticCoord> name = reg.coordForPlanet(body);
+        assertTrue(name.isPresent());
+
+        long quarterOrbit = (long) (24000d
+                * AstronomicalBodyHelper.getOrbitalPeriod(150, 1f) / 4d);
+
+        assertFalse("a cell with a primary in it moves with that primary",
+                reg.originAt(name.get(), 0L).equals(reg.originAt(name.get(), quarterOrbit)));
+
+        GalacticCoord empty = GalacticCoord.ofSectorLocal(-777, 0, 0, 0, 0, 0);
+        assertEquals("a cell with no primary is static, at the position its name states",
+                AbsolutePos.ofCellName(empty), reg.originAt(empty, 0L));
+        assertEquals(reg.originAt(empty, 0L), reg.originAt(empty, quarterOrbit));
+    }
+
+    /**
+     * C14 CON-C14-14. The sky feed is the SYSTEM unioned with the observer's own cell, and the union
+     * is what stops a straight swap erasing a station standing in a void cell — the system read
+     * aggregates POIs of BODY cells only, and answers empty for a cell no anchor attributes.
+     */
+    @Test
+    public void theSkyFeedUnionsTheSystemWithTheObserversOwnCell() {
+        StellarBody host = star(6007);
+        host.setSize(1f);
+        UniverseRegistry.setStarLookup(id -> id == 6007 ? host : null);
+        DimensionProperties body = bodyOfStar(host, 6105, 150, 0.3);
+
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6007);
+        reg.coordForPlanet(body); // record the name
+
+        // An empty cell of the same system, with a player-built station standing in it.
+        GalacticCoord voidCell = GalacticCoord.ofSectorLocal(3, 1, 0, 0, 0, 0);
+        assertTrue("the fixture's void cell must belong to the system",
+                reg.anchorForCell(voidCell).isPresent());
+        assertTrue("...and hold no body of its own", reg.bodiesAt(voidCell).isEmpty());
+        reg.addPoi(new SystemBody(voidCell.plusLocalSaturating(1_000L, 0L, 0L),
+                SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 6007));
+
+        List<SystemBody> sky = reg.skyBodiesAt(voidCell);
+        boolean sawStar = false;
+        boolean sawPlanet = false;
+        boolean sawStation = false;
+        for (SystemBody b : sky) {
+            sawStar |= b.kind() == SystemBodyKind.STAR;
+            sawPlanet |= b.dimId() == 6105;
+            sawStation |= b.kind() == SystemBodyKind.STATION_SLOT;
+        }
+        assertTrue("standing in void you still see your star", sawStar);
+        assertTrue("...and your system's planets", sawPlanet);
+        assertTrue("...and whatever is keyed at your own cell", sawStation);
+
+        // The control the union exists for: the SYSTEM read alone drops the station.
+        boolean systemReadSawStation = false;
+        for (SystemBody b : reg.systemBodiesAt(voidCell)) {
+            systemReadSawStation |= b.kind() == SystemBodyKind.STATION_SLOT;
+        }
+        assertFalse("if the system read already carried it, the union would be proving nothing",
+                systemReadSawStation);
+    }
+
+    /** Interstellar void — a cell no anchor attributes — is fed the union's EMPTY case. */
+    @Test
+    public void interstellarVoidIsFedNothing() {
+        UniverseRegistry reg = new UniverseRegistry();
+        reg.place(GalacticCoord.ORIGIN, 6008);
+        GalacticCoord farAway = GalacticCoord.ofSectorLocal(500_000, 0, 0, 0, 0, 0);
+        assertFalse("the fixture's cell must belong to no system",
+                reg.anchorForCell(farAway).isPresent());
+        assertTrue("the space between stars is black", reg.skyBodiesAt(farAway).isEmpty());
     }
 
     /** A test generator that claims every cell with one fixed system — to prove stored placements win. */

@@ -18,9 +18,15 @@ import net.minecraft.nbt.NBTTagCompound;
  * cell centre, so every local coordinate stays inside the range where 1.12.2 entity doubles, chunks
  * and lighting are crisp. Cell-centre content is at local {@code (0,0,0)}.</p>
  *
- * <p>Immutable value type. Proximity is computed on the (small, near) local delta cast to
- * {@code double} via {@link #distanceSqTo(GalacticCoord)} - precise because the delta between nearby
- * positions is small even though the absolute magnitudes are huge.</p>
+ * <p><b>Since C15 the sector triple is a cell NAME, not a place.</b> A cell rides the body it belongs
+ * to, so {@code absolute = sector * CELL + local} is the STATIC-frame reading — true for a void cell
+ * and for the sector arithmetic that keeps names apart, and false the moment either endpoint's frame
+ * has moved. Hence {@link #staticFrameDistanceTo}'s spelling, and hence {@link AbsolutePos}, which is
+ * what "where this is, at tick t" is expressed in.</p>
+ *
+ * <p>Immutable value type. Proximity within one cell is computed on the (small, near) local delta cast
+ * to {@code double} via {@link #staticFrameDistanceSqTo(GalacticCoord)} - precise because the delta
+ * between nearby positions is small even though the absolute magnitudes are huge.</p>
  */
 public final class GalacticCoord {
 
@@ -143,19 +149,30 @@ public final class GalacticCoord {
     }
 
     /**
-     * Squared absolute distance to {@code other}, in blocks&sup2;, as a {@code double}. Computed from
-     * the sector delta plus the local delta so nearby positions are exact even at galactic magnitude.
+     * Squared distance to {@code other} read over the STATIC grid, in blocks&sup2;, as a
+     * {@code double}. Computed from the sector delta plus the local delta so nearby positions are
+     * exact even at galactic magnitude.
+     *
+     * <p><b>This is not the distance between two bodies.</b> A sector triple is a cell NAME, and a
+     * cell rides the body it belongs to (C15 ADDR-6), so {@code sector * CELL} is where a cell would
+     * be if nothing moved. The reading is exact in exactly two cases: <i>within one cell</i>, where
+     * both endpoints share a frame and the sector terms cancel; and <i>between two static frames</i>
+     * — void cells, or a star, whose frames really are at {@code sector * CELL} forever. For anything
+     * else, go through {@link CellFrames#distanceBetween}: the same two names can be a light-second
+     * apart at one tick and a system's width apart at another, and that changing distance is a thing
+     * the player is meant to feel (ADDR-13).</p>
      */
-    public double distanceSqTo(GalacticCoord other) {
+    public double staticFrameDistanceSqTo(GalacticCoord other) {
         double dx = (double) (other.sectorX - sectorX) * CELL + (other.localX - localX);
         double dy = (double) (other.sectorY - sectorY) * CELL + (other.localY - localY);
         double dz = (double) (other.sectorZ - sectorZ) * CELL + (other.localZ - localZ);
         return dx * dx + dy * dy + dz * dz;
     }
 
-    /** Absolute distance to {@code other}, in blocks. */
-    public double distanceTo(GalacticCoord other) {
-        return Math.sqrt(distanceSqTo(other));
+    /** Distance to {@code other} over the STATIC grid, in blocks. See
+     *  {@link #staticFrameDistanceSqTo} for when that is the distance you want. */
+    public double staticFrameDistanceTo(GalacticCoord other) {
+        return Math.sqrt(staticFrameDistanceSqTo(other));
     }
 
     /**

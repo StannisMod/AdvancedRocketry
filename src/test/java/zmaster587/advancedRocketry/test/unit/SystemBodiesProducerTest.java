@@ -4,11 +4,15 @@ import org.junit.Test;
 
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
+import zmaster587.advancedRocketry.space.AbsolutePos;
+import zmaster587.advancedRocketry.space.CellFrames;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.SpaceManager;
 import zmaster587.advancedRocketry.space.SystemBodiesProducer;
 import zmaster587.advancedRocketry.space.SystemBodiesProducer.BodyLookup;
+import zmaster587.advancedRocketry.universe.BodyEphemeris;
+import zmaster587.advancedRocketry.universe.CellFrame;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
@@ -23,6 +27,7 @@ import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -50,7 +55,7 @@ public class SystemBodiesProducerTest {
     private static BodyLookup lookupIn(final GalacticCoord cell, final SystemBody... bodies) {
         return new BodyLookup() {
             @Override
-            public List<SystemBody> bodiesAt(GalacticCoord asked) {
+            public List<SystemBody> skyBodiesAt(GalacticCoord asked) {
                 return asked != null && asked.sameCell(cell)
                         ? Arrays.asList(bodies) : Collections.<SystemBody>emptyList();
             }
@@ -159,7 +164,7 @@ public class SystemBodiesProducerTest {
         SystemBody body = new SystemBody(GalacticCoord.ORIGIN, SystemBodyKind.PLANET, 3, 7);
         BodyLookup always = new BodyLookup() {
             @Override
-            public List<SystemBody> bodiesAt(GalacticCoord cell) {
+            public List<SystemBody> skyBodiesAt(GalacticCoord cell) {
                 return Collections.singletonList(body);
             }
         };
@@ -217,7 +222,7 @@ public class SystemBodiesProducerTest {
 
         BodyLookup empty = new BodyLookup() {
             @Override
-            public List<SystemBody> bodiesAt(GalacticCoord cell) {
+            public List<SystemBody> skyBodiesAt(GalacticCoord cell) {
                 return new ArrayList<>();
             }
         };
@@ -244,11 +249,11 @@ public class SystemBodiesProducerTest {
 
         BodyLookup lookup = new BodyLookup() {
             @Override
-            public List<SystemBody> bodiesAt(GalacticCoord cell) {
-                if (cell.sameCell(planetA.address())) {
+            public List<SystemBody> skyBodiesAt(GalacticCoord cell) {
+                if (cell.sameCell(planetA.name())) {
                     return Collections.singletonList(planetA);
                 }
-                return cell.sameCell(planetB.address())
+                return cell.sameCell(planetB.name())
                         ? Collections.singletonList(planetB) : Collections.<SystemBody>emptyList();
             }
         };
@@ -300,6 +305,107 @@ public class SystemBodiesProducerTest {
         assertTrue("neither an unbound nor an unparseable cell keys anything",
                 SystemBodiesProducer.buildByDim(hostile, new ShipLedger().snapshot(),
                         lookupIn(cell, planet)).isEmpty());
+    }
+
+    // ── The frames: what the sky shows is where things ARE, not where their names say ────────────
+
+    /**
+     * A planet whose cell rides a real orbit: one orbit-unit out, a 400-tick period, so tick 0 puts
+     * it on +X and tick 100 — a quarter turn — swings that whole radius onto +Z. Each BODY carries
+     * its own frame; the injected {@link CellFrames} answers only the OBSERVER's cell, and in
+     * production both come from the same registry, so the two halves of the vector cannot disagree.
+     */
+    private static SystemBody planetOnAQuarterTurnOrbit(GalacticCoord name) {
+        return new SystemBody(name,
+                CellFrame.of(AbsolutePos.ofCellName(name),
+                        BodyEphemeris.orbit(1d, 0d, 0d, false, 400d, 1_000_000L)),
+                BodyEphemeris.STATIC, SystemBodyKind.PLANET, 3, 7);
+    }
+
+    /**
+     * CON-C14-15. The vector a body is carried as is measured through BOTH frames at the broadcast
+     * tick, so its length is the real distance right then — which is what makes "the planet is
+     * receding" something the sky can show at all. Over the static grid the same two names are the
+     * same distance apart forever.
+     */
+    @Test
+    public void aBodyInAMovingCellIsFedFromWhereItIsNotFromWhereItsNameSays() {
+        GalacticCoord here = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L);
+        GalacticCoord elsewhere = GalacticCoord.ofSectorLocal(3L, 0L, 0L, 0L, 0L, 0L);
+        SystemBody planet = planetOnAQuarterTurnOrbit(elsewhere);
+
+        RenderBody early = SystemBodiesProducer.buildByDim(live(here, 5), new ShipLedger().snapshot(),
+                lookupIn(here, planet), CellFrames.STATIC, 0L).get(5).get(0);
+        RenderBody late = SystemBodiesProducer.buildByDim(live(here, 5), new ShipLedger().snapshot(),
+                lookupIn(here, planet), CellFrames.STATIC, 100L).get(5).get(0);
+
+        assertEquals("at tick 0 the body is one orbit-unit along +X of its cell",
+                3L * GalacticCoord.CELL + 1_000_000L, early.localX);
+        assertEquals("control: and nothing at all along +Z", 0L, early.localZ);
+        assertEquals("a quarter turn later that whole radius has swung off +X",
+                3L * GalacticCoord.CELL, late.localX);
+        assertEquals("...and onto +Z", 1_000_000L, late.localZ);
+    }
+
+    /** The observer's OWN cell moves too, so a body in it stays exactly where it was relative to him. */
+    @Test
+    public void aBodyInTheObserversOwnMovingCellDoesNotDriftAwayFromHim() {
+        final GalacticCoord cell = GalacticCoord.ofSectorLocal(7L, 0L, 0L, 0L, 0L, 0L);
+        GalacticCoord ship = GalacticCoord.ofSectorLocal(7L, 0L, 0L, 900L, 0L, 0L);
+        final SystemBody planet = planetOnAQuarterTurnOrbit(cell);
+        // The observer stands in the SAME cell, so his position resolves through the same frame.
+        CellFrames observerFrames = new CellFrames() {
+            @Override
+            public AbsolutePos originAt(GalacticCoord name, long tick) {
+                return name.sameCell(cell) ? planet.frame().originAt(tick)
+                        : AbsolutePos.ofCellName(name);
+            }
+        };
+
+        ShipLedger ledger = new ShipLedger();
+        ledger.settle(UUID.randomUUID(), ship);
+
+        long early = SystemBodiesProducer.buildByDim(live(cell, 5), ledger.snapshot(),
+                lookupIn(cell, planet), observerFrames, 0L).get(5).get(0).localX;
+        long late = SystemBodiesProducer.buildByDim(live(cell, 5), ledger.snapshot(),
+                lookupIn(cell, planet), observerFrames, 100L).get(5).get(0).localX;
+
+        assertEquals("a ship parked beside a planet is carried by the same frame the planet is",
+                early, late);
+        assertEquals(-900L, early);
+
+        // The control: measured against a STATIC observer frame the same fixture drifts, so the
+        // assertion above is about the frames cancelling and not about a planet that cannot move.
+        long staticEarly = SystemBodiesProducer.buildByDim(live(cell, 5), ledger.snapshot(),
+                lookupIn(cell, planet), CellFrames.STATIC, 0L).get(5).get(0).localX;
+        long staticLate = SystemBodiesProducer.buildByDim(live(cell, 5), ledger.snapshot(),
+                lookupIn(cell, planet), CellFrames.STATIC, 100L).get(5).get(0).localX;
+        assertNotEquals("the fixture's cell must genuinely be in motion", staticEarly, staticLate);
+    }
+
+    /**
+     * Ledger #151's half that lives on the server. A star has no dimension of its own and carried
+     * {@code INVALID_PLANET}, which the client's lenient lookup answers with the OVERWORLD — so the
+     * star was drawn wearing Earth's texture and would be captioned with Earth's name. An AUTHORED
+     * star has a proxy dimension; a procedural one (negative star id) does not, and inventing an id
+     * for it would point the client at another body again.
+     */
+    @Test
+    public void anAuthoredStarIsFedItsOwnProxyDimensionAndAProceduralOneIsNot() {
+        GalacticCoord cell = GalacticCoord.ORIGIN;
+        SystemBody authored = new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, 4);
+        SystemBody procedural = new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, -9);
+        GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 500L, 0L, 0L);
+        ShipLedger ledger = new ShipLedger();
+        ledger.settle(UUID.randomUUID(), ship);
+
+        List<RenderBody> fed = SystemBodiesProducer.buildByDim(live(cell, 5), ledger.snapshot(),
+                lookupIn(cell, authored, procedural)).get(5);
+
+        assertEquals("an authored star is fed its own star-proxy dimension",
+                Constants.STAR_ID_OFFSET + 4, fed.get(0).dimId);
+        assertEquals("a procedural star has no proxy, so it stays unidentified rather than borrowing one",
+                Constants.INVALID_PLANET, fed.get(1).dimId);
     }
 
     @Test

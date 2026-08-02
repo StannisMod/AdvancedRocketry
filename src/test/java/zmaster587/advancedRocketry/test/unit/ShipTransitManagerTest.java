@@ -303,8 +303,10 @@ public class ShipTransitManagerTest {
         assertEquals(1, records.size());
         TransitRecord r = records.get(0);
         assertEquals(ship, r.shipId);
-        assertEquals("position starts at origin (not yet ticked)", cell(1), r.position);
+        assertEquals("the origin is persisted: progress is meaningless without it", cell(1), r.origin);
         assertEquals(cell(2), r.target);
+        assertEquals("nothing flown yet (not ticked)", 0L, r.travelledBlocks);
+        assertEquals("the flight is priced at depart, once", 4_000_000L, r.distanceBlocks);
         assertEquals(7L, r.speed);
         assertTrue("no crew captured yet (option-A capture is the VS layer)", r.crew.isEmpty());
     }
@@ -334,7 +336,7 @@ public class ShipTransitManagerTest {
         UUID ship = UUID.randomUUID();
 
         // A record as if persisted before a restart; arrives in one tick (distance < speed).
-        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 10L, 0L,
+        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 4_000_000L, 0L, 10L, 0L,
                 ARRIVE_IN_ONE_TICK, new ArrayList<UUID>(), new NBTTagCompound()));
 
         assertTrue("the imported record is in transit", mgr.isInTransit(ship.toString()));
@@ -413,7 +415,7 @@ public class ShipTransitManagerTest {
         assertEquals(1, tiles.inUseCount());
 
         // A stray restore of a ship already flying must not spawn a second (restored) transit.
-        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 10L, 0L, 1L,
+        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 1L,
                 new ArrayList<UUID>(), new NBTTagCompound()));
 
         assertEquals("still exactly one transit", 1, mgr.inTransitCount());
@@ -451,8 +453,8 @@ public class ShipTransitManagerTest {
 
         NBTTagCompound imported = new NBTTagCompound();
         imported.setInteger("imported", 7);
-        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 10L, 0L, 7L, new ArrayList<UUID>(),
-                imported));
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 7L,
+                new ArrayList<UUID>(), imported));
 
         TransitRecord r = mgr.exportTransits().get(0);
         assertFalse("a restored transit has no live hyperspace ship to re-cut", r.snapshot.hasKey("recut"));
@@ -468,7 +470,7 @@ public class ShipTransitManagerTest {
         String ship = UUID.randomUUID().toString();
 
         // A restored MANNED transit (crew persisted in the record) with nobody online -> paused.
-        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 10L, 0L, 1L,
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 1L,
                 java.util.Collections.singletonList(UUID.randomUUID()), new NBTTagCompound()));
 
         double before = mgr.remainingDistance(ship);
@@ -509,13 +511,13 @@ public class ShipTransitManagerTest {
 
         // Snapshot-less record: the ship's blocks are unrecoverable, so a restored transit would only spin to
         // MAX_ARRIVAL_ATTEMPTS then silently delete it. Drop it instead.
-        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 10L, 0L, 1L,
-                new ArrayList<UUID>(), null));
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L, 0L,
+                10L, 0L, 1L, new ArrayList<UUID>(), null));
         assertEquals("a snapshot-less record is not imported as a doomed transit", 0, mgr.inTransitCount());
 
         // Blank/corrupt id (an absent NBT "shipId" reads as "") is likewise dropped.
-        mgr.importTransit(new TransitRecord("", cell(1), cell(2), 10L, 0L, 1L, new ArrayList<UUID>(),
-                new NBTTagCompound()));
+        mgr.importTransit(new TransitRecord("", cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 1L,
+                new ArrayList<UUID>(), new NBTTagCompound()));
         assertEquals("a blank-id record is dropped", 0, mgr.inTransitCount());
     }
 

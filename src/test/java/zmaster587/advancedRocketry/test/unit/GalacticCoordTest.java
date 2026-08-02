@@ -126,20 +126,20 @@ public class GalacticCoordTest {
     public void distanceIsExactEuclideanAcrossCells() {
         GalacticCoord a = GalacticCoord.ofAbsolute(0L, 0L, 0L);
         GalacticCoord b = GalacticCoord.ofAbsolute(3L, 4L, 12L);
-        assertEquals(169.0, a.distanceSqTo(b), EPS); // 3-4-12 => 13^2 = 169
-        assertEquals(13.0, a.distanceTo(b), EPS);
+        assertEquals(169.0, a.staticFrameDistanceSqTo(b), EPS); // 3-4-12 => 13^2 = 169
+        assertEquals(13.0, a.staticFrameDistanceTo(b), EPS);
 
         // A separation of exactly one cell along each axis.
         GalacticCoord p = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L);
         GalacticCoord q = GalacticCoord.ofSectorLocal(1L, 0L, 0L, 0L, 0L, 0L);
-        assertEquals((double) CELL, p.distanceTo(q), 1.0);
+        assertEquals((double) CELL, p.staticFrameDistanceTo(q), 1.0);
     }
 
     @Test
     public void distanceIsSymmetric() {
         GalacticCoord a = GalacticCoord.ofSectorLocal(-4L, 9L, 2L, 500L, -600L, 700L);
         GalacticCoord b = GalacticCoord.ofSectorLocal(3L, -5L, 8L, -100L, 200L, -300L);
-        assertEquals(a.distanceSqTo(b), b.distanceSqTo(a), EPS);
+        assertEquals(a.staticFrameDistanceSqTo(b), b.staticFrameDistanceSqTo(a), EPS);
     }
 
     @Test

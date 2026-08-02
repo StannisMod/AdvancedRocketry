@@ -232,6 +232,13 @@ public final class ShipTransitManager {
     private OfflineProgress offlineProgress;
     /** Arrival placement policy; {@code null} = arrive exactly on the aimed coordinate. */
     private ArrivalPlacement arrivalPlacement;
+    /**
+     * How a cell name resolves to a position at a tick. A jump is priced across two cells whose
+     * frames both move, so the departure distance is only meaningful through them (C15 ADDR-9/13).
+     * {@code null} = the static reading, which is what the pure state-machine tests want and what a
+     * subsystem with no registry has.
+     */
+    private CellFrames frames;
     private final Map<String, Transit> transits = new LinkedHashMap<>();
     /** Arrived ships whose crew reseat is still retrying (best-effort, not persisted). See {@link PendingReseat}. */
     private final List<PendingReseat> reseating = new ArrayList<>();
@@ -297,10 +304,19 @@ public final class ShipTransitManager {
         space.dematerialize(origin);
         long speed = Math.max(1L, speedBlocksPerTick);
         long now = clock.getAsLong();
-        // Linear ETA: the integrator steps `speed` blocks/tick until the final within-reach snap.
-        long arrivalTick = now + (long) Math.ceil(origin.distanceTo(target) / (double) speed);
+        // The flight is priced ONCE, here, through both cells' frames as they stand at departure.
+        // A jump is a commitment: the pilot saw a forecast at the console and the drive spent its
+        // burst against it, so re-pricing mid-flight because the destination kept orbiting would
+        // charge him for a decision he could not have made differently.
+        double distance = (frames == null ? CellFrames.STATIC : frames)
+                .distanceBetween(origin, target, now);
+        long distanceBlocks = (long) Math.ceil(distance);
+        // The ETA goes through the same law the console's forecast quotes, so the flight the pilot
+        // was shown is the flight he gets.
+        long arrivalTick = now + zmaster587.advancedRocketry.hyperdrive.JumpSpeed
+                .transitTicks(distance, speed);
         Transit t = new Transit(origin, target, tile, hyperAnchor, speed, arrivalTick, now,
-                new ShipTransit(origin, target));
+                new ShipTransit(origin, target, distanceBlocks));
         t.snapshot = initialSnapshot;
         t.crew.addAll(crew); // the offline-progress gate + the persisted transit record read these UUIDs
         transits.put(shipId, t);
@@ -540,6 +556,14 @@ public final class ShipTransitManager {
         this.arrivalPlacement = placement;
     }
 
+    /**
+     * Install the frame lookup used to price a departure. {@code null} restores the static reading —
+     * the distance two cell names would be apart if nothing moved.
+     */
+    public void setFrames(CellFrames lookup) {
+        this.frames = lookup;
+    }
+
     /** Record the aboard crew captured at depart (option A) on an in-flight ship — for the gate + reseat. */
     public void setTransitCrew(String shipId, List<UUID> crew) {
         Transit t = transits.get(shipId);
@@ -566,7 +590,8 @@ public final class ShipTransitManager {
                     t.snapshot = fresh;
                 }
             }
-            out.add(new TransitRecord(e.getKey(), t.integrator.position(), t.target, t.arrivalTick,
+            out.add(new TransitRecord(e.getKey(), t.integrator.origin(), t.target,
+                    t.integrator.distanceBlocks(), t.integrator.travelledBlocks(), t.arrivalTick,
                     t.lastTicked, t.speed, t.crew, t.snapshot));
         }
         return out;
@@ -594,8 +619,10 @@ public final class ShipTransitManager {
                     + "ship; dropping the record", record.shipId);
             return;
         }
-        Transit t = new Transit(record.position, record.target, null, null, record.speed,
-                record.arrivalTick, record.lastTicked, new ShipTransit(record.position, record.target));
+        Transit t = new Transit(record.origin, record.target, null, null, record.speed,
+                record.arrivalTick, record.lastTicked,
+                new ShipTransit(record.origin, record.target, record.distanceBlocks,
+                        record.travelledBlocks));
         t.restored = true;
         t.snapshot = record.snapshot;
         if (record.crew != null) {

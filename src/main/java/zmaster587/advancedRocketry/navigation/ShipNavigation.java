@@ -126,7 +126,9 @@ public final class ShipNavigation implements JumpGate.ShipContext {
         if (target == null || origin == null) {
             return 0L;
         }
-        return JumpSpeed.transitTicks(origin.distanceTo(target), plannedSpeed());
+        return JumpSpeed.transitTicks(
+                SpaceSubsystem.frames().distanceBetween(origin, target, SpaceSubsystem.spaceClock()),
+                plannedSpeed());
     }
 
     /** Where the ship is now, as the durable ledger records it, or {@code null}. */

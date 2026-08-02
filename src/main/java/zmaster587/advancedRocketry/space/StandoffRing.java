@@ -106,7 +106,7 @@ public final class StandoffRing {
             if (other == null) {
                 continue;
             }
-            double distance = point.distanceTo(other);
+            double distance = point.staticFrameDistanceTo(other);
             if (distance < nearest) {
                 nearest = distance;
             }

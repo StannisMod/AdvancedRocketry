@@ -32,19 +32,27 @@ public final class NavInfoRedaction {
     }
 
     /**
-     * The tier at which {@code shipCoord} may read the body at {@code bodyCoord}, given what the
-     * ship's crystal already {@code recorded} about it (may be {@code null} for an unrecorded body).
+     * The tier at which {@code shipCoord} may read the body NAMED {@code bodyName}, which is
+     * {@code distanceBlocks} away right now, given what the ship's crystal already {@code recorded}
+     * about it (may be {@code null} for an unrecorded body).
      *
      * <p>Proximity and memory both count, and the better of the two wins: flying up to a planet reveals
      * it whether or not it was ever recorded, and a planet surveyed from orbit long ago stays surveyed
      * once you leave.</p>
+     *
+     * <p>The two clauses want two different things from the body, which is why they are two
+     * parameters. ORBIT is a real distance and has to be measured through both cells' frames at the
+     * moment of asking (C15 ADDR-9), so the caller — which has the registry — supplies it. APPROACH
+     * is "we are in the same neighbourhood", and a neighbourhood is a NAME: comparing cell keys is
+     * exactly right and needs no tick at all.</p>
      */
-    public static InfoTier tierFor(GalacticCoord shipCoord, GalacticCoord bodyCoord, InfoTier recorded) {
+    public static InfoTier tierFor(GalacticCoord shipCoord, GalacticCoord bodyName,
+                                   double distanceBlocks, InfoTier recorded) {
         InfoTier byProximity = InfoTier.TELESCOPE;
-        if (shipCoord != null && bodyCoord != null) {
-            if (shipCoord.distanceTo(bodyCoord) <= ORBIT_ZONE_BLOCKS) {
+        if (shipCoord != null && bodyName != null) {
+            if (distanceBlocks <= ORBIT_ZONE_BLOCKS) {
                 byProximity = InfoTier.ORBIT;
-            } else if (shipCoord.cellKey().equals(bodyCoord.cellKey())) {
+            } else if (shipCoord.cellKey().equals(bodyName.cellKey())) {
                 byProximity = InfoTier.APPROACH;
             }
         }

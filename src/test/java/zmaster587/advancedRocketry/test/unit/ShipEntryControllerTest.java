@@ -152,7 +152,7 @@ public class ShipEntryControllerTest {
         assertEquals("entered the launch body's own cell", body(5).cellKey(), entry.cellKey());
         // The hysteresis contract: the spawn ring lies strictly OUTSIDE the descent radius, so a
         // fresh entry can never immediately trip the descent trigger.
-        double distance = entry.coord.distanceTo(body(5));
+        double distance = entry.coord.staticFrameDistanceTo(body(5));
         assertTrue("ring distance " + distance + " must exceed the descent radius",
                 distance > ShipEntryController.DESCENT_RADIUS_BLOCKS);
         // The realized pose matches the ledgered coordinate (the honest-3D mapping).

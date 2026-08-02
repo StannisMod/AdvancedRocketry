@@ -498,6 +498,13 @@ public class DimensionManager implements IGalaxy {
         }
         dimensionList.remove(dimId);
 
+        // A dimension id goes straight back into circulation (getNextFreeDim hands a deleted one
+        // back), so the durable cell name recorded against it has to go with the world it named.
+        // Leaving it behind means the next body given this id silently inherits a cell in whatever
+        // system the deleted one belonged to — and since the two bodies then have different anchors,
+        // no per-system audit ever compares them.
+        zmaster587.advancedRocketry.universe.UniverseRegistry.forgetNameOnServer(dimId);
+
         //Delete World Folder
         File file = new File(getCurrentSaveRootDirectory(), workingPath + "/DIM" + dimId);
 

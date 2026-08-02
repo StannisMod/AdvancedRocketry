@@ -28,8 +28,11 @@ public final class NavBodyView {
         if (body == null) {
             return view;
         }
-        GalacticCoord address = body.address();
-        view.put(PlanetInfoField.COORDINATE, address == null ? "?" : address.cellKey());
+        // The coordinate a player reads off this panel and writes down. It is the body's durable
+        // NAME and nothing else: an in-cell offset would be a number that means something different
+        // an hour later, which is exactly what a written-down coordinate must not be (C15 ADDR-1).
+        GalacticCoord name = body.name();
+        view.put(PlanetInfoField.COORDINATE, name == null ? "?" : name.cellKey());
         view.put(PlanetInfoField.NAME, nameOf(body, recorded));
         view.put(PlanetInfoField.TOPOLOGY, body.kind().name());
 

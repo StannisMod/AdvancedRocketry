@@ -78,26 +78,26 @@ public class SystemContentTest {
         List<SystemBody> bodies = SystemContent.bodiesOf(star, anchor);
 
         assertEquals("first body is the star at the anchor cell", SystemBodyKind.STAR, bodies.get(0).kind());
-        assertTrue(bodies.get(0).address().sameCell(anchor));
-        assertEquals(0, bodies.get(0).address().localX());
+        assertTrue(bodies.get(0).name().sameCell(anchor));
+        assertEquals(0, bodies.get(0).name().localX());
 
         int planets = 0;
         SystemBody aPlanet = null;
         for (SystemBody b : bodies) {
             assertEquals("every body belongs to the star", 4242, b.starId());
             // Snapped to its own cell's centre (zone content sits near the cell centre — A#1a).
-            assertEquals(0, b.address().localX());
-            assertEquals(0, b.address().localY());
-            assertEquals(0, b.address().localZ());
+            assertEquals(0, b.name().localX());
+            assertEquals(0, b.name().localY());
+            assertEquals(0, b.name().localZ());
             // Inside the anchor's super-cell box, so member attribution stays exact.
-            assertEquals(Math.floorDiv(anchor.sectorX(), s), Math.floorDiv(b.address().sectorX(), s));
-            assertEquals(Math.floorDiv(anchor.sectorY(), s), Math.floorDiv(b.address().sectorY(), s));
-            assertEquals(Math.floorDiv(anchor.sectorZ(), s), Math.floorDiv(b.address().sectorZ(), s));
+            assertEquals(Math.floorDiv(anchor.sectorX(), s), Math.floorDiv(b.name().sectorX(), s));
+            assertEquals(Math.floorDiv(anchor.sectorY(), s), Math.floorDiv(b.name().sectorY(), s));
+            assertEquals(Math.floorDiv(anchor.sectorZ(), s), Math.floorDiv(b.name().sectorZ(), s));
             if (b.kind() == SystemBodyKind.PLANET) {
                 planets++;
                 aPlanet = b;
                 assertFalse("a planet sits in its OWN cell, not the anchor's (A#1a)",
-                        b.address().sameCell(anchor));
+                        b.name().sameCell(anchor));
             }
         }
         assertEquals("both authored planets become bodies", 2, planets);
@@ -115,7 +115,7 @@ public class SystemContentTest {
                 first = b;
             } else {
                 assertFalse("planets on different orbits sit in different cells",
-                        b.address().sameCell(first.address()));
+                        b.name().sameCell(first.name()));
             }
         }
     }
@@ -144,7 +144,7 @@ public class SystemContentTest {
         GalacticCoord bodyCell = null;
         for (SystemBody b : reg.systemBodiesAt(anchor)) {
             if (b.dimId() == 710) {
-                bodyCell = b.address().cellCentre();
+                bodyCell = b.name();
             }
         }
         assertNotNull(bodyCell);
@@ -173,8 +173,8 @@ public class SystemContentTest {
             }
         }
         assertNotNull(body);
-        assertEquals("a quarter turn leaves no offset along +X", 0L, body.address().sectorX());
-        assertTrue("...and puts the whole orbital radius along +Z", body.address().sectorZ() > 0L);
+        assertEquals("a quarter turn leaves no offset along +X", 0L, body.name().sectorX());
+        assertTrue("...and puts the whole orbital radius along +Z", body.name().sectorZ() > 0L);
     }
 
     /**
@@ -240,15 +240,18 @@ public class SystemContentTest {
         long halfPeriodTicks = (long) (24000d
                 * AstronomicalBodyHelper.getOrbitalPeriod(100, 1f) / 2d);
 
-        GalacticCoord nowCell = cellOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN,
-                GalaxyGenConfig.DEFAULT_MIN_SPACING, 0L), 740);
-        GalacticCoord laterCell = cellOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN,
-                GalaxyGenConfig.DEFAULT_MIN_SPACING, halfPeriodTicks), 740);
+        SystemBody body = bodyOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN), 740);
+        assertNotNull(body);
 
-        assertNotNull(nowCell);
-        assertNotNull(laterCell);
-        assertTrue("half an orbit later the body is still addressed by the same cell",
-                nowCell.sameCell(laterCell));
+        assertEquals("half an orbit later the body is still addressed by the same cell",
+                body.name().cellKey(), body.addressAt(halfPeriodTicks).cellKey());
+        // The control. Without it this passes against a body that never went anywhere, and "the name
+        // is durable" would be a statement about the fixture rather than about the derivation.
+        assertFalse("the fixture's planet must actually travel over half an orbit",
+                body.absoluteAt(0L).equals(body.absoluteAt(halfPeriodTicks)));
+        assertTrue("...and travel FAR - a cell is 4M blocks wide, so this is many cells' worth",
+                body.absoluteAt(0L).distanceTo(body.absoluteAt(halfPeriodTicks))
+                        > GalacticCoord.CELL);
     }
 
     /**
@@ -292,10 +295,11 @@ public class SystemContentTest {
 
         final GalacticCoord recorded = GalacticCoord.ofSectorLocal(77L, -3L, 12L, 0L, 0L, 0L);
         List<SystemBody> bodies = SystemContent.bodiesOf(star, GalacticCoord.ORIGIN,
-                GalaxyGenConfig.DEFAULT_MIN_SPACING, SystemContent.NOW,
+                GalaxyGenConfig.DEFAULT_MIN_SPACING,
                 new SystemContent.CellNames() {
                     @Override
-                    public GalacticCoord nameFor(int dimId, GalacticCoord derived) {
+                    public GalacticCoord nameFor(int dimId, int starId, GalacticCoord anchor,
+                                                 int minSpacingCells, GalacticCoord derived) {
                         return dimId == 747 ? recorded : derived;
                     }
                 });
@@ -333,13 +337,51 @@ public class SystemContentTest {
         UniverseRegistry.setStarLookup(id -> id == 4247 ? star : null);
 
         Optional<GalacticCoord> cell = reg.coordForPlanet(moon);
-        Optional<GalacticCoord> aim = reg.addressForPlanet(moon, SystemContent.NOW);
+        Optional<GalacticCoord> aim = reg.addressForPlanet(moon, 0L);
         assertTrue(cell.isPresent());
         assertTrue(aim.isPresent());
 
         assertTrue("the moon is addressed inside its parent's cell", aim.get().sameCell(cell.get()));
+        // Both endpoints are in ONE cell, so they share a frame and its motion cancels: the in-cell
+        // delta IS the distance, with no tick and no frame lookup needed.
         assertTrue("...and a ship dropped at that cell's centre would be nowhere near the moon",
-                aim.get().distanceTo(cell.get()) > 1000d);
+                aim.get().staticFrameDistanceTo(cell.get()) > 1000d);
+    }
+
+    /**
+     * ADDR-5's live half. A moon shares its parent's cell NAME forever, and moves inside it — which
+     * is the one piece of a system's layout that is still a function of world time, and the reason a
+     * navigation computer has to lead its aim at a moon rather than at the cell.
+     */
+    @Test
+    public void aMoonsOffsetInsideItsParentsCellIsLiveWhileItsNameIsNot() {
+        StellarBody star = new StellarBody();
+        star.setId(4249);
+        star.setSize(1f);
+        DimensionProperties parent = planet(770, 200, 0.5);
+        parent.gravitationalMultiplier = 1f;
+        DimensionProperties moon = planet(771, 127, 0.9);
+        DimensionManager.getInstance().setDimProperties(770, parent);
+        DimensionManager.getInstance().setDimProperties(771, moon);
+        parent.setStar(star);
+        moon.setParentPlanet(parent);
+
+        List<SystemBody> bodies = SystemContent.bodiesOf(star, GalacticCoord.ORIGIN);
+        SystemBody moonBody = bodyOf(bodies, 771);
+        SystemBody planetBody = bodyOf(bodies, 770);
+        assertNotNull(moonBody);
+        assertNotNull(planetBody);
+
+        long quarterPeriod = (long) (24000d
+                * AstronomicalBodyHelper.getMoonOrbitalPeriod(127f, 1f) / 4d);
+
+        assertEquals("a moon carries its parent's cell name", planetBody.name(), moonBody.name());
+        assertEquals("...at every tick", planetBody.name().cellKey(),
+                moonBody.addressAt(quarterPeriod).cellKey());
+        assertFalse("a moon's position inside that cell is LIVE",
+                moonBody.inCellOffsetAt(0L).equals(moonBody.inCellOffsetAt(quarterPeriod)));
+        assertTrue("a planet is at its own cell's frame origin, so it has no offset to move",
+                planetBody.inCellOffsetAt(quarterPeriod).isZero());
     }
 
     /**
@@ -375,10 +417,19 @@ public class SystemContentTest {
                 reg.bodiesAt(bodyCell).isEmpty());
     }
 
+    private static SystemBody bodyOf(List<SystemBody> bodies, int dimId) {
+        for (SystemBody b : bodies) {
+            if (b.dimId() == dimId) {
+                return b;
+            }
+        }
+        return null;
+    }
+
     private static GalacticCoord cellOf(List<SystemBody> bodies, int dimId) {
         for (SystemBody b : bodies) {
             if (b.dimId() == dimId) {
-                return b.address();
+                return b.name();
             }
         }
         return null;

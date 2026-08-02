@@ -29,6 +29,16 @@ public class NavRedactionAndSyncTest {
         return GalacticCoord.ofSectorLocal(sector, 0L, 0L, localX, 0L, 0L);
     }
 
+    /**
+      * The tier now takes the true distance as a number, because measuring it is the caller's job:
+      * two cells' frames both move, so only something holding the registry can say how far apart
+      * they are RIGHT NOW (C15 ADDR-9). These fixtures supply it directly, which is what makes the
+      * tier rule checkable without a universe.
+      */
+    private static double blocksApart(GalacticCoord a, GalacticCoord b) {
+        return a.staticFrameDistanceTo(b);
+    }
+
     private static CrystalEntry entry(long sector, String name, InfoTier detail, long tick) {
         return new CrystalEntry(coord(sector, 0), name, SystemBodyKind.PLANET, detail, tick);
     }
@@ -37,7 +47,8 @@ public class NavRedactionAndSyncTest {
 
     @Test
     public void aBodyInAnotherSystemIsOnlyReadableFromAfar() {
-        InfoTier tier = NavInfoRedaction.tierFor(coord(1, 0), coord(9, 0), null);
+        InfoTier tier = NavInfoRedaction.tierFor(coord(1, 0), coord(9, 0),
+                blocksApart(coord(1, 0), coord(9, 0)), null);
 
         assertEquals("another system's body is a telescope target, nothing more",
                 InfoTier.TELESCOPE, tier);
@@ -45,31 +56,54 @@ public class NavRedactionAndSyncTest {
 
     @Test
     public void beingInTheSameSystemRevealsTheApproachFields() {
-        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 1_000_000L), null);
+        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 1_000_000L),
+                blocksApart(coord(3, 0), coord(3, 1_000_000L)), null);
 
         assertEquals(InfoTier.APPROACH, tier);
     }
 
     @Test
     public void closingOnTheBodyRevealsEverything() {
-        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 100L), null);
+        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 100L),
+                blocksApart(coord(3, 0), coord(3, 100L)), null);
 
         assertEquals("inside the body's own zone the ship sees all of it", InfoTier.ORBIT, tier);
     }
 
     @Test
     public void aBodyOnceSurveyedStaysSurveyedAfterYouLeave() {
-        InfoTier tier = NavInfoRedaction.tierFor(coord(1, 0), coord(9, 0), InfoTier.ORBIT);
+        InfoTier tier = NavInfoRedaction.tierFor(coord(1, 0), coord(9, 0),
+                blocksApart(coord(1, 0), coord(9, 0)), InfoTier.ORBIT);
 
         assertEquals("you do not forget a planet you orbited by flying away", InfoTier.ORBIT, tier);
     }
 
     @Test
     public void proximityBeatsAStaleRecord() {
-        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 100L), InfoTier.TELESCOPE);
+        InfoTier tier = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 100L),
+                blocksApart(coord(3, 0), coord(3, 100L)), InfoTier.TELESCOPE);
 
         assertEquals("arriving reveals a body whether or not it was ever recorded",
                 InfoTier.ORBIT, tier);
+    }
+
+    /**
+     * ORBIT is a real distance, so it follows the number the caller measured — not the cell name.
+     * A moon shares its parent's cell and can sit tens of thousands of blocks away inside it, and a
+     * neighbouring cell's body can be closer than one in your own; the rule has to read the metre,
+     * or a pilot alongside a moon is told less about it than the planet he is nowhere near.
+     */
+    @Test
+    public void theOrbitTierFollowsTheMeasuredDistanceNotTheCellName() {
+        InfoTier sameCellFarAway = NavInfoRedaction.tierFor(coord(3, 0), coord(3, 0),
+                NavInfoRedaction.ORBIT_ZONE_BLOCKS * 10, null);
+        assertEquals("sharing a cell is not being in the body's zone",
+                InfoTier.APPROACH, sameCellFarAway);
+
+        InfoTier otherCellClose = NavInfoRedaction.tierFor(coord(3, 0), coord(4, 0),
+                NavInfoRedaction.ORBIT_ZONE_BLOCKS / 2, null);
+        assertEquals("a body whose frame has swung close is close, whatever its name",
+                InfoTier.ORBIT, otherCellClose);
     }
 
     @Test

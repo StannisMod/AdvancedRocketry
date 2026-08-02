@@ -127,13 +127,13 @@ public class ShipLedgerDataTest {
 
     @Test
     public void transitRecordsSurviveWriteReadRoundTrip() {
-        GalacticCoord pos = coord(1, 0, 0, 500, 0, 0);
+        GalacticCoord org = coord(1, 0, 0, 500, 0, 0);
         GalacticCoord tgt = coord(2, 0, 0, 0, 0, 0);
         NBTTagCompound snapshot = new NBTTagCompound();
         snapshot.setInteger("blocks", 27); // stands in for the StorageChunk NBT (its own round-trip = TransitRecordTest)
         UUID crew = UUID.randomUUID();
-        TransitRecord rec = new TransitRecord(UUID.randomUUID().toString(), pos, tgt, 4242L, 100L, 9L,
-                java.util.Collections.singletonList(crew), snapshot);
+        TransitRecord rec = new TransitRecord(UUID.randomUUID().toString(), org, tgt, 3_500_000L,
+                1_250_000L, 4242L, 100L, 9L, java.util.Collections.singletonList(crew), snapshot);
 
         ShipLedgerData src = new ShipLedgerData();
         src.saveTransits(java.util.Collections.singletonList(rec));
@@ -146,7 +146,9 @@ public class ShipLedgerDataTest {
         assertEquals("the in-flight transit survives the store's 'transits' NBT round-trip", 1, read.size());
         TransitRecord r = read.get(0);
         assertEquals("shipId survives", rec.shipId, r.shipId);
-        assertEquals("position survives", pos, r.position);
+        assertEquals("origin survives", org, r.origin);
+        assertEquals("the flight's priced distance survives", 3_500_000L, r.distanceBlocks);
+        assertEquals("how far it had got survives", 1_250_000L, r.travelledBlocks);
         assertEquals("target survives", tgt, r.target);
         assertEquals("arrivalTick survives", 4242L, r.arrivalTick);
         assertEquals("speed survives", 9L, r.speed);

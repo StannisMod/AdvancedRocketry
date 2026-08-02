@@ -74,6 +74,7 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final int BUTTON_AIM_TYPED = 3;
     private static final int BUTTON_SYNC = 4;
     private static final int BUTTON_ARM = 5;
+    private static final int BUTTON_SKY_LABELS = 6;
     /** Button id of the first listed address; the n-th address is {@code BUTTON_PICK_FIRST + n}. */
     private static final int BUTTON_PICK_FIRST = 10;
     /**
@@ -90,6 +91,7 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final byte NET_AIM_TYPED = 4;
     private static final byte NET_SYNC = 5;
     private static final byte NET_ARM = 6;
+    private static final byte NET_SKY_LABELS = 7;
 
     private static final String NBT_TARGET = "navTarget";
     private static final String NBT_HAS_TARGET = "navHasTarget";
@@ -98,6 +100,7 @@ public class TileNavigationComputer extends TileInventoryHatch
     private static final String NBT_AFC_OFFSET = "afcOffset";
     private static final String NBT_SYNC_CHANNEL = "syncChannel";
     private static final String NBT_ARMED = "navArmed";
+    private static final String NBT_SKY_LABELS = "navSkyLabels";
 
     /**
      * The cell the ship is currently aimed at, or {@code null} when the pilot has not chosen.
@@ -245,7 +248,7 @@ public class TileNavigationComputer extends TileInventoryHatch
         GalacticCoord aimed = registry == null ? null : TargetPrediction.aimAt(targetDim, origin, now,
                 new TargetPrediction.Ephemeris() {
                     @Override
-                    public GalacticCoord cellAt(int dimId, long worldTick) {
+                    public GalacticCoord addressAt(int dimId, long worldTick) {
                         // The STRICT lookup: a lenient one answers an unknown dimension with the
                         // overworld, which would quietly re-aim the ship at Earth.
                         zmaster587.advancedRocketry.dimension.DimensionProperties props =
@@ -267,7 +270,11 @@ public class TileNavigationComputer extends TileInventoryHatch
                         return zmaster587.advancedRocketry.hyperdrive.JumpSpeed
                                 .transitTicks(distanceBlocks, speed);
                     }
-                });
+                },
+                // Distances are measured through both cells' frames at the tick being priced: the
+                // destination's frame is what moves over a jump, and it dominates a moon's own
+                // offset by two orders of magnitude.
+                registry);
 
         boolean resolved = aimed != null;
         // A target that cannot be located keeps its LAST KNOWN coordinate rather than being wiped:
@@ -526,6 +533,15 @@ public class TileNavigationComputer extends TileInventoryHatch
                 LibVulpes.proxy.getLocalizedString("msg.navcomputer.sync"), this,
                 zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 52, 18));
 
+        // Shares the bottom row with the sync channel box (x 8..32) and its button (x 36..88), taking
+        // x 96..168, y 128..146. The free band ENDS at y 146 - the hotbar starts at 147 - and a button
+        // that reaches past it cannot be clicked at all, which the geometry note at the top of this
+        // method says in as many words and which the first draft of this one did anyway.
+        modules.add(new ModuleButton(96, 128, BUTTON_SKY_LABELS,
+                LibVulpes.proxy.getLocalizedString(skyLabels
+                        ? "msg.navcomputer.labelsoff" : "msg.navcomputer.labelson"), this,
+                zmaster587.libVulpes.inventory.TextureResources.buttonBuild, 72, 18));
+
         return modules;
     }
 
@@ -743,6 +759,8 @@ public class TileNavigationComputer extends TileInventoryHatch
             PacketHandler.sendToServer(new PacketMachine(this, NET_SYNC));
         } else if (buttonId == BUTTON_ARM) {
             PacketHandler.sendToServer(new PacketMachine(this, NET_ARM));
+        } else if (buttonId == BUTTON_SKY_LABELS) {
+            PacketHandler.sendToServer(new PacketMachine(this, NET_SKY_LABELS));
         } else if (buttonId >= BUTTON_PICK_FIRST) {
             pickIndex = buttonId - BUTTON_PICK_FIRST;
             PacketHandler.sendToServer(new PacketMachine(this, NET_PICK));
@@ -751,6 +769,17 @@ public class TileNavigationComputer extends TileInventoryHatch
 
     /** Which listed address the client last clicked; travels to the server with {@link #NET_PICK}. */
     private int pickIndex;
+
+    /**
+     * Whether this console asks the cell sky to label its bodies (C14 CON-C14-17). Default ON.
+     * Persisted here and applied client-side by {@code SkyLabels} when the tile's state syncs.
+     */
+    private boolean skyLabels = true;
+
+    /** Whether this console currently asks for body labels in the sky. */
+    public boolean skyLabelsEnabled() {
+        return skyLabels;
+    }
 
     // ─── Network ───────────────────────────────────────────────────────────────
 
@@ -810,6 +839,15 @@ public class TileNavigationComputer extends TileInventoryHatch
             // something already is IS the mechanic.
             setTarget(GalacticCoord.ofSectorLocal(
                     nbt.getLong("sx"), nbt.getLong("sy"), nbt.getLong("sz"), 0L, 0L, 0L));
+        } else if (id == NET_SKY_LABELS) {
+            skyLabels = !skyLabels;
+            markDirty();
+            if (world != null) {
+                // The clients that can see this console are the ones this setting is for; the tile's
+                // own state sync is what carries it, so the toggle costs no packet of its own.
+                world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            }
+            tell(player, skyLabels ? "msg.navcomputer.labelson" : "msg.navcomputer.labelsoff");
         } else if (id == NET_ARM) {
             if (isArmed()) {
                 disarm();
@@ -923,9 +961,12 @@ public class TileNavigationComputer extends TileInventoryHatch
         SystemBody body = null;
         GalacticCoord where = entry.namesBody() && target != null ? target : entry.coord();
         for (SystemBody candidate : registry.bodiesAt(where)) {
+            // Without an identity, the crystal holds a COORDINATE the pilot wrote down, and what he
+            // wrote down is a cell name: comparing the whole address would fail for a moon the
+            // moment it moved off the point it was observed at, which is within the minute.
             if (entry.namesBody()
                     ? candidate.dimId() == entry.dimId()
-                    : where.equals(candidate.address())) {
+                    : where.sameCell(candidate.name())) {
                 body = candidate;
                 break;
             }
@@ -933,7 +974,9 @@ public class TileNavigationComputer extends TileInventoryHatch
         if (body == null) {
             return; // an address with nothing at it: the pilot finds that out by going there
         }
-        InfoTier tier = NavInfoRedaction.tierFor(shipCoord(), body.address(), entry.detail());
+        long now = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+        InfoTier tier = NavInfoRedaction.tierFor(shipCoord(), body.name(),
+                registry.distanceBetween(shipCoord(), body.addressAt(now), now), entry.detail());
         PacketHandler.sendToPlayer(PacketNavBodyInfo.of(tier,
                 NavInfoRedaction.redact(NavBodyView.of(body, entry), tier)),
                 (net.minecraft.entity.player.EntityPlayerMP) player);
@@ -972,6 +1015,7 @@ public class TileNavigationComputer extends TileInventoryHatch
         nbt.setBoolean(NBT_TARGET_RESOLVED, targetResolved);
         nbt.setInteger(NBT_SYNC_CHANNEL, syncChannel);
         nbt.setBoolean(NBT_ARMED, armed);
+        nbt.setBoolean(NBT_SKY_LABELS, skyLabels);
         nbt.setString("navForecast", forecast == null ? "" : forecast);
         return nbt;
     }
@@ -990,6 +1034,14 @@ public class TileNavigationComputer extends TileInventoryHatch
         targetResolved = !nbt.hasKey(NBT_TARGET_RESOLVED) || nbt.getBoolean(NBT_TARGET_RESOLVED);
         syncChannel = nbt.getInteger(NBT_SYNC_CHANNEL);
         armed = nbt.getBoolean(NBT_ARMED);
+        // Default ON: the label is a diagnostic before it is an affordance (C14 CON-C14-17), so a
+        // console that has never been touched shows it. An absent key therefore means ON, not OFF.
+        skyLabels = !nbt.hasKey(NBT_SKY_LABELS) || nbt.getBoolean(NBT_SKY_LABELS);
+        if (world != null && world.isRemote) {
+            // This is the whole wire for the toggle: the console already ships its state to the
+            // clients that can see it, and the sky is drawn client-side.
+            zmaster587.advancedRocketry.client.render.planet.SkyLabels.setConsoleEnabled(skyLabels);
+        }
         forecast = nbt.getString("navForecast");
     }
 

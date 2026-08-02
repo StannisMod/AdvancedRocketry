@@ -25,6 +25,8 @@ import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.AbsolutePos;
+import zmaster587.advancedRocketry.space.CellFrames;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 /**
@@ -48,12 +50,12 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * the overworld is always loaded). Server-side only; the world seed is re-derived on load rather than
  * persisted (it is immutable for a save and is the single source of truth).</p>
  */
-public final class UniverseRegistry extends WorldSavedData {
+public final class UniverseRegistry extends WorldSavedData implements CellFrames {
 
     /** The persisted identifier == the {@code .dat} filename in the world save. A save-schema constant. */
     public static final String STORAGE_KEY = "advancedrocketry_universe";
 
-    private static final int NBT_VERSION = 2; // v2: + pinned procedural systems (A#1a pin-on-touch)
+    private static final int NBT_VERSION = 3; // v3: + durable cell names (C15 ADDR-1/2) and their owning system
 
     // A self-contained logger rather than AdvancedRocketry.logger: loading the mod class triggers Forge
     // bootstrap (FluidRegistry.enableUniversalBucket), which would break pure unit tests of this registry.
@@ -78,8 +80,12 @@ public final class UniverseRegistry extends WorldSavedData {
      * save — through an XML round-trip that quantizes the authored angles, through a spacing change,
      * and through any later edit to the derivation. A cell name is an identifier, like a registry
      * name or an NBT key; it is not a snapshot of where a planet happened to be.
+     *
+     * <p>The owning system travels with the name because a dimension ID IS RECYCLED
+     * ({@code DimensionManager.getNextFreeDim} hands a deleted id straight back), and a name is
+     * meaningless outside the system whose neighbourhood it sits in. See {@link #durableName}.</p>
      */
-    private final Map<Integer, GalacticCoord> namesByDim = new HashMap<>();
+    private final Map<Integer, RecordedName> namesByDim = new HashMap<>();
     /** Latch: authored anchors drain into the store exactly once (unless a config XML reset is forced). */
     private boolean anchorsSeeded = false;
 
@@ -208,7 +214,7 @@ public final class UniverseRegistry extends WorldSavedData {
                     if (candidate == null || !withinNeighbourhood(cell, candidate, reach)) {
                         continue;
                     }
-                    double distance = cell.distanceSqTo(candidate);
+                    double distance = cell.staticFrameDistanceSqTo(candidate);
                     if (best == null || distance < bestDistance
                             || (distance == bestDistance
                                 && candidate.cellKey().compareTo(best.cellKey()) < 0)) {
@@ -336,16 +342,41 @@ public final class UniverseRegistry extends WorldSavedData {
         Optional<GalacticCoord> anchor = anchorForCell(cell);
         if (anchor.isPresent()) {
             for (SystemBody b : allSystemBodies(anchor.get())) {
-                if (b.address().sameCell(cell)) {
+                if (b.name().sameCell(cell)) {
                     bodies.add(b);
                 }
             }
         }
-        List<SystemBody> pois = poiOverrides.get(cell.cellKey());
-        if (pois != null) {
-            bodies.addAll(pois);
-        }
+        addPoisOf(cell, frameOf(bodies, cell), bodies);
         return bodies;
+    }
+
+    /**
+     * Append the POIs keyed at {@code cell}, re-bound to {@code frame}.
+     *
+     * <p>A POI is persisted as a name plus an offset — which frame that cell rides is a property of
+     * the CELL and is resolved here. Without the rebinding an orbital station in a planet's cell
+     * would keep a static frame while the planet's own cell moved, so the two would drift apart at
+     * orbital speed while sharing one address.</p>
+     */
+    private void addPoisOf(GalacticCoord cell, CellFrame frame, List<SystemBody> out) {
+        List<SystemBody> pois = poiOverrides.get(cell.cellCentre().cellKey());
+        if (pois == null) {
+            return;
+        }
+        for (SystemBody poi : pois) {
+            out.add(poi.withFrame(frame));
+        }
+    }
+
+    /** The frame the bodies already found at {@code cell} define, or a static one when none does. */
+    private static CellFrame frameOf(List<SystemBody> bodiesHere, GalacticCoord cell) {
+        for (SystemBody b : bodiesHere) {
+            if (b.definesFrame()) {
+                return b.frame();
+            }
+        }
+        return CellFrame.staticAt(cell);
     }
 
     /**
@@ -361,36 +392,54 @@ public final class UniverseRegistry extends WorldSavedData {
         }
         List<SystemBody> bodies = allSystemBodies(anchor.get());
         // Aggregate POIs of the anchor + every body cell (deduped) — the member cells that host content.
-        List<String> seenCells = new ArrayList<>();
-        seenCells.add(anchor.get().cellKey());
+        List<GalacticCoord> seenCells = new ArrayList<>();
+        List<String> seenKeys = new ArrayList<>();
+        seenCells.add(anchor.get());
+        seenKeys.add(anchor.get().cellKey());
         List<SystemBody> out = new ArrayList<>(bodies);
         for (SystemBody b : bodies) {
-            String key = b.address().cellCentre().cellKey();
-            if (!seenCells.contains(key)) {
-                seenCells.add(key);
+            String key = b.name().cellKey();
+            if (!seenKeys.contains(key)) {
+                seenKeys.add(key);
+                seenCells.add(b.name());
             }
         }
-        for (String key : seenCells) {
-            List<SystemBody> pois = poiOverrides.get(key);
-            if (pois != null) {
-                out.addAll(pois);
+        for (GalacticCoord cell : seenCells) {
+            addPoisOf(cell, frameOf(bodies, cell), out);
+        }
+        return out;
+    }
+
+    /**
+     * What the SKY of a live cell shows (C14 CON-C14-14): the whole SYSTEM's bodies, unioned with
+     * whatever is keyed at the observer's own cell.
+     *
+     * <p>The union is not tidiness. {@link #systemBodiesAt} answers empty for a cell no anchor
+     * attributes, and its POI aggregation covers the member cells that host BODIES only — so a
+     * straight swap would erase an orbital station standing in an otherwise-void cell, which is
+     * precisely the thing a pilot parked there is looking at. Interstellar void yields the union's
+     * empty case, and that emptiness is the point: the space between stars is black.</p>
+     */
+    public List<SystemBody> skyBodiesAt(GalacticCoord cell) {
+        List<SystemBody> out = systemBodiesAt(cell);
+        for (SystemBody here : bodiesAt(cell)) {
+            if (!out.contains(here)) {
+                out.add(here);
             }
         }
         return out;
     }
 
-    /** The full body list of the system anchored at {@code anchor}: pinned &rarr; authored &rarr; generator. */
-    private List<SystemBody> allSystemBodies(GalacticCoord anchor) {
-        return allSystemBodies(anchor, SystemContent.NOW);
-    }
-
     /**
-     * The system's bodies as they stand at world tick {@code atTick} ({@link SystemContent#NOW} for
-     * the present). Pinned and procedural content is time-INVARIANT by construction — a pinned
-     * snapshot is exactly a frozen system and the generator fabricates static bodies — so only the
-     * authored/catalogued path takes the tick.
+     * The full body list of the system anchored at {@code anchor}: pinned &rarr; authored &rarr;
+     * generator.
+     *
+     * <p>No tick: a body carries its own orbital LAW, so the moment is chosen by whoever asks where
+     * the body is, not by whoever produced the list. A pinned system is frozen ELEMENTS, never frozen
+     * positions — pin-on-touch fires the first time a player builds a station in a system, and a
+     * position snapshot would stop that system dead for the rest of the save.</p>
      */
-    private List<SystemBody> allSystemBodies(GalacticCoord anchor, long atTick) {
+    private List<SystemBody> allSystemBodies(GalacticCoord anchor) {
         String key = anchor.cellKey();
         PinnedSystem pinned = pinnedSystems.get(key);
         if (pinned != null) {
@@ -401,7 +450,7 @@ public final class UniverseRegistry extends WorldSavedData {
             StellarBody star = starLookup.apply(id);
             return star == null
                     ? new ArrayList<SystemBody>()
-                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(), atTick,
+                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(),
                             this::durableName);
         }
         return new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
@@ -416,23 +465,120 @@ public final class UniverseRegistry extends WorldSavedData {
      * <p>Bodies with no dimension of their own — the star proxy, belts, POIs — carry
      * {@link Constants#INVALID_PLANET} and share it, so there is no identity to key a name on; they
      * keep the derivation, which for them is already time-invariant.</p>
+     *
+     * <p><b>A recorded name has a lifecycle, and both of its ends are load-bearing.</b></p>
+     * <ul>
+     *   <li>It is only valid for the system it was derived in. A dimension id is RECYCLED — deleting
+     *       a planet frees its id and the next generated body is handed it back — so a name kept on
+     *       the id alone lets a brand-new world in one system inherit a cell in another. Nothing
+     *       downstream can see that: the two bodies belong to different anchors, so no per-system
+     *       audit compares them. The owning star id is therefore recorded with the name and checked
+     *       here.</li>
+     *   <li>It must still lie inside its system's neighbourhood box. Containment is what makes
+     *       member&rarr;anchor attribution work ({@link #withinNeighbourhood}); a name outside the
+     *       box attributes to nothing, so its body is listed by the console, jumpable, and impossible
+     *       to arrive at. Moving a star's anchor or shrinking {@code minSpacing} does exactly that to
+     *       every name already recorded under the old layout.</li>
+     * </ul>
+     * <p>Either failure is REPORTED and the name re-derived, which is the only outcome that leaves
+     * the body reachable. A name that cannot be served is not a name.</p>
      */
-    private GalacticCoord durableName(int dimId, GalacticCoord derived) {
+    private GalacticCoord durableName(int dimId, int starId, GalacticCoord anchor, int minSpacingCells,
+                                      GalacticCoord derived) {
         if (dimId == Constants.INVALID_PLANET || derived == null) {
             return derived;
         }
-        GalacticCoord recorded = namesByDim.get(dimId);
+        RecordedName recorded = namesByDim.get(dimId);
         if (recorded != null) {
-            return recorded;
+            if (recorded.starId != starId) {
+                if (SystemContent.reportOnce("nameReused:" + dimId + ':' + recorded.starId + "->" + starId)) {
+                    LOGGER.error("dimension id {} carries a cell name recorded for system {} but now "
+                            + "belongs to system {} - the id was recycled. Re-deriving its name as {} "
+                            + "(the stale one would have put this body in another system's "
+                            + "neighbourhood, where nothing would ever audit the collision).",
+                            dimId, recorded.starId, starId, derived.cellKey());
+                }
+            } else if (!SystemContent.withinBoxOf(recorded.name, anchor, minSpacingCells)) {
+                if (SystemContent.reportOnce("nameEscaped:" + dimId + ':' + recorded.name.cellKey())) {
+                    LOGGER.error("recorded cell name {} of dim {} is no longer inside system {}'s "
+                            + "neighbourhood (anchor {}, spacing {}) - the anchor or the spacing moved "
+                            + "under it. A name outside its own box attributes to no system: the body "
+                            + "would stay listed and jumpable but impossible to arrive at. Re-deriving "
+                            + "as {}; the address that was written down for it no longer denotes it.",
+                            recorded.name.cellKey(), dimId, starId, anchor.cellKey(), minSpacingCells,
+                            derived.cellKey());
+                }
+            } else {
+                return recorded.name;
+            }
         }
-        namesByDim.put(dimId, derived);
+        namesByDim.put(dimId, new RecordedName(derived, starId));
         markDirty();
         return derived;
     }
 
     /** The recorded cell name for {@code dimId}, or empty when nothing has derived one yet. */
     public Optional<GalacticCoord> recordedName(int dimId) {
-        return Optional.ofNullable(namesByDim.get(dimId));
+        RecordedName recorded = namesByDim.get(dimId);
+        return recorded == null ? Optional.<GalacticCoord>empty() : Optional.of(recorded.name);
+    }
+
+    /**
+     * Drop the recorded name of a dimension that no longer exists. Called when a dimension is
+     * deleted, because its id goes straight back into circulation: without this the next body handed
+     * that id silently inherits a cell name derived for a world that is gone. Returns whether one was
+     * held.
+     */
+    public boolean forgetName(int dimId) {
+        if (namesByDim.remove(dimId) == null) {
+            return false;
+        }
+        markDirty();
+        return true;
+    }
+
+    /**
+     * Server-side convenience for the dimension lifecycle: forget {@code dimId}'s recorded name on
+     * whatever registry is reachable. A no-op with no server (a client, a unit test).
+     */
+    public static void forgetNameOnServer(int dimId) {
+        UniverseRegistry reg = get(net.minecraftforge.fml.common.FMLCommonHandler.instance()
+                .getMinecraftServerInstance());
+        if (reg != null) {
+            reg.forgetName(dimId);
+        }
+    }
+
+    // ─── Frames (C15 ADDR-6/ADDR-7): where a cell IS at a stated tick ──────────
+
+    /**
+     * The absolute position of the frame origin of the cell NAMED by {@code name}, at {@code tick} —
+     * the position of that cell's PRIMARY. A cell with no primary is void and its origin is the
+     * static {@code sector * CELL}, which is also the answer when the registry cannot attribute the
+     * cell to any system at all.
+     */
+    @Override
+    public AbsolutePos originAt(GalacticCoord name, long tick) {
+        if (name == null) {
+            return AbsolutePos.ORIGIN;
+        }
+        for (SystemBody b : bodiesAt(name)) {
+            if (b.definesFrame()) {
+                return b.frame().originAt(tick);
+            }
+        }
+        return AbsolutePos.ofCellName(name);
+    }
+
+    /** A recorded cell name plus the system it was recorded for. See {@link #durableName}. */
+    private static final class RecordedName {
+        final GalacticCoord name;
+        final int starId;
+
+        RecordedName(GalacticCoord name, int starId) {
+            this.name = name;
+            this.starId = starId;
+        }
     }
 
     /**
@@ -441,8 +587,8 @@ public final class UniverseRegistry extends WorldSavedData {
      * from under it (A#1a pin-on-touch).
      */
     public void addPoi(SystemBody poi) {
-        pinSystem(poi.address());
-        String key = poi.address().cellCentre().cellKey();
+        pinSystem(poi.name());
+        String key = poi.name().cellKey();
         List<SystemBody> list = poiOverrides.get(key);
         if (list == null) {
             list = new ArrayList<>();
@@ -513,16 +659,6 @@ public final class UniverseRegistry extends WorldSavedData {
      * dim to the system's anchor. Falls back to the anchor when the body is not derivable.
      */
     public Optional<GalacticCoord> coordForPlanet(DimensionProperties props) {
-        return coordForPlanet(props, SystemContent.NOW);
-    }
-
-    /**
-     * Where the body will BE at world tick {@code atTick} ({@link SystemContent#NOW} for the present)
-     * — the ephemeris a navigation computer aims with. A body orbits, so its cell is a function of
-     * time; asking for "now" and then flying for two minutes is how a ship arrives at an address its
-     * destination has already left.
-     */
-    public Optional<GalacticCoord> coordForPlanet(DimensionProperties props, long atTick) {
         if (props == null) {
             return Optional.empty();
         }
@@ -539,9 +675,9 @@ public final class UniverseRegistry extends WorldSavedData {
         if (!anchor.isPresent()) {
             return Optional.empty();
         }
-        for (SystemBody body : allSystemBodies(anchor.get(), atTick)) {
+        for (SystemBody body : allSystemBodies(anchor.get())) {
             if (body.dimId() == props.getId()) {
-                return Optional.of(body.address().cellCentre()); // the body's OWN cell (moon: the parent's)
+                return Optional.of(body.name()); // the body's OWN cell (moon: the parent's)
             }
         }
         return anchor; // body not derivable from content — lenient anchor fallback
@@ -578,9 +714,9 @@ public final class UniverseRegistry extends WorldSavedData {
         if (!anchor.isPresent()) {
             return Optional.empty();
         }
-        for (SystemBody body : allSystemBodies(anchor.get(), atTick)) {
+        for (SystemBody body : allSystemBodies(anchor.get())) {
             if (body.dimId() == props.getId()) {
-                return Optional.of(body.address());
+                return Optional.of(body.addressAt(atTick));
             }
         }
         return Optional.empty();
@@ -588,15 +724,10 @@ public final class UniverseRegistry extends WorldSavedData {
 
     /** Server-side convenience: resolves the dimension via {@link DimensionManager} then delegates. */
     public Optional<GalacticCoord> coordForPlanet(int dimId) {
-        return coordForPlanet(dimId, SystemContent.NOW);
-    }
-
-    /** {@link #coordForPlanet(DimensionProperties, long)} by dimension id. */
-    public Optional<GalacticCoord> coordForPlanet(int dimId, long atTick) {
         if (dimId >= Constants.STAR_ID_OFFSET) {
             return coordForSystem(dimId - Constants.STAR_ID_OFFSET);
         }
-        return coordForPlanet(DimensionManager.getInstance().getDimensionProperties(dimId), atTick);
+        return coordForPlanet(DimensionManager.getInstance().getDimensionProperties(dimId));
     }
 
     /**
@@ -828,7 +959,8 @@ public final class UniverseRegistry extends WorldSavedData {
         NBTTagList names = nbt.getTagList("cellNames", 10 /* NBTTagCompound */);
         for (int i = 0; i < names.tagCount(); i++) {
             NBTTagCompound e = names.getCompoundTagAt(i);
-            namesByDim.put(e.getInteger("dimId"), GalacticCoord.readFromNBT(e).cellCentre());
+            namesByDim.put(e.getInteger("dimId"),
+                    new RecordedName(GalacticCoord.readFromNBT(e).cellCentre(), e.getInteger("starId")));
         }
         NBTTagList list = nbt.getTagList("placements", 10 /* NBTTagCompound */);
         for (int i = 0; i < list.tagCount(); i++) {
@@ -841,7 +973,7 @@ public final class UniverseRegistry extends WorldSavedData {
         NBTTagList pois = nbt.getTagList("pois", 10);
         for (int i = 0; i < pois.tagCount(); i++) {
             SystemBody poi = SystemBody.readFromNBT(pois.getCompoundTagAt(i));
-            String key = poi.address().cellCentre().cellKey();
+            String key = poi.name().cellKey();
             List<SystemBody> l = poiOverrides.get(key);
             if (l == null) {
                 l = new ArrayList<>();
@@ -876,10 +1008,11 @@ public final class UniverseRegistry extends WorldSavedData {
         }
         nbt.setTag("placements", list);
         NBTTagList names = new NBTTagList();
-        for (Map.Entry<Integer, GalacticCoord> e : namesByDim.entrySet()) {
+        for (Map.Entry<Integer, RecordedName> e : namesByDim.entrySet()) {
             NBTTagCompound entry = new NBTTagCompound();
             entry.setInteger("dimId", e.getKey());
-            e.getValue().writeToNBT(entry); // nested sub-tag "galacticCoord"
+            entry.setInteger("starId", e.getValue().starId);
+            e.getValue().name.writeToNBT(entry); // nested sub-tag "galacticCoord"
             names.appendTag(entry);
         }
         nbt.setTag("cellNames", names);

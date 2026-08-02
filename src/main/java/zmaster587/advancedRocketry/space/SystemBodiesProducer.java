@@ -5,13 +5,16 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import zmaster587.advancedRocketry.AdvancedRocketry;
+import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
 import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.libVulpes.network.PacketHandler;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,10 +23,17 @@ import java.util.UUID;
 /**
  * Server-side producer for the {@link PacketSystemBodiesSync} render channel: turns the set of
  * MATERIALIZED CELLS into the per-slot-dim list of bodies the client draws in the slot-world sky
- * ({@code BoundarySky}). Every live cell contributes its own contents
- * ({@link UniverseRegistry#bodiesAt}) under the slot dim it is bound to; each body is carried as a
- * DIRECTION from the observer point in that cell (see {@link #buildByDim}). Sent to a player at login
- * and rebroadcast on a throttle so the boundary/bodies track a ship as it flies within the cell.
+ * ({@code BoundarySky}). Each body is carried as a DIRECTION from the observer point in that cell,
+ * measured through both cells' frames at the broadcast tick (see {@link #buildByDim}). Sent to a
+ * player at login and rebroadcast on a throttle so the boundary/bodies track a ship as it flies
+ * within the cell — and so the SYSTEM moves around it while it sits still.
+ *
+ * <p><b>The sky shows the SYSTEM, not the cell</b> (C14 CON-C14-14). A pilot parked in interplanetary
+ * void still sees his star and his system's planets; what he sees of each is where it is right now
+ * relative to him. The feed is the system's bodies UNIONED with whatever is keyed at the observer's
+ * own cell — the union is not tidiness, since the system read answers empty for a cell no anchor
+ * attributes and aggregates POIs of body cells only, so a straight swap would erase an orbital
+ * station standing in the observer's own void cell.</p>
  *
  * <p><b>The sky belongs to the cell, not to a ship.</b> The feed is keyed off the cell&rarr;slot
  * bindings ({@link SpaceManager#loadedCells}) and never off a ship's lifecycle state. A world that is
@@ -32,9 +42,8 @@ import java.util.UUID;
  * departed. Deriving the feed from settled ships instead made all of those skies blank &mdash; and the
  * blank was indistinguishable from an empty cell.</p>
  *
- * <p>No discovery / {@code isSystemKnown} gate (by design, presence is the gate); the same
- * payload goes to everyone, so the rebroadcast is a single {@link PacketHandler#sendToAll}.
- * Server main thread only.</p>
+ * <p>No discovery / {@code isSystemKnown} gate (by design, presence is the gate). Each player is sent
+ * ONLY the dimension he is in: see {@link #broadcastTo}. Server main thread only.</p>
  */
 public final class SystemBodiesProducer {
 
@@ -42,15 +51,25 @@ public final class SystemBodiesProducer {
     private static final int BROADCAST_INTERVAL_TICKS = 20;
 
     private static int tickCounter;
-    /** True once a non-empty payload has been sent; drives ONE clearing broadcast when it later empties. */
-    private static boolean lastBroadcastNonEmpty;
 
     private SystemBodiesProducer() {
     }
 
     /** The per-cell body source — the seam that lets {@link #buildByDim} be unit-tested without a server. */
     public interface BodyLookup {
-        List<SystemBody> bodiesAt(GalacticCoord cell);
+        /** What the sky of {@code cell} shows: the system's bodies unioned with that cell's own. */
+        List<SystemBody> skyBodiesAt(GalacticCoord cell);
+    }
+
+    /**
+     * The STATIC reading of {@link #buildByDim} — every cell sits where its name says forever. What a
+     * caller with no registry has, and the honest fixture for the keying contracts (which cell is
+     * fed, from which observer), none of which depend on a frame moving.
+     */
+    public static Map<Integer, List<RenderBody>> buildByDim(Map<String, Integer> loadedCells,
+                                                           Map<UUID, ShipLedger.Entry> snapshot,
+                                                           BodyLookup lookup) {
+        return buildByDim(loadedCells, snapshot, lookup, CellFrames.STATIC, 0L);
     }
 
     /**
@@ -59,12 +78,12 @@ public final class SystemBodiesProducer {
      * bodies for that dim and draws just the ring; a cell bound to no slot keys nothing, because there
      * is no world whose sky it would be.
      *
-     * <p>Each body's {@code localX/Y/Z} is the observer&rarr;body vector (body absolute minus observer
-     * absolute, component-wise exactly like {@link GalacticCoord#distanceSqTo}); {@code BoundarySky}
-     * reads it as a direction, so a body sitting at its OWN cell centre (a planet, local
-     * {@code 0,0,0}) still points away from an observer parked off-centre.
-     * {@link UniverseRegistry#bodiesAt} only returns same-cell bodies, so the sector term is normally
-     * zero, but the full delta stays correct if a cross-cell POI ever surfaces.</p>
+     * <p>Each body's {@code localX/Y/Z} is the observer&rarr;body vector evaluated at
+     * {@code worldTick} through BOTH frame origins, so its DIRECTION is where to draw the body and its
+     * MAGNITUDE is the true distance to it at that moment (CON-C14-15). Computing it over the static
+     * grid instead — as this did — gives a body in another cell a distance that is a function of its
+     * cell's name rather than of where it is, and a planet that is really receding never moves on the
+     * sky at all.</p>
      *
      * <p>The observer point is {@link #observerIn}: the position of a ship the ledger places in that
      * cell when there is one, else the cell centre. The bearing to a body only a few thousand blocks
@@ -76,38 +95,55 @@ public final class SystemBodiesProducer {
      * @param loadedCells {@code cellKey -> slot dim} for the cells that are live right now
      *                    ({@link SpaceManager#loadedCells})
      * @param snapshot    the ship ledger, used ONLY to refine the observer point inside a cell
+     * @param frames      where each cell is at {@code worldTick}
      */
     public static Map<Integer, List<RenderBody>> buildByDim(Map<String, Integer> loadedCells,
-                                                           Map<UUID, ShipLedger.Entry> snapshot,
-                                                           BodyLookup lookup) {
+                                                            Map<UUID, ShipLedger.Entry> snapshot,
+                                                            BodyLookup lookup,
+                                                            CellFrames frames,
+                                                            long worldTick) {
         Map<Integer, List<RenderBody>> byDim = new LinkedHashMap<>();
         if (loadedCells == null || lookup == null) {
             return byDim;
         }
+        CellFrames geometry = frames == null ? CellFrames.STATIC : frames;
         for (Map.Entry<String, Integer> bound : loadedCells.entrySet()) {
             Integer slotDim = bound.getValue();
             GalacticCoord cell = GalacticCoord.fromCellKey(bound.getKey());
             if (slotDim == null || slotDim == SpaceManager.UNBOUND_SLOT || cell == null) {
                 continue;
             }
-            GalacticCoord observer = observerIn(cell, snapshot);
+            AbsolutePos observer = geometry.absoluteOf(observerIn(cell, snapshot), worldTick);
             List<RenderBody> bodies = new ArrayList<>();
-            List<SystemBody> found = lookup.bodiesAt(cell);
+            List<SystemBody> found = lookup.skyBodiesAt(cell);
             if (found != null) {
                 for (SystemBody b : found) {
-                    GalacticCoord a = b.address();
-                    long dx = (a.sectorX() - observer.sectorX()) * GalacticCoord.CELL
-                            + (a.localX() - observer.localX());
-                    long dy = (a.sectorY() - observer.sectorY()) * GalacticCoord.CELL
-                            + (a.localY() - observer.localY());
-                    long dz = (a.sectorZ() - observer.sectorZ()) * GalacticCoord.CELL
-                            + (a.localZ() - observer.localZ());
-                    bodies.add(new RenderBody(b.kind().ordinal(), dx, dy, dz, b.dimId(), b.isDescendTarget()));
+                    BlockDelta dir = b.absoluteAt(worldTick).minus(observer);
+                    bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
+                            renderDimIdOf(b), b.isDescendTarget()));
                 }
             }
             byDim.put(slotDim, bodies);
         }
         return byDim;
+    }
+
+    /**
+     * The dimension id the CLIENT should look this body's appearance up under.
+     *
+     * <p>A star has no dimension of its own and carries {@link Constants#INVALID_PLANET}, which the
+     * client's lenient lookup answers with the OVERWORLD's properties — so the star in the sky wore
+     * Earth's texture. An authored star does have a proxy dimension at
+     * {@code STAR_ID_OFFSET + starId}; a PROCEDURAL one does not (its synthetic star id is negative
+     * and no proxy is registered for it), so it keeps {@code INVALID_PLANET} and the renderer draws
+     * it untextured rather than as somebody else's planet.</p>
+     */
+    static int renderDimIdOf(SystemBody body) {
+        if (body.kind() == SystemBodyKind.STAR && body.dimId() == Constants.INVALID_PLANET
+                && body.starId() >= 0) {
+            return Constants.STAR_ID_OFFSET + body.starId();
+        }
+        return body.dimId();
     }
 
     /**
@@ -136,61 +172,89 @@ public final class SystemBodiesProducer {
         return fallback == null ? cell : fallback;
     }
 
-    /** Build the live packet from the production cell bindings + universe registry, or an empty packet. */
-    public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
+    /** The live per-slot-dim render bodies from the production bindings + universe registry. */
+    public static Map<Integer, List<RenderBody>> currentByDim(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
         SpaceManager space = SpaceSubsystem.get();
         if (reg == null || space == null) {
-            return PacketSystemBodiesSync.forDims(null);
+            return new LinkedHashMap<>();
         }
-        return PacketSystemBodiesSync.forDims(buildByDim(space.loadedCells(),
-                ledger == null ? null : ledger.snapshot(), reg::bodiesAt));
+        return buildByDim(space.loadedCells(), ledger == null ? null : ledger.snapshot(),
+                reg::skyBodiesAt, reg, SpaceSubsystem.spaceClock());
     }
 
-    /** Login send: give a joining player the current bodies (skip when there is nothing to render). */
+    /** Build the live packet from the production cell bindings + universe registry, or an empty packet. */
+    public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
+        return PacketSystemBodiesSync.forDims(currentByDim(server));
+    }
+
+    /**
+     * Send {@code player} the bodies of the dimension he is actually in, and nothing else.
+     *
+     * <p>The payload is per-DIMENSION but the broadcast used to be {@code sendToAll}, so every player
+     * received every live cell's sky — the whole pool, once a second, to everyone. That was already
+     * wasteful when a cell's entry was its own occupants; under CON-C14-14 an entry is the whole
+     * system, which multiplies it by roughly an order of magnitude. A player can only ever see one
+     * sky, so he is sent one.</p>
+     *
+     * <p>A player standing in a slot world with no entry is sent a present-and-EMPTY one: "present and
+     * empty" and "absent" are different states (CON-C14-08), and the empty one is what clears a stale
+     * sky. A player who is not in a slot world at all is sent nothing.</p>
+     */
+    private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim) {
+        if (player == null) {
+            return;
+        }
+        int dim = player.world == null ? player.dimension : player.world.provider.getDimension();
+        List<RenderBody> bodies = byDim.get(dim);
+        if (bodies == null) {
+            if (!SpaceSlotPool.slotDims().contains(dim)) {
+                return; // not a cell world: this channel has nothing to say about it
+            }
+            bodies = Collections.emptyList();
+        }
+        Map<Integer, List<RenderBody>> one = new LinkedHashMap<>();
+        one.put(dim, bodies);
+        PacketHandler.sendToPlayer(PacketSystemBodiesSync.forDims(one), player);
+    }
+
+    /** Login send: give a joining player the sky of the dimension he arrived in. */
     public static void sendToPlayer(EntityPlayerMP player) {
         if (player == null) {
             return;
         }
         try {
-            PacketSystemBodiesSync pkt =
-                    currentPacket(FMLCommonHandler.instance().getMinecraftServerInstance());
-            if (!pkt.isEmpty()) {
-                PacketHandler.sendToPlayer(pkt, player);
-            }
+            broadcastTo(player, currentByDim(FMLCommonHandler.instance().getMinecraftServerInstance()));
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies login send failed", t);
         }
     }
 
     /**
-     * Throttled rebroadcast tick: every {@link #BROADCAST_INTERVAL_TICKS}, push the current bodies to
-     * all players so the boundary/bodies track ship motion. Stays silent while no cell is live at all,
-     * apart from ONE clearing broadcast the tick the last cell goes away.
+     * Throttled rebroadcast tick: every {@link #BROADCAST_INTERVAL_TICKS}, push each player the bodies
+     * of his own dimension, so the boundary/bodies track both his ship's motion and the system's.
      */
     public static void onBroadcastTick(MinecraftServer server) {
         if (++tickCounter < BROADCAST_INTERVAL_TICKS) {
             return;
         }
         tickCounter = 0;
+        if (server == null) {
+            return;
+        }
         try {
-            PacketSystemBodiesSync pkt = currentPacket(server);
-            if (!pkt.isEmpty()) {
-                PacketHandler.sendToAll(pkt);
-                lastBroadcastNonEmpty = true;
-            } else if (lastBroadcastNonEmpty) {
-                PacketHandler.sendToAll(pkt); // final clear: the last ship just left
-                lastBroadcastNonEmpty = false;
+            Map<Integer, List<RenderBody>> byDim = currentByDim(server);
+            for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+                broadcastTo(player, byDim);
             }
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies broadcast failed", t);
         }
     }
 
-    /** Reset the broadcast cadence + active flag (server stop). */
+    /** Reset the broadcast cadence (server stop). */
     public static void reset() {
         tickCounter = 0;
-        lastBroadcastNonEmpty = false;
     }
 }

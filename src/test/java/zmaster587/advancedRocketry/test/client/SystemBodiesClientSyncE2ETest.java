@@ -8,6 +8,7 @@ import org.junit.Test;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -21,11 +22,19 @@ import static org.junit.Assert.assertTrue;
  * <p>Honest client e2e: delete the client jar and there is no client static to read, so the assertion
  * cannot pass server-side. This pins the producer&rarr;wire&rarr;client DATA path (dim key present, the
  * descend-target flag + planet dim + ship&rarr;body direction survive to the client). The billboard
- * APPEARANCE (where/how BoundarySky draws it) stays a maintainer playtest, per {@code BoundarySky}.</p>
+ * APPEARANCE is {@code BoundarySkyRendersInSlotCellE2ETest}'s.</p>
+ *
+ * <p><b>The client is put INSIDE the cell's slot world before it is asked what it received.</b> A sky
+ * is per-dimension and a player renders exactly one world, so the server sends each player only the
+ * dimension he is in; broadcasting every live cell's sky to everybody was waste that grew with the
+ * pool, and grew again when a cell's entry became its whole SYSTEM (C14 CON-C14-14). Standing the
+ * subject where the bodies are is therefore not a workaround &mdash; it is the arrangement a real
+ * pilot is in, and the control leg below is what says so.</p>
  */
 public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
 
     private static final Pattern FIRST_DIM = Pattern.compile("\"dims\":\\[(-?\\d+)");
+    private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
     /** The slot the settle actually bound the cell to — the one place that decides it. */
     private static final Pattern BOUND_DIM = Pattern.compile("\"slotDim\":(-?\\d+)");
     private static final String CLIENT_BODIES_CLASS =
@@ -69,6 +78,26 @@ public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
         Matcher boundM = BOUND_DIM.matcher(settle);
         assertTrue("the settle must report which slot the cell was bound to: " + settle, boundM.find());
         int slotDim = Integer.parseInt(boundM.group(1));
+
+        // CONTROL, and it runs FIRST, while the player is still OUTSIDE the cell: a sky he is not in
+        // is a sky he is not sent. Without this leg the assertion below is satisfied just as well by
+        // a build that broadcasts every live cell to everybody, which is what this one replaced.
+        String outside = null;
+        for (int i = 0; i < 8; i++) {
+            bot().waitTicks(5);
+            JsonObject sf = bot().readStaticField(CLIENT_BODIES_CLASS, "CLIENT_BODIES");
+            outside = sf.get("isNull").getAsBoolean() ? "" : sf.get("value").getAsString();
+        }
+        assertFalse("a player who is not in the cell's world must not be sent its sky, got: " + outside,
+                outside != null && outside.contains(slotDim + "=[RenderBody{"));
+
+        // Put the subject where a pilot in that cell would be: inside the slot world the cell is bound
+        // to, through the production transfer.
+        String player = exec("artest player health");
+        Matcher nameM = PLAYER_NAME.matcher(player);
+        assertTrue("player health must echo the player name: " + player, nameM.find());
+        String enter = exec("artest space enter " + nameM.group(1) + " " + slotDim + " 0.5 200 0.5");
+        assertTrue("space enter must succeed: " + enter, enter.contains("\"ok\":true"));
 
         // The throttled broadcast (~20 ticks) reaches the REAL client; poll its OWN CLIENT_BODIES static.
         String value = null;

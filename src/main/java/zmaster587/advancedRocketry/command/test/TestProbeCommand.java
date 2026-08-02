@@ -2128,7 +2128,7 @@ public class TestProbeCommand extends CommandBase {
     private static void appendCellInfoBody(StringBuilder out,
                                            zmaster587.advancedRocketry.universe.SystemBody b) {
         out.append("{\"dim\":").append(b.dimId()).append(",\"kind\":\"").append(b.kind())
-                .append("\",\"cell\":\"").append(b.address().cellKey())
+                .append("\",\"cell\":\"").append(b.name().cellKey())
                 .append("\",\"descendTarget\":").append(b.isDescendTarget())
                 // Whether that dimension is one of the space subsystem's own SLOT worlds rather than
                 // a real planet. Reported without loading the world, so it is safe to ask about a
@@ -2205,7 +2205,9 @@ public class TestProbeCommand extends CommandBase {
                                 .append(",\"kind\":\"").append(b.kind())
                                 .append("\",\"descendTarget\":").append(b.isDescendTarget())
                                 .append(",\"distance\":")
-                                .append((long) Math.sqrt(e.coord.distanceSqTo(b.address())))
+                                .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(
+                                        b.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
+                                                .spaceClock()))))
                                 .append('}');
                     }
                 }
@@ -2580,6 +2582,7 @@ public class TestProbeCommand extends CommandBase {
                     transitMgr,
                     new zmaster587.advancedRocketry.space.HyperspaceTiles(),
                     new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             int originDim = transitMgr.materialize(transitOrigin);
@@ -2619,6 +2622,7 @@ public class TestProbeCommand extends CommandBase {
                     transitMgr,
                     new zmaster587.advancedRocketry.space.HyperspaceTiles(),
                     new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             int originDim = transitMgr.materialize(transitOrigin);
@@ -2645,6 +2649,7 @@ public class TestProbeCommand extends CommandBase {
                     transitMgr,
                     new zmaster587.advancedRocketry.space.HyperspaceTiles(),
                     new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             int originDim = transitMgr.materialize(transitOrigin);
@@ -2787,6 +2792,7 @@ public class TestProbeCommand extends CommandBase {
                     transitMgr,
                     new zmaster587.advancedRocketry.space.HyperspaceTiles(),
                     new zmaster587.advancedRocketry.space.VSShipCrosser());
+            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             for (zmaster587.advancedRocketry.space.TransitRecord r : transitExport) {
                 transitTm.importTransit(r);
             }
@@ -2840,6 +2846,7 @@ public class TestProbeCommand extends CommandBase {
             // stack lands exactly on its destination, which is the pre-ring behaviour, and a test
             // written to check the standoff would report that as current.
             tctl.setArrivalPlacement(zmaster587.advancedRocketry.space.SpaceSubsystem::arrivalStandoff);
+            tctl.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
                     entryMgr, entryLedger, ctl, tctl, dctl);
             // Start from a clean pilot channel: a stale static FF input from a prior test would make the
@@ -3165,6 +3172,60 @@ public class TestProbeCommand extends CommandBase {
         // separates them. The optional dimId also reports where the registry thinks THAT dimension is,
         // which is the address a navigation crystal is seeded with — so a disagreement between "the
         // address of dim N" and "what is at that address" is visible in one call.
+        // frame <sx> <sy> <sz>: where the cell NAMED by that sector triple actually IS, right now —
+        // the production CellFrames lookup, read straight off the universe registry. A cell's name is
+        // eternal and its position is a function of time (C15 ADDR-6), and those are two different
+        // numbers: reporting only the name makes "the body is still in its cell" unfalsifiable, since
+        // a name that never moves would say that even for a frame that never moved either.
+        if (args.length >= 4 && "frame".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.GalacticCoord name =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            long clock = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+            zmaster587.advancedRocketry.space.AbsolutePos origin =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.cellFrameOriginAt(name, clock);
+            send(sender, "{\"ok\":true,\"cellKey\":\"" + name.cellKey() + "\",\"clock\":" + clock
+                    + ",\"originX\":" + origin.x() + ",\"originY\":" + origin.y()
+                    + ",\"originZ\":" + origin.z() + "}");
+            return;
+        }
+        // forget-name <dimId>: drop the RECORDED cell name of a dimension, so the next query has to
+        // derive one. Exists because the store is a second, independent reason a name is stable, and
+        // a test that never removes it cannot tell "the derivation is tick-invariant" from "something
+        // wrote the answer down once". Removing the propping mechanism is how the remaining one gets
+        // measured.
+        if (args.length >= 2 && "forget-name".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            int dimId = parseIntOr(args[1], Integer.MIN_VALUE);
+            boolean held = reg.forgetName(dimId);
+            send(sender, "{\"ok\":true,\"dim\":" + dimId + ",\"held\":" + held + "}");
+            return;
+        }
+        // set-clock <totalTicks>: move the OVERWORLD's total world time, which is the one clock the
+        // space subsystem reads (SpaceSubsystem.spaceClock) and the one the orbital law is evaluated
+        // against. `/time set` moves the day-cycle time and leaves total time alone, so it cannot age
+        // a universe: without this probe "a parked ship keeps its bodies for hours" is untestable
+        // except by waiting hours.
+        if (args.length >= 2 && "set-clock".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            if (overworld == null) {
+                send(sender, "{\"error\":\"overworld not loaded\"}");
+                return;
+            }
+            long before = overworld.getTotalWorldTime();
+            long target = parseLongOr(args[1], before);
+            overworld.getWorldInfo().setWorldTotalTime(target);
+            send(sender, "{\"ok\":true,\"before\":" + before + ",\"after\":"
+                    + overworld.getTotalWorldTime() + ",\"spaceClock\":"
+                    + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock() + "}");
+            return;
+        }
         if (args.length >= 4 && "cell-info".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.universe.UniverseRegistry reg =
                     zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);

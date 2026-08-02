@@ -16,7 +16,10 @@ import zmaster587.advancedRocketry.api.dimension.IDimensionProperties;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.AbsolutePos;
+import zmaster587.advancedRocketry.space.BlockDelta;
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
 /**
  * Derives the addressable {@link SystemBody} content of an AUTHORED system (a catalogued {@link StellarBody})
@@ -25,6 +28,10 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * at a sector offset scaled from its orbital position ({@link #ORBIT_UNIT_BLOCKS ~1M blocks per orbit-unit},
  * {@code tunable}), snapped to that cell's centre (zone content sits near the cell centre); moons stay LOCAL
  * inside their parent planet's cell. Inter-body space is cells of void.
+ *
+ * <p>A body's cell is its durable NAME, derived once at {@link #NAME_TICK} and thereafter recorded. Where
+ * that cell IS stays a function of time: each body cell carries a {@link CellFrame} whose origin is its
+ * primary's position, so the neighbourhood rides the body it belongs to and a moon orbits inside it.</p>
  *
  * <p>The neighbourhood is BOUNDED: every body cell is clamped (with a WARN) into the anchor's
  * {@code minSpacing}-cube super-cell, {@link #BOX_MARGIN_CELLS} cells clear of its faces — the load-time
@@ -42,7 +49,8 @@ public final class SystemContent {
     /** Cells kept clear of the super-cell faces when clamping a body cell into its system's box. */
     static final int BOX_MARGIN_CELLS = 2;
 
-    private static final long MAX_MOON_LOCAL = GalacticCoord.HALF_CELL - 1L; // moons stay inside the parent cell
+    /** Ticks in one Minecraft day — the unit {@code AstronomicalBodyHelper} reports orbital periods in. */
+    private static final double TICKS_PER_DAY = 24_000d;
 
     // Self-contained logger (not AdvancedRocketry.logger): loading the mod class triggers Forge bootstrap,
     // which would break pure unit tests of this derivation.
@@ -50,16 +58,6 @@ public final class SystemContent {
 
     private SystemContent() {
     }
-
-    /**
-     * Sentinel for "read each body's LIVE orbital angle" — as opposed to a world tick to project the
-     * whole system forward to. A jump takes long enough for the destination to move, so navigation
-     * asks the same derivation for a FUTURE system state; everything else asks for the present.
-     *
-     * <p>Since a body's CELL became durable this selects only a moon's offset inside its parent's
-     * cell, which is the one piece of a system's layout that is still a function of time.</p>
-     */
-    public static final long NOW = Long.MIN_VALUE;
 
     /**
      * The reference moment a cell name is derived at. Zero, and it must stay zero: the orbital law is
@@ -79,83 +77,115 @@ public final class SystemContent {
      * more than a cell. A recorded name survives all of that; a re-derived one silently renames a
      * coordinate a player wrote down.</p>
      *
+     * <p>The system a body belongs to and its anchor's box travel with the request, because a
+     * recorded name has a LIFECYCLE: it may only be served while it still names a cell inside its own
+     * system's neighbourhood, and a dimension id that has been recycled must not inherit the name of
+     * whatever used to hold it. The store is the only place that can see either.</p>
+     *
      * <p>{@link #DERIVED_NAMES} is the identity — "no store, take the derivation" — which is what a
      * pure unit test wants and what any caller without a registry gets.</p>
      */
     public interface CellNames {
-        /** The recorded name for {@code dimId}, or {@code derived} if this is its first derivation. */
-        GalacticCoord nameFor(int dimId, GalacticCoord derived);
+        /**
+         * The recorded name for {@code dimId} in system {@code starId}, or {@code derived} if this is
+         * its first derivation (or the recorded one may no longer be served).
+         *
+         * @param anchor          the system's anchor cell, for the containment check
+         * @param minSpacingCells the generator's super-cell edge — the box the name must lie in
+         */
+        GalacticCoord nameFor(int dimId, int starId, GalacticCoord anchor, int minSpacingCells,
+                              GalacticCoord derived);
     }
 
     /** The no-store resolver: every body keeps the name this derivation just computed. */
     public static final CellNames DERIVED_NAMES = new CellNames() {
         @Override
-        public GalacticCoord nameFor(int dimId, GalacticCoord derived) {
+        public GalacticCoord nameFor(int dimId, int starId, GalacticCoord anchor, int minSpacingCells,
+                                     GalacticCoord derived) {
             return derived;
         }
     };
 
-    /** Legacy-spacing overload: derives with the default super-cell edge, as of now. */
+    /** Legacy-spacing overload: derives with the default super-cell edge. */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord) {
         return bodiesOf(star, systemCoord, GalaxyGenConfig.DEFAULT_MIN_SPACING);
     }
 
     /**
-     * The system's bodies, per-body-cell (A#1a), as of now. {@code minSpacingCells} is the active
-     * generator's super-cell edge — the box every body cell is clamped into.
+     * The system's bodies, per-body-cell (A#1a). {@code minSpacingCells} is the active generator's
+     * super-cell edge — the box every body cell is clamped into.
      */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells) {
-        return bodiesOf(star, systemCoord, minSpacingCells, NOW);
-    }
-
-    /**
-     * The system's bodies as they stand at world tick {@code atTick} ({@link #NOW} for the present).
-     *
-     * <p>The system is derived at ONE instant, never body-by-body from whatever each one's live field
-     * happens to hold: a jump is aimed at a snapshot of a system, and mixing two instants would give
-     * the pilot a chart no moment ever looked like.</p>
-     */
-    public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells,
-                                            long atTick) {
-        return bodiesOf(star, systemCoord, minSpacingCells, atTick, DERIVED_NAMES);
+        return bodiesOf(star, systemCoord, minSpacingCells, DERIVED_NAMES);
     }
 
     /**
      * The system's bodies, with each body's cell name taken from {@code names} rather than from this
-     * derivation alone. {@code atTick} now selects only the LIVE part of the layout — a moon's offset
-     * inside its parent's cell; a planet's cell is a function of the authored elements and of nothing
-     * that ticks.
+     * derivation alone.
+     *
+     * <p>No tick is taken and none is needed: a body's NAME is a function of the authored elements
+     * only, and where it stands is answered by the accessor that asks — {@code inCellOffsetAt},
+     * {@code addressAt}, {@code absoluteAt}. A derivation that took a tick had to pick one instant for
+     * the whole system and hand every consumer the chart as of that instant; carrying the LAW instead
+     * lets each consumer ask for the moment it is really talking about.</p>
      */
     public static List<SystemBody> bodiesOf(StellarBody star, GalacticCoord systemCoord, int minSpacingCells,
-                                            long atTick, CellNames names) {
+                                            CellNames names) {
         List<SystemBody> bodies = new ArrayList<>();
         if (star == null) {
             return bodies;
         }
         int starId = star.getId();
         GalacticCoord anchor = systemCoord.cellCentre();
-        bodies.add(new SystemBody(anchor, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+        AbsolutePos anchorAbs = AbsolutePos.ofCellName(anchor);
+        // The star sits at the anchor and does not move: a degenerate frame, not an exemption (ADDR-6).
+        bodies.add(new SystemBody(anchor, CellFrame.staticAt(anchor), BodyEphemeris.STATIC,
+                SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
 
         for (IDimensionProperties p : star.getPlanets()) {
             if (!(p instanceof DimensionProperties)) {
                 continue;
             }
             DimensionProperties planet = (DimensionProperties) p;
-            GalacticCoord planetAddr = addressOf(planet, anchor, minSpacingCells, names);
-            bodies.add(new SystemBody(planetAddr, kindOf(planet, SystemBodyKind.PLANET),
-                    planet.getId(), starId));
+            BodyEphemeris planetLaw = orbitLawOf(planet, star);
+            GalacticCoord planetName = nameOf(planet, planetLaw, anchor, minSpacingCells, starId, names);
+            CellFrame planetFrame = CellFrame.of(anchorAbs, planetLaw);
+            bodies.add(new SystemBody(planetName, planetFrame, BodyEphemeris.STATIC,
+                    kindOf(planet, SystemBodyKind.PLANET), planet.getId(), starId));
 
             for (int moonId : planet.getChildPlanets()) {
                 DimensionProperties moon = DimensionManager.getInstance().getDimensionProperties(moonId);
                 if (moon == null) {
                     continue;
                 }
-                bodies.add(new SystemBody(moonAddressOf(moon, planetAddr, atTick),
+                // A moon shares its parent's NAME and its parent's FRAME, and keeps its own live offset
+                // inside it: a planet-and-its-moons is one destination that moves as one.
+                bodies.add(new SystemBody(planetName, planetFrame, moonLawOf(moon, planet),
                         kindOf(moon, SystemBodyKind.MOON), moon.getId(), starId));
             }
         }
         auditOneRealBodyPerCell(bodies, starId);
         return bodies;
+    }
+
+    /**
+     * A planet-level body's orbital law about its system ANCHOR — the law that both derives its
+     * durable name (evaluated at {@link #NAME_TICK}) and drives its cell's frame.
+     */
+    private static BodyEphemeris orbitLawOf(DimensionProperties planet, StellarBody star) {
+        double periodTicks = star == null ? 0d
+                : TICKS_PER_DAY * AstronomicalBodyHelper.getOrbitalPeriod(planet.getOrbitalDist(),
+                        star.getSize());
+        return BodyEphemeris.orbit(planet.getOrbitalDist(), planet.baseOrbitTheta, planet.orbitalPhi,
+                planet.isRetrograde, periodTicks, ORBIT_UNIT_BLOCKS);
+    }
+
+    /** A moon's orbital law about its PARENT — its offset inside the shared cell, live at every tick. */
+    private static BodyEphemeris moonLawOf(DimensionProperties moon, DimensionProperties parent) {
+        double periodTicks = TICKS_PER_DAY * AstronomicalBodyHelper.getMoonOrbitalPeriod(
+                moon.getOrbitalDist(), parent.gravitationalMultiplier);
+        return BodyEphemeris.orbit(moon.getOrbitalDist(), moon.baseOrbitTheta, moon.orbitalPhi,
+                moon.isRetrograde, periodTicks, MOON_UNIT_BLOCKS);
     }
 
     /**
@@ -171,30 +201,14 @@ public final class SystemContent {
      * left the cell a parked ship was sitting in every few minutes and simply vanished from its sky.
      * Orbital motion moves a body WITHIN its cell; it does not move it between cells.</p>
      */
-    static GalacticCoord addressOf(DimensionProperties planet, GalacticCoord anchor, int minSpacingCells,
-                                   CellNames names) {
-        double[] pos = positionOf(planet, NAME_TICK);
-        long px = Math.round(pos[0] * ORBIT_UNIT_BLOCKS);
-        long py = Math.round(pos[1] * ORBIT_UNIT_BLOCKS);
-        long pz = Math.round(pos[2] * ORBIT_UNIT_BLOCKS);
-        GalacticCoord derived = clampIntoBox(anchor.plusLocal(px, py, pz).cellCentre(), anchor,
-                minSpacingCells, planet.getId());
-        return names == null ? derived : names.nameFor(planet.getId(), derived);
-    }
-
-    /** A moon stays LOCAL: same cell as the parent planet, a small offset from its centre. */
-    private static GalacticCoord moonAddressOf(DimensionProperties moon, GalacticCoord planetAddr,
-                                               long atTick) {
-        double[] moonPos = positionOf(moon, atTick);
-        long mx = clampMoonLocal(Math.round(moonPos[0] * MOON_UNIT_BLOCKS));
-        long my = clampMoonLocal(Math.round(moonPos[1] * MOON_UNIT_BLOCKS));
-        long mz = clampMoonLocal(Math.round(moonPos[2] * MOON_UNIT_BLOCKS));
-        return GalacticCoord.ofSectorLocal(
-                planetAddr.sectorX(), planetAddr.sectorY(), planetAddr.sectorZ(), mx, my, mz);
-    }
-
-    private static double[] positionOf(DimensionProperties body, long atTick) {
-        return atTick == NOW ? body.getPlanetPosition() : body.getPlanetPositionAt(atTick);
+    static GalacticCoord nameOf(DimensionProperties planet, BodyEphemeris law, GalacticCoord anchor,
+                                int minSpacingCells, int starId, CellNames names) {
+        BlockDelta at0 = law.offsetAt(NAME_TICK);
+        GalacticCoord derived = clampIntoBox(
+                anchor.plusLocal(at0.dx(), at0.dy(), at0.dz()).cellCentre(),
+                anchor, minSpacingCells, planet.getId());
+        return names == null ? derived
+                : names.nameFor(planet.getId(), starId, anchor, minSpacingCells, derived);
     }
 
     /**
@@ -226,6 +240,11 @@ public final class SystemContent {
         REPORTED.clear();
     }
 
+    /** Report {@code message} once per distinct {@code key} per session. Returns whether it was said. */
+    static boolean reportOnce(String key) {
+        return REPORTED.add(key);
+    }
+
     /**
      * INVARIANT: at most ONE real body per cell. A star and a planet are real bodies and each owns its
      * own cell; moons are exempt by construction — a moon lives in its parent planet's cell, which is
@@ -243,7 +262,7 @@ public final class SystemContent {
             if (body.kind() == SystemBodyKind.MOON) {
                 continue; // exempt: a moon shares its parent's cell on purpose
             }
-            String cell = body.address().cellKey();
+            String cell = body.name().cellKey();
             List<Integer> occupants = realBodiesByCell.get(cell);
             if (occupants == null) {
                 occupants = new ArrayList<>();
@@ -286,6 +305,24 @@ public final class SystemContent {
     }
 
     /**
+     * Whether {@code cell} lies inside the neighbourhood box of {@code anchor} at {@code
+     * minSpacingCells} — the containment ADDR-3 asks for, and the question a RECORDED name must keep
+     * answering yes to. Shared with the store so the check that admits a name and the clamp that
+     * produces one cannot drift apart.
+     */
+    public static boolean withinBoxOf(GalacticCoord cell, GalacticCoord anchor, int minSpacingCells) {
+        if (cell == null || anchor == null) {
+            return false;
+        }
+        long s = Math.max(1, minSpacingCells);
+        long margin = (s > 2L * BOX_MARGIN_CELLS) ? BOX_MARGIN_CELLS : 0L;
+        long reach = Math.max(0L, s / 2L - margin);
+        return Math.abs(cell.sectorX() - anchor.sectorX()) <= reach
+                && Math.abs(cell.sectorY() - anchor.sectorY()) <= reach
+                && Math.abs(cell.sectorZ() - anchor.sectorZ()) <= reach;
+    }
+
+    /**
      * The per-axis bound: {@code half - margin} cells either side OF THE ANCHOR.
      *
      * <p>This used to snap to the GRID super-cell containing the anchor —
@@ -311,12 +348,5 @@ public final class SystemContent {
             return lo;
         }
         return sector > hi ? hi : sector;
-    }
-
-    private static long clampMoonLocal(long v) {
-        if (v > MAX_MOON_LOCAL) {
-            return MAX_MOON_LOCAL;
-        }
-        return v < -MAX_MOON_LOCAL ? -MAX_MOON_LOCAL : v;
     }
 }

@@ -398,7 +398,13 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                             if (!body.isDescendTarget()) {
                                 continue;
                             }
-                            double distance = Math.sqrt(shipCoord.distanceSqTo(body.address()));
+                            // Ship and body are in the SAME cell here (bodiesAt filters by name), so
+                            // both sit in one frame and its motion cancels: the in-cell delta is the
+                            // true distance without a frame lookup. A moon's offset is live, hence
+                            // the tick.
+                            double distance = Math.sqrt(shipCoord.staticFrameDistanceSqTo(
+                                    body.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
+                                            .spaceClock())));
                             if (zmaster587.advancedRocketry.space.DescentController
                                         .shouldTriggerDescent(true, true, distance, radius)
                                     && descentCtl.requestDescent(world.provider.getDimension(),

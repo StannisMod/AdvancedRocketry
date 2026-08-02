@@ -30,16 +30,20 @@ public class TransitRecordTest {
     public void roundTripPreservesLogicalStateAndCrew() {
         UUID u1 = UUID.randomUUID();
         UUID u2 = UUID.randomUUID();
-        GalacticCoord pos = coord(3, 0, -1, 250, 0, -60);
+        GalacticCoord org = coord(3, 0, -1, 250, 0, -60);
         GalacticCoord tgt = coord(9, 2, 0, 0, 0, 0);
-        TransitRecord r = new TransitRecord("ship-A", pos, tgt, 5000L, 4200L, 137L,
+        TransitRecord r = new TransitRecord("ship-A", org, tgt, 24_000L, 9_000L, 5000L, 4200L, 137L,
                 Arrays.asList(u1, u2), null);
 
         TransitRecord back = TransitRecord.readFromNBT(r.writeToNBT());
 
         assertEquals("ship-A", back.shipId);
-        assertEquals(pos, back.position);
+        // The mid-flight state is (origin name, target name, progress) and never a raw absolute:
+        // an absolute means something different every tick it is read back (C15 ADDR-12).
+        assertEquals(org, back.origin);
         assertEquals(tgt, back.target);
+        assertEquals("the flight's priced distance survives", 24_000L, back.distanceBlocks);
+        assertEquals("how far it had got survives", 9_000L, back.travelledBlocks);
         assertEquals(5000L, back.arrivalTick);
         assertEquals(4200L, back.lastTicked);
         assertEquals(137L, back.speed);
@@ -55,7 +59,7 @@ public class TransitRecordTest {
         NBTTagCompound snap = new NBTTagCompound();
         snap.setInteger("marker", 42); // stand-in for the StorageChunk payload
         TransitRecord r = new TransitRecord("s", GalacticCoord.ORIGIN, coord(1, 0, 0, 0, 0, 0),
-                10L, 0L, 5L, null, snap);
+                4_000_000L, 0L, 10L, 0L, 5L, null, snap);
 
         TransitRecord back = TransitRecord.readFromNBT(r.writeToNBT());
 

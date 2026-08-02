@@ -173,6 +173,7 @@ public final class SpaceSubsystem {
         transitManager.setOfflineProgress(new OfflineProgress(
                 OfflineProgress.parseMode(cfg.spaceTransitOfflineProgress), SpaceSubsystem::isPlayerOnline));
         transitManager.setArrivalPlacement(SpaceSubsystem::arrivalStandoff);
+        transitManager.setFrames(SpaceSubsystem::cellFrameOriginAt);
         entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
                 SpaceSubsystem::launchBodyAddress, SpaceSubsystem::worldTime);
         descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
@@ -234,7 +235,10 @@ public final class SpaceSubsystem {
             if (cell.isPresent()) {
                 for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(cell.get())) {
                     if (body.dimId() == dimId) {
-                        return body.address(); // the body's own local offset inside its zone cell
+                        // The body's own offset inside its zone cell, as of now: a moon is a live
+                        // point inside its parent's neighbourhood, and a ship leaving it has to be
+                        // put beside where the moon IS, not beside where its cell is named.
+                        return body.addressAt(spaceClock());
                     }
                 }
                 return cell.get();
@@ -278,11 +282,32 @@ public final class SpaceSubsystem {
         // own sky does not draw.
         java.util.List<GalacticCoord> occupied = new java.util.ArrayList<>();
         for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(target)) {
-            occupied.add(body.address());
+            occupied.add(body.addressAt(worldTick));
         }
         return StandoffRing.standoffFrom(target, occupied, ShipEntryController.ENTRY_RING_BLOCKS,
                 ShipEntryController.DESCENT_RADIUS_BLOCKS,
                 shipId == null ? 0 : shipId.hashCode());
+    }
+
+    /**
+     * Where the cell NAMED {@code name} is, absolutely, at {@code tick} — the production
+     * {@link zmaster587.advancedRocketry.space.CellFrames} lookup, resolved against the live universe
+     * registry. Falls back to the static reading ({@code sector * CELL}) with no registry, which is
+     * what a void cell really does anyway.
+     *
+     * <p>Public and static for the same reason {@link #launchBodyAddress(int)} is: a probe-built
+     * stack wires the production resolver rather than a second one that could disagree with it.</p>
+     */
+    public static AbsolutePos cellFrameOriginAt(GalacticCoord name, long tick) {
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        return reg == null ? AbsolutePos.ofCellName(name) : reg.originAt(name, tick);
+    }
+
+    /** The production frame lookup as a {@link CellFrames}. Never {@code null}. */
+    public static CellFrames frames() {
+        return SpaceSubsystem::cellFrameOriginAt;
     }
 
     /** Server-stop teardown. The slot dimensions stay registered (JVM-global); only the controller resets. */

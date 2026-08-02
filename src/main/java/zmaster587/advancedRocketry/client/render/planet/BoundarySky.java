@@ -12,9 +12,12 @@ import net.minecraftforge.client.IRenderHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
+import zmaster587.advancedRocketry.api.Constants;
+import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
+import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
 import java.util.List;
 
@@ -47,10 +50,18 @@ public class BoundarySky extends IRenderHandler {
     private static final float BOUNDARY_HEIGHT = 6.0F;
     private static final int BOUNDARY_SEGMENTS = 48;
     private static final float BODY_DISTANCE = 90.0F;
-    private static final float BODY_HALF_SIZE = 6.0F;
-    private static final float TARGET_HALF_SIZE = 10.0F;
+    /** Sky-frame scale the label text is drawn at, so it reads at the billboard's distance. */
+    private static final float LABEL_SCALE = 0.28F;
 
     private static final float STAR_ALPHA = 0.9F;
+
+    /**
+     * How many body labels the last frame actually drew. A counter rather than a flag: the contract
+     * is that the toggle removes the label ENTIRELY, and "zero drawn while bodies were fed" is the
+     * only reading of that a test can take without looking at pixels. Client-side diagnostic state;
+     * nothing in the render path branches on it.
+     */
+    public static volatile int labelsDrawnLastFrame;
 
     private final Minecraft mc = Minecraft.getMinecraft();
 
@@ -116,12 +127,15 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.enableTexture2D();
 
         // One billboard per synced body.
+        int labelled = 0;
         if (bodies != null && !bodies.isEmpty()) {
             BufferBuilder buffer = Tessellator.getInstance().getBuffer();
+            boolean labels = SkyLabels.enabled();
             for (PacketSystemBodiesSync.RenderBody body : bodies) {
-                drawBody(buffer, body);
+                labelled += drawBody(buffer, body, labels) ? 1 : 0;
             }
         }
+        labelsDrawnLastFrame = labelled;
 
         // Restore a sane GL state for the rest of the world render.
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
@@ -133,13 +147,15 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.popMatrix();
     }
 
-    private void drawBody(BufferBuilder buffer, PacketSystemBodiesSync.RenderBody body) {
+    /** Draw one body; returns whether a label was written for it. */
+    private boolean drawBody(BufferBuilder buffer, PacketSystemBodiesSync.RenderBody body,
+                             boolean labels) {
         double dx = body.localX;
         double dy = body.localY;
         double dz = body.localZ;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len < 1.0E-6D)
-            return;
+            return false;
 
         float nx = (float) (dx / len);
         float ny = (float) (dy / len);
@@ -147,13 +163,22 @@ public class BoundarySky extends IRenderHandler {
 
         float yaw = (float) Math.toDegrees(Math.atan2(nx, nz));
         float pitch = (float) Math.toDegrees(Math.asin(Math.max(-1.0F, Math.min(1.0F, ny))));
-        float half = body.descendTarget ? TARGET_HALF_SIZE : BODY_HALF_SIZE;
+        // The vector's LENGTH is the true distance to the body at the broadcast tick, so apparent
+        // size follows it. A fixed size made a moon at 3 km and one at 59 km indistinguishable, and
+        // left "the planet is crawling away" a thing the sky could not show at all.
+        float half = ApparentSize.halfSizeFor(len);
 
-        // Bind the body's already-synced planet texture; a minimal colour tint is the v1 fallback.
-        DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(body.dimId);
+        // The STRICT dimension lookup: the lenient one answers an unknown dimension with the
+        // OVERWORLD's properties, so the star -- which has no dimension of its own -- was drawn
+        // wearing Earth's texture. A body with nothing to bind is drawn as a tinted quad instead,
+        // which is honest.
+        DimensionProperties props =
+                DimensionManager.getInstance().getDimensionPropertiesOrNull(body.dimId);
         ResourceLocation icon = props != null ? props.getPlanetIcon() : null;
         if (icon != null)
             mc.renderEngine.bindTexture(icon);
+        else
+            GlStateManager.disableTexture2D();
 
         if (body.descendTarget)
             GlStateManager.color(0.6F, 1.0F, 0.6F, 1.0F);
@@ -178,6 +203,51 @@ public class BoundarySky extends IRenderHandler {
         buffer.pos(-half, -half, 0.0D).tex(0.0D, 1.0D).endVertex();
         Tessellator.getInstance().draw();
 
+        if (icon == null)
+            GlStateManager.enableTexture2D();
+
+        boolean drewLabel = labels && drawLabel(body, half, len);
         GlStateManager.popMatrix();
+        return drewLabel;
+    }
+
+    /**
+     * Write the body's name and its current distance under the billboard, inside the already-rotated
+     * body frame so the text faces the camera exactly as the quad does.
+     */
+    private boolean drawLabel(PacketSystemBodiesSync.RenderBody body, float half, double distance) {
+        if (mc.fontRenderer == null)
+            return false;
+        String text = nameOf(body) + "  " + ApparentSize.formatDistance(distance);
+        GlStateManager.pushMatrix();
+        // The sky frame's +Y is up while the font renders DOWN its own +Y, so both axes are negated
+        // here; without it every label reads upside down and mirrored.
+        GlStateManager.translate(0.0F, -half - 2.0F, 0.0F);
+        GlStateManager.scale(-LABEL_SCALE, -LABEL_SCALE, LABEL_SCALE);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        mc.fontRenderer.drawString(text, -mc.fontRenderer.getStringWidth(text) / 2, 0,
+                0xFFFFFFFF, false);
+        GlStateManager.popMatrix();
+        // The font renderer leaves its own texture and colour bound. The next body binds its own
+        // texture, so only the colour has to be put back.
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        return true;
+    }
+
+    /** What to call this body: its dimension's name, else its star's, else its kind. */
+    private static String nameOf(PacketSystemBodiesSync.RenderBody body) {
+        DimensionProperties props =
+                DimensionManager.getInstance().getDimensionPropertiesOrNull(body.dimId);
+        if (props != null && props.getName() != null && !props.getName().isEmpty())
+            return props.getName();
+        if (body.dimId >= Constants.STAR_ID_OFFSET) {
+            StellarBody star = DimensionManager.getInstance()
+                    .getStar(body.dimId - Constants.STAR_ID_OFFSET);
+            if (star != null && star.getName() != null && !star.getName().isEmpty())
+                return star.getName();
+        }
+        SystemBodyKind[] kinds = SystemBodyKind.values();
+        return body.kindOrdinal >= 0 && body.kindOrdinal < kinds.length
+                ? kinds[body.kindOrdinal].name() : "?";
     }
 }

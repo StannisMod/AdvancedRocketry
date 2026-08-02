@@ -42,7 +42,7 @@ public class StandoffRingTest {
                 RING, CLEARANCE, 0x5A);
 
         assertTrue("the placement must clear the body it was standing off from",
-                placed.distanceTo(body) >= CLEARANCE);
+                placed.staticFrameDistanceTo(body) >= CLEARANCE);
     }
 
     /**
@@ -98,8 +98,8 @@ public class StandoffRingTest {
 
         for (int seed = 0; seed < 256; seed++) {
             GalacticCoord placed = StandoffRing.pointAround(anchor, RING, seed);
-            assertTrue("bearing " + seed + " overshot the ring: " + placed.distanceTo(anchor),
-                    placed.distanceTo(anchor) <= RING);
+            assertTrue("bearing " + seed + " overshot the ring: " + placed.staticFrameDistanceTo(anchor),
+                    placed.staticFrameDistanceTo(anchor) <= RING);
         }
     }
 
@@ -130,7 +130,7 @@ public class StandoffRingTest {
 
         for (GalacticCoord occupant : occupied) {
             assertTrue("the placement must clear every occupant, not only the one aimed at",
-                    placed.distanceTo(occupant) >= CLEARANCE);
+                    placed.staticFrameDistanceTo(occupant) >= CLEARANCE);
         }
     }
 }

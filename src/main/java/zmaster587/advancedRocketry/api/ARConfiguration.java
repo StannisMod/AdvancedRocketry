@@ -288,6 +288,20 @@ public class ARConfiguration {
     public double oxygenVentPowerMultiplier;
     @ConfigProperty
     public boolean skyOverride;
+
+    /**
+     * Whether the cell sky writes each body's name and distance beside it (C14 CON-C14-17). ON by
+     * default: it is how a pilot — and a human checking the game — reads that a body is receding
+     * without a probe. OFF removes the label entirely; it does not dim it.
+     *
+     * <p>{@code @ConfigProperty} is not optional even for a CLIENT-only flag that needs no syncing:
+     * joining a server replaces the whole config object with a copy built by the annotation-driven
+     * copy constructor, and an un-annotated field is not copied — it silently reverts to its Java
+     * default for as long as the player is connected, which for a boolean is {@code false}. That is
+     * why the initializer below states the default too rather than leaving it implied.</p>
+     */
+    @ConfigProperty
+    public boolean skyBodyLabels = true;
     @ConfigProperty
     public boolean overworldsealevelterraforming;
     @ConfigProperty
@@ -513,6 +527,8 @@ public class ARConfiguration {
         arConfig.stationSkyOverride = config.get(CLIENT, "StationSkyOverride", true, "Use AR's custom skybox on space stations").getBoolean();
         arConfig.planetSkyOverride = config.get(CLIENT, "PlanetSkyOverride", true, "Use AR's custom skybox on planets").getBoolean();
         arConfig.skyOverride = config.get(CLIENT, "overworldSkyOverride", true, "Use AR's custom skybox in the overworld.").getBoolean();
+        arConfig.skyBodyLabels = config.get(CLIENT, "skyBodyLabels", true,
+                "Label each body in a space cell's sky with its name and distance.").getBoolean();
        // arConfig.overworldsealevelterraforming = config.get(CLIENT, "overworldSealvlTerraforming", true).getBoolean();
         arConfig.advancedVFX = config.get(CLIENT, "advancedVFX", true, "Advanced visual effects").getBoolean();
         arConfig.enableNausea = config.get(CLIENT, "EnableAtmosphericNausea", true, "Allows nausea effects in non-standard atmospheres.").getBoolean();
