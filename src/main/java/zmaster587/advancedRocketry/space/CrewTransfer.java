@@ -40,6 +40,18 @@ public final class CrewTransfer {
      *  rider-carry box of the ship-move probes. */
     private static final double RIDER_RANGE = 8.0;
 
+    /** Why the last {@link #reseat} call could not seat its whole crew, or {@code ""} when the last
+     *  one succeeded. The re-seat is one half of an asynchronous settle whose only failure report is
+     *  "gave up after N attempts"; that report is unactionable without knowing WHICH of the seat
+     *  lookup's steps failed, so each retry records its own block here and the crossing prints it
+     *  when it gives up. Deliberately not test-gated: a harness child JVM has no test mode. */
+    private static volatile String lastReseatBlock = "";
+
+    /** @see #lastReseatBlock */
+    public static String lastReseatBlock() {
+        return lastReseatBlock;
+    }
+
     /** One captured rider: the player and the seat's AFC-link offset that re-identifies its seat
      *  on the re-assembled ship (relative offsets survive the rigid relocation; absolute subspace
      *  coordinates do not). */
@@ -221,7 +233,60 @@ public final class CrewTransfer {
                     + " p=" + player.getEntityId() + " dummy=" + dummy.getEntityId()
                     + " y=" + ArrivalTrace.fmt(seatWorld[1]));
         }
+        lastReseatBlock = allSeated ? "" : describeReseatBlock(dstWorld, anchor, seats, crew,
+                expectedShipId);
         return allSeated;
+    }
+
+    /**
+     * One line naming the step at which the re-seat's seat lookup stopped: whether any ship claims
+     * the arrival point at all, how many seat tiles the scan reached, and for each of them the three
+     * things {@link #matchSeat} discriminates on (its AFC link offset, the durable ship id behind
+     * that link, and whether its world position resolves). Built only on the failing path.
+     */
+    private static String describeReseatBlock(WorldServer world, BlockPos anchor,
+            List<TilePilotSeat> seats, List<Crew> crew, java.util.UUID expectedShipId) {
+        AxisAlignedBB yard = VSIntegration.shipyardBoundsAt(world, anchor.getX() + 0.5,
+                anchor.getY() + 0.5, anchor.getZ() + 0.5);
+        StringBuilder sb = new StringBuilder(320);
+        sb.append("anchor=").append(anchor.getX()).append(',').append(anchor.getY()).append(',')
+                .append(anchor.getZ())
+                .append(" yard=")
+                .append(yard == null ? "NONE(no ship claims the arrival point)"
+                        : "[" + (int) yard.minX + ".." + (int) yard.maxX + "]x["
+                                + (int) yard.minZ + ".." + (int) yard.maxZ + "]")
+                .append(" seatsReached=").append(seats.size())
+                .append(" crew=").append(crew.size())
+                .append(" wantShip=").append(expectedShipId);
+        if (!crew.isEmpty()) {
+            Crew first = crew.get(0);
+            sb.append(" wantLink=").append(first.afcDx).append(',').append(first.afcDy)
+                    .append(',').append(first.afcDz);
+        }
+        if (seats.isEmpty()) {
+            sb.append(" | no pilot-seat tile is reachable in the shipyard box or within ")
+                    .append((int) RIDER_RANGE).append(" blocks of the arrival point");
+            return sb.toString();
+        }
+        int shown = 0;
+        for (TilePilotSeat seat : seats) {
+            if (shown++ == 3) {
+                sb.append(" | ...").append(seats.size() - 3).append(" more");
+                break;
+            }
+            BlockPos p = seat.getPos();
+            BlockPos afc = seat.getFlightComputerPos();
+            double[] seatWorld = VSIntegration.getRegisteredSeatWorldPosition(world, p);
+            sb.append(" | seat@").append(p.getX()).append(',').append(p.getY()).append(',')
+                    .append(p.getZ())
+                    .append(" link=").append(afc == null ? "UNSET"
+                            : (afc.getX() - p.getX()) + "," + (afc.getY() - p.getY()) + ","
+                                    + (afc.getZ() - p.getZ()))
+                    .append(" ship=").append(DURABLE_SHIP_ID.apply(seat))
+                    .append(" world=").append(seatWorld == null ? "UNRESOLVED"
+                            : "ok");
+        }
+        return sb.toString();
     }
 
     /**

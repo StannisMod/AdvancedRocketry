@@ -143,6 +143,11 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
+    public String settleDiagnostics() {
+        return CrewTransfer.lastReseatBlock();
+    }
+
+    @Override
     public void unparkAt(int destDim, double px, double py, double pz) {
         WorldServer world = DimensionManager.getWorld(destDim);
         if (world != null) {

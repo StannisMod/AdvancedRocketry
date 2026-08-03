@@ -38,6 +38,7 @@ import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.stations.IStorageChunk;
+import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.block.*;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
 import zmaster587.advancedRocketry.api.capability.CapabilityWear;
@@ -775,42 +776,56 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     @Override
     public void pasteInWorld(World world, int xCoord, int yCoord, int zCoord) {
 
-        //Set all the blocks
-        for (int x = 0; x < sizeX; x++) {
-            for (int z = 0; z < sizeZ; z++) {
-                for (int y = 0; y < sizeY; y++) {
+        // A structure arrives as a UNIT, and the destination's environment must not judge it
+        // block by block while it is still half-written. Every setBlockState below is seen by the
+        // atmosphere's block-conversion rule, which asks "is this block exposed to the local
+        // atmosphere?" using the world as it stands AT THAT INSTANT - and mid-paste, a block that
+        // will be deep inside a sealed hull is standing alone in the open. On a superheated planet
+        // that rule turns cloth, wood, carpet, vines and webs into fire on contact, so a ship or a
+        // rocket cargo carrying any of them lost those blocks the moment it landed: the pilot seat
+        // (cloth) was replaced by fire before its tile was restored, which left the arriving craft
+        // with no seat at all and its crew with nowhere to sit.
+        AtmosphereHandler.beginStructurePaste();
+        try {
+            //Set all the blocks
+            for (int x = 0; x < sizeX; x++) {
+                for (int z = 0; z < sizeZ; z++) {
+                    for (int y = 0; y < sizeY; y++) {
 
-                    if (blocks[x][y][z] != Blocks.AIR) {
-                        world.setBlockState(new BlockPos(xCoord + x, yCoord + y, zCoord + z), blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
+                        if (blocks[x][y][z] != Blocks.AIR) {
+                            world.setBlockState(new BlockPos(xCoord + x, yCoord + y, zCoord + z), blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
+                        }
                     }
                 }
             }
-        }
 
-        //Set tiles for each block
-        for (TileEntity tile : tileEntities) {
-            NBTTagCompound nbt = new NBTTagCompound();
-            tile.writeToNBT(nbt);
-            int x = nbt.getInteger("x");
-            int y = nbt.getInteger("y");
-            int z = nbt.getInteger("z");
+            //Set tiles for each block
+            for (TileEntity tile : tileEntities) {
+                NBTTagCompound nbt = new NBTTagCompound();
+                tile.writeToNBT(nbt);
+                int x = nbt.getInteger("x");
+                int y = nbt.getInteger("y");
+                int z = nbt.getInteger("z");
 
-            int tmpX = x + xCoord;
-            int tmpY = y + yCoord;
-            int tmpZ = z + zCoord;
+                int tmpX = x + xCoord;
+                int tmpY = y + yCoord;
+                int tmpZ = z + zCoord;
 
-            //Set blocks of tiles again to avoid weirdness caused by updates
-            //world.setBlock(xCoord + x, yCoord + y, zCoord + z, blocks[x][y][z], metas[x][y][z], 2);
+                //Set blocks of tiles again to avoid weirdness caused by updates
+                //world.setBlock(xCoord + x, yCoord + y, zCoord + z, blocks[x][y][z], metas[x][y][z], 2);
 
 
-            nbt.setInteger("x", tmpX);
-            nbt.setInteger("y", tmpY);
-            nbt.setInteger("z", tmpZ);
+                nbt.setInteger("x", tmpX);
+                nbt.setInteger("y", tmpY);
+                nbt.setInteger("z", tmpZ);
 
-            TileEntity entity = world.getTileEntity(new BlockPos(tmpX, tmpY, tmpZ));
+                TileEntity entity = world.getTileEntity(new BlockPos(tmpX, tmpY, tmpZ));
 
-            if (entity != null)
-                entity.readFromNBT(nbt);
+                if (entity != null)
+                    entity.readFromNBT(nbt);
+            }
+        } finally {
+            AtmosphereHandler.endStructurePaste();
         }
     }
 

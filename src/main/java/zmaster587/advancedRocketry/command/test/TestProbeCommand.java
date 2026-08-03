@@ -3834,6 +3834,30 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
+        // artest planet set-temp <dim> <kelvin>
+        // The generated average temperature is what decides a planet's atmosphere band, and the
+        // hottest band (>= 900 K with an atmosphere) is the one that converts blocks on contact.
+        // A test cannot wait for the generator to roll such a planet, so it authors one.
+        if (args.length >= 3 && "set-temp".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int kelvin = parseIntOr(args[2], -1);
+            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(dim);
+            if (props == null || kelvin < 0) {
+                send(sender, "{\"error\":\"unknown planet or bad temperature\",\"dim\":" + dim
+                        + ",\"kelvin\":" + kelvin + "}");
+                return;
+            }
+            props.averageTemperature = kelvin;
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("dim", dim);
+            out.put("averageTemperature", props.averageTemperature);
+            out.put("hasOxygen", props.hasOxygen);
+            out.put("atmosphereDensity", props.getAtmosphereDensity());
+            out.put("atmosphere", props.getAtmosphere().getUnlocalizedName());
+            send(sender, jsonMap(out));
+            return;
+        }
         send(sender, "{\"error\":\"unknown planet subcommand\"}");
     }
 

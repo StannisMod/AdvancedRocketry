@@ -53,8 +53,13 @@ final class VSBridge {
      * ship. This is the player-less equivalent of VS's
      * {@code assembleShipAsOrderedByPlayer}: create a ship keyed on the anchor
      * block, then queue VS to relocate every connected block into it. Called
-     * server-side; VS performs the relocation on its own physics thread, so the
-     * ship does not exist synchronously when this returns.
+     * server-side; the ship does not exist when this returns, but NOT because the
+     * work happens on another thread — it does not. The queue is drained
+     * synchronously on the game thread, in the physics mod's own world tick at
+     * {@code WorldTickEvent} phase END, so the relocation lands on the NEXT tick of
+     * this world and never later: a spawn that is refused there is dropped, not
+     * retried. Anything waiting on the assembly should therefore expect it within a
+     * tick or two, and treat a longer wait as a failure rather than as slowness.
      *
      * <p>Scope note: this queues the block relocation only. Making the resulting
      * ship pilotable (thrust, attitude) is handled by the flight-control layer;

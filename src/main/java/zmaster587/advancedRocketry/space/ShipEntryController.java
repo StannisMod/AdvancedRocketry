@@ -178,13 +178,15 @@ public final class ShipEntryController {
 
                     @Override
                     public void abandoned(UUID id) {
-                        // The re-assembled ship never became workable. The blocks are in the slot
-                        // world (the cell is dirty, so it flushes); settle it cleanly rather than
-                        // spin forever. The pilot flies out on the spawn ring.
+                        // The arrival never finished. The ship is somewhere in the slot world (the
+                        // cell is dirty, so it flushes) — which place depends on the half that
+                        // stalled, and the crossing's own give-up line names it; do not claim one
+                        // here. Settle it cleanly rather than spin forever.
                         ledger.settle(id, entryCoord);
                         crossing.ops().messageCrew(crew, "msg.shipentry.failed");
-                        LOGGER.error("[SPACE] entry settle never completed for ship {} - ship left "
-                                + "at the paste site in slot {}", id, slotDim);
+                        LOGGER.error("[SPACE] entry settle never completed for ship {} arriving in "
+                                + "slot {} - see the crossing give-up line above for which half "
+                                + "stalled", id, slotDim);
                     }
                 });
         if (anchor == null) {

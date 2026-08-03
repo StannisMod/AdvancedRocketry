@@ -116,6 +116,44 @@ public class AtmosphereHandler {
         return dimensionOxygen.containsKey(dimId);
     }
 
+    /** Nesting depth of multi-block structure writes in flight on the server thread. */
+    private static int structurePasteDepth = 0;
+
+    /**
+     * Open a multi-block structure write: until the matching {@link #endStructurePaste()}, the
+     * environmental block CONVERSIONS below (burn, vaporize) are held off.
+     *
+     * <p>They ask whether a block is exposed to the local atmosphere, and answer it from the world
+     * as it stands at that instant. A structure is written one block at a time, so mid-write every
+     * block that will end up sealed inside a hull is momentarily standing alone in the open, and
+     * the answer is wrong for reasons that have nothing to do with the finished structure. The
+     * volume bookkeeping is NOT held off - the blobs must stay correct as the blocks land.</p>
+     *
+     * <p>Deliberately not re-run at the end: re-judging the whole footprint once the paste closes
+     * would re-answer the same question with the same instrument, and a craft parked in a landing
+     * lane is not "sealed" by any measure the blob logic can take. A block that genuinely is
+     * exposed will be converted by its next block update, which is the same rule everything else
+     * in the world lives by.</p>
+     *
+     * <p>Server thread only, like every other path through this class; nesting is counted so an
+     * inner paste cannot re-arm the conversions while an outer one is still running.</p>
+     */
+    public static void beginStructurePaste() {
+        structurePasteDepth++;
+    }
+
+    /** Close a write opened by {@link #beginStructurePaste()}. Always call from a finally. */
+    public static void endStructurePaste() {
+        if (structurePasteDepth > 0) {
+            structurePasteDepth--;
+        }
+    }
+
+    /** Whether a multi-block structure write is in flight. @see #beginStructurePaste() */
+    public static boolean isStructurePasteInFlight() {
+        return structurePasteDepth > 0;
+    }
+
     //Called from setBlock in World.class
     public static void onBlockChange(@Nonnull World world, @Nonnull BlockPos bpos) {
 
@@ -134,7 +172,7 @@ public class AtmosphereHandler {
 
             //Block handling for what should and shouldn't exist or what should be on fire
             //Things should be on fire
-            if (handler.getAtmosphereType(bpos) == AtmosphereType.SUPERHEATED) {
+            if (!isStructurePasteInFlight() && handler.getAtmosphereType(bpos) == AtmosphereType.SUPERHEATED) {
                 if (world.getBlockState(bpos).getBlock().isLeaves(world.getBlockState(bpos), world, bpos)) {
                     world.setBlockToAir(bpos);
                 } else if (world.getBlockState(bpos).getMaterial() == Material.CACTUS) {
@@ -181,7 +219,7 @@ public class AtmosphereHandler {
              */
 
             //Gasses should automatically vaporize and dissipate
-            if (handler.getAtmosphereType(bpos) == AtmosphereType.VACUUM) {
+            if (!isStructurePasteInFlight() && handler.getAtmosphereType(bpos) == AtmosphereType.VACUUM) {
                 if (world.getBlockState(bpos).getMaterial() == Material.WATER && world.getBlockState(bpos).getBlock() instanceof IFluidBlock) {
                     IFluidBlock fluidblock = (IFluidBlock) world.getBlockState(bpos).getBlock();
                     if (fluidblock.getFluid().isGaseous())

@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import net.minecraft.util.math.BlockPos;
 
 /**
@@ -28,6 +31,8 @@ import net.minecraft.util.math.BlockPos;
  * {@code VSShipCrossingOps}) so the state machine is testable without VS. Server main thread only.</p>
  */
 public final class ShipCrossingService {
+
+    private static final Logger LOGGER = LogManager.getLogger("advancedrocketry/space");
 
     /** Max ticks to retry the re-seat + pose-teleport half before giving up (async VS assembly). */
     private static final int MAX_SETTLE_ATTEMPTS = 200;
@@ -77,6 +82,13 @@ public final class ShipCrossingService {
         /** Player-facing message to the captured crew (a refusal, a failure, an arrival). */
         void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args);
 
+        /** One line naming why the settle's world-facing halves are not finishing, printed when a
+         *  crossing gives up. The state machine knows WHICH half is stuck; only the seam knows why,
+         *  and a give-up report without that is unactionable. Empty when there is nothing to add. */
+        default String settleDiagnostics() {
+            return "";
+        }
+
         /** Hold the ENTRY on-ramp off the ship whose flight computer is at {@code afcPos} until it
          *  has next been at or below that dimension's entry line. Called by the descent just before
          *  the cut: a descent arrives in the AIR, which can be above the destination's own orbit
@@ -94,12 +106,13 @@ public final class ShipCrossingService {
         /** The ship re-assembled, re-seated and reached its final pose (unpark already done). */
         void settled(UUID shipId);
 
-        /** The re-assembly never became workable within {@link #MAX_SETTLE_ATTEMPTS} — the blocks
-         *  are at the paste site; finalize cleanly rather than spin forever. Since the settle's gate
-         *  is "the anchor block has been claimed", reaching here has exactly ONE cause: the physics
-         *  mod never took the pasted structure, which it refuses outright when the structure exceeds
-         *  its max ship size or touches bedrock. It is not a timing outcome and must not be treated
-         *  as one — widening the budget cannot help. */
+        /** The settle never finished within {@link #MAX_SETTLE_ATTEMPTS}; finalize cleanly rather
+         *  than spin forever. EITHER half can be the one that never completed, and they leave the
+         *  ship in different places — the pose half failing leaves the blocks at the paste site,
+         *  the re-seat half failing leaves the ship parked at its arrival pose with the crew still
+         *  behind. Do not tell the crew (or the log) which one without reading the give-up line
+         *  this service prints: it names the half, the attempt the pose completed on, and the seam's
+         *  own account of what it could not resolve. */
         void abandoned(UUID shipId);
     }
 
@@ -114,6 +127,10 @@ public final class ShipCrossingService {
         boolean reseated;
         boolean poseDone;
         int attempts;
+        /** The attempt the pose half completed on, or -1 while it has not. The give-up report is
+         *  useless without it: "pose done, re-seat not" is a different bug depending on whether the
+         *  re-seat had 198 tries or 1. */
+        int poseAttempt = -1;
 
         Pending(UUID shipId, int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
                 double[] finalPose, Completion completion) {
@@ -183,6 +200,9 @@ public final class ShipCrossingService {
             if (!e.poseDone) {
                 e.poseDone = ops.teleportPoseWithRiders(
                         e.destDim, e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
+                if (e.poseDone) {
+                    e.poseAttempt = e.attempts;
+                }
             } else if (!e.reseated) {
                 // The ship sits at its final pose now, so the paste anchor no longer resolves it —
                 // the re-seat probes at the pose itself, and the crew's fresh mounts (and the crew)
@@ -200,6 +220,17 @@ public final class ShipCrossingService {
             }
             if (++e.attempts >= MAX_SETTLE_ATTEMPTS) {
                 it.remove();
+                LOGGER.error("[SPACE] crossing settle gave up for ship {} after {} attempts in dim {}"
+                                + " - pose: {}; re-seat: {}; anchor={} pose=({},{},{}) crew={} - {}",
+                        e.shipId, e.attempts, e.destDim,
+                        e.poseAttempt >= 0
+                                ? "completed on attempt " + (e.poseAttempt + 1)
+                                + " (the ship IS at its arrival pose, parked)"
+                                : "NEVER completed - the physics mod never claimed the pasted blocks,"
+                                + " so the ship is still loose blocks at the paste site",
+                        e.reseated ? "completed" : "NEVER completed - the crew is still where it was",
+                        e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2], e.crew.size(),
+                        ops.settleDiagnostics());
                 e.completion.abandoned(e.shipId);
             }
         }

@@ -168,12 +168,15 @@ public final class DescentController {
 
                     @Override
                     public void abandoned(UUID id) {
-                        // The re-assembled ship never became workable; the blocks are at the paste
-                        // site in the planet dim. Tell the crew and stop spinning — the source cell
-                        // was already released below, so the ship has left space either way.
+                        // The arrival never finished. WHERE that leaves the ship depends on which
+                        // half stalled, which this callback is not told — the crossing's own give-up
+                        // line names it. Do not claim a location here. Tell the crew and stop
+                        // spinning; the source cell was already released below, so the ship has left
+                        // space either way.
                         crossing.ops().messageCrew(settledCrew, "msg.shipdescent.failed");
-                        LOGGER.error("[SPACE] descent settle never completed for ship {} - ship left "
-                                + "at the paste site in dim {}", id, targetPlanetDim);
+                        LOGGER.error("[SPACE] descent settle never completed for ship {} arriving on "
+                                + "dim {} - see the crossing give-up line above for which half stalled",
+                                id, targetPlanetDim);
                     }
                 });
         if (anchor == null) {
