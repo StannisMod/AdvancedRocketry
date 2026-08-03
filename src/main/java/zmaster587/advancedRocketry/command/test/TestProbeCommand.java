@@ -1586,6 +1586,12 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.externalMoveDrops);
             m.put("lastDropReason",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropReason);
+            m.put("lastDropGapTicks",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropGapTicks);
+            m.put("declinedNoLocalOrMotion",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.declinedNoLocalOrMotion);
+            m.put("declinedTransformGone",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.declinedTransformGone);
             m.put("worldMoveApplies",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.worldMoveApplies);
             m.put("lastWorldMove",
@@ -1604,6 +1610,26 @@ public class TestProbeCommand extends CommandBase {
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastDropAllowed);
             m.put("dragSuppressions",
                     zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.dragSuppressions);
+            // The no-input-drift discriminator: the ship-RELATIVE motion the last resolved tick was
+            // handed, the walk inputs that came with it, and the carry that tick held. A body that
+            // creeps along a deck with lastInStrafe/lastInForward at 0 is being moved by one of
+            // these two, and which one is nonzero names the writer.
+            m.put("lastInStrafe",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastInStrafe);
+            m.put("lastInForward",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastInForward);
+            m.put("lastMotionShipX",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipX);
+            m.put("lastMotionShipY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipY);
+            m.put("lastMotionShipZ",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastMotionShipZ);
+            m.put("lastCarryX",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryX);
+            m.put("lastCarryY",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryY);
+            m.put("lastCarryZ",
+                    zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.lastCarryZ);
             send(sender, jsonMap(m));
             return;
         }
@@ -7641,7 +7667,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if (args.length >= 2 && "torch-block-add".equalsIgnoreCase(args[0])) {
             String blockId = args[1];
-            net.minecraft.block.Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+            net.minecraft.block.Block block = resolveBlock(blockId);
             if (block == null) {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
                 return;
@@ -8821,13 +8847,10 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
                 return;
             }
-            net.minecraft.block.Block target = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
-            // Forge's GameRegistry returns AIR as the default for any missing
-            // registry key (instead of null). Detect the fallback explicitly
-            // so callers that supplied "foo:bar_typo" get a real error
-            // rather than a 424k count of air blocks.
-            boolean isAirRequested = blockId.equalsIgnoreCase("minecraft:air");
-            if (target == null || (target == net.minecraft.init.Blocks.AIR && !isAirRequested)) {
+            net.minecraft.block.Block target = resolveBlock(blockId);
+            // A missing registry key resolves to null here (see resolveBlock), so "foo:bar_typo"
+            // is a real error rather than a 424k count of air blocks.
+            if (target == null) {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
                 return;
             }
@@ -9558,7 +9581,7 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
                 return;
             }
-            net.minecraft.block.Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+            net.minecraft.block.Block block = resolveBlock(blockId);
             if (block == null) {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
                 return;
@@ -10599,7 +10622,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
             return;
         }
-        net.minecraft.block.Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+        net.minecraft.block.Block block = resolveBlock(blockId);
         if (block == null) {
             send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
             return;
@@ -10632,7 +10655,7 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
             return;
         }
-        net.minecraft.block.Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+        net.minecraft.block.Block block = resolveBlock(blockId);
         if (block == null) {
             send(sender, "{\"error\":\"unknown block id\",\"id\":\"" + escapeJson(blockId) + "\"}");
             return;
@@ -14127,7 +14150,84 @@ public class TestProbeCommand extends CommandBase {
         send(sender, out.toString());
     }
 
+    /**
+     * The block registered under {@code blockId}, or {@code null} if nothing is registered under
+     * that name.
+     *
+     * <p>Never call {@code ForgeRegistries.BLOCKS.getValue} directly here: a block registry answers
+     * an unknown name with its DEFAULT value — air — and never with null, so a null check alone
+     * lets a typo or a wrong domain fill AIR and report success. An arrangement then places
+     * nothing while every assertion downstream still passes, and the test reads as a clean run
+     * against a world that was never set up. Membership is asked first, so an unknown name is an
+     * error instead of a silent no-op.</p>
+     */
+    private static net.minecraft.block.Block resolveBlock(String blockId) {
+        ResourceLocation name = new ResourceLocation(blockId);
+        return ForgeRegistries.BLOCKS.containsKey(name) ? ForgeRegistries.BLOCKS.getValue(name) : null;
+    }
+
     // Entity spawn probe ----------------------------------------------
+
+    /**
+     * {@code /artest entity registry} — does every modded entity survive the trip a receiving
+     * client makes?
+     *
+     * <p>A modded entity is not spawned to the client by its registry name. The server writes
+     * {@code (modId, per-mod network id)} into the FML spawn message, and the client resolves that
+     * pair back to a class by walking that mod's registration list and taking the FIRST entry
+     * carrying the id. Two entities registered under the SAME mod container with the SAME network
+     * id are therefore indistinguishable on the wire: the client builds whichever one registered
+     * first — for BOTH of them — and then applies the sender's data-watcher entries to it by slot
+     * index, with no type check anywhere on the path. Whoever reads that slot casts and dies.</p>
+     *
+     * <p>This reports every registered entity whose own id resolves back to a DIFFERENT
+     * registration, so a collision surfaces as a listed mismatch instead of a class-cast crash in
+     * play. {@code mismatchCount} is the assertion surface; {@code checked} is there so an empty
+     * scan cannot read as a pass.</p>
+     */
+    private void handleEntityRegistry(ICommandSender sender) {
+        StringBuilder out = new StringBuilder();
+        int checked = 0;
+        int mismatches = 0;
+        for (net.minecraftforge.fml.common.registry.EntityEntry entry
+                : net.minecraftforge.fml.common.registry.ForgeRegistries.ENTITIES) {
+            Class<? extends net.minecraft.entity.Entity> clazz = entry.getEntityClass();
+            if (clazz == null) {
+                continue;
+            }
+            net.minecraftforge.fml.common.registry.EntityRegistry.EntityRegistration owned =
+                    net.minecraftforge.fml.common.registry.EntityRegistry.instance()
+                            .lookupModSpawn(clazz, false);
+            if (owned == null) {
+                continue; // vanilla spawning: never routed through the FML spawn message
+            }
+            checked++;
+            net.minecraftforge.fml.common.registry.EntityRegistry.EntityRegistration resolved =
+                    net.minecraftforge.fml.common.registry.EntityRegistry.instance()
+                            .lookupModSpawn(owned.getContainer(), owned.getModEntityId());
+            if (resolved != null
+                    && resolved.getRegistryName().equals(owned.getRegistryName())) {
+                continue;
+            }
+            if (mismatches > 0) {
+                out.append(',');
+            }
+            mismatches++;
+            out.append("{\"name\":\"")
+                    .append(escapeJson(String.valueOf(owned.getRegistryName())))
+                    .append("\",\"modId\":\"")
+                    .append(escapeJson(owned.getContainer() == null
+                            ? "?" : owned.getContainer().getModId()))
+                    .append("\",\"networkId\":").append(owned.getModEntityId())
+                    .append(",\"resolvesTo\":\"")
+                    .append(escapeJson(resolved == null
+                            ? "<none>" : String.valueOf(resolved.getRegistryName())))
+                    .append("\"}");
+        }
+        send(sender, "{\"ok\":true,\"checked\":" + checked
+                + ",\"mismatchCount\":" + mismatches
+                + ",\"mismatches\":[" + out + "]}");
+    }
 
     /**
      * {@code /artest entity spawn <dim> <x> <y> <z> <entityRegistryName>} —
@@ -14138,8 +14238,20 @@ public class TestProbeCommand extends CommandBase {
      *
      * {@code /artest entity info <dim> <entityId>} — reports the entity's
      * class + position + alive state.
+     *
+     * {@code /artest entity near <dim> <x> <y> <z> <radius> [classContains]} — the server-side
+     * twin of the client bot's entity report (id + class + position), for comparing the two
+     * sides entity by entity.
+     *
+     * {@code /artest entity registry} — round-trips every modded entity through the
+     * resolution a receiving client performs, and reports the ones that come back as a
+     * DIFFERENT entity (see {@link #handleEntityRegistry}).
      */
     private void handleEntity(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 1 && "registry".equalsIgnoreCase(args[0])) {
+            handleEntityRegistry(sender);
+            return;
+        }
         if (args.length >= 6 && "spawn".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             double x = parseDoubleOr(args[2], 0);
@@ -14197,6 +14309,45 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"isDead\":" + entity.isDead
                     + ",\"motionY\":" + entity.motionY
                     + ",\"posY\":" + entity.posY + "}");
+            return;
+        }
+        if (args.length >= 6 && "near".equalsIgnoreCase(args[0])) {
+            // entity near <dim> <x> <y> <z> <radius> [classContains]
+            // The SERVER-side twin of the client bot's entity report: same shape
+            // (id + class + position), so a client e2e can compare the two sides
+            // ENTITY BY ID and catch one that arrives at the client as another class.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            double x = parseDoubleOr(args[2], 0);
+            double y = parseDoubleOr(args[3], 0);
+            double z = parseDoubleOr(args[4], 0);
+            double radius = parseDoubleOr(args[5], 64);
+            String needle = args.length >= 7 ? args[6] : "";
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            StringBuilder list = new StringBuilder();
+            int found = 0;
+            for (net.minecraft.entity.Entity entity : world.loadedEntityList) {
+                if (!needle.isEmpty() && !entity.getClass().getName().contains(needle)) {
+                    continue;
+                }
+                double dx = entity.posX - x, dy = entity.posY - y, dz = entity.posZ - z;
+                if (dx * dx + dy * dy + dz * dz > radius * radius) {
+                    continue;
+                }
+                if (found > 0) {
+                    list.append(',');
+                }
+                found++;
+                list.append("{\"id\":").append(entity.getEntityId())
+                        .append(",\"class\":\"").append(escapeJson(entity.getClass().getName()))
+                        .append("\",\"x\":").append(entity.posX)
+                        .append(",\"y\":").append(entity.posY)
+                        .append(",\"z\":").append(entity.posZ).append('}');
+            }
+            send(sender, "{\"ok\":true,\"count\":" + found + ",\"entities\":[" + list + "]}");
             return;
         }
         if (args.length >= 3 && "info".equalsIgnoreCase(args[0])) {
@@ -16238,7 +16389,7 @@ public class TestProbeCommand extends CommandBase {
             // /artest seal-detector add-block-ban <block-id>
             String blockId = args[1];
             net.minecraft.block.Block block =
-                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+                    resolveBlock(blockId);
             if (block == null) {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\""
                         + escapeJson(blockId) + "\"}");
@@ -16258,7 +16409,7 @@ public class TestProbeCommand extends CommandBase {
             // into the allow list, which is not the right undo here).
             String blockId = args[1];
             net.minecraft.block.Block block =
-                    ForgeRegistries.BLOCKS.getValue(new ResourceLocation(blockId));
+                    resolveBlock(blockId);
             if (block == null) {
                 send(sender, "{\"error\":\"unknown block id\",\"id\":\""
                         + escapeJson(blockId) + "\"}");
@@ -17387,7 +17538,53 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart) + "}");
             return;
         }
-        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks>\"}");
+        // Block the server's TICK LOOP for a while, the way a real overloaded server does.
+        //
+        // Probe handlers do not run on the server thread (the wait verb above polls the world clock
+        // from a command thread and would deadlock otherwise), so the block has to be scheduled ONTO
+        // that thread. Vanilla then logs its own "Can't keep up! ... skipping N tick(s)" and resumes,
+        // which is the whole point: a per-tick threshold anywhere in the codebase means something
+        // different across a tick that really took three seconds, and until now nothing in the harness
+        // could produce one. Bounded to 10 s so it can never approach the harness's command timeout.
+        if (args.length >= 2 && "stall".equalsIgnoreCase(args[0])) {
+            long ms = parseIntOr(args[1], 0);
+            if (ms <= 0L || ms > 10_000L) {
+                send(sender, "{\"error\":\"stallMs must be in (0, 10000]\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            long before = overworld == null ? -1L : overworld.getTotalWorldTime();
+            long wallStart = System.currentTimeMillis();
+            final long blockFor = ms;
+            java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+            server.addScheduledTask(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Thread.sleep(blockFor);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        done.countDown();
+                    }
+                }
+            });
+            try {
+                done.await(blockFor + 5000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            long after = overworld == null ? -1L : overworld.getTotalWorldTime();
+            // ticksAdvanced is the witness: the whole point is that FEWER ticks ran than wall time
+            // would suggest. A caller that sees ticksAdvanced ~= wallMs/50 did not stall anything.
+            send(sender, "{\"ok\":true,\"requestedMs\":" + ms
+                    + ",\"wallMs\":" + (System.currentTimeMillis() - wallStart)
+                    + ",\"startTick\":" + before
+                    + ",\"endTick\":" + after
+                    + ",\"ticksAdvanced\":" + (after - before) + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"usage: /artest server wait <dim> <ticks> | /artest server stall <ms>\"}");
     }
 
     /** True if the {@code <slashed>.class} resource is reachable via the

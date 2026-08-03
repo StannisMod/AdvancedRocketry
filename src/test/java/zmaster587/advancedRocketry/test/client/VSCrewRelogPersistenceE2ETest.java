@@ -9,6 +9,7 @@ import org.lwjgl.input.Keyboard;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -40,6 +41,390 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
     private static final Pattern SHIP_FRAME_X = Pattern.compile("\"bodyShipFrameX\":(-?[0-9.E\\-]+)");
     private static final Pattern SHIP_FRAME_Y = Pattern.compile("\"bodyShipFrameY\":(-?[0-9.E\\-]+)");
     private static final Pattern SHIP_FRAME_Z = Pattern.compile("\"bodyShipFrameZ\":(-?[0-9.E\\-]+)");
+
+    /**
+     * The ship's OWN rotation must never count as someone else moving the crew member.
+     *
+     * <p>This test fails if production breaks the contract that <b>a body standing on a deck stays
+     * captured, and stays put in the ship frame, while the ship rotates under it</b> - at any rotation
+     * rate, with no input at all.</p>
+     *
+     * <p><b>Why this leg exists, and why it is on a planet.</b> The maintainer reported being dragged
+     * along his deck after a login in space, on a ship that was inverted. His own session log named the
+     * mechanism: the external-move guard released the deck capture 25 times in ~50 s with
+     * {@code externalMove(sub)} deltas up to 0.43 blocks/tick against its 0.2-block slack, while the
+     * ship's attitude was settling at a 53.6 deg tilt - and between the release and the re-capture the
+     * body belongs to vanilla and the physics mod, so it slides. The guard's own javadoc names this case
+     * in advance: the slack absorbs "about one tick of ship motion at the body's radius from the
+     * rotation centre ... a far-from-centre pilot on a violently spinning ship is the one case where it
+     * could still approach the slack".</p>
+     *
+     * <p>So the DRIVER is ship rotation at radius - not the space cell, not the relog, not the login
+     * restore, all of which merely accompanied it in the report. Reproducing the driver puts the subject
+     * where rolling a ship is already proven to work, and it removes three variables from the
+     * arrangement. A space-cell version would additionally need a way to rotate a ship inside a cell,
+     * which the harness currently does not have.</p>
+     *
+     * <p>The idle window before the roll is the control: the guard must be quiet while nothing rotates,
+     * or a count taken during the roll is not attributable to the roll.</p>
+     */
+    @Test
+    public void aCrewMemberStandingOnADeckIsNotReleasedWhileTheShipRolls() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        requireHeIsHeldThroughARoll(6680, 6680, "ordinary world coordinates");
+    }
+
+    // A "far from origin" variant of this leg was tried and is REFUTED, so it is not here: the
+    // 5120001.5 / 51200.9 coordinates in the reporter's log are the ship's SUBSPACE point, not a world
+    // position. Measured - a ship built at world 6720 reports its crew at B=5120000.000, 51200.000 in
+    // exactly the same range, because that is simply where Valkyrien Skies parks a subspace. There is
+    // no coordinate-magnitude variable to vary.
+    private void requireHeIsHeldThroughARoll(int bx, int bz, String where) throws Exception {
+        final int by = 64;
+
+        double[] ship = buildShip(bx, by, bz);
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(80);
+        assertTrue("ARRANGEMENT: he must be captured on the deck before anything rotates: "
+                        + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        // CONTROL: a still ship must produce no releases and no travel. Without it, a nonzero count
+        // during the roll could belong to the arrangement (the walk onto the deck, the settle) rather
+        // than to the rotation.
+        long dropsAtRest = clientLong("externalMoveDrops");
+        long restMark = lastClientTick();
+        bot().waitTicks(30);
+        String restHistory = clientTickHistory();
+        long dropsDuringRest = clientLong("externalMoveDrops") - dropsAtRest;
+        double restTravel = bodyPointTravel(restHistory, restMark);
+
+        // THE DRIVER: roll the ship under him, and measure WHILE it turns - the release happens during
+        // the attitude change, not after it.
+        double h = Math.toRadians(170.0) / 2.0;
+        assertTrue("ARRANGEMENT: the attitude hold must accept the roll command",
+                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                        + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
+        long rollMark = lastClientTick();
+        long dropsBeforeRoll = clientLong("externalMoveDrops");
+        double upY = 1.0;
+        for (int attempt = 0; attempt < 25 && upY > -0.9; attempt++) {
+            bot().waitTicks(10);
+            double qx = readDouble(shipInfo(bx, by, bz), Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+            upY = 1.0 - 2.0 * qx * qx;
+        }
+        String rollHistory = clientTickHistory();
+        long dropsDuringRoll = clientLong("externalMoveDrops") - dropsBeforeRoll;
+        double rollTravel = bodyPointTravel(rollHistory, rollMark);
+        int resolvedDuringRoll = resolvedSince(rollHistory, rollMark);
+
+        String observed = "\n  at rest:      drops=" + dropsDuringRest + " bodyTravel=" + restTravel
+                + " resolved=" + resolvedSince(restHistory, restMark)
+                + "\n  during roll:  drops=" + dropsDuringRoll + " bodyTravel=" + rollTravel
+                + " resolved=" + resolvedDuringRoll + " upY=" + upY
+                + "\n  lastDropReason=" + clientString(SHIP_FRAME_TRAVEL, "lastDropReason")
+                + "\n" + mover();
+        System.out.println("[roll-hold]" + observed);
+
+        assertTrue("ARRANGEMENT: the ship must actually have rotated, or nothing was driven (upY="
+                + upY + ")" + observed, upY < -0.9);
+        assertTrue("ARRANGEMENT: the client must have resolved the body through the roll, or a clean "
+                + "result describes the instrument" + observed, resolvedDuringRoll >= 20);
+        assertEquals("CONTROL: the guard must be quiet while the ship is still - otherwise the count "
+                + "during the roll is not attributable to the rotation" + observed,
+                0L, dropsDuringRest);
+
+        assertEquals("the ship's own rotation must not count as someone else moving the crew member: "
+                        + "the external-move guard released the capture " + dropsDuringRoll + " time(s) "
+                        + "while the ship rolled under a body with no input. Between a release and the "
+                        + "re-capture the body belongs to vanilla and the physics mod, which is what a "
+                        + "player feels as being dragged along his own deck." + observed,
+                0L, dropsDuringRoll);
+        assertTrue("and he must not travel along the deck while it rotates under him (moved "
+                        + rollTravel + " blocks in the ship frame, bar " + ROLL_DRIFT_TOLERANCE + ")"
+                        + observed,
+                rollTravel < ROLL_DRIFT_TOLERANCE);
+    }
+
+    /** How far a carried body may travel in the ship frame while the ship rotates, in blocks. */
+    private static final double ROLL_DRIFT_TOLERANCE = 0.35D;
+
+    /**
+     * A crew member WALKING his own deck must never be released by the external-move guard.
+     *
+     * <p>This test fails if production breaks the contract that <b>the guard releases a deck capture
+     * only on movement the ship-frame resolver did not itself produce</b>. A walk that the resolver
+     * swept and committed is movement it produced; treating it as a foreign teleport hands the body
+     * back to vanilla and to the physics mod for the ticks between the release and the re-capture,
+     * which is what a player feels as being dragged along his own deck.</p>
+     *
+     * <p><b>Why the stimulus is a walk, and why the ship is upright and still.</b> Taken from the
+     * distribution in the reporter's own session log rather than from one quoted line: of the 174
+     * {@code externalMove(sub)} releases in it, <b>every one is {@code remote=true}</b> (the CLIENT's
+     * copy of the local player - the server's copy is a follower and rebases instead of dropping),
+     * <b>148 are at {@code tiltDeg} of 1.1 deg or less</b>, and <b>150 report {@code shipObstacles}
+     * of 1 or more</b>, i.e. an upright ship and a body with deck support under it. {@code carrySeen}
+     * is 0.0 at nearly all of them, so the ship was not moving either. Each burst is bracketed by
+     * {@code [FF-TRACE/WALK] forward=0.98} lines: the body was WALKING.</p>
+     *
+     * <p>The releases' own numbers name the shape: the released {@code dSub} equals, in magnitude and
+     * with the opposite sign, the SERVER's {@code MoverType.PLAYER} step on the same tick (e.g. server
+     * {@code d=(-0.0516, -9.9e-5, 0.20830)} against client {@code dSub=(0.0516, -2e-10, -0.20830)}),
+     * with {@code frameMoved} at zero. The body's live point sits exactly one walk step BEHIND the
+     * point this class committed - the "walking thrash whose entityMoved exactly negated this commit's
+     * motion" the resolver's own drag-suppression comment names.</p>
+     *
+     * <p>The idle window before the walk is the control - a body on a moving platform needs its own
+     * no-change leg in the SAME run, or a green walk leg cannot be told from an instrument that never
+     * fires - and it doubles as the sensitivity witness. The walk is taken in short bursts with a 180-degree turn between them, because the
+     * fixture's deck is 5x5: one long hold would walk him off it and the leg would measure the edge
+     * rather than the guard.</p>
+     */
+    @Test
+    public void aCrewMemberWalkingHisOwnDeckIsNeverReleasedByTheExternalMoveGuard() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        requireHeIsHeldThroughAWalk(6720, 6720, "ordinary world coordinates");
+    }
+
+    private void requireHeIsHeldThroughAWalk(int bx, int bz, String where) throws Exception {
+        final int by = 64;
+
+        double[] ship = buildShip(bx, by, bz);
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(80);
+        assertTrue("ARRANGEMENT: he must be captured on the deck before he walks (" + where + "): "
+                        + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        // CONTROL, same body, same deck, same window length, stimulus absent.
+        long dropsBeforeIdle = clientLong("externalMoveDrops");
+        long idleMark = lastClientTick();
+        bot().waitTicks(40);
+        String idleHistory = clientTickHistory();
+        long dropsIdle = clientLong("externalMoveDrops") - dropsBeforeIdle;
+        int resolvedIdle = resolvedSince(idleHistory, idleMark);
+
+        // THE STIMULUS: a real key on the real client input surface, in bursts that keep him on a
+        // 5x5 deck. The turn between bursts is a real look, so each burst walks the way he faces.
+        long walkMark = lastClientTick();
+        long dropsBeforeWalk = clientLong("externalMoveDrops");
+        double walked = walkInBursts();
+        String walkHistory = clientTickHistory();
+        long dropsWalk = clientLong("externalMoveDrops") - dropsBeforeWalk;
+        int resolvedWalk = resolvedSince(walkHistory, walkMark);
+        int inputTicks = inputTicksSince(walkHistory, walkMark);
+        int offDeckTicks = offDeckTicksSince(walkHistory, walkMark);
+        String capAfter = exec("artest vs deck-capture");
+
+        String observed = "\n  " + where
+                + "\n  idle (control): drops=" + dropsIdle + " resolved=" + resolvedIdle
+                + "\n  walking:        drops=" + dropsWalk + " resolved=" + resolvedWalk
+                + " inputTicks=" + inputTicks + " offDeckTicks=" + offDeckTicks
+                + " walked=" + walked
+                + "\n  lastDropReason=" + clientString(SHIP_FRAME_TRAVEL, "lastDropReason")
+                + "\n  capture after=" + capAfter
+                + "\n" + mover()
+                + "\n  CLIENT per-tick record:\n" + walkHistory;
+        System.out.println("[walk-hold]" + observed);
+
+        // ARRANGEMENT first, so a clean result can never be the instrument's silence.
+        assertTrue("ARRANGEMENT: the client must have resolved the body through both windows, or "
+                + "neither count means anything" + observed, resolvedIdle >= 20 && resolvedWalk >= 20);
+        assertTrue("ARRANGEMENT: the resolver must have SEEN the walk input, or the key never "
+                + "reached the client's movement path" + observed, inputTicks >= 10);
+        assertTrue("ARRANGEMENT: he must actually have covered ground on the deck" + observed,
+                walked > 1.0);
+        assertTrue("ARRANGEMENT: he must have stayed ON the deck for the whole walk - a body that "
+                + "walked off the edge is measuring the edge, not the guard" + observed,
+                offDeckTicks == 0);
+        assertTrue("ARRANGEMENT: he must still be captured ABOARD at the end" + observed,
+                capAfter.contains("\"alreadyTracked\":true") && !capAfter.contains("\"hullStand\":true"));
+        assertEquals("CONTROL: the guard must be quiet while he stands still - otherwise the count "
+                + "during the walk is not attributable to the walk" + observed, 0L, dropsIdle);
+
+        assertEquals("a crew member's own walk must not count as someone else moving him: the "
+                + "external-move guard released the deck capture " + dropsWalk + " time(s) across "
+                + resolvedWalk + " resolved ticks of walking on a still, upright deck. Between a "
+                + "release and the re-capture the body belongs to vanilla and to the physics mod, "
+                + "which is what a player feels as being dragged along his own deck." + observed,
+                0L, dropsWalk);
+    }
+
+    /** Walk bursts, and ticks per burst: short enough that the body stays on a 5x5 deck, and enough
+     *  of them that a per-tick misfire cannot hide in a single burst. */
+    private static final int WALK_BURSTS = 4;
+    /** Six, measured: ten carried him 2.3 blocks per burst and off a deck whose half-width is 2.5,
+     *  and the leg then measured the deck edge instead of the guard. */
+    private static final int WALK_BURST_TICKS = 6;
+
+    /** Walk him back and forth across the deck with a real key; returns the ground he covered. */
+    private double walkInBursts() throws Exception {
+        double walked = 0.0;
+        for (int burst = 0; burst < WALK_BURSTS; burst++) {
+            bot().setLook(burst % 2 == 0 ? 0f : 180f, 0f);
+            bot().waitTicks(4);
+            double[] from = clientPos();
+            bot().holdKey(Keyboard.KEY_W);
+            bot().waitTicks(WALK_BURST_TICKS);
+            bot().releaseKey(Keyboard.KEY_W);
+            walked += distance(from, clientPos());
+        }
+        return walked;
+    }
+
+    /**
+     * A server tick BURST must not cost a crew member his deck capture.
+     *
+     * <p>This test fails if production breaks the contract that <b>the external-move guard's
+     * per-tick allowance means the same thing across a tick that really took three seconds as across
+     * one that took fifty milliseconds</b>. The guard compares a raw subspace delta against a flat
+     * 0.2 blocks and calls anything larger a foreign teleport; across a skipped-tick burst the two
+     * sides of the same body legitimately arrive that far apart, and the release hands a body the
+     * resolver was holding back to vanilla and to the physics mod.</p>
+     *
+     * <p><b>Why this stimulus, out of everything the report mentioned.</b> Correlation over the whole
+     * reporter's log, not one line: <b>150 of the 174</b> {@code externalMove(sub)} releases fall
+     * within 20 seconds of a {@code "Can't keep up! ... skipping N tick(s)"} warning, 30 of them
+     * within 5 - and the eleven stalls in those logs skip 53 to 64 ticks each. The tilt, the space
+     * cell, the inverted deck and the relog are all things the reporter happened to be doing; the
+     * stall is the thing that keeps arriving just before the releases. So the stall is the driver and
+     * the rest are conditions, and this leg reproduces the driver on the plainest possible subject:
+     * an upright, stationary ship on a planet, exactly the arrangement whose walking leg is green.</p>
+     *
+     * <p>The walk is part of the stimulus, not decoration, and the leg carries BOTH halves of it as
+     * separate windows: a freeze with the body standing still, and a freeze with the key held ACROSS
+     * it. Only the second one lets the two sides diverge - the client keeps ticking and keeps walking
+     * him while the server's copy stands frozen, so the resumed loop has to absorb the whole
+     * accumulated step at once. A freeze on a body that was not moving has nothing to catch up on,
+     * which is why it is the control rather than the stimulus.</p>
+     */
+    @Test
+    public void aCrewMemberIsNotReleasedWhenTheServerSkipsATickBurst() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 6760, by = 64, bz = 6760;
+
+        double[] ship = buildShip(bx, by, bz);
+        exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
+        bot().waitTicks(80);
+        assertTrue("ARRANGEMENT: he must be captured on the deck before the server stalls: "
+                        + exec("artest vs deck-capture"),
+                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
+
+        // CONTROL: the same body, the same deck, the same walk - without the stall. The walking leg
+        // measures this too, but it has to be in THIS run: a control from another boot has a
+        // different ship pose and a different settle history.
+        long dropsBeforeControl = clientLong("externalMoveDrops");
+        long controlMark = lastClientTick();
+        bot().waitTicks(20);
+        double controlWalked = walkInBursts();
+        String controlHistory = clientTickHistory();
+        long dropsControl = clientLong("externalMoveDrops") - dropsBeforeControl;
+        int resolvedControl = resolvedSince(controlHistory, controlMark);
+
+        // CONTROL B: the stall with the body STANDING STILL. Measured because it separates the two
+        // halves of the driver - a frozen tick loop on its own, versus a frozen tick loop while the
+        // client keeps resolving movement the server has not applied yet.
+        long idleStallMark = lastClientTick();
+        long dropsBeforeIdleStall = clientLong("externalMoveDrops");
+        String idleStall = exec("artest server stall " + STALL_MS);
+        bot().waitTicks(20);
+        long dropsIdleStall = clientLong("externalMoveDrops") - dropsBeforeIdleStall;
+        int resolvedIdleStall = resolvedSince(clientTickHistory(), idleStallMark);
+
+        // THE DRIVER: the key is HELD ACROSS the freeze. The client keeps ticking and keeps walking
+        // him while the server's copy of him stands frozen; when the loop resumes, one server tick
+        // has to absorb everything the client did meanwhile. That accumulated step is what the
+        // reporter's log shows the guard measuring against its flat per-tick 0.2 blocks.
+        //
+        // He is walked to the far edge first, so the whole freeze happens with a deck's width of
+        // runway ahead of him - the freeze is not shortened to fit the fixture, the runway is
+        // arranged to fit the freeze.
+        bot().setLook(180f, 0f);
+        bot().waitTicks(4);
+        bot().holdKey(Keyboard.KEY_W);
+        bot().waitTicks(WALK_BURST_TICKS);
+        bot().releaseKey(Keyboard.KEY_W);
+        bot().setLook(0f, 0f);
+        bot().waitTicks(4);
+        long stallMark = lastClientTick();
+        long dropsBeforeStall = clientLong("externalMoveDrops");
+        double[] beforeStalledWalk = clientPos();
+        bot().holdKey(Keyboard.KEY_W);
+        String stall = exec("artest server stall " + WALK_STALL_MS);
+        // Released the instant the loop resumes, and the window closed with it. The releases this leg
+        // is about arrive as the two sides re-converge, within a tick or two of the resume; every
+        // further tick with the key held only spends runway. Under parallel load the round trips
+        // stretch, and a 1000 ms freeze with six trailing ticks walked him 6.0 blocks off a deck
+        // 5 across - the leg then measured the deck edge and said so (offDeckTicks=3).
+        bot().releaseKey(Keyboard.KEY_W);
+        double stalledWalked = distance(beforeStalledWalk, clientPos());
+        // The window stays open a while longer with the key DOWN: the re-convergence takes a few
+        // ticks, and a window that closes on the release tick is too short to be witnessed (14
+        // resolved ticks, against the 20 every other window in this class is held to). Nothing walks
+        // here, so the runway is not spent.
+        bot().waitTicks(15);
+        String stallHistory = clientTickHistory();
+        long dropsAfterStall = clientLong("externalMoveDrops") - dropsBeforeStall;
+        int resolvedAfterStall = resolvedSince(stallHistory, stallMark);
+        int offDeckAfterStall = offDeckTicksSince(stallHistory, stallMark);
+        String capAfter = exec("artest vs deck-capture");
+
+        String observed = "\n  control A, walk, no stall:   drops=" + dropsControl + " resolved="
+                + resolvedControl + " walked=" + controlWalked
+                + "\n  control B, stall while idle: drops=" + dropsIdleStall + " resolved="
+                + resolvedIdleStall + "  " + idleStall.substring(Math.max(0, idleStall.indexOf('{')))
+                + "\n  walk ACROSS the stall:       drops=" + dropsAfterStall + " resolved="
+                + resolvedAfterStall + " walked=" + stalledWalked
+                + " offDeckTicks=" + offDeckAfterStall
+                + "\n  stall probe: " + stall
+                + "\n  lastDropReason=" + clientString(SHIP_FRAME_TRAVEL, "lastDropReason")
+                + "\n  capture after=" + capAfter
+                + "\n" + mover();
+        System.out.println("[tick-burst]" + observed);
+
+        assertTrue("ARRANGEMENT: both freezes must really have SKIPPED ticks, or nothing was driven - "
+                        + "a stall that advanced the world clock normally is not a stall" + observed,
+                stall.contains("\"ok\":true") && stalledTicks(stall) <= WALK_STALL_MS / 200
+                        && idleStall.contains("\"ok\":true")
+                        && stalledTicks(idleStall) <= STALL_MS / 200);
+        assertTrue("ARRANGEMENT: the client must have resolved the body through every window"
+                        + observed,
+                resolvedControl >= 20 && resolvedIdleStall >= 20 && resolvedAfterStall >= 20);
+        assertTrue("ARRANGEMENT: he must have covered ground both times he walked" + observed,
+                controlWalked > 1.0 && stalledWalked > 1.0);
+        assertTrue("ARRANGEMENT: he must have stayed ON the deck across the stall - a body that "
+                + "walked off the edge is measuring the edge, not the guard" + observed,
+                offDeckAfterStall == 0);
+        assertEquals("CONTROL A: the guard must be quiet for the same walk without a stall, or the "
+                + "count across the stall is not attributable to it" + observed, 0L, dropsControl);
+
+        assertEquals("a skipped-tick burst must not cost a crew member his deck capture: the "
+                + "external-move guard released him " + dropsAfterStall + " time(s) when the server "
+                + "froze for " + WALK_STALL_MS + " ms with his walk key held - against "
+                + dropsControl + " for the same walk with no freeze, and " + dropsIdleStall
+                + " for the same freeze with him standing still. Its allowance is per TICK and flat, "
+                + "so everything the client resolved while the loop was frozen arrives in one server "
+                + "tick and is measured against the budget of a tick that took 50 ms." + observed,
+                0L, dropsAfterStall);
+    }
+
+    /** How long the server's tick loop is frozen: the reporter's own stalls ran 2.87-3.22 s and
+     *  skipped 53-64 ticks. */
+    private static final int STALL_MS = 3000;
+
+    /** The freeze he WALKS across is shorter, and the reason is the fixture's runway rather than the
+     *  mechanism: at ~0.117 blocks per client tick a full three-second freeze carries him seven
+     *  blocks, and this deck is five across. Ten skipped ticks already put ten times the guard's
+     *  per-tick assumption into one server tick, and leave slop for the round trips to stretch
+     *  under parallel load. */
+    private static final int WALK_STALL_MS = 500;
+
+    /** Ticks the world clock advanced across the stall probe's window - the witness that it really
+     *  froze the loop rather than sleeping a command thread beside it. */
+    private static long stalledTicks(String stallJson) {
+        Matcher m = Pattern.compile("\"ticksAdvanced\":(-?\\d+)").matcher(stallJson);
+        return m.find() ? Long.parseLong(m.group(1)) : Long.MAX_VALUE;
+    }
 
     @Test
     public void aPlayerWhoRelogsOnAnInvertedDeckStaysAboardIt() throws Exception {
@@ -184,6 +569,11 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         assertTrue("after the relog he must be captured ABOARD the deck again, or 'he did not "
                 + "drift' would just mean he is standing on something else: " + capNow, aboard);
 
+        // Everything the tight pins below measure is taken from the CLIENT's own per-tick record,
+        // which starts here: the client owns this body's movement, and the server-side probe reads
+        // the server's copy of it.
+        long fromTick = lastClientTick();
+
         // Measured in the SHIP FRAME, one snapshot per sample (see deckPoint's note on the three
         // instruments that were wrong before it). The whole observation is TRACED rather than
         // sampled at two points: what a residual velocity looks like - a decaying slide - and what a
@@ -205,6 +595,8 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         }
         System.out.println("[walk-relog] logoutDeckPoint=" + fmt(logoutOffset) + " seedOutcome="
                 + clientString(SHIP_FRAME_TRAVEL, "lastSeedOutcome") + " trace:" + path);
+        System.out.println("[walk-relog] CLIENT per-tick history (B = the client body's own "
+                + "ship-frame point):\n" + clientTickHistory());
 
         double[] justAfter = trace[0];
         double[] oneSecondLater = trace[4];
@@ -228,20 +620,44 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
                 Math.abs(justAfter[1] - oneSecondLater[1]) < 0.75);
 
         // And he must STAY put - not merely have stopped by then.
-        // TODAY'S BEHAVIOUR, PINNED ON PURPOSE - NOT THE CONTRACT. About a second after the login a
-        // slow creep along the deck sets in, and it is the RESTORE's doing, not the deck's: the
-        // control above puts the same body, on the same deck, over the same window, at 0.0 without a
-        // relog. Everything the restore was supposed to fix is asserted tightly above (he lands on
-        // the recorded point, and for the first second he neither slides nor sinks); this residual
-        // is a separate defect with its own ledger entry. It is pinned at today's magnitude so that
-        // fixing it fails HERE, deliberately, instead of passing unnoticed - the fix tightens this
-        // bound to the control's.
         double afterCreep = alongDeck(oneSecondLater, later);
-        assertTrue("the post-login creep along the deck has grown beyond what was measured when it "
-                + "was logged as a known defect (after the relog he moved " + afterCreep
+        assertTrue("a restored crew member must not creep along the deck once he has landed on it "
+                + "(after the relog he moved " + afterCreep
                 + " blocks along the deck in 30 ticks; the same body before the relog moved "
-                + idleCreep + " over the same window - THAT is what this must eventually equal)"
-                + path, afterCreep < 1.5);
+                + idleCreep + " over the same window)" + path, afterCreep < 0.35);
+
+        // The two CLIENT-side pins, and the reason they exist alongside the sampled trace above.
+        //
+        // (1) ONE deck point. The client is where this body's movement is decided, and what it
+        // decides each tick is a ship-frame point. Held still, that point must not travel: a body
+        // given a recorded position keeps it. The reading is the client's own committed point, so
+        // it carries none of the ship-transform skew that contaminates any position re-derived from
+        // world coordinates while the ship is moving - and the ship IS moving here, for the first
+        // second or so after a rejoin, which is exactly when this used to break.
+        //
+        // (2) ONE capture mode. Standing on a deck is ABOARD (deck gravity, deck camera, deck walk
+        // basis); the world-frame HULL mode is for a body on the ship's outer skin. A body that
+        // alternates between them is in neither contract, and the alternation is what produced (1):
+        // the hull mode re-bases the held deck point onto the body's current world position, so
+        // every flip banked the skew and the crew member ratcheted along his own deck.
+        String history = clientTickHistory();
+        assertTrue("the client's per-tick record must exist, or these pins measure nothing "
+                + "(is the client JVM in test mode?)", history.contains("|B="));
+        double heldTravel = heldPointTravel(history, fromTick);
+        int hullTicks = hullStandTicks(history, fromTick);
+        int covered = resolvedSince(history, fromTick);
+        System.out.println("[walk-relog] CLIENT held-point travel along the deck = " + heldTravel
+                + " over " + covered + " resolved ticks, hullStand ticks = " + hullTicks);
+        // WITNESS: "it did not travel" and "nothing was recorded" are the same number otherwise.
+        assertTrue("the client must have resolved the body through the observation window, or the "
+                + "two pins below cannot fail (" + covered + " ticks recorded)\n" + history,
+                covered > 20);
+        assertTrue("the deck point the client holds him at must not travel along the deck with no "
+                + "input (moved " + heldTravel + " blocks)\n" + history, heldTravel < 0.2);
+        assertTrue("a crew member standing on a deck must stay in ABOARD capture semantics - "
+                + "flipping to the world-frame hull mode re-bases his deck point onto wherever the "
+                + "world thinks he is (" + hullTicks + " hull-stand ticks)\n" + history,
+                hullTicks == 0);
 
         // Gross-misplacement bound: he has to come back on the deck spot he left, not somewhere
         // else on the ship. Loose on purpose - the reference is read one command before the logout
@@ -284,13 +700,177 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
         String st = exec("artest vs shipframe-stats");
         return "SRV[resolved=" + readLong(st, "resolvedTicks")
                 + " declined=" + readLong(st, "declinedTicks")
-                + " worldMoves=" + readLong(st, "worldMoveApplies") + "]"
+                + " worldMoves=" + readLong(st, "worldMoveApplies")
+                + " in=" + readString2(st, "lastInStrafe") + "/" + readString2(st, "lastInForward")
+                + " mShip=(" + readString2(st, "lastMotionShipX") + ","
+                + readString2(st, "lastMotionShipY") + "," + readString2(st, "lastMotionShipZ") + ")"
+                + " carry=(" + readString2(st, "lastCarryX") + "," + readString2(st, "lastCarryY")
+                + "," + readString2(st, "lastCarryZ") + ")"
+                + " guardCarry=" + readString2(st, "lastGuardCarry") + "]"
+                // The client side is deliberately THIN here — every field costs a round trip, and
+                // the round trips stretch the very timeline this trace is sampling. The client's
+                // own per-tick record is read once, at the end (clientTickHistory).
                 + " CLI[resolved=" + clientString(SHIP_FRAME_TRAVEL, "resolvedTicks")
                 + " declined=" + clientString(SHIP_FRAME_TRAVEL, "declinedTicks")
                 + " worldMoves=" + clientString(SHIP_FRAME_TRAVEL, "worldMoveApplies")
                 + " extDrops=" + clientString(SHIP_FRAME_TRAVEL, "externalMoveDrops")
                 + " lastDrop=" + clientString(SHIP_FRAME_TRAVEL, "lastDropReason") + "]"
                 + " srvLastMove=" + readString(st, "lastWorldMove");
+    }
+
+    /**
+     * The CLIENT's own per-tick record of the resolution, read as one field. The sampled trace above
+     * cannot answer this leg's question on its own: it costs a round trip per field, so its
+     * "5 ticks" are really 5 ticks plus the reads, and anything that settles between two samples is
+     * invisible. This is the client body's ship-frame point every tick it was resolved.
+     */
+    private String clientTickHistory() throws Exception {
+        return clientString(SHIP_FRAME_TRAVEL, "tickHistory");
+    }
+
+    /** One line of that record: the resolved-tick number, which capture path produced it, and the
+     *  ship-frame point the client COMMITTED for the body that tick. */
+    private static final Pattern HISTORY_LINE = Pattern.compile(
+            "(\\d+)([afh])\\|B=[^|]*\\|H=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)\\|");
+
+    /**
+     * The same line with the LIVE body point captured instead of the committed one. A separate pattern
+     * rather than extra groups on {@link #HISTORY_LINE}, so the existing helpers' group numbers stay
+     * where they are. The committed point reads perfectly still for a body something else is holding;
+     * this is the one that answers "did the body move along the deck".
+     */
+    private static final Pattern BODY_LINE = Pattern.compile(
+            "(\\d+)([afh])\\|B=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)\\|");
+
+    /** How far the BODY travelled along the deck in the window: first tick after {@code fromTick} to
+     *  the farthest one, so a body that wanders out and back cannot pass. */
+    private double bodyPointTravel(String history, long fromTick) {
+        Matcher m = BODY_LINE.matcher(history);
+        double[] first = null;
+        double worst = 0.0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) <= fromTick) {
+                continue;
+            }
+            double[] point = {Double.parseDouble(m.group(3)), Double.parseDouble(m.group(4)),
+                    Double.parseDouble(m.group(5))};
+            if (first == null) {
+                first = point;
+            } else {
+                worst = Math.max(worst, alongDeck(first, point));
+            }
+        }
+        return worst;
+    }
+
+    /**
+     * The same line read for what came INTO the tick rather than where the body ended up: the walk
+     * inputs the resolver saw, and whether it had the deck under the feet.
+     *
+     * <p>Both are arrangement witnesses for the walking leg, and both were needed the hard way: a
+     * clean drop count means nothing if the key never reached the resolver, and a body that has
+     * walked off a 5x5 deck is measuring the deck edge rather than the guard.</p>
+     */
+    private static final Pattern INPUT_LINE = Pattern.compile(
+            "(\\d+)([afh])\\|B=[^|]*\\|H=[^|]*\\|m=[^|]*\\|c=[^|]*\\|in=(-?[0-9.]+)/(-?[0-9.]+)\\|d=(\\d)");
+
+    /** Ticks after {@code fromTick} in which the resolver saw a nonzero walk input. */
+    private int inputTicksSince(String history, long fromTick) {
+        Matcher m = INPUT_LINE.matcher(history);
+        int n = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick
+                    && (Double.parseDouble(m.group(3)) != 0.0 || Double.parseDouble(m.group(4)) != 0.0)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Ticks after {@code fromTick} the body spent without the deck under it. */
+    private int offDeckTicksSince(String history, long fromTick) {
+        Matcher m = INPUT_LINE.matcher(history);
+        int n = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick && "0".equals(m.group(5))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** A client-side counter as a number, or {@code -1} when it cannot be read. */
+    private long clientLong(String field) throws Exception {
+        String value = clientString(SHIP_FRAME_TRAVEL, field);
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException notANumber) {
+            return -1L;
+        }
+    }
+
+    /** The most recent resolved-tick number in the client's record — the mark an observation starts
+     *  from, so the pins never read ticks from before the window (the record survives the relog:
+     *  the harness reuses one client JVM). */
+    private long lastClientTick() throws Exception {
+        Matcher m = HISTORY_LINE.matcher(clientTickHistory());
+        long last = -1;
+        while (m.find()) {
+            last = Long.parseLong(m.group(1));
+        }
+        return last;
+    }
+
+    /** How far the committed deck point travelled ALONG the deck across the window — first commit
+     *  after {@code fromTick} to the farthest one, not merely the last, so a body that wanders out
+     *  and back cannot pass. */
+    private double heldPointTravel(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        double[] first = null;
+        double worst = 0.0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) <= fromTick) {
+                continue;
+            }
+            double[] held = {Double.parseDouble(m.group(3)), Double.parseDouble(m.group(4)),
+                    Double.parseDouble(m.group(5))};
+            if (first == null) {
+                first = held;
+            } else {
+                worst = Math.max(worst, alongDeck(first, held));
+            }
+        }
+        return worst;
+    }
+
+    private int hullStandTicks(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        int hull = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick && "h".equals(m.group(2))) {
+                hull++;
+            }
+        }
+        return hull;
+    }
+
+    /** How many ticks the window actually covers — a witness that the pins above had something to
+     *  look at, since "no travel" and "no ticks recorded" read the same. */
+    private int resolvedSince(String history, long fromTick) {
+        Matcher m = HISTORY_LINE.matcher(history);
+        int n = 0;
+        while (m.find()) {
+            if (Long.parseLong(m.group(1)) > fromTick) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** A numeric JSON field as text (the probe writes doubles unquoted). */
+    private static String readString2(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\":(-?[0-9.EN\\-]+)").matcher(json);
+        return m.find() ? m.group(1) : "?";
     }
 
     private static long readLong(String json, String key) {

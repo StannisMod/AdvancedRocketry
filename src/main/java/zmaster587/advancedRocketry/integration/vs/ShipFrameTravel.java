@@ -76,6 +76,13 @@ public final class ShipFrameTravel {
     /** Ship-frame obstacles the last resolved sweep saw. Zero on every tick means the deck's blocks
      *  are not being found, and an aboard body falls straight through it. */
     public static volatile int lastObstacleCount = -1;
+    /** The sweep's horizontal collision flags on the last resolved tick, and how many obstacles it
+     *  saw (test diagnostics). A body that is ON the deck, whose input the resolver SEES, and which
+     *  still does not travel has exactly two candidate writers: the sweep zeroing the horizontal
+     *  motion against geometry it is standing in, or something re-applying a committed point over the
+     *  swept result. These flags separate them; without them both readings fit the same numbers. */
+    public static volatile boolean lastSweepCollidedX = false;
+    public static volatile boolean lastSweepCollidedZ = false;
     /** Whether the last resolved entity ended the tick standing on its deck. */
     public static volatile boolean lastOnDeck = false;
     /** Diagnostic: the last measured disagreement between the MOVEMENT frame (VS
@@ -100,6 +107,43 @@ public final class ShipFrameTravel {
     public static volatile double lastMotionShipX = 0.0;
     public static volatile double lastMotionShipY = 0.0;
     public static volatile double lastMotionShipZ = 0.0;
+    /** The HELD carry of the most recent capture install on this side (world frame, per tick) — the
+     *  value the next tick subtracts to recover the ship-relative motion. Paired with
+     *  {@code lastMotionShip*} it separates the two ways a no-input body can still be moving: a
+     *  ship-relative motion the resolver is carrying (motion nonzero) from a held carry that no
+     *  longer matches what the deck is doing (carry stale against {@code lastGuardCarry}). */
+    public static volatile double lastCarryX = 0.0;
+    public static volatile double lastCarryY = 0.0;
+    public static volatile double lastCarryZ = 0.0;
+    /** The LIVE body position in the ship frame, as of the last guard pass on this side — the body's
+     *  own coordinates mapped through its anchor ship's transform, one snapshot. Distinct from the
+     *  capture's committed point ({@code shipFrameX/Y/Z} on the probe), which only changes when the
+     *  resolver commits and therefore reads "perfectly still" for a body something else is holding.
+     *  This is the field to read when the question is "did the body move ALONG THE DECK", and it is
+     *  the only such field a CLIENT e2e can reach: the {@code deck-capture} probe runs on the server
+     *  and answers about the SERVER's copy of the body. */
+    public static volatile double lastBodyLocalX = 0.0;
+    public static volatile double lastBodyLocalY = 0.0;
+    public static volatile double lastBodyLocalZ = 0.0;
+    /**
+     * A bounded per-tick history of this side's ship-frame resolution, oldest first, as one string
+     * (test mode only; empty otherwise). Each resolved tick appends
+     * {@code <n><path>|B=x,y,z|H=x,y,z|m=x,y,z|c=<carry>|in=<strafe>/<forward>|d=<onDeck>}: the
+     * resolved-tick number, which capture path produced it ({@code a} aboard / {@code f} flying /
+     * {@code h} hull-stand), the live BODY point, the HELD (committed) point, the ship-relative
+     * motion the tick was handed, the carry it held, the walk input, and deck contact.
+     *
+     * <p>Read as ONE field at the end of an observation. Sampling the individual {@code last*}
+     * statics once per N ticks costs a network round trip per field, which both stretches the
+     * timeline being measured and hides everything between the samples — a transient that settles
+     * inside one sampling gap is invisible, and a settling transient read at two points is
+     * indistinguishable from a steady drift.</p>
+     */
+    public static volatile String tickHistory = "";
+    /** Cap on {@link #tickHistory}, in characters — the oldest lines are dropped past it. Sized for
+     *  a few hundred ticks of the format above; the whole buffer crosses the wire in one read. */
+    private static final int TICK_HISTORY_CHARS = 20000;
+    private static final StringBuilder TICK_HISTORY = new StringBuilder();
     /** Throttle for the [FF-TRACE/WALK] line (test mode only). */
     private static int walkTraceTicks = 0;
     /** The reason of the most recent capture release on THIS side, or "" — lets a probe/e2e name
@@ -125,6 +169,25 @@ public final class ShipFrameTravel {
     public static volatile double lastDropFrameMovedX, lastDropFrameMovedY, lastDropFrameMovedZ;
     public static volatile double lastDropEntityMovedX, lastDropEntityMovedY, lastDropEntityMovedZ;
     public static volatile double lastDropAllowed = -1.0;
+    /** Ticks between the commit that wrote the released capture and the guard pass that released it.
+     *  The guard's budget is per tick, so this is the number that says whether the released
+     *  displacement could ever have fitted it: {@code 1} means a foreign writer moved the body inside
+     *  one tick, anything larger means the body is simply where this class's own resolution left it N
+     *  ticks ago and the comparison is against the budget of a single tick. {@code -1} when it could
+     *  not be read. */
+    public static volatile long lastDropGapTicks = -1L;
+    /** World time of the most recent commit, stamped onto each per-tick record line. */
+    public static volatile long lastCommitWorldTime = -1L;
+    /** What the physics mod was holding for this body at the last release: its added linear/yaw
+     *  velocity, its last-touched ship and its ground counters. A VELOCITY writer and a POSITION
+     *  writer produce the same released delta, and only this tells them apart. */
+    public static volatile String lastDropVsAdded = "";
+    /** Ticks on which the resolver DECLINED to move a body it still holds, split by cause, so a
+     *  gap above can be attributed without another run. {@code transformGone} is the branch that had
+     *  no trace at all until now - it hands the body to vanilla for the tick and says nothing, which
+     *  is exactly the shape a silent gap has. */
+    public static volatile long declinedNoLocalOrMotion = 0L;
+    public static volatile long declinedTransformGone = 0L;
     /** How many times a resolved tick actually CLEARED the physics mod's own entity-to-ship
      *  association (its drag anchor) on this side. Nonzero proves the drag suppression engaged -
      *  i.e. the mod HAD armed its own mover on a body AR resolves (a boarding fall, a flight
@@ -231,6 +294,13 @@ public final class ShipFrameTravel {
         /** Monotonic install stamp ({@link #CAPTURE_EPOCH}) - lets a pending dismount seed tell a
          *  capture installed DURING its window (which it supersedes) from one that predates it. */
         long installEpoch;
+        /** World time at the commit that wrote this state. The external-move guard compares a
+         *  displacement against a PER-TICK budget, so how many ticks that displacement accumulated
+         *  over is the one number that says whether it can mean anything: a gap of one tick means
+         *  something else moved the body, a gap of many means the guard is measuring this class's
+         *  own body over N ticks against the budget of one. Diagnostic input only - the guard's
+         *  decision does not read it. */
+        long commitWorldTime;
         /** Whether this capture came from a seat-dismount/relog SEED (an explicit deck point)
          *  rather than first contact - a re-sent seed no-ops against it instead of re-snapping. */
         boolean seedAnchored;
@@ -326,9 +396,14 @@ public final class ShipFrameTravel {
                 release(entity, "leftShipRegion");
                 return false;
             }
+            // Every gate below asks about the body's relation to the DECK, at whichever reading is
+            // authoritative on this side - see gatePointFor. The stay-region gate above is
+            // deliberately NOT: leaving the ship is a world-frame fact about where the body
+            // actually is, and a committed point cannot answer it.
+            double[] gate = gatePointFor(entity, state, local);
             // Stepped off the deck onto real world ground: hand it straight back to vanilla, which
             // collides that terrain correctly. (Deliberate world-frame release-to-vanilla test.)
-            if (isSupportedByWorldTerrain(entity) && !isSupportedByShipFor(entity, state.shipId)) {
+            if (isSupportedByWorldTerrain(entity) && !isSupportedByShipAt(entity, state.shipId, gate)) {
                 release(entity, "steppedOntoTerrain");
                 return false;
             }
@@ -338,7 +413,7 @@ public final class ShipFrameTravel {
                 // subspace top face at this attitude): hand over to ABOARD semantics - deck gravity,
                 // deck camera. Losing hull contact (walked off the hull edge, the ship rotated away)
                 // hands the body back to vanilla mid-air.
-                if (shipSupportObstacleCountFor(entity, state.shipId) > 0) {
+                if (shipSupportObstacleCountAt(entity, state.shipId, gate) > 0) {
                     state.hullStand = false;
                     logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
                     return true;
@@ -361,14 +436,14 @@ public final class ShipFrameTravel {
             // cancelling the velocity it entered with (a fast interior entry rises away from the
             // deck in the ship frame before falling back). Interior = the deck's; releasing it
             // here handed a just-captured interior body straight back to world gravity.
-            if (!hasDeckBelowFor(entity, state.shipId)) {
+            if (!hasDeckBelowAt(entity, state.shipId, gate)) {
                 AxisAlignedBB own = VSIntegration.subspaceStayRegion(entity.world, state.shipId, 0.0);
                 boolean interior = own != null
-                        && own.contains(new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]))
+                        && own.contains(new net.minecraft.util.math.Vec3d(gate[0], gate[1], gate[2]))
                         // Same enclosure test as the capture gate: only a ROOFED body (a hull
                         // cavity) is held past the deck probe's reach; open air over the deck
                         // keeps the normal release semantics.
-                        && hasRoofAboveFor(entity, state.shipId);
+                        && hasRoofAboveAt(entity, state.shipId, gate);
                 if (!interior) {
                     if (hullContactFor(entity, state.shipId)) {
                         state.hullStand = true;
@@ -526,7 +601,13 @@ public final class ShipFrameTravel {
         state.carryX = carryX;
         state.carryY = carryY;
         state.carryZ = carryZ;
+        lastCarryX = carryX;
+        lastCarryY = carryY;
+        lastCarryZ = carryZ;
         state.installEpoch = CAPTURE_EPOCH.incrementAndGet();
+        state.commitWorldTime = entity == null || entity.world == null
+                ? -1L : entity.world.getTotalWorldTime();
+        lastCommitWorldTime = state.commitWorldTime;
         STATE.put(entity, state);
     }
 
@@ -1000,7 +1081,11 @@ public final class ShipFrameTravel {
             m.put("supportedByShip", shipObstacles > 0);
             verdict = false;
         } else if (tracked) {
-            int shipObstacles = shipSupportObstacleCountFor(entity, state.shipId);
+            // Asked at the same point the live gate asks it at (gatePointFor), or the probe would
+            // report a different verdict than the code it exists to explain.
+            int shipObstacles = shipSupportObstacleCountAt(entity, state.shipId,
+                    gatePointFor(entity, state, VSIntegration.toShipFrameFor(
+                            entity.world, state.shipId, entity.posX, entity.posY, entity.posZ)));
             m.put("shipFrameResolved", shipObstacles >= 0);
             m.put("shipSupportObstacles", shipObstacles);
             m.put("supportedByShip", shipObstacles > 0);
@@ -1202,14 +1287,54 @@ public final class ShipFrameTravel {
         return m;
     }
 
-    /** Whether a SHIP block sits directly beneath the entity's feet, tested in the ANCHORED ship
-     *  {@code shipId}'s frame (where the deck is axis-aligned) — the form every decision about a
-     *  tracked body uses (contract C2). The probe reaches further for a fast faller so it is caught
-     *  before it can tunnel through a thin deck in one tick. Ship blocks live in a subspace never at
-     *  the entity's world position, so this is what tells "standing on the deck" from "standing on
-     *  the ground". */
-    private static boolean isSupportedByShipFor(Entity entity, String shipId) {
-        return shipSupportObstacleCountFor(entity, shipId) > 0;
+    /** Whether a SHIP block sits directly beneath the entity's feet at the given ship-frame point,
+     *  tested in the ANCHORED ship {@code shipId}'s frame (where the deck is axis-aligned) — the
+     *  form every decision about a tracked body uses (contract C2). The probe reaches further for a
+     *  fast faller so it is caught before it can tunnel through a thin deck in one tick. Ship blocks
+     *  live in a subspace never at the entity's world position, so this is what tells "standing on
+     *  the deck" from "standing on the ground". */
+    private static boolean isSupportedByShipAt(Entity entity, String shipId, double[] local) {
+        return shipSupportObstacleCountAt(entity, shipId, local) > 0;
+    }
+
+    /**
+     * The ship-frame point the deck-vs-hull gates must be asked at for a TRACKED body: whichever of
+     * the two available readings is AUTHORITATIVE on this side.
+     *
+     * <p>The readings are the point this class last COMMITTED and the body's live world position
+     * mapped back through the ship transform, and on a MOVING ship they disagree. A resolved body's
+     * world position is written once per game tick from the committed subspace point while the
+     * physics mod advances the transform on its own thread, so the re-derived point is the
+     * committed one plus however far the transform has stepped since — up to ~0.15 blocks per tick
+     * on a ship settling after a client rejoin. The skew dips a standing body a few centimetres
+     * "below" its own deck; the floor-below probe then finds nothing under it and the deck hands it
+     * to the world-frame hull mode, which re-bases the held point onto that world position. The two
+     * modes then alternate and ratchet a standing crew member along his own deck with no input.</p>
+     *
+     * <p>So the side that DECIDES the body's movement asks at its own committed point, which cannot
+     * skew: it is the value the sweep produced, in the frame the sweep produced it in. The side that
+     * merely FOLLOWS asks at the live position, because there the incoming position IS the truth and
+     * its own committed point is a guess that may sit up to the external-move guard's slack away
+     * from it — asked there, the gates read "no deck below" for a body the owner has standing on
+     * one, and a dismounted pilot inside a ship was demoted to hull semantics for it. That is the
+     * same split, for the same reason, as the follow branch in {@link #heldShipFramePos};
+     * {@link #followsRemoteOwner} is the one predicate for both.</p>
+     */
+    private static double[] gatePointFor(Entity entity, ShipFrameState state, double[] live) {
+        return followsRemoteOwner(entity)
+                ? live
+                : new double[]{state.localX, state.localY, state.localZ};
+    }
+
+    /** Whether this side merely FOLLOWS the body's movement rather than deciding it: a real
+     *  player's movement is client-authoritative, so the server's copy of him is a follower and the
+     *  position arriving by packet outranks anything the server computed for itself. Every other
+     *  case — the client's own player, a mob or armour stand on either side, a fake player — is
+     *  decided on the side that is asking. */
+    private static boolean followsRemoteOwner(Entity entity) {
+        return entity != null && entity.world != null && !entity.world.isRemote
+                && entity instanceof net.minecraft.entity.player.EntityPlayerMP
+                && !(entity instanceof net.minecraftforge.common.util.FakePlayer);
     }
 
     /** {@link #shipSupportObstacleCount}, resolved through the ship {@code shipId} instead of a
@@ -1221,8 +1346,13 @@ public final class ShipFrameTravel {
      *  captured the hull-top stander into a frame that can never seat him (no floor under him in
      *  subspace), and ship-frame gravity then flung him world-up off the hull - the #49 thrash. */
     private static int shipSupportObstacleCountFor(Entity entity, String shipId) {
-        double[] local = VSIntegration.toShipFrameFor(
-                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        return shipSupportObstacleCountAt(entity, shipId, VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ));
+    }
+
+    /** As above, at an explicit ship-frame point (see {@link #gatePointOf}); {@code -1} for a null
+     *  point, which is the same "ship not loaded" answer the derivation would have produced. */
+    private static int shipSupportObstacleCountAt(Entity entity, String shipId, double[] local) {
         if (local == null) {
             return -1;
         }
@@ -1316,8 +1446,12 @@ public final class ShipFrameTravel {
      *  the anchored ship's frame. Returns true on a failed lookup - the unloaded-ship release is
      *  {@code handles()}'s own gate, not this one's. */
     private static boolean hasDeckBelowFor(Entity entity, String shipId) {
-        double[] local = VSIntegration.toShipFrameFor(
-                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        return hasDeckBelowAt(entity, shipId, VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ));
+    }
+
+    /** As above, at an explicit ship-frame point (see {@link #gatePointOf}). */
+    private static boolean hasDeckBelowAt(Entity entity, String shipId, double[] local) {
         if (local == null) {
             return true;
         }
@@ -1367,8 +1501,12 @@ public final class ShipFrameTravel {
      *  overhead is what distinguishes a hull CAVITY - a hatch entry, an inverted cockpit - from
      *  open air over a deck. */
     private static boolean hasRoofAboveFor(Entity entity, String shipId) {
-        double[] local = VSIntegration.toShipFrameFor(
-                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        return hasRoofAboveAt(entity, shipId, VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ));
+    }
+
+    /** As above, at an explicit ship-frame point (see {@link #gatePointOf}). */
+    private static boolean hasRoofAboveAt(Entity entity, String shipId, double[] local) {
         if (local == null) {
             return false;
         }
@@ -1488,6 +1626,45 @@ public final class ShipFrameTravel {
     }
 
     /**
+     * Append one resolved tick to {@link #tickHistory}. Test-gated: the buffer and the string it
+     * publishes exist only under {@code -Dadvancedrocketry.tests=true}.
+     */
+    private static void noteTickHistory(char path, double heldX, double heldY, double heldZ,
+                                        double carryX, double carryY, double carryZ,
+                                        boolean onDeck) {
+        if (!zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+            return;
+        }
+        // The motion recorded is the INCOMING ship-relative velocity (before this tick's input and
+        // gravity): that is what a no-input body arrives carrying, and a nonzero value there is the
+        // signature of a velocity writer rather than a position writer.
+        // The trailing |w= is the WORLD TIME of the commit, and it is appended (like |s= before it)
+        // so the existing readers' patterns keep matching. The leading number counts RESOLVED ticks,
+        // so consecutive lines cannot show a tick on which the resolver did NOT commit - and a gap
+        // between two commits is precisely what makes a per-tick guard budget meaningless. With the
+        // world time on every line, a gap is visible in the record itself rather than only inferable.
+        String line = String.format(java.util.Locale.ROOT,
+                "%d%c|B=%.3f,%.3f,%.3f|H=%.3f,%.3f,%.3f|m=%.4f,%.4f,%.4f|c=%.4f|in=%.1f/%.1f|d=%d"
+                        + "|s=%d%d/%d|w=%d%n",
+                resolvedTicks, path,
+                lastBodyLocalX, lastBodyLocalY, lastBodyLocalZ, heldX, heldY, heldZ,
+                lastMotionShipX, lastMotionShipY, lastMotionShipZ,
+                Math.sqrt(carryX * carryX + carryY * carryY + carryZ * carryZ),
+                lastInStrafe, lastInForward, onDeck ? 1 : 0,
+                lastSweepCollidedX ? 1 : 0, lastSweepCollidedZ ? 1 : 0, lastObstacleCount,
+                lastCommitWorldTime);
+        synchronized (TICK_HISTORY) {
+            TICK_HISTORY.append(line);
+            int over = TICK_HISTORY.length() - TICK_HISTORY_CHARS;
+            if (over > 0) {
+                int cut = TICK_HISTORY.indexOf("\n", over);
+                TICK_HISTORY.delete(0, cut < 0 ? over : cut + 1);
+            }
+            tickHistory = TICK_HISTORY.toString();
+        }
+    }
+
+    /**
      * Resolve {@code travel(strafe, vertical, forward)} in the entity's ship frame.
      *
      * @param jumpMovementFactor the entity's airborne move factor (protected in vanilla; the mixin
@@ -1536,6 +1713,7 @@ public final class ShipFrameTravel {
                 entity.motionZ - anchored.carryZ);
         if (local == null || motion == null) {
             declinedTicks++;
+            declinedNoLocalOrMotion++;
             // A declined tick hands this body to VANILLA travel while the capture stays held:
             // vanilla applies world-frame gravity and moves the body world-down, and the NEXT
             // tick's guard then reads that as an external move (entityMoved = world-down). Trace
@@ -1611,6 +1789,8 @@ public final class ShipFrameTravel {
         Sweep sweep = sweepShipFrame(world, entity, local, motion[0], motion[1], motion[2], wasOnDeck);
 
         boolean onDeck = sweep.collidedVertically && sweep.wantY < 0.0;
+        lastSweepCollidedX = sweep.collidedX;
+        lastSweepCollidedZ = sweep.collidedZ;
         if (sweep.collidedX) motion[0] = 0.0;
         if (sweep.collidedY) motion[1] = 0.0;
         if (sweep.collidedZ) motion[2] = 0.0;
@@ -1628,6 +1808,19 @@ public final class ShipFrameTravel {
                 motion[0], motion[1], motion[2]);
         if (worldPos == null || worldMotion == null) {
             declinedTicks++;
+            declinedTransformGone++;
+            // Traced for the same reason as the branch above, and it was the ONLY decline path with
+            // no trace at all: it leaves the body to vanilla for the tick, silently, and the next
+            // tick's guard then reads a full tick of vanilla movement as a foreign teleport.
+            if (zmaster587.advancedRocketry.command.test.TestProbeCommandRegistration.isTestMode()) {
+                zmaster587.advancedRocketry.AdvancedRocketry.logger.info("[FF-TRACE/DECLINE]"
+                        + " transformGone remote=" + world.isRemote
+                        + " id=" + entity.getEntityId()
+                        + " ship=" + shipId
+                        + " worldPos=" + (worldPos != null)
+                        + " worldMotion=" + (worldMotion != null)
+                        + " pos=(" + entity.posX + "," + entity.posY + "," + entity.posZ + ")");
+            }
             return false; // the ship went away mid-tick; leave the entity untouched for vanilla
         }
         resolvedTicks++;
@@ -1683,6 +1876,7 @@ public final class ShipFrameTravel {
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }
+        noteTickHistory('a', sweep.x, sweep.y, sweep.z, carryX, carryY, carryZ, onDeck);
         return true;
     }
 
@@ -1750,6 +1944,8 @@ public final class ShipFrameTravel {
         // Sweep the deck-aligned box; a flyer still collides with his ship's geometry.
         Sweep sweep = sweepShipFrame(world, entity, local, motion[0], motion[1], motion[2], false);
         boolean onDeck = sweep.collidedVertically && sweep.wantY < 0.0;
+        lastSweepCollidedX = sweep.collidedX;
+        lastSweepCollidedZ = sweep.collidedZ;
         if (sweep.collidedX) motion[0] = 0.0;
         if (sweep.collidedY) motion[1] = 0.0;
         if (sweep.collidedZ) motion[2] = 0.0;
@@ -1795,6 +1991,7 @@ public final class ShipFrameTravel {
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }
+        noteTickHistory('f', sweep.x, sweep.y, sweep.z, carryX, carryY, carryZ, onDeck);
         return true;
     }
 
@@ -1955,6 +2152,7 @@ public final class ShipFrameTravel {
         if (VSIntegration.suppressShipDrag(entity)) {
             dragSuppressions++;
         }
+        noteTickHistory('h', sub[0], sub[1], sub[2], carryX, carryY, carryZ, grounded);
         return true;
     }
 
@@ -2093,6 +2291,11 @@ public final class ShipFrameTravel {
             // between handles() and here; hand back the held point and let travel() decline.
             return new double[]{state.localX, state.localY, state.localZ};
         }
+        // The live body point, published for observers (see the field's note on why the capture's
+        // committed point cannot answer a question about motion).
+        lastBodyLocalX = local[0];
+        lastBodyLocalY = local[1];
+        lastBodyLocalZ = local[2];
         double dx = local[0] - state.localX;
         double dy = local[1] - state.localY;
         double dz = local[2] - state.localZ;
@@ -2140,9 +2343,7 @@ public final class ShipFrameTravel {
             // the stay region / terrain gates in handles(). Non-player bodies (mobs, stands) keep the
             // guard: the resolving side OWNS their movement, so a large drift there really is an
             // external mover.
-            if (!entity.world.isRemote
-                    && entity instanceof net.minecraft.entity.player.EntityPlayerMP
-                    && !(entity instanceof net.minecraftforge.common.util.FakePlayer)) {
+            if (followsRemoteOwner(entity)) {
                 state.localX = local[0];
                 state.localY = local[1];
                 state.localZ = local[2];
@@ -2152,6 +2353,27 @@ public final class ShipFrameTravel {
                 return local;
             }
             externalMoveDrops++;
+            // How many ticks the released displacement accumulated over. The guard's budget is per
+            // tick and flat, so this number decides which of the two possible writers is being
+            // measured, and nothing else in the trace can: a gap of ONE tick means someone else moved
+            // the body between our commit and now; a gap of MANY means the body is where this class's
+            // own resolution left it several ticks ago and the comparison is against the wrong budget.
+            lastDropGapTicks = entity.world == null
+                    ? -1L : entity.world.getTotalWorldTime() - state.commitWorldTime;
+            // The OTHER candidate writer, asked directly instead of inferred: the physics mod's own
+            // entity drag. It writes a VELOCITY (its added linear velocity) rather than a position,
+            // which is the signature a body drifting at ZERO INPUT actually has; the drag suppression
+            // clears it on every resolved tick, so a nonzero value here says the suppression did not
+            // hold. Read only at a release, so it costs nothing in the common path.
+            lastDropVsAdded = "";
+            java.util.Map<String, Object> vs = VSIntegration.getEntityShipMovementData(entity);
+            if (vs != null) {
+                lastDropVsAdded = "(" + vs.get("addedVelX") + "," + vs.get("addedVelY") + ","
+                        + vs.get("addedVelZ") + ") yaw=" + vs.get("addedYawVelocity")
+                        + " touched=" + vs.get("lastTouchedShip")
+                        + " sinceTouched=" + vs.get("ticksSinceTouchedShip")
+                        + " partOfGround=" + vs.get("ticksPartOfGround");
+            }
             lastDropFrameMovedX = fmx;
             lastDropFrameMovedY = fmy;
             lastDropFrameMovedZ = fmz;
@@ -2160,13 +2382,18 @@ public final class ShipFrameTravel {
             lastDropEntityMovedZ = emz;
             lastDropAllowed = allowed;
             double worldMiss = Math.sqrt(emx * emx + emy * emy + emz * emz);
-            release(entity, "externalMove(sub) d2=" + (dx * dx + dy * dy + dz * dz)
+            release(entity, "externalMove(sub) gapTicks=" + lastDropGapTicks
+                    + " d2=" + (dx * dx + dy * dy + dz * dz)
                     + " dSub=(" + dx + "," + dy + "," + dz + ")"
                     + " held=(" + state.localX + "," + state.localY + "," + state.localZ + ")"
                     + " worldMiss=" + worldMiss
                     + " frameMoved=(" + fmx + "," + fmy + "," + fmz + ")"
                     + " entityMoved=(" + emx + "," + emy + "," + emz + ")"
-                    + " allowed=" + allowed + " carrySeen=" + carrySeen);
+                    + " allowed=" + allowed + " carrySeen=" + carrySeen
+                    + " motionShip=(" + lastMotionShipX + "," + lastMotionShipY + ","
+                    + lastMotionShipZ + ") in=" + lastInStrafe + "/" + lastInForward
+                    + " dragSuppressions=" + dragSuppressions
+                    + " vsAdded=" + lastDropVsAdded);
             return null;
         }
         return new double[]{state.localX, state.localY, state.localZ};

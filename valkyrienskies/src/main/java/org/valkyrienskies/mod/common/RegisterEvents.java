@@ -18,6 +18,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.registry.EntityEntry;
 import net.minecraftforge.fml.common.registry.EntityEntryBuilder;
+import zmaster587.advancedRocketry.network.EntityNetworkIds;
 
 @Mod.EventBusSubscriber(modid = ValkyrienSkiesMod.HOST_MOD_ID)
 public class RegisterEvents {
@@ -70,19 +71,25 @@ public class RegisterEvents {
                 "entity_mountable");
         final ResourceLocation entityMountableChair = new ResourceLocation(ValkyrienSkiesMod.MOD_ID,
                 "entity_mountable_chair");
-        // Used to ensure no duplicates of entity network id's
-        int entityId = 0;
+        // Entity network ids are resolved PER MOD CONTAINER, and this code is vendored into the
+        // host mod instead of being loaded as its own: these ids therefore share one numbering
+        // space with the host's entities and with anything else vendored beside them. A local
+        // counter starting from 0 collided with the host's first two entities, and a receiving
+        // client - which resolves an id to the FIRST registration under the mod carrying it -
+        // rebuilt every mountable as one of those, then applied this entity's synced fields to it
+        // slot by slot. The host owns the shared space: declare an entity in EntityNetworkIds and
+        // read its id back here. Never count locally - a local counter cannot see the space.
         event.getRegistry()
                 .registerAll(
                         EntityEntryBuilder.create()
                                 .entity(EntityMountable.class)
-                                .id(entityMountable, entityId++)
+                                .id(entityMountable, EntityNetworkIds.of(entityMountable))
                                 .name(entityMountable.getResourcePath())
                                 .tracker(ValkyrienSkiesMod.VS_ENTITY_LOAD_DISTANCE, 1, false)
                                 .build(),
                         EntityEntryBuilder.create()
                                 .entity(EntityMountableChair.class)
-                                .id(entityMountableChair, entityId++)
+                                .id(entityMountableChair, EntityNetworkIds.of(entityMountableChair))
                                 .name(entityMountableChair.getResourcePath())
                                 .tracker(ValkyrienSkiesMod.VS_ENTITY_LOAD_DISTANCE, 1, false)
                                 .build()

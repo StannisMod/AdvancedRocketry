@@ -27,13 +27,13 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
-import net.minecraftforge.fml.common.registry.EntityRegistry;
 import net.minecraftforge.fml.common.registry.GameRegistry;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.apache.logging.log4j.Logger;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.Constants;
+import zmaster587.advancedRocketry.network.EntityNetworkIds;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -116,9 +116,10 @@ public class AdvancedForceFieldSystem {
         GameRegistry.registerTileEntity(TileEntityShieldConsole.class, new ResourceLocation(MODID, "shield_console"));
         GameRegistry.registerTileEntity(TileEntityAdminEnergySource.class, new ResourceLocation(MODID, "admin_energy_source"));
         GameRegistry.registerTileEntity(TileEntityContourInjector.class, new ResourceLocation(MODID, "contour_injector"));
-        // Owner is AR's mod instance (the guest is folded into AR's container); the
-        // per-mod entity id must be free in AR's namespace (AR uses 0..9) → 10.
-        EntityRegistry.registerModEntity(new ResourceLocation(MODID, "laser_bolt"), EntityLaserBolt.class, "laser_bolt", 10, AdvancedRocketry.instance, 64, 10, true);
+        // Owner is AR's mod instance (the guest is folded into AR's container), so this entity lives
+        // in the host's one container-wide network id space and takes its id from the space's owner
+        // instead of a number chosen here. Declare a new entity there before registering it.
+        EntityNetworkIds.register(new ResourceLocation(MODID, "laser_bolt"), EntityLaserBolt.class, "laser_bolt", AdvancedRocketry.instance, 64, 10, true);
         if (event.getSide().isClient()) {
             com.github.stannismod.affs.client.ClientEntityRenderRegistry.init();
         }

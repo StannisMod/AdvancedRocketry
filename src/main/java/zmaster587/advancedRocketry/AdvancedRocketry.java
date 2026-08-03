@@ -333,30 +333,9 @@ public class AdvancedRocketry {
         //Register cap events
         MinecraftForge.EVENT_BUS.register(new CapabilityProtectiveArmor());
 
-        //Register Packets
-        PacketHandler.INSTANCE.addDiscriminator(PacketDimInfo.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketSatellite.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketStellarInfo.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketItemModifcation.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketOxygenState.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketStationUpdate.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketSpaceStationInfo.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketAtmSync.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketBiomeIDChange.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketStorageTileUpdate.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketLaserGun.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketAsteroidInfo.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketAirParticle.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketInvalidLocationNotify.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketConfigSync.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketFluidParticle.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketSatellitesUpdate.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketSyncKnownPlanets.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketBackToRocketGui.class);
-        PacketHandler.INSTANCE.addDiscriminator(PacketDeckCapture.class);
-        PacketHandler.INSTANCE.addDiscriminator(zmaster587.advancedRocketry.network.PacketSlotDimSync.class);
-        PacketHandler.INSTANCE.addDiscriminator(zmaster587.advancedRocketry.network.PacketSystemBodiesSync.class);
-        PacketHandler.INSTANCE.addDiscriminator(zmaster587.advancedRocketry.network.PacketNavBodyInfo.class);
+        //Register Packets - the discriminator space is declared in PacketRegistry, which owns the
+        //wire order; a packet is added by appending it there, never by a call from here.
+        PacketRegistry.registerAll();
 
         //if(zmaster587.advancedRocketry.api.Configuration.allowMakingItemsForOtherMods)
         MinecraftForge.EVENT_BUS.register(this);
@@ -375,22 +354,27 @@ public class AdvancedRocketry {
 
 
         //Entity Registration ---------------------------------------------------------------------------------------------
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "mountDummy"), EntityDummy.class, "mountDummy", 0, this, 16, 20, false);
+        // The per-mod network id a client resolves an incoming spawn with is scoped to the MOD
+        // CONTAINER - which this jar's vendored code bases share with this mod - and nothing in
+        // Forge rejects a duplicate: the client builds whichever registered first and then reads
+        // another entity's fields out of it. EntityNetworkIds owns that one space and supplies the
+        // id, so no registration here names a number; a new entity is declared there first.
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "mountDummy"), EntityDummy.class, "mountDummy", this, 16, 20, false);
         // updateFrequency=1: Free Flight is a fast, piloted arcade craft whose
         // server motion the FA control loop nudges every tick. At the old 3-tick
         // cadence the client dead-reckoned across stale samples and the position
         // error sawtoothed the first-person camera (visible jitter). Per-tick
         // pos/rotation/velocity sync shrinks the correction to one tick's error —
         // smooth. One piloted rocket's extra tracker traffic is negligible.
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", 1, this, 64, 1, true);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "laserNode"), EntityLaserNode.class, "laserNode", 2, instance, 256, 20, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "deployedRocket"), EntityStationDeployedRocket.class, "deployedRocket", 3, this, 256, 600, true);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARAbductedItem"), EntityItemAbducted.class, "ARAbductedItem", 4, this, 127, 600, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARPlanetUIItem"), EntityUIPlanet.class, "ARPlanetUIItem", 5, this, 64, 1, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARPlanetUIButton"), EntityUIButton.class, "ARPlanetUIButton", 6, this, 64, 20, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARStarUIButton"), EntityUIStar.class, "ARStarUIButton", 7, this, 64, 20, false);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARSpaceElevatorCapsule"), EntityElevatorCapsule.class, "ARSpaceElevatorCapsule", 8, this, 64, 20, true);
-        EntityRegistry.registerModEntity(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", 9, this, 64, 1, true);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "rocket"), EntityRocket.class, "rocket", this, 64, 1, true);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "laserNode"), EntityLaserNode.class, "laserNode", instance, 256, 20, false);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "deployedRocket"), EntityStationDeployedRocket.class, "deployedRocket", this, 256, 600, true);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARAbductedItem"), EntityItemAbducted.class, "ARAbductedItem", this, 127, 600, false);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARPlanetUIItem"), EntityUIPlanet.class, "ARPlanetUIItem", this, 64, 1, false);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARPlanetUIButton"), EntityUIButton.class, "ARPlanetUIButton", this, 64, 20, false);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARStarUIButton"), EntityUIStar.class, "ARStarUIButton", this, 64, 20, false);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARSpaceElevatorCapsule"), EntityElevatorCapsule.class, "ARSpaceElevatorCapsule", this, 64, 20, true);
+        EntityNetworkIds.register(new ResourceLocation(Constants.modId, "ARHoverCraft"), EntityHoverCraft.class, "hovercraft", this, 64, 1, true);
 
         //TileEntity Registration ---------------------------------------------------------------------------------------------
         GameRegistry.registerTileEntity(TileBrokenPart.class, "ARbrokenPart");
