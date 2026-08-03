@@ -1379,6 +1379,15 @@ public class AdvancedRocketry {
     }
 
 
+    /**
+     * The worlds are still up and the last save has not run yet — the only moment a ship that is mid-jump
+     * can be brought fully up to date before the server writes what a returning player will resume from.
+     */
+    @EventHandler
+    public void serverStopping(net.minecraftforge.fml.common.event.FMLServerStoppingEvent event) {
+        zmaster587.advancedRocketry.space.SpaceSubsystem.onServerStopping();
+    }
+
     @EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
         zmaster587.advancedRocketry.wirelessdata.NetworkRegistry.clear();

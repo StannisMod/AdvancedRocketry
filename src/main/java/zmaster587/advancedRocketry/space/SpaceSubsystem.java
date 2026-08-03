@@ -40,6 +40,8 @@ public final class SpaceSubsystem {
     private static int gcTickCounter;
     /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
     private static boolean pressureGcRequested;
+    /** Armed by {@link #armSaveFaultOnce()}; consumed by the next save point that reaches it. */
+    private static boolean saveFaultArmed;
 
     private SpaceSubsystem() { }
 
@@ -310,6 +312,60 @@ public final class SpaceSubsystem {
         return SpaceSubsystem::cellFrameOriginAt;
     }
 
+    /**
+     * Take a final cut of every parked ship before the server writes its last save. Called from the
+     * server-STOPPING hook, which runs while the worlds are still up and before {@code stopServer} saves
+     * them; the periodic re-cut alone would leave the shutdown snapshot up to one period out of date, and
+     * the shutdown save is the one a returning player actually resumes from. A no-op while the subsystem
+     * is down, and it never propagates: a stop must not be turned into a crash by a snapshot.
+     */
+    public static void onServerStopping() {
+        if (transitManager == null) {
+            return;
+        }
+        try {
+            int refreshed = transitManager.refreshSnapshots();
+            if (refreshed > 0) {
+                AdvancedRocketry.logger.info("[SPACE] re-cut {} in-flight ship(s) before the shutdown save",
+                        refreshed);
+            }
+        } catch (Exception failed) {
+            AdvancedRocketry.logger.error("[SPACE] could not re-cut the in-flight ships before shutdown; "
+                    + "each jump keeps the snapshot it already carries", failed);
+        }
+    }
+
+    /**
+     * Arm a one-shot failure inside the next ship-ledger save point. The subsystem promises that a save
+     * which fails part-way leaves the previously persisted fleet intact and leaves the server running,
+     * and that promise is only worth what a test can make fail — the gather it protects is otherwise
+     * total, which is the whole point of it and also why nothing can be made to break from outside.
+     * Fired and disarmed by the first save that reaches it.
+     */
+    public static void armSaveFaultOnce() {
+        saveFaultArmed = true;
+    }
+
+    /**
+     * Whether an armed save fault is still waiting to fire. It going false is how an observer knows a
+     * save point actually reached the fault — which matters because the save that can take the server
+     * down is the world autosave, not one a command asked for.
+     */
+    public static boolean isSaveFaultArmed() {
+        return saveFaultArmed;
+    }
+
+    /**
+     * The armed fault, thrown from the middle of a save point's gather — where a mistake in that gather
+     * would land, which is the one failure the handler undertakes to survive.
+     */
+    private static void failSavePointIfArmed() {
+        if (saveFaultArmed) {
+            saveFaultArmed = false;
+            throw new IllegalStateException("armed ship-ledger save fault");
+        }
+    }
+
     /** Server-stop teardown. The slot dimensions stay registered (JVM-global); only the controller resets. */
     public static void onServerStopped() {
         instance = null;
@@ -319,6 +375,7 @@ public final class SpaceSubsystem {
         descentController = null;
         gcTickCounter = 0;
         pressureGcRequested = false;
+        saveFaultArmed = false;
         SystemBodiesProducer.reset();
         zmaster587.advancedRocketry.universe.SystemContent.reset();
         HyperspaceWorld.reset();
@@ -451,25 +508,73 @@ public final class SpaceSubsystem {
          * shutdown save is the last one there is, and nothing writes map storage after it, so the
          * final state of every ship would be silently dropped on a clean server stop. For a subsystem
          * whose entire purpose is surviving a restart, that is the one save that must not be lost.</p>
+         *
+         * <p><b>Nothing here may destroy, and nothing recoverable may escape.</b> This handler once ran
+         * as a sequence of destructive steps — empty the stored ships, refill them, then go and fetch
+         * the in-flight ones — and a failure between two of those steps left the store holding an empty
+         * fleet, which the next flush made permanent. It also took the server down with it, because a
+         * throw out of a dim-0 save event aborts the loop over the remaining worlds (that loop catches
+         * only its own world exceptions) and then the tick loop itself. So the whole body is gathered
+         * first and applied in one step that cannot half-run, and a failure it can carry on past is
+         * logged rather than propagated: a save point that fails must cost one stale cycle, never a
+         * fleet and never the server.</p>
          */
         @SubscribeEvent
         public void onWorldSave(net.minecraftforge.event.world.WorldEvent.Save event) {
             if (shipLedger == null || event.getWorld().provider.getDimension() != 0) {
                 return;
             }
-            ShipLedgerData data = ShipLedgerData.get(event.getWorld());
-            if (data != null) {
-                data.saveFrom(shipLedger);
-                if (transitManager != null) {
-                    data.saveTransits(transitManager.exportTransits());
+            try {
+                ShipLedgerData data = ShipLedgerData.get(event.getWorld());
+                if (data == null) {
+                    AdvancedRocketry.logger.error("[SPACE] the durable ship ledger could not be resolved "
+                            + "on this save - every ship's position is going unwritten this pass");
+                    return;
                 }
-                if (instance != null) {
-                    data.saveVisits(instance.exportVisits());
+                // Gather EVERYTHING before touching the store. Whatever fails in here - a physics-mod
+                // hiccup, a class that will not load - leaves the previously persisted snapshot exactly
+                // as it was, which is a stale answer rather than a lost fleet.
+                java.util.Map<java.util.UUID, ShipLedger.Entry> live = shipLedger.snapshot();
+                java.util.List<TransitRecord> inFlight = transitManager == null
+                        ? java.util.Collections.<TransitRecord>emptyList()
+                        : transitManager.exportTransits();
+                java.util.Map<String, Long> visits = instance == null
+                        ? java.util.Collections.<String, Long>emptyMap() : instance.exportVisits();
+                failSavePointIfArmed();
+                java.util.List<java.util.UUID> dropped = data.replaceAll(live, inFlight, visits);
+                if (!dropped.isEmpty()) {
+                    AdvancedRocketry.logger.error("[SPACE] refusing to persist a ship ledger that would "
+                            + "lose {} ship(s) - {} is/are recorded as flying but no in-flight jump "
+                            + "carries them, so this save would store them nowhere. The previously saved "
+                            + "state is kept instead. This state should be unreachable - treat it as a "
+                            + "bug report.", dropped.size(), dropped);
+                    return;
                 }
                 net.minecraft.world.storage.MapStorage storage = event.getWorld().getMapStorage();
                 if (storage != null) {
                     storage.saveAllData();
+                    // saveAllData walks every registered store in one unguarded loop, so an error raised
+                    // by somebody else's store can end the pass before ours is reached - and it stays
+                    // dirty when that happens. On an autosave the next pass picks it up; on the shutdown
+                    // save there is no next pass, so say so rather than let the ledger vanish quietly.
+                    if (data.isDirty()) {
+                        AdvancedRocketry.logger.error("[SPACE] the ship ledger was not written during this "
+                                + "save pass (another world-saved-data aborted it); if this was the "
+                                + "shutdown save, the last session's ship positions did not reach disk");
+                    }
                 }
+            } catch (Exception failed) {
+                // Exceptions, and deliberately nothing wider. What this can meaningfully carry on past
+                // is a mistake in the gathering above - a null nobody expected, a collection changed
+                // under an iterator - and there one stale cycle is a far better price than the whole
+                // save pass. An Error is a different animal: the JVM or the class loader is already
+                // broken, this handler cannot mend it, and swallowing one would trade a crash report -
+                // which is exactly how the bug behind this rewrite was found - for an ERROR line every
+                // autosave forever. The fleet does not depend on this catch either way: the gather
+                // above touches the store only once it holds every value, so a throw of ANY kind
+                // leaves the previously persisted snapshot intact.
+                AdvancedRocketry.logger.error("[SPACE] the ship-ledger save step failed; the previously "
+                        + "persisted snapshot is left untouched and the server keeps running", failed);
             }
         }
     }

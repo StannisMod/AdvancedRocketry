@@ -89,6 +89,13 @@ public final class LoginRestore {
         double[] overworldSpawn();
     }
 
+    /**
+     * Told to a returning player whose ship the server has no record of. He was aboard something when
+     * he left and is standing at his spawn point now; without this the only trace is a server log line
+     * he cannot read, and the first thing he knows about it is that his ship is not where he left it.
+     */
+    public static final String MSG_SHIP_UNKNOWN = "msg.loginrestore.shipunknown";
+
     /** Why a placement is what it is — carried into the log line and the diagnostic surface. */
     public enum Reason {
         /** Restored into his ship's own cell; the ship is settled there. */

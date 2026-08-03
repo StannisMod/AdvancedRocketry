@@ -11,7 +11,9 @@ import static org.junit.Assert.assertTrue;
 /**
  * E2E: can a restored in-flight tier-2 jump rebuild its ship by PASTING a block snapshot into the target
  * cell? A ship departs into hyperspace; its {@code StorageChunk} snapshot is re-cut from the parked
- * hyperspace ship. We then simulate a restart in-process: the live transit manager is discarded (its parked
+ * hyperspace ship by the periodic refresh (driven on demand here — it is deliberately NOT on the save
+ * path, where a physics-world call once cost a whole fleet). We then simulate a restart in-process: the
+ * live transit manager is discarded (its parked
  * hyperspace ship is orphaned and can never arrive) and the transit is rebuilt from the exported record
  * alone. The restored transit holds no hyperspace ship, so it can only complete through
  * {@code VSShipCrosser.completeRestored} / {@code VSIntegration.pasteAndAssemble} — the snapshot NBT is read
@@ -51,20 +53,31 @@ public class VSShipTransitPersistE2ETest extends AbstractSharedServerTest {
         String begin = exec("artest space transit-begin " + originDim + " " + ax + " " + ay + " " + az);
         assertTrue("transit did not begin (departure crossing failed): " + begin, begin.contains("\"began\":true"));
 
-        // Re-cut the parked ship's block snapshot into a durable record; retry while the async hyperspace
-        // assembly completes (snapshotShipAt needs the ship's subspace shipyard to be up).
+        // Re-cut the parked ship's block snapshot; retry while the async hyperspace assembly completes
+        // (snapshotShipAt needs the ship's subspace shipyard to be up).
+        //
+        // Poll the REFRESH's own count, not the export's hasSnapshot. Every transit carries a snapshot
+        // from the instant it departs — the floor cut of the source ship, taken before the departure
+        // crossing so that a save in the pre-assembly window is never snapshot-less — so hasSnapshot is
+        // true on the first iteration whether or not hyperspace was ever read. Waiting on it is waiting
+        // on a condition that is already met: it exits immediately and the assertion that the PARKED
+        // ship was re-cut becomes a statement about a cut that never happened.
         boolean snapshotCut = false;
-        String lastExport = "";
+        String lastRefresh = "";
         for (int i = 0; i < 40; i++) {
-            lastExport = exec("artest space transit-export");
-            if (lastExport.contains("\"hasSnapshot\":true")) {
+            lastRefresh = exec("artest space transit-refresh");
+            if (extractInt(lastRefresh, "refreshed") >= 1) {
                 snapshotCut = true;
                 break;
             }
             Thread.sleep(250);
         }
-        assertTrue("the parked hyperspace ship was never re-cut into a persisted snapshot; last=" + lastExport,
-                snapshotCut);
+        assertTrue("the parked hyperspace ship was never re-cut into a persisted snapshot; last="
+                + lastRefresh, snapshotCut);
+
+        String lastExport = exec("artest space transit-export");
+        assertTrue("the durable record must carry a block snapshot, or the restore below has no ship to "
+                + "paste: " + lastExport, lastExport.contains("\"hasSnapshot\":true"));
 
         // Simulate a restart in-process: rebuild the transit from the exported record alone (the live
         // manager, and its parked hyperspace ship, are thrown away). Note: this reuses the in-memory record;

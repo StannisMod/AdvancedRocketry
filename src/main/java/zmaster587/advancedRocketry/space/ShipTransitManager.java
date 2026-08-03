@@ -47,6 +47,14 @@ public final class ShipTransitManager {
     private static final int MAX_ARRIVAL_ATTEMPTS = 200;
 
     /**
+     * How often a parked ship's durable block snapshot is re-cut from hyperspace, in server ticks
+     * (tunable). It bounds how much of an in-flight ship's own change a crash can roll back, so it is
+     * kept at the same order as the world autosave it used to ride on; the clean-stop case is exact
+     * regardless, because the server-stopping hook takes a final cut.
+     */
+    private static final int SNAPSHOT_REFRESH_TICKS = 600;
+
+    /**
      * The world-operation seam: perform the two per-ship crossings and park/unpark the ship. Kept out of
      * the pure state machine so it can be faked in tests. The production implementation drives
      * {@code VSIntegration.crossShip} + {@code parkShipAt}/{@code unparkShipAt}.
@@ -88,7 +96,8 @@ public final class ShipTransitManager {
          * Re-cut the parked ship in hyperspace (lane {@code tile}, anchor {@code hyperAnchor}) as a
          * {@code StorageChunk} NBT snapshot, non-destructively, so an in-flight jump survives a restart
          * (the hyperspace world is ephemeral - wiped on restart). Returns {@code null} if VS is absent or
-         * the ship is gone. Called at save points; the default no-ops for the pure state-machine tests.
+         * the ship is gone. Called from the server tick on a cadence, never from a save handler; the
+         * default no-ops for the pure state-machine tests.
          */
         default NBTTagCompound snapshotParked(HyperspaceTiles.Tile tile, BlockPos hyperAnchor) {
             return null;
@@ -98,8 +107,9 @@ public final class ShipTransitManager {
          * Snapshot the SOURCE ship (still in its origin cell, BEFORE {@link #departToHyperspace} cuts it) as
          * a {@code StorageChunk} NBT - the depart-time FLOOR snapshot. Without it, a jump saved in the window
          * before its hyperspace ship has assembled (when {@link #snapshotParked} is still empty) would persist
-         * a snapshot-less record and, on restart, strand + silently DELETE the ship. Later save points refresh
-         * it via {@link #snapshotParked}. Returns {@code null} if VS is absent (the pure state-machine tests).
+         * a snapshot-less record and, on restart, strand + silently DELETE the ship. The periodic re-cut
+         * refreshes it via {@link #snapshotParked}. Returns {@code null} if VS is absent (the pure
+         * state-machine tests).
          */
         default NBTTagCompound snapshotSource(int srcSlotDim, BlockPos srcAnchor) {
             return null;
@@ -185,9 +195,10 @@ public final class ShipTransitManager {
         GalacticCoord arrivalCoord; // where in the target cell the ship is actually put down; resolved ONCE
                                     // (a re-rolled ring would hand each settle retry a different point)
         final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
-        NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace at save points
+        NBTTagCompound snapshot;    // packed ship (StorageChunk NBT), re-cut from hyperspace on a cadence
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
         boolean lastResortReported; // the "not even the snapshot landed" line is said once, not per retry
+        boolean snapshotFailureReported; // likewise for a re-cut that keeps failing
 
         Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
                 long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
@@ -242,6 +253,8 @@ public final class ShipTransitManager {
     private final Map<String, Transit> transits = new LinkedHashMap<>();
     /** Arrived ships whose crew reseat is still retrying (best-effort, not persisted). See {@link PendingReseat}. */
     private final List<PendingReseat> reseating = new ArrayList<>();
+    /** Ticks since the last snapshot re-cut pass; counts only while something is in flight. */
+    private int snapshotTicks;
 
     /** State-machine only: no ledger sync, a zero clock. Used by the transit-wiring unit tests. */
     public ShipTransitManager(SpaceManager space, HyperspaceTiles tiles, Crosser crosser) {
@@ -326,11 +339,19 @@ public final class ShipTransitManager {
 
     /**
      * Advance the whole subsystem one server tick: every in-flight transit, then the best-effort crew
-     * reseat of any ship that has already physically arrived.
+     * reseat of any ship that has already physically arrived, then — periodically — the re-cut of every
+     * parked ship's durable block snapshot.
      */
     public void tick() {
         tickTransits();
         tickReseating();
+        // Nothing to re-cut with no ship in flight, and the counter must not run while it is idle or the
+        // first jump of a long session would be cut the instant it departs and then not again for a full
+        // period. Arrivals are advanced first, so a transit that finished this tick is already gone.
+        if (!transits.isEmpty() && ++snapshotTicks >= SNAPSHOT_REFRESH_TICKS) {
+            snapshotTicks = 0;
+            refreshSnapshots();
+        }
     }
 
     /**
@@ -576,25 +597,72 @@ public final class ShipTransitManager {
     }
 
     /**
-     * Snapshot every in-flight transit as a durable {@link TransitRecord} (for the save point). Re-cuts a
-     * live parked ship's block snapshot from hyperspace first (a restored transit keeps the snapshot it was
-     * imported with); a null re-cut - VS hiccup - keeps the last good snapshot rather than dropping it.
+     * Snapshot every in-flight transit as a durable {@link TransitRecord}, for the save point.
+     *
+     * <p><b>This does no world work, and that is the point.</b> It reads the block snapshot each transit
+     * is already carrying — {@link #refreshSnapshots()} is what keeps that current — and builds records
+     * out of numbers. A save handler runs inside the server's save pass, where a throw does not merely
+     * fail: it aborts the pass for every remaining world. Re-cutting a live ship from a live physics
+     * world is the least predictable call this subsystem makes, and it has no business being on that
+     * path.</p>
      */
     public List<TransitRecord> exportTransits() {
         List<TransitRecord> out = new ArrayList<>();
         for (Map.Entry<String, Transit> e : transits.entrySet()) {
             Transit t = e.getValue();
-            if (!t.restored && t.tile != null && t.hyperAnchor != null) {
-                NBTTagCompound fresh = crosser.snapshotParked(t.tile, t.hyperAnchor);
-                if (fresh != null) {
-                    t.snapshot = fresh;
-                }
-            }
             out.add(new TransitRecord(e.getKey(), t.integrator.origin(), t.target,
                     t.integrator.distanceBlocks(), t.integrator.travelledBlocks(), t.arrivalTick,
                     t.lastTicked, t.speed, t.crew, t.snapshot));
         }
         return out;
+    }
+
+    /**
+     * Re-cut the block snapshot of every ship parked in hyperspace, so what a restart resumes is the ship
+     * as it is NOW rather than as it left. Driven on a cadence from {@link #tick()} and once more when the
+     * server is stopping; returns how many transits actually got a fresh cut, which is the only honest way
+     * for a caller to know a re-cut happened at all (a snapshot is non-null from the depart-time floor
+     * onwards, so its mere presence proves nothing).
+     *
+     * <p>Three transits are skipped, each for its own reason. A RESTORED one has no hyperspace ship to cut
+     * — that world was wiped by the restart it survived. One that has already PASTED into its target and is
+     * only retrying the pose settle has had its hyperspace hull cut away by the arrival crossing, and the
+     * ship lookup underneath the cut is unbounded, so it would answer with a NEIGHBOURING lane's ship and
+     * overwrite this transit's snapshot with the wrong hull. And a lane-less transit has no anchor to cut
+     * at.</p>
+     *
+     * <p>A failed cut keeps the last good snapshot: the ship is mid-jump and the snapshot it already
+     * carries is the only durable copy of it, so a hiccup must never be allowed to trade a stale ship for
+     * no ship. Reported once per transit rather than once per attempt.</p>
+     */
+    public int refreshSnapshots() {
+        int refreshed = 0;
+        for (Map.Entry<String, Transit> e : transits.entrySet()) {
+            Transit t = e.getValue();
+            if (t.restored || t.tile == null || t.hyperAnchor == null || t.pasteAnchor != null) {
+                continue;
+            }
+            try {
+                NBTTagCompound fresh = crosser.snapshotParked(t.tile, t.hyperAnchor);
+                if (fresh != null) {
+                    t.snapshot = fresh;
+                    t.snapshotFailureReported = false;
+                    refreshed++;
+                }
+            } catch (Exception bad) {
+                // PRECAUTIONARY, and worth saying so: no throw has ever been observed out of the
+                // physics world's cut. If one ever is, that mod is compiled from this repository - the
+                // honest fix is there, not a wider net here. Errors are not caught: they are not a
+                // hiccup a jump can carry on past.
+                if (!t.snapshotFailureReported) {
+                    t.snapshotFailureReported = true;
+                    LOGGER.error("[SPACE] could not re-cut the parked ship {} in hyperspace; the jump keeps "
+                            + "the snapshot it already carries, so a restart would resume it as it was at "
+                            + "the last successful cut", e.getKey(), bad);
+                }
+            }
+        }
+        return refreshed;
     }
 
     /**

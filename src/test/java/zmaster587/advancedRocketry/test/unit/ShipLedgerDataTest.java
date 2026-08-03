@@ -19,10 +19,11 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Pure persistence contract of {@link ShipLedgerData} (the durable backing for the ship ledger): a
- * settled ship's galactic position + slot binding survives a write&rarr;read NBT round-trip, in-transit
- * ships are NOT persisted (they need a transit record + block snapshot, a later phase), and a loaded
- * store repopulates a live {@link ShipLedger}. No MC world — the WSD's own {@code write/readFromNBT} +
- * {@code saveFrom}/{@code loadInto} operate on in-memory maps.
+ * settled ship's galactic position survives a write&rarr;read NBT round-trip, a ship in flight is
+ * carried by its transit record instead of by the settled list, a write that would store a ship in
+ * NEITHER place is refused outright, and a loaded store repopulates a live {@link ShipLedger}. No MC
+ * world — the WSD's own {@code write/readFromNBT} + {@code replaceAll}/{@code loadInto} operate on
+ * in-memory maps.
  */
 public class ShipLedgerDataTest {
 
@@ -30,21 +31,40 @@ public class ShipLedgerDataTest {
         return GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
     }
 
+    /** The in-flight record that carries {@code ship} — what makes it legal to leave the settled list. */
+    private static TransitRecord flying(UUID ship, GalacticCoord target) {
+        NBTTagCompound blocks = new NBTTagCompound();
+        blocks.setInteger("blocks", 1);
+        return new TransitRecord(ship.toString(), coord(0, 0, 0, 0, 0, 0), target, 10L, 0L, 0L, 0L, 1L,
+                java.util.Collections.<UUID>emptyList(), blocks);
+    }
+
+    /** The whole store replaced from a live ledger with nothing in flight and no visits recorded. */
+    private static List<UUID> store(ShipLedgerData data, ShipLedger live) {
+        return data.replaceAll(live.snapshot(), java.util.Collections.<TransitRecord>emptyList(),
+                java.util.Collections.<String, Long>emptyMap());
+    }
+
     @Test
     public void settledEntriesSurviveWriteReadRoundTrip() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
+        UUID flyer = UUID.randomUUID();
         GalacticCoord coordA = coord(3, 0, -1, 100, 0, 50);
         GalacticCoord coordB = coord(-7, 2, 0, 0, -40, 0);
+        GalacticCoord flyingTo = coord(9, 0, 0, 0, 0, 0);
 
         ShipLedger live = new ShipLedger();
         live.settle(a, coordA);
         live.settle(b, coordB);
-        live.beginTransit(UUID.randomUUID(), coord(9, 0, 0, 0, 0, 0)); // in-transit: must be skipped
+        live.beginTransit(flyer, flyingTo); // in flight: belongs in the transit list, not this one
 
         ShipLedgerData src = new ShipLedgerData();
-        src.saveFrom(live);
-        assertEquals("only the two settled ships are persisted", 2, src.snapshot().size());
+        assertTrue("nothing is dropped: the flying ship is carried by its record",
+                src.replaceAll(live.snapshot(),
+                        java.util.Collections.singletonList(flying(flyer, flyingTo)),
+                        java.util.Collections.<String, Long>emptyMap()).isEmpty());
+        assertEquals("only the two settled ships are in the settled list", 2, src.snapshot().size());
 
         NBTTagCompound nbt = src.writeToNBT(new NBTTagCompound());
 
@@ -73,7 +93,7 @@ public class ShipLedgerDataTest {
         live.settle(a, coord(3, 0, -1, 100, 0, 50));
 
         ShipLedgerData data = new ShipLedgerData();
-        data.saveFrom(live);
+        store(data, live);
         NBTTagCompound nbt = data.writeToNBT(new NBTTagCompound());
 
         NBTTagCompound ship = nbt.getTagList("ships", 10).getCompoundTagAt(0);
@@ -85,18 +105,60 @@ public class ShipLedgerDataTest {
     }
 
     @Test
-    public void inTransitEntriesAreNotPersisted() {
+    public void anInFlightShipIsCarriedByItsTransitRecordAndNotByTheSettledList() {
+        UUID flyer = UUID.randomUUID();
+        GalacticCoord flyingTo = coord(1, 0, 0, 0, 0, 0);
         ShipLedger live = new ShipLedger();
-        live.beginTransit(UUID.randomUUID(), coord(1, 0, 0, 0, 0, 0));
+        live.beginTransit(flyer, flyingTo);
 
         ShipLedgerData data = new ShipLedgerData();
-        data.saveFrom(live);
-        assertTrue("an in-transit ship contributes nothing to the store", data.snapshot().isEmpty());
+        assertTrue("the write is applied", data.replaceAll(live.snapshot(),
+                java.util.Collections.singletonList(flying(flyer, flyingTo)),
+                java.util.Collections.<String, Long>emptyMap()).isEmpty());
+        assertTrue("a ship in flight is not in the settled list", data.snapshot().isEmpty());
 
         NBTTagCompound nbt = data.writeToNBT(new NBTTagCompound());
         ShipLedgerData dst = new ShipLedgerData();
         dst.readFromNBT(nbt);
-        assertTrue("nothing to restore", dst.snapshot().isEmpty());
+        assertTrue("and it is still not in the settled list after the round-trip",
+                dst.snapshot().isEmpty());
+        assertEquals("it comes back as the in-flight jump it is", 1, dst.loadTransits().size());
+        assertEquals(flyer.toString(), dst.loadTransits().get(0).shipId);
+    }
+
+    /**
+     * The contract that a lost fleet was made of: a ship the ledger no longer calls settled, and that
+     * no in-flight jump carries either, would be stored in NEITHER list — so this write is refused and
+     * the store is left alone.
+     *
+     * <p>This is exactly the state a save point reaches when the transit half of the gather fails: the
+     * live ledger says the ship is flying, the transit records say nothing, and the old code obliged by
+     * writing an empty fleet over a good one. There is no ordering of a clear-then-refill that survives
+     * it, which is why the store no longer offers one.</p>
+     */
+    @Test
+    public void aWriteThatWouldStoreAFlyingShipNowhereIsRefused() {
+        UUID settled = UUID.randomUUID();
+        UUID flyer = UUID.randomUUID();
+        GalacticCoord home = coord(4, 0, 0, 0, 0, 0);
+
+        ShipLedgerData data = new ShipLedgerData();
+        ShipLedger before = new ShipLedger();
+        before.settle(settled, home);
+        before.settle(flyer, home);
+        assertTrue("arrangement: a good fleet is stored first", store(data, before).isEmpty());
+        NBTTagCompound good = data.writeToNBT(new NBTTagCompound());
+
+        ShipLedger during = new ShipLedger();
+        during.settle(settled, home);
+        during.beginTransit(flyer, coord(5, 0, 0, 0, 0, 0)); // flying, and nothing carries it
+
+        List<UUID> dropped = store(data, during);
+        assertEquals("the write names the ship it would have lost", 1, dropped.size());
+        assertEquals(flyer, dropped.get(0));
+        assertEquals("and it changed nothing: both ships are still stored", 2, data.snapshot().size());
+        assertEquals("byte for byte, the store is what it was before the refused write",
+                good.toString(), data.writeToNBT(new NBTTagCompound()).toString());
     }
 
     @Test
@@ -108,7 +170,7 @@ public class ShipLedgerDataTest {
         source.settle(a, coordA);
 
         ShipLedgerData data = new ShipLedgerData();
-        data.saveFrom(source);
+        store(data, source);
         // Round-trip through NBT so we exercise the on-disk shape, not just the in-memory copy.
         ShipLedgerData restored = new ShipLedgerData();
         restored.readFromNBT(data.writeToNBT(new NBTTagCompound()));
@@ -136,7 +198,9 @@ public class ShipLedgerDataTest {
                 1_250_000L, 4242L, 100L, 9L, java.util.Collections.singletonList(crew), snapshot);
 
         ShipLedgerData src = new ShipLedgerData();
-        src.saveTransits(java.util.Collections.singletonList(rec));
+        src.replaceAll(java.util.Collections.<UUID, ShipLedger.Entry>emptyMap(),
+                java.util.Collections.singletonList(rec),
+                java.util.Collections.<String, Long>emptyMap());
 
         // Round-trip through the store's own NBT (the same write/read that hits disk on a world save).
         ShipLedgerData dst = new ShipLedgerData();

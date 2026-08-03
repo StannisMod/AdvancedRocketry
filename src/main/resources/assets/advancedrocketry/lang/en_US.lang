@@ -881,6 +881,7 @@ msg.pilotseat.notassembled=§eShip not assembled - assemble it to fly.
 msg.pilotseat.occupied=§e%s is already in this seat.
 msg.pilotseat.taken=§eYour seat was taken by %s while you were away.
 msg.pilotseat.afcdestroyed=§cFlight computer destroyed - the ship is adrift.
+msg.loginrestore.shipunknown=§cYour ship could not be found - the server has no record of it, so you have been placed at your spawn point.
 msg.shipdescent.refused=§cThe descent could not start - the destination is not ready yet. Wait a moment and try again.
 msg.shipdescent.failed=§cThe descent failed - the ship could not cross onto the planet.
 msg.shipdescent.arrived=§aDescent complete - the ship is in the sky over the planet. Take her down.

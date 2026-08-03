@@ -103,6 +103,12 @@ public final class SpaceEventHandler {
      */
     private final java.util.Map<UUID, UUID> heldCells = new java.util.HashMap<>();
 
+    /**
+     * Players who came back aboard a ship the server has no record of, waiting to be told so. Written
+     * while their save file is read (no connection yet) and drained once they have actually joined.
+     */
+    private final java.util.Set<UUID> pendingShipLostNotices = new java.util.HashSet<>();
+
     // --- pre-spawn client sync -------------------------------------------------------------------
 
     /**
@@ -175,9 +181,36 @@ public final class SpaceEventHandler {
             // one record of which ship he belongs to — he could never be restored, on any later login.
             ShipAboardTag.clear(player);
         }
+        if (placement.reason == LoginRestore.Reason.SHIP_UNKNOWN) {
+            // He left aboard a ship and is being put down at his spawn point instead. That is the one
+            // outcome of this hook a player has to be TOLD about: everything else either puts him back
+            // where he was or is an ordinary login. He cannot be told here — his connection is not
+            // assigned until later in the login sequence, and both send paths dereference it — so the
+            // notice is queued for the moment he is actually on the server.
+            pendingShipLostNotices.add(player.getUniqueID());
+            LOGGER.warn("[SPACE] {} returned aboard ship {} but the ledger has no record of it; he is "
+                    + "being placed at his spawn point and his aboard record is cleared",
+                    player.getName(), aboard == null ? "?" : aboard.shipId);
+        }
         LOGGER.info("[SPACE] login restore for {}: {} -> dim {} ({})",
                 player.getName(), placement.reason, placement.dimension,
                 placement.aboard ? "aboard" : "not aboard");
+    }
+
+    /**
+     * Tell a player whose ship could not be found that it could not be found. Queued by phase 1, which
+     * runs while his save file is being read — before {@code connection} exists — and drained here,
+     * where he is a fully joined player.
+     */
+    @SubscribeEvent
+    public void onPlayerLoggedIn(net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.player == null || pendingShipLostNotices.isEmpty()) {
+            return;
+        }
+        if (pendingShipLostNotices.remove(event.player.getUniqueID())) {
+            event.player.sendMessage(
+                    new net.minecraft.util.text.TextComponentTranslation(LoginRestore.MSG_SHIP_UNKNOWN));
+        }
     }
 
     /**

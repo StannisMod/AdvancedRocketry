@@ -2314,7 +2314,12 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"slotDims\":[" + slots + "]"
                     + ",\"slotDimsAlsoBodies\":[" + collisions + "]"
                     + ",\"ledger\":" + (led == null ? -1 : led.size())
-                    + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount()) + "}");
+                    + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount())
+                    // Still-armed vs fired: the only way to know a save point actually reached an armed
+                    // fault, and therefore the only way to wait for the WORLD AUTOSAVE rather than for
+                    // a save some command asked for.
+                    + ",\"saveFaultArmed\":"
+                    + zmaster587.advancedRocketry.space.SpaceSubsystem.isSaveFaultArmed() + "}");
             return;
         }
         // occupy <sx> <sy> <sz>: hold cell (sx,sy,sz) live in the PRODUCTION space manager (an
@@ -2546,6 +2551,33 @@ public class TestProbeCommand extends CommandBase {
                     + "}");
             return;
         }
+        // ledger-forget <shipUuid>: drop a ship from the PRODUCTION ledger, the way a descent onto a
+        // planet does when the ship leaves the subsystem for good. It arranges the one login outcome a
+        // player has to be told about - he comes back aboard something the server has no record of -
+        // which is otherwise only reachable by damaging the durable store.
+        if (args.length >= 2 && "ledger-forget".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.ShipLedger led =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (led == null) {
+                send(sender, "{\"error\":\"production ledger not live\"}");
+                return;
+            }
+            java.util.UUID forgetId;
+            try {
+                forgetId = java.util.UUID.fromString(args[1]);
+            } catch (IllegalArgumentException bad) {
+                send(sender, "{\"error\":\"bad uuid\"}");
+                return;
+            }
+            // Report whether it was there BEFORE, so a test cannot read "the ledger does not know this
+            // ship" as success when it never knew it - the arrangement and its own witness in one line.
+            boolean wasKnown = led.get(forgetId) != null;
+            led.remove(forgetId);
+            send(sender, "{\"ok\":true,\"wasKnown\":" + wasKnown
+                    + ",\"found\":" + (led.get(forgetId) != null)
+                    + ",\"ledger\":" + led.size() + "}");
+            return;
+        }
         // pool-idempotence: call the PRODUCTION registerPool entry point again and report whether the
         // pool changed. Registering a second pool would not merely waste dimension ids, it would shift
         // the slot ids out from under everything already bound to the first one.
@@ -2561,6 +2593,19 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"grew\":" + (after.size() != before.size())
                     + ",\"before\":" + before.size() + ",\"after\":" + after.size()
                     + ",\"returnedExisting\":" + sameIds + "}");
+            return;
+        }
+        // save-fault-once: arm a one-shot failure inside the next ship-ledger save point. The subsystem
+        // promises that a save which fails part-way keeps the previously persisted fleet and keeps the
+        // server running; the real failure behind that promise is a class that will not load, which no
+        // fixture can arrange from outside, so it is armed here instead.
+        if (args.length >= 1 && "save-fault-once".equalsIgnoreCase(args[0])) {
+            if (zmaster587.advancedRocketry.space.SpaceSubsystem.ledger() == null) {
+                send(sender, "{\"error\":\"production ledger not live\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.SpaceSubsystem.armSaveFaultOnce();
+            send(sender, "{\"ok\":true,\"armed\":true}");
             return;
         }
         // save-now: force an overworld save, which is what drives the production persistence hook.
@@ -2780,9 +2825,24 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"ships\":\"" + ships + "\"}");
             return;
         }
-        // transit-export: re-cut every in-flight transit's block snapshot from hyperspace and stash the
-        // durable records (exactly what onWorldSave persists). Polled until hasSnapshot=true, so the test
-        // waits for the parked hyperspace ship's async assembly to finish before it simulates a restart.
+        // transit-refresh: run the periodic re-cut of every parked ship's block snapshot, on demand.
+        //
+        // `refreshed` is how many transits actually got a FRESH cut from hyperspace this call, and it is
+        // the only honest instrument for "the parked ship was re-cut": every transit carries a snapshot
+        // from the moment it departs (the floor cut of the source ship), so the mere presence of one
+        // says nothing about whether hyperspace was ever read. A test waiting on the async hyperspace
+        // assembly polls THIS, not the export.
+        if (args.length >= 1 && "transit-refresh".equalsIgnoreCase(args[0])) {
+            if (transitTm == null) {
+                send(sender, "{\"error\":\"transit not set up\"}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"refreshed\":" + transitTm.refreshSnapshots() + "}");
+            return;
+        }
+        // transit-export: stash the durable records of every in-flight transit (exactly what onWorldSave
+        // persists). This does NO world work - the snapshots it reports were cut by transit-refresh or by
+        // the departure's own floor cut.
         if (args.length >= 1 && "transit-export".equalsIgnoreCase(args[0])) {
             if (transitTm == null) {
                 send(sender, "{\"error\":\"transit not set up\"}");

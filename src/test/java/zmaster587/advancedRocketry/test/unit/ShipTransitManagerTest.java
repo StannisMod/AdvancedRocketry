@@ -57,6 +57,9 @@ public class ShipTransitManagerTest {
         int completeRestoredFailCount; // fail the restored paste this many times, then succeed
         NBTTagCompound snapshotToReturn; // what snapshotParked hands back (the re-cut stub)
         NBTTagCompound sourceSnapshotToReturn; // what snapshotSource hands back (the depart-time floor)
+        int snapshotParkedCalls;        // how often the live re-cut was asked for - a SAVE must ask zero times
+        boolean snapshotParkedThrows;   // the physics world failing the cut, which must not lose the ship
+        int settleFailCount;            // fail the arrival POSE settle this many times (ship pasted, not settled)
         // Crew seam (option-A capture at depart, reseat at arrival). EMPTY crew by default, so every existing
         // test sees no crew captured and no reseat entries - behaviorally identical to before this seam.
         final List<UUID> crewToCapture = new ArrayList<>(); // captureCrew hands these back (empty => no crew)
@@ -83,7 +86,21 @@ public class ShipTransitManagerTest {
         }
 
         @Override
+        public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+                                          double px, double py, double pz) {
+            if (settleFailCount > 0) {
+                settleFailCount--;
+                return null; // re-assembly not queryable yet - the ship stays pasted, the settle retries
+            }
+            return pasteAnchor;
+        }
+
+        @Override
         public NBTTagCompound snapshotParked(HyperspaceTiles.Tile tile, BlockPos hyperAnchor) {
+            snapshotParkedCalls++;
+            if (snapshotParkedThrows) {
+                throw new IllegalStateException("the physics world refused the cut");
+            }
             return snapshotToReturn;
         }
 
@@ -423,7 +440,7 @@ public class ShipTransitManagerTest {
     }
 
     @Test
-    public void exportRecutsALiveShipSnapshotFromHyperspace() {
+    public void refreshingRecutsALiveShipSnapshotFromHyperspace() {
         SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
         FakeCrosser crosser = new FakeCrosser();
         NBTTagCompound cut = new NBTTagCompound();
@@ -436,13 +453,107 @@ public class ShipTransitManagerTest {
         int originDim = space.materialize(cell(1));
         mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 7L);
 
+        assertEquals("the parked ship is re-cut", 1, mgr.refreshSnapshots());
         TransitRecord r = mgr.exportTransits().get(0);
-        assertNotNull("export re-cut the parked ship's block snapshot", r.snapshot);
-        assertEquals("the freshly re-cut snapshot is what gets persisted", 42, r.snapshot.getInteger("marker"));
+        assertNotNull("the transit carries a block snapshot", r.snapshot);
+        assertEquals("and it is the freshly re-cut one, not the depart-time floor", 42,
+                r.snapshot.getInteger("marker"));
+    }
+
+    /**
+     * A save point reads what the transit already carries and asks the physics world nothing. This is the
+     * whole of the contract: the export runs inside the server's save pass, where a throw does not merely
+     * fail but aborts the pass for every remaining world — and once did, taking the fleet with it.
+     */
+    @Test
+    public void exportingForASaveAsksThePhysicsWorldNothing() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.sourceSnapshotToReturn = new NBTTagCompound();
+        crosser.sourceSnapshotToReturn.setInteger("floor", 1);
+        crosser.snapshotToReturn = new NBTTagCompound();
+        crosser.snapshotToReturn.setInteger("recut", 1);
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(UUID.randomUUID().toString(), cell(1), originDim, new BlockPos(0, 64, 0),
+                cell(2), 7L);
+        int afterDepart = crosser.snapshotParkedCalls;
+
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertEquals("exporting for a save re-cuts nothing from the live world",
+                afterDepart, crosser.snapshotParkedCalls);
+        assertNotNull("it still persists the ship, from the snapshot the jump carries", r.snapshot);
+        assertEquals("what a save writes is the depart-time floor cut, untouched by the export", 1,
+                r.snapshot.getInteger("floor"));
+
+        // The witness that this counter can move at all: the same crosser, asked by the refresh.
+        assertEquals("control: the re-cut path DOES ask the physics world", 1, mgr.refreshSnapshots());
+        assertEquals("control: and the ask reaches the crosser", afterDepart + 1,
+                crosser.snapshotParkedCalls);
+    }
+
+    /**
+     * A physics world that fails the cut must cost a stale snapshot, never the ship: the one it carries is
+     * the only durable copy of a hull that is mid-jump, and hyperspace does not survive a restart.
+     */
+    @Test
+    public void aFailedRecutKeepsTheSnapshotTheJumpAlreadyCarries() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.sourceSnapshotToReturn = new NBTTagCompound();
+        crosser.sourceSnapshotToReturn.setInteger("floor", 1);
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(UUID.randomUUID().toString(), cell(1), originDim, new BlockPos(0, 64, 0),
+                cell(2), 7L);
+
+        crosser.snapshotParkedThrows = true;
+        assertEquals("nothing was refreshed", 0, mgr.refreshSnapshots());
+
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertNotNull("the jump still has a snapshot to be restored from", r.snapshot);
+        assertEquals("it is the last good one", 1, r.snapshot.getInteger("floor"));
+        assertEquals("and the jump is still in flight", 1, mgr.inTransitCount());
+    }
+
+    /**
+     * Once the arrival crossing has landed the ship in its target cell, the hyperspace hull it was cut
+     * from is gone — but the transit stays in the map while the pose settle retries. Re-cutting there
+     * would read a hyperspace lane that no longer holds this ship, and the lookup underneath is
+     * unbounded, so with a second jump in flight it answers with THAT ship: the snapshot of a hull the
+     * player is about to be standing on would be replaced by somebody else's.
+     */
+    @Test
+    public void aShipWhoseArrivalHasAlreadyLandedIsNotRecutFromHyperspace() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.sourceSnapshotToReturn = new NBTTagCompound();
+        crosser.sourceSnapshotToReturn.setInteger("floor", 1);
+        crosser.snapshotToReturn = new NBTTagCompound();
+        crosser.snapshotToReturn.setInteger("recut", 1);
+        crosser.settleFailCount = 5; // the ship is pasted; its pose settle keeps retrying
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(UUID.randomUUID().toString(), cell(1), originDim, new BlockPos(0, 64, 0),
+                cell(2), 5_000_000L);
+        assertEquals("control: while it is still parked, a re-cut is exactly what should happen",
+                1, mgr.refreshSnapshots());
+
+        mgr.tick(); // reaches the target: the arrival crossing pastes, the pose settle does not finish
+        assertEquals("arrangement: the jump is still in flight (settling), not gone", 1, mgr.inTransitCount());
+
+        assertEquals("a landed ship is not re-cut from a lane it no longer occupies",
+                0, mgr.refreshSnapshots());
     }
 
     @Test
-    public void exportDoesNotRecutARestoredTransitButKeepsItsImportedSnapshot() {
+    public void refreshDoesNotRecutARestoredTransitButKeepsItsImportedSnapshot() {
         SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
         FakeCrosser crosser = new FakeCrosser();
         crosser.snapshotToReturn = new NBTTagCompound(); // a would-be re-cut that MUST NOT be used
@@ -456,8 +567,9 @@ public class ShipTransitManagerTest {
         mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 7L,
                 new ArrayList<UUID>(), imported));
 
+        assertEquals("a restored transit has no live hyperspace ship to re-cut", 0, mgr.refreshSnapshots());
         TransitRecord r = mgr.exportTransits().get(0);
-        assertFalse("a restored transit has no live hyperspace ship to re-cut", r.snapshot.hasKey("recut"));
+        assertFalse("so nothing overwrote its snapshot", r.snapshot.hasKey("recut"));
         assertEquals("it keeps the snapshot it was imported with", 7, r.snapshot.getInteger("imported"));
     }
 

@@ -10,9 +10,12 @@ import net.minecraft.world.storage.WorldSavedData;
 import net.minecraftforge.common.DimensionManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -27,8 +30,9 @@ import java.util.UUID;
  *
  * <p>Hosting + accessor mirror {@code UniverseRegistry} exactly: a {@link WorldSavedData} on the
  * overworld global {@link MapStorage}, server-side only, persisted by MC whenever it is {@code
- * markDirty()}-ed. This first increment persists SETTLED entries only; in-transit ships need the
- * transit record + block snapshot (a later phase) and are skipped.</p>
+ * markDirty()}-ed. A ship is stored in exactly one of two places — {@code ships} while it is settled in
+ * a cell, its {@link TransitRecord} (block snapshot included) while it is in flight — and
+ * {@link #replaceAll} is the single, all-or-nothing writer that keeps those two halves in step.</p>
  *
  * <p>Server main thread only.</p>
  */
@@ -84,17 +88,69 @@ public final class ShipLedgerData extends WorldSavedData {
     }
 
     /**
-     * Replace the persisted snapshot from the live ledger (SETTLED entries only) and mark dirty so MC
-     * writes it on the next world save. Called at save points; a no-op-safe full re-snapshot.
+     * Replace the ENTIRE persisted snapshot — settled ships, in-flight transits and per-cell visit
+     * times — in one step, and mark it dirty so MC writes it.
+     *
+     * <p><b>Why one call instead of three setters.</b> A settled ship is stored under {@code ships} and
+     * a flying one under {@code transits}, so a save that rebuilt the first half and then failed before
+     * the second erased every ship that happened to be in flight: the durable record said the fleet was
+     * empty, and the next flush made that permanent. Rebuilding the halves as separate steps is what
+     * made that reachable, so separate steps no longer exist — this method mutates nothing until it
+     * holds every value it is going to write, and then writes all of them.</p>
+     *
+     * <p>It also enforces what used to be a convention no code checked: a ship the live ledger does NOT
+     * call settled has to be carried by a transit record, or this write would store it nowhere. Such a
+     * snapshot is REFUSED — nothing is touched, whatever was persisted before still stands, and the
+     * ships that would have been dropped are returned so the caller can name them. An empty return
+     * means the snapshot was applied.</p>
+     *
+     * @param live     the live ledger's whole snapshot (both states; only the settled half is stored)
+     * @param inFlight the in-flight transit records, as exported by the transit manager
+     * @param visits   cell key -&gt; the world time it was last visited
+     * @return the ships this write would have dropped; empty when it was applied
      */
-    public void saveFrom(ShipLedger live) {
-        entries.clear();
-        for (Map.Entry<UUID, ShipLedger.Entry> e : live.snapshot().entrySet()) {
-            if (e.getValue().state == ShipLedger.State.SETTLED) {
-                entries.put(e.getKey(), e.getValue());
+    public List<UUID> replaceAll(Map<UUID, ShipLedger.Entry> live, List<TransitRecord> inFlight,
+                                 Map<String, Long> visits) {
+        List<TransitRecord> records = new ArrayList<>();
+        Set<String> carried = new HashSet<>();
+        if (inFlight != null) {
+            for (TransitRecord r : inFlight) {
+                if (r == null) {
+                    continue;
+                }
+                records.add(r);
+                if (r.shipId != null) {
+                    carried.add(r.shipId);
+                }
             }
         }
+        Map<UUID, ShipLedger.Entry> settled = new HashMap<>();
+        List<UUID> dropped = new ArrayList<>();
+        if (live != null) {
+            for (Map.Entry<UUID, ShipLedger.Entry> e : live.entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) {
+                    continue;
+                }
+                if (e.getValue().state == ShipLedger.State.SETTLED) {
+                    settled.put(e.getKey(), e.getValue());
+                } else if (!carried.contains(e.getKey().toString())) {
+                    dropped.add(e.getKey());
+                }
+            }
+        }
+        if (!dropped.isEmpty()) {
+            return dropped;
+        }
+        entries.clear();
+        entries.putAll(settled);
+        transits.clear();
+        transits.addAll(records);
+        cellVisits.clear();
+        if (visits != null) {
+            cellVisits.putAll(visits);
+        }
         markDirty();
+        return Collections.emptyList();
     }
 
     /**
@@ -108,33 +164,15 @@ public final class ShipLedgerData extends WorldSavedData {
         }
     }
 
-    /** Replace the persisted transit records (called at the same save point as {@link #saveFrom}). */
-    public void saveTransits(List<TransitRecord> records) {
-        transits.clear();
-        if (records != null) {
-            transits.addAll(records);
-        }
-        markDirty();
-    }
-
     /** The persisted in-flight transit records (a copy). Empty until a jump is in flight at a save point. */
     public List<TransitRecord> loadTransits() {
         return new ArrayList<>(transits);
     }
 
     /**
-     * Replace the persisted per-cell last-visit times (same save point as {@link #saveFrom}). Without
-     * these every cell looks freshly visited after a restart and age-based GC never fires.
+     * The persisted per-cell last-visit times (a copy). Without these every cell looks freshly visited
+     * after a restart and age-based GC never fires.
      */
-    public void saveVisits(Map<String, Long> visits) {
-        cellVisits.clear();
-        if (visits != null) {
-            cellVisits.putAll(visits);
-        }
-        markDirty();
-    }
-
-    /** The persisted per-cell last-visit times (a copy). */
     public Map<String, Long> loadVisits() {
         return new HashMap<>(cellVisits);
     }

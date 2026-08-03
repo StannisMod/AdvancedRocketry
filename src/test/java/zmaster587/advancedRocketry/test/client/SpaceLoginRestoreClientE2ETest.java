@@ -26,6 +26,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -103,6 +104,14 @@ public class SpaceLoginRestoreClientE2ETest {
 
     /** Where an orphaned login lands, and the one dimension a restored pilot must NOT be in. */
     private static final int OVERWORLD_DIM = 0;
+
+    /**
+     * A stable fragment of what a pilot is told when the server has no record of his ship. Matching a
+     * fragment rather than the whole line is deliberate: this is the player-visible sentence, so the
+     * test has to read what he reads — but the punctuation and the colour code around it are not the
+     * contract.
+     */
+    private static final String SHIP_LOST_NEEDLE = "ship could not be found";
 
     /** The launch dimension the ship takes off from - always registered, always terrain-generated. */
     private static final int LAUNCH_DIM = 0;
@@ -203,6 +212,88 @@ public class SpaceLoginRestoreClientE2ETest {
     public void aPilotWhoBoardedOnThePlanetAndFlewUpComesBackAboardAfterAServerRestart()
             throws Exception {
         requireHeComesBackAboardHisShip(seatThePilotBeforeHeLeavesTheGround());
+    }
+
+    /**
+     * The other end of the restore: when the server genuinely has no record of a returning pilot's
+     * ship, he is TOLD so — not silently stood up at his spawn point wondering where his ship went.
+     *
+     * <p>This is a client test for the only reason that matters: the subject is a line of text a
+     * player reads. The server can be asked whether it decided he was orphaned; it cannot be asked
+     * whether he was informed. The bot's own chat log can.</p>
+     *
+     * <p><b>Why the ship is removed rather than the ledger damaged.</b> "The ledger has no such ship"
+     * is one verdict reached from several directions — a ship dismantled while its owner was away, a
+     * descent that took it out of the subsystem, a durable record that failed to come back. The
+     * player's side of it is identical in every case, and the removal is the one direction that is
+     * both production behaviour and arrangeable, so the arrangement asserts the ledger KNEW the ship
+     * first: a "he was told his ship is missing" that came from a ship the server never had would be
+     * a statement about the fixture.</p>
+     *
+     * <p>A relog is enough and is deliberate — the decision is made when a player's save file is read,
+     * which a rejoin does as faithfully as a reboot, and it keeps the ship, the cell and the ledger in
+     * one server's lifetime where the arrangement can still speak about them.</p>
+     */
+    @Test
+    public void aPilotWhoseShipTheServerNoLongerKnowsIsToldSoWhenHeComesBack() throws Exception {
+        seatThePilotAboardHisShip();
+
+        // The notice must not already be on screen, or "it is there afterwards" says nothing.
+        assertNull("nothing may have told him about a missing ship before one went missing: "
+                + bot().reportChat(20), chatLineContaining(SHIP_LOST_NEEDLE));
+
+        String forgot = exec("artest space ledger-forget " + arrangedShipId);
+        assertTrue("arrangement: the ledger must have KNOWN this ship before being told to forget it - "
+                + "otherwise the login below is about a ship that never existed: " + forgot,
+                readBool(forgot, "wasKnown"));
+        assertFalse("arrangement: and it must not know it afterwards: " + forgot,
+                readBool(forgot, "found"));
+
+        bot().reconnect();
+        bot().waitForWorld();
+        bot().waitTicks(40);
+
+        String told = chatLineContaining(SHIP_LOST_NEEDLE);
+        assertNotNull("a pilot whose ship the server cannot find must be TOLD, in chat, rather than "
+                + "appearing at his spawn point with no explanation: " + bot().reportChat(20)
+                + " serverPos=" + exec("artest player position-of " + BOT), told);
+
+        // And he really is the orphan the message describes: out of the cell, off his ship.
+        //
+        // Placement is read from the SERVER, not from the client's rendered dimension. That is not a
+        // convenience: measured here, the two DISAGREE on this path — the server has him in the
+        // overworld at his spawn point while the client is still rendering the slot world it was in
+        // (ledger #170). That split is a pre-existing property of the orphan path, it is filed, and it
+        // is not what this test is about; what this test must not do is read the disagreeing instrument
+        // and call the placement broken. `playerDimField` is quoted alongside `playerDim` because they
+        // are maintained separately and a placement that moved one but not the other is a real failure
+        // this assertion should catch.
+        String serverPos = exec("artest player position-of " + BOT);
+        JsonObject riding = bot().reportRidingEntity();
+        assertEquals("the server must actually have placed him out of the cell, or the message is "
+                        + "describing something that did not happen: " + serverPos
+                        + " clientRiding=" + riding + " clientRenderedDim=" + clientDim(),
+                OVERWORLD_DIM, readInt(serverPos, "playerDim"));
+        assertEquals("and his persisted dimension field must agree, or the next login starts from a "
+                        + "world he is not in: " + serverPos,
+                OVERWORLD_DIM, readInt(serverPos, "playerDimField"));
+        assertFalse("and the client agrees he is riding nothing: " + riding + " server=" + serverPos,
+                riding.get("riding").getAsBoolean());
+    }
+
+    /** The newest client chat line containing {@code needle} (case-insensitive), or null. */
+    private String chatLineContaining(String needle) throws Exception {
+        com.google.gson.JsonArray lines = bot().reportChat(20).getAsJsonArray("lines");
+        if (lines == null) {
+            return null;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).getAsString();
+            if (line.toLowerCase(java.util.Locale.ROOT).contains(needle.toLowerCase(java.util.Locale.ROOT))) {
+                return line;
+            }
+        }
+        return null;
     }
 
     /**

@@ -6,6 +6,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.github.stannismod.forge.testing.TestTimeouts;
 import com.github.stannismod.forge.testing.junit.AbstractHeadlessServerTest;
 import com.github.stannismod.forge.testing.server.RealDedicatedServerHarness;
 
@@ -47,6 +48,14 @@ public class SpaceRestartPersistenceE2ETest {
     private static final String SECTOR_X = "7";
     private static final String SECTOR_Y = "-3";
     private static final String SECTOR_Z = "11";
+
+    /**
+     * How long to wait for the world autosave to reach an armed save fault. Vanilla saves every 900
+     * ticks, i.e. 45 s at a full tick rate, and a harness server under fork contention runs slower than
+     * that — so the wait is scaled the way every other hard ceiling in this suite is, and is generous:
+     * its only cost on a healthy build is that it ends early, the moment the fault reports it fired.
+     */
+    private static final long AUTOSAVE_WAIT_MS = (long) (150_000L * TestTimeouts.factor());
 
     private Path root;
     private RealDedicatedServerHarness harness;
@@ -206,6 +215,164 @@ public class SpaceRestartPersistenceE2ETest {
                 + "crossing would then cut a ship out of a cell belonging to somebody else: "
                 + restored,
                 SECTOR_X + "_" + SECTOR_Y + "_" + SECTOR_Z, jsonString(restored, "slotCell"));
+    }
+
+    /**
+     * A save point that cannot record a ship it has been told is flying must keep the fleet it already
+     * persisted, rather than storing an empty one over it.
+     *
+     * <p><b>The state this arranges is the one a real crash produced.</b> A ship in flight is deliberately
+     * absent from the stored settled list — the in-flight jump record is what carries it — so the two
+     * halves of the durable record are only ever right together. In the playtest that started this, the
+     * half that fetches the jumps died half-way through a save; the half that empties the settled list had
+     * already run; and what reached the disk said the world contained no ships at all. The next flush made
+     * that permanent and the pilot came back to a world that had forgotten he ever owned a ship.</p>
+     *
+     * <p>Reproducing the class-loading accident itself is neither possible nor the point. What matters is
+     * the STATE it left the save point in — the ledger saying "flying", nothing carrying it — and that is
+     * arrangeable directly. A save may then legitimately do only one of two things: record the ship, or
+     * record nothing at all. It may not record its absence.</p>
+     *
+     * <p><b>What makes this able to fail.</b> The instrument is not the forced save: it is the SHUTDOWN
+     * save, which the neighbouring reboot test already proves runs and writes. So a forced save that
+     * silently did nothing cannot turn this green — it would leave the shutdown save to write the same
+     * emptied fleet, and the assertion below would still be the thing that catches it. The one thing the
+     * forced save is load-bearing for is laying down a good snapshot BEFORE the bad state exists; if that
+     * failed, this test goes red, never quietly green.</p>
+     */
+    @Test
+    public void aSavePointThatCannotRecordAFlyingShipKeepsTheFleetItAlreadyPersisted() throws Exception {
+        // --- boot 1 -------------------------------------------------------------------------------
+        harness = RealDedicatedServerHarness.startWith(root, false);
+        assumeProductionSubsystemAvailable();
+
+        String status = exec("artest space subsystem-status");
+        assertTrue("the production space subsystem must be live on boot 1: " + status,
+                status.contains("\"registered\":true"));
+
+        String settled = exec("artest space ledger-settle " + SHIP_ID + " "
+                + SECTOR_X + " " + SECTOR_Y + " " + SECTOR_Z + " 0 0 0");
+        assertTrue("the ship must be recorded in the production ledger: " + settled,
+                settled.contains("\"ok\":true"));
+
+        // Lay a good snapshot on disk. Everything below is about what the NEXT save does to it.
+        String saved = exec("artest space save-now");
+        assertTrue("the forced save must have run: " + saved, saved.contains("\"ok\":true"));
+
+        // Now the state the crash left behind: the ledger says this ship is flying, and no jump carries
+        // it. Both halves are asserted, because "the ship is somewhere else" and "the ship is nowhere"
+        // are the same reading from the settled list alone.
+        String flying = exec("artest space ledger-transit " + SECTOR_X + " " + SECTOR_Y + " " + SECTOR_Z
+                + " " + SHIP_ID);
+        assertTrue("arrangement: the ledger must now call the ship in-flight: " + flying,
+                flying.contains("\"state\":\"IN_TRANSIT\""));
+        String midStatus = exec("artest space subsystem-status");
+        assertEquals("arrangement: and NO jump may be carrying it — that is the whole condition under "
+                        + "test, and with a jump in flight this test would prove nothing: " + midStatus,
+                0, jsonInt(midStatus, "transits"));
+        assertEquals("arrangement: the subsystem must still hold the ship, or the save has nothing to "
+                + "lose: " + midStatus, 1, jsonInt(midStatus, "ledger"));
+
+        String savedAgain = exec("artest space save-now");
+        assertTrue("the second save must also have run: " + savedAgain, savedAgain.contains("\"ok\":true"));
+
+        // --- the reboot ---------------------------------------------------------------------------
+        harness.close();
+        harness = null;
+        harness = RealDedicatedServerHarness.startWith(root, false);
+
+        String statusAfter = exec("artest space subsystem-status");
+        assertTrue("the production subsystem must come up again on boot 2: " + statusAfter,
+                statusAfter.contains("\"registered\":true"));
+
+        String restored = exec("artest space ledger-get " + SHIP_ID);
+        assertTrue("the ship must survive a save point that could not record it — a save is allowed to "
+                + "be one cycle stale, never to erase a fleet: " + restored,
+                restored.contains("\"found\":true"));
+        assertTrue("and it must come back at the address the last GOOD save recorded: " + restored,
+                restored.contains("\"cell\":\"" + SECTOR_X + "_" + SECTOR_Y + "_" + SECTOR_Z + "\""));
+    }
+
+    /**
+     * A save point that fails part-way leaves both the fleet and the server standing.
+     *
+     * <p><b>What "fails" means here, precisely.</b> The gathering the handler does before it writes is
+     * meant to be total, so nothing can be made to break it from outside — which is exactly why the
+     * subsystem exposes a one-shot armed fault instead. What it stands in for is a mistake in that
+     * gather: a null nobody expected, a collection changed under an iterator. The handler undertakes to
+     * survive THAT and lose one stale cycle. It deliberately does not undertake to survive an
+     * {@link Error} — a broken class loader or an exhausted heap is not a condition a save handler can
+     * mend, and a crash report is worth more than a line swallowed every forty-five seconds. The fleet
+     * does not rest on that distinction: the gather touches the store only once it holds every value,
+     * so a throw of any kind leaves the previous snapshot whole (which is the leg above).</p>
+     *
+     * <p><b>Which save the fault has to land in is the whole design of this test.</b> A save asked for
+     * by a command cannot demonstrate anything here: vanilla's command dispatch catches {@code
+     * Throwable}, so a handler that throws under a {@code /save-all} is caught two frames up and the
+     * server survives on the broken build as readily as on the fixed one. The save that can take the
+     * server down is the WORLD AUTOSAVE, raised straight out of the server tick with nothing between it
+     * and the tick loop's crash handler — the crash report this task came from names that exact stack.
+     * So this arms the fault and then WAITS for the periodic autosave to walk into it, which is why the
+     * test is slow. The fault going un-armed is the witness that it really fired; without that, a wait
+     * that was merely too short would read as "the server survived".</p>
+     *
+     * <p><b>Red witness</b>: delete the {@code catch} around the save handler's body. The poll below
+     * then dies reporting that the server process exited.</p>
+     */
+    @Test
+    public void aSavePointThatFailsPartWayLeavesBothTheFleetAndTheServerStanding() throws Exception {
+        harness = RealDedicatedServerHarness.startWith(root, false);
+        assumeProductionSubsystemAvailable();
+
+        String status = exec("artest space subsystem-status");
+        assertTrue("the production space subsystem must be live on boot 1: " + status,
+                status.contains("\"registered\":true"));
+
+        String settled = exec("artest space ledger-settle " + SHIP_ID + " "
+                + SECTOR_X + " " + SECTOR_Y + " " + SECTOR_Z + " 0 0 0");
+        assertTrue("the ship must be recorded in the production ledger: " + settled,
+                settled.contains("\"ok\":true"));
+
+        String armed = exec("artest space save-fault-once");
+        assertTrue("the fault must actually be armed, or nothing below is exercising a failed save: "
+                + armed, armed.contains("\"armed\":true"));
+        assertTrue("and the subsystem must agree it is armed: " + exec("artest space subsystem-status"),
+                exec("artest space subsystem-status").contains("\"saveFaultArmed\":true"));
+
+        // Wait for the world autosave to walk into the fault. Every poll is itself a liveness check:
+        // on an unguarded handler the server is gone by now and exec() reports the dead process.
+        String live = "";
+        boolean fired = false;
+        long startedAt = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startedAt < AUTOSAVE_WAIT_MS) {
+            live = exec("artest space subsystem-status");
+            if (live.contains("\"saveFaultArmed\":false")) {
+                fired = true;
+                break;
+            }
+            Thread.sleep(2000);
+        }
+        assertTrue("no autosave reached the armed fault within "
+                + (AUTOSAVE_WAIT_MS / 1000) + "s, so this run never exercised a failing save at all "
+                + "and its green would be worth nothing: " + live, fired);
+
+        // It fired, from the server tick, and the server is still answering.
+        assertTrue("the server must still be running after a save point failed — a failed save costs a "
+                + "stale cycle, not the process: " + live, live.contains("\"registered\":true"));
+
+        // And it is not wedged: an ordinary save still works afterwards.
+        String recovered = exec("artest space save-now");
+        assertTrue("the next save must work normally: " + recovered, recovered.contains("\"ok\":true"));
+
+        harness.close();
+        harness = null;
+        harness = RealDedicatedServerHarness.startWith(root, false);
+
+        String restored = exec("artest space ledger-get " + SHIP_ID);
+        assertTrue("and the ship the failing save was holding must still be there: " + restored,
+                restored.contains("\"found\":true"));
+        assertTrue("at its own address: " + restored,
+                restored.contains("\"cell\":\"" + SECTOR_X + "_" + SECTOR_Y + "_" + SECTOR_Z + "\""));
     }
 
     /** The value of a numeric JSON field in a probe response. Fails the test if it is absent. */
