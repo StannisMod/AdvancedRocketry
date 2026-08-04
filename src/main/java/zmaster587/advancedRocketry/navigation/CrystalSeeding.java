@@ -48,7 +48,13 @@ public final class CrystalSeeding {
         if (registry == null) {
             return memory;
         }
-        long now = world.getTotalWorldTime();
+        // The SPACE clock, not this world's. Two crystals merge by freshness — same body, newer
+        // observation wins — so a stamp is only comparable against another stamp from the same
+        // counter. Every dimension but the overworld advances only while it ticks, so a crystal made
+        // on a moon and one made at home would be dated on two unrelated clocks and the merge would
+        // pick by where the player happened to be standing rather than by what he had seen more
+        // recently.
+        long now = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
 
         GalacticCoord home = coordOf(registry, 0);
         if (home != null) {

@@ -19,7 +19,7 @@ import zmaster587.advancedRocketry.tile.TileShipComponent;
  * cooldown a pilot feels between jumps is nothing but that recovery, so there is no timer here and
  * no thermal state to keep.</p>
  *
- * <p><b>It never ticks.</b> The charge is arithmetic over the world clock, so a capacitor aboard a
+ * <p><b>It never ticks.</b> The charge is arithmetic over the SPACE clock, so a capacitor aboard a
  * ship that spent a month in hyperspace, or parked in a cell nobody loaded, is exactly as charged as
  * one that sat in a busy chunk the whole time. Only the level at the last real event, and when that
  * event was, are ever written down.</p>
@@ -34,7 +34,7 @@ public class TileJumpCapacitor extends TileShipComponent {
 
     /** The charge as of {@link #since} — the level at the last thing that actually happened. */
     private long baseCharge;
-    /** World-clock tick of that event. Everything after it is computed, never accumulated. */
+    /** Space-clock tick of that event. Everything after it is computed, never accumulated. */
     private long since;
 
     /** How much this bank holds when full. */

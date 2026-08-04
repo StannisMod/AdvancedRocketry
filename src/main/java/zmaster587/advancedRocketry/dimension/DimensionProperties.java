@@ -1143,10 +1143,17 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      * Advance the live orbital angle to this tick. One law, {@link #orbitThetaAt}, evaluated at now:
      * the sky a player looks at and the address a navigation computer extrapolates to must be the
      * same orbit, or the ship arrives somewhere the planet is not drawn.
+     *
+     * <p>"Now" is the space clock, and it has to be, because that is the tick every OTHER evaluation
+     * of this same law is made at — the address a body reports, the standoff an arrival is priced
+     * with, the sky feed a cell publishes. The two agreed by accident while the space clock was
+     * simply the overworld's counter and this read a proxy that answered with it; they are separate
+     * numbers now, with separate restore points, and the invariant above only survives if both sides
+     * read the one clock rather than two that happen to match.</p>
      */
     public void updateOrbit() {
         this.prevOrbitalTheta = this.orbitTheta;
-        this.orbitTheta = orbitThetaAt(AdvancedRocketry.proxy.getWorldTimeUniversal(0));
+        this.orbitTheta = orbitThetaAt(zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock());
     }
 
     /**

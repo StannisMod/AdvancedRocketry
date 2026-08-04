@@ -2335,7 +2335,7 @@ public class TestProbeCommand extends CommandBase {
             this.lagTicks = 0L;
         }
 
-        /** Answer with the overworld's clock minus a fixed lag - a per-dimension clock's effect, sized. */
+        /** Answer with the SPACE clock minus a fixed lag - a per-dimension clock's effect, sized. */
         MirroredDimClockProxy(long lagTicks) {
             this.mirrored = Integer.MIN_VALUE;
             this.lagTicks = lagTicks;
@@ -2344,10 +2344,17 @@ public class TestProbeCommand extends CommandBase {
         @Override
         public long getWorldTimeUniversal(int id) {
             // The argument is DELIBERATELY ignored - that is the behaviour being reproduced.
-            int dim = mirrored == Integer.MIN_VALUE ? 0 : mirrored;
+            if (mirrored == Integer.MIN_VALUE) {
+                // The lag is sized AGAINST THE SPACE CLOCK, because the split between the two is the
+                // quantity a caller reasons about: it computes the miss a stale aim should produce,
+                // and it is asserted before any aim is read. Anchoring the lag on a world's counter
+                // instead would make the split whatever the gap between that world and the subsystem
+                // happened to be - a number the test never chose and cannot check.
+                return zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock() - lagTicks;
+            }
             net.minecraft.world.WorldServer world =
-                    net.minecraftforge.common.DimensionManager.getWorld(dim);
-            return world == null ? 0L : world.getTotalWorldTime() - lagTicks;
+                    net.minecraftforge.common.DimensionManager.getWorld(mirrored);
+            return world == null ? 0L : world.getTotalWorldTime();
         }
     }
 
@@ -3487,21 +3494,52 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"dim\":" + dimId + ",\"held\":" + held + "}");
             return;
         }
-        // set-clock <totalTicks>: move the OVERWORLD's total world time, which is the one clock the
-        // space subsystem reads (SpaceSubsystem.spaceClock) and the one the orbital law is evaluated
-        // against. `/time set` moves the day-cycle time and leaves total time alone, so it cannot age
-        // a universe: without this probe "a parked ship keeps its bodies for hours" is untestable
-        // except by waiting hours.
+        // clock: read both clocks in one answer - the SPACE clock (the subsystem's own counter) and
+        // the overworld's total world time. Read-only. They are two different numbers that used to be
+        // one, and every claim about the space clock being independent of any world is a claim about
+        // the pair, so the pair is what the probe reports.
+        if (args.length >= 1 && "clock".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            send(sender, "{\"ok\":true,\"spaceClock\":"
+                    + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock()
+                    + ",\"overworld\":" + (overworld == null ? -1L : overworld.getTotalWorldTime())
+                    + "}");
+            return;
+        }
+        // set-clock <ticks>: move the SPACE clock - the subsystem's own counter, which is what the
+        // orbital law and every space-side elapsed time are evaluated against. `/time set` moves the
+        // day-cycle time and leaves total time alone, so it cannot age a universe: without this probe
+        // "a parked ship keeps its bodies for hours" is untestable except by waiting hours.
+        //
+        // It touches NO WORLD. This used to write the overworld's totalTime, and on a server shared
+        // by the whole fork that meant one test aging the universe by eleven days moved every
+        // vanilla and third-party `totalTime % N` gate with it. The overworld's own clock is reported
+        // beside the new value so a caller can see that it did not move.
         if (args.length >= 2 && "set-clock".equalsIgnoreCase(args[0])) {
+            long before = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+            zmaster587.advancedRocketry.space.SpaceSubsystem.setSpaceClock(
+                    parseLongOr(args[1], before));
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            send(sender, "{\"ok\":true,\"before\":" + before + ",\"spaceClock\":"
+                    + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock()
+                    + ",\"overworld\":" + (overworld == null ? -1L : overworld.getTotalWorldTime())
+                    + "}");
+            return;
+        }
+        // set-world-clock <totalTicks>: move the OVERWORLD's total world time and nothing else. What
+        // set-clock used to do, kept because the two clocks being independent is only assertable
+        // against a fixture in which they DISAGREE - and on a fresh world they both start at zero and
+        // both advance once per tick, so nothing diverges by itself. This is the verb that authors
+        // the divergence; it does not belong on a shared server.
+        if (args.length >= 2 && "set-world-clock".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer overworld = server.getWorld(0);
             if (overworld == null) {
                 send(sender, "{\"error\":\"overworld not loaded\"}");
                 return;
             }
             long before = overworld.getTotalWorldTime();
-            long target = parseLongOr(args[1], before);
-            overworld.getWorldInfo().setWorldTotalTime(target);
-            send(sender, "{\"ok\":true,\"before\":" + before + ",\"after\":"
+            overworld.getWorldInfo().setWorldTotalTime(parseLongOr(args[1], before));
+            send(sender, "{\"ok\":true,\"before\":" + before + ",\"overworld\":"
                     + overworld.getTotalWorldTime() + ",\"spaceClock\":"
                     + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock() + "}");
             return;

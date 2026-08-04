@@ -20,7 +20,8 @@ import java.util.UUID;
 
 /**
  * Durable backing for the wave-1 {@link ShipLedger}: persists, per ship UUID, WHERE a settled tier-2
- * ship is — its {@link GalacticCoord}, and nothing else about its whereabouts.
+ * ship is — its {@link GalacticCoord}, and nothing else about its whereabouts — together with the
+ * subsystem's own clock, which is WHEN everything else in here was true.
  *
  * <p>The slot dimension is deliberately NOT persisted. Slot ids are minted in registration order each
  * start and re-used as cells come and go, so an id written on one boot names a different cell (or no
@@ -41,14 +42,24 @@ public final class ShipLedgerData extends WorldSavedData {
     /** The {@code .dat} filename — a save-schema constant. */
     public static final String STORAGE_KEY = "advancedrocketry_shipledger";
 
+    /** NBT key of the persisted space clock — a save-schema constant. */
+    private static final String KEY_CLOCK = "spaceClock";
+
     private static final int NBT_VERSION = 1;
 
     /** The persisted snapshot: ship UUID -> its settled ledger entry. */
     private final Map<UUID, ShipLedger.Entry> entries = new HashMap<>();
     /** The persisted in-flight transit records (a jump survives a restart). */
     private final List<TransitRecord> transits = new ArrayList<>();
-    /** cell key -> the world time it was last visited; drives age-based store GC across restarts. */
+    /** cell key -> the space clock it was last visited at; drives age-based store GC across restarts. */
     private final Map<String, Long> cellVisits = new HashMap<>();
+    /**
+     * The space subsystem's own clock as of this snapshot — the tick every other value in here is
+     * dated against. Without it the subsystem would restart its counter at zero on every boot and
+     * each persisted stamp would read as an age of the whole world; with it, an ETA written last
+     * session still says how much of the flight is left.
+     */
+    private long clock;
 
     public ShipLedgerData() {
         super(STORAGE_KEY);
@@ -104,9 +115,13 @@ public final class ShipLedgerData extends WorldSavedData {
      * ships that would have been dropped are returned so the caller can name them. An empty return
      * means the snapshot was applied.</p>
      *
+     * <p>The space clock is deliberately NOT part of this write — see {@link #setClock(long)}. It is
+     * monotonic state rather than a snapshot, and it dates stamps that live outside this store
+     * entirely, so it must never be rolled back by a pass that declined to replace the fleet.</p>
+     *
      * @param live     the live ledger's whole snapshot (both states; only the settled half is stored)
      * @param inFlight the in-flight transit records, as exported by the transit manager
-     * @param visits   cell key -&gt; the world time it was last visited
+     * @param visits   cell key -&gt; the space clock it was last visited at
      * @return the ships this write would have dropped; empty when it was applied
      */
     public List<UUID> replaceAll(Map<UUID, ShipLedger.Entry> live, List<TransitRecord> inFlight,
@@ -177,6 +192,32 @@ public final class ShipLedgerData extends WorldSavedData {
         return new HashMap<>(cellVisits);
     }
 
+    /**
+     * The persisted space clock — where the subsystem's counter resumes on this boot. {@code 0} for a
+     * world that has never stored one, which is where a brand-new clock starts anyway.
+     */
+    public long clock() {
+        return clock;
+    }
+
+    /**
+     * Store the clock. The ONLY writer of it, and deliberately separate from {@link #replaceAll}:
+     * every save pass calls this, whether or not the subsystem is up and whether or not the fleet
+     * write is applied.
+     *
+     * <p>The clock is monotonic state, not a snapshot. It dates stamps that live nowhere near this
+     * store — a jump capacitor's {@code since} in tile NBT, a memory crystal's {@code observedTick}
+     * in item NBT — and Minecraft has already committed those to disk by the time a save event
+     * reaches this class. So the clock must never come back EARLIER than they do: elapsed time
+     * against a stamp from the future is negative, and the code that consumes it treats that as
+     * "no time has passed" and stops accruing. Rolling the clock back with a declined fleet write
+     * would trade a stale ship position for a world of capacitors that never charge.</p>
+     */
+    public void setClock(long clock) {
+        this.clock = clock;
+        markDirty();
+    }
+
     /** Test/diagnostic view of the persisted snapshot. */
     public Map<UUID, ShipLedger.Entry> snapshot() {
         return new HashMap<>(entries);
@@ -211,6 +252,9 @@ public final class ShipLedgerData extends WorldSavedData {
                 cellVisits.put(key, c.getLong("visit"));
             }
         }
+        // Absent on a save written before the subsystem owned a clock: zero, the same place a new
+        // one starts.
+        clock = nbt.getLong(KEY_CLOCK);
     }
 
     @Override
@@ -239,6 +283,7 @@ public final class ShipLedgerData extends WorldSavedData {
             visitList.appendTag(c);
         }
         nbt.setTag("cellVisits", visitList);
+        nbt.setLong(KEY_CLOCK, clock);
         return nbt;
     }
 }

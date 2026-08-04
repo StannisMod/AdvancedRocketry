@@ -21,11 +21,21 @@ import static org.junit.Assert.assertTrue;
  * Pure persistence contract of {@link ShipLedgerData} (the durable backing for the ship ledger): a
  * settled ship's galactic position survives a write&rarr;read NBT round-trip, a ship in flight is
  * carried by its transit record instead of by the settled list, a write that would store a ship in
- * NEITHER place is refused outright, and a loaded store repopulates a live {@link ShipLedger}. No MC
- * world — the WSD's own {@code write/readFromNBT} + {@code replaceAll}/{@code loadInto} operate on
- * in-memory maps.
+ * NEITHER place is refused outright, the subsystem's own clock rides its own monotonic writer rather
+ * than the fleet's snapshot, and a loaded store repopulates a live {@link ShipLedger}. No MC world —
+ * the WSD's own {@code write/readFromNBT} + {@code replaceAll}/{@code loadInto} operate on in-memory
+ * maps.
  */
 public class ShipLedgerDataTest {
+
+    /**
+     * A space-clock value no fresh boot reaches — ~11.6 days at 20 tps. Deliberately not a small
+     * number: reading back a small one would be indistinguishable from reading back a default.
+     */
+    private static final long CLOCK = 20_000_000L;
+
+    /** How much NEWER the clock offered with a refused write is. Any non-zero value would do. */
+    private static final long AGE = 500_000L;
 
     private static GalacticCoord coord(long sx, long sy, long sz, long lx, long ly, long lz) {
         return GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
@@ -159,6 +169,102 @@ public class ShipLedgerDataTest {
         assertEquals("and it changed nothing: both ships are still stored", 2, data.snapshot().size());
         assertEquals("byte for byte, the store is what it was before the refused write",
                 good.toString(), data.writeToNBT(new NBTTagCompound()).toString());
+    }
+
+    /**
+     * The space subsystem's own clock is part of the durable snapshot, so the counter resumes where
+     * the last save left it instead of restarting at zero every boot.
+     *
+     * <p>Everything else in this store is a STAMP — a cell's last visit, a jump's arrival tick — and a
+     * stamp only means anything beside the counter it was taken from. Lose the counter and a flight
+     * that had two minutes left comes back having arrived before the world began.</p>
+     */
+    @Test
+    public void theSpaceClockIsStoredWithTheStateItDatesAndSurvivesTheRoundTrip() {
+        UUID a = UUID.randomUUID();
+        GalacticCoord home = coord(3, 0, -1, 100, 0, 50);
+        ShipLedger live = new ShipLedger();
+        live.settle(a, home);
+
+        ShipLedgerData src = new ShipLedgerData();
+        assertTrue("the write is applied", store(src, live).isEmpty());
+        src.setClock(CLOCK);
+
+        ShipLedgerData dst = new ShipLedgerData();
+        dst.readFromNBT(src.writeToNBT(new NBTTagCompound()));
+
+        assertEquals("the subsystem must resume its own counter where the save left it", CLOCK,
+                dst.clock());
+        assertEquals("...beside the fleet that counter dates", 1, dst.snapshot().size());
+    }
+
+    /**
+     * A save with no clock in it reads back as tick zero — the pre-3.0.0 / brand-new-world case.
+     *
+     * <p>This is the READ side of the schema, not a field default: it goes through the same
+     * {@code readFromNBT} a world on disk does, against NBT that genuinely lacks the key. The store
+     * has to answer something, and zero is where a new clock starts, so a world that never stored one
+     * begins rather than jumping.</p>
+     */
+    @Test
+    public void aSaveWithNoClockInItReadsBackAsTickZero() {
+        ShipLedgerData legacy = new ShipLedgerData();
+        legacy.setClock(CLOCK); // it must be capable of holding a non-zero clock first
+        assertEquals("arrangement: the store holds a clock before the key is taken away", CLOCK,
+                legacy.clock());
+
+        NBTTagCompound nbt = legacy.writeToNBT(new NBTTagCompound());
+        assertTrue("arrangement: the schema key must be there to remove", nbt.hasKey("spaceClock"));
+        nbt.removeTag("spaceClock");
+
+        legacy.readFromNBT(nbt);
+        assertEquals("a save written before the subsystem owned a clock has none to give back, and "
+                + "zero is where a new clock starts", 0L, legacy.clock());
+    }
+
+    /**
+     * A REFUSED fleet write must not roll the clock back with it.
+     *
+     * <p>The tempting design is the opposite — bundle the clock into the same all-or-nothing write,
+     * so a pass that keeps an older fleet keeps the older clock. It is wrong, because the fleet is
+     * not the only thing this clock dates. A jump capacitor's {@code since} lives in TILE NBT and a
+     * memory crystal's {@code observedTick} in ITEM NBT, and Minecraft commits both to disk BEFORE a
+     * world-save event ever reaches this store. A clock rolled back under them comes back EARLIER
+     * than stamps already written, elapsed time against those stamps goes negative, and the code
+     * that consumes it reads that as "no time has passed" and stops accruing — a world of capacitors
+     * that never charge, for however long it takes the clock to catch up.</p>
+     *
+     * <p>So the clock is monotonic and the fleet is atomic. The price is that a refused pass can
+     * leave a clock at most one save cycle ahead of a stale fleet: a cell reads a cycle older, a jump
+     * lands a cycle sooner. That is the cheaper of the two errors by a wide margin.</p>
+     */
+    @Test
+    public void aRefusedFleetWriteDoesNotRollTheClockBack() {
+        UUID settled = UUID.randomUUID();
+        UUID flyer = UUID.randomUUID();
+        GalacticCoord home = coord(4, 0, 0, 0, 0, 0);
+
+        ShipLedgerData data = new ShipLedgerData();
+        ShipLedger before = new ShipLedger();
+        before.settle(settled, home);
+        before.settle(flyer, home);
+        assertTrue("arrangement: a good fleet is stored first", store(data, before).isEmpty());
+        data.setClock(CLOCK);
+
+        // The clock keeps being written every pass, because it is not part of the snapshot.
+        data.setClock(CLOCK + AGE);
+
+        // The state a failed gather leaves behind: flying, and nothing carrying it.
+        ShipLedger during = new ShipLedger();
+        during.settle(settled, home);
+        during.beginTransit(flyer, coord(5, 0, 0, 0, 0, 0));
+        assertEquals("arrangement: the fleet write must actually be refused", 1,
+                store(data, during).size());
+
+        assertEquals("a refused FLEET write may not drag the clock backwards with it: stamps outside "
+                + "this store are already on disk at the newer tick, and a clock behind them makes "
+                + "their elapsed time negative", CLOCK + AGE, data.clock());
+        assertEquals("...and the fleet it declined to replace is untouched", 2, data.snapshot().size());
     }
 
     @Test

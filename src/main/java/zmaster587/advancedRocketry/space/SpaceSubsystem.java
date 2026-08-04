@@ -164,22 +164,22 @@ public final class SpaceSubsystem {
                 parseGcPolicy(cfg.spaceCellGcPolicy),
                 cfg.spaceCellMaxAgeTicks,
                 cfg.spaceMaxStoredCells);
-        instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::worldTime, mgrConfig,
+        instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::spaceClock, mgrConfig,
                 SpaceSubsystem::onForcedTier1Eviction);
         shipLedger = new ShipLedger();
         // A cell is protected from garbage collection while a ship is parked in it. That fact already
         // lives in the ledger, so the manager asks it rather than keeping a second flag of its own.
         instance.setClaimedCells(cellKey -> shipLedger != null && shipLedger.holdsShipIn(cellKey));
         transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser(),
-                shipLedger, SpaceSubsystem::worldTime);
+                shipLedger, SpaceSubsystem::spaceClock);
         transitManager.setOfflineProgress(new OfflineProgress(
                 OfflineProgress.parseMode(cfg.spaceTransitOfflineProgress), SpaceSubsystem::isPlayerOnline));
         transitManager.setArrivalPlacement(SpaceSubsystem::arrivalStandoff);
         transitManager.setFrames(SpaceSubsystem::cellFrameOriginAt);
         entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
-                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::worldTime);
+                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::spaceClock);
         descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
-                new VSDescentPasteResolver(), SpaceSubsystem::worldTime);
+                new VSDescentPasteResolver(), SpaceSubsystem::spaceClock);
         gcTickCounter = 0;
         pressureGcRequested = false;
         AdvancedRocketry.logger.info("[SPACE] subsystem online: pool={} gcPolicy={} maxStored={} maxAgeTicks={}",
@@ -187,16 +187,31 @@ public final class SpaceSubsystem {
     }
 
     /**
-     * Server-STARTED hook (worlds are up, MapStorage reachable): restore the persisted ship ledger so
-     * the server's knowledge of every settled ship survives a restart. Runs before any player login.
-     * A no-op when the subsystem stood down (test harness / disabled / no VS -> {@code shipLedger} null).
+     * Server-STARTED hook (worlds are up, MapStorage reachable): restore the space clock, and then
+     * the persisted ship ledger so the server's knowledge of every settled ship survives a restart.
+     * Runs before any player login. The LEDGER half is a no-op when the subsystem stood down (test
+     * harness / disabled / no VS -&gt; {@code shipLedger} null); the CLOCK half is not — see below.
      */
     public static void onServerStarted() {
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        ShipLedgerData data = ShipLedgerData.get(server);
+        // The clock FIRST, and BEFORE the stand-down check. Every value restored below is dated
+        // against it, and a ledger age or a transit ETA read at tick zero while its stamp came from
+        // last session is not merely stale, it is in the future.
+        //
+        // It is restored even with the subsystem down, because the clock is not the CONTROLLER's:
+        // spaceClock() is public and is read by code that has no idea whether space registered - a
+        // memory crystal stamps the freshness of every address it is seeded with, from any world,
+        // with or without Valkyrien Skies - and such a stamp OUTLIVES the session in storage of its
+        // own. A counter that restarted at zero would leave every one of them permanently in the
+        // future, so the freshest observation could never win a merge again. A world with none
+        // stored (a new save) starts at zero, which is where a new clock starts.
+        if (data != null) {
+            spaceTick = data.clock();
+        }
         if (shipLedger == null) {
             return;
         }
-        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
-        ShipLedgerData data = ShipLedgerData.get(server);
         if (data != null) {
             data.loadInto(shipLedger);
             AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", shipLedger.size());
@@ -373,6 +388,10 @@ public final class SpaceSubsystem {
         shipLedger = null;
         entryController = null;
         descentController = null;
+        // The clock belongs to the save that was just closed. A single-player client keeps this JVM
+        // alive between worlds, so carrying the number over would date the next world's first jump
+        // against the previous world's history; the next server-started hook reads its own.
+        spaceTick = 0L;
         gcTickCounter = 0;
         pressureGcRequested = false;
         saveFaultArmed = false;
@@ -395,37 +414,53 @@ public final class SpaceSubsystem {
     }
 
     /**
+     * The subsystem's own clock, in ticks: the counter {@link #spaceClock()} answers with on the
+     * server. Advanced once per server tick by {@link Ticker}, written out with the rest of the
+     * subsystem's durable state and read back on server start, so a persisted age or ETA still means
+     * what it meant before the reboot.
+     *
+     * <p>Plain static state and not a world's counter, because a world's counter belongs to that
+     * world. The overworld's is the only one that advances unconditionally, and it is also the one
+     * anything that wants to age a save writes to; every other dimension's advances only while that
+     * dimension ticks; and neither is resolvable in the windows around server start and stop, where
+     * asking for one used to answer <b>tick zero</b> — silently dating a body's address, a transit's
+     * elapsed time or a capacitor's charge to the beginning of the world.</p>
+     */
+    private static long spaceTick;
+
+    /**
      * The one clock every space-side elapsed-time computation reads, on EITHER side. Public so
      * machines that carry a lazy resource — a capacitor that is charged by arithmetic rather than by
      * ticking — measure their elapsed time against exactly the same counter a transit does, and so a
      * ship parked in an unloaded cell is never quietly on a different clock from one in a loaded
      * chunk.
      *
-     * <p><b>Side-agnostic on purpose.</b> On the server this is the overworld's total time; on a
-     * client it is {@link SpaceClockSync}, the synced copy of that same counter. No caller needs to
-     * know which side it is on, and none may reach for a world's own clock instead: every dimension
-     * except the overworld carries a clock that advances only while it ticks, so "the total time of
-     * whatever world I am in" is a DIFFERENT quantity that merely looks like this one. A jump aim
-     * once read that other quantity and put arrivals thousands of blocks off their target.</p>
+     * <p><b>Side-agnostic on purpose.</b> On the server this is {@link #spaceTick}, the subsystem's
+     * own counter; on a client it is {@link SpaceClockSync}, the synced copy of that same counter. No
+     * caller needs to know which side it is on, and none may reach for a world's own clock instead:
+     * every dimension except the overworld carries a clock that advances only while it ticks, so "the
+     * total time of whatever world I am in" is a DIFFERENT quantity that merely looks like this one.
+     * A jump aim once read that other quantity and put arrivals thousands of blocks off their target.
+     * There is now no world clock anywhere in this answer, so that class of mistake has nothing left
+     * to be made out of.</p>
      */
     public static long spaceClock() {
         return FMLCommonHandler.instance().getEffectiveSide().isClient()
                 ? SpaceClockSync.now()
-                : worldTime();
+                : spaceTick;
     }
 
     /**
-     * The overworld's total world time — the persist-safe clock for the space subsystem (last-visit /
-     * GC age, transit {@code arrivalTick}/{@code lastTicked}). Unlike {@code getTickCounter()} it survives
-     * a restart, so a persisted age/ETA stays meaningful across reboots (universe-model §7 lazy-catch-up).
+     * TEST/HEADLESS: put the owned clock at {@code tick}. Ages the universe by arithmetic instead of
+     * by waiting, which is the only way a dwell measured in days is testable at all — and, unlike the
+     * counter this used to be, moving it touches no world, so a shared server's day cycle, mob spawns
+     * and every other {@code totalTime % N} gate are left exactly where they were.
+     *
+     * <p>Production has no other writer: the clock is advanced by {@link Ticker} and restored by
+     * {@link #onServerStarted()}, and nothing else may set it.</p>
      */
-    private static long worldTime() {
-        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
-        if (server == null) {
-            return 0L;
-        }
-        net.minecraft.world.WorldServer overworld = server.getWorld(0);
-        return overworld != null ? overworld.getTotalWorldTime() : 0L;
+    public static void setSpaceClock(long tick) {
+        spaceTick = tick;
     }
 
     /** Whether {@code player} is currently connected — the offline-progress crew-online check. */
@@ -473,6 +508,15 @@ public final class SpaceSubsystem {
             if (event.phase != TickEvent.Phase.END) {
                 return;
             }
+            // THE SUBSYSTEM'S ONLY ADVANCE SITE. One increment per server tick, before anything else
+            // here can return: the clock is not the controller's, it is the subsystem's, and a
+            // session with the controller down (config off, no Valkyrien Skies, a harness that
+            // installs its own stack) must still get a number that MOVES when it asks the time —
+            // a clock frozen at zero is the defect this counter replaced, not an acceptable
+            // stand-down. Nothing else in the mod may increment it; the other server-tick handler in
+            // this subsystem (SpaceEventHandler) deliberately only READS it, because two writers on
+            // the same event would run the clock at twice the tick rate and nothing would report it.
+            spaceTick++;
             SpaceManager mgr = instance;
             if (mgr == null) {
                 return;
@@ -508,8 +552,12 @@ public final class SpaceSubsystem {
         }
 
         /**
-         * Persist the ship ledger on the overworld save cadence (autosave + shutdown both fire this on
-         * dim 0). A no-op while the subsystem is down.
+         * Persist the space clock and the ship ledger on the overworld save cadence (autosave +
+         * shutdown both fire this on dim 0). Three steps, in this order and for this reason: stage the
+         * CLOCK (always — it is read by code that does not know or care whether space registered, see
+         * {@link SpaceSubsystem#onServerStarted()}), stage the FLEET (only while the subsystem is up,
+         * and all-or-nothing), then write out whatever was staged in a {@code finally} — so a fleet
+         * step that refuses or fails still cannot take the clock down with it.
          *
          * <p>The snapshot is written out EXPLICITLY at the end rather than merely marked dirty. This
          * looks redundant and is not: the world's save routine writes its map storage and only then
@@ -531,11 +579,55 @@ public final class SpaceSubsystem {
          */
         @SubscribeEvent
         public void onWorldSave(net.minecraftforge.event.world.WorldEvent.Save event) {
-            if (shipLedger == null || event.getWorld().provider.getDimension() != 0) {
+            if (event.getWorld().provider.getDimension() != 0) {
                 return;
             }
             try {
-                ShipLedgerData data = ShipLedgerData.get(event.getWorld());
+                stageClock(event.getWorld());
+                if (shipLedger != null) {
+                    stageFleet(event.getWorld());
+                }
+            } finally {
+                flush(event.getWorld());
+            }
+        }
+
+        /**
+         * Stage the space clock. UNCONDITIONAL - it runs before the fleet, on every dim-0 save,
+         * whether or not the subsystem is up, and it is not part of the fleet's all-or-nothing write.
+         *
+         * <p><b>Why it is not bundled with the fleet, which is where it started.</b> Bundling looks
+         * right: the clock dates what the fleet stores, so a pass that keeps an older fleet should
+         * keep the older clock. But the fleet is not the only thing this clock dates. A jump
+         * capacitor's {@code since} lives in TILE NBT and a memory crystal's {@code observedTick}
+         * lives in ITEM NBT, and Minecraft commits both BEFORE this handler is ever called - the
+         * chunks are written, then the save event is posted. A clock left behind on a refused or
+         * failed pass therefore comes back EARLIER than stamps already on disk, and the elapsed time
+         * they are measured against goes negative: every capacitor in the world reads frozen at its
+         * last level, with the pilot unable to jump and nothing in the log tying it to a save.
+         *
+         * <p>Written forward instead, the worst case is a clock at most one save cycle AHEAD of a
+         * stale fleet: a cell looks a cycle older and a jump lands a cycle sooner. A clock that runs
+         * backwards breaks arithmetic; a clock that runs a little ahead of one stale snapshot does
+         * not. So the clock is monotonic and the fleet is atomic, and they are written separately
+         * because they are different KINDS of state.</p>
+         */
+        private void stageClock(net.minecraft.world.World overworld) {
+            try {
+                ShipLedgerData data = ShipLedgerData.get(overworld);
+                if (data != null) {
+                    data.setClock(spaceTick);
+                }
+            } catch (Exception failed) {
+                AdvancedRocketry.logger.error("[SPACE] the space clock could not be staged this save "
+                        + "pass; it will resume from the last value that reached disk", failed);
+            }
+        }
+
+        /** Stage the whole fleet in one all-or-nothing write. Never propagates - see the class body. */
+        private void stageFleet(net.minecraft.world.World overworld) {
+            try {
+                ShipLedgerData data = ShipLedgerData.get(overworld);
                 if (data == null) {
                     AdvancedRocketry.logger.error("[SPACE] the durable ship ledger could not be resolved "
                             + "on this save - every ship's position is going unwritten this pass");
@@ -558,20 +650,6 @@ public final class SpaceSubsystem {
                             + "carries them, so this save would store them nowhere. The previously saved "
                             + "state is kept instead. This state should be unreachable - treat it as a "
                             + "bug report.", dropped.size(), dropped);
-                    return;
-                }
-                net.minecraft.world.storage.MapStorage storage = event.getWorld().getMapStorage();
-                if (storage != null) {
-                    storage.saveAllData();
-                    // saveAllData walks every registered store in one unguarded loop, so an error raised
-                    // by somebody else's store can end the pass before ours is reached - and it stays
-                    // dirty when that happens. On an autosave the next pass picks it up; on the shutdown
-                    // save there is no next pass, so say so rather than let the ledger vanish quietly.
-                    if (data.isDirty()) {
-                        AdvancedRocketry.logger.error("[SPACE] the ship ledger was not written during this "
-                                + "save pass (another world-saved-data aborted it); if this was the "
-                                + "shutdown save, the last session's ship positions did not reach disk");
-                    }
                 }
             } catch (Exception failed) {
                 // Exceptions, and deliberately nothing wider. What this can meaningfully carry on past
@@ -585,6 +663,23 @@ public final class SpaceSubsystem {
                 // leaves the previously persisted snapshot intact.
                 AdvancedRocketry.logger.error("[SPACE] the ship-ledger save step failed; the previously "
                         + "persisted snapshot is left untouched and the server keeps running", failed);
+            }
+        }
+
+        /**
+         * Write whatever was staged. In a {@code finally}, so a fleet step that failed or refused
+         * still lets the CLOCK reach disk - which is the whole point of staging it first.
+         */
+        private void flush(net.minecraft.world.World overworld) {
+            try {
+                net.minecraft.world.storage.MapStorage storage = overworld.getMapStorage();
+                if (storage != null) {
+                    storage.saveAllData();
+                }
+            } catch (Exception failed) {
+                AdvancedRocketry.logger.error("[SPACE] the space save could not be written out this "
+                        + "pass; the previously persisted snapshot is left untouched and the server "
+                        + "keeps running", failed);
             }
         }
     }

@@ -29,11 +29,13 @@ import static org.junit.Assert.assertTrue;
  * fails loudly rather than passing quietly.
  *
  * <h2>Why the clock is set rather than ticked</h2>
- * The orbital law is evaluated against the overworld's TOTAL world time, and {@code /time set} moves
- * the day-cycle time and leaves total time alone. Twenty million real ticks is not an option, so
- * {@code artest space set-clock} writes the counter the production code reads &mdash; and puts it back
- * afterwards, because this server is shared with every other test in the fork and an aged clock is
- * exactly the kind of leaked state that produces a failure three classes later.
+ * The orbital law is evaluated against the SPACE clock &mdash; the subsystem's own counter &mdash; and
+ * twenty million real ticks is not an option, so {@code artest space set-clock} writes that counter
+ * directly. It is put back afterwards: the counter is the subsystem's, not this test's, and this
+ * server is shared with every other test in the fork, so an aged clock is exactly the kind of leaked
+ * state that produces a failure three classes later. What the restore no longer has to undo is
+ * collateral: the probe used to age the overworld's total world time, which moved every vanilla and
+ * third-party gate keyed on it for whoever ran next.
  *
  * <p>Nothing else is synthetic: the bodies are the shipped world's own authored system, the query is
  * the production registry's, and the frame reading comes from the production {@code CellFrames}
@@ -99,8 +101,8 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
                     forget.contains("\"held\":true"));
             reDerived = exec("artest space cell-info " + cellArgs + " " + WATCHED_DIM);
         } finally {
-            // Hand the shared server back the clock it had. A test that ages a world by eleven days
-            // and leaves it there is a test that breaks somebody else's.
+            // Hand the shared server back the clock it had. A test that ages the universe by eleven
+            // days and leaves it there is a test that breaks somebody else's.
             exec("artest space set-clock " + clockBefore);
         }
 

@@ -3,12 +3,14 @@ package zmaster587.advancedRocketry.space;
 /**
  * The client's copy of the space clock.
  *
- * <p>The space clock is the SERVER's counter — the overworld's total world time. A client has no
- * access to it: the server broadcasts each world's OWN total time to the players in it, and Advanced
+ * <p>The space clock is the SERVER's counter — the space subsystem's own, advanced once per server
+ * tick and persisted with the subsystem's saved state. A client has no access to it and no way to
+ * derive it: the only counters it is told about are its worlds' own total times, and Advanced
  * Rocketry gives every non-overworld dimension a clock that only advances while that dimension
  * ticks. So a client asking "what time is it, for the space subsystem" through any world it can see
  * gets an answer that belongs to a different clock — which is precisely the defect this class
- * exists to make unnecessary.</p>
+ * exists to make unnecessary. Since the server's counter stopped being any world's, that is no
+ * longer even approximately recoverable client-side; this class is the only route.</p>
  *
  * <p><b>Baseline plus local advance, not a packet per tick.</b> The clock is monotonic at a fixed
  * rate, so the whole of it is one number plus elapsed ticks: a sync sets the baseline, and every
