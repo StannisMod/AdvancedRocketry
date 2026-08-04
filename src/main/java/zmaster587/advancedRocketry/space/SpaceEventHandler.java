@@ -204,7 +204,17 @@ public final class SpaceEventHandler {
      */
     @SubscribeEvent
     public void onPlayerLoggedIn(net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.player == null || pendingShipLostNotices.isEmpty()) {
+        if (event.player == null) {
+            return;
+        }
+        // The space clock, before anything he can see depends on it. A client that has never been
+        // told simply answers zero, which is indistinguishable from "the world just started".
+        if (event.player instanceof EntityPlayerMP) {
+            PacketHandler.sendToPlayer(
+                    zmaster587.advancedRocketry.network.PacketSpaceClockSync.current(),
+                    (EntityPlayerMP) event.player);
+        }
+        if (pendingShipLostNotices.isEmpty()) {
             return;
         }
         if (pendingShipLostNotices.remove(event.player.getUniqueID())) {
@@ -249,6 +259,42 @@ public final class SpaceEventHandler {
         }
     }
 
+    /**
+     * How often each player's space-clock baseline is refreshed, in ticks. Sized off what the clock
+     * is USED for rather than off precision for its own sake: a body moves well under a block per
+     * tick and the descent trigger is hundreds of blocks wide, so even a client whose tick rate has
+     * run away from a lagging server stays far inside tolerance over this interval. {@code tunable}.
+     */
+    private static final int CLOCK_SYNC_TICKS = 200;
+
+    /**
+     * Refresh the space-clock baseline of whichever players are due this tick.
+     *
+     * <p><b>Each player has his OWN phase inside the interval.</b> A shared
+     * {@code tick % CLOCK_SYNC_TICKS == 0} would read the same clock for every player and open the
+     * gate for all of them on the same tick — one packet per online player at once, then nothing for
+     * the rest of the interval. The peak, not the average, is what a network stall is made of. The
+     * phase comes from the player's own id, so it is stable across his whole session and costs no
+     * state to remember.</p>
+     *
+     * <p>Cost, stated as the PEAK: at most one packet of one {@code long} in any single tick,
+     * whatever the player count.</p>
+     */
+    private void syncSpaceClock(MinecraftServer server) {
+        long clock = SpaceSubsystem.spaceClock();
+        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+            if (Math.floorMod(clock + clockPhaseOf(player.getUniqueID()), (long) CLOCK_SYNC_TICKS) == 0L) {
+                PacketHandler.sendToPlayer(
+                        zmaster587.advancedRocketry.network.PacketSpaceClockSync.current(), player);
+            }
+        }
+    }
+
+    /** A stable, well-spread phase for one player inside the sync interval. */
+    private static long clockPhaseOf(UUID playerId) {
+        return Math.floorMod(playerId.hashCode() * 2654435761L, (long) CLOCK_SYNC_TICKS);
+    }
+
     // --- phase 2: seating ------------------------------------------------------------------------
 
     /**
@@ -273,6 +319,7 @@ public final class SpaceEventHandler {
                 AboardRecord.reconcile(player);
             }
         }
+        syncSpaceClock(server);
         if (pendingSeats.isEmpty()) {
             return;
         }

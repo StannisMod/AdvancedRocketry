@@ -243,7 +243,13 @@ public class TileNavigationComputer extends TileInventoryHatch
                 : new zmaster587.advancedRocketry.navigation.ShipNavigation(world, afc, shipIdOf(afc));
         GalacticCoord origin = nav == null ? null : nav.currentCoord();
         final long speed = nav == null ? 0L : nav.plannedSpeed();
-        long now = zmaster587.advancedRocketry.AdvancedRocketry.proxy.getWorldTimeUniversal(0);
+        // The SPACE clock, not a world's own. The aim is a prediction of where the target will be
+        // when this flight ends, and the arrival is priced against SpaceSubsystem.spaceClock(); read
+        // anything else here and the two disagree by however far the reader's clock has drifted from
+        // the overworld's. `proxy.getWorldTimeUniversal(0)` looks like it asks for exactly this and
+        // does not: its client implementation ignores the dimension argument and answers with the
+        // player's CURRENT world, whose clock advances only while that world ticks.
+        long now = SpaceSubsystem.spaceClock();
 
         GalacticCoord aimed = registry == null ? null : TargetPrediction.aimAt(targetDim, origin, now,
                 new TargetPrediction.Ephemeris() {

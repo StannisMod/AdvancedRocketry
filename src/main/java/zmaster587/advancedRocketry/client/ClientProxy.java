@@ -323,6 +323,33 @@ public class ClientProxy extends CommonProxy {
     }
 
     /**
+     * Advance this client's copy of the space clock by one tick.
+     *
+     * <p>The space clock is the server's counter, and the server sends a baseline rather than a
+     * value per tick; between baselines the client carries it forward itself. Deliberately NOT read
+     * off any world's own total time: every dimension but the overworld has a clock that advances
+     * only while it ticks, so a client that took its time from the world it happens to be standing
+     * in would answer with a different quantity every time it changed dimension.</p>
+     */
+    @SubscribeEvent
+    public static void advanceSpaceClock(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            zmaster587.advancedRocketry.space.SpaceClockSync.onClientTick();
+        }
+    }
+
+    /**
+     * Forget the space-clock baseline on disconnect — the next server's counter has nothing to do
+     * with this one, and a stale baseline would let the client answer confidently with a number
+     * from a world it has left.
+     */
+    @SubscribeEvent
+    public static void forgetSpaceClock(
+            net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        zmaster587.advancedRocketry.space.SpaceClockSync.reset();
+    }
+
+    /**
      * Silence a harness-spawned test client. Automated client e2e ({@code RealClientHarness})
      * boots a REAL client with REAL audio on the dev box, marked by {@code -Dforge.test.client=true}
      * (the same flag {@link #bootstrapTestClientBridge()} keys on); this mutes the master sound

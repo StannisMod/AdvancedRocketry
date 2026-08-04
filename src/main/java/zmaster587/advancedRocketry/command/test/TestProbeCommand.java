@@ -2156,6 +2156,35 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"target\":\"" + nav.getTarget().cellKey() + "\"}");
             return;
         }
+        // target-body <dim> <x> <y> <z> <bodyDim>: aim the console at a BODY the way the pick button
+        // does, rather than at a raw coordinate. This is the path that predicts where the body will
+        // be, so it is the one that reads a clock; `target` above sets a fixed point and reads none.
+        if ("target-body".equalsIgnoreCase(verb) && args.length >= 6) {
+            int bodyDim = parseIntOr(args[5], zmaster587.advancedRocketry.api.Constants.INVALID_PLANET);
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> observed =
+                    reg == null ? java.util.Optional.<zmaster587.advancedRocketry.space.GalacticCoord>empty()
+                            : reg.coordForPlanet(bodyDim);
+            if (!observed.isPresent()) {
+                send(sender, "{\"error\":\"no such body\",\"bodyDim\":" + bodyDim + "}");
+                return;
+            }
+            nav.setTargetBody(bodyDim, observed.get());
+            send(sender, "{\"ok\":true,\"targetDim\":" + nav.getTargetDim()
+                    + ",\"target\":" + (nav.getTarget() == null
+                            ? "null" : "\"" + nav.getTarget().cellKey() + "\"") + "}");
+            return;
+        }
+        // refresh <dim> <x> <y> <z>: re-run the console's own aim, now. The production method, the
+        // one both the 20-tick console update and the jump trigger call; driving it directly keeps a
+        // test off the tick cadence, which is timing it has no reason to depend on.
+        if ("refresh".equalsIgnoreCase(verb)) {
+            nav.refreshTarget();
+            send(sender, "{\"ok\":true,\"target\":" + (nav.getTarget() == null
+                    ? "null" : "\"" + nav.getTarget().cellKey() + "\"") + "}");
+            return;
+        }
         if ("cleartarget".equalsIgnoreCase(verb)) {
             nav.setTarget(null);
             send(sender, "{\"ok\":true,\"target\":null}");
@@ -2189,6 +2218,19 @@ public class TestProbeCommand extends CommandBase {
             String targetKind = "null";
             String descend = "false";
             boolean slotWorld = false;
+            // Where the aim points INSIDE its cell, and where the aimed body actually is right now.
+            // The cell key alone cannot answer "did the aim land on the body": a moon shares its
+            // parent's cell name and carries its own live offset inside it, so a badly-timed aim
+            // keeps the right cell and misses the body by tens of thousands of blocks. The MISS is
+            // reported together with both offsets it was computed from, so a caller can see WHICH
+            // component moved rather than only that a magnitude changed.
+            String targetLocal = "null";
+            String bodyNowLocal = "null";
+            String aimMissNow = "null";
+            if (nav.getTarget() != null) {
+                targetLocal = "[" + nav.getTarget().localX() + "," + nav.getTarget().localY()
+                        + "," + nav.getTarget().localZ() + "]";
+            }
             if (targetDim != zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
                 slotWorld = zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().contains(targetDim);
                 zmaster587.advancedRocketry.universe.UniverseRegistry reg =
@@ -2201,6 +2243,15 @@ public class TestProbeCommand extends CommandBase {
                         if (b.dimId() == targetDim) {
                             targetKind = "\"" + b.kind() + "\"";
                             descend = Boolean.toString(b.isDescendTarget());
+                            long clockNow = zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock();
+                            zmaster587.advancedRocketry.space.BlockDelta here = b.inCellOffsetAt(clockNow);
+                            bodyNowLocal = "[" + here.dx() + "," + here.dy() + "," + here.dz() + "]";
+                            if (nav.getTarget() != null) {
+                                aimMissNow = Double.toString(zmaster587.advancedRocketry.space.BlockDelta
+                                        .of(nav.getTarget().localX() - here.dx(),
+                                                nav.getTarget().localY() - here.dy(),
+                                                nav.getTarget().localZ() - here.dz()).length());
+                            }
                             break;
                         }
                     }
@@ -2218,6 +2269,15 @@ public class TestProbeCommand extends CommandBase {
                             nav.getStackInSlot(
                                     zmaster587.advancedRocketry.tile.TileNavigationComputer.SLOT_SOURCE)).size()
                     + ",\"armed\":" + nav.isArmed()
+                    + ",\"targetLocal\":" + targetLocal
+                    + ",\"bodyNowLocal\":" + bodyNowLocal
+                    + ",\"aimMissNow\":" + aimMissNow
+                    // Both clocks, so a caller measures the INPUT of an aim rather than only its
+                    // outcome: an aim that agrees with the body proves nothing if the two clocks
+                    // never diverged in the first place.
+                    + ",\"spaceClock\":" + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock()
+                    + ",\"proxyClock\":"
+                    + zmaster587.advancedRocketry.AdvancedRocketry.proxy.getWorldTimeUniversal(0)
                     + ",\"channel\":" + nav.getSyncChannel() + "}");
             return;
         }
@@ -2244,6 +2304,51 @@ public class TestProbeCommand extends CommandBase {
         net.minecraft.tileentity.TileEntity te = world.getTileEntity(pos);
         return te instanceof zmaster587.advancedRocketry.tile.TileNavigationComputer
                 ? (zmaster587.advancedRocketry.tile.TileNavigationComputer) te : null;
+    }
+
+    /**
+     * The real proxy, parked while {@code space aim-clock} has a mirror installed. Non-null means a
+     * mirror IS installed, which is what {@code aim-clock off} restores and what the status field
+     * reports, so a test can never mistake "restored" for "was never installed".
+     */
+    private static zmaster587.advancedRocketry.common.CommonProxy parkedProxy;
+
+    /**
+     * A proxy that answers {@code getWorldTimeUniversal} the way {@code ClientProxy} does — with the
+     * total time of the world the driver is currently IN, ignoring the dimension it was asked about.
+     *
+     * <p>This exists because the divergence it produces cannot otherwise be exhibited by this test
+     * harness: the harness always runs a dedicated server, where the real proxy honours the argument
+     * and is therefore correct. The DRIVER of the defect is not "being in single-player" — it is an
+     * accessor answering with a clock that is not the overworld's — and that is what this
+     * reproduces, faithfully rather than by an invented number: every dimension but the overworld
+     * carries its own clock, so the value here is a real per-dimension clock, not a synthetic skew.</p>
+     */
+    private static final class MirroredDimClockProxy
+            extends zmaster587.advancedRocketry.common.CommonProxy {
+        private final int mirrored;
+        private final long lagTicks;
+
+        /** Answer with {@code mirrored}'s own clock. */
+        MirroredDimClockProxy(int mirrored) {
+            this.mirrored = mirrored;
+            this.lagTicks = 0L;
+        }
+
+        /** Answer with the overworld's clock minus a fixed lag - a per-dimension clock's effect, sized. */
+        MirroredDimClockProxy(long lagTicks) {
+            this.mirrored = Integer.MIN_VALUE;
+            this.lagTicks = lagTicks;
+        }
+
+        @Override
+        public long getWorldTimeUniversal(int id) {
+            // The argument is DELIBERATELY ignored - that is the behaviour being reproduced.
+            int dim = mirrored == Integer.MIN_VALUE ? 0 : mirrored;
+            net.minecraft.world.WorldServer world =
+                    net.minecraftforge.common.DimensionManager.getWorld(dim);
+            return world == null ? 0L : world.getTotalWorldTime() - lagTicks;
+        }
     }
 
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
@@ -3399,6 +3504,67 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"before\":" + before + ",\"after\":"
                     + overworld.getTotalWorldTime() + ",\"spaceClock\":"
                     + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock() + "}");
+            return;
+        }
+        // aim-clock mirror <dim> | aim-clock off: install or remove a proxy that answers
+        // getWorldTimeUniversal with <dim>'s OWN total time, ignoring the dimension it was asked
+        // about — the behaviour a client-side proxy has, and the driver of the arrival-distance
+        // defect. Only a JVM whose server is the client's own produces it naturally, and this
+        // harness has no such tier, so a test that wants to exercise it installs it here and removes
+        // it in a finally.
+        //
+        // The mirrored value is a REAL per-dimension clock, not an invented skew: every dimension
+        // but the overworld advances only while it ticks, which is exactly why the two disagree in
+        // play. Installing REFUSES when <dim> is not loaded — a mirror that silently fell back to
+        // the overworld would make the whole arrangement a no-op and read as "fixed".
+        //
+        // Reports every clock it can see on BOTH legs, because the interesting quantity is the SPLIT
+        // between them: a test that asserts an aim without asserting the split it created cannot
+        // tell a fixed build from an arrangement that never diverged.
+        if (args.length >= 2 && "aim-clock".equalsIgnoreCase(args[0])) {
+            String mode = args[1];
+            boolean installed;
+            int mirrored = Integer.MIN_VALUE;
+            if ("off".equalsIgnoreCase(mode)) {
+                if (parkedProxy != null) {
+                    zmaster587.advancedRocketry.AdvancedRocketry.proxy = parkedProxy;
+                    parkedProxy = null;
+                }
+                installed = false;
+            } else if ("lag".equalsIgnoreCase(mode) && args.length >= 3) {
+                // The same defect, SIZED: the accessor answers a fixed number of ticks behind the
+                // space clock. What a per-dimension clock does in play is lag by however long its
+                // world was not ticking; naming the lag is what lets a test compute the miss it
+                // should see rather than only observe that one happened.
+                long lag = parseLongOr(args[2], 0L);
+                if (parkedProxy == null) {
+                    parkedProxy = zmaster587.advancedRocketry.AdvancedRocketry.proxy;
+                }
+                zmaster587.advancedRocketry.AdvancedRocketry.proxy = new MirroredDimClockProxy(lag);
+                installed = true;
+            } else if ("mirror".equalsIgnoreCase(mode) && args.length >= 3) {
+                mirrored = parseIntOr(args[2], Integer.MIN_VALUE);
+                if (net.minecraftforge.common.DimensionManager.getWorld(mirrored) == null) {
+                    send(sender, "{\"error\":\"mirror dim not loaded\",\"dim\":" + mirrored + "}");
+                    return;
+                }
+                if (parkedProxy == null) {
+                    parkedProxy = zmaster587.advancedRocketry.AdvancedRocketry.proxy;
+                }
+                zmaster587.advancedRocketry.AdvancedRocketry.proxy = new MirroredDimClockProxy(mirrored);
+                installed = true;
+            } else {
+                send(sender, "{\"error\":\"usage: space aim-clock mirror <dim> | space aim-clock off\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer overworld = server.getWorld(0);
+            send(sender, "{\"ok\":true,\"installed\":" + installed
+                    + ",\"mirrored\":" + mirrored
+                    + ",\"spaceClock\":"
+                    + zmaster587.advancedRocketry.space.SpaceSubsystem.spaceClock()
+                    + ",\"overworld\":" + (overworld == null ? -1L : overworld.getTotalWorldTime())
+                    + ",\"proxyClock\":"
+                    + zmaster587.advancedRocketry.AdvancedRocketry.proxy.getWorldTimeUniversal(0) + "}");
             return;
         }
         if (args.length >= 4 && "cell-info".equalsIgnoreCase(args[0])) {

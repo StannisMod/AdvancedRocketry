@@ -395,20 +395,30 @@ public final class SpaceSubsystem {
     }
 
     /**
+     * The one clock every space-side elapsed-time computation reads, on EITHER side. Public so
+     * machines that carry a lazy resource — a capacitor that is charged by arithmetic rather than by
+     * ticking — measure their elapsed time against exactly the same counter a transit does, and so a
+     * ship parked in an unloaded cell is never quietly on a different clock from one in a loaded
+     * chunk.
+     *
+     * <p><b>Side-agnostic on purpose.</b> On the server this is the overworld's total time; on a
+     * client it is {@link SpaceClockSync}, the synced copy of that same counter. No caller needs to
+     * know which side it is on, and none may reach for a world's own clock instead: every dimension
+     * except the overworld carries a clock that advances only while it ticks, so "the total time of
+     * whatever world I am in" is a DIFFERENT quantity that merely looks like this one. A jump aim
+     * once read that other quantity and put arrivals thousands of blocks off their target.</p>
+     */
+    public static long spaceClock() {
+        return FMLCommonHandler.instance().getEffectiveSide().isClient()
+                ? SpaceClockSync.now()
+                : worldTime();
+    }
+
+    /**
      * The overworld's total world time — the persist-safe clock for the space subsystem (last-visit /
      * GC age, transit {@code arrivalTick}/{@code lastTicked}). Unlike {@code getTickCounter()} it survives
      * a restart, so a persisted age/ETA stays meaningful across reboots (universe-model §7 lazy-catch-up).
      */
-    /**
-     * The one clock every space-side elapsed-time computation reads. Public so machines that carry a
-     * lazy resource — a capacitor that is charged by arithmetic rather than by ticking — measure
-     * their elapsed time against exactly the same counter a transit does, and so a ship parked in an
-     * unloaded cell is never quietly on a different clock from one in a loaded chunk.
-     */
-    public static long spaceClock() {
-        return worldTime();
-    }
-
     private static long worldTime() {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         if (server == null) {

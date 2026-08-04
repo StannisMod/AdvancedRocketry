@@ -52,6 +52,7 @@ public final class PacketRegistry {
             PacketSlotDimSync.class,
             PacketSystemBodiesSync.class,
             PacketNavBodyInfo.class,
+            PacketSpaceClockSync.class,
     };
 
     private PacketRegistry() {
