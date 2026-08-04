@@ -58,6 +58,12 @@ public final class ShipCrossingService {
                        int pasteX, int pasteY, int pasteZ);
 
         /** Pin {@code dimId} loaded across the crossing (the arrival pin pattern). */
+        /**
+         * Make {@code dimId} present and keep it that way: LOAD it if it is down, then hold it
+         * against unload. Both halves are required — Forge's keep-loaded flag only stops a world
+         * that is already up from being queued for unload, so flagging a dimension nobody has loaded
+         * pins nothing at all and every subsequent read of it still answers "no such world".
+         */
         void pinDim(int dimId);
 
         /** Re-seat the captured crew on the re-assembled ship. Runs AFTER the pose teleport, so

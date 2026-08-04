@@ -95,7 +95,9 @@ public class DescentControllerTest {
             return failCross ? null : new BlockPos(pasteX, pasteY, pasteZ);
         }
 
-        @Override public void pinDim(int dimId) { }
+        /** Dims the controller asked to be present, IN ORDER — the pin must precede the resolve. */
+        final List<Integer> pinned = new ArrayList<>();
+        @Override public void pinDim(int dimId) { pinned.add(dimId); }
 
 
         @Override public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
@@ -187,6 +189,40 @@ public class DescentControllerTest {
         assertFalse(ctl.isDescending(SHIP));
         assertEquals("no crossing attempted", 0, ops.crossings);
         assertEquals("no landing even resolved", 0, resolver.calls);
+    }
+
+    /**
+     * A descent brings its destination up BEFORE it asks whether it can arrive there.
+     *
+     * <p>A planet with nobody standing on it is unloaded within seconds of the last player leaving,
+     * and the arrival resolve needs that world to compute anything at all. So a pilot who flew to
+     * orbit and came back later was refused on every attempt, forever, and told only to wait — the
+     * one piece of advice that could never come true. Measured in a live session: the destination
+     * was unloaded twelve minutes before the first attempt, and thirteen consecutive refusals all
+     * carried the same discriminator, the destination world absent while everything else was
+     * present.</p>
+     *
+     * <p>The ORDER is the whole assertion, which is why the fake records it: the crossing pins the
+     * destination as well, but that happens after the resolve it would have had to enable.</p>
+     */
+    @Test
+    public void aDescentBringsItsDestinationUpBeforeAskingWhereToLand() {
+        AtomicLong clock = new AtomicLong();
+        ShipLedger ledger = new ShipLedger();
+        SpaceManager space = spaceWithSettledShip(ledger, clock, body(5), SLOT_DIM);
+        FakeOps ops = new FakeOps();
+        FakeResolver resolver = new FakeResolver();
+        // The destination cannot be resolved — the case where the pin has to have happened ANYWAY,
+        // because a refusal that never asked for the world is a refusal that can never stop.
+        resolver.fail = true;
+        DescentController ctl = new DescentController(space, ledger, ops, resolver, clock::get);
+
+        assertFalse(ctl.requestDescent(SLOT_DIM, AFC, SHIP, PLANET_DIM));
+
+        assertTrue("the destination must have been asked for, even on the path that refuses: "
+                        + ops.pinned, ops.pinned.contains(PLANET_DIM));
+        assertEquals("...and asked for BEFORE the arrival was resolved, or the resolve is answering "
+                        + "about a world nobody has brought up yet", 1, resolver.calls);
     }
 
     @Test

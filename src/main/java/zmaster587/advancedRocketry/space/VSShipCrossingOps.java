@@ -74,6 +74,15 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
 
     @Override
     public void pinDim(int dimId) {
+        // LOAD it, then hold it. The flag alone pins nothing: Forge's keepDimensionLoaded only stops
+        // a LOADED world being queued for unload, and a planet with nobody on it is unloaded within
+        // seconds of the last player leaving. A destination that is already down therefore stayed
+        // down, and every read of it afterwards - the descent's own arrival resolve above all -
+        // answered "no such world" forever, because nothing on that path ever asked for it.
+        // Init only when it is actually absent: initDimension on a live dimension reloads it.
+        if (DimensionManager.getWorld(dimId) == null) {
+            DimensionManager.initDimension(dimId);
+        }
         DimensionManager.keepDimensionLoaded(dimId, true);
     }
 

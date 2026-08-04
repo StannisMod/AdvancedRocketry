@@ -126,6 +126,16 @@ public final class DescentController {
 
         final GalacticCoord sourceCell = entry.coord;
 
+        // BRING THE DESTINATION UP BEFORE ASKING ABOUT IT. The resolver needs the target world to
+        // compute an arrival, and a planet with nobody standing on it is unloaded within seconds of
+        // the last player leaving — so a pilot who flew to orbit and came back later was refused on
+        // every attempt, permanently, and told only to wait and try again. The crossing pins the
+        // destination too, but that happens further down and could never run: the resolve above it
+        // was already refusing. Every other crossing in this subsystem brings its own destination up
+        // (hyperspace, the slot pool); the descent is the one whose destination is a vanilla world,
+        // and it was the one assuming somebody else had loaded it.
+        crossing.ops().pinDim(targetPlanetDim);
+
         int laneIndex = (laneCounter++ % DESCENT_LANE_COUNT);
         Landing landing = pasteResolver.resolve(slotDim, shipPos, targetPlanetDim, laneIndex);
         if (landing == null) {
