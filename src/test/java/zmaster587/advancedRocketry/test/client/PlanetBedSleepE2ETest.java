@@ -85,6 +85,17 @@ public class PlanetBedSleepE2ETest {
                 + "    </star>\n"
                 + "</galaxy>\n";
         Files.write(arConfigDir.resolve("planetDefs.xml"), xml.getBytes(StandardCharsets.UTF_8));
+        // The skip this test is ABOUT is off by default now: a planet's day is the turning of a body
+        // in an orbit, and a bed no longer fast-forwards it. This class pins the other side of that
+        // flag — with the arcade mechanic opted back in, the skip must still land on the PLANET's
+        // own dawn rather than vanilla's 24000 rounding. The locked default is pinned by
+        // PlanetBedSleepLockedE2ETest; both sides are needed, or a build that ignored the flag
+        // entirely would satisfy whichever one happened to match its hard-coded behaviour.
+        Files.write(arConfigDir.resolve("advancedRocketry.cfg"),
+                ("# seeded by PlanetBedSleepE2ETest\n"
+                        + "planet {\n"
+                        + "    B:allowTimeSkipOnPlanets=true\n"
+                        + "}\n").getBytes(StandardCharsets.UTF_8));
 
         serverHarness = RealDedicatedServerHarness.startWith(workDir, /*cleanupOnClose=*/false);
         try {

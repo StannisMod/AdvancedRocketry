@@ -873,6 +873,8 @@ msg.top.advancedrocketry.data.link.linked=Linked
 msg.top.advancedrocketry.data.link.unlinked=Unlinked
 
 # Tier-2 ship space entry
+msg.timeskip.locked=§7You wake in the dark. This world turns at its own rate - dawn is about %s minute(s) away.
+msg.timeskip.command.partial=§7Time set on %s world(s); %s left alone (their time skip is disabled in the config).
 msg.shipentry.refused=§cSpace is saturated - the ship cannot enter orbit right now. Descend and try again later.
 msg.shipentry.failed=§cThe ascent failed - the ship could not cross into space.
 msg.shipentry.arrived=§aOrbit reached - the ship has entered space.

@@ -63,6 +63,8 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
             "org.valkyrienskies.mod.common.physics.IPhysicsBlockController";
 
     private boolean perDimWorldInfo = true;
+    private boolean allowTimeSkipOnPlanets = false;
+    private boolean allowTimeSkipOnOverworld = true;
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -74,16 +76,25 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
                 perDimWorldInfo = cfg
                         .get("Planet", "perDimWorldInfo", true)
                         .getBoolean(true);
+                allowTimeSkipOnPlanets = cfg
+                        .get("Planet", "allowTimeSkipOnPlanets", false)
+                        .getBoolean(false);
+                allowTimeSkipOnOverworld = cfg
+                        .get("Planet", "allowTimeSkipOnOverworld", true)
+                        .getBoolean(true);
             }
         } catch (Throwable t) {
             // Fail-open: behave exactly as before the plugin (mixins on).
             perDimWorldInfo = true;
+            allowTimeSkipOnPlanets = false;
+            allowTimeSkipOnOverworld = true;
         }
     }
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return shouldApply(perDimWorldInfo, mixinClassName);
+        return shouldApply(perDimWorldInfo, allowTimeSkipOnPlanets, allowTimeSkipOnOverworld,
+                mixinClassName);
     }
 
     /**
@@ -93,9 +104,28 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
      * enabled; every other mixin always applies.
      */
     public static boolean shouldApply(boolean perDimWorldInfoEnabled, String mixinClassName) {
+        return shouldApply(perDimWorldInfoEnabled, true, true, mixinClassName);
+    }
+
+    /**
+     * The same decision, told about the time-skip policy as well.
+     *
+     * <p>{@code MixinWorldServer} owns TWO things that happen at the same call: the per-dimension
+     * rounding of a sleep to the planet's own dawn (which needs {@code perDimWorldInfo}, since
+     * without it there is no per-dimension clock to round), and the refusal to skip at all
+     * (which does not). So it is woven whenever EITHER is wanted. Without this, turning off
+     * {@code allowTimeSkipOnOverworld} on a pack that also runs {@code perDimWorldInfo=false} would
+     * be a flag that silently does nothing — the mixin carrying its only seam would never be woven.
+     * The mixin's own body still checks {@code perDimWorldInfo} at runtime, so weaving it in that
+     * configuration changes nothing else.</p>
+     */
+    public static boolean shouldApply(boolean perDimWorldInfoEnabled, boolean allowSkipOnPlanets,
+                                      boolean allowSkipOnOverworld, String mixinClassName) {
+        if (MIXIN_WORLD_SERVER.equals(mixinClassName)) {
+            return perDimWorldInfoEnabled || !allowSkipOnPlanets || !allowSkipOnOverworld;
+        }
         if (MIXIN_WORLD_SERVER_MULTI.equals(mixinClassName)
-                || MIXIN_PLAYER_LIST.equals(mixinClassName)
-                || MIXIN_WORLD_SERVER.equals(mixinClassName)) {
+                || MIXIN_PLAYER_LIST.equals(mixinClassName)) {
             return perDimWorldInfoEnabled;
         }
         if (MIXIN_FLIGHT_CONTROLLER.equals(mixinClassName)

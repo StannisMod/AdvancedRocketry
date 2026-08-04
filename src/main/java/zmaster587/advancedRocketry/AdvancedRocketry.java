@@ -1192,6 +1192,9 @@ public class AdvancedRocketry {
         // End compat stuff
 
         MinecraftForge.EVENT_BUS.register(SpaceObjectManager.getSpaceManager());
+        // Keeps /time off the worlds whose skip is locked. Registered unconditionally: it stands
+        // aside the moment no loaded world is locked, so the default-everything case pays nothing.
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.TimeCommandGuard());
         // Movable-ship space subsystem GC ticker (idle unless a server-start builds the controller).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystem.Ticker());
         // Login restore (a returning player goes back to his ship, not to a stale pool slot) and the

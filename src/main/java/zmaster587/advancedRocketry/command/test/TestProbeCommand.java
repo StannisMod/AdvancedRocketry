@@ -8647,6 +8647,12 @@ public class TestProbeCommand extends CommandBase {
                     // PerDimWorldInfoMasterToggleTest flips it to pin both off (vanilla
                     // WorldInfo) and weather-off-but-master-on (per-dim time survives).
                     "perDimWorldInfo",
+                    // The time-skip policy, read at every use (TimeSkipPolicy.allows), so flipping
+                    // it at runtime is enough to exercise BOTH sides of each flag in one server -
+                    // which is what stops a build that ignores the flag from satisfying whichever
+                    // single test happens to match its hard-coded behaviour.
+                    "allowTimeSkipOnPlanets",
+                    "allowTimeSkipOnOverworld",
                     // rocketRequireFuel: RocketRequireFuelDisableAssemblesTest flips it
                     // off to pin that a valid rocket still assembles (no fuel-adequacy
                     // gate) — the regression the weight-system merge introduced.

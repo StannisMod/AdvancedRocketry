@@ -210,6 +210,10 @@ public class ARConfiguration {
     @ConfigProperty
     public boolean enableCustomPlanetWeather = true;
     @ConfigProperty
+    public boolean allowTimeSkipOnPlanets = false;
+    @ConfigProperty
+    public boolean allowTimeSkipOnOverworld = true;
+    @ConfigProperty
     public boolean logPlanetWeatherWrapping = true;
     @ConfigProperty
     public boolean forcePlanetWeatherWorldInfoWrapper = false;
@@ -515,6 +519,8 @@ public class ARConfiguration {
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
         arConfig.perDimWorldInfo = config.get(PLANET, "perDimWorldInfo", true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
         arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "Sub-toggle of perDimWorldInfo (no effect when that is false): if true, each AR planet has its own weather state (rain, thunder, /weather, isRaining); if false, weather delegates to the overworld while per-dimension time-of-day still applies.").getBoolean();
+        arConfig.allowTimeSkipOnPlanets = config.get(PLANET, "allowTimeSkipOnPlanets", false, "Whether a bed or /time may SKIP a planet's time of day forward. Off by default: a planet's day is the turning of a body in an orbit, so its night is lived through rather than slept away. This does NOT stop the day cycle - a planet still turns at its own rotational period - and a bed still sets your spawn point. Turn it on to keep the classic Minecraft conveniences everywhere. Space stations and asteroid fields are governed by neither this nor allowTimeSkipOnOverworld.").getBoolean();
+        arConfig.allowTimeSkipOnOverworld = config.get(PLANET, "allowTimeSkipOnOverworld", true, "The same, for the overworld, where it is ON by default: a player who has not left home yet is still playing Minecraft, and beds and /time work the way he expects. Turn it off to hold the overworld to the same rule as the planets.").getBoolean();
         arConfig.logPlanetWeatherWrapping = config.get(PLANET, "logPlanetWeatherWrapping", true, "Log an info line every time an AR planet's WorldInfo is wrapped for per-dimension weather. Useful for diagnosing weather-wrapping issues; safe to disable in production.").getBoolean();
         arConfig.forcePlanetWeatherWorldInfoWrapper = config.get(PLANET, "forcePlanetWeatherWorldInfoWrapper", false, "Force per-dimension weather wrapping on every secondary (non-overworld) dimension, including non-AR dims of other mods. Compatibility/debug flag — do NOT enable unless you know exactly what you are doing.").getBoolean();
         arConfig.minAtmosphereDensityForRain = (float) config.get(PLANET, "minAtmosphereDensityForRain", 75d, "Minimum atmosphere density (0-100 scale, same as planet atmosphereDensity) required for rain/snow and thunder on a planet. Below this, rain is suppressed regardless of the planet's weather markers, and thunder cannot occur. Thin/airless worlds stay clear.", 0d, 200d).getDouble();

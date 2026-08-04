@@ -70,6 +70,31 @@ public class ARMixinPluginTest {
         assertTrue(ARMixinPlugin.shouldApply(false, BLOCK_PLACE));
     }
 
+    /**
+     * The per-dim TIME mixin carries a SECOND mechanic — the refusal to skip time at all — and that
+     * one does not need a per-dimension clock. So it is woven whenever either mechanic is wanted.
+     *
+     * <p>Without this, a pack that runs {@code perDimWorldInfo=false} and turns a time-skip flag off
+     * would get a flag that does nothing: the class carrying its only seam would never be woven, and
+     * nothing anywhere would say so. That is the exact shape of a config option that lies.</p>
+     */
+    @Test
+    public void theTimeMixinIsWovenWheneverEitherMechanicNeedsIt() {
+        // The old reason, unchanged: per-dimension time.
+        assertTrue(ARMixinPlugin.shouldApply(true, true, true, WORLD_SERVER));
+        // The new reason: a locked skip, with no per-dim clock in the picture at all.
+        assertTrue("a locked PLANET skip needs the seam even with the master off",
+                ARMixinPlugin.shouldApply(false, false, true, WORLD_SERVER));
+        assertTrue("...and so does a locked OVERWORLD skip",
+                ARMixinPlugin.shouldApply(false, true, false, WORLD_SERVER));
+        // And when nothing needs it, it stays un-woven — or the gate is not a gate.
+        assertFalse("nothing wants it: master off and both skips allowed",
+                ARMixinPlugin.shouldApply(false, true, true, WORLD_SERVER));
+        // Its two neighbours are NOT dragged along: they only ever served the per-dim clock.
+        assertFalse(ARMixinPlugin.shouldApply(false, false, false, WORLD_SERVER_MULTI));
+        assertFalse(ARMixinPlugin.shouldApply(false, false, false, PLAYER_LIST));
+    }
+
     @Test
     public void valkyrienSkiesMixinGatingIsIndependentOfPerDimWorldInfoFlag() {
         // The VS ship-load double-load guard is gated by the VS classpath, NOT by the
