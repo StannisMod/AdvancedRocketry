@@ -14,7 +14,8 @@ package zmaster587.advancedRocketry.space;
  *
  * <p>An absolute position is only ever an intermediate: it exists to be subtracted from another one at
  * the same tick, giving a {@link BlockDelta} &mdash; a direction and a true distance. Nothing is stored
- * as one (C15 ADDR-12) and nothing is addressed by one.</p>
+ * as one and nothing is addressed by one: what goes on disk is always a cell name plus an in-cell
+ * offset, never a value whose meaning depends on the tick it happened to be written at.</p>
  *
  * <p>Immutable value type. As with {@link GalacticCoord#absoluteX()}, the {@code long} arithmetic can
  * overflow at extreme sector magnitudes; that is the same bound the sectorized coordinate already
@@ -41,8 +42,8 @@ public final class AbsolutePos {
 
     /**
      * The absolute position a cell NAME denotes under a STATIC frame: {@code sector * CELL}. This is
-     * the frame origin of a void cell (C15 ADDR-7) and the fallback for any cell whose primary cannot
-     * be resolved.
+     * the frame origin of a void cell &mdash; one with no primary to ride, so it never moves &mdash;
+     * and the fallback for any cell whose primary cannot be resolved.
      */
     public static AbsolutePos ofCellName(GalacticCoord name) {
         if (name == null) {

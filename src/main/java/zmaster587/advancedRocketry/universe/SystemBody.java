@@ -12,16 +12,17 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * (asteroid belt, station slot). It is pure DATA — its walkable realization is Layer 2 (the ship branch),
  * never here.
  *
- * <p><b>A body has a NAME and a PLACE, and they are not the same number</b> (C15). The name is the
+ * <p><b>A body has a NAME and a PLACE, and they are not the same number.</b> The name is the
  * {@link #name() sector triple} of its cell: an identifier, fixed for the life of the save, which is
  * what a coordinate a player wrote down keeps denoting. The place is a function of world time and
  * comes in two readings:</p>
  * <ul>
  *   <li>{@link #inCellOffsetAt(long)} — where the body stands inside its own cell's frame. Zero for
  *       the cell's PRIMARY by construction (the primary is what the frame is centred on); LIVE for a
- *       moon, which shares its parent's cell and orbits inside it (ADDR-5).</li>
+ *       moon, which shares its parent's cell name and orbits inside it.</li>
  *   <li>{@link #absoluteAt(long)} — the frame origin at that tick plus the offset. Only ever an
- *       intermediate for a distance or a direction; nothing is stored as one (ADDR-12).</li>
+ *       intermediate for a distance or a direction; nothing is stored as one, because a stored
+ *       coordinate may not mean something different from the tick it was written at.</li>
  * </ul>
  *
  * <p>{@link #addressAt(long)} packages the first reading as a {@link GalacticCoord} — name plus
@@ -35,7 +36,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  */
 public final class SystemBody {
 
-    /** No content may sit outside its own cell (ADDR-10), so an in-cell offset is bounded. */
+    /** No content may sit outside its own cell — a cell is a whole neighbourhood — so an offset is bounded. */
     private static final long MAX_IN_CELL = GalacticCoord.HALF_CELL - 1L;
 
     private final GalacticCoord name;
@@ -80,22 +81,23 @@ public final class SystemBody {
     }
 
     /**
-     * This body's DURABLE cell name — the sector triple, at cell centre. An identifier: no tick
-     * changes it, and membership of a cell is decided by comparing these (ADDR-1/ADDR-8).
+     * This body's DURABLE cell name — the sector triple, at cell centre. An identifier: neither a
+     * passing tick nor any amount of flight changes it, and membership of a cell is decided by
+     * comparing these.
      */
     public GalacticCoord name() {
         return name;
     }
 
-    /** The frame this body's cell rides. A planet and its moons share one (ADDR-5/ADDR-6). */
+    /** The frame this body's cell rides. A planet and its moons share one: they are one destination. */
     public CellFrame frame() {
         return frame;
     }
 
     /**
      * Where this body stands inside its own cell's frame at {@code tick}. Zero for the cell's
-     * primary; live for a moon. Held inside the cell (ADDR-10) — a body outside its own
-     * neighbourhood would be a body in a different cell.
+     * primary; live for a moon. Held inside the cell — a body outside its own neighbourhood would be
+     * a body in a different cell.
      */
     public BlockDelta inCellOffsetAt(long tick) {
         BlockDelta raw = offsetLaw.offsetAt(tick);
@@ -107,8 +109,8 @@ public final class SystemBody {
 
     /**
      * The full in-frame address at {@code tick}: this body's durable name plus where it stands inside
-     * that cell. This is the canonical stored/aimed form (ADDR-12) and the right value for every
-     * consumer that works within one cell.
+     * that cell. This is the canonical stored/aimed form — what persists is always a name plus an
+     * offset, never a raw absolute — and the right value for every consumer that works within one cell.
      */
     public GalacticCoord addressAt(long tick) {
         BlockDelta offset = inCellOffsetAt(tick);
@@ -117,7 +119,7 @@ public final class SystemBody {
 
     /**
      * Where this body IS, absolutely, at {@code tick} — its cell's frame origin displaced by its
-     * in-cell offset. Compare two of these only at the same tick (ADDR-9).
+     * in-cell offset. Compare two of these only at the same tick: a distance exists only at a tick.
      */
     public AbsolutePos absoluteAt(long tick) {
         return frame.originAt(tick).plus(inCellOffsetAt(tick));

@@ -17,9 +17,10 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Contract tests for {@link SystemBody}: the split between a body's durable NAME and where it
- * actually is (C15 ADDR-1/5/6), its NBT round-trip (used by the universe registry's POI and pinned
- * stores) and the descend-target rule. Pure-JUnit.
+ * Contract tests for {@link SystemBody}: the split between a body's durable NAME — an identifier no
+ * tick changes, and one a moon shares with its parent — and where it actually is, which rides the
+ * body its cell is the neighbourhood of; its NBT round-trip (used by the universe registry's POI and
+ * pinned stores) and the descend-target rule. Pure-JUnit.
  */
 public class SystemBodyTest {
 
@@ -44,8 +45,9 @@ public class SystemBodyTest {
     }
 
     /**
-     * ADDR-1. The whole point of the model: a cell name is an identifier, so no amount of time
-     * changes it. The second half is the control — without it a body that never moves would pass.
+     * A name is not a place. The whole point of the model: a cell name is an identifier, so no amount
+     * of time changes it. The second half is the control — without it a body that never moves would
+     * pass.
      */
     @Test
     public void aNameIsTheSameAtEveryTickWhileThePlaceIsNot() {
@@ -64,7 +66,7 @@ public class SystemBodyTest {
                 planet.absoluteAt(0L), planet.absoluteAt(250L));
     }
 
-    /** ADDR-6. A cell's primary is what its frame is centred on, so its in-cell offset is zero. */
+    /** A cell's primary body is what its frame is centred on, so its in-cell offset is zero. */
     @Test
     public void aPrimarySitsAtItsOwnFramesOrigin() {
         GalacticCoord name = GalacticCoord.ofSectorLocal(1, 2, 3, 0, 0, 0);
@@ -80,8 +82,8 @@ public class SystemBodyTest {
     }
 
     /**
-     * ADDR-5. A moon shares its parent's cell NAME and rides its parent's frame, while keeping its
-     * own live offset inside it — that is what makes a planet-and-its-moons one destination.
+     * A moon shares its parent's cell NAME and rides its parent's frame, while keeping its own live
+     * offset inside it — that is what makes a planet-and-its-moons one destination.
      */
     @Test
     public void aMoonKeepsItsParentsNameAndMovesInsideIt() {
@@ -98,10 +100,10 @@ public class SystemBodyTest {
     }
 
     /**
-     * ADDR-6's requirement on the pinned store, and the reason a body carries a LAW rather than a
-     * position: a pin freezes the ELEMENTS. Pin-on-touch fires the first time a player builds a
-     * station in a system, so a pin that froze positions would stop that system for the rest of the
-     * save — and nothing would ever say so.
+     * What "a cell rides the body in it" demands of the pinned store, and the reason a body carries a
+     * LAW rather than a position: a pin freezes the ELEMENTS. Pin-on-touch fires the first time a
+     * player builds a station in a system, so a pin that froze positions would stop that system for
+     * the rest of the save — and nothing would ever say so.
      */
     @Test
     public void aBodyStillMovesAfterAnNbtRoundTrip() {

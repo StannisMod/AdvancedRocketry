@@ -11,8 +11,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Contract C16 CLOCK-3, on a real client: <b>the space clock is readable on both sides and answers
- * the same value on each.</b>
+ * The space clock, on a real client: <b>it is readable on both logical sides and answers the same
+ * value on each, to within the sync period — no caller needs to know which side it is on.</b>
  *
  * <p>Before this shipped, a client asking the space subsystem what time it was got a constant
  * {@code 0} — {@code SpaceSubsystem.spaceClock()} resolved a {@code MinecraftServer} that does not
@@ -74,8 +74,9 @@ public class TheClientKnowsTheSpaceClockE2ETest extends AbstractClientE2ETest {
 
         // The load-bearing claim first: a client that has never been told the clock says so, and a
         // build that never sends it can only answer "false" here.
-        assertEquals("a joined client must have been told the space clock — C16 CLOCK-3. \"false\""
-                + " means the baseline never arrived, which is the whole mechanism missing.",
+        assertEquals("a joined client must have been told the space clock, or it cannot answer the"
+                + " same value the server does. \"false\" means the baseline never arrived, which is"
+                + " the whole mechanism missing.",
                 "true", clientHasSync());
 
         long serverBefore = serverClock();

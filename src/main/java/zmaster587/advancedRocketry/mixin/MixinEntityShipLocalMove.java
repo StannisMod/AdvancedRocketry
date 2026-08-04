@@ -36,11 +36,13 @@ public abstract class MixinEntityShipLocalMove {
         // pipeline: vanilla collides its upright box against world blocks it is not standing on, and
         // the physics mod's injector (hooked behind us at this same point) collides it against hull
         // POLYGONS in world space - for a crew member whose capsule legitimately overlaps hull
-        // geometry (any steep/inverted interior, contract C8) that shove is a constant fight against
-        // the ship-frame resolution. The live symptom: the server applies a walking client's packet
-        // deltas through Entity.move, the polygon collision deflects them, and the crew member is
-        // dragged around in small jerks. Apply the displacement RAW instead and cancel: collision for
-        // this body is the ship-frame sweep's job, and the world position is derived state.
+        // geometry (an aboard body standing on a deck open in the SHIP frame may legally have its
+        // world capsule inside hull blocks - any steep or inverted interior) that shove is a
+        // constant fight against the ship-frame resolution. The live symptom: the server applies a
+        // walking client's packet deltas through Entity.move, the polygon collision deflects them,
+        // and the crew member is dragged around in small jerks. Apply the displacement RAW instead
+        // and cancel: collision for this body is the ship-frame sweep's job, and the world position
+        // is derived state.
         if (zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolving(self)) {
             // Every world-frame move request against a resolved body is counted (side-local statics,
             // readable by probes/e2e) and, in test mode, traced - the discriminator for "who still

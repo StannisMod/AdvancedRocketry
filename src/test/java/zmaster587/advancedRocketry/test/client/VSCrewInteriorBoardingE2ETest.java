@@ -12,7 +12,8 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Interior boarding of a non-upright ship (any-attitude crew contract C12/C13 territory).
+ * Interior boarding of a non-upright ship - the enclosed-interior capture, and the flying-aboard
+ * rule that lets a creative flyer be captured without ever touching the deck.
  *
  * <p>The pinned contract: a body inside a ship's hull with a deck below it IN THE SHIP FRAME is
  * the DECK's to claim - stopping creative flight there seats it back on the deck (ship-frame
@@ -87,7 +88,8 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
 
         // Release the capture DETERMINISTICALLY, with the body still inside the hull: a small
         // world teleport reads as an external move, the guard drops the capture, and the body is
-        // exactly the C12 subject - inside the ship's region, un-captured, under WORLD gravity.
+        // exactly the interior-boarding subject - inside the ship's region, un-captured, under
+        // WORLD gravity.
         // (A creative-flight release is the report's flavor, but the flying body drifts
         // unpredictably and can leave the hull before flight ends - flight interaction belongs
         // to the flying-aboard contract's own test.)
@@ -97,8 +99,8 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         // opposite - the seat dismount can stand the body on the region's boundary block (the
         // cockpit doorway), 0.2 blocks from the face, and a world-down nudge carries a ~0.1
         // subspace-Z component that pushes it OUT through that face; an outside body is not
-        // C12's subject at all (the interior gate rightly refuses it) and the test then measured
-        // its own ejection, not the contract.
+        // the interior gate's subject at all (it rightly refuses a body outside the region) and the
+        // test then measured its own ejection, not the contract.
         exec("tp @a ~ ~0.6 ~");
 
         // Subject validity (fixture geometry by measurement): the released body must still BE
@@ -167,7 +169,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
                 + "(shipCamActive=" + shipCam + ")", shipCam);
     }
 
-    // ---- Enclosed cavity (contract C12 positive): the interior gate claims an UNSUPPORTED body -
+    // ---- Enclosed cavity: the interior gate claims an UNSUPPORTED roofed body with a deck below -
 
     @Test
     public void aBodyLostMidCavityOfAnEnclosedInvertedShipIsReclaimedByTheDeck() throws Exception {
@@ -298,7 +300,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         }
     }
 
-    // ---- Flying-aboard (contract C13): flight resolves in the DECK frame -----------------------
+    // ---- Flying-aboard: a captured flyer's flight kinematics resolve in the DECK frame ---------
 
     @Test
     public void aFlyingCrewMemberAscendsAlongTheDeckNormalAndReseatsOnFlightOff() throws Exception {
@@ -344,15 +346,16 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         // The double-tap itself climbs a few blocks (a deck jump + held-space flight ticks), so
         // re-baseline AFTER flight is on: the pin measures the held-ascend phase alone. The hold
         // is SHORT deliberately - the stay region ends ~4 blocks above the hull top, and a climb
-        // that exits it is C4's legitimate release, not this pin's subject.
+        // that exits it is a legitimate release (leaving the region ends the capture), not this
+        // pin's subject.
         double[] subFly = parseSub(censusStatic("censusSubPos"));
         StringBuilder trace = new StringBuilder();
         int trackedSeen = 0, camSeen = 0, samples = 0;
         double[] subEnd = subFly;
         // Climb TO A TARGET RISE (+2 subspace blocks), not for a fixed time: the climb rate
         // varies run to run, and a timed hold can overshoot into the stay region's edge - whose
-        // release is C4 doing its job, not this pin's subject. From a ~129-130 start the +2
-        // target tops out well below that edge.
+        // release is the region-exit rule doing its job, not this pin's subject. From a ~129-130
+        // start the +2 target tops out well below that edge.
         bot().holdKey(org.lwjgl.input.Keyboard.KEY_SPACE);
         try {
             // Scale the climb-sampling ceiling by the fork factor (load-tail): under client
@@ -396,10 +399,10 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
                 + " dxzSub=" + dxzSub + " :: " + trace, dySub > 1.2 && dxzSub < 1.6);
 
         // Descend back toward the deck first - the flight-off double-tap itself adds a little
-        // climb, and toggling at the stay region's edge exits it mid-flight (C4's legitimate
-        // release, but then WORLD gravity owns the fall and the reseat below is not this
-        // contract's). The descend leg also pins the OTHER vertical intent: sneak sinks along
-        // the deck normal exactly as space climbs it.
+        // climb, and toggling at the stay region's edge exits it mid-flight (leaving the stay
+        // region is a legitimate release, but then WORLD gravity owns the fall and the reseat
+        // below is not this contract's). The descend leg also pins the OTHER vertical intent:
+        // sneak sinks along the deck normal exactly as space climbs it.
         double[] subHigh = subEnd;
         // Event-gated descend (load-scaled ceiling + early exit): hold sneak until the body has sunk
         // along the deck normal, instead of a fixed 14-tick budget a frame-starved client can under-sink

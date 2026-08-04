@@ -290,7 +290,7 @@ public class ARConfiguration {
     public boolean skyOverride;
 
     /**
-     * Whether the cell sky writes each body's name and distance beside it (C14 CON-C14-17). ON by
+     * Whether the cell sky writes each body's name and distance beside it. ON by
      * default: it is how a pilot — and a human checking the game — reads that a body is receding
      * without a probe. OFF removes the label entirely; it does not dim it.
      *

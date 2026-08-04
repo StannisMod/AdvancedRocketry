@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.client.render.planet;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 
 /**
- * Whether the cell sky writes a body's name and distance beside it (C14 CON-C14-17).
+ * Whether the cell sky writes a body's name and distance beside it.
  *
  * <p>The label is a diagnostic first and a player affordance second: it is how a human confirms that
  * a body really is receding, without a probe. It defaults ON for that reason.</p>
@@ -20,10 +20,11 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
  *
  * <p><b>The known limit, stated rather than hidden:</b> the render decision is per-CLIENT while the
  * console is per-SHIP, so in a cell holding two ships the last console to update wins for everyone in
- * that world. The audience C14 CON-C14-06 names — a passenger, a crew member on the hull, a tier-1
- * craft — owns no navigation computer at all, and for them the default is the only setting there is.
- * That is the shape C14 proposes; a per-player channel is a bigger change than the affordance is
- * worth today.</p>
+ * that world. And the sky belongs to the cell rather than to a ship, so its audience is wider than any
+ * one console's crew — a passenger, a crew member who walked off the hull, a tier-1 craft — and those
+ * own no navigation computer at all, so for them the default is the only setting there is. That cost
+ * is accepted deliberately; a per-player channel is a bigger change than the affordance is worth
+ * today.</p>
  */
 public final class SkyLabels {
 

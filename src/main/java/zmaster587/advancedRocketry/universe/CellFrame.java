@@ -6,17 +6,17 @@ import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 
 /**
- * The coordinate system a cell's contents live in — its ORIGIN as a function of world time
- * (C15 ADDR-6).
+ * The coordinate system a cell's contents live in — its ORIGIN as a function of world time. Every
+ * cell that has a primary body rides that body; only a cell with none stands still.
  *
  * <p>A cell's origin is the position of its PRIMARY: the one real body the cell belongs to. That
  * position is the system anchor (which does not move) displaced by the primary's own orbital law, so
  * a frame is exactly two things: a static base and an ephemeris. A cell with no primary is VOID and
- * its frame is {@link #staticAt static} at {@code sector * CELL} (ADDR-7) — a degenerate frame, not
- * an exemption.</p>
+ * its frame is {@link #staticAt static} at {@code sector * CELL} — a degenerate frame, not an
+ * exemption.</p>
  *
  * <p>A planet and its moons share ONE frame instance: they are one destination, and the moons move
- * inside it (ADDR-5).</p>
+ * inside it.</p>
  *
  * <p>Immutable value type.</p>
  */

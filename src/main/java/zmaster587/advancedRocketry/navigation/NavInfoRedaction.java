@@ -40,11 +40,12 @@ public final class NavInfoRedaction {
      * it whether or not it was ever recorded, and a planet surveyed from orbit long ago stays surveyed
      * once you leave.</p>
      *
-     * <p>The two clauses want two different things from the body, which is why they are two
-     * parameters. ORBIT is a real distance and has to be measured through both cells' frames at the
-     * moment of asking (C15 ADDR-9), so the caller — which has the registry — supplies it. APPROACH
-     * is "we are in the same neighbourhood", and a neighbourhood is a NAME: comparing cell keys is
-     * exactly right and needs no tick at all.</p>
+     * <p>The two tiers want two different things from the body, which is why they are two
+     * parameters. ORBIT is a real distance, and a distance across cells exists only at a stated tick
+     * — both frames are riding their own bodies — so it has to be measured through both frame
+     * origins at the moment of asking, which is why the caller (the one holding the registry)
+     * supplies it. APPROACH is "we are in the same neighbourhood", and a neighbourhood is a NAME:
+     * comparing cell keys is exactly right and needs no tick at all.</p>
      */
     public static InfoTier tierFor(GalacticCoord shipCoord, GalacticCoord bodyName,
                                    double distanceBlocks, InfoTier recorded) {

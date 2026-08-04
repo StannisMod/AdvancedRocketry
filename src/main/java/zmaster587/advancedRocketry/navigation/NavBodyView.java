@@ -29,8 +29,9 @@ public final class NavBodyView {
             return view;
         }
         // The coordinate a player reads off this panel and writes down. It is the body's durable
-        // NAME and nothing else: an in-cell offset would be a number that means something different
-        // an hour later, which is exactly what a written-down coordinate must not be (C15 ADDR-1).
+        // NAME and nothing else: a name is fixed for the life of the save, so it still denotes the
+        // same body at every later tick, whereas an in-cell offset would be a number that means
+        // something different an hour later — exactly what a written-down coordinate must not be.
         GalacticCoord name = body.name();
         view.put(PlanetInfoField.COORDINATE, name == null ? "?" : name.cellKey());
         view.put(PlanetInfoField.NAME, nameOf(body, recorded));

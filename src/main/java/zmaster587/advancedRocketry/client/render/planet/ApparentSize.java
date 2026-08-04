@@ -1,7 +1,7 @@
 package zmaster587.advancedRocketry.client.render.planet;
 
 /**
- * How big a fed body is drawn in the cell sky, given how far away it is (C14 CON-C14-16).
+ * How big a fed body is drawn in the cell sky, given how far away it is.
  *
  * <p>The rule is one sentence: <b>strictly decreasing in distance, clamped at both ends.</b> Both
  * halves are contract, not polish. The fed range runs from a few thousand blocks (a moon in the

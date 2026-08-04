@@ -31,9 +31,9 @@ public class NavRedactionAndSyncTest {
 
     /**
       * The tier now takes the true distance as a number, because measuring it is the caller's job:
-      * two cells' frames both move, so only something holding the registry can say how far apart
-      * they are RIGHT NOW (C15 ADDR-9). These fixtures supply it directly, which is what makes the
-      * tier rule checkable without a universe.
+      * two cells' frames both move, so a distance between them exists only AT a stated tick and only
+      * something holding the registry can evaluate it through both frame origins. These fixtures
+      * supply it directly, which is what makes the tier rule checkable without a universe.
       */
     private static double blocksApart(GalacticCoord a, GalacticCoord b) {
         return a.staticFrameDistanceTo(b);

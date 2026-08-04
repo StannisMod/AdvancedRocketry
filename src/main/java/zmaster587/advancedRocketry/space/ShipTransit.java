@@ -8,11 +8,13 @@ package zmaster587.advancedRocketry.space;
  * <p><b>A flight is a scalar, not a moving point.</b> Both ends are cell NAMES plus an offset inside
  * those cells, and a cell rides the body it belongs to — so the straight line between two absolute
  * positions is not a fixed line at all, and integrating a position along it would be integrating over
- * a grid that does not exist (C15 ADDR-9). What is well-defined is how far the ship has got: the
- * distance is priced once, through both frames, at departure; the flight then counts blocks flown
- * against it. That is also exactly what ADDR-12 permits a mid-transit state to be — origin name,
- * target name, progress — and nothing else about the position needs to be true, because there is no
- * observer: the ship is parked in hyperspace for the whole trip.</p>
+ * a grid that does not exist: a distance across cells is defined only at a stated tick, read through
+ * both frame origins. What is well-defined is how far the ship has got: the distance is priced once,
+ * through both frames, at departure; the flight then counts blocks flown against it. That is also
+ * exactly the one shape a mid-transit state is allowed to take — origin name, target name, progress,
+ * never a raw absolute whose meaning would depend on when it was written — and nothing else about the
+ * position needs to be true, because there is no observer: the ship is parked in hyperspace for the
+ * whole trip.</p>
  *
  * <p>Speed / reach / power are ship stats supplied by the caller (per-tick block speed); this type
  * only integrates the motion.</p>

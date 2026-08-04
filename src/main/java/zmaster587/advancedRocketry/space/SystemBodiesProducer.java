@@ -28,9 +28,9 @@ import java.util.UUID;
  * player at login and rebroadcast on a throttle so the boundary/bodies track a ship as it flies
  * within the cell — and so the SYSTEM moves around it while it sits still.
  *
- * <p><b>The sky shows the SYSTEM, not the cell</b> (C14 CON-C14-14). A pilot parked in interplanetary
- * void still sees his star and his system's planets; what he sees of each is where it is right now
- * relative to him. The feed is the system's bodies UNIONED with whatever is keyed at the observer's
+ * <p><b>The sky shows the SYSTEM, not the cell.</b> A pilot parked in interplanetary void still sees
+ * his star and his system's planets; what he sees of each is where it is right now relative to him.
+ * The feed is the system's bodies UNIONED with whatever is keyed at the observer's
  * own cell — the union is not tidiness, since the system read answers empty for a cell no anchor
  * attributes and aggregates POIs of body cells only, so a straight swap would erase an orbital
  * station standing in the observer's own void cell.</p>
@@ -80,8 +80,8 @@ public final class SystemBodiesProducer {
      *
      * <p>Each body's {@code localX/Y/Z} is the observer&rarr;body vector evaluated at
      * {@code worldTick} through BOTH frame origins, so its DIRECTION is where to draw the body and its
-     * MAGNITUDE is the true distance to it at that moment (CON-C14-15). Computing it over the static
-     * grid instead — as this did — gives a body in another cell a distance that is a function of its
+     * MAGNITUDE is the true distance to it at that moment. Computing it over the static grid
+     * instead — as this did — gives a body in another cell a distance that is a function of its
      * cell's name rather than of where it is, and a planet that is really receding never moves on the
      * sky at all.</p>
      *
@@ -194,13 +194,13 @@ public final class SystemBodiesProducer {
      *
      * <p>The payload is per-DIMENSION but the broadcast used to be {@code sendToAll}, so every player
      * received every live cell's sky — the whole pool, once a second, to everyone. That was already
-     * wasteful when a cell's entry was its own occupants; under CON-C14-14 an entry is the whole
-     * system, which multiplies it by roughly an order of magnitude. A player can only ever see one
-     * sky, so he is sent one.</p>
+     * wasteful when a cell's entry was its own occupants; now that an entry is a whole system it is
+     * roughly an order of magnitude worse. A player can only ever see one sky, so he is sent one.</p>
      *
      * <p>A player standing in a slot world with no entry is sent a present-and-EMPTY one: "present and
-     * empty" and "absent" are different states (CON-C14-08), and the empty one is what clears a stale
-     * sky. A player who is not in a slot world at all is sent nothing.</p>
+     * empty" and "absent" are different states — the empty one is what tells the client to clear a
+     * stale sky, where an absent one would leave it standing. A player who is not in a slot world at
+     * all is sent nothing.</p>
      */
     private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim) {
         if (player == null) {

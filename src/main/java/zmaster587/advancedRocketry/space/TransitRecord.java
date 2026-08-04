@@ -18,8 +18,8 @@ import java.util.UUID;
  * {@code crew} UUIDs (for the {@code crew-online} offline-progress gate + reseat), and the packed ship
  * {@code snapshot} — an {@link StorageChunk} NBT re-cut from the parked hyperspace blocks at save points.
  * A mid-flight state is (origin name, target name, progress) and never a raw absolute position: an
- * absolute is only defined at a stated tick, and a persisted one silently means something else the next
- * time it is read (C15 ADDR-12).
+ * absolute is only defined at a stated tick, so a persisted one silently means something else the next
+ * time it is read — no stored coordinate may depend on when it was written.
  * A restored record advances logically; its snapshot is unpacked into hyperspace only when an aboard
  * player logs in mid-transit, or pasted into the target cell on completion.</p>
  *

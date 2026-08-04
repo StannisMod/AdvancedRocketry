@@ -323,10 +323,10 @@ public class SystemBodiesProducerTest {
     }
 
     /**
-     * CON-C14-15. The vector a body is carried as is measured through BOTH frames at the broadcast
-     * tick, so its length is the real distance right then — which is what makes "the planet is
-     * receding" something the sky can show at all. Over the static grid the same two names are the
-     * same distance apart forever.
+     * Direction AND distance, evaluated live. The vector a body is carried as is measured through
+     * BOTH frames at the broadcast tick, so its length is the real distance right then — which is
+     * what makes "the planet is receding" something the sky can show at all. Over the static grid
+     * the same two names are the same distance apart forever.
      */
     @Test
     public void aBodyInAMovingCellIsFedFromWhereItIsNotFromWhereItsNameSays() {

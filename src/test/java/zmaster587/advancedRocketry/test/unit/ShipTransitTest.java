@@ -11,9 +11,9 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Contract tests for the automatic transit integrator. A flight is a SCALAR — origin name, target
- * name, blocks flown against the distance priced at departure (C15 ADDR-12) — so what has to hold is
- * that it converges in the tick count the price implies, never overshoots, never stalls, and never
- * moves backwards.
+ * name, blocks flown against the distance priced at departure, never a raw absolute whose meaning
+ * would depend on the tick it was written at — so what has to hold is that it converges in the tick
+ * count the price implies, never overshoots, never stalls, and never moves backwards.
  */
 public class ShipTransitTest {
 

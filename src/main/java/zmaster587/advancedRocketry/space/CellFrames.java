@@ -1,7 +1,8 @@
 package zmaster587.advancedRocketry.space;
 
 /**
- * Where a cell IS, at a stated moment (C15 ADDR-6/ADDR-7).
+ * Where a cell IS, at a stated moment &mdash; every cell rides its primary, and only a cell that has
+ * no primary stands still.
  *
  * <p>A cell is the neighbourhood OF a body and it rides with that body. Its NAME &mdash; the sector
  * triple &mdash; is eternal; where it is stays a function of time. This is the seam that answers the
@@ -17,8 +18,8 @@ public interface CellFrames {
 
     /**
      * The static reading: every cell sits at {@code sector * CELL} forever. This is what a void cell
-     * really does (ADDR-7), and it is the honest answer for any caller with no registry — a pure unit
-     * test, a fixture, a probe with no world.
+     * — one with no primary to ride — really does, and it is the honest answer for any caller with no
+     * registry: a pure unit test, a fixture, a probe with no world.
      */
     CellFrames STATIC = new CellFrames() {
         @Override

@@ -273,10 +273,11 @@ public final class ShipFrameTravel {
      *  ({@link #heldShipFramePos}), where a body carried by a moving deck does not drift. */
     private static final class ShipFrameState {
         /** UUID string of the ANCHOR ship — the ship this capture episode was established on. Every
-         *  transform of the episode resolves through it (any-attitude crew contract C2). Re-picking the
-         *  ship by world-AABB containment mid-episode is forbidden: with several loaded ships whose
-         *  grown boxes overlap, first-match flips between ships tick to tick and the held subspace
-         *  anchor is then read through the WRONG transform. */
+         *  transform of the episode resolves through it: an aboard body belongs to ONE ship, the
+         *  one chosen at capture, for the whole episode. Re-picking the ship by world-AABB
+         *  containment mid-episode is forbidden: with several loaded ships whose grown boxes
+         *  overlap, first-match flips between ships tick to tick and the held subspace anchor is
+         *  then read through the WRONG transform. */
         String shipId;
         double localX, localY, localZ;
         /** The exact WORLD position this class last committed for the body (the value handed to
@@ -292,9 +293,10 @@ public final class ShipFrameTravel {
          *  ACCELERATION (the per-tick carry delta) into the relative motion, and a violently
          *  slewing deck then slides its crew off by "inertia" the deck-static model must not have. */
         double carryX, carryY, carryZ;
-        /** Capture mode (contract C11). {@code false} = ABOARD: deck semantics - gravity along the
-         *  ship's down, the walk basis in the deck plane, the deck-levelled camera. {@code true} =
-         *  HULL-STAND: the body is on the ship's OUTER (world-facing) surface, where no subspace
+        /** Capture mode - which frame owns the body. {@code false} = ABOARD: deck semantics -
+         *  gravity along the ship's down, the walk basis in the deck plane, the deck-levelled
+         *  camera. {@code true} = HULL-STAND: the body is on the ship's OUTER (world-facing)
+         *  surface, which is walkable at any attitude but where no subspace
          *  floor exists beneath it - WORLD semantics (world gravity, world walk basis, own camera),
          *  with only the COLLISION resolved against the ship's subspace geometry so it stands on
          *  the hull as on terrain, rides the moving ship, and never tunnels. */
@@ -346,8 +348,10 @@ public final class ShipFrameTravel {
      *  far larger AND not explained by the deck's rotation, so it still trips. */
     private static final double DECK_CARRY_MARGIN = 3.0;
     /** How far (blocks) beyond the anchored ship's subspace claim/hull an aboard body may travel before
-     *  the capture is released (contract C3/C4). Measured in SUBSPACE, so it is attitude-invariant and a
-     *  jump/fall ABOVE the deck never exits it the way the old grown-world-AABB gate (`leftShipBox`)
+     *  the capture is released: a body stays aboard everywhere inside the ship's own block region grown
+     *  by this margin, and leaving that region is one of the handful of facts that end an episode.
+     *  Measured in SUBSPACE, so it is attitude-invariant and a jump/fall ABOVE the deck never exits
+     *  it the way the old grown-world-AABB gate (`leftShipBox`)
      *  released a jumping body mid-air; and because a rigid transform preserves distances, a region-exit
      *  release always happens at least this far from every hull block, so vanilla never inherits a body
      *  overlapping subspace geometry it cannot see (the fall-through tunnel). Comfortably above a jump
@@ -371,11 +375,12 @@ public final class ShipFrameTravel {
             release(entity, "notSimulated");
             return false;
         }
-        // Excluded states keep world-frame semantics (contract C4). Each RELEASES an existing capture
-        // explicitly: the old silent `return false` left stale STATE behind, so isResolving (the gate
-        // for the deck camera, the FF HUD and the deck-frame mouse look) kept answering true through a
-        // whole creative-flight/riding episode, and the capture eventually died mid-air far from where
-        // the gate first disengaged.
+        // Excluded states keep world-frame semantics - a body that is riding, flying, swimming,
+        // climbing or levitating is the world's to move, never the deck's. Each RELEASES an existing
+        // capture explicitly: the old silent `return false` left stale STATE behind, so isResolving
+        // (the gate for the deck camera, the FF HUD and the deck-frame mouse look) kept answering
+        // true through a whole creative-flight/riding episode, and the capture eventually died
+        // mid-air far from where the gate first disengaged.
         String excluded = excludedStateOf(entity);
         if (excluded != null) {
             release(entity, excluded);
@@ -383,11 +388,12 @@ public final class ShipFrameTravel {
         }
         ShipFrameState state = STATE.get(entity);
         if (state != null) {
-            // Anchored stay/release (contract C2-C4): the episode keeps talking to ITS ship. A body
-            // mid-jump or mid-fall over the deck is momentarily unsupported yet has NOT left the ship -
-            // the stay region is the ship's own subspace block region grown by STAY_REGION_MARGIN, so
-            // vertical excursions above the deck never release the way the old grown-world-AABB
-            // containment gate did.
+            // Anchored stay/release: the episode keeps talking to ITS ship - the one capture chose -
+            // and ends only when the body genuinely leaves it, steps onto world terrain, enters an
+            // excluded state, or that ship unloads. A body mid-jump or mid-fall over the deck is
+            // momentarily unsupported yet has NOT left the ship - the stay region is the ship's own
+            // subspace block region grown by STAY_REGION_MARGIN, so vertical excursions above the
+            // deck never release the way the old grown-world-AABB containment gate did.
             double[] local = VSIntegration.toShipFrameFor(
                     entity.world, state.shipId, entity.posX, entity.posY, entity.posZ);
             if (local == null) {
@@ -416,11 +422,13 @@ public final class ShipFrameTravel {
                 return false;
             }
             if (state.hullStand) {
-                // HULL-STAND liveness (C11). A standing deck below means the body reached a surface
-                // that IS a deck in the ship frame (a hatch entry, or a hull region that reads as a
-                // subspace top face at this attitude): hand over to ABOARD semantics - deck gravity,
-                // deck camera. Losing hull contact (walked off the hull edge, the ship rotated away)
-                // hands the body back to vanilla mid-air.
+                // HULL-STAND liveness: the outer-hull mode is world semantics, and it holds only
+                // while the body still touches the hull and has no deck under it in the ship's own
+                // frame. A standing deck below means the body reached a surface that IS a deck in
+                // the ship frame (a hatch entry, or a hull region that reads as a subspace top face
+                // at this attitude): hand over to ABOARD semantics - deck gravity, deck camera.
+                // Losing hull contact (walked off the hull edge, the ship rotated away) hands the
+                // body back to vanilla mid-air.
                 if (shipSupportObstacleCountAt(entity, state.shipId, gate) > 0) {
                     state.hullStand = false;
                     logCapture(entity, state.shipId, state.localX, state.localY, state.localZ);
@@ -432,18 +440,19 @@ public final class ShipFrameTravel {
                 }
                 return true;
             }
-            // C11: no subspace floor within reach below the body means ship-frame gravity can never
+            // No subspace floor within reach below the body means ship-frame gravity can never
             // seat it on a deck - it is on the OUTER hull (the world-facing surface of a
             // non-upright ship) or past the underside. World semantics own it there: transition to
             // HULL-STAND while the body still touches the hull, or release to vanilla when it does
             // not. A jump/fall over a deck always keeps its floor within reach and never trips
             // this; a hatch entry re-captures by first contact the moment a real deck is below.
             //
-            // EXCEPT inside the ship's own block region (contract C12): an interior body's deck
-            // can legitimately sit farther than the probe's reach while deck gravity is still
-            // cancelling the velocity it entered with (a fast interior entry rises away from the
-            // deck in the ship frame before falling back). Interior = the deck's; releasing it
-            // here handed a just-captured interior body straight back to world gravity.
+            // EXCEPT inside the ship's own block region, under a ship-frame roof: an ENCLOSED body
+            // with a deck below it belongs to the deck whether or not anything is under its feet,
+            // and its deck can legitimately sit farther than the probe's reach while deck gravity
+            // is still cancelling the velocity it entered with (a fast interior entry rises away
+            // from the deck in the ship frame before falling back). Interior = the deck's;
+            // releasing it here handed a just-captured interior body straight back to world gravity.
             if (!hasDeckBelowAt(entity, state.shipId, gate)) {
                 AxisAlignedBB own = VSIntegration.subspaceStayRegion(entity.world, state.shipId, 0.0);
                 boolean interior = own != null
@@ -467,38 +476,40 @@ public final class ShipFrameTravel {
             }
             return true;
         }
-        // First contact (contract C1b): capture only a body actually standing on a ship's deck in that
-        // ship's OWN frame - and NEVER one standing on world terrain. A ground position mapped through
-        // a parked ship's transform can alias onto a subspace block (a walker beside a docked hull was
-        // captured into a tilted derelict's frame in the round-9 playtest), so ship-support alone is
-        // not a boarding test. The terrain veto costs only the sliver of a deck lying within the 0.3
-        // probe of real ground (a carpet-thin grounded hull), where VS's own world collision holds the
-        // body anyway.
+        // First contact - the one way aboard that is not a seat dismount: capture only a body
+        // actually standing on a ship's deck in that ship's OWN frame - and NEVER one standing on
+        // world terrain. A ground position mapped through a parked ship's transform can alias onto
+        // a subspace block (a walker beside a docked hull was captured into a tilted derelict's
+        // frame in the round-9 playtest), so ship-support alone is not a boarding test. The terrain
+        // veto costs only the sliver of a deck lying within the 0.3 probe of real ground (a
+        // carpet-thin grounded hull), where VS's own world collision holds the body anyway.
         if (isSupportedByWorldTerrain(entity)) {
             return false;
         }
         String candidate = firstContactCandidate(entity);
         boolean hullStand = false;
         if (candidate == null) {
-            // Interior boarding (contract C12): a body INSIDE a ship's own subspace block region
-            // with a deck below it IN THAT SHIP'S FRAME is the deck's to claim even without
-            // standing support - ship-frame gravity can seat it (a body that stopped flying
-            // inside the hull, fell in through a hatch, or relogged there). Without this the
-            // interior of a non-upright ship belonged to WORLD gravity: the body was either
-            // pinned to the interior world-floor by the outer-hull fallback (a world camera on a
-            // "captured" body) or fell clean out through an opening. Checked BEFORE that
-            // fallback - hull contact from INSIDE must not demote an interior body to world
-            // semantics. The region is the ship's own block bounds (margin 0), NOT the grown
-            // stay region: a bystander in the surrounding airspace stays world-frame (C9), and
-            // the terrain veto above already keeps anyone standing on the ground out.
+            // Interior boarding: a body INSIDE a ship's own subspace block region, ENCLOSED by
+            // ship blocks overhead in that frame and with a deck below it IN THAT SHIP'S FRAME, is
+            // the deck's to claim even without standing support - ship-frame gravity can seat it
+            // (a body that stopped flying inside the hull, fell in through a hatch, or relogged
+            // there). Without this the interior of a non-upright ship belonged to WORLD gravity:
+            // the body was either pinned to the interior world-floor by the outer-hull fallback
+            // (a world camera on a "captured" body) or fell clean out through an opening. Checked
+            // BEFORE that fallback - hull contact from INSIDE must not demote an interior body to
+            // world semantics. The region is the ship's own block bounds (margin 0), NOT the grown
+            // stay region: a body merely in the surrounding airspace keeps world gravity,
+            // movement and camera untouched, and the terrain veto above already keeps anyone
+            // standing on the ground out.
             candidate = interiorCandidate(entity);
         }
         if (candidate == null) {
             // No deck under the body in any candidate's frame - but its box may still be meeting a
-            // ship's OUTER hull (contract C11: the world-facing surface of a non-upright ship, or
-            // any hull face a falling body is about to hit). Capture in HULL-STAND mode: world
-            // kinematics, ship-geometry collision - the body lands on the hull instead of the
-            // physics mod bouncing it off and dropping it through the skin.
+            // ship's OUTER hull: the world-facing surface of a non-upright ship, walkable at any
+            // attitude but with world-frame semantics, or any hull face a falling body is about to
+            // hit. Capture in HULL-STAND mode: world kinematics, ship-geometry collision - the body
+            // lands on the hull instead of the physics mod bouncing it off and dropping it through
+            // the skin.
             for (String shipId : VSIntegration.shipIdsAt(
                     entity.world, entity.posX, entity.posY, entity.posZ)) {
                 if (hullContactFor(entity, shipId)) {
@@ -531,14 +542,15 @@ public final class ShipFrameTravel {
         return true;
     }
 
-    /** Whether {@code entity} is in an excluded state (contract C4) — the public face of
-     *  {@link #excludedStateOf} for seed SENDERS (the dismount deck-hold), which should stop
-     *  re-sending a seed the receiving side will refuse. */
+    /** Whether {@code entity} is in a state that keeps it on world-frame semantics and so can never
+     *  be captured — the public face of {@link #excludedStateOf} for seed SENDERS (the dismount
+     *  deck-hold), which should stop re-sending a seed the receiving side will refuse. */
     public static boolean isExcludedFromCapture(EntityLivingBase entity) {
         return entity == null || excludedStateOf(entity) != null;
     }
 
-    /** The excluded state keeping this body on world-frame semantics (contract C4), or {@code null}
+    /** The excluded state keeping this body on world-frame semantics — one of the few facts that
+     *  end an aboard episode, and the same set that refuses a new capture — or {@code null}
      *  when none. ONE predicate for every consumer — {@link #handles} (which releases on it) and
      *  {@link #seedShipFrameCapture} (which must REFUSE to force-capture an excluded body: a seed
      *  that ignored creative flight snapped a flying player to the deck point every window tick,
@@ -554,12 +566,12 @@ public final class ShipFrameTravel {
             return "excludedLevitation";
         }
         if (entity instanceof EntityPlayer && ((EntityPlayer) entity).capabilities.isFlying) {
-            // Flying-aboard (contract C13): creative flight stops being an excluded state for a
-            // body the deck already owns (its flight then resolves on DECK axes - no partial
-            // "captured but flying world-frame" split, which is the old force-capture war), and
-            // for a flyer the deck may CLAIM right now - standing contact or an enclosed
-            // interior. A flyer anywhere else (open airspace, flown away from his seat, over
-            // terrain) keeps world-frame flight untouched.
+            // Flying-aboard: creative flight stops being an excluded state for a body the deck
+            // already owns (its flight then resolves on DECK axes - no partial "captured but
+            // flying world-frame" split, which is the old force-capture war), and for a flyer the
+            // deck may CLAIM right now - standing contact or an enclosed interior. A flyer
+            // anywhere else (open airspace, flown away from his seat, over terrain) keeps
+            // world-frame flight untouched.
             ShipFrameState st = STATE.get(entity);
             boolean aboard = st != null && !st.hullStand;
             if (!aboard && !flyCaptureEligible(entity)) {
@@ -569,9 +581,9 @@ public final class ShipFrameTravel {
         return null;
     }
 
-    /** Whether a creative FLYER is the deck's to claim right now (contract C13): supported by a
-     *  ship's blocks in its own frame (standing contact) or inside an enclosed interior - and not
-     *  on world terrain. Everything else keeps world-frame flight. */
+    /** Whether a creative FLYER is the deck's to claim right now: supported by a ship's blocks in
+     *  its own frame (standing contact) or inside an enclosed interior - and not on world terrain.
+     *  Everything else keeps world-frame flight. */
     private static boolean flyCaptureEligible(EntityLivingBase entity) {
         if (isSupportedByWorldTerrain(entity)) {
             return false;
@@ -619,9 +631,10 @@ public final class ShipFrameTravel {
         STATE.put(entity, state);
     }
 
-    /** Remove the capture with an explicit, logged reason (contract C4). Every path that stops
-     *  resolving a tracked body goes through here - a silent gate leaves stale STATE behind and the
-     *  camera/HUD keep acting on it. No-op for an untracked body. */
+    /** Remove the capture with an explicit, logged reason: an episode never ends implicitly, it
+     *  ends by naming the gate that ended it. Every path that stops resolving a tracked body goes
+     *  through here - a silent gate leaves stale STATE behind and the camera/HUD keep acting on
+     *  it. No-op for an untracked body. */
     private static void release(Entity entity, String reason) {
         if (STATE.remove(entity) != null) {
             lastDropReason = reason;
@@ -672,9 +685,11 @@ public final class ShipFrameTravel {
             return false;
         }
         seedAttempts++;
-        // NEVER force-capture a body in an excluded state (contract C4): handles() would release it
-        // right back next tick, and the re-sent seed then snaps it to the deck point again - a
-        // per-tick teleport war that froze a creative-FLYING ex-pilot mid-air at the seat column.
+        // NEVER force-capture a body in a state that keeps world-frame semantics - riding, elytra,
+        // creative flight it is not claimable in, water, lava, a ladder, levitation. handles()
+        // would release it right back next tick, and the re-sent seed then snaps it to the deck
+        // point again - a per-tick teleport war that froze a creative-FLYING ex-pilot mid-air at
+        // the seat column.
         // Refuse; the sender's window keeps trying and expires harmlessly if the state persists.
         if (entity instanceof EntityLivingBase) {
             String excluded = excludedStateOf((EntityLivingBase) entity);
@@ -689,9 +704,10 @@ public final class ShipFrameTravel {
                 return false;
             }
         }
-        // Anchored (contract C2): the seed names its ship explicitly - the server resolved it
-        // unambiguously from the SUBSPACE seat block (claims of distinct ships never overlap), so the
-        // client never has to guess by containment among overlapping world boxes.
+        // Anchored to one ship for the whole episode: the seed names its ship explicitly - the
+        // server resolved it unambiguously from the SUBSPACE seat block (claims of distinct ships
+        // never overlap), so the client never has to guess by containment among overlapping world
+        // boxes.
         double[] world = VSIntegration.toWorldFrameFor(entity.world, shipId, subX, subY, subZ);
         if (world == null) {
             seedNotLoaded++;
@@ -746,11 +762,11 @@ public final class ShipFrameTravel {
     // entirely - and an "already resolving" gate then no-ops every re-sent seed forever. The
     // pending slot removes both races by construction: the seed waits for the exclusion to clear
     // and then applies EXACTLY ONCE, superseding any capture installed during its window (within
-    // the dismount window the seat's deck point is the contractual boarding spot; a vanilla-spot
-    // first contact there is a mis-boarding). A capture that PREDATES the slot is respected and
-    // the slot dissolves. If the exclusion outlives the TTL (a pilot who dismounted straight into
-    // creative flight and left), the slot expires silently and the body is never snapped - the
-    // one-shot application is what keeps the old per-tick teleport war impossible.
+    // the dismount window the seat's deck point is BY DEFINITION where a dismount puts the body;
+    // a vanilla-spot first contact there is a mis-boarding). A capture that PREDATES the slot is
+    // respected and the slot dissolves. If the exclusion outlives the TTL (a pilot who dismounted
+    // straight into creative flight and left), the slot expires silently and the body is never
+    // snapped - the one-shot application is what keeps the old per-tick teleport war impossible.
 
     /** How long a pending seed waits for the body to become capturable. Comfortably above the
      *  riding-flag tail and a ship's client-side streaming delay; re-sent packets refresh it. */
@@ -813,7 +829,7 @@ public final class ShipFrameTravel {
      *
      * <p>Only one rule differs, and it is the one that matters at login: "a capture that predates
      * the slot wins" is right for a dismount — the body was already legitimately captured and the
-     * seat point is merely where the contract says it should stand — and wrong for a restore, where
+     * seat point is merely the deck spot a dismount is defined to deliver — and wrong for a restore, where
      * every capture on this side is younger than the player entity itself and the durable record is
      * the authority. Applied to a login, that rule handed the body to a first-contact capture
      * holding the position AND VELOCITY vanilla had just restored, and the crew member skated off
@@ -964,7 +980,8 @@ public final class ShipFrameTravel {
      *  including the eye, are the world's). This is the axis the aboard EYE sits along: the
      *  renderer already offsets the camera along it ({@code MixinEntityRendererShipEye}), and the
      *  raytrace must originate from the SAME point or the crosshair picks a block the camera is
-     *  not looking at (contract C10). */
+     *  not looking at - the block outlined under the crosshair has to be the block interacted
+     *  with, at any attitude. */
     public static double[] aboardShipUpWorld(Entity entity) {
         if (entity == null) {
             return null;
@@ -978,8 +995,9 @@ public final class ShipFrameTravel {
 
     /** Whether this class resolves {@code entity} in ABOARD (deck) mode specifically. The
      *  deck-levelled camera, the deck mouse basis and every other "this body lives in the deck's
-     *  frame" consumer gate on THIS - a HULL-STAND body (contract C11) keeps its own world-frame
-     *  view and look while only its collision is resolved against the ship. Movement-ownership
+     *  frame" consumer gate on THIS - a HULL-STAND body, one standing on the ship's outer
+     *  world-facing surface, keeps its own world-frame view and look while only its collision is
+     *  resolved against the ship. Movement-ownership
      *  consumers (the move-suppression hook, gravity) keep gating on {@link #isResolving}. */
     public static boolean isResolvingAboard(Entity entity) {
         if (entity == null) {
@@ -1077,7 +1095,7 @@ public final class ShipFrameTravel {
         boolean terrain = isSupportedByWorldTerrain(entity);
         m.put("supportedByWorldTerrain", terrain);
         // The handles() verdict, replicated WITHOUT its capture/release side effects.
-        // excludedStateOf is itself side-effect-free (its C13 flying clause only READS state and
+        // excludedStateOf is itself side-effect-free (its flying-aboard branch only READS state and
         // candidates), so the probe shares it instead of drifting from the live gate.
         boolean gated = !available || (!entity.isServerWorld() && !entity.canPassengerSteer())
                 || excludedStateOf(entity) != null;
@@ -1297,8 +1315,9 @@ public final class ShipFrameTravel {
 
     /** Whether a SHIP block sits directly beneath the entity's feet at the given ship-frame point,
      *  tested in the ANCHORED ship {@code shipId}'s frame (where the deck is axis-aligned) — the
-     *  form every decision about a tracked body uses (contract C2). The probe reaches further for a
-     *  fast faller so it is caught before it can tunnel through a thin deck in one tick. Ship blocks
+     *  form every decision about a tracked body uses, since an episode resolves through the ship it
+     *  was captured on and no other. The probe reaches further for a fast faller so it is caught
+     *  before it can tunnel through a thin deck in one tick. Ship blocks
      *  live in a subspace never at the entity's world position, so this is what tells "standing on
      *  the deck" from "standing on the ground". */
     private static boolean isSupportedByShipAt(Entity entity, String shipId, double[] local) {
@@ -1349,8 +1368,9 @@ public final class ShipFrameTravel {
      *  containment lookup. {@code -1} when that ship is not loaded on this side.
      *
      *  <p>Counts only STANDING support - boxes whose TOP face is at/below the feet. A body that
-     *  punched INTO the hull from outside (the world-top of an inverted ship, contract C11)
-     *  intersects the probe with boxes whose top is ABOVE its feet; counting those as "support"
+     *  punched INTO the hull from outside (the world-top of an inverted ship - outer hull, and so
+     *  world-frame territory) intersects the probe with boxes whose top is ABOVE its feet;
+     *  counting those as "support"
      *  captured the hull-top stander into a frame that can never seat him (no floor under him in
      *  subspace), and ship-frame gravity then flung him world-up off the hull - the #49 thrash. */
     private static int shipSupportObstacleCountFor(Entity entity, String shipId) {
@@ -1390,7 +1410,8 @@ public final class ShipFrameTravel {
     /** How far below the feet (in the ship frame) a floor must exist for a capture to make sense.
      *  Comfortably above a jump apex (~1.25) and interior drops; a body with NO floor within this
      *  reach can never be seated on a deck by ship-frame gravity - it is on the outer hull or past
-     *  the underside, where world-frame semantics own it (contract C11). */
+     *  the underside, where world gravity, the world walk basis and the body's own camera own it
+     *  and only the collision is resolved against the ship. */
     private static final double FLOOR_PROBE_DEPTH = 6.0;
 
     /** Whether the body's REAL world-upright box, moved by its motion this tick (plus a hair of
@@ -1415,8 +1436,8 @@ public final class ShipFrameTravel {
      *  (0.15–0.4 measured on the inverted fixture), and a gate that demanded near-touch (0.05)
      *  lost the handover race — the body was chewed and dropped through the hull, the exact
      *  failure this capture mode exists to prevent. The
-     *  margin must exceed that parking gap; bystanders are safe (the terrain veto and the C4/C13
-     *  flight exclusions run before any hull capture). */
+     *  margin must exceed that parking gap; bystanders are safe (the terrain veto and the
+     *  excluded-state gates, creative flight among them, run before any hull capture). */
     private static final double HULL_CONTACT_MARGIN = 0.5;
 
     private static boolean hullContactFor(Entity entity, String shipId) {
@@ -1505,7 +1526,7 @@ public final class ShipFrameTravel {
      *  top of the ship's block region - the "enclosed" half of the interior test. A ship's margin-0
      *  block-bounds region over-covers: it includes the OPEN air between a deck and the ship's
      *  topmost blocks, and "inside the region + deck below" alone therefore captured a body merely
-     *  flying through that airspace (the fly-through hijack the airspace contract forbids). A roof
+     *  flying through that airspace - the fly-through hijack a bystander must never suffer. A roof
      *  overhead is what distinguishes a hull CAVITY - a hatch entry, an inverted cockpit - from
      *  open air over a deck. */
     private static boolean hasRoofAboveFor(Entity entity, String shipId) {
@@ -1902,11 +1923,12 @@ public final class ShipFrameTravel {
     public static volatile java.util.function.Function<EntityLivingBase, Integer> clientFlyIntent = null;
 
     /**
-     * One tick of FLYING-ABOARD movement (contract C13): vanilla creative-flight kinematics -
-     * fly-speed horizontal input, the {@code 0.6} vertical damping, NO gravity - computed on DECK
+     * One tick of FLYING-ABOARD movement - a creative flyer the deck owns keeps flying, in the
+     * deck's frame: vanilla creative-flight kinematics - fly-speed horizontal input, the
+     * {@code 0.6} vertical damping, NO gravity - computed on DECK
      * axes with the held-carry velocity rule, swept against the ship's own blocks. One frame for
      * input, aim, camera and motion; the partial "captured but flying world-frame" split is
-     * exactly the old force-capture war and is forbidden by the contract.
+     * exactly the old force-capture war and must never exist.
      *
      * <p>Vanilla applies the vertical fly impulse as a WORLD {@code motionY} write before travel
      * runs ({@code EntityPlayerSP.onLivingUpdate}); this branch subtracts exactly that impulse
@@ -2004,8 +2026,9 @@ public final class ShipFrameTravel {
     }
 
     /**
-     * One tick of HULL-STAND movement (contract C11): vanilla's OWN kinematics on world axes -
-     * world gravity, world walk basis (the entity's own yaw), vanilla's drag constants on the
+     * One tick of HULL-STAND movement - a body on the ship's outer, world-facing surface, which is
+     * walkable at any attitude but never aboard: vanilla's OWN kinematics on world axes - world
+     * gravity, world walk basis (the entity's own yaw), vanilla's drag constants on the
      * world's axes - with only the COLLISION resolved by the ship-frame sweep against the ship's
      * subspace geometry. The position stays subspace-authoritative (the body rides the moving
      * ship); the velocity follows the same held-carry rule as the aboard path, applied to the
@@ -2234,8 +2257,8 @@ public final class ShipFrameTravel {
         String shipId = anchored.shipId;
         double up = jumpUpwardsMotion + jumpBoost;
         if (anchored.hullStand) {
-            // HULL-STAND (C11): the jump is vanilla's own - WORLD-up, sprint boost along the WORLD
-            // yaw - applied to the relative motion under the same held-carry rule.
+            // HULL-STAND is world semantics: the jump is vanilla's own - WORLD-up, sprint boost
+            // along the WORLD yaw - applied to the relative motion under the same held-carry rule.
             double relX = entity.motionX - anchored.carryX;
             double relZ = entity.motionZ - anchored.carryZ;
             if (entity.isSprinting()) {

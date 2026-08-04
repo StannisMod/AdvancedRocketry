@@ -22,9 +22,10 @@ import static org.junit.Assert.assertTrue;
  * <h2>Why this is not satisfiable by a universe that does not move</h2>
  * A name that never changes is trivially still the same name if nothing else changed either, so the
  * invariance below would mean nothing on its own. The control is the cell's FRAME: {@code artest space
- * frame} reports where the cell actually IS at the current clock (C15 ADDR-6), and that number must
- * have moved a long way between the two samples. One assertion says the identity held; the other says
- * there was something for it to hold against. The control is asserted FIRST, so a frozen universe
+ * frame} reports where the cell actually IS at the current clock &mdash; a cell rides the body it is
+ * named for, so its origin is that body's own position at the tick you ask &mdash; and that number
+ * must have moved a long way between the two samples. One assertion says the identity held; the other
+ * says there was something for it to hold against. The control is asserted FIRST, so a frozen universe
  * fails loudly rather than passing quietly.
  *
  * <h2>Why the clock is set rather than ticked</h2>
@@ -91,7 +92,8 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
             // nothing about the derivation underneath it — measured: with the derivation deliberately
             // re-pointed at the live clock, everything above still passed. Forgetting the record
             // forces the next query to derive, at the aged clock, and that answer must be the same
-            // cell (C15 ADDR-2: a name comes from the layout, never from the clock).
+            // cell: a name is derived from the layout alone — the system anchor and the body's own
+            // authored orbital elements — and never from the clock.
             String forget = exec("artest space forget-name " + WATCHED_DIM);
             assertTrue("the registry must have been holding a recorded name to forget: " + forget,
                     forget.contains("\"held\":true"));
@@ -123,7 +125,8 @@ public class ParkedShipKeepsItsBodiesE2ETest extends AbstractSharedServerTest {
         // And the same again with the store's protection REMOVED: a name derived fresh at the aged
         // clock is the same name. This is the leg that fails if the derivation ever reads a clock.
         assertEquals("a name derived fresh, eleven days later, must still be the same cell — the"
-                + " layout decides a name and the clock has no part in it (C15 ADDR-2): " + reDerived,
+                + " layout decides a name, from the system anchor and the authored orbit, and the"
+                + " clock has no part in it: " + reDerived,
                 cellKey, dimCell(reDerived));
         assertTrue("...and the body must still be standing in it: " + reDerived,
                 reDerived.contains("\"dim\":" + WATCHED_DIM + ",\"kind\""));

@@ -777,8 +777,9 @@ public class TileNavigationComputer extends TileInventoryHatch
     private int pickIndex;
 
     /**
-     * Whether this console asks the cell sky to label its bodies (C14 CON-C14-17). Default ON.
-     * Persisted here and applied client-side by {@code SkyLabels} when the tile's state syncs.
+     * Whether this console asks the cell sky to write each body's name and distance beside it.
+     * Default ON. Persisted here and applied client-side by {@code SkyLabels} when the tile's
+     * state syncs.
      */
     private boolean skyLabels = true;
 
@@ -1040,8 +1041,9 @@ public class TileNavigationComputer extends TileInventoryHatch
         targetResolved = !nbt.hasKey(NBT_TARGET_RESOLVED) || nbt.getBoolean(NBT_TARGET_RESOLVED);
         syncChannel = nbt.getInteger(NBT_SYNC_CHANNEL);
         armed = nbt.getBoolean(NBT_ARMED);
-        // Default ON: the label is a diagnostic before it is an affordance (C14 CON-C14-17), so a
-        // console that has never been touched shows it. An absent key therefore means ON, not OFF.
+        // Default ON: the label is a diagnostic before it is a player affordance — it is how anyone
+        // reads that a body is receding without a probe — so a console that has never been touched
+        // shows it. An absent key therefore means ON, not OFF.
         skyLabels = !nbt.hasKey(NBT_SKY_LABELS) || nbt.getBoolean(NBT_SKY_LABELS);
         if (world != null && world.isRemote) {
             // This is the whole wire for the toggle: the console already ships its state to the

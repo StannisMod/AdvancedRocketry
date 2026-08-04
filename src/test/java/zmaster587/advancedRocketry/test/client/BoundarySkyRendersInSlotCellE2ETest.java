@@ -372,16 +372,18 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         // The billboard's angular radius is half/BODY_DISTANCE, i.e. 6.3 degrees for a descend target
         // (half 10) and 3.8 for a plain body (half 6); on a 70-degree vertical FOV that is 9.1% and 5.4%
         // of the frame height. Each aim therefore has its own expected disc and its own sample box.
-        // The billboard's angular radius is halfSizeFor(distance)/BODY_DISTANCE, and since
-        // CON-C14-16 made the half-size a function of distance, the expected disc is derived from
-        // that law rather than from a constant. It is used only to SIZE the sample box - the
+        // The billboard's angular radius is halfSizeFor(distance)/BODY_DISTANCE, and since the sky
+        // draws a body at a half-size that falls with its distance, the expected disc is derived
+        // from that law rather than from a constant. It is used only to SIZE the sample box - the
         // assertion is still "a disc was drawn at the bearing the server reported", which a build
         // that drew nothing fails whatever the box is.
         assertBodyDrawn(NEAREST, before[NEAREST], after[NEAREST], emptyAfter);
         assertBodyDrawn(GIANT, before[GIANT], after[GIANT], emptyAfter);
 
-        // ------------------- Leg 2b: apparent size FALLS with distance (C14 CON-C14-16), in pixels.
-        // The player-visible half of the clause: two bodies a pilot can see in the same cell, one
+        // ------------------------------ Leg 2b: apparent size FALLS with distance, in pixels. A body
+        // is drawn at an apparent size that strictly decreases with its distance, clamped at both
+        // ends so that no fed body becomes invisible and none fills the sky.
+        // The player-visible half of that rule: two bodies a pilot can see in the same cell, one
         // twenty times further away than the other, must not look the same size. Before this every
         // body was drawn at one of two fixed sizes, so a moon at 3 km and one at 59 km were
         // indistinguishable and "the planet is crawling away" was not something the sky could show.
@@ -426,10 +428,11 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 + stars + "px against background " + rgb(starBackground) + " " + describe(emptyAfter)
                 + " (" + outDir.resolve("after_empty.png") + ")", stars >= 25);
 
-        // ------------------------------------------------- Leg 5: every body says what it is (C14
-        // CON-C14-17). Read off the CLIENT's own per-frame counter rather than off pixels, because
+        // ------------------------------------------ Leg 5: every body says what it is - the sky
+        // writes each body's name and its distance under the billboard, one label per body, on by
+        // default. Read off the CLIENT's own per-frame counter rather than off pixels, because
         // "is that text or is it a star" is not a question a pixel count can answer - and because
-        // the clause is "one label per body", which a count states exactly. The before-sample is the
+        // the rule is "one label per body", which a count states exactly. The before-sample is the
         // control: with no body in the cell the counter must be zero, so a non-zero after-sample is
         // attributable to the bodies and to nothing else.
         assertEquals("no body is registered yet, so the sky can have labelled nothing",
@@ -490,9 +493,9 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     }
 
     /**
-     * The billboard's expected radius as a fraction of the frame HEIGHT: its half-size (which C14
-     * CON-C14-16 makes a function of distance) subtends {@code atan(half / BODY_DISTANCE)} on a
-     * 70-degree vertical FOV. Used only to SIZE sample boxes; every assertion is still about what
+     * The billboard's expected radius as a fraction of the frame HEIGHT: its half-size (which falls
+     * with the body's own distance, clamped at both ends) subtends {@code atan(half / BODY_DISTANCE)}
+     * on a 70-degree vertical FOV. Used only to SIZE sample boxes; every assertion is still about what
      * the client actually drew, so a build that drew nothing fails whatever the box is.
      */
     private static double discRadiusOf(int index) {

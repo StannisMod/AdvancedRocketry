@@ -297,8 +297,9 @@ public class RocketEventHandler extends Gui {
                     + " worldYaw=" + (event.getYaw() - 180f)
                     + " worldPitch=" + event.getPitch());
         }
-        // ABOARD specifically: a HULL-STAND body (outer hull, contract C11) keeps world semantics -
-        // its camera is its own, never levelled to a deck it is not standing on.
+        // ABOARD specifically: a HULL-STAND body - standing on the OUTER hull, where the ship frame
+        // has no floor beneath it - keeps world-frame semantics, so its camera is its own and is
+        // never levelled to a deck it is not standing on.
         if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
             zmaster587.advancedRocketry.client.ShipFrameCamera.shipCamActive = false;
             return;

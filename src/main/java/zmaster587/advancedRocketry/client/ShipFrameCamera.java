@@ -36,12 +36,13 @@ public final class ShipFrameCamera {
     public static volatile boolean shipCamActive = false;
     /** The block position the client's crosshair raytrace resolved this frame, as "x,y,z" (ship
      *  blocks come back in SUBSPACE coordinates), or "" when it hit no block. Test-mode only -
-     *  lets a client e2e assert WHAT the crosshair actually picks (contract C10) through
+     *  lets a client e2e assert WHAT the crosshair actually picks - the block outlined under the
+     *  crosshair must be the block interacted with, at any ship attitude - through
      *  {@code readStaticField}, with no live objectMouseOver access. */
     public static volatile String lastMouseOverBlock = "";
     /** Where the crosshair RAY actually originates ({@code getPositionEyes}) this frame — compared
-     *  by the C10 e2e against {@code shipCamEye*} (what the RENDERER recorded): the two must be one
-     *  point, or the crosshair picks a block the camera is not looking at. */
+     *  by the crosshair-picking e2e against {@code shipCamEye*} (what the RENDERER recorded): the
+     *  two must be one point, or the crosshair picks a block the camera is not looking at. */
     public static volatile double lastRayEyeX, lastRayEyeY, lastRayEyeZ;
     /** The camera attitude actually pushed to the renderer last frame (degrees). */
     public static volatile double shipCamYaw = 0.0;
@@ -174,9 +175,10 @@ public final class ShipFrameCamera {
             return FreeFlightPhysics.slerp(KeyBindings.shipPrevQuat(), KeyBindings.shipQuat(), partialTicks);
         }
         // The LOCAL player's eye/camera/model gate on the MOVEMENT truth - resolved ABOARD a deck -
-        // never on containment (contract C7). Containment overlaps a large air volume around the
-        // hull (the fly-through hijack), and a HULL-STAND body (outer hull, C11) is inside it too
-        // while owning a world-frame view.
+        // never on containment: a body is aboard when a deck carries its movement, not when it
+        // merely sits inside the hull's volume. Containment overlaps a large air volume around the
+        // hull (the fly-through hijack), and a HULL-STAND body (standing on the OUTER hull, which
+        // keeps world-frame semantics) is inside it too while owning a world-frame view.
         if (view == mc.player) {
             if (!zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.isResolvingAboard(view)) {
                 return null;

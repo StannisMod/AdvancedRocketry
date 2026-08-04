@@ -18,7 +18,7 @@ import net.minecraft.nbt.NBTTagCompound;
  * cell centre, so every local coordinate stays inside the range where 1.12.2 entity doubles, chunks
  * and lighting are crisp. Cell-centre content is at local {@code (0,0,0)}.</p>
  *
- * <p><b>Since C15 the sector triple is a cell NAME, not a place.</b> A cell rides the body it belongs
+ * <p><b>The sector triple is a cell NAME, not a place.</b> A cell rides the body it belongs
  * to, so {@code absolute = sector * CELL + local} is the STATIC-frame reading — true for a void cell
  * and for the sector arithmetic that keeps names apart, and false the moment either endpoint's frame
  * has moved. Hence {@link #staticFrameDistanceTo}'s spelling, and hence {@link AbsolutePos}, which is
@@ -153,14 +153,14 @@ public final class GalacticCoord {
      * {@code double}. Computed from the sector delta plus the local delta so nearby positions are
      * exact even at galactic magnitude.
      *
-     * <p><b>This is not the distance between two bodies.</b> A sector triple is a cell NAME, and a
-     * cell rides the body it belongs to (C15 ADDR-6), so {@code sector * CELL} is where a cell would
-     * be if nothing moved. The reading is exact in exactly two cases: <i>within one cell</i>, where
-     * both endpoints share a frame and the sector terms cancel; and <i>between two static frames</i>
-     * — void cells, or a star, whose frames really are at {@code sector * CELL} forever. For anything
-     * else, go through {@link CellFrames#distanceBetween}: the same two names can be a light-second
-     * apart at one tick and a system's width apart at another, and that changing distance is a thing
-     * the player is meant to feel (ADDR-13).</p>
+     * <p><b>This is not the distance between two bodies.</b> A sector triple is a cell NAME, and every
+     * cell with a primary rides it, so {@code sector * CELL} is where a cell would be if nothing
+     * moved. The reading is exact in exactly two cases: <i>within one cell</i>, where both endpoints
+     * share a frame and the sector terms cancel; and <i>between two static frames</i> — void cells, or
+     * a star, whose frames really are at {@code sector * CELL} forever. For anything else, go through
+     * {@link CellFrames#distanceBetween}: the same two names can be a light-second apart at one tick
+     * and a system's width apart at another, and that changing distance — hence the cost and the
+     * duration of the flight it prices — is a thing the player is meant to feel.</p>
      */
     public double staticFrameDistanceSqTo(GalacticCoord other) {
         double dx = (double) (other.sectorX - sectorX) * CELL + (other.localX - localX);

@@ -107,8 +107,8 @@ public final class DeckLook {
      * Mouse turn, in the deck frame. Applies vanilla's exact delta scaling and pitch clamp to the
      * DECK yaw/pitch, then derives the world rotation, and returns true so the caller cancels the
      * vanilla world-frame turn. Returns false - vanilla runs untouched - for anyone who is not the
-     * local player resolved ABOARD a deck (a hull-stand body keeps its own world look, contract
-     * C11).
+     * local player resolved ABOARD a deck (a body standing on the OUTER hull keeps world-frame
+     * semantics, its own world look included).
      */
     public static boolean turn(Entity player, float yawDelta, float pitchDelta) {
         if (!sync(player)) {

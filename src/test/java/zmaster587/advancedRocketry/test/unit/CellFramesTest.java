@@ -11,8 +11,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The frame seam (C15 ADDR-6/7/9): a cell NAME plus a tick resolves to a position, and a distance
- * exists only at a stated tick, measured through both endpoints' frames.
+ * The frame seam: a cell NAME plus a tick resolves to a position — a cell holding a body rides that
+ * body, a cell holding none stands still where its name says — and a distance exists only at a
+ * stated tick, measured through both endpoints' frames.
  *
  * <p>The static reading is kept as the void case AND as the control: a witness that a distance
  * changes with time means nothing unless the same fixture, read over a grid that does not move,
@@ -57,8 +58,10 @@ public class CellFramesTest {
     }
 
     /**
-     * ADDR-13's observable, at the seam that owns it: a body seen from a cell whose frame does not
-     * carry the observer visibly recedes. The static leg is the control.
+     * The observable the player actually feels, at the seam that owns it: a body seen from a cell
+     * whose frame does not carry the observer visibly recedes, so the distance between two moving
+     * cells — hence the cost and duration of a flight between them — is live. The static leg is the
+     * control.
      */
     @Test
     public void aDistanceBetweenTwoCellsChangesWithTimeWhenOneOfThemMoves() {

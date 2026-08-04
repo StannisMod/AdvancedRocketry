@@ -245,7 +245,8 @@ public final class ShipTransitManager {
     private ArrivalPlacement arrivalPlacement;
     /**
      * How a cell name resolves to a position at a tick. A jump is priced across two cells whose
-     * frames both move, so the departure distance is only meaningful through them (C15 ADDR-9/13).
+     * frames both move, so the departure distance is only meaningful read through both of them at a
+     * stated tick — and it is that live geometry the flight's cost and duration follow.
      * {@code null} = the static reading, which is what the pure state-machine tests want and what a
      * subsystem with no registry has.
      */

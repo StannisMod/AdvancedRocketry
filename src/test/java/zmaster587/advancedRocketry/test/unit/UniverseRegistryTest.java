@@ -256,7 +256,7 @@ public class UniverseRegistryTest {
         assertEquals(42, atPlaced.get().starId());
 
         // A member cell of the stored anchor's super-cell attributes to the STORED system, not the
-        // generator (A#1a: authored anchors win inside their super-cell).
+        // generator: an authored anchor owns every cell of its super-cell.
         Optional<StarSystem> nearStored = reg.systemForCoord(GalacticCoord.ofSectorLocal(6, 6, 6, 0, 0, 0));
         assertTrue(nearStored.isPresent());
         assertEquals(42, nearStored.get().starId());
@@ -270,8 +270,9 @@ public class UniverseRegistryTest {
 
     @Test
     public void memberCellResolvesToItsOwningProceduralSystem() {
-        // A#1a member semantics end-to-end through the registry: a planet's own zone cell (and the void
-        // between bodies) resolves to the owning system; the zone read returns exactly that cell's body.
+        // Member semantics end-to-end through the registry: a system is a neighbourhood of cells round
+        // its anchor, so a planet's own zone cell (and the void between bodies) resolves to the owning
+        // system; the zone read returns exactly that cell's body.
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(0xBEEF);
         GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 16, 8, 0.0d, null);
@@ -649,12 +650,13 @@ public class UniverseRegistryTest {
                 first, reg.coordForPlanet(body));
     }
 
-    // ── Frames: where a cell IS (C15 ADDR-6 / ADDR-7) ────────────────────────────────────────────
+    // ── Frames: where a cell IS, and what makes it move ──────────────────────────────────────────
 
     /**
-     * ADDR-6 and ADDR-7 together. A cell with a primary rides it; a cell with none is static at
-     * {@code sector * CELL}. The void half is the control — without it "the frame moves" would pass
-     * against a lookup that returned an arbitrary function of the tick for everything.
+     * Both halves of the frame rule at once. A cell with a primary body in it rides that body; a cell
+     * with none is static at {@code sector * CELL}. The void half is the control — without it "the
+     * frame moves" would pass against a lookup that returned an arbitrary function of the tick for
+     * everything.
      */
     @Test
     public void aBodyCellRidesItsPrimaryWhileAVoidCellStandsStill() {
@@ -681,9 +683,10 @@ public class UniverseRegistryTest {
     }
 
     /**
-     * C14 CON-C14-14. The sky feed is the SYSTEM unioned with the observer's own cell, and the union
-     * is what stops a straight swap erasing a station standing in a void cell — the system read
-     * aggregates POIs of BODY cells only, and answers empty for a cell no anchor attributes.
+     * The sky shows the SYSTEM, not the cell: the feed is the system's bodies unioned with whatever is
+     * keyed at the observer's own cell, and the union is what stops a straight swap erasing a station
+     * standing in a void cell — the system read aggregates POIs of BODY cells only, and answers empty
+     * for a cell no anchor attributes.
      */
     @Test
     public void theSkyFeedUnionsTheSystemWithTheObserversOwnCell() {

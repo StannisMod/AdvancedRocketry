@@ -7,11 +7,11 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
  * Where to aim at a moving destination.
  *
  * <p>A jump takes time, and in that time the destination moves. Not its NAME — a cell name is
- * durable, so the cell a ship arrives into is the cell it aimed at, at every tick (C15 ADDR-14). What
- * moves is the POINT: the body's cell frame slides along the body's orbit, a moon slides inside that
- * frame, and both are somewhere else by the time the ship comes out of hyperspace. Aiming at where the
- * destination is NOW therefore prices the wrong flight and puts the ship down at the wrong end of the
- * neighbourhood.</p>
+ * durable, so the cell a ship arrives into is the cell it aimed at, at every tick, and that half
+ * needs no projection at all. What moves is the POINT: the body's cell frame slides along the body's
+ * orbit, a moon slides inside that frame, and both are somewhere else by the time the ship comes out
+ * of hyperspace. Aiming at where the destination is NOW therefore prices the wrong flight and puts
+ * the ship down at the wrong end of the neighbourhood.</p>
  *
  * <p>The aim point and the flight time depend on each other: a further aim point means a longer flight,
  * and a longer flight means the body has moved further. This resolves that by <b>bounded iteration</b>

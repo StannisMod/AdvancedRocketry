@@ -18,10 +18,11 @@ import static org.junit.Assert.assertTrue;
  * where the body WILL BE when the flight ends, never at where it is when the pilot presses the
  * button. Pure — no world, no registry, no drive.
  *
- * <p>What moves is the POINT, not the cell: a body's cell name is durable (C15 ADDR-1), so the
- * arrival cell equals the aimed cell at every tick and needs no projection at all (ADDR-14). The
- * body slides inside its cell, and the cell's own frame slides through space, and both of those are
- * what the aim and its price have to follow.</p>
+ * <p>What moves is the POINT, not the cell: a body's cell name is durable — fixed for the life of
+ * the save, and no tick changes it — so the arrival cell equals the aimed cell at every tick and
+ * needs no projection at all; only the rendezvous POINT does. The body slides inside its cell, and
+ * the cell's own frame slides through space, and both of those are what the aim and its price have
+ * to follow.</p>
  */
 public class TargetPredictionTest {
 
@@ -81,8 +82,9 @@ public class TargetPredictionTest {
     }
 
     /**
-     * ADDR-14. The cell is the destination and the cell is durable, so no amount of leading may
-     * change which cell the ship is aimed at — the pilot chose a body, not a place the body passes.
+     * An aim resolves to a NAME. The cell is the destination and the cell is durable, so no amount
+     * of leading may change which cell the ship is aimed at — the pilot chose a body, not a place
+     * the body happens to pass through.
      */
     @Test
     public void theAimedCellIsTheBodysDurableNameWhateverTheFlightCosts() {

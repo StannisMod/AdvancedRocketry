@@ -861,8 +861,9 @@ final class VSBridge {
 
     /** The body-&gt;world attitude of the ship {@code shipId} as {@code {w,x,y,z}}, or {@code null}
      *  when it is not loaded on this side. The by-ID sibling of {@link #shipAttitudeAt}: a consumer
-     *  that already knows WHICH ship it means must not re-derive one by containment (contract C2 -
-     *  the anchor is the ship, not whatever box the body currently sits inside). */
+     *  that already knows WHICH ship it means must not re-derive one by containment: an aboard body
+     *  is anchored to ONE ship for the whole episode, and that anchor is the ship's identity, never
+     *  whatever box the body currently sits inside. */
     static double[] shipAttitudeForId(World world, String shipId) {
         try {
             PhysicsObject physo = physoById(world, shipId);

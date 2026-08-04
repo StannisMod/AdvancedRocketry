@@ -8,7 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * C14 CON-C14-16: a fed body is drawn at a size that FALLS with distance and is CLAMPED at both ends.
+ * A fed body is drawn at an apparent size that FALLS with distance and is CLAMPED at both ends.
  *
  * <p>Neither half is polish. The fed range runs from a few thousand blocks to ~10<sup>9</sup>, so an
  * unclamped inverse law draws the star at a fraction of a pixel; and the renderer drops a body whose

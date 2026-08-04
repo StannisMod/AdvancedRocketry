@@ -12,17 +12,18 @@ import java.util.regex.Pattern;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The capture/release contract of the ship-frame crew (any-attitude crew contract C1/C3/C9), pinned
- * against a REAL CLIENT PLAYER — the subject that broke in the inverted-boarding playtest. Two
- * boundary behaviours that the world-AABB containment gate got wrong:
+ * The capture/release contract of the ship-frame crew - what makes a body ABOARD, what keeps it
+ * there, and what leaves a bystander alone - pinned against a REAL CLIENT PLAYER — the subject that
+ * broke in the inverted-boarding playtest. Two boundary behaviours that the world-AABB containment
+ * gate got wrong:
  *
  * <ul>
- *   <li><b>Jumping on the TOP deck keeps the capture (C3).</b> The hull's top surface sits at the
+ *   <li><b>Jumping on the TOP deck keeps the capture.</b> The hull's top surface sits at the
  *       ship's world-AABB ceiling; a jump apex from there crossed the old grown-box gate
  *       (`leftShipBox`) and the capture died MID-AIR — vanilla, blind to the subspace deck, then
  *       tunnelled the body through the whole ship. The stay region is measured in SUBSPACE with a
  *       real margin, so a jump must ride out and land back on the deck, still captured.</li>
- *   <li><b>A player walking on world TERRAIN near a ship is never captured (C1/C9).</b> A ground
+ *   <li><b>A player walking on world TERRAIN near a ship is never captured.</b> A ground
  *       position mapped through a parked ship's transform can alias onto a subspace block, and the
  *       old first-contact gate then captured a walker who stood on plain ground beside the hull
  *       (the playtest's "entered the ship transform at a random place"). Terra firma always keeps
@@ -43,7 +44,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
 
     private static final String VARIANT = "with-pilot-deck";
 
-    // ---- C3: a jump from the top deck must not release the capture ------------------------------
+    // ---- Staying aboard: a jump from the top deck must not release the capture ------------------
 
     @Test
     public void jumpingOnTheTopDeckKeepsTheCaptureAndLandsBackOnIt() throws Exception {
@@ -118,7 +119,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 + " settledY=" + settledY, Math.abs(settledY - deckY) < 1.5);
     }
 
-    // ---- C1/C9: terra firma near a ship never captures ------------------------------------------
+    // ---- Boarding vs bystanders: terra firma near a ship never captures -------------------------
 
     @Test
     public void walkingOnTheGroundBesideAParkedShipNeverEntersItsFrame() throws Exception {
@@ -265,8 +266,8 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // for a still body).
         assertTrue("the stillness window must be input-free (saw strafe=" + strafeSeen + " forward="
                 + forwardSeen + ")", strafeSeen == 0f && forwardSeen == 0f);
-        // The contract (C6): a still crew member on a held, stationary deck STAYS PUT - no sideways
-        // drag - and his capture does not churn.
+        // The contract (deck-frame walking - no input, no movement): a still crew member on a held,
+        // stationary deck STAYS PUT - no sideways drag - and his capture does not churn.
         assertTrue("a still crew member must not be dragged sideways on a held rolled deck: drifted "
                 + drift + " blocks in ~5s (client drop churn=" + churn + ", max lateral ship-frame "
                 + "motion=" + maxLateral + "): " + trace, drift < 0.5);
@@ -573,16 +574,17 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 + resolvedBefore + " -> " + resolvedAfter + ")", resolvedAfter > resolvedBefore + 40);
         assertTrue("the control (quiet hover) window must not churn (control=" + controlChurn + ")",
                 controlChurn < 3);
-        // The contract (C6 along the ship-motion axis): smooth sustained ship motion must never
-        // cycle the crew capture through the external-move guard - the deck's own carry is the
-        // guard's to absorb. frameMoved >> entityMoved in the drop shape = the deck stepped under
-        // an unmoved body and the widening was blind (carry ~0 = the client velocity feed is empty).
+        // The contract (deck-frame walking, along the ship-motion axis): smooth sustained ship
+        // motion must never cycle the crew capture through the external-move guard - the deck's own
+        // carry is the guard's to absorb. frameMoved >> entityMoved in the drop shape = the deck
+        // stepped under an unmoved body and the widening was blind (carry ~0 = the client velocity
+        // feed is empty).
         assertTrue("a fast-climbing ship must not churn its still crew member's capture: churn="
                 + churn + " maxFrameStep=" + maxFrameStep + " maxCarry=" + maxCarry + " " + dropShape
                 + " :: " + samples, churn == 0);
     }
 
-    // ---- C4: the dismount deck-hold must never snap a creative-flying ex-pilot ------------------
+    // ---- Excluded states: the dismount deck-hold must never snap a creative-flying ex-pilot -----
 
     @Test
     public void aCreativeFlyingExPilotIsNeverSnappedBackByTheDismountHold() throws Exception {
@@ -612,12 +614,12 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // upright open fixture, soon leaves the ship's grown stay region entirely. The war's
         // signature is the opposite - position pinned to the seat column, isResolving flickering.
         //
-        // Contract as amended by flying-aboard (C13): a transient capture of the flyer while he
-        // is still the deck's to claim (standing contact at the seat) is LEGAL - his flight then
-        // resolves on deck axes and he still rises. What must NEVER happen is the old war: the
-        // body frozen/yanked at the seat column. And once he has risen out of the ship's stay
-        // region he is RELEASED (C4) and stays world-frame - never re-captured, never snapped
-        // back down.
+        // Contract as amended by flying-aboard: a transient capture of the flyer while he is still
+        // the deck's to claim (standing contact at the seat) is LEGAL - his flight then resolves
+        // on deck axes and he still rises. What must NEVER happen is the old war: the body
+        // frozen/yanked at the seat column. And once he has risen out of the ship's stay region he
+        // is RELEASED - leaving that region ends the capture - and stays world-frame: never
+        // re-captured, never snapped back down.
         double y0 = bot().reportState().get("playerY").getAsDouble();
         long dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
         StringBuilder win = new StringBuilder();
@@ -657,7 +659,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 !trackedAtEnd);
     }
 
-    // ---- C11: the OUTER hull of an inverted ship is walkable with WORLD-frame semantics ---------
+    // ---- The OUTER hull of an inverted ship is walkable, with WORLD-frame semantics -------------
 
     @Test
     public void standingOnTheWorldTopOfAnInvertedShipKeepsWorldFrameSemantics() throws Exception {
@@ -666,10 +668,11 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
 
         // The round-15 playtest residue: standing on the world-facing top of an inverted hull (its
         // former belly), the capture cycle chews - in subspace that surface has NO floor beneath
-        // the body (shipObstacles=0), ship-frame capture is structurally impossible there (C1b),
-        // yet the post-drop re-capture takes unconditionally and ship-frame gravity fights the
-        // world's hull collision every tick. Contract C11: that body is NOT ABOARD - it keeps
-        // world gravity and movement and stands on the hull as on terrain, never tunneling.
+        // the body (shipObstacles=0), so ship-frame capture is structurally impossible there (first
+        // contact demands standing support in the ship's OWN subspace), yet the post-drop
+        // re-capture takes unconditionally and ship-frame gravity fights the world's hull collision
+        // every tick. The outer-hull contract: that body is NOT ABOARD - it keeps world gravity and
+        // movement and stands on the hull as on terrain, never tunneling.
         double[] ship = buildShip(bx, by, bz);
         double h = Math.toRadians(160.0) / 2.0;
         assertTrue("attitude hold must accept the past-vertical roll",
@@ -719,16 +722,17 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         assertTrue("the body must stand on the world-top of the inverted hull, not tunnel through "
                 + "(settledY=" + settledY + " shipY=" + sy + " terrainY~" + (by + 1) + "): " + land,
                 settledY > sy - 0.5);
-        // (b) NOT ABOARD (C11): the hull-top stander is held in HULL-STAND mode - world semantics,
+        // (b) NOT ABOARD: the hull-top stander is held in HULL-STAND mode - world semantics,
         // ship-geometry collision - never in the deck frame.
         String cap = exec("artest vs deck-capture");
         assertTrue("a body on the OUTER hull must keep world-frame semantics - held as HULL-STAND, "
-                + "never ABOARD (C11): " + cap,
+                + "never ABOARD: " + cap,
                 !cap.contains("\"alreadyTracked\":true") || cap.contains("\"hullStand\":true"));
         // (c) His camera stays his own - the deck-levelled view never engages for a hull stander.
         boolean camActive = Boolean.parseBoolean(
                 clientString("zmaster587.advancedRocketry.client.ShipFrameCamera", "shipCamActive"));
-        assertTrue("the deck camera must never engage for a hull-top stander (C11)", !camActive);
+        assertTrue("the deck camera must never engage for a hull-top stander (the outer hull keeps "
+                + "world-frame semantics)", !camActive);
         // (d) And the capture machinery must not churn against him.
         long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
         System.out.println("[crewcap] hull-top settledY=" + settledY + " shipY=" + sy + " churn="
@@ -742,9 +746,9 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
         final int bx = 6020, by = 64, bz = 6020;
 
-        // The verified C11 half (the round-15 residue): a body meeting the world-facing surface of
-        // an inverted hull - where in subspace there is NO floor beneath it - must NEVER be
-        // captured into the ship frame. The old support probe counted PENETRATING boxes (top above
+        // The verified outer-hull half (the round-15 residue): a body meeting the world-facing
+        // surface of an inverted hull - where in subspace there is NO floor beneath it - must NEVER
+        // be captured into the ship frame. The old support probe counted PENETRATING boxes (top above
         // the feet) as standing support, so a faller who punched slightly into the hull was
         // captured, ship-frame gravity (world-up at inversion) flung him off, and the post-drop
         // re-capture re-entered every tick: the round-15 log's obstacles=0 capture bursts.
@@ -795,10 +799,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         System.out.println("[crewcap] hull-top-mode aboard=" + aboardSeen + " hull=" + hullSeen
                 + "/" + samples + " churn=" + churn + " :: " + enc);
 
-        // The C11 mode contract: the hull encounter may be HELD (hull-stand), but it must NEVER
-        // read as ABOARD - no deck frame, no deck camera, no deck mouse for a hull stander.
+        // The outer-hull mode contract: the hull encounter may be HELD (hull-stand), but it must
+        // NEVER read as ABOARD - no deck frame, no deck camera, no deck mouse for a hull stander.
         assertTrue("a body meeting the OUTER hull of an inverted ship must never enter ABOARD/deck "
-                + "mode (C11): aboard " + aboardSeen + "/" + samples + " (hull-stand " + hullSeen
+                + "mode: aboard " + aboardSeen + "/" + samples + " (hull-stand " + hullSeen
                 + ") :: " + enc, aboardSeen == 0);
         // The encounter must actually exercise the hull-stand hold, or this run proved nothing.
         assertTrue("the encounter must engage the HULL-STAND hold (hull-stand seen " + hullSeen
@@ -807,7 +811,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
                 churn == 0);
     }
 
-    // ---- C10: the crosshair picks the block the camera looks at, at any attitude ----------------
+    // ---- The crosshair picks the block the camera looks at, at any attitude ---------------------
 
     @Test
     public void theCrosshairPicksTheSameDeckBlockAtAnyAttitude() throws Exception {
@@ -817,10 +821,11 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // The raytrace origin (getPositionEyes) ran along WORLD up while the camera renders the eye
         // along the SHIP's up; on a rolled deck the two diverge by up to an eye height, so the
         // crosshair picked a block ~1.4 blocks beside the one the camera centred (the round-10
-        // "crosshair does not match the look-HUD"). Contract C10, attitude-invariance form: a crew
-        // member held at the SAME deck point, looking straight down, must see the crosshair resolve
-        // the SAME subspace deck block whatever the ship's roll - the deck under his feet does not
-        // move in the ship frame when the ship rolls.
+        // "crosshair does not match the look-HUD"). The interaction contract - the block outlined
+        // under the crosshair is the block interacted with - in its attitude-invariance form: a
+        // crew member held at the SAME deck point, looking straight down, must see the crosshair
+        // resolve the SAME subspace deck block whatever the ship's roll - the deck under his feet
+        // does not move in the ship frame when the ship rolls.
         buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
         exec("artest player dismount");
@@ -883,10 +888,11 @@ public class VSCrewCaptureContractE2ETest extends AbstractClientE2ETest {
         // Instrument-fires: at this roll the OLD world-up eye really diverges from the rendered
         // camera eye - otherwise agreement below would be vacuous.
         assertTrue("the world-up eye must diverge from the camera eye at this roll (worldEyeVsCam="
-                + worldEyeVsCam + ", upY=" + upY + "); a level-ship run cannot falsify C10",
-                worldEyeVsCam > 0.6);
-        // The C10 contract: the crosshair ray originates from the SAME eye the camera renders.
-        assertTrue("the crosshair ray must originate from the rendered camera eye (C10): ray=("
+                + worldEyeVsCam + ", upY=" + upY + "); a level-ship run cannot falsify the "
+                + "ray-origin claim below", worldEyeVsCam > 0.6);
+        // The interaction contract: the crosshair ray originates from the SAME eye the camera
+        // renders, so the outlined block is the block interacted with.
+        assertTrue("the crosshair ray must originate from the rendered camera eye: ray=("
                 + rx + "," + ry + "," + rz + ") cam=(" + cx + "," + cy + "," + cz + ") dist="
                 + rayVsCam, rayVsCam < 0.25);
     }

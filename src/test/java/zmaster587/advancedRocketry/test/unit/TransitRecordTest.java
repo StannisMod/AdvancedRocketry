@@ -38,8 +38,9 @@ public class TransitRecordTest {
         TransitRecord back = TransitRecord.readFromNBT(r.writeToNBT());
 
         assertEquals("ship-A", back.shipId);
-        // The mid-flight state is (origin name, target name, progress) and never a raw absolute:
-        // an absolute means something different every tick it is read back (C15 ADDR-12).
+        // The mid-flight state is (origin name, target name, progress) and never a raw absolute: no
+        // stored coordinate may mean something different depending on when it was written, and an
+        // absolute means something different every tick it is read back.
         assertEquals(org, back.origin);
         assertEquals(tgt, back.target);
         assertEquals("the flight's priced distance survives", 24_000L, back.distanceBlocks);

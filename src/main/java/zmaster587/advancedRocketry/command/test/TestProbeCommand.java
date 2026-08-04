@@ -3454,7 +3454,7 @@ public class TestProbeCommand extends CommandBase {
         // address of dim N" and "what is at that address" is visible in one call.
         // frame <sx> <sy> <sz>: where the cell NAMED by that sector triple actually IS, right now —
         // the production CellFrames lookup, read straight off the universe registry. A cell's name is
-        // eternal and its position is a function of time (C15 ADDR-6), and those are two different
+        // eternal and its position is a function of time (it rides its primary), and those are two different
         // numbers: reporting only the name makes "the body is still in its cell" unfalsifiable, since
         // a name that never moves would say that even for a frame that never moved either.
         if (args.length >= 4 && "frame".equalsIgnoreCase(args[0])) {

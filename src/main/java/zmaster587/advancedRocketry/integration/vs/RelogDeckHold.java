@@ -11,7 +11,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Re-seats a returning player on the deck he logged out on (any-attitude crew contract C14).
+ * Re-seats a returning player on the deck he logged out on: a body that logs out ABOARD a ship
+ * logs back in ABOARD it, at the same subspace point and at any ship attitude, and is never handed
+ * to world gravity while the capture re-seeds.
  *
  * <p>The ABOARD capture is in-memory; what survives the relog is the durable aboard record
  * ({@link zmaster587.advancedRocketry.space.ShipAboardTag}: the ship's DURABLE id plus his deck
@@ -231,7 +233,8 @@ public final class RelogDeckHold {
             holds.remove(player.getUniqueID());
             return;
         }
-        // An excluded state owns its own movement (contract C4); the seed would refuse anyway.
+        // An excluded state - riding, elytra, creative flight, water/ladder, levitation - owns its
+        // own movement and ends any capture; the seed would refuse anyway.
         if (ShipFrameTravel.isExcludedFromCapture(player)) {
             holds.remove(player.getUniqueID());
             return;

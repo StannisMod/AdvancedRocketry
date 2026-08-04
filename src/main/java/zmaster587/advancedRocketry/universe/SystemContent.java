@@ -138,7 +138,7 @@ public final class SystemContent {
         int starId = star.getId();
         GalacticCoord anchor = systemCoord.cellCentre();
         AbsolutePos anchorAbs = AbsolutePos.ofCellName(anchor);
-        // The star sits at the anchor and does not move: a degenerate frame, not an exemption (ADDR-6).
+        // The star sits at the anchor and does not move: a degenerate frame, not an exemption.
         bodies.add(new SystemBody(anchor, CellFrame.staticAt(anchor), BodyEphemeris.STATIC,
                 SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
 
@@ -306,9 +306,9 @@ public final class SystemContent {
 
     /**
      * Whether {@code cell} lies inside the neighbourhood box of {@code anchor} at {@code
-     * minSpacingCells} — the containment ADDR-3 asks for, and the question a RECORDED name must keep
-     * answering yes to. Shared with the store so the check that admits a name and the clamp that
-     * produces one cannot drift apart.
+     * minSpacingCells} — the containment that keeps two systems' neighbourhoods from overlapping, and
+     * the question a RECORDED name must keep answering yes to. Shared with the store so the check that
+     * admits a name and the clamp that produces one cannot drift apart.
      */
     public static boolean withinBoxOf(GalacticCoord cell, GalacticCoord anchor, int minSpacingCells) {
         if (cell == null || anchor == null) {
@@ -330,9 +330,10 @@ public final class SystemContent {
      * home system a disastrous one: with the anchor at sector 0 and {@code s = 512} the legal range
      * was {@code [2, 509]}, i.e. the POSITIVE OCTANT ONLY. Every body with a negative offset was
      * clamped flat onto the faces {@code x=2}/{@code y=2}, so half of every orbit collapsed into a
-     * handful of cells and several real bodies ended up sharing one address (INV-UNI-01, ledger
-     * #118). Measured 2026-07-28: dim 0's own cell derived as {@code (-3,0,25)} and clamped to
-     * {@code (2,2,25)} — which is exactly the cell a ship entering space from Earth then settled in.
+     * handful of cells and several real bodies ended up sharing one address, though at most one real
+     * body may ever hold a cell name (ledger #118). Measured 2026-07-28: dim 0's own cell derived as
+     * {@code (-3,0,25)} and clamped to {@code (2,2,25)} — which is exactly the cell a ship entering
+     * space from Earth then settled in.
      * Centring the box on the anchor is also what this class's javadoc and
      * {@code ClusteredGalaxyGenerator} ("minSpacing/2 - margin") always claimed it did.</p>
      */

@@ -15,10 +15,10 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The hull-stand collision contract (CREW-C11 amendment): a world-upright body collides with the
- * ship's blocks where their TRUE world geometry is — at any ship attitude — and the stand-vs-slide
- * decision follows the local gravity with unit friction (faces within 45 degrees of gravity-up
- * hold a body statically; steeper faces shed it).
+ * The hull-stand collision contract - a body standing on a ship's OUTER hull keeps WORLD-frame
+ * semantics: it collides with the ship's blocks where their TRUE world geometry is — at any ship
+ * attitude — and the stand-vs-slide decision follows the local gravity with unit friction (faces
+ * within 45 degrees of gravity-up hold a body statically; steeper faces shed it).
  *
  * <p>Every expected number here is computed by hand from the geometry, so a wrong sweep cannot
  * pass by construction. The tilted cases are the ones the subspace-aligned sweep got wrong by

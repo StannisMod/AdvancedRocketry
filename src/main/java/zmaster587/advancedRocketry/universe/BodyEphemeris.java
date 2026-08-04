@@ -7,8 +7,8 @@ import zmaster587.advancedRocketry.space.BlockDelta;
 /**
  * A body's ORBITAL LAW, frozen as elements rather than as a position.
  *
- * <p>This is what makes a cell able to ride its body (C15 ADDR-6): given a tick, it answers where the
- * body stands relative to whatever it orbits, in blocks. It is the same law
+ * <p>This is what makes a cell able to ride its body: given a tick, it answers where the body stands
+ * relative to whatever it orbits, in blocks. It is the same law
  * {@code DimensionProperties.orbitThetaAt} + {@code positionFor} apply, lifted out of the dimension
  * object so that a body which no longer has one &mdash; a PINNED procedural system, a POI &mdash;
  * still moves.</p>
@@ -71,7 +71,7 @@ public final class BodyEphemeris {
                 periodTicks, unitBlocks);
     }
 
-    /** {@code true} iff this law is time-invariant — the degenerate frame of C15 ADDR-6/ADDR-7. */
+    /** {@code true} iff this law is time-invariant — the degenerate frame of a star, or of a void cell. */
     public boolean isStatic() {
         return unitBlocks == 0L || !(periodTicks > 0d) || Double.isInfinite(periodTicks)
                 || distUnits == 0d;

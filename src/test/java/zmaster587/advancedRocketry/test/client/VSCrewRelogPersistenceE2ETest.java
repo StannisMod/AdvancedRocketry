@@ -13,9 +13,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The relog-persistence contract of the ship-frame crew (any-attitude crew contract C14): a
- * player who logs out standing ABOARD a ship's deck logs back in ABOARD, at the same deck point,
- * at any ship attitude - never handed to world gravity while the capture re-seeds.
+ * The relog-persistence contract of the ship-frame crew: a player who logs out standing ABOARD a
+ * ship's deck logs back in ABOARD, at the same deck point, at any ship attitude - never handed to
+ * world gravity while the capture re-seeds.
  *
  * <p>The subject is the HARD side of every axis this bug lives on: a real client player, captured
  * on the deck of an INVERTED ship (world gravity points away from the deck overhead, so any
@@ -477,8 +477,8 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
                 + " dY=" + (postY - preY));
         System.out.println("[relog] cap=" + capNow);
 
-        // Contract C14: still ABOARD (deck semantics, not a hull-stand catch), still AT the deck
-        // spot he logged out on - never handed to world gravity for a visible fall.
+        // Relog persistence: still ABOARD (deck semantics, not a hull-stand catch), still AT the
+        // deck spot he logged out on - never handed to world gravity for a visible fall.
         assertTrue("after a relog on an inverted deck the player must be captured ABOARD again "
                 + "(deck semantics, not hull-stand), not handed to world gravity: " + capNow,
                 aboard);

@@ -25,10 +25,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Authored system content (universe-model.md &sect;2 A#1a + &sect;4): a catalogued {@link StellarBody} with
- * planets resolves to addressable {@link SystemBody} data — star at the anchor, each planet in its OWN cell
- * (snapped to the cell centre) inside the anchor's super-cell box — and a planet dim resolves to its own
- * cell through the registry. Needs {@link MinecraftBootstrap} for {@link DimensionProperties} construction.
+ * Authored system content, where a system is an anchored NEIGHBOURHOOD of cells rather than one cell:
+ * a catalogued {@link StellarBody} with planets resolves to addressable {@link SystemBody} data — star
+ * at the anchor, each planet in its OWN cell (snapped to the cell centre) inside the anchor's super-cell
+ * box — and a planet dim resolves to its own cell through the registry.
+ * Needs {@link MinecraftBootstrap} for {@link DimensionProperties} construction.
  * Scale constants are {@code tunable} and never pinned; only the placement SHAPE is.
  */
 public class SystemContentTest {
@@ -85,7 +86,7 @@ public class SystemContentTest {
         SystemBody aPlanet = null;
         for (SystemBody b : bodies) {
             assertEquals("every body belongs to the star", 4242, b.starId());
-            // Snapped to its own cell's centre (zone content sits near the cell centre — A#1a).
+            // Snapped to its own cell's centre: a cell names a body's whole orbital ZONE, not a point.
             assertEquals(0, b.name().localX());
             assertEquals(0, b.name().localY());
             assertEquals(0, b.name().localZ());
@@ -96,7 +97,7 @@ public class SystemContentTest {
             if (b.kind() == SystemBodyKind.PLANET) {
                 planets++;
                 aPlanet = b;
-                assertFalse("a planet sits in its OWN cell, not the anchor's (A#1a)",
+                assertFalse("a planet sits in its OWN cell, not in the star's anchor cell",
                         b.name().sameCell(anchor));
             }
         }
@@ -134,11 +135,11 @@ public class SystemContentTest {
         // Without content resolution (star not in the catalogue) the seam falls back to the anchor.
         assertEquals("catalogue-miss fallback = the system anchor", Optional.of(anchor), reg.coordForPlanet(p));
 
-        // With content resolvable, the planet resolves to its OWN cell (A#1a), which is where its body sits.
+        // With content resolvable, the planet resolves to its OWN cell, which is where its body sits.
         UniverseRegistry.setStarLookup(id -> id == 4243 ? star : null);
         Optional<GalacticCoord> resolved = reg.coordForPlanet(p);
         assertTrue(resolved.isPresent());
-        assertFalse("the planet's coord is its own zone cell, NOT the anchor (A#1a)",
+        assertFalse("the planet's coord is its own zone cell, NOT the system's anchor cell",
                 resolved.get().sameCell(anchor));
 
         GalacticCoord bodyCell = null;
@@ -349,9 +350,9 @@ public class SystemContentTest {
     }
 
     /**
-     * ADDR-5's live half. A moon shares its parent's cell NAME forever, and moves inside it — which
-     * is the one piece of a system's layout that is still a function of world time, and the reason a
-     * navigation computer has to lead its aim at a moon rather than at the cell.
+     * The live half of the moon rule. A moon shares its parent's cell NAME forever, and moves inside
+     * it — which is the one piece of a system's layout that is still a function of world time, and the
+     * reason a navigation computer has to lead its aim at a moon rather than at the cell.
      */
     @Test
     public void aMoonsOffsetInsideItsParentsCellIsLiveWhileItsNameIsNot() {

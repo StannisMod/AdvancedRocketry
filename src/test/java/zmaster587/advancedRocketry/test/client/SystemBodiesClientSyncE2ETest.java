@@ -27,9 +27,10 @@ import static org.junit.Assert.assertTrue;
  * <p><b>The client is put INSIDE the cell's slot world before it is asked what it received.</b> A sky
  * is per-dimension and a player renders exactly one world, so the server sends each player only the
  * dimension he is in; broadcasting every live cell's sky to everybody was waste that grew with the
- * pool, and grew again when a cell's entry became its whole SYSTEM (C14 CON-C14-14). Standing the
- * subject where the bodies are is therefore not a workaround &mdash; it is the arrangement a real
- * pilot is in, and the control leg below is what says so.</p>
+ * pool, and grew again when a cell's entry became its whole SYSTEM &mdash; the sky shows the system
+ * the observer's cell belongs to, not merely that one cell's own occupants. Standing the subject
+ * where the bodies are is therefore not a workaround &mdash; it is the arrangement a real pilot is
+ * in, and the control leg below is what says so.</p>
  */
 public class SystemBodiesClientSyncE2ETest extends AbstractClientE2ETest {
 

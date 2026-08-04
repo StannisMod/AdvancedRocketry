@@ -55,7 +55,8 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     /** The persisted identifier == the {@code .dat} filename in the world save. A save-schema constant. */
     public static final String STORAGE_KEY = "advancedrocketry_universe";
 
-    private static final int NBT_VERSION = 3; // v3: + durable cell names (C15 ADDR-1/2) and their owning system
+    // v3: + durable cell names (derived once, then persisted and never re-derived) and their owning system.
+    private static final int NBT_VERSION = 3;
 
     // A self-contained logger rather than AdvancedRocketry.logger: loading the mod class triggers Forge
     // bootstrap (FluidRegistry.enableUniversalBucket), which would break pure unit tests of this registry.
@@ -411,8 +412,8 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     }
 
     /**
-     * What the SKY of a live cell shows (C14 CON-C14-14): the whole SYSTEM's bodies, unioned with
-     * whatever is keyed at the observer's own cell.
+     * What the SKY of a live cell shows — the whole SYSTEM, never just the cell: the system's bodies,
+     * unioned with whatever is keyed at the observer's own cell.
      *
      * <p>The union is not tidiness. {@link #systemBodiesAt} answers empty for a cell no anchor
      * attributes, and its POI aggregation covers the member cells that host BODIES only — so a
@@ -549,7 +550,7 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         }
     }
 
-    // ─── Frames (C15 ADDR-6/ADDR-7): where a cell IS at a stated tick ──────────
+    // ─── Frames: where a cell IS at a stated tick ──────────────────────────────
 
     /**
      * The absolute position of the frame origin of the cell NAMED by {@code name}, at {@code tick} —
