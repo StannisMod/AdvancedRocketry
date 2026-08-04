@@ -11,6 +11,7 @@
     "MixinEntityPlayerShipFlight",
     "MixinEntityShipEyes",
     "MixinEntityShipLocalMove",
+    "MixinEntityTrackerRiderSeesVehicle",
     "MixinEntityPlayerInventoryAccess",
     "MixinEntityPlayerMPInventoryAccess",
     "MixinPlayerList",

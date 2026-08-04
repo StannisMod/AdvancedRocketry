@@ -1,9 +1,9 @@
 package zmaster587.advancedRocketry.integration.vs;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.WeakHashMap;
+
+import com.google.common.collect.MapMaker;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
@@ -253,12 +253,20 @@ public final class ShipFrameTravel {
 
     /**
      * Each aboard entity's authoritative position in its ship's frame, plus the world position this
-     * class last derived from it. Weak keys: an entity that goes away takes its entry with it. The two
-     * logical sides tick on different threads but hold different entity objects, so one map serves both;
-     * it is synchronized only against that concurrency, never contended.
+     * class last derived from it. Weak keys: an entity that goes away takes its entry with it.
+     *
+     * <p><b>Keyed by IDENTITY, and it has to be.</b> Vanilla {@code Entity} declares equality by
+     * network id alone ({@code equals} compares {@code entityId}, {@code hashCode} returns it), so a
+     * store matching keys with {@code equals} hands the two logical sides ONE slot whenever they share
+     * a JVM - which is every integrated server, i.e. singleplayer. The sides then overwrite and, worse,
+     * RELEASE each other's captures: a seated pilot, whose SERVER side is excluded from capture every
+     * tick, had his CLIENT's capture deleted about five times a second, and the client re-captured and
+     * free-fell in the gap. {@code weakKeys()} switches key comparison to {@code ==}, which makes the
+     * collision unrepresentable rather than merely unlikely; the map is concurrent too, so the two
+     * sides' threads need no external synchronization.</p>
      */
     private static final Map<Entity, ShipFrameState> STATE =
-            Collections.synchronizedMap(new WeakHashMap<Entity, ShipFrameState>());
+            new MapMaker().weakKeys().<Entity, ShipFrameState>makeMap();
 
     /** An aboard entity's authoritative position in its ship's frame (subspace). The world position is
      *  derived from it every tick and is not stored: the held/external-move check is done in the ship frame

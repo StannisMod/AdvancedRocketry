@@ -1137,6 +1137,80 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"occupantName\":\"" + occupant.getName() + "\"}");
             return;
         }
+        // mount-tracking <dim> — server truth about whether a seated player is still being SENT his
+        // own mount. A client that loses its vehicle dismounts the rider on the next tick, and that
+        // is invisible from the server's own entity state (which stays mounted) and ambiguous from
+        // the client's (which reports only the consequence). This reports the cause: is the rider in
+        // the mount's tracking set, and how far has the mount's published tracking anchor fallen
+        // behind the rider it is supposed to be co-located with.
+        //
+        // "anchorLagX"/"anchorLagZ" are the exact quantity vanilla's visibility test compares against
+        // its range: rider position minus encodedPos. encodedPos is republished only on a gated tick,
+        // so on a fast platform the lag grows until the mount leaves its own box and is destroyed
+        // client-side. Per axis, because that test is per axis and ignores Y entirely.
+        if (args.length >= 2 && "mount-tracking".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            net.minecraft.entity.player.EntityPlayerMP rider = null;
+            for (net.minecraft.entity.player.EntityPlayer p : world.playerEntities) {
+                if (p instanceof net.minecraft.entity.player.EntityPlayerMP
+                        && p.getRidingEntity() instanceof zmaster587.advancedRocketry.entity.EntityDummy) {
+                    rider = (net.minecraft.entity.player.EntityPlayerMP) p;
+                    break;
+                }
+            }
+            if (rider == null) {
+                send(sender, "{\"seatedRider\":false}");
+                return;
+            }
+            net.minecraft.entity.Entity mount = rider.getRidingEntity();
+            boolean riderTracks = world.getEntityTracker().getTrackingPlayers(mount).contains(rider);
+            int trackingCount = world.getEntityTracker().getTrackingPlayers(mount).size();
+            String anchor = "";
+            try {
+                java.lang.reflect.Field entriesField = null;
+                for (java.lang.reflect.Field f
+                        : net.minecraft.entity.EntityTracker.class.getDeclaredFields()) {
+                    if (java.util.Set.class.isAssignableFrom(f.getType())) {
+                        entriesField = f;
+                        break;
+                    }
+                }
+                if (entriesField != null) {
+                    entriesField.setAccessible(true);
+                    java.lang.reflect.Field te = net.minecraft.entity.EntityTrackerEntry.class
+                            .getDeclaredField("trackedEntity");
+                    java.lang.reflect.Field ex = net.minecraft.entity.EntityTrackerEntry.class
+                            .getDeclaredField("encodedPosX");
+                    java.lang.reflect.Field ez = net.minecraft.entity.EntityTrackerEntry.class
+                            .getDeclaredField("encodedPosZ");
+                    te.setAccessible(true);
+                    ex.setAccessible(true);
+                    ez.setAccessible(true);
+                    for (Object e : (java.util.Set<?>) entriesField.get(world.getEntityTracker())) {
+                        if (te.get(e) != mount) {
+                            continue;
+                        }
+                        double ax = ((Long) ex.get(e)) / 4096.0D;
+                        double az = ((Long) ez.get(e)) / 4096.0D;
+                        anchor = ",\"anchorLagX\":" + Math.abs(rider.posX - ax)
+                                + ",\"anchorLagZ\":" + Math.abs(rider.posZ - az);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                anchor = ",\"anchorLagError\":\"" + e.getClass().getSimpleName() + "\"";
+            }
+            send(sender, "{\"seatedRider\":true,\"mountId\":" + mount.getEntityId()
+                    + ",\"riderTracks\":" + riderTracks
+                    + ",\"trackingCount\":" + trackingCount
+                    + ",\"mountDead\":" + mount.isDead
+                    + anchor + "}");
+            return;
+        }
         // seat-status <dim> <x> <y> <z> — server truth about the seat's bound dummy: its id and its
         // passengers (id + class), so a test can verify an arranged occupancy actually holds.
         // "boundCount" is the number of dummies in the WHOLE world bound to this seat block — the
