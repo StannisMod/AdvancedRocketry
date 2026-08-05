@@ -660,6 +660,39 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.isAvailable() + "}");
             return;
         }
+        // motion-trace reset — drop every recorded ring, so a leg starts from an empty recorder.
+        // motion-trace <dim> <afcX> <afcY> <afcZ> [windowMs] — the flight recorder's account of how
+        // SMOOTHLY the ship driven by that flight computer moved over the trailing window: the
+        // physics-thread channel (the clock its velocity integrates on), the server-tick channel
+        // (the clock its command is republished on), and — when this JVM is also the client, i.e. a
+        // single-player session — the client tick and per-frame channels. Each reports the interval
+        // distribution of its own clock and the displacement distribution of the thing it watches,
+        // plus two named pathologies: `hitches` (a beat that arrived late) and `stalls` (a sample
+        // that barely moved while its neighbours did). A jerk is one of those two, on one of these
+        // four clocks, and they are not fixed by the same thing.
+        if (args.length >= 1 && "motion-trace".equalsIgnoreCase(args[0])) {
+            if (args.length >= 2 && "reset".equalsIgnoreCase(args[1])) {
+                zmaster587.advancedRocketry.util.MotionTrace.reset();
+                send(sender, "{\"ok\":true,\"reset\":true}");
+                return;
+            }
+            if (args.length < 5) {
+                send(sender, "{\"error\":\"usage: vs motion-trace <dim> <afcX> <afcY> <afcZ>"
+                        + " [windowMs] | vs motion-trace reset\"}");
+                return;
+            }
+            long key = zmaster587.advancedRocketry.util.MotionTrace.keyOf(
+                    parseIntOr(args[1], Integer.MIN_VALUE), parseIntOr(args[2], 0),
+                    parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            long windowMs = args.length >= 6 ? parseIntOr(args[5], 10000) : 10000;
+            send(sender, "{\"ok\":true,\"windowMs\":" + windowMs
+                    + ",\"serverChunkLoads\":"
+                    + zmaster587.advancedRocketry.util.MotionTrace.serverChunkLoads
+                    + "," + zmaster587.advancedRocketry.util.MotionTrace.serverSummary(key, windowMs)
+                    + ",\"client\":"
+                    + zmaster587.advancedRocketry.util.MotionTrace.clientSummary() + "}");
+            return;
+        }
         // permaload <bool> — keep VS ships permanently loaded (headless has no player to hold a ship
         // loaded, so a freshly assembled ship auto-unloads between probe calls).
         if (args.length >= 2 && "permaload".equalsIgnoreCase(args[0])) {

@@ -403,6 +403,12 @@ public class KeyBindings {
         // turning under him while he reads a chest, and his world aim must keep following the
         // deck even when the mouse is captured by a screen.
         if (player != null) {
+            // Flight recorder, client-tick channel. Where the CLIENT thinks the player is, on the
+            // client's own clock — the server can be perfectly smooth and this still stutter, because
+            // the ship's pose arrives over the wire and is smoothed by a filter before anything is
+            // drawn. Taken ahead of the GUI gate below: a tick is a tick whether or not a screen is up.
+            zmaster587.advancedRocketry.util.MotionTrace.clientTick(
+                    player.posX, player.posY, player.posZ, player.getRidingEntity() != null);
             DeckLook.clientTick(player);
             // Pending dismount seed: apply the queued deck capture the moment the body's transient
             // exclusion (the post-dismount riding tail) clears. Driven here, per client tick, so
