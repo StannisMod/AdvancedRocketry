@@ -326,10 +326,17 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             if (loadingInBackground.contains(toLoadID)) {
                 continue; // Already loading this ship in the background
             }
-            // Make sure there isn't an already loaded ship with this UUID.
+            // Already loaded is a SATISFIED background request, not an error. determineLoadAndUnload
+            // queues a background load for every ship it finds unloaded and runs immediately before
+            // this method on the same tick, so anything that queues an IMMEDIATE load from outside the
+            // manager's tick (a player logging in aboard a ship asks for the whole registry) puts the
+            // same uuid in both queues. The immediate loop above has just loaded it and dropped it from
+            // loadingInBackground, which is why the skip a few lines up does not catch it. Both wanted
+            // the ship loaded and the ship is loaded; throwing here instead raised an
+            // IllegalStateException out of the world tick, with nothing between it and the server loop,
+            // and took the whole dedicated server down.
             if (loadedShips.containsKey(toLoadID)) {
-                // continue; // temp, need to fix WorldShipLoadingController.determineLoadAndUnload()
-                throw new IllegalStateException("Tried loading a ShipData that was already loaded? Ship ID is\n" + toLoadID);
+                continue;
             }
             // Then try getting the ShipData for this UUID.
             Optional<ShipData> toLoadOptional = queryableShipData.getShip(toLoadID);
