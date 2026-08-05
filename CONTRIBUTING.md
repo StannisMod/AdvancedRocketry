@@ -29,8 +29,8 @@ tested by hand without extra flags.
 | `testServer` | boots a dedicated server | server-side behaviour end to end |
 | `testClient` | boots a real GL client | anything the client renders or drives |
 
-Tests that need Valkyrien Skies opt in with `-PwithVS`; the default build and test run stay VS-free on
-purpose, so the VS-absent fallback paths keep getting exercised.
+Valkyrien Skies needs no opt-in: its source is vendored under `valkyrienskies/` and compiled into the
+mod, so every build and every test run has it.
 
 `testClient` works directly on a Windows development machine (native OpenGL). On a headless Linux box it
 needs a real X server — see the notes in the repository's development documentation.

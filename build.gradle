@@ -476,7 +476,7 @@ tasks.register('testMilestone', Test) {
     // A milestone test walks ONE playable loop end to end on the real client, driving only the
     // inputs a human has (keys, GUI clicks, seat mount) — its own tier because it is long, because
     // it fails for reasons no single-mechanic e2e can, and because it is the gate for calling a
-    // milestone reachable. Needs -PwithVS.
+    // milestone reachable.
     description = 'Milestone e2e — one full playable loop on the real client (src/test/.../test/milestone).'
     configureHarnessTest(it, true)
     include 'zmaster587/advancedRocketry/test/milestone/**'

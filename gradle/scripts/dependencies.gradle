@@ -2,21 +2,6 @@ apply from: 'gradle/scripts/helpers.gradle'
 
 def run_the_one_probe = true
 def run_hwyla = false
-// Pull Valkyrien Skies into the DEV runtime for hands-on testing of the
-// true-spaceship feature. compileOnly is always on (AR compiles against the VS
-// Core API); this toggle only adds the runtime jars (Core + World + Control) so a
-// dev boot — AND the testServer harness, whose child JVM inherits runServer's
-// classpath — actually has a functional VS able to assemble and move ships.
-//
-// Default ON for hands-on dev boots (runClient / runServer) so a regenerated IDE
-// run config never needs -PwithVS re-added by hand. The normal build and the test
-// suite stay VS-FREE (they must prove the VS-ABSENT path — e.g. the mixin-gating
-// and flight-computer-without-VS tests) unless -PwithVS is passed explicitly, which
-// is still how the VS-gated test tasks opt in.
-def vsDevRun = gradle.startParameter.taskNames.any {
-    it == 'runClient' || it == 'runServer' || it.endsWith(':runClient') || it.endsWith(':runServer')
-}
-def run_valkyrien_skies = project.hasProperty('withVS') || vsDevRun
 
 repositories {
     maven {
