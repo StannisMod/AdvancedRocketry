@@ -3030,10 +3030,17 @@ public class TestProbeCommand extends CommandBase {
             // point-keyed lookup above cannot be told from "the ship is not where I asked".
             String ships = tw == null ? "" : zmaster587.advancedRocketry.integration.vs.VSIntegration
                     .queryableShipPositions(tw);
+            // Where the crew of the in-flight ship BELONGS while it is parked, and the world that holds
+            // it. `crewDim` is the subsystem's own answer (-1 once the jump is over, or for a transit
+            // restored from a snapshot, which has no physical ship anywhere); `hyperDim` is the raw id of
+            // the shared parking world. A crew-side test compares the CLIENT's dimension against these
+            // rather than hardcoding an id that is minted per boot.
             send(sender, "{\"ok\":true,\"inTransit\":" + inTransit + ",\"targetDim\":" + targetDim
                     + ",\"poseX\":" + (long) pose[0] + ",\"poseY\":" + (long) pose[1]
                     + ",\"poseZ\":" + (long) pose[2]
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
+                    + ",\"crewDim\":" + transitTm.crewDimensionOf("t")
+                    + ",\"hyperDim\":" + zmaster587.advancedRocketry.space.HyperspaceWorld.dimId()
                     + ",\"ships\":\"" + ships + "\"}");
             return;
         }

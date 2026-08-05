@@ -150,6 +150,32 @@ public final class ShipTransitManager {
         }
 
         /**
+         * Seat the crew captured for {@code shipId} onto the ship parked at {@code anchor} in
+         * {@code parkedDim}, WITHOUT releasing the capture. Same retry contract as
+         * {@link #reseatCrew}: {@code true} once everyone is aboard or there is nobody to move,
+         * {@code false} to try again next tick.
+         *
+         * <p>The capture is deliberately kept: this seats the crew for the LEG, and the same records
+         * seat them again at the far end. Consuming it here would leave the arrival with nobody to
+         * re-seat and no way to find them, because the far-side ship is a fresh re-assembly whose
+         * seat positions only the capture's link offsets can re-identify.</p>
+         *
+         * <p>The default returns {@code true} (nothing to seat).</p>
+         */
+        default boolean boardCrew(int parkedDim, BlockPos anchor, String shipId) {
+            return true;
+        }
+
+        /**
+         * The dimension in-flight ships are parked in, or {@link Integer#MIN_VALUE} where there is no
+         * such world (the pure state-machine tests, and any build without the ship integration). A
+         * caller that gets {@code MIN_VALUE} must not try to put anything there.
+         */
+        default int parkedDim() {
+            return Integer.MIN_VALUE;
+        }
+
+        /**
          * Tell the aboard crew something, by translation key. Used only where the subsystem does
          * something the pilot would otherwise have to infer from his ship not behaving — an arrival that
          * had to be finished the hard way is the case that exists today. The default says nothing (the
@@ -223,12 +249,21 @@ public final class ShipTransitManager {
         final String shipId;
         final int targetSlotDim;
         final BlockPos anchor;
+        /**
+         * {@code true} for the DEPARTURE-side seating onto the parked hull, which keeps the capture
+         * for the far end; {@code false} for the arrival, which is the end of the line and releases
+         * it. One retry loop serves both because the reason for retrying is the same on both sides:
+         * the blocks are placed synchronously but the ship is re-assembled a tick or more later, and
+         * a seat tile cannot be found before that.
+         */
+        final boolean boarding;
         int attempts;
 
-        PendingReseat(String shipId, int targetSlotDim, BlockPos anchor) {
+        PendingReseat(String shipId, int targetSlotDim, BlockPos anchor, boolean boarding) {
             this.shipId = shipId;
             this.targetSlotDim = targetSlotDim;
             this.anchor = anchor;
+            this.boarding = boarding;
         }
     }
 
@@ -335,6 +370,19 @@ public final class ShipTransitManager {
         t.crew.addAll(crew); // the offline-progress gate + the persisted transit record read these UUIDs
         transits.put(shipId, t);
         ledgerBeginTransit(shipId, target);
+        // The crew flies WITH its ship. Capturing them unseated them and the departure cut took the
+        // world they were standing in out from under them, so leaving it there would strand every
+        // passenger in the cell the ship just left for the whole flight. Seat them on the parked hull
+        // instead - the flight is a place, not an interval.
+        //
+        // It cannot happen on this tick: the blocks are pasted synchronously but the ship is
+        // re-assembled later, so no seat tile resolves yet. Hand it to the same retry loop the arrival
+        // uses. Ordering is safe in a way the arrival's is not - the parked ship never moves again
+        // before the arrival crossing cuts it - so there is no seat-then-move window here.
+        int parkedDim = crosser.parkedDim();
+        if (!crew.isEmpty() && parkedDim != Integer.MIN_VALUE) {
+            reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true));
+        }
         return true;
     }
 
@@ -424,7 +472,7 @@ public final class ShipTransitManager {
                 // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
                 // few ticks (async re-assembly) without ever risking a duplicate ship on restart.
                 if (!t.crew.isEmpty()) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt));
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false));
                 }
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
@@ -469,7 +517,7 @@ public final class ShipTransitManager {
                 ledgerSettle(entry.getKey(), t.arrivalCoord); // same coordinate as the normal path
                 space.markDirty(t.target);
                 if (!t.crew.isEmpty()) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor));
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor, false));
                 }
                 LOGGER.error("[SPACE] transit arrival for ship {} did not complete normally after {} ticks "
                         + "and was finished the hard way - the ship is in cell {} (slot {}) at its paste "
@@ -545,8 +593,20 @@ public final class ShipTransitManager {
         Iterator<PendingReseat> it = reseating.iterator();
         while (it.hasNext()) {
             PendingReseat r = it.next();
-            if (crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId)
-                    || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
+            boolean done = r.boarding
+                    ? crosser.boardCrew(r.targetSlotDim, r.anchor, r.shipId)
+                    : crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId);
+            if (done || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
+                if (!done && r.boarding) {
+                    // The crew is NOT lost - the capture is still held and the arrival will seat them
+                    // at the far end - but they spend the flight where the departure left them instead
+                    // of aboard, which is the whole point of the leg. Say so once, with the anchor,
+                    // because the only other symptom is a pilot who quietly did not travel.
+                    LOGGER.error("[SPACE] crew of ship {} could not be seated on its parked hull in dim "
+                            + "{} at {} after {} ticks - they stay where the departure left them for the "
+                            + "flight and are seated at arrival. Treat this as a bug report.",
+                            r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
+                }
                 it.remove();
             }
         }

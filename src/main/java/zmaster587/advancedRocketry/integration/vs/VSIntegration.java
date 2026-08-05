@@ -253,6 +253,26 @@ public final class VSIntegration {
         AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
         zmaster587.advancedRocketry.util.StorageChunk snap =
                 zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(srcWorld, tight);
+        // The cut took the seat BLOCKS; the dummies bound to them are entities and survive it. On a
+        // crossing they must not: the ship is re-assembled in ANOTHER world and its riders are re-seated
+        // there on fresh dummies, so a source-side dummy is a chair whose ship no longer exists - and
+        // one that clears the flight computer's pilot input every tick if a rider is ever put back near
+        // it. Deliberately NOT in the generic cut: an assembly relocation re-pastes the same seat and
+        // must leave its pilot seated, which is exactly what BlockPilotSeat.breakBlock's
+        // isRelocationInProgress guard buys. A crossing is the case where nothing comes back.
+        //
+        // Matched by the SEAT BINDING, not by position: a dummy is glued to its ship's world position,
+        // which for a managed ship is nowhere near the subspace shipyard box, so an AABB query over the
+        // cut box would find none of them.
+        for (zmaster587.advancedRocketry.entity.EntityDummy dummy
+                : srcWorld.getEntities(zmaster587.advancedRocketry.entity.EntityDummy.class, d -> {
+                    net.minecraft.util.math.BlockPos seat = d == null ? null : d.getSeatPos();
+                    return seat != null && tight.contains(new net.minecraft.util.math.Vec3d(
+                            seat.getX() + 0.5D, seat.getY() + 0.5D, seat.getZ() + 0.5D));
+                })) {
+            dummy.removePassengers();
+            dummy.setDead();
+        }
         // Force-load the destination paste footprint's chunks first: a freshly-materialized cell world
         // may not have them loaded, in which case setBlockState/isAirBlock see an unloaded (all-air)
         // region and the anchor scan below finds nothing.

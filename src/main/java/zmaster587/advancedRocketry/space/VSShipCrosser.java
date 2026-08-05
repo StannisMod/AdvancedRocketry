@@ -253,6 +253,27 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
+    public int parkedDim() {
+        return HyperspaceWorld.dimId();
+    }
+
+    @Override
+    public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId) {
+        List<CrewTransfer.Crew> stash = crewStash.get(shipId);
+        if (stash == null || stash.isEmpty()) {
+            return true; // crewless, or a restored transit whose stash did not survive the restart
+        }
+        WorldServer dst = DimensionManager.getWorld(parkedDim);
+        if (dst == null || anchor == null) {
+            return false; // hyperspace not up yet - retry next tick
+        }
+        // Deliberately does NOT remove the stash: these same records seat the crew again at the far
+        // end, and only their flight-computer link offsets can re-identify a seat on a ship that has
+        // been re-assembled into a fresh subspace since.
+        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId));
+    }
+
+    @Override
     public void messageCrew(List<UUID> crew, String translationKey) {
         if (crew == null || crew.isEmpty()) {
             return;
