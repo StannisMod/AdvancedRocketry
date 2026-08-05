@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.integration.vs;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import com.google.common.collect.ImmutableList;
 import net.minecraft.entity.Entity;
@@ -300,17 +301,38 @@ final class VSBridge {
     }
 
     /**
-     * Deregister the ship nearest to {@code (x,y,z)} from VS's per-world queryable ship registry (by
-     * UUID), or return false if none exists. The per-ship "crossing" calls this after snapshotting the
-     * ship's shipyard blocks, so cutting those blocks to air leaves no dangling ship in the registry.
-     * Does not delete the shipyard chunks — the caller cuts those.
+     * Identity of the queryable ship nearest to {@code (x,y,z)}, or {@code null} if this world holds
+     * none. Taken BEFORE a per-ship crossing cuts the ship away, because after the cut the ship is
+     * still registered but has no blocks, and a position lookup is no longer a safe way to name it.
      */
-    static boolean removeShipRegistrationAt(World world, double x, double y, double z) {
+    static UUID queryableShipUuidAt(World world, double x, double y, double z) {
         ShipData ship = nearestQueryableShip(world, x, y, z);
-        if (ship == null) {
+        return ship == null ? null : ship.getUuid();
+    }
+
+    /**
+     * Release {@code uuid}'s registry entry, but ONLY when nothing is loaded that would collect it.
+     *
+     * <p>Valkyrien Skies collects a ship whose blocks have all gone to air by itself: the destroy pass
+     * at the top of its world tick finds the empty block set, deconstructs the ship and deregisters it.
+     * That pass walks the LOADED ship objects, though — so it never runs for a ship whose blocks were cut
+     * while nothing held it loaded, and that ship's entry would sit in the registry with no blocks and no
+     * object behind it, answering every later position lookup in the world and being written to disk with
+     * it.</p>
+     *
+     * <p>So this is the fallback for exactly that case and no other. When a physics object IS loaded, it
+     * does nothing and lets VS's own pass do the work — deregistering there would take the ship out from
+     * under the accounting that empties its block set, which is the whole reason a crossing must not
+     * deregister up front. Returns whether it released anything.</p>
+     */
+    static boolean releaseShipIfNothingLoaded(World world, UUID uuid) {
+        if (uuid == null) {
             return false;
         }
-        ValkyrienUtils.getQueryableData(world).removeShip(ship.getUuid());
+        if (ValkyrienUtils.getServerShipManager(world).getPhysObjectFromUUID(uuid) != null) {
+            return false;
+        }
+        ValkyrienUtils.getQueryableData(world).removeShip(uuid);
         return true;
     }
 

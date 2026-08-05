@@ -127,18 +127,6 @@ public final class VSIntegration {
     }
 
     /**
-     * Deregister the VS ship whose world BB contains {@code (x,y,z)} from its per-world registry, or
-     * return false when VS is absent or no ship is there. Used by the per-ship "crossing" to drop the
-     * source ship after snapshotting its shipyard blocks. A safe no-op when VS is absent.
-     */
-    public static boolean removeShipRegistrationAt(World world, double x, double y, double z) {
-        if (!isAvailable()) {
-            return false;
-        }
-        return VSBridge.removeShipRegistrationAt(world, x, y, z);
-    }
-
-    /**
      * PARK the VS ship whose world BB contains {@code (x,y,z)}: disable its physics so it holds position
      * (used while a ship is in transit — {@code ShipTransit} advances its coordinate logically, not by
      * physically flying). Returns false when VS is absent or no ship is there. A safe no-op when VS absent.
@@ -175,19 +163,17 @@ public final class VSIntegration {
 
     /**
      * Result of a {@link #crossShip} per-ship crossing: the destination anchor block the re-assembly was
-     * seeded on ({@code null} = the crossing failed and no ship was created), whether the source ship was
-     * deregistered, and the ship's actual Y band in the source shipyard (diagnostics).
+     * seeded on ({@code null} = the crossing failed and no ship was created), and the ship's actual Y band
+     * in the source shipyard (diagnostics).
      */
     public static final class CrossResult {
         /** The destination anchor the ship was re-assembled on, or {@code null} if the crossing failed. */
         public final BlockPos anchor;
-        public final boolean removed;
         public final int minShipY;
         public final int maxShipY;
 
-        CrossResult(BlockPos anchor, boolean removed, int minShipY, int maxShipY) {
+        CrossResult(BlockPos anchor, int minShipY, int maxShipY) {
             this.anchor = anchor;
-            this.removed = removed;
             this.minShipY = minShipY;
             this.maxShipY = maxShipY;
         }
@@ -207,8 +193,8 @@ public final class VSIntegration {
      *   <li>find the ship's subspace shipyard bounds (XZ claim, full column) at the source;</li>
      *   <li>scan the shipyard for the ship's actual Y band (the full 256 column would clip on paste) —
      *       the region is void but for this ship, so any non-air block is a ship block;</li>
-     *   <li>deregister the source ship, snapshot a TIGHT box of its blocks/TEs, and paste it into clear
-     *       sky at the destination (so the flood-fill grabs only the ship, never the destination terrain);</li>
+     *   <li>snapshot a TIGHT box of its blocks/TEs by CUTTING them, and paste it into clear sky at the
+     *       destination (so the flood-fill grabs only the ship, never the destination terrain);</li>
      *   <li>anchor by scanning the pasted sky band (no cut&rarr;paste offset math — claims span multiple
      *       chunks) and re-assemble the ship there.</li>
      * </ol>
@@ -225,14 +211,14 @@ public final class VSIntegration {
         if (!isAvailable()) {
             LOGGER.warn("[SPACE] crossShip: Valkyrien Skies absent - nothing crossed (src dim {})",
                     srcWorld == null ? "null" : srcWorld.provider.getDimension());
-            return new CrossResult(null, false, 0, 0);
+            return new CrossResult(null, 0, 0);
         }
         AxisAlignedBB yard = shipyardBoundsAt(srcWorld, sx, sy, sz);
         if (yard == null) {
             LOGGER.warn("[SPACE] crossShip: no ship claims ({},{},{}) in dim {} - nothing to cross, "
                             + "the source is untouched",
                     sx, sy, sz, srcWorld.provider.getDimension());
-            return new CrossResult(null, false, 0, 0);
+            return new CrossResult(null, 0, 0);
         }
         int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
         int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
@@ -244,15 +230,34 @@ public final class VSIntegration {
                             + "({},{},{}) in dim {} holds no blocks - nothing to cross, the source is "
                             + "untouched",
                     yMinX, yMaxX, yMinZ, yMaxZ, sx, sy, sz, srcWorld.provider.getDimension());
-            return new CrossResult(null, false, 0, 0); // source shipyard empty
+            return new CrossResult(null, 0, 0); // source shipyard empty
         }
         int minShipY = band[0], maxShipY = band[1];
-        boolean removed = removeShipRegistrationAt(srcWorld, sx, sy, sz);
+        // The source ship is deliberately NOT deregistered before the cut, and the order is the whole
+        // point. Valkyrien Skies maintains a ship's block set from a chunk hook that resolves the ship
+        // THROUGH the per-world registry, so a ship taken out of that registry first is a ship whose
+        // block set the cut below no longer updates: it never looks empty, VS's own destroy pass
+        // therefore never fires for it, and its physics object is stranded in the loaded set for the
+        // life of the world - one left behind per crossing, and the load/unload pass cannot see it
+        // either because that one iterates the registry it was just removed from.
+        // Cut while it is still registered and the accounting runs: the block set empties, the destroy
+        // pass collects it on the next world tick and performs the deregistration itself. Its
+        // copy-blocks-back step is guarded on the block set being non-empty, so nothing is resurrected.
+        //
+        // That pass walks the LOADED ships, though, so it never runs for a source nothing was holding
+        // loaded - a crewless or offline departure. Name the ship before the cut and release it by hand
+        // afterwards in exactly that case (below); after the cut it is registered but blockless, and a
+        // position lookup can no longer tell it from any other ship in the world.
+        java.util.UUID srcShipId = VSBridge.queryableShipUuidAt(srcWorld, sx, sy, sz);
         // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
         // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
         AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
         zmaster587.advancedRocketry.util.StorageChunk snap =
                 zmaster587.advancedRocketry.util.StorageChunk.cutWorldBB(srcWorld, tight);
+        // No-op whenever a physics object is still loaded for the source - there VS's destroy pass owns
+        // the collection and taking the ship out of the registry here would be the very bug this order
+        // exists to avoid.
+        VSBridge.releaseShipIfNothingLoaded(srcWorld, srcShipId);
         // The cut took the seat BLOCKS; the dummies bound to them are entities and survive it. On a
         // crossing they must not: the ship is re-assembled in ANOTHER world and its riders are re-seated
         // there on fresh dummies, so a source-side dummy is a chair whose ship no longer exists - and
@@ -303,18 +308,18 @@ public final class VSIntegration {
         if (anchor != null) {
             assembleTier2Ship(dstWorld, anchor);
         } else {
-            // The only DESTRUCTIVE failure of the four: the source has already been deregistered and
-            // cut by this point, so the ship exists as loose blocks at the paste site and nowhere else.
-            // Logged at ERROR with the exact box that was searched, because a silent null here reads
-            // downstream as "the jump did not happen" while a ship has in fact been taken apart.
+            // The only DESTRUCTIVE failure of the four: the source has already been cut by this point,
+            // so the ship exists as loose blocks at the paste site and nowhere else. Logged at ERROR
+            // with the exact box that was searched, because a silent null here reads downstream as
+            // "the jump did not happen" while a ship has in fact been taken apart.
             LOGGER.error("[SPACE] crossShip: pasted the ship from dim {} into dim {} at ({},{},{}) but "
                             + "the anchor scan of the {}x{}x{} paste box found only air - the source was "
-                            + "ALREADY cut (deregistered: {}), so the ship is now loose blocks at the "
-                            + "paste site and is registered nowhere",
+                            + "ALREADY cut, so the ship is now loose blocks at the paste site and is "
+                            + "registered nowhere",
                     srcWorld.provider.getDimension(), dstWorld.provider.getDimension(),
-                    dstX, dstY, dstZ, width, height, depth, removed);
+                    dstX, dstY, dstZ, width, height, depth);
         }
-        return new CrossResult(anchor, removed, minShipY, maxShipY);
+        return new CrossResult(anchor, minShipY, maxShipY);
     }
 
     /**

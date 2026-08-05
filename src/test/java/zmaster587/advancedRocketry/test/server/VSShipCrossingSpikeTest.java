@@ -81,7 +81,11 @@ public class VSShipCrossingSpikeTest extends AbstractSharedServerTest {
         String cross = exec("artest vs ship-repack 0 " + (int) sx + " " + (int) sy + " " + (int) sz
                 + " " + DST_X + " " + DST_Y + " " + DST_Z);
         assertTrue("crossing failed (NO-GO signal): " + cross, cross.contains("\"ok\":true"));
-        assertTrue("crossing did not deregister the source ship: " + cross, cross.contains("\"removed\":true"));
+        // No assertion on HOW the source stops being a ship. This used to require the crossing to have
+        // deregistered it itself, which pinned the mechanism rather than the promise - and the mechanism
+        // it pinned was the one that leaked a ship per crossing. What the crossing owes is that the world
+        // it left does not keep the ship it moved, and that is asserted where it belongs, in
+        // VSCrossingLeavesNoShipBehindE2ETest.
         assertTrue("crossing did not carry the aboard rider: " + cross,
                 extractInt(cross, "ridersCarried") >= 1);
 

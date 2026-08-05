@@ -810,7 +810,6 @@ public class TestProbeCommand extends CommandBase {
                 }
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("ok", anchorSolid);
-                m.put("removed", res.removed);
                 m.put("minShipY", res.minShipY);
                 m.put("maxShipY", res.maxShipY);
                 m.put("anchorX", anchor == null ? -1 : anchor.getX());

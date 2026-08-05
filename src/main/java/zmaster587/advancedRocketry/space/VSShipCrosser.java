@@ -89,8 +89,8 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                 hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
         if (!res.ok()) {
             LOGGER.warn("[SPACE] depart aborted: the crossing out of slot dim {} at anchor {} produced "
-                    + "no ship in hyperspace (source deregistered: {})",
-                    srcSlotDim, srcAnchor, res.removed);
+                    + "no ship in hyperspace",
+                    srcSlotDim, srcAnchor);
             return null;
         }
         // Park the just-assembled ship so it holds its lane while ShipTransit advances its coord logically.
