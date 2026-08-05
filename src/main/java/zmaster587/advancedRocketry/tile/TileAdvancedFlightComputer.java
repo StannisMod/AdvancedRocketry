@@ -300,6 +300,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // out: a spool that quietly stopped counting because the ship's attitude was momentarily
         // unresolvable would leave a pilot waiting for a window that is never going to open.
         tickJumpSpool();
+        // Flight recorder, server-tick channel. Taken here, BEFORE every gate below, because the
+        // quantity it exists to measure is the interval between this tile's ticks: a tick the server
+        // never got round to is exactly the case in which every gate below would have skipped the
+        // sample. The command and setpoint recorded are last tick's published values - this sample
+        // describes the state the tick STARTS from, which is also the state the physics thread has
+        // been chasing since.
+        zmaster587.advancedRocketry.util.MotionTrace.game(
+                zmaster587.advancedRocketry.util.MotionTrace.keyOf(
+                        world.provider.getDimension(),
+                        getPos().getX(), getPos().getY(), getPos().getZ()),
+                pilotInput != null, magnitude(commandedVelocity), magnitude(velocitySetpoint));
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
@@ -568,6 +579,14 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // error of rate/gain, so without it the ship visibly lags the pilot's hand.
         targetAttitude = new double[]{target.w, target.x, target.y, target.z};
         commandedAngVel = FreeFlightPhysics.bodyRatesToWorldOmega(target, pitchRate, yawRate, rollRate);
+    }
+
+    /** Length of a 3-vector channel, treating "no command" (null) as zero. */
+    private static double magnitude(double[] v) {
+        if (v == null || v.length < 3) {
+            return 0.0;
+        }
+        return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     }
 
     /** The shortest-arc angle (radians) between two attitudes. */

@@ -1206,6 +1206,10 @@ public class AdvancedRocketry {
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.DelayedActionBar());
         // Position-writer timeline around ship crossings (ungated diagnostics, probe-readable).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.ArrivalTrace.Hooks());
+        // Chunk-load counters for the motion flight recorder: a tick that ran long is only
+        // attributable to chunk work if the count of chunks that arrived during it is on the same
+        // sample. Two increments per chunk load, nothing else.
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.MotionTrace.Hooks());
 
         PacketHandler.init();
 

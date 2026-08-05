@@ -207,6 +207,16 @@ public class RocketEventHandler extends Gui {
         net.minecraft.entity.Entity ridden = view.getRidingEntity();
         float p = (float) event.getRenderPartialTicks();
 
+        // Flight recorder, per-FRAME channel, taken before every branch below because each of them
+        // returns. This is the only sample in the game that is the pilot's actual eye point, so it
+        // is the only one that can answer "is the PICTURE jerking" as opposed to "is the ship". A
+        // frame that arrives late — chunk meshing, a collection pause — shows up here as a gap and
+        // nowhere else.
+        {
+            net.minecraft.util.math.Vec3d recEye = view.getPositionEyes(p);
+            zmaster587.advancedRocketry.util.MotionTrace.clientFrame(recEye.x, recEye.y, recEye.z, p);
+        }
+
         if (ridden instanceof zmaster587.advancedRocketry.entity.EntityRocket) {
             zmaster587.advancedRocketry.entity.EntityRocket rocket =
                     (zmaster587.advancedRocketry.entity.EntityRocket) ridden;

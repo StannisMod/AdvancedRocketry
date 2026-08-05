@@ -159,6 +159,42 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
                 w.x, w.y, w.z,
                 angAccel == null ? -1.0 : 1.0};
 
+        // Flight recorder, physics-thread channel: one sample per physics step. This is the clock
+        // the ship's velocity actually integrates on, and it is NOT the game tick — an interval
+        // that wanders here is the physics loop failing to hold its rate, which no server-side tick
+        // measurement can see. Costs a handful of stores into a preallocated ring.
+        // The PHYSICS transform, not the game-tick one. They are different objects and only one of
+        // them advances on this clock: sampling `getShipTransform()` from a 60 Hz hook gives a pose
+        // that only changes 20 times a second, so two thirds of the samples read as "did not move"
+        // and the rest as a triple step — a metronomic ship reported as a stuttering one, by the
+        // instrument alone. Measured on the first calibration run: median step 0.0, p95 2.0.
+        org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform pose =
+                physo.getShipTransformationManager().getCurrentPhysicsTransform();
+        Vector3d vNow = calc.getLinearVelocity();
+        double cmdSpeed = vCmd == null || vCmd.length < 3 ? 0.0
+                : Math.sqrt(vCmd[0] * vCmd[0] + vCmd[1] * vCmd[1] + vCmd[2] * vCmd[2]);
+        double accelMag = calc.getMass() <= 0.0 ? 0.0
+                : Math.sqrt(fx * fx + fy * fy + fz * fz) / calc.getMass();
+        BlockPos self2 = self.getPos();
+        zmaster587.advancedRocketry.util.MotionTrace.phys(
+                zmaster587.advancedRocketry.util.MotionTrace.keyOf(
+                        physo.getWorld().provider.getDimension(),
+                        self2.getX(), self2.getY(), self2.getZ()),
+                // WHO drove this step, and on WHICH ship. A block's flight computer is one object on
+                // one ship, so a window carrying two of either is a state to go and look at rather
+                // than a number to average — and the two cases have different causes: two
+                // controllers on one ship is a stale tile instance that outlived its replacement in
+                // the ship's controller set, two ships is two craft claiming one computer.
+                System.identityHashCode(self),
+                physo.getUuid() == null ? 0.0 : physo.getUuid().hashCode(),
+                dt, pose.getPosX(), pose.getPosY(), pose.getPosZ(),
+                Math.sqrt(vNow.x * vNow.x + vNow.y * vNow.y + vNow.z * vNow.z),
+                cmdSpeed, calc.getMass(),
+                // "Clamped" is read back off the acceleration that was actually applied rather than
+                // reported by the clamp itself: at the authority ceiling the controller is no longer
+                // tracking its command, and that is the observable fact worth recording.
+                accelMag >= AR_MAX_LINEAR_ACCEL - 1.0e-6);
+
         calc.addForceAndTorque(new Vector3d(fx, fy, fz), new Vector3d(tx, ty, tz));
     }
 
