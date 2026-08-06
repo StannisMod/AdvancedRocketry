@@ -1248,6 +1248,10 @@ public class TestProbeCommand extends CommandBase {
         // "boundCount" is the number of dummies in the WHOLE world bound to this seat block — the
         // one-seat-one-dummy invariant's direct witness (boundDummyAt alone returns the first match
         // and cannot see a duplicate).
+        // "dummyYaw"/"dummyPitch" are the mount's own rotation. A seat dummy is glued to a ship that
+        // turns, so anything reading the mount for a DIRECTION (where the nose points) reads these;
+        // they are reported beside the ship's attitude the caller can fetch from `vs ship-info`, so a
+        // test can hold the two against each other.
         if (args.length >= 5 && "seat-status".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
@@ -1271,6 +1275,8 @@ public class TestProbeCommand extends CommandBase {
             StringBuilder sb = new StringBuilder("{\"ok\":true,\"dummyFound\":true,\"dummyId\":")
                     .append(dummy.getEntityId())
                     .append(",\"boundCount\":").append(boundCount)
+                    .append(",\"dummyYaw\":").append(dummy.rotationYaw)
+                    .append(",\"dummyPitch\":").append(dummy.rotationPitch)
                     .append(",\"passengers\":[");
             boolean firstP = true;
             for (net.minecraft.entity.Entity p : dummy.getPassengers()) {

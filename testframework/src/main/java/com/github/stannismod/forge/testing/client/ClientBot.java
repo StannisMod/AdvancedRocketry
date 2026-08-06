@@ -371,6 +371,25 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Raise or lower the client's frame-rate cap at runtime, returning its {@code previous} value.
+     *
+     * <p>The harness seeds {@code maxFps:30}, which is right for a test that only needs the client to
+     * run and wrong for one that reads the rendered frame as a CLOCK: a hitch a player sees at 120 fps
+     * is averaged away by a 30 fps sampler, so a smoothness measurement taken at the default reads a
+     * clean number off an instrument that cannot resolve what it is looking for. Raise it for the
+     * measurement and put it back, exactly as {@link #setRenderDistance} does for the sky.</p>
+     *
+     * @return {@code previous}, {@code limitFramerate} (read back), {@code effectiveLimit} (what vanilla
+     *         actually syncs to), {@code capped}, and {@code vsync} — vsync overrides the cap at the
+     *         driver, so a caller that raised the limit and still sees 60 finds the reason here
+     */
+    public JsonObject setFrameRate(int fps) throws IOException {
+        JsonObject command = command("set_frame_rate");
+        command.addProperty("fps", fps);
+        return assertOk(execute(command));
+    }
+
+    /**
      * Hide or show the whole in-game HUD (vanilla's F1), returning its {@code previous} value.
      *
      * <p>Required before a {@link #screenshot} that MEASURES the rendered world. The chat overlay carries

@@ -1027,6 +1027,35 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("skyPassEnabled", mc.gameSettings.renderDistanceChunks >= 4);
                     return response;
                 });
+            case "set_frame_rate":
+                // The harness seeds options.txt with maxFps:30 (RealClientHarness), which is right for
+                // every test that only needs the client to RUN. It is wrong for a test that measures the
+                // rendered frame as a CLOCK: a stutter a player sees at 120 fps is averaged away by a
+                // 30 fps sampler, so such a test would read a clean number off an instrument that cannot
+                // resolve the thing it is looking for. This raises the cap for the test that needs it and
+                // puts it back, exactly as set_render_distance does for the sky.
+                //
+                // Vanilla applies the cap in Minecraft.runGameLoop via Display.sync(getLimitFramerate()),
+                // and getLimitFramerate() returns gameSettings.limitFramerate whenever a world is loaded
+                // - so this takes effect on the next frame with no other call needed. Vsync is reported
+                // because it overrides the cap at the driver: a caller that raised the limit and still
+                // sees 60 has learned why here rather than by guessing.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    int fps = request.get("fps").getAsInt();
+                    int previous = mc.gameSettings.limitFramerate;
+                    mc.gameSettings.limitFramerate = fps;
+                    JsonObject response = ok();
+                    response.addProperty("previous", previous);
+                    // Read BACK rather than echo: the caller learns whether the write stuck, and
+                    // getLimitFramerate() is the value vanilla actually syncs to, which is not the
+                    // setting itself when no world is loaded.
+                    response.addProperty("limitFramerate", mc.gameSettings.limitFramerate);
+                    response.addProperty("effectiveLimit", mc.getLimitFramerate());
+                    response.addProperty("capped", mc.isFramerateLimitBelowMax());
+                    response.addProperty("vsync", mc.gameSettings.enableVsync);
+                    return response;
+                });
             case "set_hud_hidden":
                 // F1. A test that MEASURES the rendered world has to get the HUD out of the frame first:
                 // the chat overlay carries this harness's own per-command completion markers, which scroll

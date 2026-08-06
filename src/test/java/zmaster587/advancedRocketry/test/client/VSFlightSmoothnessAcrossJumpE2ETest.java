@@ -103,9 +103,33 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
     /** A spread at or below this is even enough that no ratio against the control is meaningful. */
     private static final double EVENNESS_FLOOR = 1.5;
 
+    /**
+     * The frame cap this test runs its measurement at. The harness default is 30, which is a sampler
+     * too coarse to resolve a hitch a player sees at his own frame rate — the reported symptom is
+     * about what the pilot SEES, so the frame clock has to run at something like what he runs at.
+     */
+    private static final int MEASURED_FPS = 120;
+
+    /** The client's frame cap before this test raised it, so cleanup can put it back. */
+    private int previousFrameRate = -1;
+
     @Test
     public void aShipFliesAsSmoothlyAfterAJumpAsBeforeOne() throws Exception {
         Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        // The rendered frame is one of the four clocks this test reads, and the harness seeds
+        // maxFps:30. A pilot sees his stutter at 120; a 30 Hz sampler averages that away, so the
+        // frame channel would return a clean number off an instrument that cannot resolve the thing
+        // it is looking for. Raised for this test only and read BACK off the client's own field,
+        // never assumed — the same discipline the sky-pass gate gets in the sibling jump e2e.
+        com.google.gson.JsonObject fps = bot().setFrameRate(MEASURED_FPS);
+        previousFrameRate = fps.get("previous").getAsInt();
+        assertTrue("ARRANGEMENT: the frame cap must actually be raised, read back off the client's "
+                        + "own field - every frame-channel number below is measured through it: " + fps,
+                fps.get("effectiveLimit").getAsInt() >= MEASURED_FPS);
+        assertTrue("ARRANGEMENT: vsync must be off, or the driver caps the frame clock below the "
+                + "limit that was just set and the frame channel is throttled by something this "
+                + "test cannot see: " + fps, !fps.get("vsync").getAsBoolean());
 
         // Headless: nothing but the client holds a ship loaded, and the probe calls below run
         // between client ticks. This affordance touches ship LOADING, never the timing of the
@@ -123,6 +147,12 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
         assertTrue("ARRANGEMENT: chunk warmup failed",
                 exec("artest chunk warmup " + originDim + " " + ((bx - 2) >> 4) + " " + ((bz - 2) >> 4)
                         + " " + ((bx + 7) >> 4) + " " + ((bz + 7) >> 4)).contains("\"ok\":true"));
+        // The BIGGEST flyable tier-2 variant the catalogue has, not the bare one. Mass and block
+        // count are on the causal path for every one of the four clocks — the physics step's cost,
+        // the volume of ship state synced per tick, the chunk work a moving hull does — and the
+        // report is about a real ship, not a builder's minimum. Using the largest existing variant
+        // rather than hand-placing a new one keeps the fixture inside the rules the catalogue
+        // already enforces (tower-bounded scan, anchor connectivity, flyability).
         String fixture = exec("artest fixture rocket " + originDim + " " + bx + " " + by + " " + bz
                 + " with-pilot-seat");
         assertTrue("ARRANGEMENT: fixture (with-pilot-seat) failed: " + fixture,
@@ -288,6 +318,9 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
     @After
     public void cleanup() {
         try {
+            if (previousFrameRate > 0) {
+                bot().setFrameRate(previousFrameRate);
+            }
             if (serverHasVs()) {
                 exec("artest player dismount");
                 exec("artest vs permaload false");

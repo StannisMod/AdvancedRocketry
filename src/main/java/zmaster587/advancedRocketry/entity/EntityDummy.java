@@ -343,7 +343,8 @@ public class EntityDummy extends Entity {
     }
 
     /**
-     * Glue this dummy — and thus its seated rider — to its ship every tick.
+     * Glue this dummy — and thus its seated rider — to its ship every tick, in POSITION and in
+     * ATTITUDE.
      *
      * <p>A pilot-seat dummy is bound to its seat block ({@link #getSeatPos()}), which on a
      * Valkyrien Skies ship lives in a stationary shipyard subspace while the ship itself flies
@@ -353,6 +354,13 @@ public class EntityDummy extends Entity {
      * and snap there. Runs on BOTH sides — each reads its own synced ship transform, so client and
      * server agree and the rider tracks the ship with no rubber-banding. A safe no-op for an
      * unbound (ordinary) seat or when the physics mod is absent, leaving vanilla behaviour intact.</p>
+     *
+     * <p><b>The rotation is glued for the same reason the position is.</b> A mount is asked two
+     * questions — where is it, and which way is it facing — and anything that wants the SHIP's
+     * heading from the thing the pilot is riding reads the second one. Nothing else writes it, so
+     * left alone it is a constant that claims every ship in the game points the same way. Vanilla
+     * has already copied this tick's rotation into {@code prev*} by the time we get here (see
+     * {@code Entity.onEntityUpdate}), so the render interpolation sweeps rather than steps.</p>
      */
     @Override
     public void onUpdate() {
@@ -360,6 +368,13 @@ public class EntityDummy extends Entity {
         BlockPos seat = getSeatPos();
         if (seat == null) {
             return;
+        }
+        zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat attitude =
+                VSIntegration.getShipAttitude(world, seat);
+        if (attitude != null) {
+            float[] euler = zmaster587.advancedRocketry.api.FreeFlightPhysics.eulerFromQuat(attitude);
+            this.rotationYaw = euler[0];
+            this.rotationPitch = euler[1];
         }
         double[] worldSeat = VSIntegration.getSeatWorldPosition(world, seat);
         if (worldSeat != null) {
