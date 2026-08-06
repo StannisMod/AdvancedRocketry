@@ -63,6 +63,23 @@ public class BoundarySky extends IRenderHandler {
      */
     public static volatile int labelsDrawnLastFrame;
 
+    /**
+     * Frames on which the descent-boundary ring has been drawn. It exists so "the ring is suppressed
+     * in hyperspace" is a statement a test can falsify: a counter that only ever goes up cannot tell
+     * a suppressed ring from a sky renderer that stopped running altogether, so the corridor's own
+     * counter is read in the same breath and the pair has to move in opposite directions.
+     */
+    public static volatile long ringFramesDrawn = 0L;
+
+    /**
+     * Frames on which this sky renderer ran AT ALL, counted before any branch inside it.
+     *
+     * <p>Without it the ring counter answers two different questions with the same zero: "the ring
+     * was suppressed" and "nothing rendered here". The first control leg written against that pair
+     * could not tell them apart, and said so by failing on its own arrangement.</p>
+     */
+    public static volatile long skyFramesDrawn = 0L;
+
     private final Minecraft mc = Minecraft.getMinecraft();
 
     // Cached static geometry: the descent boundary ring (position-only; colour set at call time).
@@ -105,6 +122,7 @@ public class BoundarySky extends IRenderHandler {
 
     @Override
     public void render(float partialTicks, WorldClient world, Minecraft mc) {
+        skyFramesDrawn++;
         List<PacketSystemBodiesSync.RenderBody> bodies =
                 PacketSystemBodiesSync.bodiesForDim(world.provider.getDimension());
 
@@ -121,9 +139,21 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
         GL11.glCallList(this.glStarList);
 
+        // In hyperspace this same provider serves the transit lanes, and the two things below are
+        // both wrong there: the ring marks a descent boundary in a world nothing descends to, and
+        // no cell is loaded so no body is ever synced. The corridor replaces them, and it is the
+        // only thing that tells a pilot with no controls and no readout that he is moving.
+        if (HyperspaceTunnel.localTransitPhase() > 0) {
+            HyperspaceTunnel.render(partialTicks, world);
+            GlStateManager.enableTexture2D();
+            restoreState();
+            return;
+        }
+
         // Descent boundary ring (untextured colour band).
         GlStateManager.color(0.35F, 0.65F, 1.0F, 0.35F);
         GL11.glCallList(this.glBoundaryList);
+        ringFramesDrawn++;
         GlStateManager.enableTexture2D();
 
         // One billboard per synced body.
@@ -137,7 +167,16 @@ public class BoundarySky extends IRenderHandler {
         }
         labelsDrawnLastFrame = labelled;
 
-        // Restore a sane GL state for the rest of the world render.
+        restoreState();
+    }
+
+    /**
+     * Restore a sane GL state for the rest of the world render.
+     *
+     * <p>One copy, because both exits of {@link #render} take it and a second copy is how the two
+     * drift apart: the hyperspace path leaving blend enabled would tint every block drawn after it.
+     */
+    private static void restoreState() {
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.depthMask(true);
         GlStateManager.disableBlend();

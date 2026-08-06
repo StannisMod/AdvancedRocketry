@@ -383,6 +383,12 @@ public final class ShipTransitManager {
         if (!crew.isEmpty() && parkedDim != Integer.MIN_VALUE) {
             reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true));
         }
+        // The crew is told it has departed, on the same channel and in the same voice as everything
+        // else this subsystem says. Said here rather than at the key press: the press only starts a
+        // spool, and a jump that is refused above this line must not have announced itself first.
+        if (!crew.isEmpty()) {
+            crosser.messageCrew(crew, "msg.shiptransit.departed");
+        }
         return true;
     }
 
@@ -473,6 +479,12 @@ public final class ShipTransitManager {
                 // few ticks (async re-assembly) without ever risking a duplicate ship on restart.
                 if (!t.crew.isEmpty()) {
                     reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false));
+                    // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
+                    // the crew has no control in flight and no number to watch, so arriving is the one
+                    // moment the flight has to announce itself. Said on the NORMAL path only - the two
+                    // recovery branches below have their own, louder message, and a crew that got both
+                    // would read the failure as routine.
+                    crosser.messageCrew(t.crew, "msg.shiptransit.arrived");
                 }
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
@@ -623,6 +635,42 @@ public final class ShipTransitManager {
         Transit t = transits.get(shipId);
         return t == null ? -1L : t.arrivalTick;
     }
+
+    /**
+     * How far along its flight a ship is, as a COARSE phase rather than a number.
+     *
+     * <p>The crew is told departing / in flight / arriving and never a countdown: a phase needs no
+     * tick-by-tick agreement between server and client, so it cannot show the pilot a number that
+     * stutters, and a jump does not turn into a progress bar. Both boundaries are derived from the
+     * ship's OWN speed rather than from a fraction of the trip, so a short hop and a long crossing
+     * both get a recognisable departure and run-in instead of one being all "arriving".</p>
+     *
+     * <p>Both windows are tunable. Arriving is tested first: near the end of a hop short enough for
+     * the two windows to overlap, the run-in is the half worth naming.</p>
+     */
+    public Phase phaseOf(String shipId) {
+        Transit t = transits.get(shipId);
+        if (t == null || t.integrator == null) {
+            return Phase.NONE;
+        }
+        long speed = Math.max(1L, t.speed);
+        if (t.integrator.remainingDistance() <= speed * ARRIVING_TICKS) {
+            return Phase.ARRIVING;
+        }
+        if (t.integrator.travelledBlocks() < speed * DEPARTING_TICKS) {
+            return Phase.DEPARTING;
+        }
+        return Phase.CRUISING;
+    }
+
+    /** The coarse phases of a flight, in the order a crew meets them. Ordinals cross the wire. */
+    public enum Phase {
+        NONE, DEPARTING, CRUISING, ARRIVING
+    }
+
+    /** How long a flight reads as "departing" / "arriving", in ticks of its own travel (tunable). */
+    private static final long DEPARTING_TICKS = 60L;
+    private static final long ARRIVING_TICKS = 100L;
 
     /** Install the offline-progress gate (config mode + online check). {@code null} restores always-advance. */
     public void setOfflineProgress(OfflineProgress policy) {

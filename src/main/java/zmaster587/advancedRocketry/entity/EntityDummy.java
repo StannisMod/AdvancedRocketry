@@ -52,6 +52,18 @@ public class EntityDummy extends Entity {
             EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
     private static final DataParameter<Float> SETPOINT_UP =
             EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    /** Drive readout for the seated pilot's HUD: {@code TileAdvancedFlightComputer.DriveReadout} ordinal. */
+    private static final DataParameter<Byte> DRIVE_STATE =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.BYTE);
+    /** Capacitor charge as a fraction of capacity (0..1). */
+    private static final DataParameter<Float> DRIVE_CHARGE =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.FLOAT);
+    /** Ticks left in the jump wind-up, 0 when not spooling. */
+    private static final DataParameter<Integer> SPOOL_TICKS =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.VARINT);
+    /** {@code ShipTransitManager.Phase} ordinal: the coarse phase of the jump this ship is making. */
+    private static final DataParameter<Byte> TRANSIT_PHASE =
+            EntityDataManager.createKey(EntityDummy.class, DataSerializers.BYTE);
 
     //Just a dummy so a player can sit on a chair
     public EntityDummy(World world) {
@@ -106,6 +118,30 @@ public class EntityDummy extends Entity {
         this.dataManager.register(SETPOINT_FORWARD, 0f);
         this.dataManager.register(SETPOINT_RIGHT, 0f);
         this.dataManager.register(SETPOINT_UP, 0f);
+        this.dataManager.register(DRIVE_STATE, (byte) 0);
+        this.dataManager.register(DRIVE_CHARGE, 0f);
+        this.dataManager.register(SPOOL_TICKS, 0);
+        this.dataManager.register(TRANSIT_PHASE, (byte) 0);
+    }
+
+    /** The drive readout ordinal for the pilot's HUD, as last synced. */
+    public int getDriveState() {
+        return this.dataManager.get(DRIVE_STATE);
+    }
+
+    /** Capacitor charge as a fraction of capacity (0..1), as last synced. */
+    public float getDriveCharge() {
+        return this.dataManager.get(DRIVE_CHARGE);
+    }
+
+    /** Ticks left in the jump wind-up, 0 when not spooling, as last synced. */
+    public int getSpoolTicks() {
+        return this.dataManager.get(SPOOL_TICKS);
+    }
+
+    /** The jump-phase ordinal this ship is in, as last synced (0 = not in flight). */
+    public int getTransitPhase() {
+        return this.dataManager.get(TRANSIT_PHASE);
     }
 
     /** The piloted ship's body-frame velocity {forward, right, up} in blocks/tick, as last synced. */
@@ -277,11 +313,26 @@ public class EntityDummy extends Entity {
         setIfChanged(SETPOINT_FORWARD, setpoint[0]);
         setIfChanged(SETPOINT_RIGHT, setpoint[1]);
         setIfChanged(SETPOINT_UP, setpoint[2]);
+        // The drive readout rides the same channel for the same reason: the rider is already
+        // tracking this entity, so a pilot's HUD costs no packet of its own.
+        setIfChanged(DRIVE_CHARGE, afc.getHudDriveCharge());
+        setIfChanged(DRIVE_STATE, (byte) afc.getHudDrive().ordinal());
+        setIfChanged(TRANSIT_PHASE, (byte) afc.getHudTransitPhase().ordinal());
+        int spool = afc.getHudSpoolTicks();
+        if (this.dataManager.get(SPOOL_TICKS) != spool) {
+            this.dataManager.set(SPOOL_TICKS, spool);
+        }
     }
 
     private void setIfChanged(DataParameter<Float> key, double value) {
         float next = (float) value;
         if (Math.abs(this.dataManager.get(key) - next) > 1.0e-4f) {
+            this.dataManager.set(key, next);
+        }
+    }
+
+    private void setIfChanged(DataParameter<Byte> key, byte next) {
+        if (this.dataManager.get(key) != next) {
             this.dataManager.set(key, next);
         }
     }

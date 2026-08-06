@@ -384,7 +384,52 @@ public class KeyBindings {
             }
             lines.add(I18n.format("msg.ff.hud.speed", String.format("%.1f", state.speed() * 20.0)));
         }
+        lines.addAll(driveHudLines(state));
         return lines;
+    }
+
+    /**
+     * The drive block of the HUD: what the jump key is, what the capacitor is doing, and — while a
+     * jump is under way — which phase of it the ship is in.
+     *
+     * <p>Its reason for existing is discoverability. A pilot who has built a drive, aimed and armed
+     * at the console has no way to learn from the game that the act of jumping exists at all: the
+     * key is a keybinding and nothing in the world names it. So the key is printed from its LIVE
+     * binding rather than as a letter, and a rebound key shows its new one.</p>
+     *
+     * <p>Nothing here shows a distance or an ETA. The crew gets a PHASE, which needs no tick-by-tick
+     * agreement with the server and cannot stutter; a jump is a journey, not a progress bar.</p>
+     */
+    private static java.util.List<String> driveHudLines(FreeFlightHudState state) {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        if (state.transitPhase > 0) {
+            // In flight: the drive is spent and the helm is dead, so the readouts below would only
+            // say so at length. The phase is the whole story.
+            lines.add(I18n.format("msg.ff.hud.transit." + transitPhaseKey(state.transitPhase)));
+            return lines;
+        }
+        if (state.driveState <= 0) {
+            return lines; // no drive aboard (a rocket, or a ship that has not built one)
+        }
+        if (state.spoolTicks > 0) {
+            // The abort window is the one moment the pilot MUST act, so it says both things at once:
+            // how long is left, and that the same key stops it.
+            lines.add(I18n.format("msg.ff.hud.drive.spooling",
+                    String.format("%.1f", state.spoolTicks / 20.0), key(jumpTrigger)));
+            return lines;
+        }
+        lines.add(I18n.format(state.driveState >= 2 ? "msg.ff.hud.drive.armed" : "msg.ff.hud.drive.idle",
+                key(jumpTrigger), (int) Math.round(state.driveCharge * 100.0)));
+        return lines;
+    }
+
+    /** Lang suffix for a {@code ShipTransitManager.Phase} ordinal. */
+    private static String transitPhaseKey(int phase) {
+        switch (phase) {
+            case 1:  return "departing";
+            case 3:  return "arriving";
+            default: return "cruising";
+        }
     }
 
     /**

@@ -300,6 +300,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // out: a spool that quietly stopped counting because the ship's attitude was momentarily
         // unresolvable would leave a pilot waiting for a window that is never going to open.
         tickJumpSpool();
+        // Same reasoning for the drive readout: a pilot mid-jump is exactly the pilot whose HUD must
+        // keep saying something, and every gate below can decline to run for a ship in hyperspace.
+        refreshHudDrive(world.getTotalWorldTime());
         // Flight recorder, server-tick channel. Taken here, BEFORE every gate below, because the
         // quantity it exists to measure is the interval between this tile's ticks: a tick the server
         // never got round to is exactly the case in which every gate below would have skipped the
@@ -621,6 +624,103 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     /** The Flight-Assist cruise setpoint {forward, right, up} in blocks/tick, for the pilot's HUD. */
     public double[] getHudSetpoint() {
         return hudSetpoint;
+    }
+
+    // ── The drive readout the seated pilot gets ────────────────────────────────────────────────
+    //
+    // These ride the seat dummy's tracked data, like the velocity readout above, because that is
+    // the channel a rider already has. They are server-authoritative for the same reason the
+    // console's forecast is: the numbers come from block scans the client cannot do.
+
+    /** No drive aboard / a drive but not armed / armed. Ordinals cross the wire. */
+    public enum DriveReadout {
+        NONE, IDLE, ARMED
+    }
+
+    private DriveReadout hudDrive = DriveReadout.NONE;
+    private float hudDriveCharge = 0f;
+
+    /**
+     * Refresh the cached drive readout. Resolving the drive walks the ship's machines, which is far
+     * too expensive to do per tick for a text line - the navigation console recomputes its own
+     * forecast on the same cadence and for the same reason.
+     *
+     * <p>The cadence is phase-shifted by the computer's OWN position, not aligned on the shared
+     * world clock: a fleet of ships would otherwise all rescan on the same tick, turning a spread
+     * cost into one spike every {@value #DRIVE_REFRESH_TICKS} ticks. The period is unchanged; only
+     * where in it each ship sits.</p>
+     */
+    private void refreshHudDrive(long now) {
+        if (((now + Math.abs(getPos().hashCode())) % DRIVE_REFRESH_TICKS) != 0) {
+            return;
+        }
+        zmaster587.advancedRocketry.hyperdrive.ShipDrive drive =
+                new zmaster587.advancedRocketry.hyperdrive.ShipDrive(world, getPos());
+        if (drive.generator() == null) {
+            hudDrive = DriveReadout.NONE;
+            hudDriveCharge = 0f;
+            return;
+        }
+        long capacity = drive.capacitorCapacity();
+        hudDriveCharge = capacity <= 0 ? 0f
+                : (float) Math.min(1.0, (double) drive.capacitorCharge(now) / (double) capacity);
+        zmaster587.advancedRocketry.navigation.ShipNavigation nav =
+                new zmaster587.advancedRocketry.navigation.ShipNavigation(world, getPos(), shipId);
+        zmaster587.advancedRocketry.tile.TileNavigationComputer computer = nav.findNavComputer();
+        hudDrive = (computer != null && computer.isArmed()) ? DriveReadout.ARMED : DriveReadout.IDLE;
+    }
+
+    /** How often the drive readout is rescanned (ticks); a display cadence, not a mechanic. */
+    private static final int DRIVE_REFRESH_TICKS = 20;
+
+    /** The drive readout for the pilot's HUD, as last rescanned. */
+    public DriveReadout getHudDrive() {
+        return hudDrive;
+    }
+
+    /** Capacitor charge as a fraction of capacity (0..1) for the pilot's HUD, as last rescanned. */
+    public float getHudDriveCharge() {
+        return hudDriveCharge;
+    }
+
+    /** Ticks left in the jump wind-up, or 0 when not spooling. Cheap enough to read every tick. */
+    public int getHudSpoolTicks() {
+        long now = world == null ? 0L : world.getTotalWorldTime();
+        return jumpSpool.spooling(now) ? (int) jumpSpool.remaining(now) : 0;
+    }
+
+    /**
+     * Which phase of a jump this ship is in, or {@link ShipTransitManager.Phase#NONE} when it is not
+     * in flight. The crew is shown a phase and never a countdown, so nothing here has to agree with
+     * the server tick-for-tick.
+     */
+    public zmaster587.advancedRocketry.space.ShipTransitManager.Phase getHudTransitPhase() {
+        // The primary fact - "this ship is in flight" - is the world it is in, not a lookup in a
+        // registry. Ships are parked in the shared hyperspace world exactly while they are mid-jump,
+        // which is the same single source the helm's own control gate keys on a few hundred lines up.
+        // Asking the transit registry first would make the readout depend on the ship being findable
+        // under the id the registry happens to use, and a pilot who is demonstrably in hyperspace
+        // would then be told nothing at all.
+        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
+        if (world == null || hyperDim == Integer.MIN_VALUE
+                || world.provider.getDimension() != hyperDim) {
+            return zmaster587.advancedRocketry.space.ShipTransitManager.Phase.NONE;
+        }
+        // In hyperspace for certain. The registry only REFINES that into departing/arriving; when it
+        // cannot say - it does not own this ship, or it is keyed differently - the honest answer is
+        // still that the flight is under way.
+        if (shipId != null) {
+            zmaster587.advancedRocketry.space.ShipTransitManager transit =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.transit();
+            if (transit != null) {
+                zmaster587.advancedRocketry.space.ShipTransitManager.Phase refined =
+                        transit.phaseOf(shipId.toString());
+                if (refined != zmaster587.advancedRocketry.space.ShipTransitManager.Phase.NONE) {
+                    return refined;
+                }
+            }
+        }
+        return zmaster587.advancedRocketry.space.ShipTransitManager.Phase.CRUISING;
     }
 
     /**

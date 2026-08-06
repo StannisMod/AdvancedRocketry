@@ -42,9 +42,27 @@ public final class FreeFlightHudState {
      *  each backend's bars use their whole width instead of a rocket-sized fraction of it. */
     public final double barScale;
 
+    /**
+     * The drive readout for a seated tier-2 pilot: 0 = no drive aboard, 1 = a drive but not armed,
+     * 2 = armed ({@code TileAdvancedFlightComputer.DriveReadout} ordinals). A rocket has no drive,
+     * so it reads 0 and the HUD says nothing about jumping.
+     */
+    public final int driveState;
+    /** Capacitor charge as a fraction of capacity (0..1). Meaningless while {@link #driveState} is 0. */
+    public final float driveCharge;
+    /** Ticks left in the jump wind-up, 0 when not spooling. The one moment the pilot must act. */
+    public final int spoolTicks;
+    /** The coarse jump phase ({@code ShipTransitManager.Phase} ordinal); 0 = not in flight. */
+    public final int transitPhase;
+
     private FreeFlightHudState(int tier, boolean inFlight, boolean flightAssistOn, boolean hasVelocity,
                               double bodyForward, double bodyRight, double bodyUp,
-                              double faForward, double faRight, double faUp, double barScale) {
+                              double faForward, double faRight, double faUp, double barScale,
+                              int driveState, float driveCharge, int spoolTicks, int transitPhase) {
+        this.driveState = driveState;
+        this.driveCharge = driveCharge;
+        this.spoolTicks = spoolTicks;
+        this.transitPhase = transitPhase;
         this.tier = tier;
         this.inFlight = inFlight;
         this.flightAssistOn = flightAssistOn;
@@ -86,7 +104,8 @@ public final class FreeFlightHudState {
             return new FreeFlightHudState(1, rocket.isInFlight(), rocket.isFlightAssistOn(), true,
                     act[0], act[1], act[2],
                     rocket.getFaSetpointForward(), rocket.getFaSetpointRight(), rocket.getFaSetpointUp(),
-                    FreeFlightPhysics.MAX_SPEED);
+                    FreeFlightPhysics.MAX_SPEED,
+                    0, 0f, 0, 0);
         }
         // The link alone is NOT evidence that a ship exists — it is a build-time intention that
         // survives a rejected assembly, so on its own it lit this entire panel (velocity readout,
@@ -103,7 +122,9 @@ public final class FreeFlightHudState {
             return new FreeFlightHudState(2, true, seat.isFlightAssistOn(), true,
                     velocity[0], velocity[1], velocity[2],
                     setpoint[0], setpoint[1], setpoint[2],
-                    TileAdvancedFlightComputer.SHIP_MAX_SPEED / 20.0);
+                    TileAdvancedFlightComputer.SHIP_MAX_SPEED / 20.0,
+                    dummy.getDriveState(), dummy.getDriveCharge(),
+                    dummy.getSpoolTicks(), dummy.getTransitPhase());
         }
         return null;
     }

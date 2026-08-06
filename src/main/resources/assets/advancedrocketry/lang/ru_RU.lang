@@ -476,6 +476,12 @@ msg.ff.hud.pitchmouse=Мышь  Управление носом (взгляд п
 msg.ff.hud.cut=%s  Тормоз в зависание
 msg.ff.hud.brake=%s Тормоз
 msg.ff.hud.assist=%s Ассист
+msg.ff.hud.drive.idle=%s Прыжок — не взведён, привод %d%%
+msg.ff.hud.drive.armed=%s Прыжок — ВЗВЕДЁН, привод %d%%
+msg.ff.hud.drive.spooling=ПРЫЖОК через %s с — нажмите %s ещё раз для отмены
+msg.ff.hud.transit.departing=В ГИПЕРПРОСТРАНСТВЕ — отправление
+msg.ff.hud.transit.cruising=В ГИПЕРПРОСТРАНСТВЕ — в пути
+msg.ff.hud.transit.arriving=В ГИПЕРПРОСТРАНСТВЕ — подход
 
 # Выход корабля 2-го уровня в космос
 msg.shipentry.refused=§cКосмос перегружен — корабль не может выйти на орбиту. Снизьтесь и попробуйте позже.
@@ -490,6 +496,8 @@ msg.loginrestore.shipunknown=§cВаш корабль не найден — на
 msg.shipdescent.refused=§cСнижение не началось — точка прибытия ещё не готова. Подождите немного и попробуйте снова.
 msg.shipdescent.failed=§cСпуск не удался — корабль не смог перейти на планету.
 msg.shipdescent.arrived=§aСнижение выполнено — корабль в небе над планетой. Ведите его вниз.
+msg.shiptransit.departed=§aПрыжок начат — корабль в пути. Управление отключено до прибытия.
+msg.shiptransit.arrived=§aПрибытие — корабль снова в обычном пространстве. Управление снова ваше.
 msg.shiptransit.arrivalrecovered=§eПрыжок завершён, но не чисто — корабль стоит в точке прибытия, а не на курсе. Он цел; сообщите об этом.
 msg.shiptransit.arrivalstalled=§cПрыжок сейчас не может завершиться. Корабль не потерян — он остаётся в полёте и прибудет. Сообщите об этом.
 
