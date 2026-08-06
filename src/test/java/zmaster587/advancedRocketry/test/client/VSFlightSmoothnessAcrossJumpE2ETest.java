@@ -259,6 +259,12 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(SETTLE_TICKS);
         Leg settled = measure("after-jump-settled", targetDim, afcArrived);
 
+        // The raw client channels beside the summary. A ratio says the pose stream is uneven; only
+        // the beat GAPS beside the per-beat STEPS can say whether the tick arrived late (a stalled
+        // clock) or arrived on time carrying an uneven pose (a stuttering pose stream), and only the
+        // step series can say whether that unevenness is periodic.
+        System.out.println("[SMOOTH-RAW] before:  " + before.clientJson);
+        System.out.println("[SMOOTH-RAW] settled: " + settled.clientJson);
         System.out.println("[SMOOTH] control (before jump):    " + before);
         System.out.println("[SMOOTH] subject (after jump):     " + after);
         System.out.println("[SMOOTH] subject (settled):        " + settled);

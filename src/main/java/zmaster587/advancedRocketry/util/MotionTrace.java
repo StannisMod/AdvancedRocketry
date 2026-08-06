@@ -110,6 +110,20 @@ public final class MotionTrace {
     public static volatile long clientChunkLoads = 0L;
 
     /**
+     * Ship transform updates the CLIENT has applied, cumulative.
+     *
+     * <p>The client's ship pose is an exponential filter chasing whatever the last packet said, so
+     * how many packets landed inside a window is the difference between "the ship moved unevenly"
+     * and "the ship's pose ARRIVED unevenly". Those are different defects with different owners, and
+     * a displacement series alone cannot tell them apart: a filter fed one update where it expected
+     * two produces exactly the same shape as a ship that genuinely lurched.</p>
+     *
+     * <p>Cumulative rather than per-window on purpose — a counter read only at the end of a window
+     * supports a correlation between legs and never an attribution inside one.</p>
+     */
+    public static volatile long clientShipTransformUpdates = 0L;
+
+    /**
      * The client half of the recording, rendered on demand. Exposed as an object whose
      * {@code toString()} does the work, because the harness's client channel can read a static
      * FIELD but cannot call a method — and rendering eagerly every frame would cost more than the
@@ -210,7 +224,7 @@ public final class MotionTrace {
      */
     public static void clientTick(double x, double y, double z, boolean riding) {
         ring(CLIENT_TICK, 0L).add(System.nanoTime(), riding ? 1.0 : 0.0, x, y, z, clientChunkLoads,
-                0.0, 0.0, 0.0, 0.0, 0.0);
+                clientShipTransformUpdates, 0.0, 0.0, 0.0, 0.0);
     }
 
     /**
@@ -452,6 +466,13 @@ public final class MotionTrace {
                         .append(",\"p95\":").append(round(pct(sortedStep, 0.95)))
                         .append(",\"max\":").append(round(sortedStep[sortedStep.length - 1]))
                         .append("},\"stalls\":").append(stalls)
+                        // The SHAPE of the roughness, bounded to the tail of the window. A p95/p50
+                        // ratio says a channel is uneven and can never say HOW: a periodic spike
+                        // every N beats names a periodic writer, a random scatter names load, and a
+                        // run of equal steps followed by one long one names a correction being
+                        // applied in arrears. Those three want different fixes and the percentiles
+                        // do not distinguish them.
+                        .append(",\"lastSteps\":").append(tail(step, STEP_TAIL))
                         .append(",\"netMove\":[").append(round(sumDx)).append(',')
                         .append(round(sumDy)).append(',').append(round(sumDz)).append(']');
             }
@@ -468,6 +489,23 @@ public final class MotionTrace {
             appendRow(sb, ",\"last\":", idx[n - 1]);
             sb.append('}');
             return sb.toString();
+        }
+
+        /** How many beats of {@link #summary}'s per-beat step series are reported verbatim. */
+        private static final int STEP_TAIL = 40;
+
+        /** The last {@code max} entries of {@code values}, as a JSON array. Bounded on purpose: a
+         *  full window is thousands of numbers and nobody reads those; forty beats is two seconds
+         *  at tick rate, which is long enough to show a period and short enough to print. */
+        private static String tail(double[] values, int max) {
+            StringBuilder out = new StringBuilder("[");
+            for (int i = Math.max(0, values.length - max); i < values.length; i++) {
+                if (out.length() > 1) {
+                    out.append(',');
+                }
+                out.append(round(values[i]));
+            }
+            return out.append(']').toString();
         }
 
         /** How many distinct values one column takes across the window. */

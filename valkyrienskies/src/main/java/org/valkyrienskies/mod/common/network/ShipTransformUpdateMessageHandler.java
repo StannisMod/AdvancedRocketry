@@ -45,6 +45,10 @@ public class ShipTransformUpdateMessageHandler implements IMessageHandler<ShipTr
                         // Do not update the transform in ShipData, that will be done by PhysicsObject.tick()
                         ITransformInterpolator interpolator = physicsObject.getTransformInterpolator();
                         interpolator.onNewTransformPacket(shipTransform, shipBB);
+                        // Flight recorder: this is the ONLY place a client learns where a ship is, and
+                        // the pose the pilot sees is a filter chasing it. Counting arrivals here is
+                        // what separates "the ship moved unevenly" from "its pose arrived unevenly".
+                        zmaster587.advancedRocketry.util.MotionTrace.clientShipTransformUpdates++;
                     }
                 }
             }
