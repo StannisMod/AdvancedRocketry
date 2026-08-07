@@ -63,7 +63,8 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
+    public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                          HyperspaceTiles.Tile tile) {
         WorldServer src = DimensionManager.getWorld(srcSlotDim);
         WorldServer hyper = HyperspaceWorld.getOrCreate();
         // Three different reasons a departure never even starts, told apart. Rolled into one null they
@@ -95,11 +96,14 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         }
         // Park the just-assembled ship so it holds its lane while ShipTransit advances its coord logically.
         VSIntegration.parkShipAt(hyper, res.anchor.getX() + 0.5, res.anchor.getY() + 0.5, res.anchor.getZ() + 0.5);
-        return res.anchor;
+        // The crossing kept the ship's identity, so this uuid is the one it had in its origin cell and
+        // the one it will still have at the far end - one name for the whole jump.
+        return new ShipCrossingService.Crossed(res.anchor, res.shipUuid);
     }
 
     @Override
-    public BlockPos arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor, int targetSlotDim) {
+    public ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
+                                                            int targetSlotDim) {
         WorldServer hyper = HyperspaceWorld.getOrCreate();
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (hyper == null || dst == null || hyperAnchor == null) {
@@ -127,11 +131,11 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                 dst, dstX, ARRIVAL_Y, 0);
         // The paste lands in the destination's BLOCK band; the ship is moved onto its real pose (and
         // unparked there) by the settle step, once the asynchronous re-assembly is queryable.
-        return res.ok() ? res.anchor : null;
+        return res.ok() ? new ShipCrossingService.Crossed(res.anchor, res.shipUuid) : null;
     }
 
     @Override
-    public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+    public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor, UUID vsShipUuid,
                                       double px, double py, double pz) {
         // NOTE: no load pump here on purpose. This used to force-load every ship in the target cell
         // each retry, because the pose teleport's readiness gate asked whether a ship was LOADED —
@@ -140,15 +144,16 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // the settle went through only when the two happened to interleave in its favour. The gate now
         // asks about the crossing's own progress instead, which needs no load at all; the crew re-seat
         // still pumps the queue for itself (it genuinely needs a live ship to resolve seat positions).
-        // The same recipe the entry/descent settle uses (readiness gate, rider carry, unpark last).
-        // Both calls pass no ship identity, so they resolve BY POSITION — the transit records are
-        // persisted and an in-memory identity would not survive a restart mid-arrival, which makes
-        // carrying one here its own change. The entry and descent crossings, which own the reported
-        // wrong-ship arrival, hand their crossing's own uuid down instead.
-        if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, null, px, py, pz)) {
+        // The same recipe the entry/descent settle uses (readiness gate, rider carry, unpark last), and
+        // now with the same identity discipline: both calls are told WHICH ship arrived, so a target
+        // cell holding a second craft cannot have its arrival move a stranger. The uuid is the one the
+        // ship crossed with; a crossing keeps a ship's identity, so it is the same value the jump
+        // departed under, and it has exactly the lifetime of the paste anchor beside it - a restart
+        // mid-arrival re-derives both by completing the jump from its snapshot.
+        if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, vsShipUuid, px, py, pz)) {
             return null; // re-assembly not queryable yet: retry next tick, the ship stays pasted
         }
-        ops.unpark(targetSlotDim, null, px, py, pz);
+        ops.unpark(targetSlotDim, vsShipUuid, px, py, pz);
         return new BlockPos(px, py, pz);
     }
 
@@ -176,7 +181,8 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public BlockPos completeRestored(net.minecraft.nbt.NBTTagCompound snapshot, int targetSlotDim) {
+    public ShipCrossingService.Crossed completeRestored(net.minecraft.nbt.NBTTagCompound snapshot,
+                                                        int targetSlotDim) {
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (dst == null || snapshot == null) {
             // Same silence as the live arrival's guard, and the same retry-per-tick shape: discriminate,
@@ -198,7 +204,12 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // The snapshot source is always present (no async wait), so this pastes exactly once - a non-null
         // anchor on the first call, no retry - never a duplicate paste.
         int dstX = -ARRIVAL_LANE_STRIDE * (restoredLane++ + 1);
-        return VSIntegration.pasteAndAssemble(dst, snapshot, dstX, ARRIVAL_Y, 0);
+        VSIntegration.CrossResult res = VSIntegration.pasteAndAssemble(dst, snapshot, dstX, ARRIVAL_Y, 0);
+        // A restored arrival is the one that CANNOT keep the ship's identity: the ship it names died
+        // with the hyperspace world on the restart this transit survived, and what lands here is a
+        // rebuild from stored blocks. The identity it comes back with is fresh, and the transit adopts
+        // it - the settle and the re-seat that follow must name the ship that actually exists.
+        return res.ok() ? new ShipCrossingService.Crossed(res.anchor, res.shipUuid) : null;
     }
 
     @Override
@@ -235,7 +246,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+    public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId, UUID vsShipUuid) {
         List<CrewTransfer.Crew> stash = crewStash.get(shipId);
         if (stash == null || stash.isEmpty()) {
             return true; // crewless, restored (stash wiped on restart), or already reseated - nothing to do
@@ -249,10 +260,12 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // tiles would resolve, which put AR in a per-tick tug of war with VS's unload of a ship nobody is
         // near. It reads the seats' positions off the ships' durable records now, and force-loads only the
         // shipyard CHUNKS it has to scan — neither of which needs a live physics object.
-        // NOTE: still POSITION-keyed. The transit records are persisted and a restart mid-arrival
-        // would lose an in-memory identity, so carrying one here is its own change; the entry and
-        // descent crossings, which own the reported failure, resolve by identity.
-        if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId), null)) {
+        // Keyed by IDENTITY, like the entry and descent re-seats: the seat scan searches the shipyard of
+        // the ship that arrived, not of whichever craft happens to be nearest the arrival point. That
+        // distinction is the whole failure this path used to be able to produce - a destination holding
+        // a second ship had its arrival scan the stranger's yard, find no seat, and give up while the
+        // crew's own seat sat tens of thousands of blocks away in the same world.
+        if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId), vsShipUuid)) {
             crewStash.remove(shipId);
             return true;
         }
@@ -265,7 +278,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId) {
+    public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId, UUID vsShipUuid) {
         List<CrewTransfer.Crew> stash = crewStash.get(shipId);
         if (stash == null || stash.isEmpty()) {
             return true; // crewless, or a restored transit whose stash did not survive the restart
@@ -277,7 +290,10 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // Deliberately does NOT remove the stash: these same records seat the crew again at the far
         // end, and only their flight-computer link offsets can re-identify a seat on a ship that has
         // been re-assembled into a fresh subspace since.
-        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId), null);
+        //
+        // Named by identity, and hyperspace is where that matters most: every ship in flight is parked
+        // in the same world, so "the ship at this anchor" has neighbours by construction.
+        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId), vsShipUuid);
     }
 
     @Override

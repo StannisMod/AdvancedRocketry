@@ -153,8 +153,24 @@ public final class ValkyrienUtils {
      * Creates a new ShipIndexedData based on the inputs provided by the physics infuser block.
      */
     public static ShipData createNewShip(World world, BlockPos physInfuserPos) {
+        return createNewShip(world, physInfuserPos, UUID.randomUUID());
+    }
+
+    /**
+     * The same, with the ship's identity CHOSEN by the caller instead of minted here.
+     *
+     * <p>A ship that is taken apart in one world and re-assembled in another is the same ship to the
+     * player, and a fresh identity per re-assembly is what forces everything downstream to re-find it
+     * by position. The identity is a plain parameter of {@link ShipData#createData} and always was;
+     * this overload only exposes it, and the no-uuid form above is now this one with a random value.
+     *
+     * <p><b>The uuid must be free in {@code world}</b>: the registry indexes it uniquely, so adding a
+     * second ship under a live one's identity throws when the spawn is drained. A caller re-assembling
+     * a ship it has just cut out of another world is responsible for the blockless remnant of that
+     * ship here, if one exists.
+     */
+    public static ShipData createNewShip(World world, BlockPos physInfuserPos, UUID shipID) {
         String name = NounListNameGenerator.getInstance().generateName();
-        UUID shipID = UUID.randomUUID();
         // Create ship chunk claims
         VSChunkClaim chunkClaim = ValkyrienUtils.getShipChunkAllocator(world).allocateNextChunkClaim();
         Vector3dc centerOfMassInitial = VSMath.toVector3d(chunkClaim.getRegionCenter());

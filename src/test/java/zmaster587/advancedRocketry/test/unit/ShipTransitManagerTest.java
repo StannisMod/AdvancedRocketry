@@ -12,6 +12,7 @@ import net.minecraft.util.math.BlockPos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.space.HyperspaceTiles;
 import zmaster587.advancedRocketry.space.OfflineProgress;
+import zmaster587.advancedRocketry.space.ShipCrossingService;
 import zmaster587.advancedRocketry.space.ShipLedger;
 import zmaster587.advancedRocketry.space.ShipTransitManager;
 import zmaster587.advancedRocketry.space.SlotBinder;
@@ -66,28 +67,48 @@ public class ShipTransitManagerTest {
         int reseatFailCount;                                // fail reseatCrew this many times, then succeed
         final List<String> captureCalls = new ArrayList<>();
         final List<String> reseatCalls = new ArrayList<>();
+        // Identity seam: which ship each crossing produced, and which one every later step was told to
+        // act on. A jump keeps ONE identity, so departedAs is what the settle and the re-seat must be
+        // handed - unless a crossing reports it could not keep it (arrivesAs / restoredAs), which is
+        // exactly when the later steps must follow the NEW one instead.
+        UUID departedAs = UUID.fromString("00000000-0000-0000-0000-0000000000d1");
+        UUID arrivesAs;                                     // null => the arrival kept departedAs
+        UUID restoredAs = UUID.fromString("00000000-0000-0000-0000-0000000000e1");
+        final List<UUID> settledAs = new ArrayList<>();     // what settleArrivedPose was told, per call
+        final List<UUID> reseatedAs = new ArrayList<>();    // what reseatCrew was told, per call
+        final List<UUID> boardedAs = new ArrayList<>();     // what boardCrew was told, per call
+        // Where in-flight ships are parked. MIN_VALUE (the interface default) means "there is no such
+        // world", which suppresses the departure-side boarding entirely - so a test that wants to see
+        // that leg has to name a world for it.
+        int parkedDimToReturn = Integer.MIN_VALUE;
         final List<String> order = new ArrayList<>();       // shared call order: pins capture-before-depart
 
         @Override
-        public BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile) {
+        public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                              HyperspaceTiles.Tile tile) {
             departs.add(srcSlotDim + "@" + tile.index);
             order.add("depart");
-            return failDepart ? null : tile.pos;
+            return failDepart ? null : new ShipCrossingService.Crossed(tile.pos, departedAs);
         }
 
         @Override
-        public BlockPos arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor, int targetSlotDim) {
+        public ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
+                                                                int targetSlotDim) {
             arrivals.add(targetSlotDim + "@" + tile.index);
             if (arriveFailCount > 0) {
                 arriveFailCount--;
                 return null; // ship not yet crossable in hyperspace (async assembly) - retry next tick
             }
-            return new BlockPos(0, 128, 0);
+            // A live crossing KEEPS the ship's identity, so the arrival comes back under the same uuid
+            // the departure did - unless a test asks for the case where it could not be kept.
+            return new ShipCrossingService.Crossed(new BlockPos(0, 128, 0),
+                    arrivesAs == null ? departedAs : arrivesAs);
         }
 
         @Override
-        public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+        public BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor, UUID vsShipUuid,
                                           double px, double py, double pz) {
+            settledAs.add(vsShipUuid);
             if (settleFailCount > 0) {
                 settleFailCount--;
                 return null; // re-assembly not queryable yet - the ship stays pasted, the settle retries
@@ -110,13 +131,14 @@ public class ShipTransitManagerTest {
         }
 
         @Override
-        public BlockPos completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
+        public ShipCrossingService.Crossed completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
             restoredCompletions.add(targetSlotDim + ":" + (snapshot != null));
             if (completeRestoredFailCount > 0) {
                 completeRestoredFailCount--;
                 return null; // paste/assembly not up yet - retry next tick
             }
-            return new BlockPos(0, 200, 0);
+            // A rebuild from stored blocks cannot keep an identity: it comes back under a fresh one.
+            return new ShipCrossingService.Crossed(new BlockPos(0, 200, 0), restoredAs);
         }
 
         @Override
@@ -127,13 +149,26 @@ public class ShipTransitManagerTest {
         }
 
         @Override
-        public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+        public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId,
+                                  UUID vsShipUuid) {
             reseatCalls.add(targetSlotDim + "@" + shipId);
+            reseatedAs.add(vsShipUuid);
             if (reseatFailCount > 0) {
                 reseatFailCount--;
                 return false; // seat tiles not up yet - retry next tick
             }
             return true;
+        }
+
+        @Override
+        public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId, UUID vsShipUuid) {
+            boardedAs.add(vsShipUuid);
+            return true;
+        }
+
+        @Override
+        public int parkedDim() {
+            return parkedDimToReturn;
         }
     }
 
@@ -339,6 +374,101 @@ public class ShipTransitManagerTest {
         assertFalse("already in transit", mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0),
                 cell(3), 1L));
         assertEquals(1, mgr.inTransitCount());
+    }
+
+    // ── One jump, one ship identity ─────────────────────────────────────────────────────────────────
+
+    @Test
+    public void everyStepOfAJumpActsOnTheShipTheCrossingProduced() {
+        // The contract: a jump names ITS ship at every step. Nothing here may fall back to "whichever
+        // ship is nearest the arrival point" - a destination cell holding a second craft is ordinary,
+        // and a settle or a re-seat that picks the neighbour moves the wrong ship and then hunts for
+        // this crew's seats aboard it.
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID()); // a manned jump, so the re-seat leg runs too
+        crosser.parkedDimToReturn = 900;              // a hyperspace world exists, so the crew boards it
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
+
+        mgr.tick(); // departs, flies, arrives and settles on the same tick; the re-seat follows
+        mgr.tick();
+
+        assertFalse("the departure seated its crew on SOME ship", crosser.boardedAs.isEmpty());
+        assertFalse("the arrival settled SOME ship", crosser.settledAs.isEmpty());
+        assertFalse("the arrival re-seated its crew on SOME ship", crosser.reseatedAs.isEmpty());
+        for (UUID named : crosser.boardedAs) {
+            assertEquals("the hyperspace boarding names the departed ship", crosser.departedAs, named);
+        }
+        for (UUID named : crosser.settledAs) {
+            assertEquals("the settle names the ship the crossing produced", crosser.departedAs, named);
+        }
+        for (UUID named : crosser.reseatedAs) {
+            assertEquals("the re-seat names the ship the crossing produced", crosser.departedAs, named);
+        }
+    }
+
+    @Test
+    public void anArrivalThatCouldNotKeepTheIdentityIsFollowedNotOverruled() {
+        // A crossing keeps the ship's identity, but it can fail to: something live at the destination
+        // may already hold that name. The arrival then comes back under a different one, and THAT is
+        // the ship which exists - so the settle and the re-seat must follow the arrival, not the
+        // departure. Keeping the departure's value here would name a ship that is not there.
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID());
+        crosser.arrivesAs = UUID.fromString("00000000-0000-0000-0000-0000000000f1");
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
+
+        mgr.tick();
+        mgr.tick();
+
+        assertFalse(crosser.settledAs.isEmpty());
+        assertFalse(crosser.reseatedAs.isEmpty());
+        for (UUID named : crosser.settledAs) {
+            assertEquals("the settle follows the identity the ARRIVAL came back with",
+                    crosser.arrivesAs, named);
+        }
+        for (UUID named : crosser.reseatedAs) {
+            assertEquals("the re-seat follows the identity the ARRIVAL came back with",
+                    crosser.arrivesAs, named);
+        }
+    }
+
+    @Test
+    public void aRestoredArrivalAdoptsTheIdentityOfTheShipItRebuilt() {
+        // The one arrival that cannot keep an identity: it rebuilds the ship out of stored blocks,
+        // because the ship it departed as died with the hyperspace world on the restart this transit
+        // survived. Everything after it must name the rebuild.
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+        UUID ship = UUID.randomUUID();
+        List<UUID> crew = new ArrayList<>();
+        crew.add(UUID.randomUUID()); // a manned record, so the arrival hands work to the re-seat leg
+
+        mgr.importTransit(new TransitRecord(ship.toString(), cell(1), cell(2), 4_000_000L, 0L, 10L, 0L,
+                ARRIVE_IN_ONE_TICK, crew, new NBTTagCompound()));
+
+        mgr.tick(); // completeRestored pastes the snapshot and reports its fresh identity
+        mgr.tick(); // the re-seat retry runs against it
+
+        assertFalse("the restored arrival settled SOME ship", crosser.settledAs.isEmpty());
+        assertFalse("the restored arrival re-seated its crew on SOME ship", crosser.reseatedAs.isEmpty());
+        for (UUID named : crosser.settledAs) {
+            assertEquals("the settle names the REBUILT ship", crosser.restoredAs, named);
+        }
+        for (UUID named : crosser.reseatedAs) {
+            assertEquals("the re-seat names the REBUILT ship", crosser.restoredAs, named);
+        }
     }
 
     // ── Restored transits (survive a restart): imported from a persisted TransitRecord ──────────────

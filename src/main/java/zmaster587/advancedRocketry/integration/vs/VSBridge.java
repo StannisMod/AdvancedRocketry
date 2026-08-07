@@ -68,12 +68,82 @@ final class VSBridge {
      * headless test.</p>
      */
     static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger) {
-        ShipData ship = ValkyrienUtils.createNewShip(world, anchorPos);
+        return assembleTier2Ship(world, anchorPos, logger, null);
+    }
+
+    /**
+     * The same assembly, KEEPING an identity the caller already holds ({@code keepUuid}), so a ship
+     * that crosses from one world to another comes out the other side as the same ship rather than as
+     * a stranger that has to be re-found by position. {@code null} means "mint a fresh one", which is
+     * what a genuinely new build wants.
+     *
+     * <p>The identity is only kept if it is FREE in {@code world}, and the one thing that can hold it
+     * is this ship's own remnant: a crossing cuts the blocks out of the source world and the physics
+     * mod's registry entry can outlive them, blockless. That remnant IS this ship, so it is adopted —
+     * dropped here so the assembly below re-registers the identity around the blocks that actually
+     * arrived. See {@link #adoptOwnRemnant}.</p>
+     */
+    static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid) {
+        UUID identity = adoptOwnRemnant(world, keepUuid, logger);
+        ShipData ship = identity == null
+                ? ValkyrienUtils.createNewShip(world, anchorPos)
+                : ValkyrienUtils.createNewShip(world, anchorPos, identity);
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
         manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
-        logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}).", anchorPos, ship.getName(),
-                ship.getUuid());
+        logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}{}).", anchorPos, ship.getName(),
+                ship.getUuid(), identity == null && keepUuid != null ? ", identity NOT kept" : "");
         return ship.getUuid();
+    }
+
+    /**
+     * Decide whether {@code wanted} may be used as the identity of a ship about to be assembled in
+     * {@code world}, clearing this ship's own remnant if one is in the way. Returns the identity to
+     * assemble with, or {@code null} to mint a fresh one.
+     *
+     * <p>What may hold the identity, and what each case means:</p>
+     * <ul>
+     *   <li><b>Nothing</b> — the ordinary case for a crossing into another world. Keep it.</li>
+     *   <li><b>A BLOCKLESS registry entry</b> — this same ship's remnant, left registered after its
+     *       blocks were cut out of this world. It owns nothing and still answers position lookups,
+     *       which is the state that misdirects an arrival. Drop it and keep the identity; the
+     *       assembly re-registers it around the blocks that actually arrived. A physics object may
+     *       still be loaded for such a remnant on a SAME-WORLD crossing: that one is not touched
+     *       here, because the physics mod collects a blockless ship in its own destroy pass, which
+     *       runs immediately before the spawn queue is drained.</li>
+     *   <li><b>A ship with BLOCKS, or a loaded physics object with no registry entry</b> — a real,
+     *       live ship (or a stranded object), and re-using its identity would put two ships under one
+     *       name; the physics mod throws on the second, out of the world tick. Refuse: log loudly,
+     *       naming both sides, and assemble under a fresh identity instead. A crossing that reaches
+     *       this point has ALREADY cut its source, so a throw here would leave the ship as loose
+     *       blocks; losing the identity keeps the craft flying and keeps the fault visible.</li>
+     * </ul>
+     */
+    private static UUID adoptOwnRemnant(World world, UUID wanted, Logger logger) {
+        if (wanted == null) {
+            return null;
+        }
+        ShipData existing = shipByUuid(world, wanted);
+        PhysicsObject loaded = ValkyrienUtils.getServerShipManager(world).getPhysObjectFromUUID(wanted);
+        if (existing == null && loaded == null) {
+            return wanted;
+        }
+        int blocks = existing == null || existing.getBlockPositions() == null
+                ? -1 : existing.getBlockPositions().size();
+        if (blocks == 0) {
+            ValkyrienUtils.getQueryableData(world).removeShip(wanted);
+            logger.info("[SPACE] adopted this ship's own blockless remnant in dim {} ({} '{}',{} still "
+                            + "loaded) - the arriving ship keeps its identity",
+                    world.provider.getDimension(), wanted, existing.getName(),
+                    loaded == null ? " not" : "");
+            return wanted;
+        }
+        logger.error("[SPACE] refusing to keep ship identity {} in dim {}: it is held by a LIVE ship "
+                        + "('{}', {} blocks, {} loaded) - the arriving ship gets a fresh identity and "
+                        + "everything keyed on the old one now names the wrong craft",
+                wanted, world.provider.getDimension(),
+                existing == null ? "not registered" : existing.getName(), blocks,
+                loaded == null ? "not" : "IS");
+        return null;
     }
 
     /**

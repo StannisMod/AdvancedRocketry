@@ -32,6 +32,14 @@ public class ShipTransformUpdateMessageHandler implements IMessageHandler<ShipTr
             @Override
             public void run() {
                 World world = Minecraft.getMinecraft().world;
+                if (world == null || world.provider.getDimension() != message.getDimensionID()) {
+                    // The poses in this packet belong to a world this client is no longer in. It is
+                    // addressed to a dimension and carries no other way to tell, and a ship keeps its
+                    // identity when it crosses between worlds - so applying it against whatever world
+                    // the client is in now can put the SOURCE world's pose on the ship that just
+                    // arrived here. The window is a dimension change with a packet still in flight.
+                    return;
+                }
                 IPhysObjectWorld physObjectWorld = ValkyrienUtils.getPhysObjWorld(world);
                 QueryableShipData worldData = QueryableShipData.get(world);
 

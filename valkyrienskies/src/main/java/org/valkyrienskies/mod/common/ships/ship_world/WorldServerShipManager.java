@@ -124,6 +124,7 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             final BlockPos physicsInfuserPos = spawnData.getLeft();
             final ShipData toSpawn = spawnData.getMiddle();
             final BlockFinder.BlockFinderType blockBlockFinderType = spawnData.getRight();
+            dropOwnBlocklessRemnant(toSpawn.getUuid());
             if (loadedShips.containsKey(toSpawn.getUuid())) {
                 throw new IllegalStateException("Tried spawning a ShipData that was already loaded?\n" + toSpawn);
             }
@@ -285,6 +286,43 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             loadedShips.put(toSpawn.getUuid(), physicsObject);
         }
         spawnQueue.clear();
+    }
+
+    /**
+     * Clear this world's blockless remnant of the ship about to be spawned under {@code uuid}, if one
+     * is there.
+     *
+     * <p>A ship keeps its identity when it is cut out of one world and re-assembled in another, so a
+     * spawn may legitimately arrive under a uuid this world has seen. The only thing that can still
+     * hold that uuid here is the SAME ship's remnant: a registry entry (and, for a same-world
+     * crossing, possibly a loaded object) left behind after the blocks were cut away. A remnant owns
+     * no blocks. It is this ship, not another one, so it is dropped rather than collided with — the
+     * spawn below re-registers the identity around the blocks that actually arrived.</p>
+     *
+     * <p>A holder that owns BLOCKS is a different, live ship and is deliberately left alone: the two
+     * throws around this call are what say so, and they must keep firing for that case.</p>
+     *
+     * <p>The destroy pass at the top of {@link #tick()} already collects a blockless LOADED ship one
+     * step before the queue is drained, so in practice only an unloaded remnant reaches here. This is
+     * the guard for the paths where that ordering does not hold, and it is placed at the drain rather
+     * than at the queue because only here is the answer authoritative: a spawn is queued a tick or
+     * more earlier, when the remnant may not exist yet.</p>
+     */
+    private void dropOwnBlocklessRemnant(@Nonnull UUID uuid) {
+        final PhysicsObject loaded = loadedShips.get(uuid);
+        if (loaded != null && loaded.getShipData().getBlockPositions() != null
+                && loaded.getShipData().getBlockPositions().isEmpty()) {
+            // Exactly what the destroy pass does for a ship with nothing left in it: releases the
+            // watchers and deletes the ship chunks (the copy-back step is guarded on a non-empty
+            // block set, so nothing is resurrected).
+            loaded.destroyShip();
+            loadedShips.remove(uuid);
+        }
+        QueryableShipData.get(world).getShip(uuid).ifPresent(remnant -> {
+            if (remnant.getBlockPositions() != null && remnant.getBlockPositions().isEmpty()) {
+                QueryableShipData.get(world).removeShip(remnant);
+            }
+        });
     }
 
     private void injectChunkIntoWorldServer(@Nonnull Chunk chunk, int x, int z) {

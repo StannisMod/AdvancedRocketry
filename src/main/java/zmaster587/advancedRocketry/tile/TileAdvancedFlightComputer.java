@@ -41,11 +41,19 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private static final String NBT_ENTRY_LATCHED = "entryLatched";
 
     /**
-     * The ship's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
+     * The CRAFT's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
      * use for a pre-existing computer) and persisted in this tile's NBT. Crossings carry tile
-     * NBT verbatim, so this id survives every jump/re-assembly — unlike the physics mod's own
-     * ship UUID, which is re-minted on every re-assembly and must never key durable state
-     * (ledger, transit, persistence all key on THIS id).
+     * NBT verbatim, so this id survives every jump and re-assembly — and more than that: a
+     * player who dismantles the hull and rebuilds it around this computer still has the same
+     * craft, with the same ledger entry and the same history.
+     *
+     * <p>The physics mod's ship UUID is a different thing, not a redundant one: it names the
+     * BODY currently assembled out of blocks, and it ends when that body is taken apart. A
+     * crossing keeps it — the re-assembly at the far end is told which identity to come back
+     * under — so it is stable across a jump too; it is legitimately replaced only when a ship
+     * is REBUILT rather than moved, which is precisely when the craft has not changed. Durable
+     * state (ledger, transit, aboard records) therefore keys on THIS id, while a live lookup
+     * meaning "which body do I act on right now" keys on the physics one.</p>
      */
     private java.util.UUID shipId = null;
 

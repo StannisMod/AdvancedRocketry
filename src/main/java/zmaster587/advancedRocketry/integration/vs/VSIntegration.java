@@ -79,10 +79,26 @@ public final class VSIntegration {
      * loaded on an AR install without VS.
      */
     public static java.util.UUID assembleTier2Ship(World world, BlockPos anchorPos) {
+        return assembleTier2Ship(world, anchorPos, null);
+    }
+
+    /**
+     * The same, KEEPING the identity {@code keepUuid} the caller already holds for this ship, so a
+     * craft that is cut out of one world and re-assembled in another stays the same ship to every
+     * lookup instead of becoming a stranger that has to be found by position. {@code null} mints a
+     * fresh identity, which is what a new build wants.
+     *
+     * <p>The identity is kept only when nothing live holds it in {@code world}; this ship's own
+     * blockless remnant is adopted, a live ship is refused with a loud log and the assembly falls
+     * back to a fresh identity. The returned uuid is the one the ship actually got, which is not
+     * necessarily the one that was asked for.</p>
+     */
+    public static java.util.UUID assembleTier2Ship(World world, BlockPos anchorPos,
+                                                   java.util.UUID keepUuid) {
         if (!isAvailable()) {
             return null;
         }
-        return VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
+        return VSBridge.assembleTier2Ship(world, anchorPos, LOGGER, keepUuid);
     }
 
     /**
@@ -307,6 +323,13 @@ public final class VSIntegration {
         // loaded - a crewless or offline departure. Name the ship before the cut and release it by hand
         // afterwards in exactly that case (below); after the cut it is registered but blockless, and a
         // position lookup can no longer tell it from any other ship in the world.
+        //
+        // This name is also the ship's IDENTITY, and the re-assembly at the destination keeps it (see
+        // the assemble call below): the craft that lands is the same ship it was before the cut, so
+        // nothing downstream has to re-find it by position. It is resolved by the SAME lookup that
+        // chose the shipyard box being cut, so it can never name a different ship than the one this
+        // crossing is moving - if that lookup is wrong the crossing is already moving the wrong craft,
+        // and keeping the identity adds no risk of its own.
         java.util.UUID srcShipId = VSBridge.queryableShipUuidAt(srcWorld, sx, sy, sz);
         // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
         // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
@@ -366,7 +389,10 @@ public final class VSIntegration {
         }
         java.util.UUID shipUuid = null;
         if (anchor != null) {
-            shipUuid = assembleTier2Ship(dstWorld, anchor);
+            // Re-assemble under the identity the ship crossed with. Same world as the source on a
+            // same-world reposition, where this ship's own blockless remnant is what holds the
+            // identity - it is adopted rather than collided with.
+            shipUuid = assembleTier2Ship(dstWorld, anchor, srcShipId);
         } else {
             // The only DESTRUCTIVE failure of the four: the source has already been cut by this point,
             // so the ship exists as loose blocks at the paste site and nowhere else. Logged at ERROR
@@ -418,19 +444,24 @@ public final class VSIntegration {
      * {@code (dstX,dstY,dstZ)} in {@code dstWorld} and re-assemble it into a VS ship - the block half of a
      * RESTORED transit's arrival, which has no live source ship to {@link #crossShip}. Mirrors crossShip's
      * paste tail (force-load the footprint, paste, anchor on the first non-air block, assemble); keep the
-     * two in step. Returns the ship's anchor, or {@code null} when VS is absent or the snapshot is empty.
+     * two in step. Returns the ship's anchor and the identity it was assembled under, or {@code null}
+     * when VS is absent or the snapshot is empty.
+     *
+     * <p>Unlike {@link #crossShip} this one has no ship to take an identity FROM - it builds a ship out
+     * of stored blocks - so the identity it returns is always a fresh one, and its caller must adopt it
+     * rather than keep whatever the ship was called before the restart.</p>
      */
-    public static BlockPos pasteAndAssemble(World dstWorld, net.minecraft.nbt.NBTTagCompound snapshot,
-                                            int dstX, int dstY, int dstZ) {
+    public static CrossResult pasteAndAssemble(World dstWorld, net.minecraft.nbt.NBTTagCompound snapshot,
+                                               int dstX, int dstY, int dstZ) {
         if (!isAvailable() || snapshot == null) {
-            return null;
+            return new CrossResult(null, null, 0, 0);
         }
         zmaster587.advancedRocketry.util.StorageChunk snap =
                 new zmaster587.advancedRocketry.util.StorageChunk();
         snap.readFromNBT(snapshot);
         int width = snap.getSizeX(), depth = snap.getSizeZ(), height = snap.getSizeY() + 2;
         if (width <= 0 || snap.getSizeY() <= 0 || depth <= 0) {
-            return null; // empty snapshot
+            return new CrossResult(null, null, 0, 0); // empty snapshot
         }
         // Force-load the destination paste footprint's chunks first (a freshly-materialized cell world may
         // not have them loaded, in which case setBlockState/isAirBlock see an unloaded all-air region).
@@ -456,10 +487,8 @@ public final class VSIntegration {
                 }
             }
         }
-        if (anchor != null) {
-            assembleTier2Ship(dstWorld, anchor);
-        }
-        return anchor;
+        java.util.UUID shipUuid = anchor == null ? null : assembleTier2Ship(dstWorld, anchor);
+        return new CrossResult(anchor, shipUuid, dstY, dstY + snap.getSizeY());
     }
 
     /**

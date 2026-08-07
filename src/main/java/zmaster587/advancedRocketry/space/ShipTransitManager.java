@@ -63,17 +63,24 @@ public final class ShipTransitManager {
         /**
          * Depart: cross the ship anchored at {@code srcAnchor} in the origin cell's slot world
          * {@code srcSlotDim} into the shared hyperspace world at {@code tile}, and PARK it (physics off).
-         * Returns the ship's new anchor in hyperspace, or {@code null} if the crossing failed.
+         * Returns the ship's new anchor in hyperspace together with the identity it is now registered
+         * under there, or {@code null} if the crossing failed.
+         *
+         * <p>A crossing KEEPS the ship's identity, so the uuid this returns is the same one the ship
+         * had in its origin cell and the same one it will have at the far end. That is what lets one
+         * jump carry ONE identity instead of re-finding the ship by position at each leg.</p>
          */
-        BlockPos departToHyperspace(int srcSlotDim, BlockPos srcAnchor, HyperspaceTiles.Tile tile);
+        ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                       HyperspaceTiles.Tile tile);
 
         /**
          * Arrive: cross the parked ship at {@code hyperAnchor} (lane {@code tile}) into the target cell's
-         * slot world {@code targetSlotDim}. Returns the ship's PASTE anchor in the target cell, or
-         * {@code null} if the crossing failed. The ship stays parked in the paste lane until
-         * {@link #settleArrivedPose} moves it onto the coordinate it was aimed at.
+         * slot world {@code targetSlotDim}. Returns the ship's PASTE anchor in the target cell plus the
+         * identity it carries, or {@code null} if the crossing failed. The ship stays parked in the
+         * paste lane until {@link #settleArrivedPose} moves it onto the coordinate it was aimed at.
          */
-        BlockPos arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor, int targetSlotDim);
+        ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
+                                                         int targetSlotDim);
 
         /**
          * Settle an arrived ship (live or restored) onto the world pose realizing its TARGET coordinate:
@@ -84,10 +91,15 @@ public final class ShipTransitManager {
          * arrives in the destination's BLOCK band while every reader of its address works in the POSE
          * band, so the settled coordinate lands in a neighbouring cell.
          *
+         * <p>{@code vsShipUuid} names WHICH ship to settle. A destination that holds a second craft
+         * near the arrival point is the ordinary case, not an exotic one, and a settle that picks the
+         * nearest ship instead moves a stranger and then looks for its own crew's seats aboard that
+         * stranger. {@code null} falls back to the position lookup.</p>
+         *
          * <p>The default returns {@code pasteAnchor} unchanged - the pure state-machine tests have no
          * world to realize a pose in.</p>
          */
-        default BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor,
+        default BlockPos settleArrivedPose(int targetSlotDim, BlockPos pasteAnchor, UUID vsShipUuid,
                                            double px, double py, double pz) {
             return pasteAnchor;
         }
@@ -121,8 +133,13 @@ public final class ShipTransitManager {
          * {@code targetSlotDim} and re-assemble it there. Returns the ship's anchor in the target cell, or
          * {@code null} if the paste/assembly is not up yet (retried next tick) or VS is absent. The
          * live-ship counterpart is {@link #arriveFromHyperspace}.
+         *
+         * <p>This is the ONE arrival that cannot keep the ship's identity: it pastes stored blocks,
+         * with no live ship anywhere to take an identity from, so the returned uuid is a fresh one and
+         * the transit adopts it. Everything downstream keys on what this returns rather than on what
+         * the jump departed with.</p>
          */
-        default BlockPos completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
+        default ShipCrossingService.Crossed completeRestored(NBTTagCompound snapshot, int targetSlotDim) {
             return null;
         }
 
@@ -144,8 +161,12 @@ public final class ShipTransitManager {
          * it survived), or an abort that never cut - and {@code false} to retry next tick while the async
          * re-assembly's seat tiles are not up yet. Idempotent across retries (already-seated riders are not
          * double-mounted). The default returns {@code true} (nothing to reseat).
+         *
+         * <p>{@code vsShipUuid} names the arrived ship, so the seat scan searches ITS shipyard rather
+         * than the nearest one's; {@code null} falls back to the position lookup.</p>
          */
-        default boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId) {
+        default boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId,
+                                   UUID vsShipUuid) {
             return true;
         }
 
@@ -160,9 +181,13 @@ public final class ShipTransitManager {
          * re-seat and no way to find them, because the far-side ship is a fresh re-assembly whose
          * seat positions only the capture's link offsets can re-identify.</p>
          *
+         * <p>{@code vsShipUuid} names the parked ship, for the same reason the arrival re-seat takes
+         * one: the hyperspace world holds every ship in flight, so "the ship at this anchor" is a
+         * question with neighbours. {@code null} falls back to the position lookup.</p>
+         *
          * <p>The default returns {@code true} (nothing to seat).</p>
          */
-        default boolean boardCrew(int parkedDim, BlockPos anchor, String shipId) {
+        default boolean boardCrew(int parkedDim, BlockPos anchor, String shipId, UUID vsShipUuid) {
             return true;
         }
 
@@ -218,6 +243,18 @@ public final class ShipTransitManager {
         int targetSlotDim;          // the slot the target cell is bound to (valid once targetMaterialized)
         int arrivalAttempts;        // retries of a stalled arrival crossing / pose settle (async VS assembly)
         BlockPos pasteAnchor;       // the arrival paste landed here; set once, so a retried settle never re-crosses
+        /**
+         * The ship's PHYSICS identity - one value for the whole jump, because a crossing keeps it:
+         * the ship registered under this uuid in the origin cell is registered under it in hyperspace
+         * and again in the target cell. Set at depart, re-read from each crossing (a crossing that had
+         * to refuse the identity says so by returning a different one), and replaced outright by a
+         * RESTORED arrival, which pastes stored blocks and can keep nothing.
+         *
+         * <p>In memory only, and that is the right lifetime: it is exactly the lifetime of
+         * {@link #pasteAnchor}, which a restart also re-derives rather than reloads. A restored transit
+         * completes through the snapshot path, which mints its own identity.</p>
+         */
+        UUID vsShipUuid;
         GalacticCoord arrivalCoord; // where in the target cell the ship is actually put down; resolved ONCE
                                     // (a re-rolled ring would hand each settle retry a different point)
         final List<UUID> crew = new ArrayList<>(); // aboard crew captured at depart (option A) - gate + reseat
@@ -257,13 +294,17 @@ public final class ShipTransitManager {
          * a seat tile cannot be found before that.
          */
         final boolean boarding;
+        /** The ship's physics identity, so the seat scan searches ITS shipyard and not a neighbour's. */
+        final UUID vsShipUuid;
         int attempts;
 
-        PendingReseat(String shipId, int targetSlotDim, BlockPos anchor, boolean boarding) {
+        PendingReseat(String shipId, int targetSlotDim, BlockPos anchor, boolean boarding,
+                      UUID vsShipUuid) {
             this.shipId = shipId;
             this.targetSlotDim = targetSlotDim;
             this.anchor = anchor;
             this.boarding = boarding;
+            this.vsShipUuid = vsShipUuid;
         }
     }
 
@@ -329,13 +370,15 @@ public final class ShipTransitManager {
         // snapshot-less record - which on restart would strand + silently delete the ship. Later saves refresh
         // it from hyperspace via snapshotParked.
         NBTTagCompound initialSnapshot = crosser.snapshotSource(originSlotDim, originAnchor);
-        BlockPos hyperAnchor = crosser.departToHyperspace(originSlotDim, originAnchor, tile);
+        ShipCrossingService.Crossed departed = crosser.departToHyperspace(originSlotDim, originAnchor, tile);
+        BlockPos hyperAnchor = departed == null ? null : departed.anchor;
         if (hyperAnchor == null) {
             tiles.free(tile);
             // The depart cut never happened (the ship stays in the origin cell), but captureCrew already
             // dismounted the crew - re-seat them onto the still-present origin ship so an aborted jump does
-            // not silently eject the pilot.
-            crosser.reseatCrew(originSlotDim, originAnchor, shipId);
+            // not silently eject the pilot. No identity to name it by: the ship never crossed, so the only
+            // handle on it is the anchor it is still sitting at.
+            crosser.reseatCrew(originSlotDim, originAnchor, shipId, null);
             // Say what DISCRIMINATES. One generic line for every null return is how a departure that
             // never found its origin world got read as a crossing that failed, and the wrong subsystem
             // was blamed for it. The origin slot and whether that dimension resolves at all separate
@@ -367,6 +410,7 @@ public final class ShipTransitManager {
         Transit t = new Transit(origin, target, tile, hyperAnchor, speed, arrivalTick, now,
                 new ShipTransit(origin, target, distanceBlocks));
         t.snapshot = initialSnapshot;
+        t.vsShipUuid = departed.vsShipUuid; // one identity for the whole jump - the crossing kept it
         t.crew.addAll(crew); // the offline-progress gate + the persisted transit record read these UUIDs
         transits.put(shipId, t);
         ledgerBeginTransit(shipId, target);
@@ -381,7 +425,7 @@ public final class ShipTransitManager {
         // before the arrival crossing cuts it - so there is no seat-then-move window here.
         int parkedDim = crosser.parkedDim();
         if (!crew.isEmpty() && parkedDim != Integer.MIN_VALUE) {
-            reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true));
+            reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true, t.vsShipUuid));
         }
         // The crew is told it has departed, on the same channel and in the same voice as everything
         // else this subsystem says. Said here rather than at the key press: the press only starts a
@@ -440,9 +484,24 @@ public final class ShipTransitManager {
             // hyperspace ship (that world is wiped on restart) - it pastes its persisted snapshot in.
             // The paste happens EXACTLY ONCE: once it lands, only the pose settle is retried.
             if (t.pasteAnchor == null) {
-                t.pasteAnchor = t.restored
+                ShipCrossingService.Crossed arrived = t.restored
                         ? crosser.completeRestored(t.snapshot, t.targetSlotDim)
                         : crosser.arriveFromHyperspace(t.tile, t.hyperAnchor, t.targetSlotDim);
+                if (arrived != null) {
+                    t.pasteAnchor = arrived.anchor;
+                    // The arrival's identity WINS over the one the jump departed with. Normally they are
+                    // the same value - a crossing keeps the identity - and the two differ in exactly two
+                    // cases, both of which make the new one the true one: a restored arrival, which pastes
+                    // stored blocks and can keep nothing, and a destination where something live already
+                    // held the identity, which the crossing refuses rather than collide with. Keeping the
+                    // departure's value in either case would name a ship that is not the one that landed.
+                    if (arrived.vsShipUuid != null && !arrived.vsShipUuid.equals(t.vsShipUuid)) {
+                        LOGGER.info("[SPACE] transit arrival for ship {} came out under identity {} "
+                                        + "(it departed as {}) - the settle and re-seat follow the new one",
+                                entry.getKey(), arrived.vsShipUuid, t.vsShipUuid);
+                        t.vsShipUuid = arrived.vsShipUuid;
+                    }
+                }
             }
             // Realize the target COORDINATE as a world pose and move the pasted ship onto it. Skipping
             // this leaves the ship in the paste lane's block band, and the flight computer's first
@@ -462,7 +521,7 @@ public final class ShipTransitManager {
             if (t.pasteAnchor != null) {
                 double[] pose = CellWorldMapper.poseWorldOf(t.arrivalCoord);
                 arrivedAt = crosser.settleArrivedPose(
-                        t.targetSlotDim, t.pasteAnchor, pose[0], pose[1], pose[2]);
+                        t.targetSlotDim, t.pasteAnchor, t.vsShipUuid, pose[0], pose[1], pose[2]);
             }
             if (arrivedAt != null) {
                 freeLane(t);
@@ -478,7 +537,8 @@ public final class ShipTransitManager {
                 // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
                 // few ticks (async re-assembly) without ever risking a duplicate ship on restart.
                 if (!t.crew.isEmpty()) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false));
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false,
+                            t.vsShipUuid));
                     // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
                     // the crew has no control in flight and no number to watch, so arriving is the one
                     // moment the flight has to announce itself. Said on the NORMAL path only - the two
@@ -499,8 +559,14 @@ public final class ShipTransitManager {
                     // asks VS nothing - it writes blocks and finds its anchor among the blocks it just
                     // wrote - so unlike the live crossing it cannot stall. The snapshot is always
                     // present (the depart-time floor cut, and a restored transit without one is refused
-                    // at import), so this is a recovery with no precondition left to fail.
-                    t.pasteAnchor = crosser.completeRestored(t.snapshot, t.targetSlotDim);
+                    // at import), so this is a recovery with no precondition left to fail. It builds a
+                    // ship out of stored blocks, so the identity it comes back with REPLACES the one the
+                    // jump carried: the ship that existed under that identity is not the one landing here.
+                    ShipCrossingService.Crossed rebuilt = crosser.completeRestored(t.snapshot, t.targetSlotDim);
+                    if (rebuilt != null) {
+                        t.pasteAnchor = rebuilt.anchor;
+                        t.vsShipUuid = rebuilt.vsShipUuid;
+                    }
                 }
                 if (t.pasteAnchor == null) {
                     // Not even the snapshot landed. The ONE thing that must not happen now is losing the
@@ -529,7 +595,8 @@ public final class ShipTransitManager {
                 ledgerSettle(entry.getKey(), t.arrivalCoord); // same coordinate as the normal path
                 space.markDirty(t.target);
                 if (!t.crew.isEmpty()) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor, false));
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor, false,
+                            t.vsShipUuid));
                 }
                 LOGGER.error("[SPACE] transit arrival for ship {} did not complete normally after {} ticks "
                         + "and was finished the hard way - the ship is in cell {} (slot {}) at its paste "
@@ -606,8 +673,8 @@ public final class ShipTransitManager {
         while (it.hasNext()) {
             PendingReseat r = it.next();
             boolean done = r.boarding
-                    ? crosser.boardCrew(r.targetSlotDim, r.anchor, r.shipId)
-                    : crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId);
+                    ? crosser.boardCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid)
+                    : crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid);
             if (done || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
                 if (!done && r.boarding) {
                     // The crew is NOT lost - the capture is still held and the arrival will seat them
