@@ -1,10 +1,11 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import com.google.gson.JsonObject;
 
 import org.junit.Assume;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.lwjgl.input.Keyboard;
 
 import java.awt.image.BufferedImage;
@@ -40,7 +41,14 @@ import static org.junit.Assert.assertTrue;
  * <p>Gated on real VS - run with {@code -PwithVS}. Each test builds its own ship at its own base, so a
  * ship left rolled by one cannot poison the next.</p>
  */
-public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest {
+
+    @Override
+    protected String subsystem() {
+        return "vs-flight-telemetry";
+    }
+
 
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern BUILDER_POS =
@@ -51,6 +59,9 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
     private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
     private static final Pattern OMEGA = Pattern.compile("\"omega\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+    private static final Pattern SEAT_X = Pattern.compile("\"seatX\":(-?\\d+)");
+    private static final Pattern SEAT_Y = Pattern.compile("\"seatY\":(-?\\d+)");
+    private static final Pattern SEAT_Z = Pattern.compile("\"seatZ\":(-?\\d+)");
     private static final Pattern LOCAL_X = Pattern.compile("\"localX\":(-?[0-9.E\\-]+)");
     private static final Pattern LOCAL_Y = Pattern.compile("\"localY\":(-?[0-9.E\\-]+)");
     private static final Pattern LOCAL_Z = Pattern.compile("\"localZ\":(-?[0-9.E\\-]+)");
@@ -516,12 +527,17 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);
-        String mountInfo = exec("artest vs seat-mount 0");
-        assertTrue("seat-mount must find the pilot seat: " + mountInfo,
-                mountInfo.contains("\"seatFound\":true"));
+        // The seat is located INSIDE this scenario's own ship: `vs seat-mount <dim>` takes the first
+        // pilot seat in the world's loaded-tile list with no position filter, which is unambiguous
+        // only while the world holds one ship, and mounts a neighbour's once scenarios share one.
+        String seat = exec("artest vs find-seat 0 " + bx + " " + by + " " + bz);
+        assertTrue("find-seat must locate the pilot seat INSIDE the ship built at this base ("
+                + bx + "," + by + "," + bz + "): " + seat, seat.contains("\"seatFound\":true"));
+        String mountInfo = exec("artest vs seat-mount-at 0 " + readInt(seat, SEAT_X) + " "
+                + readInt(seat, SEAT_Y) + " " + readInt(seat, SEAT_Z));
         Matcher dm = DUMMY_ID.matcher(mountInfo);
-        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
-        assertTrue("bot must mount the seat dummy",
+        assertTrue("seat-mount-at must report a dummy id: " + mountInfo, dm.find());
+        assertTrue("bot must mount the seat dummy: " + mountInfo,
                 exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
         bot().waitTicks(10); // let the mount replicate and the client recognise the pilot seat
         return ship;
@@ -604,7 +620,8 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
     }
 
     private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
+        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS);
     }
 
     private double[] localOf(int entityId) throws Exception {
@@ -619,9 +636,6 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
-    }
 
     private int count(String sub) throws Exception {
         Matcher m = COUNT.matcher(exec("artest vs " + sub + " 0"));
@@ -640,9 +654,6 @@ public class VSShipFlightTelemetryE2ETest extends AbstractClientE2ETest {
         return Integer.parseInt(m.group(1));
     }
 
-    private boolean serverHasVs() throws Exception {
-        return exec("artest vs available").contains("\"available\":true");
-    }
 
     private String assembleFixture(int baseX, int baseY, int baseZ) throws Exception {
         int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;

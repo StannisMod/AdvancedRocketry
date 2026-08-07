@@ -266,6 +266,12 @@ public abstract class AbstractSharedClientE2ETest {
         // own. Both are un-restored global mutations of the SHARED subject, which is the one thing
         // this base class exists to stop.
         serverClient().execute("artest player set-health 20");
+        // A family of scenarios can carry a channel this base knows nothing about — a seat the
+        // player is still riding, a subsystem flag it switched on. It runs HERE, before the
+        // teleport, because a player still bound to a vehicle is not moved by /tp: the plot
+        // assertion below would then fail naming coordinates, which is the symptom and not the
+        // cause. Everything the hook does is asserted by the hook itself.
+        resetFamilyStateBeforeTeleport();
         // DIMENSION, and it must come before the teleport: vanilla /tp moves the player WITHIN the
         // world he is in, so a scenario left behind in the space dim or on a planet would be placed
         // at the right X/Z in the WRONG world — and the plot assertion below, which reads X and Z,
@@ -391,6 +397,19 @@ public abstract class AbstractSharedClientE2ETest {
      * stack-walking can infer which system a red belongs to.
      */
     protected abstract String subsystem();
+
+    /**
+     * Reset the state channels that belong to a FAMILY of scenarios rather than to every client —
+     * run between scenarios, before the teleport, and expected to assert what it closed.
+     *
+     * <p>The default is a no-op, and deliberately so: this base class's own reset was measured
+     * against the non-VS tier, and every command added to it is paid by all 89 scenarios there. A
+     * family that leaves something else behind (a ship seat the player is still riding, a
+     * subsystem flag it switched on for its own arrangement) closes it here instead, in a base
+     * class of its own.</p>
+     */
+    protected void resetFamilyStateBeforeTeleport() throws Exception {
+    }
 
     /**
      * Where this class's plots live. Override when the scenarios work at GROUND level, or when a

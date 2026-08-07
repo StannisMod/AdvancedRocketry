@@ -1,9 +1,10 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import com.google.gson.JsonObject;
 import org.junit.Assume;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.lwjgl.input.Keyboard;
 
 import java.util.Locale;
@@ -33,7 +34,14 @@ import static org.junit.Assert.assertTrue;
  * the action-bar overlay) with the server ship position as the motion oracle. Gated on real VS —
  * run with {@code -PwithVS}.</p>
  */
-public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class VSPilotStationDestructionE2ETest extends AbstractSharedVsClientE2ETest {
+
+    @Override
+    protected String subsystem() {
+        return "vs-pilot-station";
+    }
+
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
@@ -157,11 +165,12 @@ public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
         double y0 = Double.NaN;
         for (int i = 0; i < 40 && Double.isNaN(y0); i++) {
             bot().waitTicks(5);
-            if (count("ship-count") >= 1) {
-                String info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
-                if (info.contains("\"managed\":true")) {
-                    y0 = readDouble(info, POS_Y);
-                }
+            // Scoped to this scenario's own base: a whole-dimension ship count answers about
+            // whichever neighbour's ship is loaded, and the ship-info below is the real gate anyway.
+            String info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS);
+            if (info.contains("\"managed\":true")) {
+                y0 = readDouble(info, POS_Y);
             }
         }
         assertTrue("the ship must LOAD with the client present", !Double.isNaN(y0));
@@ -181,12 +190,14 @@ public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
         ship.afcY = Integer.parseInt(am.group(2));
         ship.afcZ = Integer.parseInt(am.group(3));
 
-        // Seat the bot and fly up on the REAL key path until the climb is unambiguous.
-        String mountInfo = exec("artest vs seat-mount 0");
-        assertTrue("seat-mount must find the pilot seat: " + mountInfo,
-                mountInfo.contains("\"seatFound\":true"));
+        // Seat the bot and fly up on the REAL key path until the climb is unambiguous. The seat is
+        // addressed by the subspace block find-seat just resolved FOR THIS SHIP: `vs seat-mount`
+        // takes the first pilot seat in the world with no position filter, which mounts a
+        // neighbour's ship once several scenarios share a world.
+        String mountInfo = exec("artest vs seat-mount-at 0 " + ship.seatX + " " + ship.seatY
+                + " " + ship.seatZ);
         Matcher dm = DUMMY_ID.matcher(mountInfo);
-        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
+        assertTrue("seat-mount-at must report a dummy id: " + mountInfo, dm.find());
         String mount = exec("artest player mount-entity " + dm.group(1));
         assertTrue("bot must mount the seat dummy: " + mount, mount.contains("\"mounted\":true"));
         bot().waitTicks(10);
@@ -241,7 +252,8 @@ public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
     }
 
     private double shipY(int bx, int by, int bz) throws Exception {
-        return readDouble(exec("artest vs ship-info 0 " + bx + " " + by + " " + bz), POS_Y);
+        return readDouble(exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS), POS_Y);
     }
 
     private int count(String sub) throws Exception {
@@ -255,13 +267,7 @@ public class VSPilotStationDestructionE2ETest extends AbstractClientE2ETest {
         return Double.parseDouble(m.group(1));
     }
 
-    private boolean serverHasVs() throws Exception {
-        return exec("artest vs available").contains("\"available\":true");
-    }
 
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
-    }
 
     private String assembleFixture(int baseX, int baseY, int baseZ) throws Exception {
         int cx1 = (baseX - 2) >> 4, cz1 = (baseZ - 2) >> 4;
