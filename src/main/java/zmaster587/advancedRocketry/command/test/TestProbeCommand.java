@@ -736,6 +736,38 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadAllShips(world) + "}");
             return;
         }
+        // seat-yard <dim> <x> <y> <z> [shipUuid] — how many pilot-seat tiles the ARRIVAL's own seat
+        // lookup reaches, and whose shipyard it looked in. With a uuid the ship is resolved BY
+        // IDENTITY (what a crossing does with the ship it created); without one it falls back to
+        // the ship nearest to (x,y,z) — the lookup that can answer for a stranger's craft. Both are
+        // reported because the DIFFERENCE between them is the whole of the wrong-ship arrival.
+        if (args.length >= 5 && "seat-yard".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double qx = parseDoubleOr(args[2], 0), qy = parseDoubleOr(args[3], 0),
+                    qz = parseDoubleOr(args[4], 0);
+            java.util.UUID want = null;
+            if (args.length >= 6) {
+                try {
+                    want = java.util.UUID.fromString(args[5]);
+                } catch (IllegalArgumentException e) {
+                    send(sender, "{\"error\":\"bad uuid\"}");
+                    return;
+                }
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("seats", zmaster587.advancedRocketry.space.CrewTransfer.countSeatsOfShip(
+                    world, new net.minecraft.util.math.BlockPos(qx, qy, qz), want));
+            m.put("askedShip", want == null ? "BY-POSITION" : want.toString());
+            m.put("nearest", zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .describeShipAt(world, qx, qy, qz));
+            send(sender, jsonMap(m));
+            return;
+        }
         // ship-info <dim> <x> <y> <z> — state of the loaded ship nearest to (x,y,z).
         if (args.length >= 5 && "ship-info".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));

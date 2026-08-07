@@ -141,10 +141,14 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // asks about the crossing's own progress instead, which needs no load at all; the crew re-seat
         // still pumps the queue for itself (it genuinely needs a live ship to resolve seat positions).
         // The same recipe the entry/descent settle uses (readiness gate, rider carry, unpark last).
-        if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, px, py, pz)) {
+        // Both calls pass no ship identity, so they resolve BY POSITION — the transit records are
+        // persisted and an in-memory identity would not survive a restart mid-arrival, which makes
+        // carrying one here its own change. The entry and descent crossings, which own the reported
+        // wrong-ship arrival, hand their crossing's own uuid down instead.
+        if (!ops.teleportPoseWithRiders(targetSlotDim, pasteAnchor, null, px, py, pz)) {
             return null; // re-assembly not queryable yet: retry next tick, the ship stays pasted
         }
-        ops.unparkAt(targetSlotDim, px, py, pz);
+        ops.unpark(targetSlotDim, null, px, py, pz);
         return new BlockPos(px, py, pz);
     }
 
@@ -245,7 +249,10 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // tiles would resolve, which put AR in a per-tick tug of war with VS's unload of a ship nobody is
         // near. It reads the seats' positions off the ships' durable records now, and force-loads only the
         // shipyard CHUNKS it has to scan — neither of which needs a live physics object.
-        if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId))) {
+        // NOTE: still POSITION-keyed. The transit records are persisted and a restart mid-arrival
+        // would lose an in-memory identity, so carrying one here is its own change; the entry and
+        // descent crossings, which own the reported failure, resolve by identity.
+        if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId), null)) {
             crewStash.remove(shipId);
             return true;
         }
@@ -270,7 +277,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // Deliberately does NOT remove the stash: these same records seat the crew again at the far
         // end, and only their flight-computer link offsets can re-identify a seat on a ship that has
         // been re-assembled into a fresh subspace since.
-        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId));
+        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId), null);
     }
 
     @Override

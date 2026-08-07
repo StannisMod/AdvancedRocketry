@@ -63,6 +63,10 @@ public class DescentControllerTest {
         boolean failCross;
         final List<String> messages = new ArrayList<>();
         final List<Integer> reseatDims = new ArrayList<>();
+        /** The identity the cross hands back — every settle half must address THIS ship. */
+        static final UUID CROSSED_SHIP = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        /** What the settle actually named when it re-seated; a null here is a position lookup. */
+        final List<UUID> reseatShipUuids = new ArrayList<>();
         int crossings;
         int captures;
         int peeks;
@@ -89,10 +93,11 @@ public class DescentControllerTest {
             return new ArrayList<>();
         }
 
-        @Override public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
+        @Override public ShipCrossingService.Crossed cross(int srcDimId, double[] srcShipPos, int destDim,
                                         int pasteX, int pasteY, int pasteZ) {
             crossings++;
-            return failCross ? null : new BlockPos(pasteX, pasteY, pasteZ);
+            return failCross ? null : new ShipCrossingService.Crossed(
+                    new BlockPos(pasteX, pasteY, pasteZ), CROSSED_SHIP);
         }
 
         /** Dims the controller asked to be present, IN ORDER — the pin must precede the resolve. */
@@ -101,18 +106,19 @@ public class DescentControllerTest {
 
 
         @Override public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
-                java.util.UUID shipId) {
+                java.util.UUID shipId, java.util.UUID vsShipUuid) {
             reseatDims.add(destDim);
+            reseatShipUuids.add(vsShipUuid);
             lastReseated = crew;
             return true;
         }
 
-        @Override public boolean teleportPoseWithRiders(int destDim, BlockPos anchor,
+        @Override public boolean teleportPoseWithRiders(int destDim, BlockPos anchor, java.util.UUID vsShipUuid,
                                                         double px, double py, double pz) {
             return true;
         }
 
-        @Override public void unparkAt(int destDim, double px, double py, double pz) { }
+        @Override public void unpark(int destDim, java.util.UUID vsShipUuid, double px, double py, double pz) { }
 
         @Override public void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args) {
             messages.add(langKey);

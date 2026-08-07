@@ -78,11 +78,61 @@ public final class VSIntegration {
      * is reached only past the {@link #isAvailable()} gate, so no VS class is
      * loaded on an AR install without VS.
      */
-    public static void assembleTier2Ship(World world, BlockPos anchorPos) {
+    public static java.util.UUID assembleTier2Ship(World world, BlockPos anchorPos) {
         if (!isAvailable()) {
-            return;
+            return null;
         }
-        VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
+        return VSBridge.assembleTier2Ship(world, anchorPos, LOGGER);
+    }
+
+    /**
+     * The subspace shipyard box of the ship NAMED by {@code shipUuid}, or {@code null} when the
+     * physics mod is absent or this world holds no such ship.
+     *
+     * <p>Prefer this over {@link #shipyardBoundsAt} wherever the caller KNOWS which ship it means.
+     * The position-keyed form answers for whatever craft is nearest — with no distance bound — so in
+     * a world holding more than one ship it can hand back a stranger's shipyard, and every scan
+     * built on that box then searches the wrong craft.</p>
+     */
+    public static AxisAlignedBB shipyardBoundsOf(World world, java.util.UUID shipUuid) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipyardBoundsOf(world, shipUuid);
+    }
+
+    /**
+     * RIGID-TELEPORT the ship NAMED by {@code shipUuid} to {@code (x,y,z)} — the identity-keyed twin
+     * of {@link #teleportShipTo}. {@code false} when the physics mod is absent or no such ship is
+     * registered here.
+     */
+    public static boolean teleportShipToByUuid(World world, java.util.UUID shipUuid,
+                                               double x, double y, double z) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.teleportShipToByUuid(world, shipUuid, x, y, z);
+    }
+
+    /** UNPARK (re-enable physics on) the ship NAMED by {@code shipUuid}. */
+    public static boolean unparkShip(World world, java.util.UUID shipUuid) {
+        if (!isAvailable()) {
+            return false;
+        }
+        return VSBridge.unparkShip(world, shipUuid);
+    }
+
+    /**
+     * One line naming the ship a POSITION lookup resolves to at {@code (x,y,z)} — uuid, name, its
+     * pose and its shipyard — or {@code "none"}. Diagnostics only: a give-up report that prints a
+     * shipyard box without saying WHOSE it is cannot distinguish "the ship is broken" from "we asked
+     * about the wrong ship", and that distinction is the whole finding.
+     */
+    public static String describeShipAt(World world, double x, double y, double z) {
+        if (!isAvailable()) {
+            return "vs-absent";
+        }
+        return VSBridge.describeNearestShip(world, x, y, z);
     }
 
     /**
@@ -169,11 +219,20 @@ public final class VSIntegration {
     public static final class CrossResult {
         /** The destination anchor the ship was re-assembled on, or {@code null} if the crossing failed. */
         public final BlockPos anchor;
+        /**
+         * The DESTINATION ship's own identity, minted when the re-assembly was queued, or
+         * {@code null} if the crossing failed. Everything the settle does afterwards — the pose
+         * teleport, the shipyard the re-seat scans, the unpark — must be keyed on this and not on a
+         * position: the destination may already hold other ships, and a nearest-ship lookup at the
+         * arrival point will happily answer for one of them.
+         */
+        public final java.util.UUID shipUuid;
         public final int minShipY;
         public final int maxShipY;
 
-        CrossResult(BlockPos anchor, int minShipY, int maxShipY) {
+        CrossResult(BlockPos anchor, java.util.UUID shipUuid, int minShipY, int maxShipY) {
             this.anchor = anchor;
+            this.shipUuid = shipUuid;
             this.minShipY = minShipY;
             this.maxShipY = maxShipY;
         }
@@ -211,14 +270,14 @@ public final class VSIntegration {
         if (!isAvailable()) {
             LOGGER.warn("[SPACE] crossShip: Valkyrien Skies absent - nothing crossed (src dim {})",
                     srcWorld == null ? "null" : srcWorld.provider.getDimension());
-            return new CrossResult(null, 0, 0);
+            return new CrossResult(null, null, 0, 0);
         }
         AxisAlignedBB yard = shipyardBoundsAt(srcWorld, sx, sy, sz);
         if (yard == null) {
             LOGGER.warn("[SPACE] crossShip: no ship claims ({},{},{}) in dim {} - nothing to cross, "
                             + "the source is untouched",
                     sx, sy, sz, srcWorld.provider.getDimension());
-            return new CrossResult(null, 0, 0);
+            return new CrossResult(null, null, 0, 0);
         }
         int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
         int yMaxX = (int) yard.maxX, yMaxZ = (int) yard.maxZ;
@@ -230,7 +289,7 @@ public final class VSIntegration {
                             + "({},{},{}) in dim {} holds no blocks - nothing to cross, the source is "
                             + "untouched",
                     yMinX, yMaxX, yMinZ, yMaxZ, sx, sy, sz, srcWorld.provider.getDimension());
-            return new CrossResult(null, 0, 0); // source shipyard empty
+            return new CrossResult(null, null, 0, 0); // source shipyard empty
         }
         int minShipY = band[0], maxShipY = band[1];
         // The source ship is deliberately NOT deregistered before the cut, and the order is the whole
@@ -305,8 +364,9 @@ public final class VSIntegration {
                 }
             }
         }
+        java.util.UUID shipUuid = null;
         if (anchor != null) {
-            assembleTier2Ship(dstWorld, anchor);
+            shipUuid = assembleTier2Ship(dstWorld, anchor);
         } else {
             // The only DESTRUCTIVE failure of the four: the source has already been cut by this point,
             // so the ship exists as loose blocks at the paste site and nowhere else. Logged at ERROR
@@ -319,7 +379,7 @@ public final class VSIntegration {
                     srcWorld.provider.getDimension(), dstWorld.provider.getDimension(),
                     dstX, dstY, dstZ, width, height, depth);
         }
-        return new CrossResult(anchor, minShipY, maxShipY);
+        return new CrossResult(anchor, shipUuid, minShipY, maxShipY);
     }
 
     /**

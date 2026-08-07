@@ -365,8 +365,10 @@ public final class SpaceEventHandler {
                 pending.aboard.afcDx, pending.aboard.afcDy, pending.aboard.afcDz);
         // The aboard record names the ship by its durable id — hand it to the re-seat so a
         // neighbouring ship with the same seat offset can never claim the returning pilot.
+        // Position-keyed by nature: a login restore is driven by the record of where the player was,
+        // not by a crossing that knows which ship it just created.
         return CrewTransfer.reseat(world, anchor, Collections.singletonList(rider),
-                pending.aboard.shipId);
+                pending.aboard.shipId, null);
     }
 
     // --- the divergence hook ---------------------------------------------------------------------

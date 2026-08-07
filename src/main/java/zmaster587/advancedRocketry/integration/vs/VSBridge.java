@@ -67,11 +67,50 @@ final class VSBridge {
      * runtime behaviour can only be exercised with VS actually installed, not in a
      * headless test.</p>
      */
-    static void assembleTier2Ship(World world, BlockPos anchorPos, Logger logger) {
+    static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger) {
         ShipData ship = ValkyrienUtils.createNewShip(world, anchorPos);
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
         manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
-        logger.info("Queued tier-2 ship assembly at {} (ship '{}').", anchorPos, ship.getName());
+        logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}).", anchorPos, ship.getName(),
+                ship.getUuid());
+        return ship.getUuid();
+    }
+
+    /**
+     * The registered ship with this {@code uuid}, or {@code null}. Identity, not proximity: the
+     * caller that knows WHICH ship it means must never go through
+     * {@link #nearestQueryableShip} — that one answers for whatever craft happens to be closest,
+     * including a stranger parked in the same world.
+     */
+    private static ShipData shipByUuid(World world, UUID uuid) {
+        if (uuid == null) {
+            return null;
+        }
+        return ValkyrienUtils.getQueryableData(world).getShip(uuid).orElse(null);
+    }
+
+    /**
+     * The subspace shipyard box of the ship NAMED by {@code uuid}, or {@code null} when this world
+     * holds no such ship. The identity-keyed twin of {@link #shipyardBoundsAt}: same box, but it
+     * cannot answer for a neighbour's craft.
+     */
+    static AxisAlignedBB shipyardBoundsOf(World world, UUID uuid) {
+        return claimBounds(shipByUuid(world, uuid));
+    }
+
+    /** Human-readable identity of the ship a POSITION lookup resolves to, for diagnostics only. */
+    static String describeNearestShip(World world, double x, double y, double z) {
+        ShipData ship = nearestQueryableShip(world, x, y, z);
+        if (ship == null) {
+            return "none";
+        }
+        Vec3d p = ship.getShipTransform().getShipPositionVec3d();
+        AxisAlignedBB yard = claimBounds(ship);
+        return ship.getUuid() + " '" + ship.getName() + "' at ("
+                + (int) p.x + "," + (int) p.y + "," + (int) p.z + ")"
+                + (yard == null ? " yard=NONE"
+                        : " yard=[" + (int) yard.minX + ".." + (int) yard.maxX + "]x["
+                                + (int) yard.minZ + ".." + (int) yard.maxZ + "]");
     }
 
     /**
@@ -281,7 +320,11 @@ final class VSBridge {
      * chunks over the full Y column. Only MC types cross back to AR core.
      */
     static AxisAlignedBB shipyardBoundsAt(World world, double x, double y, double z) {
-        ShipData ship = nearestQueryableShip(world, x, y, z);
+        return claimBounds(nearestQueryableShip(world, x, y, z));
+    }
+
+    /** The XZ box of a ship's chunk claim across the full {@code y 0..256} column, or {@code null}. */
+    private static AxisAlignedBB claimBounds(ShipData ship) {
         if (ship == null) {
             return null;
         }
@@ -421,6 +464,16 @@ final class VSBridge {
         return true;
     }
 
+    /** UNPARK the ship NAMED by {@code uuid}. The identity-keyed twin of {@link #unparkShipAt}. */
+    static boolean unparkShip(World world, UUID uuid) {
+        ShipData ship = shipByUuid(world, uuid);
+        if (ship == null) {
+            return false;
+        }
+        ship.setPhysicsEnabled(true);
+        return true;
+    }
+
     /**
      * RIGID-TELEPORT the ship nearest to {@code (x,y,z)}: rewrite its transform position to
      * {@code (dstX,dstY,dstZ)} — rotation and subspace centre kept — shift its world AABB by the same
@@ -434,7 +487,21 @@ final class VSBridge {
      */
     static boolean teleportShipTo(World world, double x, double y, double z,
                                   double dstX, double dstY, double dstZ) {
-        ShipData ship = nearestQueryableShip(world, x, y, z);
+        return teleportShip(world, nearestQueryableShip(world, x, y, z), dstX, dstY, dstZ);
+    }
+
+    /**
+     * RIGID-TELEPORT the ship NAMED by {@code uuid}. The identity-keyed twin of
+     * {@link #teleportShipTo}: same write, but a caller that knows which ship it crossed can never
+     * move a stranger that happens to be parked nearer to the probe point.
+     */
+    static boolean teleportShipToByUuid(World world, UUID uuid,
+                                        double dstX, double dstY, double dstZ) {
+        return teleportShip(world, shipByUuid(world, uuid), dstX, dstY, dstZ);
+    }
+
+    private static boolean teleportShip(World world, ShipData ship,
+                                        double dstX, double dstY, double dstZ) {
         if (ship == null) {
             return false;
         }

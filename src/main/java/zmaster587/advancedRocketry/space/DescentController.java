@@ -195,7 +195,7 @@ public final class DescentController {
             // intact in its slot cell, so put the already-captured crew back on their seats before
             // messaging them; a missing seat just leaves that rider standing.
             crossing.ops().reseat(slotDim,
-                    new BlockPos(shipPos[0], shipPos[1], shipPos[2]), crew, shipId);
+                    new BlockPos(shipPos[0], shipPos[1], shipPos[2]), crew, shipId, null);
             crossing.ops().messageCrew(crew, "msg.shipdescent.failed");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
             return false;

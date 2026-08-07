@@ -158,11 +158,11 @@ public final class CrewTransfer {
      * skips the filter (caller has no id — e.g. a ship whose computer never minted one).</p>
      */
     public static boolean reseat(WorldServer dstWorld, BlockPos anchor, List<Crew> crew,
-            java.util.UUID expectedShipId) {
+            java.util.UUID expectedShipId, java.util.UUID vsShipUuid) {
         if (crew.isEmpty()) {
             return true;
         }
-        List<TilePilotSeat> seats = seatsOfShipAt(dstWorld, anchor);
+        List<TilePilotSeat> seats = seatsOfShipAt(dstWorld, anchor, vsShipUuid);
         boolean allSeated = true;
         for (Crew rider : crew) {
             TilePilotSeat seat = matchSeat(seats, rider, expectedShipId, DURABLE_SHIP_ID);
@@ -234,7 +234,7 @@ public final class CrewTransfer {
                     + " y=" + ArrivalTrace.fmt(seatWorld[1]));
         }
         lastReseatBlock = allSeated ? "" : describeReseatBlock(dstWorld, anchor, seats, crew,
-                expectedShipId);
+                expectedShipId, vsShipUuid);
         return allSeated;
     }
 
@@ -245,16 +245,25 @@ public final class CrewTransfer {
      * that link, and whether its world position resolves). Built only on the failing path.
      */
     private static String describeReseatBlock(WorldServer world, BlockPos anchor,
-            List<TilePilotSeat> seats, List<Crew> crew, java.util.UUID expectedShipId) {
-        AxisAlignedBB yard = VSIntegration.shipyardBoundsAt(world, anchor.getX() + 0.5,
-                anchor.getY() + 0.5, anchor.getZ() + 0.5);
+            List<TilePilotSeat> seats, List<Crew> crew, java.util.UUID expectedShipId,
+            java.util.UUID vsShipUuid) {
+        AxisAlignedBB yard = yardOfTheShipWeMean(world, anchor, vsShipUuid);
         StringBuilder sb = new StringBuilder(320);
         sb.append("anchor=").append(anchor.getX()).append(',').append(anchor.getY()).append(',')
                 .append(anchor.getZ())
+                .append(" scannedShip=")
+                .append(vsShipUuid == null ? "BY-POSITION" : vsShipUuid.toString())
                 .append(" yard=")
-                .append(yard == null ? "NONE(no ship claims the arrival point)"
+                .append(yard == null
+                        ? (vsShipUuid == null ? "NONE(no ship is registered in this world)"
+                                : "NONE(the crossed ship is not registered here)")
                         : "[" + (int) yard.minX + ".." + (int) yard.maxX + "]x["
                                 + (int) yard.minZ + ".." + (int) yard.maxZ + "]")
+                // What a POSITION lookup would have answered, always — it is the difference between
+                // the two that says "we were asking about the wrong ship", and reconstructing it
+                // afterwards took a scan of the world's region files.
+                .append(" nearestToAnchor=").append(VSIntegration.describeShipAt(world,
+                        anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5))
                 .append(" seatsReached=").append(seats.size())
                 .append(" crew=").append(crew.size())
                 .append(" wantShip=").append(expectedShipId);
@@ -318,7 +327,9 @@ public final class CrewTransfer {
         if (!(riding instanceof EntityDummy) || riding.getEntityId() != staleDummyId) {
             return RebindOutcome.NOT_ON_STALE_MOUNT; // stood up / re-seated - never force him back
         }
-        TilePilotSeat seat = matchSeat(seatsOfShipAt(world, anchor),
+        // No crossing identity here: a stale-mount rebind is driven by the player's own position,
+        // not by a crossing that knows which ship it created.
+        TilePilotSeat seat = matchSeat(seatsOfShipAt(world, anchor, null),
                 new Crew(player, afcDx, afcDy, afcDz), expectedShipId, DURABLE_SHIP_ID);
         // getSeatWorldPosition is non-null only for a block MANAGED by a live ship, so a seat tile
         // still sitting at the paste site (relocation unfinished) does not pass - rebinding to it
@@ -348,10 +359,40 @@ public final class CrewTransfer {
     }
 
     /** Every pilot-seat tile of the ship at {@code anchor}, found over its subspace shipyard. */
-    private static List<TilePilotSeat> seatsOfShipAt(WorldServer world, BlockPos anchor) {
-        List<TilePilotSeat> seats = new ArrayList<>();
-        AxisAlignedBB yard = VSIntegration.shipyardBoundsAt(world,
+    /**
+     * The shipyard box to scan for {@code vsShipUuid}'s seats: that ship's own claim when the caller
+     * knows which ship it means, and only otherwise the ship nearest to {@code anchor}.
+     *
+     * <p>The distinction decides whether an arrival works. A position lookup answers for the CLOSEST
+     * registered ship with no distance bound, so in a destination that already holds another craft
+     * the arrival scans the stranger's shipyard — no pilot seat in it, ever — while the ship that
+     * crossed sits elsewhere in the same world with the crew's own seat aboard. Measured on a failed
+     * entry to orbit: the two shipyards were 51,200 blocks apart in one world.</p>
+     */
+    private static AxisAlignedBB yardOfTheShipWeMean(WorldServer world, BlockPos anchor,
+            java.util.UUID vsShipUuid) {
+        if (vsShipUuid != null) {
+            return VSIntegration.shipyardBoundsOf(world, vsShipUuid);
+        }
+        return VSIntegration.shipyardBoundsAt(world,
                 anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5);
+    }
+
+    /**
+     * How many pilot-seat tiles the arrival's own seat lookup reaches for {@code vsShipUuid} at
+     * {@code anchor} — the exact scan {@link #reseat} runs, exposed so a test can ask it directly
+     * instead of inferring it from a crossing that either completed or did not. A {@code null} uuid
+     * reproduces the position-keyed lookup.
+     */
+    public static int countSeatsOfShip(WorldServer world, BlockPos anchor,
+            java.util.UUID vsShipUuid) {
+        return seatsOfShipAt(world, anchor, vsShipUuid).size();
+    }
+
+    private static List<TilePilotSeat> seatsOfShipAt(WorldServer world, BlockPos anchor,
+            java.util.UUID vsShipUuid) {
+        List<TilePilotSeat> seats = new ArrayList<>();
+        AxisAlignedBB yard = yardOfTheShipWeMean(world, anchor, vsShipUuid);
         // Force-load the shipyard's chunks before reading the world's tile list — the same
         // force-load-then-scan idiom shipBlockAt/flightComputerAt use. Unloading a ship queues its
         // shipyard chunks for unload, and a seat tile in an unloaded chunk is absent from

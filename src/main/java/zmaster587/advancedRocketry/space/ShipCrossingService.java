@@ -40,6 +40,30 @@ public final class ShipCrossingService {
     /** The world-operation seam (production: {@code VSShipCrossingOps}); fakeable in tests. Worlds
      *  are addressed by dimension id only, so the state machine itself never touches a World type
      *  (the {@link ShipTransitManager.Crosser} discipline). */
+    /**
+     * What a completed cross hands back: where the destination ship was re-assembled, and WHICH ship
+     * that is.
+     *
+     * <p>The identity is not a convenience. Every world-facing half of the settle — the pose
+     * teleport, the shipyard the re-seat scans, the unpark — used to name its ship by a POSITION, and
+     * a position names a ship only while it is the sole ship near that point. Measured on a
+     * player's failed entry: the destination cell already held another craft, the arrival resolved to
+     * it, and the re-seat then scanned that craft's shipyard for a pilot seat forever while the ship
+     * that had actually crossed sat 51,200 blocks away in the same world with its crew's seat in
+     * it.</p>
+     */
+    public static final class Crossed {
+        /** The block the re-assembly was seeded on, in the destination world. */
+        public final BlockPos anchor;
+        /** The destination ship's own id, or {@code null} if the physics mod minted none. */
+        public final UUID vsShipUuid;
+
+        public Crossed(BlockPos anchor, UUID vsShipUuid) {
+            this.anchor = anchor;
+            this.vsShipUuid = vsShipUuid;
+        }
+    }
+
     public interface Ops {
         /** The ship's live world position read off its managed block, or {@code null}. */
         double[] shipWorldPosition(int dimId, BlockPos afcPos);
@@ -53,9 +77,9 @@ public final class ShipCrossingService {
         List<CrewTransfer.Crew> peekCrew(int dimId, BlockPos afcPos, double[] shipWorldPos);
 
         /** Cross the ship at {@code srcShipPos} into {@code destDim} at the paste point.
-         *  Returns the re-assembly anchor, or {@code null} on failure. */
-        BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
-                       int pasteX, int pasteY, int pasteZ);
+         *  Returns the destination ship's anchor AND identity, or {@code null} on failure. */
+        Crossed cross(int srcDimId, double[] srcShipPos, int destDim,
+                      int pasteX, int pasteY, int pasteZ);
 
         /** Pin {@code dimId} loaded across the crossing (the arrival pin pattern). */
         /**
@@ -71,7 +95,8 @@ public final class ShipCrossingService {
          *  longer resolves the moved ship). {@code shipId} is the crossing ship's durable id —
          *  the re-seat accepts only THAT ship's seats (a neighbouring ship with the same seat
          *  offset must never claim the crew). {@code false} = retry next tick. */
-        boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew, UUID shipId);
+        boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew, UUID shipId,
+                       UUID vsShipUuid);
 
         /** Rigid-teleport the ship pasted at {@code anchor} to the pose position, carrying riders.
          *  Runs FIRST in the settle (before the re-seat), so it owns its own proof that the
@@ -80,10 +105,11 @@ public final class ShipCrossingService {
          *  anchor going to air IS "my ship has been claimed". Deliberately not a question about
          *  whether any ship is loaded. The ship comes out PARKED. {@code false} = not claimed yet,
          *  retry. */
-        boolean teleportPoseWithRiders(int destDim, BlockPos anchor, double px, double py, double pz);
+        boolean teleportPoseWithRiders(int destDim, BlockPos anchor, UUID vsShipUuid,
+                                       double px, double py, double pz);
 
-        /** Re-enable physics on the ship at the (post-teleport) pose position. */
-        void unparkAt(int destDim, double px, double py, double pz);
+        /** Re-enable physics on the ship the crossing created. */
+        void unpark(int destDim, UUID vsShipUuid, double px, double py, double pz);
 
         /** Player-facing message to the captured crew (a refusal, a failure, an arrival). */
         void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args);
@@ -125,6 +151,9 @@ public final class ShipCrossingService {
     /** One in-flight crossing (the momentary cross is done; settling over ticks). */
     private static final class Pending {
         final UUID shipId;
+        /** The DESTINATION ship's identity (see {@link Crossed}); {@code null} only when the
+         *  physics mod minted none, in which case the settle falls back to position lookups. */
+        final UUID vsShipUuid;
         final int destDim;
         final BlockPos anchor;
         final List<CrewTransfer.Crew> crew;
@@ -138,9 +167,10 @@ public final class ShipCrossingService {
          *  re-seat had 198 tries or 1. */
         int poseAttempt = -1;
 
-        Pending(UUID shipId, int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
-                double[] finalPose, Completion completion) {
+        Pending(UUID shipId, UUID vsShipUuid, int destDim, BlockPos anchor,
+                List<CrewTransfer.Crew> crew, double[] finalPose, Completion completion) {
             this.shipId = shipId;
+            this.vsShipUuid = vsShipUuid;
             this.destDim = destDim;
             this.anchor = anchor;
             this.crew = crew;
@@ -174,12 +204,13 @@ public final class ShipCrossingService {
         // tick end, discarding the ship VS is still assembling; a planet dim is usually loaded, but
         // the pin is dim-agnostic and harmless when the dim is already held).
         ops.pinDim(destDim);
-        BlockPos anchor = ops.cross(srcDim, srcShipPos, destDim, pasteX, pasteY, pasteZ);
-        if (anchor == null) {
+        Crossed crossed = ops.cross(srcDim, srcShipPos, destDim, pasteX, pasteY, pasteZ);
+        if (crossed == null || crossed.anchor == null) {
             return null;
         }
-        pending.put(shipId, new Pending(shipId, destDim, anchor, crew, finalPose, completion));
-        return anchor;
+        pending.put(shipId, new Pending(shipId, crossed.vsShipUuid, destDim, crossed.anchor, crew,
+                finalPose, completion));
+        return crossed.anchor;
     }
 
     /**
@@ -204,8 +235,8 @@ public final class ShipCrossingService {
             // which is precisely the state a crossing arrives in: the crew who would keep it loaded are
             // the ones the re-seat is carrying across.
             if (!e.poseDone) {
-                e.poseDone = ops.teleportPoseWithRiders(
-                        e.destDim, e.anchor, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
+                e.poseDone = ops.teleportPoseWithRiders(e.destDim, e.anchor, e.vsShipUuid,
+                        e.finalPose[0], e.finalPose[1], e.finalPose[2]);
                 if (e.poseDone) {
                     e.poseAttempt = e.attempts;
                 }
@@ -214,12 +245,13 @@ public final class ShipCrossingService {
                 // the re-seat probes at the pose itself, and the crew's fresh mounts (and the crew)
                 // are born directly there: no write ever targets a superseded position.
                 e.reseated = ops.reseat(e.destDim, new BlockPos(
-                        e.finalPose[0], e.finalPose[1], e.finalPose[2]), e.crew, e.shipId);
+                        e.finalPose[0], e.finalPose[1], e.finalPose[2]), e.crew, e.shipId,
+                        e.vsShipUuid);
             } else {
                 // A tick after the re-seat: unpark at the pose, then let the controller
                 // settle/release. Removed from the map before the callback so a completion that
                 // re-queries this service sees the crossing as done.
-                ops.unparkAt(e.destDim, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
+                ops.unpark(e.destDim, e.vsShipUuid, e.finalPose[0], e.finalPose[1], e.finalPose[2]);
                 it.remove();
                 e.completion.settled(e.shipId);
                 continue;

@@ -60,8 +60,8 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
-    public BlockPos cross(int srcDimId, double[] srcShipPos, int destDim,
-                          int pasteX, int pasteY, int pasteZ) {
+    public ShipCrossingService.Crossed cross(int srcDimId, double[] srcShipPos, int destDim,
+                                             int pasteX, int pasteY, int pasteZ) {
         WorldServer src = DimensionManager.getWorld(srcDimId);
         WorldServer dst = DimensionManager.getWorld(destDim);
         if (src == null || dst == null || srcShipPos == null) {
@@ -69,7 +69,7 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
         }
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 src, srcShipPos[0], srcShipPos[1], srcShipPos[2], dst, pasteX, pasteY, pasteZ);
-        return res.ok() ? res.anchor : null;
+        return res.ok() ? new ShipCrossingService.Crossed(res.anchor, res.shipUuid) : null;
     }
 
     @Override
@@ -88,13 +88,14 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
 
     @Override
     public boolean reseat(int destDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
-            java.util.UUID shipId) {
+            java.util.UUID shipId, java.util.UUID vsShipUuid) {
         WorldServer world = DimensionManager.getWorld(destDim);
-        return world != null && CrewTransfer.reseat(world, anchor, crew, shipId);
+        return world != null && CrewTransfer.reseat(world, anchor, crew, shipId, vsShipUuid);
     }
 
     @Override
-    public boolean teleportPoseWithRiders(int destDim, BlockPos anchor, double px, double py, double pz) {
+    public boolean teleportPoseWithRiders(int destDim, BlockPos anchor, java.util.UUID vsShipUuid,
+                                          double px, double py, double pz) {
         WorldServer world = DimensionManager.getWorld(destDim);
         if (world == null) {
             return false;
@@ -121,7 +122,14 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
         // (the proven teleport-ship recipe; a carried dummy's seated player follows as passenger).
         List<EntityDummy> riders = world.getEntitiesWithinAABB(EntityDummy.class,
                 new AxisAlignedBB(sx, sy, sz, sx, sy, sz).grow(RIDER_RANGE));
-        if (!VSIntegration.teleportShipTo(world, sx, sy, sz, px, py, pz)) {
+        // BY IDENTITY when the crossing minted one. The position form moves whatever ship is nearest
+        // to the anchor, and a destination that already holds another craft can hand back that
+        // craft — which then sits at OUR arrival pose while our ship stays where it was assembled,
+        // and every later lookup at the pose answers for the stranger.
+        boolean moved = vsShipUuid != null
+                ? VSIntegration.teleportShipToByUuid(world, vsShipUuid, px, py, pz)
+                : VSIntegration.teleportShipTo(world, sx, sy, sz, px, py, pz);
+        if (!moved) {
             return false;
         }
         ArrivalTrace.server("poseTp.ship t=" + world.getTotalWorldTime()
@@ -157,9 +165,15 @@ public final class VSShipCrossingOps implements ShipCrossingService.Ops {
     }
 
     @Override
-    public void unparkAt(int destDim, double px, double py, double pz) {
+    public void unpark(int destDim, java.util.UUID vsShipUuid, double px, double py, double pz) {
         WorldServer world = DimensionManager.getWorld(destDim);
-        if (world != null) {
+        if (world == null) {
+            return;
+        }
+        // Identity first, for the same reason the pose teleport uses it: giving physics back to
+        // whatever ship is nearest to the arrival point can un-park a stranger and leave the ship
+        // that actually crossed frozen.
+        if (vsShipUuid == null || !VSIntegration.unparkShip(world, vsShipUuid)) {
             VSIntegration.unparkShipAt(world, px, py, pz);
         }
     }

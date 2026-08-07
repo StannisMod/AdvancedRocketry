@@ -63,6 +63,12 @@ public class ShipEntryControllerTest {
         final List<Integer> pinned = new ArrayList<>();
         final List<double[]> teleports = new ArrayList<>();
         final List<Integer> reseatDims = new ArrayList<>();
+        /** The identity the cross hands back — every settle half must address THIS ship. */
+        static final UUID CROSSED_SHIP = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        /** What each settle half actually named; a null is a position lookup, i.e. the defect. */
+        final List<UUID> reseatShipUuids = new ArrayList<>();
+        final List<UUID> teleportShipUuids = new ArrayList<>();
+        final List<UUID> unparkShipUuids = new ArrayList<>();
         int unparks;
         int crossings;
         int captures;
@@ -88,10 +94,11 @@ public class ShipEntryControllerTest {
             return new ArrayList<>();
         }
 
-        @Override public BlockPos cross(int srcDimId, double[] srcShipPos, int slotDim,
-                                        int pasteX, int pasteY, int pasteZ) {
+        @Override public ShipCrossingService.Crossed cross(int srcDimId, double[] srcShipPos,
+                                        int slotDim, int pasteX, int pasteY, int pasteZ) {
             crossings++;
-            return failCross ? null : new BlockPos(pasteX, pasteY, pasteZ);
+            return failCross ? null : new ShipCrossingService.Crossed(
+                    new BlockPos(pasteX, pasteY, pasteZ), CROSSED_SHIP);
         }
 
         @Override public void pinDim(int dimId) { pinned.add(dimId); }
@@ -99,21 +106,28 @@ public class ShipEntryControllerTest {
 
 
         @Override public boolean reseat(int slotDim, BlockPos anchor, List<CrewTransfer.Crew> crew,
-                java.util.UUID shipId) {
+                java.util.UUID shipId, java.util.UUID vsShipUuid) {
             reseatDims.add(slotDim);
+            reseatShipUuids.add(vsShipUuid);
             lastReseated = crew;
             if (reseatFailCount > 0) { reseatFailCount--; return false; }
             return true;
         }
 
         @Override public boolean teleportPoseWithRiders(int slotDim, BlockPos anchor,
+                                                        java.util.UUID vsShipUuid,
                                                         double px, double py, double pz) {
             if (teleportFailCount > 0) { teleportFailCount--; return false; }
             teleports.add(new double[]{px, py, pz});
+            teleportShipUuids.add(vsShipUuid);
             return true;
         }
 
-        @Override public void unparkAt(int slotDim, double px, double py, double pz) { unparks++; }
+        @Override public void unpark(int slotDim, java.util.UUID vsShipUuid,
+                                     double px, double py, double pz) {
+            unparks++;
+            unparkShipUuids.add(vsShipUuid);
+        }
 
         @Override public void messageCrew(List<CrewTransfer.Crew> crew, String langKey, Object... args) {
             messages.add(langKey);
@@ -247,6 +261,44 @@ public class ShipEntryControllerTest {
 
         assertFalse("settled despite the slow re-assembly", ctl.isEntering(SHIP));
         assertNotNull(ledger.get(SHIP));
+    }
+
+    /**
+     * Every world-facing half of the settle must address the ship the crossing CREATED, by its own
+     * identity — not "whatever ship is at the arrival point".
+     *
+     * <p>The distinction is invisible while a destination holds one ship and decides the outcome
+     * when it holds two: a position lookup has no distance bound, so it answers for the nearest
+     * craft. A player's entry has already ended with his ship parked in a cell while the arrival
+     * re-seated against another craft's shipyard — no pilot seat in it, ever, and the pilot left
+     * standing while his own seat sat 51,200 blocks away in the same world.</p>
+     *
+     * <p>This pins the WIRING: the state machine hands its crossing's identity to all three halves.
+     * That the identity then resolves the right shipyard is the seam's own contract, exercised
+     * where a real physics registry exists.</p>
+     */
+    @Test
+    public void everySettleHalfAddressesTheShipTheCrossingCreated() {
+        AtomicLong clock = new AtomicLong();
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), clock::get, never());
+        ShipLedger ledger = new ShipLedger();
+        FakeOps ops = new FakeOps();
+        ShipEntryController ctl = new ShipEntryController(space, ledger, ops,
+                dim -> body(5), clock::get);
+
+        assertTrue(ctl.requestEntry(LAUNCH_DIM, AFC, SHIP));
+        ctl.tick(); // pose
+        ctl.tick(); // re-seat
+        ctl.tick(); // unpark + settle
+
+        assertFalse("the crossing never finished, so no half was exercised", ctl.isEntering(SHIP));
+        assertEquals("the pose teleport did not name the crossed ship",
+                java.util.Collections.singletonList(FakeOps.CROSSED_SHIP), ops.teleportShipUuids);
+        assertEquals("the re-seat did not name the crossed ship — it would scan whichever "
+                        + "shipyard happens to be nearest the arrival point",
+                java.util.Collections.singletonList(FakeOps.CROSSED_SHIP), ops.reseatShipUuids);
+        assertEquals("the unpark did not name the crossed ship",
+                java.util.Collections.singletonList(FakeOps.CROSSED_SHIP), ops.unparkShipUuids);
     }
 
     @Test
