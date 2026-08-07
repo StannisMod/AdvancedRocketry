@@ -2,7 +2,9 @@ package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 import com.google.gson.JsonObject;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Matcher;
@@ -42,12 +44,37 @@ import static org.junit.Assert.assertTrue;
  * one of those two layers.
  *
  * Gated by {@code -Dforge.test.client=true}; skipped on headless CI.
+ *
+ * <h2>Shared harness</h2>
+ *
+ * <p>This class is the single largest item in the client tier: 27 scenarios, each of which used to
+ * boot its own dedicated-server JVM AND its own Minecraft client — about 27 x 110 s in ONE gradle
+ * fork, which made it the wall-clock FLOOR of the whole tier while the other seven forks idled.
+ * It now runs on one shared harness.</p>
+ *
+ * <p>Two things made the migration safe rather than merely cheap:</p>
+ * <ul>
+ *   <li><b>The lane is not moved.</b> These scenarios build on GROUND at y=64, so they inherit
+ *       whatever the fixed seed generated. The x=3000.. / z=500 strip is what every green run of
+ *       this file was taken on; relocating it onto the shared-harness default would have been a
+ *       change of subject dressed as a refactor. See {@link #lane()}.</li>
+ *   <li><b>The rocket is found by PLOT, not by "the last one in the world".</b> The old
+ *       {@code buildAndAssemble} read {@code artest rocket list 0} and took the highest id it saw.
+ *       That is safe when the world holds exactly one rocket and silently wrong when it holds 27 —
+ *       precisely the object-answers-for-another-object failure a shared world creates. The lookup
+ *       now filters on {@link Plot#contains}.</li>
+ * </ul>
  */
-public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class FreeFlightModeE2ETest extends AbstractSharedClientE2ETest {
 
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
     private static final Pattern ROCKET_ID = Pattern.compile("\"id\":(-?\\d+)");
+    /** One {@code rocket list} entry: id plus the x/y/z it stands at. */
+    private static final Pattern ROCKET_ENTRY = Pattern.compile(
+            "\\{\"id\":(-?\\d+),\"uuid\":\"[^\"]*\",\"dim\":-?\\d+,"
+                    + "\"pos\":\\[(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)]}");
     private static final Pattern MOTION_Y = Pattern.compile("\"motionY\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
@@ -58,11 +85,48 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     private static final Pattern FUEL_PRIMARY_AMOUNT =
             Pattern.compile("\"primaryFuelType\":\"([^\"]+)\".*?\"\\1\":\\{\"amount\":(-?\\d+)");
 
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
+    /** Ground level for every fixture here; the pad is built on terrain, not in air. */
+    private static final int BASE_Y = 64;
+
+    @Override
+    protected String subsystem() {
+        return "free-flight";
     }
 
-    private int buildAndAssemble(int baseX, int baseY, int baseZ) throws Exception {
+    /**
+     * The strip this file's scenarios have always flown on: x from 3000, z=500, 100 apart. Ground
+     * level, therefore terrain-dependent, therefore NOT relocatable on the strength of a refactor.
+     * 27 scenarios reach x=5600; the pre-migration file already used up to 5100 on this line.
+     */
+    @Override
+    protected Plot.Lane lane() {
+        return new Plot.Lane(3000, 500, 100);
+    }
+
+    private int baseX() {
+        return plot().originX;
+    }
+
+    private int baseZ() {
+        return plot().originZ;
+    }
+
+    /** Stand the bot above and beside its own plot's build site, clear of the pad. */
+    private void tpNearBuildSite() throws Exception {
+        exec("tp @a " + (baseX() + 10) + " " + (BASE_Y + 15) + " " + (baseZ() + 10) + " 0 0");
+        bot().waitTicks(10);
+    }
+
+    /** Stand the bot on its own plot's pad, within {@code mount-entity} range of the rocket. */
+    private void tpOntoPad() throws Exception {
+        exec("tp @a " + (baseX() + 0.5) + " " + (BASE_Y + 1) + " " + (baseZ() + 0.5) + " 0 0");
+        bot().waitTicks(5);
+    }
+
+    private int buildAndAssemble() throws Exception {
+        final int baseX = baseX();
+        final int baseY = BASE_Y;
+        final int baseZ = baseZ();
         // Clear the full flight column, not just the build site. The world is
         // generated with a RANDOM seed each run; a hill or tree overhanging the
         // pad above the old +10 ceiling pins the assembled rocket in place
@@ -93,12 +157,38 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         }
         assertTrue("assemble failed: " + assemble, assemble.contains("\"ok\":true"));
 
+        return rocketIdInThisPlot();
+    }
+
+    /**
+     * The id of the rocket standing in THIS scenario's plot.
+     *
+     * <p>{@code artest rocket list 0} is a GLOBAL query: on a shared harness the world holds every
+     * earlier scenario's rocket too. The pre-migration code took the highest id it saw, which is
+     * correct only while exactly one rocket exists. Each entry carries its {@code pos}, so the
+     * answer is narrowed to the plot that built it — and an ambiguous answer is an ARRANGEMENT
+     * failure naming what it saw, never a silently-picked candidate.</p>
+     */
+    private int rocketIdInThisPlot() throws Exception {
         String list = exec("artest rocket list 0");
-        Matcher rim = ROCKET_ID.matcher(list);
-        int lastId = -1;
-        while (rim.find()) lastId = Integer.parseInt(rim.group(1));
-        assertTrue("rocket list empty after assemble: " + list, lastId >= 0);
-        return lastId;
+        Matcher entry = ROCKET_ENTRY.matcher(list);
+        int found = -1;
+        int matches = 0;
+        StringBuilder seen = new StringBuilder();
+        while (entry.find()) {
+            int id = Integer.parseInt(entry.group(1));
+            double px = Double.parseDouble(entry.group(2));
+            double pz = Double.parseDouble(entry.group(4));
+            seen.append(" id=").append(id).append('@').append(px).append(',').append(pz);
+            if (plot().contains(px, pz)) {
+                found = id;
+                matches++;
+            }
+        }
+        scenario().requireArranged("exactly one rocket must stand in " + plot()
+                + " after assemble, found " + matches + " —" + seen, matches == 1);
+        scenario().record("rocketId", found);
+        return found;
     }
 
     private static double parseDouble(String body, Pattern p, String label) {
@@ -114,14 +204,12 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     @Test
     public void botMountsFreeFlightRocketAndObservesInFlightFlip() throws Exception {
         // Stand bot near the build site.
-        exec("tp @a 3010 79 510 0 0");
-        bot().waitTicks(10);
+        tpNearBuildSite();
 
-        int rocketId = buildAndAssemble(3000, 64, 500);
+        int rocketId = buildAndAssemble();
 
         // Move bot adjacent to the rocket so mount-entity has line-of-sight.
-        exec("tp @a 3000.5 65 500.5 0 0");
-        bot().waitTicks(5);
+        tpOntoPad();
 
         String mount = exec("artest player mount-entity " + rocketId);
         assertTrue("mount-entity must succeed: " + mount,
@@ -163,12 +251,10 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void verticalThrottleProducesObservableMotionThroughRealTickLoop() throws Exception {
-        exec("tp @a 3110 79 510 0 0");
-        bot().waitTicks(10);
+        tpNearBuildSite();
 
-        int rocketId = buildAndAssemble(3100, 64, 500);
-        exec("tp @a 3100.5 65 500.5 0 0");
-        bot().waitTicks(5);
+        int rocketId = buildAndAssemble();
+        tpOntoPad();
 
         exec("artest player mount-entity " + rocketId);
         exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
@@ -220,10 +306,9 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // Toggle without mounting — exercises the server probe surface that
         // the M-key sends via SET_FLIGHT_MODE packet. The bot just stays
         // connected and observes through the rocket info.
-        exec("tp @a 3210 79 510 0 0");
-        bot().waitTicks(10);
+        tpNearBuildSite();
 
-        int rocketId = buildAndAssemble(3200, 64, 500);
+        int rocketId = buildAndAssemble();
 
         String info0 = exec("artest rocket info " + rocketId);
         assertTrue("default mode must be CLASSIC_LAUNCH: " + info0,
@@ -244,10 +329,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     // ===== FF flight controls (TWR-based thrust) =========================
 
-    private int mountFreshFreeFlightRocket(int baseX, int baseY, int baseZ) throws Exception {
+    private int mountFreshFreeFlightRocket() throws Exception {
+        final int baseX = baseX(), baseY = BASE_Y, baseZ = baseZ();
         exec("tp @a " + (baseX + 10) + " " + (baseY + 15) + " " + (baseZ + 10) + " 0 0");
         bot().waitTicks(10);
-        int rocketId = buildAndAssemble(baseX, baseY, baseZ);
+        int rocketId = buildAndAssemble();
         exec("tp @a " + (baseX + 0.5) + " " + (baseY + 1) + " " + (baseZ + 0.5) + " 0 0");
         bot().waitTicks(5);
         exec("artest player mount-entity " + rocketId);
@@ -277,7 +363,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // launch-capable fixture rocket (TWR ≫ 1) must actually CLIMB under
         // full vertical throttle through the live server tick loop — not just
         // hop and re-land like the old /10000-scaled thrust did.
-        int rocketId = mountFreshFreeFlightRocket(3300, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         String inputResp = exec("artest rocket free-flight-input " + rocketId + " 0 1 0 0 0");
         assertTrue("vertical input must apply: " + inputResp, inputResp.contains("\"applied\":true"));
@@ -301,7 +387,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void forwardThrustDisplacesHorizontally() throws Exception {
         // Forward throttle at yaw=0 -> +Z. Vertical kept on so the rocket stays
         // airborne (doesn't auto-land mid-test).
-        int rocketId = mountFreshFreeFlightRocket(3400, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         String before = exec("artest rocket info " + rocketId);
         final double xb = parseDouble(before, POS_X, "posX");
@@ -338,7 +424,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void yawInputRotatesHeading() throws Exception {
         // Yaw input must steer the heading through the live loop. Vertical kept
         // on to stay airborne while yawing (yaw rotates regardless of thrust).
-        int rocketId = mountFreshFreeFlightRocket(3500, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         exec("artest rocket free-flight-input " + rocketId + " 0 1 1 0 0");
         double yawBefore = parseDouble(exec("artest rocket info " + rocketId), YAW, "rotationYaw");
@@ -364,7 +450,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // that the probe tests could never see:
         //   1) the server rocket actually climbs (real packet path delivers thrust),
         //   2) the CLIENT-rendered rocket tracks the server (no poscorrection lag).
-        int rocketId = mountFreshFreeFlightRocket(3700, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         // Hold the real climb key. No artest free-flight-input here on purpose.
         bot().holdKey(Keyboard.KEY_R);
@@ -407,7 +493,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // rendered rocket advances on (almost) every single client tick. The
         // snap-only approach froze between the every-3-tick tracker updates and
         // jumped on update ticks — here that shows up as many zero-delta samples.
-        int rocketId = mountFreshFreeFlightRocket(4000, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         // Drive a reliable, sustained server-side climb. Probe input is
         // authoritative and not subject to key-injection timing; the bot holds
         // no keys, so onClientTick stays quiet and doesn't override it. (The real
@@ -446,7 +532,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // a control legend keyed to the pilot's bindings, and the FA state. Read
         // the actually-rendered text from the client (reflective static), so a
         // missing lang key (which I18n echoes back raw) fails these assertions.
-        int rocketId = mountFreshFreeFlightRocket(3800, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().waitTicks(10); // let the overlay render a few frames
 
         String hud = bot().readStaticField(ROCKET_EVENT_HANDLER, "lastFreeFlightHud")
@@ -467,11 +553,9 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void freeFlightHudPreLaunchShowsLaunchHint() throws Exception {
         // FF mode, mounted but NOT launched: HUD shows the title + how to launch /
         // switch back to classic — distinct from the in-flight legend.
-        exec("tp @a 3910 79 510 0 0");
-        bot().waitTicks(10);
-        int rocketId = buildAndAssemble(3900, 64, 500);
-        exec("tp @a 3900.5 65 500.5 0 0");
-        bot().waitTicks(5);
+        tpNearBuildSite();
+        int rocketId = buildAndAssemble();
+        tpOntoPad();
         exec("artest player mount-entity " + rocketId);
         exec("artest rocket set-flight-mode " + rocketId + " FREE_FLIGHT");
         bot().waitTicks(10);
@@ -493,7 +577,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void verticalThrustDrainsFuelThroughLiveLoop() throws Exception {
         // Fuel must burn classic-style (getFuelConsumptionRate, gated by
         // rocketRequireFuel) while thrust is applied across real server ticks.
-        int rocketId = mountFreshFreeFlightRocket(3600, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         Matcher mb = FUEL_PRIMARY_AMOUNT.matcher(exec("artest rocket fuel " + rocketId));
         assertTrue("rocket must report a primary fuel amount", mb.find());
@@ -533,8 +617,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // On foot (not piloting any AR craft), pressing the inventory key must
         // open the survival inventory exactly like vanilla — i.e. the FF key
         // override does NOT leak into normal gameplay.
-        exec("tp @a 4200 79 510 0 0");
-        bot().waitTicks(10);
+        tpNearBuildSite();
         // Guarantee the precondition: not riding, no GUI up.
         exec("artest player dismount");
         bot().closeScreen();
@@ -560,7 +643,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // Same physical key (E), while piloting in Free Flight: it must NOT open
         // the inventory (which would also freeze steering) and must instead drive
         // the lateral strafe control through the real key->packet->server path.
-        int rocketId = mountFreshFreeFlightRocket(4300, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         assertEquals("precondition: no GUI open while piloting", "", currentScreen());
 
         double xBefore = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
@@ -602,7 +685,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // looking out the nose, world +X renders on the pilot's LEFT, so the
         // strafe-left key must push the craft toward +X to feel correct (the raw
         // body-right mapping felt inverted in playtest). E is the mirror.
-        int rocketId = mountFreshFreeFlightRocket(4400, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         double xBefore = parseDouble(exec("artest rocket info " + rocketId), POS_X, "posX");
 
         bot().holdKey(Keyboard.KEY_R);          // stay airborne
@@ -628,7 +711,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // R climbs (real altitude gain); F is the opposite vertical thrust, so it
         // must drive the vertical velocity down. We measure F by motionY (robust
         // to the climb's accumulated upward inertia, which a position check is not).
-        int rocketId = mountFreshFreeFlightRocket(4500, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         double y0 = parseDouble(exec("artest rocket info " + rocketId), POS_Y, "posY");
         bot().holdKey(Keyboard.KEY_R);
@@ -659,7 +742,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     public void throttleCutKeyNeutralisesThrust() throws Exception {
         // X (cut) with FA on zeroes the velocity setpoint even while R is held:
         // a climbing craft stops accelerating and eases back toward hover.
-        int rocketId = mountFreshFreeFlightRocket(4600, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         // Establish a climb.
         bot().holdKey(Keyboard.KEY_R);
@@ -688,7 +771,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // X with Flight Assist on: zero the velocity setpoint —
         // the craft eases to a stop AND holds altitude. Build a climb via the
         // real R key first, then hold the real X.
-        int rocketId = mountFreshFreeFlightRocket(4700, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         bot().holdKey(Keyboard.KEY_R);
         bot().waitTicks(15);
@@ -732,10 +815,11 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
     // the server validates and starts the hover. No probe shortcut here.
 
     /** Build + mount + flip to FREE_FLIGHT, but do NOT start the engines. */
-    private int mountColdFreeFlightRocket(int baseX, int baseY, int baseZ) throws Exception {
+    private int mountColdFreeFlightRocket() throws Exception {
+        final int baseX = baseX(), baseY = BASE_Y, baseZ = baseZ();
         exec("tp @a " + (baseX + 10) + " " + (baseY + 15) + " " + (baseZ + 10) + " 0 0");
         bot().waitTicks(10);
-        int rocketId = buildAndAssemble(baseX, baseY, baseZ);
+        int rocketId = buildAndAssemble();
         exec("tp @a " + (baseX + 0.5) + " " + (baseY + 1) + " " + (baseZ + 0.5) + " 0 0");
         bot().waitTicks(5);
         exec("artest player mount-entity " + rocketId);
@@ -751,7 +835,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void realSpaceHoldStartsEnginesAndHoversOneBlock() throws Exception {
-        int rocketId = mountColdFreeFlightRocket(5100, 64, 500);
+        int rocketId = mountColdFreeFlightRocket();
         String before = exec("artest rocket info " + rocketId);
         assertTrue("precondition: engines off before the hold: " + before,
                 before.contains("\"isInFlight\":false"));
@@ -784,7 +868,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
 
     @Test
     public void spaceEarlyReleaseCancelsEngineStart() throws Exception {
-        int rocketId = mountColdFreeFlightRocket(5200, 64, 500);
+        int rocketId = mountColdFreeFlightRocket();
 
         bot().holdKey(Keyboard.KEY_SPACE);
         bot().waitTicks(25);             // well under the 60-tick requirement
@@ -814,7 +898,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // Full cycle through real keys: start via probe (covered above), then
         // descend with the real F key until touchdown — engines must shut off
         // and the HUD must say so.
-        int rocketId = mountFreshFreeFlightRocket(5300, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().waitTicks(30); // settle into the liftoff hover
 
         bot().holdKey(Keyboard.KEY_F);
@@ -845,7 +929,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // The per-axis vector readout: holding R ramps the VRT setpoint and the
         // actual velocity follows; X zeroes the setpoint back. Read from the
         // REAL rendered HUD text.
-        int rocketId = mountFreshFreeFlightRocket(5400, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         bot().holdKey(Keyboard.KEY_R);
         // Event-gated: hold R until the rendered HUD VRT setpoint has ramped and the actual velocity is
@@ -899,7 +983,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // FA state is part of the perception contract: with FA off the HUD
         // must say so (the N keybind path is edge-driven and not injectable —
         // the probe flips the same server state the key would).
-        int rocketId = mountFreshFreeFlightRocket(5500, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().waitTicks(5);
 
         exec("artest rocket set-flight-assist " + rocketId + " off");
@@ -938,7 +1022,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // tick (loose eps: the two bot reads aren't atomic, one tick may pass
         // between them — max craft turn is 6°/tick). Then, with all input
         // released and corrections bled out, the lock must be exact.
-        int rocketId = mountFreshFreeFlightRocket(4800, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
 
         bot().holdKey(Keyboard.KEY_R);   // stay airborne
         bot().holdKey(Keyboard.KEY_D);   // yaw the nose
@@ -1016,7 +1100,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // down tick by tick; the camera never detaches from the craft. The
         // server nose pitch must integrate the swipes through the real
         // key->packet path.
-        int rocketId = mountFreshFreeFlightRocket(4900, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().holdKey(Keyboard.KEY_R); // keep airborne so tickFreeFlight integrates pitch
 
         // A real mouse drag: repeated +6° swipes (above MAX_PITCH_RATE=4, so
@@ -1053,7 +1137,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
         // rightward mouse drag must bank the craft (client camera roll grows) while
         // the heading (client yaw) stays put. Supersedes the pre-deflection
         // "fast mouse swipe yaws the craft" test, whose premise no longer holds.
-        int rocketId = mountFreshFreeFlightRocket(5000, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().holdKey(Keyboard.KEY_R);   // climb clear of the pad while banking
         bot().waitTicks(5);
 
@@ -1094,7 +1178,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
      */
     @Test
     public void sustainedPitchLoopsPastVerticalWithNoClamp() throws Exception {
-        int rocketId = mountFreshFreeFlightRocket(5100, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         // Climb well clear of the pad, then CUT to a gravity-cancelled hover: with
         // a zero velocity setpoint FA holds position regardless of attitude, so the
         // craft can loop in place without body-up thrust flying it into the ground.
@@ -1144,7 +1228,7 @@ public class FreeFlightModeE2ETest extends AbstractClientE2ETest {
      */
     @Test
     public void rollChannelIntegratesAndClientRendersWithoutCrash() throws Exception {
-        int rocketId = mountFreshFreeFlightRocket(5900, 64, 500);
+        int rocketId = mountFreshFreeFlightRocket();
         bot().waitTicks(20);
         double roll0 = parseDouble(exec("artest rocket info " + rocketId), FF_ROLL, "freeFlightRoll");
 

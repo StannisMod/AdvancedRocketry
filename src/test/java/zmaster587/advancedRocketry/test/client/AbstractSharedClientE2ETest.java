@@ -235,8 +235,9 @@ public abstract class AbstractSharedClientE2ETest {
 
     @Before
     public final void resetBetweenScenarios() throws Exception {
+        final Plot.Lane lane = lane();
         Plot plot = PLOTS.computeIfAbsent(testName.getMethodName(),
-                name -> new Plot(nextPlotIndex++, name, 0));
+                name -> new Plot(nextPlotIndex++, name, 0, lane));
         scenario = new Scenario(testName.getMethodName(), subsystem(), plot);
 
         // SERVER side first: its commands echo harness markers into the chat the client reset is
@@ -313,6 +314,16 @@ public abstract class AbstractSharedClientE2ETest {
      * stack-walking can infer which system a red belongs to.
      */
     protected abstract String subsystem();
+
+    /**
+     * Where this class's plots live. Override when the scenarios work at GROUND level, or when a
+     * class is MIGRATING an existing test — keep the coordinates that test already proved green
+     * rather than moving it onto fresh terrain, which is a change of subject disguised as a
+     * refactor. See {@link Plot.Lane}.
+     */
+    protected Plot.Lane lane() {
+        return Plot.Lane.DEFAULT;
+    }
 
     protected final Scenario scenario() {
         return scenario;

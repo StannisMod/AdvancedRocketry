@@ -24,12 +24,43 @@ public final class Plot {
     /** Edge of a plot, in blocks. Wide enough for a rocket fixture plus its pad. */
     public static final int SIZE = 64;
 
-    /** Far from every fixture range the existing suites use (200-350, 2100-2140, 6620/6820). */
-    private static final int ORIGIN_X = 4000;
-    private static final int ORIGIN_Z = 4000;
-
     /** Open air above generated terrain, so a plot starts empty without clearing anything. */
     public static final int DEFAULT_Y = 150;
+
+    /**
+     * Where a class's plots live and how far apart they sit.
+     *
+     * <p>This is a per-class choice on purpose, and the reason is terrain. A plot at ground level
+     * inherits whatever the fixed world seed generated there — a hill, an ocean, a forest — and this
+     * repo has lost runs to all three. <b>A class migrating an existing test should keep the
+     * coordinates that test already proved</b> rather than inherit {@link #DEFAULT}: those numbers
+     * are backed by however many green runs the test has behind it, and a fresh lane is not.</p>
+     */
+    public static final class Lane {
+        public final int originX;
+        public final int originZ;
+        /** Distance between successive plot origins. Must be at least {@link Plot#SIZE}. */
+        public final int stride;
+
+        public Lane(int originX, int originZ, int stride) {
+            if (stride < SIZE) {
+                throw new IllegalArgumentException("stride " + stride + " < plot size " + SIZE
+                        + " — plots would overlap, which is the one thing they exist to prevent");
+            }
+            this.originX = originX;
+            this.originZ = originZ;
+            this.stride = stride;
+        }
+
+        /**
+         * Far from every fixture range the existing suites use (200-350, 2100-2140, 3000-5100,
+         * 6620/6820), and green 10/10 for the seal-detector pilot at {@link Plot#DEFAULT_Y}, which
+         * is air and therefore terrain-independent. <b>Do not move it</b> — that green is what makes
+         * it a default rather than a guess. A scenario that needs GROUND is on its own terrain and
+         * should declare its own lane.
+         */
+        public static final Lane DEFAULT = new Lane(4000, 4000, SIZE);
+    }
 
     private final int index;
     private final String owner;
@@ -38,12 +69,12 @@ public final class Plot {
     public final int originX;
     public final int originZ;
 
-    Plot(int index, String owner, int dim) {
+    Plot(int index, String owner, int dim, Lane lane) {
         this.index = index;
         this.owner = owner;
         this.dim = dim;
-        this.originX = ORIGIN_X + index * SIZE;
-        this.originZ = ORIGIN_Z;
+        this.originX = lane.originX + index * lane.stride;
+        this.originZ = lane.originZ;
     }
 
     /** Absolute X of a point {@code dx} blocks into the plot. */
