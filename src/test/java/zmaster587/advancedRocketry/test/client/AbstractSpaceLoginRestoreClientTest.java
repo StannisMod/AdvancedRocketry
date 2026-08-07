@@ -11,7 +11,6 @@ import com.google.gson.JsonObject;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
-import org.junit.Test;
 import org.lwjgl.input.Keyboard;
 
 import java.nio.file.Files;
@@ -97,10 +96,10 @@ import static org.junit.Assert.assertTrue;
  * Valkyrien Skies is absent - the production subsystem declines to register without it, so the
  * wiring under test would not exist at all. Run with {@code -PwithVS}.</p>
  */
-public class SpaceLoginRestoreClientE2ETest {
+public abstract class AbstractSpaceLoginRestoreClientTest {
 
     /** The account every client harness launches under; the server keys his player data by it. */
-    private static final String BOT = "ForgeTestClient";
+    protected static final String BOT = "ForgeTestClient";
 
     /**
      * The ship fixture. A crew member has to be able to STAND and WALK on this ship: the seat-only
@@ -109,10 +108,10 @@ public class SpaceLoginRestoreClientE2ETest {
      * move". This variant adds the 5x5 deck under the seat and is the one the planet-side walking
      * relog test flies for the same reason.
      */
-    private static final String VARIANT = "with-pilot-deck";
+    protected static final String VARIANT = "with-pilot-deck";
 
     /** Where an orphaned login lands, and the one dimension a restored pilot must NOT be in. */
-    private static final int OVERWORLD_DIM = 0;
+    protected static final int OVERWORLD_DIM = 0;
 
     /**
      * A stable fragment of what a pilot is told when the server has no record of his ship. Matching a
@@ -120,18 +119,18 @@ public class SpaceLoginRestoreClientE2ETest {
      * test has to read what he reads — but the punctuation and the colour code around it are not the
      * contract.
      */
-    private static final String SHIP_LOST_NEEDLE = "ship could not be found";
+    protected static final String SHIP_LOST_NEEDLE = "ship could not be found";
 
     /** The launch dimension the ship takes off from - always registered, always terrain-generated. */
-    private static final int LAUNCH_DIM = 0;
+    protected static final int LAUNCH_DIM = 0;
 
     /** Where the piloted ship is built: a loaded overworld region well clear of other fixtures. */
-    private static final int SRC_X = 6800;
-    private static final int SRC_Y = 80;
-    private static final int SRC_Z = 6800;
+    protected static final int SRC_X = 6800;
+    protected static final int SRC_Y = 80;
+    protected static final int SRC_Z = 6800;
 
     /** A world height comfortably above the default orbit ceiling, so the ceiling check fires. */
-    private static final int ABOVE_CEILING_Y = 1200;
+    protected static final int ABOVE_CEILING_Y = 1200;
 
     /**
      * The six flight channels - forward, vertical, strafe, yaw, pitch, roll - as the flight-input
@@ -139,52 +138,52 @@ public class SpaceLoginRestoreClientE2ETest {
      * and reading the leading zero as a dimension id is the trap this constant exists to close.
      * {@link #HELD_CLIMB} is a pilot holding the ship up; {@link #HANDS_OFF} is him letting go.
      */
-    private static final String HELD_CLIMB = "0 1 0 0 0 0";
-    private static final String HANDS_OFF = "0 0 0 0 0 0";
+    protected static final String HELD_CLIMB = "0 1 0 0 0 0";
+    protected static final String HANDS_OFF = "0 0 0 0 0 0";
 
     /**
      * How far off his ship the client may be and still count as "back at his ship". Covers the
      * seat's offset from the ship's own origin plus a few ticks of settling, and is far too small to
      * be satisfied by any other dimension's spawn.
      */
-    private static final double POSE_EPSILON = 24.0D;
+    protected static final double POSE_EPSILON = 24.0D;
 
     /** Sentinel for "the client has no world yet", so nobody reads a "dim" key that is absent. */
-    private static final int NO_CLIENT_WORLD = Integer.MIN_VALUE;
+    protected static final int NO_CLIENT_WORLD = Integer.MIN_VALUE;
 
     /**
      * A demonstrable held-key climb: well above settle jitter, cheap to reach. Same bar as the
      * planet-side relog-control pin ({@link VSPilotSeatRelogControlE2ETest}) - the contract is
      * "held input MOVES the ship within a bounded window", not any particular rate.
      */
-    private static final double MIN_CLIMB = 1.0;
+    protected static final double MIN_CLIMB = 1.0;
 
     /**
      * The no-input observation window, in ticks. Two seconds: long enough that a drift of the
      * reported size (about a block per thirty ticks) is unmistakable, short enough not to invite the
      * station-hold's own settling into the measurement.
      */
-    private static final int OBSERVE_TICKS = 40;
+    protected static final int OBSERVE_TICKS = 40;
 
     /**
      * The floor below which the window is not evidence. "The body did not move" and "the resolver
      * never ran" are the same reading, and only one of them is a pass.
      */
-    private static final int MIN_RESOLVED = 20;
+    protected static final int MIN_RESOLVED = 20;
 
     /**
      * How far a no-input body may travel along its deck across the window, in blocks. Same bar as the
      * planet-side relog pin, so a red here is comparable with that leg rather than a new standard;
      * the reported drift is several times it.
      */
-    private static final double DRIFT_TOLERANCE = 0.35D;
+    protected static final double DRIFT_TOLERANCE = 0.35D;
 
     /**
      * How far the ship itself must travel across the window for the window to mean anything, in
      * blocks. A body held to a motionless deck cannot drift however broken the hold is - the first cut
      * of this pin measured exactly that and came back all zeros.
      */
-    private static final double MIN_DECK_MOVE = 1.0D;
+    protected static final double MIN_DECK_MOVE = 1.0D;
 
     /**
      * And the ceiling of that band. The reported symptom is a ship that is ALMOST STATIONARY -
@@ -195,30 +194,30 @@ public class SpaceLoginRestoreClientE2ETest {
      * pulse in a space cell, so the totals accumulate window over window while the rate is what
      * actually distinguishes a settling ship from one at its cap.
      */
-    private static final double MAX_DECK_RATE = 0.75D;
+    protected static final double MAX_DECK_RATE = 0.75D;
 
     /**
      * The throttle pulse, in ticks: enough to set the ship moving, short enough that what the window
      * observes is the station hold SETTLING it rather than the ship accelerating to its cap.
      */
-    private static final int THROTTLE_PULSE_TICKS = 8;
+    protected static final int THROTTLE_PULSE_TICKS = 8;
 
     /**
      * The per-tick step band a creep lives in, in blocks: above the floating-point noise of a held
      * point, below the one-off jump of a placement or a teleport. Summing only the steps inside it
      * separates "he was put somewhere" from "he is being walked along the deck".
      */
-    private static final double CREEP_STEP_MIN = 0.002D;
-    private static final double CREEP_STEP_MAX = 0.30D;
+    protected static final double CREEP_STEP_MIN = 0.002D;
+    protected static final double CREEP_STEP_MAX = 0.30D;
 
     /**
      * How far the walk itself must carry him along the deck, in blocks, for the post-release window to
      * be about an inherited velocity rather than about a body that never walked.
      */
-    private static final double MIN_WALK_TRAVEL = 0.5D;
+    protected static final double MIN_WALK_TRAVEL = 0.5D;
 
     /** The class whose client-side statics carry the per-tick ship-frame record. */
-    private static final String SHIP_FRAME_TRAVEL =
+    protected static final String SHIP_FRAME_TRAVEL =
             "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel";
 
     /**
@@ -226,25 +225,25 @@ public class SpaceLoginRestoreClientE2ETest {
      * ship-relative motion>|c=<carry>|in=<strafe>/<forward>|d=<on deck>}. Every field is in the SHIP's
      * frame, which is what makes a drift measurable at all.
      */
-    private static final Pattern HISTORY_LINE = Pattern.compile(
+    protected static final Pattern HISTORY_LINE = Pattern.compile(
             "(\\d+)([afh])\\|B=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)"
                     + "\\|H=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)"
                     + "\\|m=(-?[0-9.E\\-]+),(-?[0-9.E\\-]+),(-?[0-9.E\\-]+)"
                     + "\\|c=(-?[0-9.E\\-]+)\\|in=(-?[0-9.]+)/(-?[0-9.]+)\\|d=(\\d)"
                     + "\\|s=(\\d)(\\d)/(-?\\d+)");
 
-    private static final Pattern SHIP_ID = Pattern.compile("\"shipId\":\"([^\"]+)\"");
-    private static final Pattern BUILDER_POS =
+    protected static final Pattern SHIP_ID = Pattern.compile("\"shipId\":\"([^\"]+)\"");
+    protected static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)]");
-    private static final Pattern FORGE_DIMS = Pattern.compile("\"forgeDimensions\":\\[([^\\]]*)]");
+    protected static final Pattern FORGE_DIMS = Pattern.compile("\"forgeDimensions\":\\[([^\\]]*)]");
 
     /** The ship production minted for the arranged pilot, and the cell production settled it in. */
-    private String arrangedShipId;
-    private String arrangedCellKey;
+    protected String arrangedShipId;
+    protected String arrangedCellKey;
 
-    private Path root;
-    private RealDedicatedServerHarness serverHarness;
-    private RealClientHarness clientHarness;
+    protected Path root;
+    protected RealDedicatedServerHarness serverHarness;
+    protected RealClientHarness clientHarness;
 
     @Before
     public void seedWorldDirectory() throws Exception {
@@ -265,107 +264,8 @@ public class SpaceLoginRestoreClientE2ETest {
         closeBoth();
     }
 
-    /**
-     * The pilot logs out seated on his ship and the server is restarted under him. He must come back
-     * in his ship's cell and back in his seat.
-     */
-    @Test
-    public void aPilotWhoLoggedOutSeatedOnHisShipComesBackAboardItAfterAServerRestart() throws Exception {
-        requireHeComesBackAboardHisShip(seatThePilotAboardHisShip());
-    }
-
-    /**
-     * The same contract, reached the way a player actually reaches it: the pilot takes his seat ON THE
-     * GROUND and is still in it when his ship crosses into the cell. He never sits down inside a space
-     * cell at all.
-     *
-     * <p><b>Why this is a separate leg and not a variant of the arrangement above.</b> The durable
-     * aboard record is what the restore runs on, and it was for a long time written only by the mount
-     * TRANSITION - so it existed for a pilot who sat down in a cell and did not exist for a pilot who
-     * sat down on a planet and flew up. Both pilots are equally aboard, and the leg above cannot tell
-     * them apart because its arrangement seats him after the arrival. This one is the route that was
-     * broken in real play: fly to orbit, log out, come back standing at the build site you left hours
-     * ago, with no message and your ship still in orbit without you.</p>
-     *
-     * <p>The arrangement is the witness for the mechanism as well as the setup for the restart: it
-     * requires the record to be ABSENT while he sits on the planet and PRESENT once he has arrived,
-     * so a green here cannot come from a record that was already there before the flight.</p>
-     */
-    @Test
-    public void aPilotWhoBoardedOnThePlanetAndFlewUpComesBackAboardAfterAServerRestart()
-            throws Exception {
-        requireHeComesBackAboardHisShip(seatThePilotBeforeHeLeavesTheGround());
-    }
-
-    /**
-     * The other end of the restore: when the server genuinely has no record of a returning pilot's
-     * ship, he is TOLD so — not silently stood up at his spawn point wondering where his ship went.
-     *
-     * <p>This is a client test for the only reason that matters: the subject is a line of text a
-     * player reads. The server can be asked whether it decided he was orphaned; it cannot be asked
-     * whether he was informed. The bot's own chat log can.</p>
-     *
-     * <p><b>Why the ship is removed rather than the ledger damaged.</b> "The ledger has no such ship"
-     * is one verdict reached from several directions — a ship dismantled while its owner was away, a
-     * descent that took it out of the subsystem, a durable record that failed to come back. The
-     * player's side of it is identical in every case, and the removal is the one direction that is
-     * both production behaviour and arrangeable, so the arrangement asserts the ledger KNEW the ship
-     * first: a "he was told his ship is missing" that came from a ship the server never had would be
-     * a statement about the fixture.</p>
-     *
-     * <p>A relog is enough and is deliberate — the decision is made when a player's save file is read,
-     * which a rejoin does as faithfully as a reboot, and it keeps the ship, the cell and the ledger in
-     * one server's lifetime where the arrangement can still speak about them.</p>
-     */
-    @Test
-    public void aPilotWhoseShipTheServerNoLongerKnowsIsToldSoWhenHeComesBack() throws Exception {
-        seatThePilotAboardHisShip();
-
-        // The notice must not already be on screen, or "it is there afterwards" says nothing.
-        assertNull("nothing may have told him about a missing ship before one went missing: "
-                + bot().reportChat(20), chatLineContaining(SHIP_LOST_NEEDLE));
-
-        String forgot = exec("artest space ledger-forget " + arrangedShipId);
-        assertTrue("arrangement: the ledger must have KNOWN this ship before being told to forget it - "
-                + "otherwise the login below is about a ship that never existed: " + forgot,
-                readBool(forgot, "wasKnown"));
-        assertFalse("arrangement: and it must not know it afterwards: " + forgot,
-                readBool(forgot, "found"));
-
-        bot().reconnect();
-        bot().waitForWorld();
-        bot().waitTicks(40);
-
-        String told = chatLineContaining(SHIP_LOST_NEEDLE);
-        assertNotNull("a pilot whose ship the server cannot find must be TOLD, in chat, rather than "
-                + "appearing at his spawn point with no explanation: " + bot().reportChat(20)
-                + " serverPos=" + exec("artest player position-of " + BOT), told);
-
-        // And he really is the orphan the message describes: out of the cell, off his ship.
-        //
-        // Placement is read from the SERVER, not from the client's rendered dimension. That is not a
-        // convenience: measured here, the two DISAGREE on this path — the server has him in the
-        // overworld at his spawn point while the client is still rendering the slot world it was in
-        // (ledger #170). That split is a pre-existing property of the orphan path, it is filed, and it
-        // is not what this test is about; what this test must not do is read the disagreeing instrument
-        // and call the placement broken. `playerDimField` is quoted alongside `playerDim` because they
-        // are maintained separately and a placement that moved one but not the other is a real failure
-        // this assertion should catch.
-        String serverPos = exec("artest player position-of " + BOT);
-        JsonObject riding = bot().reportRidingEntity();
-        assertEquals("the server must actually have placed him out of the cell, or the message is "
-                        + "describing something that did not happen: " + serverPos
-                        + " clientRiding=" + riding + " clientRenderedDim=" + clientDim(),
-                OVERWORLD_DIM, readInt(serverPos, "playerDim"));
-        assertEquals("and his persisted dimension field must agree, or the next login starts from a "
-                        + "world he is not in: " + serverPos,
-                OVERWORLD_DIM, readInt(serverPos, "playerDimField"));
-        assertFalse("and the client agrees he is riding nothing: " + riding + " server=" + serverPos,
-                riding.get("riding").getAsBoolean());
-    }
-
     /** The newest client chat line containing {@code needle} (case-insensitive), or null. */
-    private String chatLineContaining(String needle) throws Exception {
+    protected String chatLineContaining(String needle) throws Exception {
         com.google.gson.JsonArray lines = bot().reportChat(20).getAsJsonArray("lines");
         if (lines == null) {
             return null;
@@ -384,7 +284,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * stopping the server under him must bring him back in that seat, in his ship's cell, with a
      * control chain that still flies. Takes the slot dimension the arrangement banked him in.
      */
-    private void requireHeComesBackAboardHisShip(int slotDim) throws Exception {
+    protected void requireHeComesBackAboardHisShip(int slotDim) throws Exception {
         // CONTROL LEG (pre-restart): the seated pilot's REAL key must fly the ship in its cell
         // BEFORE the restart - without this, a dead key after the reboot could be a chain that
         // never worked in the cell at all, and the post-restart assertion could not indict the
@@ -580,303 +480,6 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /**
-     * A crew member who STANDS UP on his own ship in orbit is still aboard it, and must come back
-     * aboard - on his feet, on his own deck, in his ship's cell - not seated, and not at an ordinary
-     * spawn.
-     *
-     * <p>Two contracts meet here and must not be confused. That he comes back NOT SEATED is one: a
-     * player who left his post must not be dragged back into it by the next login. That he comes
-     * back IN HIS SHIP'S CELL is the other, and it is the one this leg used to pin INVERTED -
-     * standing up dropped the durable record entirely, the restore then had no evidence he had ever
-     * been aboard, and he woke at his overworld build site with his ship still in orbit without him.
-     * This leg is what says that is fixed.</p>
-     *
-     * <p><b>What replaced this leg's second job.</b> While it asserted "overworld" it also served as
-     * the falsifiability witness for the positive legs - the proof that these oracles can answer
-     * "not aboard" at all. It cannot do that any more, so the witness now comes from a player who
-     * was never aboard in the first place:
-     * {@link #aPlayerWhoWasNeverAboardIsNotRestoredOntoTheShip}.</p>
-     *
-     * <p>Both of the ways this leg could be green for the wrong reason are closed before it looks at
-     * the client: the production subsystem must be up on the second boot, and the ship must still be
-     * in the ledger.</p>
-     */
-    @Test
-    public void aPilotWhoStoodUpBeforeLoggingOutComesBackAboardOnHisFeet() throws Exception {
-        int slotDim = seatThePilotAboardHisShip();
-
-        // Stand up through the production path. The record must SURVIVE it and change SHAPE: he is
-        // no longer in a seat, he is on the deck - which is a way of BEING aboard, not of leaving.
-        // Polled, because the record is refreshed on a one-second cadence: a single sample taken on
-        // the dismount tick reads the shape he had a moment ago and says nothing.
-        String dismount = exec("artest player dismount");
-        assertTrue("the pilot must leave his seat: " + dismount, dismount.contains("\"ok\":true"));
-        String tag = "";
-        for (int attempt = 0; attempt < 40 && !tag.contains("\"posture\":\"STANDING\""); attempt++) {
-            bot().waitTicks(5);
-            tag = exec("artest space aboard-tag " + BOT);
-        }
-        assertTrue("standing up on his own deck must keep him aboard, as a STANDING record - a "
-                + "record dropped here is exactly what used to send him to an ordinary spawn: " + tag,
-                tag.contains("\"tagged\":true") && tag.contains("\"posture\":\"STANDING\""));
-        assertTrue("and it must still name the ship he is standing on: " + tag
-                + " (entered ship " + arrangedShipId + ")", tag.contains(arrangedShipId));
-        // He must really be resolved on the DECK, in the ship's own frame, before the restart: that
-        // is what produces the record asserted above, and a hull-stand catch is not it.
-        String capBefore = exec("artest vs deck-capture");
-        assertTrue("ARRANGEMENT: he must be captured ABOARD the deck after standing up, or the record "
-                + "above describes something other than a crew member on his feet: " + capBefore,
-                capBefore.contains("\"alreadyTracked\":true")
-                        && !capBefore.contains("\"hullStand\":true"));
-
-        String serverBeforeLogout = exec("artest player position-of " + BOT);
-        assertEquals("the SERVER must still have him in his ship's slot dimension when it writes him "
-                + "to disk: " + serverBeforeLogout, slotDim, readInt(serverBeforeLogout, "playerDim"));
-
-        closeBoth();
-        keepBootLog("boot1-standing");
-
-        serverHarness = RealDedicatedServerHarness.startWith(root, false);
-
-        // Both discriminators, BEFORE the client connects. Without them a client reading says
-        // nothing about the record: a second boot whose subsystem stood down, or whose ledger did
-        // not survive the shutdown save, would leave him at an ordinary spawn for its own reasons.
-        String statusAfter = exec("artest space subsystem-status");
-        assertTrue("the production subsystem must come up again on boot 2, or nothing below is "
-                + "exercising it: " + statusAfter, statusAfter.contains("\"registered\":true"));
-        String ledger = exec("artest space ledger-get " + arrangedShipId);
-        assertTrue("his ship must still be ledgered - there has to be a ship to restore him ONTO: "
-                + ledger, ledger.contains("\"found\":true"));
-
-        exec("artest vs permaload true");
-        startClient();
-        bot().waitForWorld();
-
-        // Poll for the end state on the same budget the positive legs use: the deck hold waits for
-        // the ship to finish re-assembling before it can place him, and gives up silently after it.
-        int dim = NO_CLIENT_WORLD;
-        boolean placed = false;
-        for (int attempt = 0; attempt < 45 && !placed; attempt++) {
-            bot().waitTicks(10);
-            dim = clientDim();
-            placed = dim != NO_CLIENT_WORLD && dim != OVERWORLD_DIM;
-        }
-        JsonObject riding = bot().reportRidingEntity();
-        JsonObject state = bot().reportState();
-        String observed = "clientDim=" + dim + " riding=" + riding + " state=" + state;
-
-        assertTrue("the client must have a world at all before anything can be read from it: "
-                + observed, dim != NO_CLIENT_WORLD);
-        assertFalse("a pilot who stood up must NOT be re-seated on the ship he left: " + observed,
-                riding.get("riding").getAsBoolean());
-        assertNotEquals("he stood up ON HIS OWN SHIP in orbit, which is a way of BEING aboard - so he "
-                + "must not come back at an ordinary spawn. Note dim 0 is an AMBIGUOUS failure: "
-                + "vanilla also forces it when the target world did not load, so attribute a red here "
-                + "from the server's login-restore log line. " + observed, OVERWORLD_DIM, dim);
-
-        // And he must be back ON his ship rather than merely in its cell: the deck hold puts the body
-        // on the stored deck point, so his client-rendered position has to be at the ship.
-        double[] shipPose = awaitShipPose(dim);
-        assertNotNull("his ship must be live in the dimension he came back to: " + observed, shipPose);
-        double clientX = state.get("playerX").getAsDouble();
-        double clientY = state.get("playerY").getAsDouble();
-        double clientZ = state.get("playerZ").getAsDouble();
-        for (int attempt = 0; attempt < 40 && Math.abs(clientY - shipPose[1]) > POSE_EPSILON;
-                attempt++) {
-            bot().waitTicks(10);
-            state = bot().reportState();
-            if (!state.get("worldReady").getAsBoolean()) {
-                continue;
-            }
-            clientX = state.get("playerX").getAsDouble();
-            clientY = state.get("playerY").getAsDouble();
-            clientZ = state.get("playerZ").getAsDouble();
-            double[] livePose = awaitShipPose(dim);
-            if (livePose != null) {
-                shipPose = livePose;
-            }
-        }
-        observed = "clientDim=" + dim + " state=" + state + " shipPose=[" + shipPose[0] + ","
-                + shipPose[1] + "," + shipPose[2] + "]";
-        assertEquals("he must come back at his ship on X: " + observed,
-                shipPose[0], clientX, POSE_EPSILON);
-        assertEquals("he must come back at his ship on Y: " + observed,
-                shipPose[1], clientY, POSE_EPSILON);
-        assertEquals("he must come back at his ship on Z: " + observed,
-                shipPose[2], clientZ, POSE_EPSILON);
-
-        // And that position must realize a coordinate inside his ship's own ledgered cell - the check
-        // "not the overworld" cannot make, since an ordinary block height in the right slot world
-        // would still pass it.
-        GalacticCoord cell = GalacticCoord.fromCellKey(arrangedCellKey);
-        assertNotNull("the ledger reported an unreadable cell key: " + arrangedCellKey, cell);
-        GalacticCoord realized = CellWorldMapper.coordOfPose(cell, clientX, clientY, clientZ);
-        assertTrue("the client's position must realize a coordinate in his ship's own cell "
-                + arrangedCellKey + ", but it maps to " + realized.cellKey() + ": " + observed,
-                realized.sameCell(cell));
-
-        // Coming back ON the ship is only half of it: he also has to STAY where he was put. Every
-        // position pin above is written at POSE_EPSILON, a tolerance sized to separate "at his ship"
-        // from "at a spawn" - three orders of magnitude coarser than a drift a player feels under his
-        // own feet, which is why this class was green while play reported exactly that.
-        requireHeIsNotDraggedAlongHisDeck(dim);
-    }
-
-    /**
-     * THE REPORTED CASE, and it is deliberately NOT the restart case: a crew member standing on his
-     * deck logs out and back IN while the server keeps running.
-     *
-     * <p><b>Why this is a separate leg.</b> The restart leg above measures the same body, the same
-     * deck and the same posture and finds the hold exact - so whatever the report is about, a restart
-     * does not carry it. A restart wipes every live object: the ship is re-assembled from disk, the
-     * slot dimension re-minted, the capture rebuilt from nothing. A plain relog wipes none of that.
-     * If two writers are fighting over where a restored body belongs, the restart is the arrangement
-     * that destroys the fight before it can be observed, and this is the one that keeps it.</p>
-     *
-     * <p>The slot dimension is asserted UNCHANGED here, unlike across a restart: without a reboot the
-     * pool does not re-mint its ids, so a different slot would mean something moved his ship, not
-     * that the ids churned.</p>
-     */
-    @Test
-    public void aCrewMemberWhoRelogsWithoutARestartIsNotDraggedAlongHisDeck() throws Exception {
-        int slotDim = seatThePilotAboardHisShip();
-
-        // The posture the report is about: on his feet, on his own deck.
-        String dismount = exec("artest player dismount");
-        assertTrue("the pilot must leave his seat: " + dismount, dismount.contains("\"ok\":true"));
-        String tag = "";
-        for (int attempt = 0; attempt < 40 && !tag.contains("\"posture\":\"STANDING\""); attempt++) {
-            bot().waitTicks(5);
-            tag = exec("artest space aboard-tag " + BOT);
-        }
-        assertTrue("ARRANGEMENT: standing up must keep him aboard as a STANDING record: " + tag,
-                tag.contains("\"tagged\":true") && tag.contains("\"posture\":\"STANDING\""));
-        String capBefore = exec("artest vs deck-capture");
-        assertTrue("ARRANGEMENT: he must be captured ABOARD the deck before the relog, or the leg is "
-                        + "not about a restored deck capture at all: " + capBefore,
-                capBefore.contains("\"alreadyTracked\":true")
-                        && !capBefore.contains("\"hullStand\":true"));
-
-        // A REAL logout that leaves the world running. The client has no world to wait ticks in while
-        // it is away, so the offline window is polled from the server side.
-        bot().disconnect();
-        String offline = "";
-        boolean gone = false;
-        for (int attempt = 0; attempt < 40 && !gone; attempt++) {
-            Thread.sleep(250);
-            offline = exec("artest player position-of " + BOT);
-            gone = offline.contains("\"error\":\"no such player\"")
-                    || offline.contains("\"error\":\"no players connected\"");
-        }
-        assertTrue("ARRANGEMENT: the server must see him GONE after the disconnect, or nothing below "
-                + "is a relog: " + offline, gone);
-
-        // Nobody is left near the ship to hold its chunks while he is away.
-        exec("artest vs permaload true");
-
-        bot().connect();
-        bot().waitForWorld();
-        int dim = NO_CLIENT_WORLD;
-        for (int attempt = 0; attempt < 45 && (dim == NO_CLIENT_WORLD || dim == OVERWORLD_DIM);
-                attempt++) {
-            bot().waitTicks(10);
-            dim = clientDim();
-        }
-        assertEquals("he relogged while standing on his ship in its cell, and no reboot re-minted the "
-                        + "pool, so he must come back in the very same slot dimension: clientDim="
-                        + dim + " riding=" + bot().reportRidingEntity(),
-                slotDim, dim);
-
-        requireHeIsNotDraggedAlongHisDeck(dim);
-    }
-
-    /**
-     * The same relog, on an INVERTED deck - the attitude the report actually comes from.
-     *
-     * <p><b>Why the attitude is not decoration.</b> This path is governed by the any-attitude crew
-     * contract: gravity is projected along the DECK normal rather than world -Y, the floor search looks
-     * below the body's feet in the SHIP frame, the aboard/hull-stand classification depends on contact
-     * orientation, and the deck-plane axes change sign. An upright fixture cannot exhibit an
-     * attitude-dependent defect at all - which is why fourteen upright runs of the leg above could not,
-     * and why "it did not reproduce" was a statement about the arrangement, not about the code.</p>
-     *
-     * <p>The ship is rolled while he is ALREADY captured on the deck, so the capture carries his deck
-     * spot through the roll and leaves him standing on the deck of an inverted ship - hanging under the
-     * hull in world terms - the same way the planet-side inverted leg arranges it. The inversion is
-     * established BEFORE the logout, on the assumption that the ship was already inverted when he left;
-     * "inverted while he was away" is a different arrangement and would need its own leg.</p>
-     */
-    @Test
-    public void aCrewMemberWhoRelogsOnAnInvertedDeckIsNotDraggedAlongIt() throws Exception {
-        int slotDim = seatThePilotAboardHisShip();
-
-        String dismount = exec("artest player dismount");
-        assertTrue("the pilot must leave his seat: " + dismount, dismount.contains("\"ok\":true"));
-        String tag = "";
-        for (int attempt = 0; attempt < 40 && !tag.contains("\"posture\":\"STANDING\""); attempt++) {
-            bot().waitTicks(5);
-            tag = exec("artest space aboard-tag " + BOT);
-        }
-        assertTrue("ARRANGEMENT: standing up must keep him aboard as a STANDING record: " + tag,
-                tag.contains("\"tagged\":true") && tag.contains("\"posture\":\"STANDING\""));
-        assertTrue("ARRANGEMENT: he must be captured on the deck while the ship is still upright: "
-                        + exec("artest vs deck-capture"),
-                exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
-
-        // Roll the ship to (near-)inverted UNDER him, through the ROLL CHANNEL of the flight input.
-        // The attitude-target verb was tried first and does not survive here: this arrangement leaves a
-        // held all-zero flight input behind after the climb, and the flight computer re-commands "hold
-        // the current attitude" from it every tick, so a commanded target is cancelled before it turns
-        // anything (measured: three runs, upY stayed exactly 1.0 while the verb answered
-        // commanded=true). The planet-side leg never publishes a flight input at all, which is why the
-        // same verb works there. Rolling through the input is also the way a pilot actually rolls.
-        double[] pose = awaitShipPose(slotDim);
-        assertNotNull("the ship must be live to be rolled", pose);
-        exec("artest vs ff-input 0 0 0 0 0 1");
-        double upY = 1.0;
-        for (int attempt = 0; attempt < 40 && upY > -0.9; attempt++) {
-            bot().waitTicks(10);
-            // upY from the quat: for a roll about X (qy=qz=0), upY = 1 - 2*qx^2.
-            double qx = readDouble(jsonOf(exec("artest vs ship-info " + slotDim + " 0 0 0")), "qx");
-            upY = 1.0 - 2.0 * qx * qx;
-        }
-        exec("artest vs ff-input " + HANDS_OFF);
-        bot().waitTicks(20);
-        String info = jsonOf(exec("artest vs ship-info " + slotDim + " 0 0 0"));
-        assertTrue("ARRANGEMENT: the ship must be (near-)inverted before the relog, or this leg is "
-                + "silently the upright one again (upY=" + upY + "): " + info, upY < -0.9);
-        String capInverted = exec("artest vs deck-capture");
-        assertTrue("ARRANGEMENT: he must still be captured on the INVERTED deck: " + capInverted,
-                capInverted.contains("\"alreadyTracked\":true"));
-
-        bot().disconnect();
-        String offline = "";
-        boolean gone = false;
-        for (int attempt = 0; attempt < 40 && !gone; attempt++) {
-            Thread.sleep(250);
-            offline = exec("artest player position-of " + BOT);
-            gone = offline.contains("\"error\":\"no such player\"")
-                    || offline.contains("\"error\":\"no players connected\"");
-        }
-        assertTrue("ARRANGEMENT: the server must see him GONE after the disconnect: " + offline, gone);
-
-        exec("artest vs permaload true");
-        bot().connect();
-        bot().waitForWorld();
-        int dim = NO_CLIENT_WORLD;
-        for (int attempt = 0; attempt < 45 && (dim == NO_CLIENT_WORLD || dim == OVERWORLD_DIM);
-                attempt++) {
-            bot().waitTicks(10);
-            dim = clientDim();
-        }
-        assertEquals("he relogged standing on his INVERTED ship in its cell: clientDim=" + dim
-                        + " riding=" + bot().reportRidingEntity(),
-                slotDim, dim);
-
-        requireHeIsNotDraggedAlongHisDeck(dim);
-    }
-
-    /**
      * A crew member restored onto his deck must not be DRAGGED along it: with no input at all, his
      * own position in the ship's frame has to stay put.
      *
@@ -895,7 +498,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * so the number of resolved ticks inside the window is asserted before the travel is. Without
      * that, a client whose resolver never ran would produce the cleanest possible pass.</p>
      */
-    private void requireHeIsNotDraggedAlongHisDeck(int dim) throws Exception {
+    protected void requireHeIsNotDraggedAlongHisDeck(int dim) throws Exception {
         // DIAGNOSTIC FIRST, and it covers the login itself. The client JVM is new on this boot, so its
         // record starts empty and everything in it belongs to this session: the whole restore, the
         // placement jump included. A drag reported "right after entering the game" is a TRANSIENT, and
@@ -1061,7 +664,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * planet side: the subject is an inherited VELOCITY, not an inherited INPUT, and a window opened on
      * the release tick cannot tell a key that is still held from a body that is still moving.</p>
      */
-    private double[] walkThenIdle(int dim) throws Exception {
+    protected double[] walkThenIdle(int dim) throws Exception {
         pulseThrottle();
         double[] deckBefore = awaitShipPose(dim);
         long walkFrom = lastClientTick();
@@ -1117,7 +720,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * remaining candidates for a pinned body - a zero here alongside a zero travel indicts whatever
      * re-applies the committed point, not the collision box.
      */
-    private int sweepPinnedTicksIn(String history, long fromTick) {
+    protected int sweepPinnedTicksIn(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         int n = 0;
         while (m.find()) {
@@ -1130,7 +733,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** The most obstacles the sweep saw in the window - a body standing inside geometry sees more. */
-    private int maxObstaclesIn(String history, long fromTick) {
+    protected int maxObstaclesIn(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         int worst = -1;
         while (m.find()) {
@@ -1142,7 +745,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** How many ticks of the window the resolver did NOT consider the body to be on the deck. */
-    private int offDeckTicksIn(String history, long fromTick) {
+    protected int offDeckTicksIn(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         int n = 0;
         while (m.find()) {
@@ -1154,7 +757,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** How many ticks of the window carried a nonzero walk input, as the resolver saw it. */
-    private int inputTicksIn(String history, long fromTick) {
+    protected int inputTicksIn(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         int n = 0;
         while (m.find()) {
@@ -1173,7 +776,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * different regime with a different suspected defect - and the accumulation is invisible in any
      * single window's numbers.
      */
-    private void pulseThrottle() throws Exception {
+    protected void pulseThrottle() throws Exception {
         exec("artest vs ff-input " + HELD_CLIMB);
         bot().waitTicks(THROTTLE_PULSE_TICKS);
         exec("artest vs ff-input " + HANDS_OFF);
@@ -1185,7 +788,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * last drop's reason), or it is still holding him and simply had nothing to say. Without this a
      * silent record reads as "he did not move", which is the one reading it must never be able to fake.
      */
-    private String dropReasons() throws Exception {
+    protected String dropReasons() throws Exception {
         return "CLIENT[resolvedTicks=" + clientString(SHIP_FRAME_TRAVEL, "resolvedTicks")
                 + " declinedTicks=" + clientString(SHIP_FRAME_TRAVEL, "declinedTicks")
                 + " externalMoveDrops=" + clientString(SHIP_FRAME_TRAVEL, "externalMoveDrops")
@@ -1193,7 +796,7 @@ public class SpaceLoginRestoreClientE2ETest {
                 + " worldMoveApplies=" + clientString(SHIP_FRAME_TRAVEL, "worldMoveApplies") + "]";
     }
 
-    private static String describeWalk(double[] w) {
+    protected static String describeWalk(double[] w) {
         return "walkTravel=" + w[0] + " idleAfterRelease=" + w[1] + " resolvedIdle=" + (int) w[2]
                 + " deckMoved=" + w[3] + " creepBandTotal=" + w[4]
                 + " inputTicksSeenByResolver=" + (int) w[5] + "/" + (int) w[6]
@@ -1203,7 +806,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** A client-side counter as a number, or {@code -1} when it cannot be read. */
-    private long clientLong(String field) throws Exception {
+    protected long clientLong(String field) throws Exception {
         try {
             return Long.parseLong(clientString(SHIP_FRAME_TRAVEL, field).trim());
         } catch (NumberFormatException notANumber) {
@@ -1216,7 +819,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * and measure the same drift over the same window. Diagnostic only: any failure to find a seat
      * degrades to text, because this must never be the reason the subject's pin goes red.
      */
-    private String measureAfterReCapture(int dim) {
+    protected String measureAfterReCapture(int dim) {
         try {
             String seat = exec("artest vs seat-mount " + dim);
             if (!readBool(seat, "seatFound")) {
@@ -1252,65 +855,6 @@ public class SpaceLoginRestoreClientE2ETest {
         }
     }
 
-    /**
-     * THE FALSIFIABILITY WITNESS for every positive leg in this class, and the reason a green
-     * "he is aboard" means anything at all: the same world, the same entry, the same ship in the
-     * same cell, the same two boots and the same oracles - but a player who never boarded.
-     *
-     * <p>He must come back where vanilla would put him, off the ship and carrying no record. Without
-     * a leg that comes back negative through these very oracles, "he is aboard his ship" could
-     * equally be produced by an oracle that answers "aboard" unconditionally, or by a restore that
-     * drags every logging-in player to the nearest ship. This job used to belong to the standing
-     * pilot's leg; it stopped being able to do it the moment a standing crew member was correctly
-     * restored aboard.</p>
-     */
-    @Test
-    public void aPlayerWhoWasNeverAboardIsNotRestoredOntoTheShip() throws Exception {
-        flyOneShipIntoItsCell();
-
-        // The client never went near the ship. The record must be absent BEFORE the restart too -
-        // that is what makes the reading after it attributable to the restore rather than to a
-        // record that was never written in the first place.
-        String tagBefore = exec("artest space aboard-tag " + BOT);
-        assertTrue("a player who never boarded must carry no aboard record: " + tagBefore,
-                tagBefore.contains("\"tagged\":false"));
-
-        closeBoth();
-        keepBootLog("boot1-never-aboard");
-
-        serverHarness = RealDedicatedServerHarness.startWith(root, false);
-
-        // The same two discriminators the other legs establish, so this leg differs from them in
-        // exactly one thing: whether the player was ever aboard.
-        String statusAfter = exec("artest space subsystem-status");
-        assertTrue("the production subsystem must come up again on boot 2: " + statusAfter,
-                statusAfter.contains("\"registered\":true"));
-        String ledger = exec("artest space ledger-get " + arrangedShipId);
-        assertTrue("the ship must still be ledgered - a restore with nothing to restore ONTO would "
-                + "leave him in the overworld for the wrong reason: " + ledger,
-                ledger.contains("\"found\":true"));
-
-        exec("artest vs permaload true");
-        startClient();
-        bot().waitForWorld();
-        bot().waitTicks(450);
-
-        int dim = clientDim();
-        JsonObject riding = bot().reportRidingEntity();
-        String tag = exec("artest space aboard-tag " + BOT);
-        String observed = "clientDim=" + dim + " riding=" + riding + " tag=" + tag;
-
-        assertTrue("the client must have a world at all before anything can be read from it: "
-                + observed, dim != NO_CLIENT_WORLD);
-        assertEquals("a player who was never aboard must come back where vanilla puts him, not in "
-                + "the ship's cell: " + observed, OVERWORLD_DIM, dim);
-        assertFalse("and he must not be seated on a ship he never boarded: " + observed,
-                riding.get("riding").getAsBoolean());
-        assertTrue("and the record oracle must still answer NO for him - if it cannot, every "
-                + "\"tagged\":true in this class is worthless: " + observed,
-                tag.contains("\"tagged\":false"));
-    }
-
     // --- arrangement -------------------------------------------------------------------------------
 
     /**
@@ -1334,7 +878,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * failure mode that makes a two-boot test unattributable: after the restart there is no way left
      * to tell "the restore lost him" from "he was never aboard in the first place".</p>
      */
-    private int seatThePilotAboardHisShip() throws Exception {
+    protected int seatThePilotAboardHisShip() throws Exception {
         int slotDim = flyOneShipIntoItsCell();
 
         // The cell holds exactly this one ship, so "the ship nearest anywhere" is unambiguous.
@@ -1420,7 +964,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * same ledger as the legs where somebody does - which is what makes it a witness for their
      * oracles rather than a different experiment.</p>
      */
-    private int flyOneShipIntoItsCell() throws Exception {
+    protected int flyOneShipIntoItsCell() throws Exception {
         serverHarness = RealDedicatedServerHarness.startWith(root, false);
         assumeProductionSubsystemAvailable();
 
@@ -1525,7 +1069,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * record was produced BY the flight, which is the claim a green restart leg would otherwise be
      * unable to distinguish from "it was there all along".</p>
      */
-    private int seatThePilotBeforeHeLeavesTheGround() throws Exception {
+    protected int seatThePilotBeforeHeLeavesTheGround() throws Exception {
         serverHarness = RealDedicatedServerHarness.startWith(root, false);
         assumeProductionSubsystemAvailable();
 
@@ -1657,7 +1201,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * scratch, so without this the first boot's record - the only place that says what happened to the
      * pilot before he was written to disk - is destroyed by the second boot.
      */
-    private void keepBootLog(String label) {
+    protected void keepBootLog(String label) {
         try {
             java.nio.file.Path live = root.resolve("logs").resolve("latest.log");
             if (java.nio.file.Files.exists(live)) {
@@ -1689,7 +1233,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * there is nothing for it to host, so it deliberately declines. The wiring under test would not
      * exist, hence a skip rather than a failure.
      */
-    private void assumeProductionSubsystemAvailable() throws Exception {
+    protected void assumeProductionSubsystemAvailable() throws Exception {
         String vs = exec("artest vs available");
         Assume.assumeTrue("Valkyrien Skies absent - the production space subsystem declines to "
                 + "register without it; run with -PwithVS: " + vs, vs.contains("\"available\":true"));
@@ -1698,7 +1242,7 @@ public class SpaceLoginRestoreClientE2ETest {
     // --- lifecycle ---------------------------------------------------------------------------------
 
     /** Start the client against the live server, never leaking the server JVM if the client fails. */
-    private void startClient() throws Exception {
+    protected void startClient() throws Exception {
         try {
             clientHarness = RealClientHarness.start(serverHarness);
         } catch (Exception startupFailure) {
@@ -1713,7 +1257,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Client first, then server: reversing the order leaks or hangs. Safe to call when nothing runs. */
-    private void closeBoth() throws Exception {
+    protected void closeBoth() throws Exception {
         Exception deferred = null;
         if (clientHarness != null) {
             try {
@@ -1742,11 +1286,11 @@ public class SpaceLoginRestoreClientE2ETest {
 
     // --- helpers -----------------------------------------------------------------------------------
 
-    private String exec(String cmd) throws Exception {
+    protected String exec(String cmd) throws Exception {
         return String.join("\n", serverHarness.client().execute(cmd));
     }
 
-    private ClientBot bot() {
+    protected ClientBot bot() {
         return clientHarness.bot();
     }
 
@@ -1756,7 +1300,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * stimulus/observation pair as the planet-side relog-control pin: the REAL key in, the
      * client's own rendered player altitude out.
      */
-    private double climbWith(int key, double from) throws Exception {
+    protected double climbWith(int key, double from) throws Exception {
         int budget = (int) (40 * TestTimeouts.factor());
         double last = from;
         bot().holdKey(key);
@@ -1777,7 +1321,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * asserts "he is now aboard" has to give the writer its second - a single sample taken on the
      * mount tick is a statement about the cadence, not about the record.
      */
-    private String awaitTagged() throws Exception {
+    protected String awaitTagged() throws Exception {
         String tag = "";
         for (int attempt = 0; attempt < 40 && !tag.contains("\"tagged\":true"); attempt++) {
             bot().waitTicks(5);
@@ -1787,7 +1331,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** The client's own rendered player altitude, or NaN while it has no world/player. */
-    private double clientPlayerY() throws Exception {
+    protected double clientPlayerY() throws Exception {
         JsonObject state = bot().reportState();
         return state.has("playerY") ? state.get("playerY").getAsDouble() : Double.NaN;
     }
@@ -1798,7 +1342,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * {@code mc.world} is null it answers with the readiness flag and nothing else - so the flag has
      * to be read before "dim" exists to be read at all.
      */
-    private int clientDim() throws Exception {
+    protected int clientDim() throws Exception {
         JsonObject weather = bot().reportWeather();
         if (!weather.get("worldReady").getAsBoolean()) {
             return NO_CLIENT_WORLD;
@@ -1814,7 +1358,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * at the cell pose. The re-assembly is asynchronous, so this retries, force-loading the ships of
      * any dimension that answered at all.
      */
-    private String[] awaitSettledShipSlot() throws Exception {
+    protected String[] awaitSettledShipSlot() throws Exception {
         String dims = exec("artest dim list");
         Matcher list = FORGE_DIMS.matcher(dims);
         assertTrue("could not read the registered dimensions: " + dims, list.find());
@@ -1844,7 +1388,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * The live world position of the one ship in {@code dim}, or {@code null} if none is up within
      * the wait. The cell holds exactly one ship, so the nearest ship to any point is that ship.
      */
-    private double[] awaitShipPose(int dim) throws Exception {
+    protected double[] awaitShipPose(int dim) throws Exception {
         for (int attempt = 0; attempt < 40; attempt++) {
             String info = exec("artest vs ship-info " + dim + " 0 0 0");
             if (info.contains("\"managed\":true")) {
@@ -1858,7 +1402,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Poll for a loaded VS ship in {@code dim} (assembly is async; a headless server forces the load). */
-    private int waitForLoadedShip(int dim) throws Exception {
+    protected int waitForLoadedShip(int dim) throws Exception {
         for (int attempt = 0; attempt < 40; attempt++) {
             if (readIntOr(exec("artest vs ship-count-all " + dim), "count", -1) >= 1) {
                 exec("artest vs load-ships " + dim);
@@ -1873,7 +1417,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Clear the build site so the fixture is not welded to whatever terrain generated there. */
-    private void clearArea(int baseX, int baseZ) throws Exception {
+    protected void clearArea(int baseX, int baseZ) throws Exception {
         int cx1 = (baseX - 4) >> 4, cz1 = (baseZ - 4) >> 4;
         int cx2 = (baseX + 20) >> 4, cz2 = (baseZ + 20) >> 4;
         assertTrue("chunk warmup failed", exec("artest chunk warmup " + LAUNCH_DIM
@@ -1885,7 +1429,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Place a fixture build and return its build-controller position, as the assembler wants it. */
-    private String placeFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
+    protected String placeFixture(int baseX, int baseY, int baseZ, String variant) throws Exception {
         String fixture = exec("artest fixture rocket " + LAUNCH_DIM
                 + " " + baseX + " " + baseY + " " + baseZ + " " + variant);
         assertTrue("fixture (" + variant + ") failed: " + fixture, fixture.contains("\"ok\":true"));
@@ -1894,19 +1438,19 @@ public class SpaceLoginRestoreClientE2ETest {
         return builder.group(1) + " " + builder.group(2) + " " + builder.group(3);
     }
 
-    private static String readShipId(String json) {
+    protected static String readShipId(String json) {
         Matcher m = SHIP_ID.matcher(json);
         assertTrue("expected a minted ship id in: " + json, m.find());
         return m.group(1);
     }
 
-    private static int readInt(String json, String key) {
+    protected static int readInt(String json, String key) {
         Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+)").matcher(json);
         assertTrue("expected int \"" + key + "\" in: " + json, m.find());
         return Integer.parseInt(m.group(1));
     }
 
-    private static int readIntOr(String json, String key, int def) {
+    protected static int readIntOr(String json, String key, int def) {
         Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+)").matcher(json);
         return m.find() ? Integer.parseInt(m.group(1)) : def;
     }
@@ -1916,7 +1460,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * test-mode server interleaves its own trace lines with the reply - so a numeric read against the
      * raw blob can match a digit from a log line and answer confidently with the wrong value.
      */
-    private static String jsonOf(String answer) {
+    protected static String jsonOf(String answer) {
         // The reply does not arrive on a line of its own: the server prints it THROUGH its logger, so
         // the object is embedded in "[14:40:23] [Server thread/INFO] [advancedrocketry]: {...}". A
         // line-level startsWith("{") therefore never matches and quietly returns the whole blob -
@@ -1926,19 +1470,19 @@ public class SpaceLoginRestoreClientE2ETest {
         return open >= 0 && close > open ? answer.substring(open, close + 1) : answer;
     }
 
-    private static double readDouble(String json, String key) {
+    protected static double readDouble(String json, String key) {
         Matcher m = Pattern.compile("\"" + key + "\":(-?[0-9.E\\-]+)").matcher(json);
         assertTrue("expected number \"" + key + "\" in: " + json, m.find());
         return Double.parseDouble(m.group(1));
     }
 
-    private static String readString(String json, String key) {
+    protected static String readString(String json, String key) {
         Matcher m = Pattern.compile("\"" + key + "\":\"([^\"]*)\"").matcher(json);
         return m.find() ? m.group(1) : null;
     }
 
     /** The pool's slot dimension ids as reported by {@code space subsystem-status}. */
-    private static java.util.List<Integer> slotDimsOf(String json) {
+    protected static java.util.List<Integer> slotDimsOf(String json) {
         Matcher m = Pattern.compile("\"slotDims\":\\[([^\\]]*)\\]").matcher(json);
         assertTrue("expected \"slotDims\" in: " + json, m.find());
         java.util.List<Integer> dims = new java.util.ArrayList<Integer>();
@@ -1951,14 +1495,14 @@ public class SpaceLoginRestoreClientE2ETest {
         return dims;
     }
 
-    private static boolean readBool(String json, String key) {
+    protected static boolean readBool(String json, String key) {
         return Pattern.compile("\"" + key + "\":true").matcher(json).find();
     }
 
     // --- the per-tick ship-frame record (client side) -----------------------------------------------
 
     /** A client-side static field as text, or a marked placeholder - never an assertion subject. */
-    private String clientString(String className, String field) throws Exception {
+    protected String clientString(String className, String field) throws Exception {
         try {
             return bot().readStaticField(className, field).get("value").getAsString();
         } catch (Exception unavailable) {
@@ -1971,13 +1515,13 @@ public class SpaceLoginRestoreClientE2ETest {
      * costs a round trip each, which stretches the very timeline being measured and hides everything
      * between the samples.
      */
-    private String clientTickHistory() throws Exception {
+    protected String clientTickHistory() throws Exception {
         return clientString(SHIP_FRAME_TRAVEL, "tickHistory");
     }
 
     /** The newest resolved-tick number on record - the mark a window starts from. The record survives
      *  the reconnect, so without this mark the pins would read ticks from before the restart. */
-    private long lastClientTick() throws Exception {
+    protected long lastClientTick() throws Exception {
         Matcher m = HISTORY_LINE.matcher(clientTickHistory());
         long last = -1L;
         while (m.find()) {
@@ -1991,16 +1535,16 @@ public class SpaceLoginRestoreClientE2ETest {
      * first tick after {@code fromTick} to the FARTHEST one, not the last, so a body that wanders out
      * and comes back cannot pass.
      */
-    private double bodyPointTravel(String history, long fromTick) {
+    protected double bodyPointTravel(String history, long fromTick) {
         return travel(history, fromTick, 3);
     }
 
     /** The same measure for the point the resolver COMMITS - still for a body someone else pulls. */
-    private double heldPointTravel(String history, long fromTick) {
+    protected double heldPointTravel(String history, long fromTick) {
         return travel(history, fromTick, 6);
     }
 
-    private double travel(String history, long fromTick, int firstGroup) {
+    protected double travel(String history, long fromTick, int firstGroup) {
         Matcher m = HISTORY_LINE.matcher(history);
         double[] first = null;
         double worst = 0.0;
@@ -2021,7 +1565,7 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Ticks the window actually covers - the witness that the pins had something to look at. */
-    private int resolvedSince(String history, long fromTick) {
+    protected int resolvedSince(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         int n = 0;
         while (m.find()) {
@@ -2038,7 +1582,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * carry; ticks on the hull path name the capture-mode flip that ledger #108 was; input ticks say
      * the body was not actually idle and the whole window is void.
      */
-    private String writerSummary(String history, long fromTick) {
+    protected String writerSummary(String history, long fromTick) {
         Matcher m = HISTORY_LINE.matcher(history);
         double worstMotion = 0.0;
         double worstCarry = 0.0;
@@ -2072,7 +1616,7 @@ public class SpaceLoginRestoreClientE2ETest {
      * The largest single-tick step the body's ship-frame point took. A placement jump shows up here
      * and nowhere else, which is what lets the creep total below stay honest about a steady drag.
      */
-    private double worstStep(String history, long fromTick) {
+    protected double worstStep(String history, long fromTick) {
         return stepStat(history, fromTick, false);
     }
 
@@ -2080,11 +1624,11 @@ public class SpaceLoginRestoreClientE2ETest {
      * The sum of the per-tick steps that fall inside the creep band - the size of a drag, with the
      * one-off jumps of a placement excluded rather than averaged away.
      */
-    private double creepBandTotal(String history, long fromTick) {
+    protected double creepBandTotal(String history, long fromTick) {
         return stepStat(history, fromTick, true);
     }
 
-    private double stepStat(String history, long fromTick, boolean bandSum) {
+    protected double stepStat(String history, long fromTick, boolean bandSum) {
         Matcher m = HISTORY_LINE.matcher(history);
         double[] previous = null;
         double worst = 0.0;
@@ -2108,12 +1652,12 @@ public class SpaceLoginRestoreClientE2ETest {
     }
 
     /** Distance in the deck plane: the ship frame's own horizontal, gravity excluded. */
-    private static double alongDeck(double[] a, double[] b) {
+    protected static double alongDeck(double[] a, double[] b) {
         double dx = a[0] - b[0], dz = a[2] - b[2];
         return Math.sqrt(dx * dx + dz * dz);
     }
 
-    private static double distance(double[] a, double[] b) {
+    protected static double distance(double[] a, double[] b) {
         double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }

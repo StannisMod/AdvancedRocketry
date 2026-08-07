@@ -539,6 +539,19 @@ public final class ClientBot implements Closeable {
     }
 
     /**
+     * Clear the chat backlog and the action-bar overlay, leaving the open screen and held keys
+     * ALONE. Returns the same {@code clearedChatLines} / {@code clearedOverlay} /
+     * {@code clearedOverlayTicks} fields {@link #resetClientState()} does.
+     *
+     * <p>Use this to arm a chat observation immediately before a stimulus that is a click on an
+     * OPEN GUI: {@link #resetClientState()} closes the screen, so calling it there would destroy
+     * the arrangement it was called to protect.</p>
+     */
+    public JsonObject clearChat() throws IOException {
+        return assertOk(execute(command("clear_chat")));
+    }
+
+    /**
      * Is the client still answering? Answers within {@code timeoutMillis} whatever the client does.
      *
      * <p>This exists because the command channel's own read timeout is <b>two minutes, scaled by

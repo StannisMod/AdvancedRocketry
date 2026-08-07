@@ -39,17 +39,29 @@ public final class Plot {
     public static final class Lane {
         public final int originX;
         public final int originZ;
-        /** Distance between successive plot origins. Must be at least {@link Plot#SIZE}. */
+        /** Distance between successive plot origins. Must be at least {@link #plotSize}. */
         public final int stride;
+        /**
+         * Edge of every plot on this lane. Widen it for a class whose fixtures are bigger than
+         * {@link Plot#SIZE} — a pair of linked machines standing 60 blocks apart, a multiblock plus
+         * its clearance. Widening the plot is the honest move there; reaching past the plot's edge
+         * into a neighbour's is what the allocator exists to prevent.
+         */
+        public final int plotSize;
 
         public Lane(int originX, int originZ, int stride) {
-            if (stride < SIZE) {
-                throw new IllegalArgumentException("stride " + stride + " < plot size " + SIZE
+            this(originX, originZ, stride, SIZE);
+        }
+
+        public Lane(int originX, int originZ, int stride, int plotSize) {
+            if (stride < plotSize) {
+                throw new IllegalArgumentException("stride " + stride + " < plot size " + plotSize
                         + " — plots would overlap, which is the one thing they exist to prevent");
             }
             this.originX = originX;
             this.originZ = originZ;
             this.stride = stride;
+            this.plotSize = plotSize;
         }
 
         /**
@@ -68,6 +80,8 @@ public final class Plot {
     /** North-west corner of the plot. */
     public final int originX;
     public final int originZ;
+    /** Edge of this plot, from its lane. Usually {@link #SIZE}. */
+    public final int size;
 
     Plot(int index, String owner, int dim, Lane lane) {
         this.index = index;
@@ -75,32 +89,33 @@ public final class Plot {
         this.dim = dim;
         this.originX = lane.originX + index * lane.stride;
         this.originZ = lane.originZ;
+        this.size = lane.plotSize;
     }
 
     /** Absolute X of a point {@code dx} blocks into the plot. */
     public int x(int dx) {
-        if (dx < 0 || dx >= SIZE) {
+        if (dx < 0 || dx >= size) {
             throw new IllegalArgumentException("dx=" + dx + " leaves plot " + this
-                    + " — a scenario that needs more room needs a bigger SIZE, not a neighbour's plot");
+                    + " — a scenario that needs more room declares a wider lane, not a neighbour's plot");
         }
         return originX + dx;
     }
 
     /** Absolute Z of a point {@code dz} blocks into the plot. */
     public int z(int dz) {
-        if (dz < 0 || dz >= SIZE) {
+        if (dz < 0 || dz >= size) {
             throw new IllegalArgumentException("dz=" + dz + " leaves plot " + this
-                    + " — a scenario that needs more room needs a bigger SIZE, not a neighbour's plot");
+                    + " — a scenario that needs more room declares a wider lane, not a neighbour's plot");
         }
         return originZ + dz;
     }
 
     public int centerX() {
-        return originX + SIZE / 2;
+        return originX + size / 2;
     }
 
     public int centerZ() {
-        return originZ + SIZE / 2;
+        return originZ + size / 2;
     }
 
     /**
@@ -109,8 +124,8 @@ public final class Plot {
      * MY arrangement build one".
      */
     public boolean contains(double worldX, double worldZ) {
-        return worldX >= originX && worldX < originX + SIZE
-                && worldZ >= originZ && worldZ < originZ + SIZE;
+        return worldX >= originX && worldX < originX + size
+                && worldZ >= originZ && worldZ < originZ + size;
     }
 
     public int index() {
@@ -124,7 +139,7 @@ public final class Plot {
     @Override
     public String toString() {
         return "Plot#" + index + "[" + owner + " dim=" + dim
-                + " x=" + originX + ".." + (originX + SIZE - 1)
-                + " z=" + originZ + ".." + (originZ + SIZE - 1) + "]";
+                + " x=" + originX + ".." + (originX + size - 1)
+                + " z=" + originZ + ".." + (originZ + size - 1) + "]";
     }
 }

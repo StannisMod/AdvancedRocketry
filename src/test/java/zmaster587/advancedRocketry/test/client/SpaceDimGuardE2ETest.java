@@ -1,52 +1,47 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.client.RealClientHarness;
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
-import com.github.stannismod.forge.testing.junit.AbstractHeadlessServerTest;
-import com.github.stannismod.forge.testing.server.RealDedicatedServerHarness;
-import com.google.gson.JsonObject;
-import org.junit.After;
-import org.junit.Assume;
-import org.junit.Before;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * space-dim "outside-any-station" teleport guard.
+ * The space-dim "outside-any-station" teleport guard, both branches.
  *
- * <p>Production:
- * {@link zmaster587.advancedRocketry.event.PlanetEventHandler#playerTick}
- * lines 210-232. Every server tick, if the player is in
- * {@code ARConfiguration.spaceDimId}, NOT inside any registered
- * station's bounds, and NOT riding a rocket, the handler:</p>
+ * <p>Production: {@link zmaster587.advancedRocketry.event.PlanetEventHandler#playerTick}. Every
+ * server tick, if the player is in {@code ARConfiguration.spaceDimId}, NOT inside any registered
+ * station's bounds, and NOT riding a rocket, the handler either teleports him to the FURTHEST
+ * registered station's {@code getSpawnLocation()}, or — when no
+ * {@link zmaster587.advancedRocketry.api.stations.ISpaceObject} is registered at all — transfers him
+ * to dim 0 through {@code PlayerList.transferPlayerToDimension} with a {@code TeleporterNoPortal}.</p>
  *
- * <ul>
- *   <li>If at least one {@link zmaster587.advancedRocketry.api.stations.ISpaceObject}
- *       station is registered, teleports the player to the
- *       <strong>furthest</strong> station's
- *       {@code getSpawnLocation()}.</li>
- *   <li>Otherwise transfers the player to dim 0 via
- *       {@code PlayerList.transferPlayerToDimension} with a
- *       {@code TeleporterNoPortal}.</li>
- * </ul>
+ * <h2>Why this class boots ONE harness for two scenarios, and why it is still its own class</h2>
  *
- * <p>This pin asserts both branches behave correctly. Reproduces the
- * inline server+client harness lifecycle from
- * {@link AtmospherePlayerEventE2ETest} / {@link WeatherClientSyncE2ETest}
- * because the no-station branch needs a workdir without persisted
- * station NBT.</p>
+ * <p>It used to spin up a server and a client per method — 175.1 s for two assertions, measured
+ * 2026-08-07 at 8 forks. It now shares one, like the rest of the tier.</p>
+ *
+ * <p>It does not join a bigger group, and the reason is a constraint no other class here has:
+ * <b>{@link #noStationFallbackTeleportsPlayerToOverworld()} requires a world in which no station has
+ * ever been registered</b>. Its sibling registers one, so the order matters, and
+ * {@code NAME_ASCENDING} delivers it (n &lt; r) — but that is a fact about two names, not a
+ * guarantee anyone should lean on silently. So the precondition is ASSERTED as an arrangement step:
+ * if a future scenario in this class ever registers a station first, this reddens as ARRANGEMENT
+ * (the fixture was wrong) rather than as CONTRACT (production is broken), which are opposite
+ * responses.</p>
+ *
+ * <p>The old class also created its own temp work directory to get "a workdir without persisted
+ * station NBT". That bought nothing: {@code RealDedicatedServerHarness.start()} already creates a
+ * fresh temp directory per harness, so the custom one was an empty temp dir standing in for an empty
+ * temp dir. Dropping it is what let this class share the base at all.</p>
  */
-public class SpaceDimGuardE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class SpaceDimGuardE2ETest extends AbstractSharedClientE2ETest {
 
     private static final Pattern DIM = Pattern.compile("\"dim\":(-?\\d+)");
     private static final Pattern POS_X = Pattern.compile("\"posX\":(-?[0-9.eE+-]+)");
@@ -57,47 +52,12 @@ public class SpaceDimGuardE2ETest {
     private static final Pattern SPAWN_Z = Pattern.compile("\"spawnZ\":(-?\\d+)");
     private static final Pattern STATION_ID = Pattern.compile("\"id\":(-?\\d+)");
 
-    private Path workDir;
-    private RealDedicatedServerHarness serverHarness;
-    private RealClientHarness clientHarness;
+    /** {@code ARConfiguration.spaceDimId}'s default. */
+    private static final int SPACE_DIM = -2;
 
-    @Before
-    public void startBoth() throws Exception {
-        Assume.assumeTrue("Server harness disabled",
-                Boolean.parseBoolean(System.getProperty(
-                        AbstractHeadlessServerTest.PROP_HARNESS_ENABLED, "false")));
-        Assume.assumeTrue("Client harness disabled",
-                Boolean.parseBoolean(System.getProperty(
-                        AbstractClientE2ETest.PROP_CLIENT_ENABLED, "false")));
-
-        workDir = Files.createTempDirectory("forge-client-space-guard-");
-        serverHarness = RealDedicatedServerHarness.startWith(workDir, false);
-        try {
-            clientHarness = RealClientHarness.start(serverHarness);
-        } catch (Exception ex) {
-            try { serverHarness.close(); } catch (Exception cleanup) { ex.addSuppressed(cleanup); }
-            serverHarness = null;
-            throw ex;
-        }
-    }
-
-    @After
-    public void stopBoth() throws Exception {
-        Exception deferred = null;
-        if (clientHarness != null) {
-            try { clientHarness.close(); } catch (Exception e) { deferred = e; }
-            clientHarness = null;
-        }
-        if (serverHarness != null) {
-            try { serverHarness.close(); }
-            catch (Exception e) { if (deferred == null) deferred = e; else deferred.addSuppressed(e); }
-            serverHarness = null;
-        }
-        if (deferred != null) throw deferred;
-    }
-
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverHarness.client().execute(cmd));
+    @Override
+    protected String subsystem() {
+        return "space-dim-guard";
     }
 
     private int intField(Pattern p, String src, String name) {
@@ -113,110 +73,103 @@ public class SpaceDimGuardE2ETest {
     }
 
     /**
-     * Pin: with NO registered station, a player who lands in the space
-     * dim gets kicked back to the overworld on the next server tick.
+     * With NO registered station, a player who lands in the space dim gets kicked back to the
+     * overworld on the next server tick.
      */
     @Test
     public void noStationFallbackTeleportsPlayerToOverworld() throws Exception {
-        clientHarness.bot().waitForWorld();
+        scenario().arranging("confirm this world has no station in it yet")
+                .describeOnFailureWith("artest station list", "artest player health");
 
-        // Sanity: must start in overworld.
-        String pre = exec("artest player health");
-        assertEquals("baseline must be overworld dim 0; " + pre,
-                0, intField(DIM, pre, "dim"));
-
-        // Sanity: no stations exist (a fresh workdir has none).
+        // The guard has two branches and this one is only reachable while the station registry is
+        // EMPTY. On a shared world that is a property of the run, not of the boot, so it is checked
+        // rather than assumed — see the class javadoc.
         String list = exec("artest station list");
-        assertTrue("no stations expected at test start: " + list,
+        scenario().requireArranged("this scenario exercises the NO-STATION branch, so the registry"
+                + " must still be empty when it runs; it holds: " + list,
                 list.contains("\"stations\":[]"));
 
-        // Teleport to spaceDimId (-2 default). Without any station, the
-        // playerTick guard MUST kick the player back to dim 0 on the
-        // very next server tick.
-        exec("artest tp -2");
-        // Wait a few ticks for one full server tick cycle so the
-        // playerTick guard fires reliably (LivingUpdateEvent runs every
-        // tick).
-        clientHarness.bot().waitTicks(40);
+        String pre = exec("artest player health");
+        scenario().requireArranged("baseline must be overworld dim 0; " + pre,
+                0 == intField(DIM, pre, "dim"));
+
+        scenario().asserting("the guard transfers a station-less player back to the overworld");
+        exec("artest tp " + SPACE_DIM);
+        // A few ticks for one full server tick cycle so the playerTick guard fires reliably.
+        bot().waitTicks(40);
 
         String after = exec("artest player health");
         int dim = intField(DIM, after, "dim");
-        assertEquals("no-station fallback must transfer player back to "
-                + "overworld; player is in dim " + dim + " — " + after,
-                0, dim);
+        assertEquals("no-station fallback must transfer player back to overworld; player is in dim "
+                + dim + " — " + after, 0, dim);
     }
 
     /**
-     * Pin: with a registered station, a player who lands in the space
-     * dim outside the station's bounds gets teleported to the station's
-     * spawn location.
+     * With a registered station, a player who lands in the space dim outside the station's bounds
+     * gets teleported to the station's spawn location — not back to the overworld.
      */
     @Test
     public void registeredStationTeleportTargetsStationSpawn() throws Exception {
-        clientHarness.bot().waitForWorld();
-
-        // Create a station orbiting the overworld (dim 0).
-        String createResp = exec("artest station create 0");
-        assertFalse("station create must succeed: " + createResp,
-                createResp.contains("\"error\""));
+        scenario().arranging("create a station orbiting the overworld")
+                .describeOnFailureWith("artest station list", "artest player health");
+        String createResp = exec("artest station create " + plot().dim);
+        scenario().requireArranged("station create must succeed: " + createResp,
+                !createResp.contains("\"error\""));
         int stationId = intField(STATION_ID, createResp, "station id");
+        scenario().record("stationId", stationId);
 
-        // Read the station's spawn position to derive a "definitely
-        // outside the station" probe target (well past 1024 blocks from
-        // spawn — vanilla 1.12 space-station bounds are much smaller).
         String info = exec("artest station info " + stationId);
         int spawnX = intField(SPAWN_X, info, "spawnX");
         int spawnY = intField(SPAWN_Y, info, "spawnY");
         int spawnZ = intField(SPAWN_Z, info, "spawnZ");
+        scenario().record("stationSpawn", spawnX + "," + spawnY + "," + spawnZ);
 
-        // Teleport player into the space dim. The default spawn lands
-        // in station-id-1's slot (the spiral indexing puts the first
-        // station near origin), which would make the playerTick guard
-        // skip teleporting (player is "in" the station's slot). So
-        // immediately /tp the player far away (50_000 blocks) — that
-        // resolves to a station slot index our station doesn't occupy,
-        // so SpaceObjectManager.getSpaceStationFromBlockCoords returns
-        // null and the guard fires.
-        exec("artest tp -2");
-        clientHarness.bot().waitTicks(20);
-        // Vanilla /tp works inside the same dim.
+        // The default space-dim spawn lands in station-id-1's slot (the spiral indexing puts the
+        // first station near origin), which would make the guard skip teleporting (the player is
+        // "in" the station's slot). So immediately move him 50 000 blocks away — that resolves to a
+        // slot index our station does not occupy, so getSpaceStationFromBlockCoords returns null
+        // and the guard fires.
+        scenario().asserting("the guard puts an out-of-bounds player on the station's spawn");
+        exec("artest tp " + SPACE_DIM);
+        bot().waitTicks(20);
         exec("tp @a 50000 100 50000");
-        // Only 5 ticks: the guard fires every tick, so a single tick is
-        // already enough — extra ticks just let gravity drag the player
-        // away from spawnY (there's no platform at the freshly-created
-        // station's spawn), inflating the posY epsilon for no gain.
-        clientHarness.bot().waitTicks(5);
 
+        // Gated on the guard having FIRED, not on a tick count. The original waited exactly 5
+        // ticks, reasoning that the guard runs every tick and that further ticks only let gravity
+        // drag the player away from spawnY — true of the wait's PURPOSE, but a fixed wait says how
+        // long we are willing to wait, and under a loaded run the server's player tick does not
+        // arrive on our schedule (measured 2026-08-07: the player was still standing at 50000 when
+        // the five ticks were up, and the leg indicted production for it). Polling exits at the
+        // EARLIEST tick the teleport is visible, which is also the least free-fall the posY check
+        // below can be handed.
         String after = exec("artest player health");
+        int waitedTicks = 0;
+        while (waitedTicks < 120
+                && Math.abs(doubleField(POS_X, after, "posX") - 50000.5) < 1.0) {
+            bot().waitTicks(2);
+            waitedTicks += 2;
+            after = exec("artest player health");
+        }
+        scenario().record("ticksUntilGuardMovedHim", waitedTicks);
         int dim = intField(DIM, after, "dim");
-        // The player MUST still be in the space dim (the guard
-        // teleported them to a station INSIDE space dim, not back to
-        // overworld) AND their position must match the station spawn.
-        assertEquals("player must remain in space dim — they should be "
-                + "teleported to the station's spawn, not back to "
-                + "overworld; dim=" + dim + " " + after,
-                -2, dim);
+        assertEquals("player must remain in the space dim — he should be teleported to the "
+                + "station's spawn, not back to overworld; dim=" + dim + " " + after,
+                SPACE_DIM, dim);
 
         double posX = doubleField(POS_X, after, "posX");
         double posY = doubleField(POS_Y, after, "posY");
         double posZ = doubleField(POS_Z, after, "posZ");
-        // The handler uses setPositionAndUpdate(spawn.x, spawn.y, spawn.z)
-        // exactly. X/Z motion in vacuum is zero (no input), so a tight
-        // 2.0 epsilon holds. Y drifts down: spawn has no platform, so
-        // gravity pulls the player ~1 block/tick after a few ticks of
-        // accumulation. A 6.0 epsilon covers the 5-tick free-fall window
-        // while still pinning "teleported to spawn area, not overworld".
-        assertEquals("player posX must match station spawnX after "
-                + "guard fires; spawn=(" + spawnX + "," + spawnY + "," + spawnZ
-                + ") player=(" + posX + "," + posY + "," + posZ + ")",
-                spawnX, posX, 2.0);
-        assertEquals("player posY must match station spawnY (within free-fall window)",
+        // The handler uses setPositionAndUpdate(spawn.x, spawn.y, spawn.z) exactly. X/Z motion in
+        // vacuum is zero (no input), so a tight 2.0 epsilon holds. Y drifts down: gravity pulls the
+        // player ~1 block/tick after a few ticks of accumulation, so 6.0 covers the 5-tick
+        // free-fall window while still pinning "teleported to the spawn area, not to the overworld".
+        assertEquals("player posX must match station spawnX after the guard fires; spawn=("
+                        + spawnX + "," + spawnY + "," + spawnZ + ") player=(" + posX + "," + posY
+                        + "," + posZ + ")", spawnX, posX, 2.0);
+        assertEquals("player posY must match station spawnY (within the free-fall window)",
                 spawnY, posY, 6.0);
-        assertEquals("player posZ must match station spawnZ",
-                spawnZ, posZ, 2.0);
-        // Pin the "not overworld" invariant explicitly for readability.
-        assertNotEquals("player must NOT be in overworld (station exists "
-                + "-> teleport-to-station branch, not fallback): " + after,
-                0, dim);
+        assertEquals("player posZ must match station spawnZ", spawnZ, posZ, 2.0);
+        assertNotEquals("player must NOT be in overworld (station exists -> teleport-to-station "
+                + "branch, not fallback): " + after, 0, dim);
     }
 }

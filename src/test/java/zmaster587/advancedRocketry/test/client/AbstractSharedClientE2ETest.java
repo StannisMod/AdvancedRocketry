@@ -255,6 +255,28 @@ public abstract class AbstractSharedClientE2ETest {
         // about to clear. Doing it the other way round leaves the markers behind and the clean
         // assertion below fails for a reason that has nothing to do with the previous scenario.
         serverClient().execute("clear @a");
+        // The harness server runs gamemode=1 (RealDedicatedServerHarness writes it into
+        // server.properties), and a scenario that needs survival — a vacuum-damage or a
+        // stack-consumption one — drops the player into it. Left behind, the NEXT scenario runs
+        // under a different mode than the one its green runs were taken on. Restoring the
+        // documented default is a no-op for every scenario that never touches it.
+        serverClient().execute("gamemode creative @a");
+        // Same argument for health: a damage scenario leaves the player short, and the next one's
+        // "the player started at full health" precondition is then false through no fault of its
+        // own. Both are un-restored global mutations of the SHARED subject, which is the one thing
+        // this base class exists to stop.
+        serverClient().execute("artest player set-health 20");
+        // DIMENSION, and it must come before the teleport: vanilla /tp moves the player WITHIN the
+        // world he is in, so a scenario left behind in the space dim or on a planet would be placed
+        // at the right X/Z in the WRONG world — and the plot assertion below, which reads X and Z,
+        // would happily agree. The transfer is conditional because it is not free: a scenario that
+        // never left dim 0 must not pay a dimension change and a chunk re-send every time.
+        JsonObject where = bot().reportWeather();
+        int clientDim = where != null && where.has("dim") ? where.get("dim").getAsInt() : plot.dim;
+        if (clientDim != plot.dim) {
+            serverClient().execute("artest tp " + plot.dim);
+            bot().waitTicks(20);
+        }
         serverClient().execute("tp @a " + (plot.centerX() + 0.5) + " " + (Plot.DEFAULT_Y + 1)
                 + " " + (plot.centerZ() + 0.5) + " 0 0");
         bot().waitTicks(10);
@@ -283,6 +305,26 @@ public abstract class AbstractSharedClientE2ETest {
         assertTrue("a scenario must start inside its own plot " + plot + "; the client reports the"
                 + " player at " + px + "," + pz, plot.contains(px, pz));
 
+        // Health is asserted on the CLIENT's own view, and polled rather than read once: the
+        // set-health above is a server write and the client learns it on the next update packet.
+        double health = state.has("health") ? state.get("health").getAsDouble() : -1.0;
+        for (int waited = 0; waited < 40 && health < 19.5; waited += 5) {
+            bot().waitTicks(5);
+            health = bot().reportState().get("health").getAsDouble();
+        }
+        assertTrue("a scenario must start at full health as the CLIENT renders it, or a"
+                + " damage-observing scenario measures the previous one's leftovers; client"
+                + " reports " + health, health >= 19.5);
+
+        // The world the CLIENT actually renders, asserted rather than inferred from the teleport
+        // having been issued: the plot check above reads X and Z only, so without this a scenario
+        // running in the wrong dimension at the right coordinates passes it.
+        JsonObject renderedIn = bot().reportWeather();
+        int renderedDim = renderedIn != null && renderedIn.has("dim")
+                ? renderedIn.get("dim").getAsInt() : Integer.MIN_VALUE;
+        assertEquals("a scenario must start in the world its plot lives in; the client renders "
+                + renderedIn, plot.dim, renderedDim);
+
         // Held item is RECORDED, not asserted: `clear @a` is the reset, but a third-party mod in
         // the dev runtime may hand the player something on its own (TheOneProbe does), and pinning
         // an empty hand would make this base class fail for a reason that is not about sharing.
@@ -304,16 +346,40 @@ public abstract class AbstractSharedClientE2ETest {
      * <p><b>Issue no SERVER command between this call and the stimulus.</b> Client-side bridge
      * calls ({@code interactBlock}, {@code setKey}, {@code waitTicks}, every {@code report*}) are
      * safe — they produce no marker.</p>
+     *
+     * <p>This clears the chat channel ONLY. It deliberately does not use the full client reset,
+     * which closes the open screen: a GUI scenario's stimulus is a click on that screen, so arming
+     * the channel with the full reset would destroy the arrangement it was called to protect.</p>
      */
     protected final void armChatObservation() throws Exception {
-        JsonObject cleared = bot().resetClientState();
-        JsonObject chat = bot().reportChat(20);
-        int remaining = chat.has("count") ? chat.get("count").getAsInt() : -1;
+        // DRAIN, then clear, then verify — in that order, and repeat until it takes.
+        //
+        // A server command's completion marker is delivered to the client ASYNCHRONOUSLY: the
+        // command channel answers as soon as the server has run it, and the chat packet arrives at
+        // the client some ticks later. Clearing the backlog the instant the last arrangement
+        // command returns therefore clears everything EXCEPT the marker still in flight, which
+        // lands immediately afterwards — measured 2026-08-07, one line, one marker, on a scenario
+        // whose arrangement ended with a server command. Waiting first lets the tail land so the
+        // clear can actually remove it.
+        JsonObject cleared = null;
+        JsonObject chat = null;
+        int remaining = -1;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            bot().waitTicks(5);
+            cleared = bot().clearChat();
+            bot().waitTicks(2);
+            chat = bot().reportChat(20);
+            remaining = chat.has("count") ? chat.get("count").getAsInt() : -1;
+            if (remaining == 0) {
+                break;
+            }
+        }
         scenario.record("armedChatObservation", cleared);
         scenario.requireArranged("the chat channel must be empty at the moment of the stimulus,"
-                + " so a matching line can only have come from THIS stimulus; after the reset it"
-                + " still holds " + remaining + " line(s): " + chat.get("lines")
-                + " — did a server command run between armChatObservation() and the stimulus?",
+                + " so a matching line can only have come from THIS stimulus; after four"
+                + " drain-and-clear rounds it still holds " + remaining + " line(s): "
+                + (chat == null ? "?" : chat.get("lines"))
+                + " — is a server command running between armChatObservation() and the stimulus?",
                 remaining == 0);
     }
 

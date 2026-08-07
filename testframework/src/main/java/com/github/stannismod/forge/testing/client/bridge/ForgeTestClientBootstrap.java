@@ -455,46 +455,28 @@ public final class ForgeTestClientBootstrap {
                     }
                     response.addProperty("clearedScreen", hadScreen);
 
-                    // Chat backlog: a scenario asserting "the player was told X" searches
-                    // the last N lines, so a previous scenario's identical line is a false
-                    // green with no stimulus behind it at all.
-                    int clearedLines = 0;
-                    String clearedOverlay = "";
-                    int clearedOverlayTicks = 0;
-                    if (mc.ingameGUI != null) {
-                        try {
-                            net.minecraft.client.gui.GuiNewChat chat = mc.ingameGUI.getChatGUI();
-                            java.lang.reflect.Field linesF = findField(chat.getClass(), "chatLines");
-                            linesF.setAccessible(true);
-                            clearedLines = ((List<?>) linesF.get(chat)).size();
-                            chat.clearChatMessages(true);
-
-                            java.lang.reflect.Field overlayF =
-                                    findField(mc.ingameGUI.getClass(), "overlayMessage");
-                            overlayF.setAccessible(true);
-                            clearedOverlay = String.valueOf(overlayF.get(mc.ingameGUI));
-                            overlayF.set(mc.ingameGUI, "");
-
-                            // overlayTicks is the real gate: the overlay STRING lingers
-                            // after expiry, so only the countdown says "still on screen".
-                            java.lang.reflect.Field overlayTimeF =
-                                    findField(mc.ingameGUI.getClass(), "overlayMessageTime");
-                            overlayTimeF.setAccessible(true);
-                            clearedOverlayTicks = overlayTimeF.getInt(mc.ingameGUI);
-                            overlayTimeF.setInt(mc.ingameGUI, 0);
-                        } catch (Throwable t) {
-                            throw new IllegalStateException("reset_client_state chat/overlay: " + t, t);
-                        }
-                    }
-                    response.addProperty("clearedChatLines", clearedLines);
-                    response.addProperty("clearedOverlay", clearedOverlay);
-                    response.addProperty("clearedOverlayTicks", clearedOverlayTicks);
+                    clearChatAndOverlay(mc, response);
 
                     // A key left down by set_key/holdKey keeps driving production input
                     // handlers into the next scenario.
                     net.minecraft.client.settings.KeyBinding.unPressAllKeys();
                     response.addProperty("keysReleased", true);
 
+                    return response;
+                });
+            case "clear_chat":
+                // The observation channel ALONE, with the screen left exactly as it is.
+                //
+                // A test that reads "the player was told X" must clear the chat immediately
+                // before the stimulus, because the harness itself writes to that channel —
+                // every server command echoes a FORGE_TEST_DONE marker into it. But a GUI
+                // test's stimulus is a click on an OPEN screen, and reset_client_state closes
+                // the screen, so using it to arm the channel destroys the arrangement it was
+                // called to protect. Hence this narrower verb: same chat/overlay wipe, no
+                // screen close, no key release.
+                return runOnClientThread(() -> {
+                    JsonObject response = ok();
+                    clearChatAndOverlay(Minecraft.getMinecraft(), response);
                     return response;
                 });
             case "report_state":
@@ -1430,6 +1412,50 @@ public final class ForgeTestClientBootstrap {
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to access integer field '" + fieldName + "' on " + target.getClass().getName(), exception);
         }
+    }
+
+    /**
+     * Wipes the chat backlog and the action-bar overlay, and reports what was found there.
+     *
+     * <p>Shared by {@code reset_client_state} (which also closes the screen and releases keys)
+     * and {@code clear_chat} (which does not). The chat backlog is the dangerous channel in a
+     * shared harness: an assertion of the form "the player was told X" searches the last N
+     * lines, so a previous scenario's identical line — or one of the harness's own
+     * {@code FORGE_TEST_DONE} markers — satisfies it with no stimulus behind it at all.</p>
+     *
+     * <p>{@code overlayMessageTime} is the real gate for the action bar: the overlay STRING
+     * lingers after expiry, so only the countdown says "still on screen".</p>
+     */
+    private static void clearChatAndOverlay(Minecraft mc, JsonObject response) {
+        int clearedLines = 0;
+        String clearedOverlay = "";
+        int clearedOverlayTicks = 0;
+        if (mc.ingameGUI != null) {
+            try {
+                net.minecraft.client.gui.GuiNewChat chat = mc.ingameGUI.getChatGUI();
+                java.lang.reflect.Field linesF = findField(chat.getClass(), "chatLines");
+                linesF.setAccessible(true);
+                clearedLines = ((List<?>) linesF.get(chat)).size();
+                chat.clearChatMessages(true);
+
+                java.lang.reflect.Field overlayF =
+                        findField(mc.ingameGUI.getClass(), "overlayMessage");
+                overlayF.setAccessible(true);
+                clearedOverlay = String.valueOf(overlayF.get(mc.ingameGUI));
+                overlayF.set(mc.ingameGUI, "");
+
+                java.lang.reflect.Field overlayTimeF =
+                        findField(mc.ingameGUI.getClass(), "overlayMessageTime");
+                overlayTimeF.setAccessible(true);
+                clearedOverlayTicks = overlayTimeF.getInt(mc.ingameGUI);
+                overlayTimeF.setInt(mc.ingameGUI, 0);
+            } catch (Throwable t) {
+                throw new IllegalStateException("clear chat/overlay: " + t, t);
+            }
+        }
+        response.addProperty("clearedChatLines", clearedLines);
+        response.addProperty("clearedOverlay", clearedOverlay);
+        response.addProperty("clearedOverlayTicks", clearedOverlayTicks);
     }
 
     private static java.lang.reflect.Field findField(Class<?> type, String fieldName) throws NoSuchFieldException {
