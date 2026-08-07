@@ -106,23 +106,20 @@ public abstract class AbstractSharedClientE2ETest {
     public final TestRule verdict = new TestWatcher() {
         @Override
         protected void failed(Throwable e, Description description) {
-            Scenario.Phase effective;
-            if (HARNESS_DEAD.get()) {
-                effective = Scenario.Phase.CASCADE;
-            } else if (e instanceof Scenario.ArrangementFailure) {
-                effective = Scenario.Phase.ARRANGEMENT;
-            } else if (scenario == null) {
-                effective = Scenario.Phase.HARNESS;
-            } else {
-                effective = scenario.phase();
-            }
-
             // "Is the harness still there?" is the difference between one broken contract and a
-            // whole group reporting the same corpse. Ask it before printing the verdict, and ask
-            // it of the CLIENT, which is the half that dies.
-            boolean alive = pingClient();
-            if (!alive && effective != Scenario.Phase.CASCADE) {
-                effective = Scenario.Phase.HARNESS;
+            // whole group reporting the same corpse — so it is an INPUT to the verdict, not an
+            // afterthought. Ask it of the CLIENT, which is the half that dies.
+            boolean groupAlreadyDown = HARNESS_DEAD.get();
+            // Do not ping a corpse we already buried — but then do not REPORT a liveness we never
+            // measured either. Printing "harnessAlive=true" for a scenario aborted BECAUSE the
+            // harness is dead is a field that states the opposite of the truth, and this class
+            // exists so a reader can trust the line without opening the source.
+            boolean alive = groupAlreadyDown || pingClient();
+            String aliveReport = groupAlreadyDown
+                    ? "not-probed (group already down)" : String.valueOf(alive);
+            Scenario.Phase effective =
+                    Scenario.classify(e, scenario, alive, groupAlreadyDown);
+            if (!alive) {
                 HARNESS_DEAD.set(true);
             }
             if (firstFailure == null) {
@@ -135,7 +132,7 @@ public abstract class AbstractSharedClientE2ETest {
                     ? "E2E verdict=" + effective + " scenario=" + description.getMethodName()
                       + " (never started — failed before or inside the shared setup)"
                     : scenario.verdictLine(effective));
-            out.append("\n  harnessAlive=").append(alive);
+            out.append("\n  harnessAlive=").append(aliveReport);
             if (firstFailure != null && !firstFailure.equals(description.getMethodName())) {
                 out.append(" firstFailureInThisGroup=").append(firstFailure);
             }
@@ -213,8 +210,24 @@ public abstract class AbstractSharedClientE2ETest {
         if (deferred != null) throw deferred;
     }
 
+    /**
+     * The ONE {@code @Before}, calling the three steps in an order this class controls.
+     *
+     * <p>They were three separate {@code @Before} methods until it was noticed that JUnit 4 does not
+     * define the order of {@code @Before} methods declared in the SAME class. That is not a style
+     * point here: the fast-fail check must run BEFORE the reset, or a class whose client has died
+     * pays the reset's full round-trip — on a HUNG client, the command channel's own multi-minute
+     * timeout — once per remaining scenario, which is exactly the cost the fast-fail exists to
+     * avoid. An undefined order made the guarantee a coin flip.
+     */
     @Before
-    public final void enforceDeterministicOrder() {
+    public final void prepareScenario() throws Exception {
+        enforceDeterministicOrder();
+        failFastWhenTheGroupIsAlreadyDown();
+        resetBetweenScenarios();
+    }
+
+    private void enforceDeterministicOrder() {
         FixMethodOrder order = getClass().getAnnotation(FixMethodOrder.class);
         assertTrue(getClass().getName() + " extends " + AbstractSharedClientE2ETest.class.getSimpleName()
                         + " but does not carry @FixMethodOrder(MethodSorters.NAME_ASCENDING)."
@@ -224,8 +237,7 @@ public abstract class AbstractSharedClientE2ETest {
                 order != null && order.value() == MethodSorters.NAME_ASCENDING);
     }
 
-    @Before
-    public final void failFastWhenTheGroupIsAlreadyDown() {
+    private void failFastWhenTheGroupIsAlreadyDown() {
         if (HARNESS_DEAD.get()) {
             throw new AssertionError("E2E verdict=CASCADE scenario=" + testName.getMethodName()
                     + " — the shared harness died earlier in this class (first failure: "
@@ -233,8 +245,7 @@ public abstract class AbstractSharedClientE2ETest {
         }
     }
 
-    @Before
-    public final void resetBetweenScenarios() throws Exception {
+    private void resetBetweenScenarios() throws Exception {
         final Plot.Lane lane = lane();
         Plot plot = PLOTS.computeIfAbsent(testName.getMethodName(),
                 name -> new Plot(nextPlotIndex++, name, 0, lane));
@@ -352,16 +363,23 @@ public abstract class AbstractSharedClientE2ETest {
 
     // ── internals ────────────────────────────────────────────────────────────
 
+    /**
+     * Liveness ceiling for the failure-path ping. Deliberately NOT the command channel's own
+     * timeout, which is two minutes scaled by the fork factor — six minutes at eight forks. That is
+     * the right budget for a command and a terrible one for "should the rest of this class run",
+     * because a HUNG client (socket open, nobody answering) would cost it once per scenario.
+     *
+     * <p>Five seconds against a round trip measured in milliseconds, still scaled so a genuinely
+     * starved client is not mistaken for a corpse.</p>
+     */
+    private static final int PING_TIMEOUT_MS = 5_000;
+
     private boolean pingClient() {
         if (sharedClient == null) {
             return false;
         }
-        try {
-            sharedClient.bot().reportState();
-            return true;
-        } catch (Throwable dead) {
-            return false;
-        }
+        return sharedClient.bot().isAlive(
+                com.github.stannismod.forge.testing.TestTimeouts.scaledMillis(PING_TIMEOUT_MS));
     }
 
     private String renderStateBundle(Scenario s) {

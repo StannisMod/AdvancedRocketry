@@ -538,6 +538,52 @@ public final class ClientBot implements Closeable {
         return assertOk(execute(command("reset_client_state")));
     }
 
+    /**
+     * Is the client still answering? Answers within {@code timeoutMillis} whatever the client does.
+     *
+     * <p>This exists because the command channel's own read timeout is <b>two minutes, scaled by
+     * the fork factor</b> ({@link #ClientBot} sets it) — six minutes at eight forks. That is right
+     * for a command: a starved client thread queue genuinely takes a long time. It is wrong for a
+     * liveness question asked on a failure path, and the two death modes are not alike:</p>
+     *
+     * <ul>
+     *   <li>the client process <b>exited</b> — the socket is closed, {@code readLine} returns null
+     *       and the ordinary channel already throws instantly;</li>
+     *   <li>the client process <b>hung</b> — the socket is still open and nothing ever answers, so
+     *       the ordinary channel blocks for the full six minutes, once per caller.</li>
+     * </ul>
+     *
+     * <p>A caller deciding "is the rest of this class worth running" must get the same fast answer
+     * in both. So this borrows the socket with its own short timeout and restores the original.</p>
+     *
+     * <p><b>Trade, stated:</b> a merely SLOW client can be reported dead. A normal round trip is
+     * milliseconds, so pass something generous (seconds, scaled by the fork factor) — never a value
+     * close to a real round trip, or a loaded box starts declaring corpses.</p>
+     *
+     * @return true if the client answered a trivial command in time; false on ANY failure
+     */
+    public boolean isAlive(int timeoutMillis) {
+        int previous;
+        try {
+            previous = socket.getSoTimeout();
+        } catch (Throwable alreadyGone) {
+            return false;
+        }
+        try {
+            socket.setSoTimeout(Math.max(1, timeoutMillis));
+            execute(command("report_state"));
+            return true;
+        } catch (Throwable dead) {
+            return false;
+        } finally {
+            try {
+                socket.setSoTimeout(previous);
+            } catch (Throwable ignored) {
+                // The socket is gone; the caller already has its answer.
+            }
+        }
+    }
+
     public void shutdown() throws IOException {
         assertOk(execute(command("shutdown")));
     }

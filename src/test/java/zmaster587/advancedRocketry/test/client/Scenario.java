@@ -48,6 +48,51 @@ public final class Scenario {
         CASCADE
     }
 
+    /**
+     * The verdict decision table, as a pure function — no harness, no MC classes, no sockets.
+     *
+     * <p>It lives here rather than inside the watcher because the ORDER of these rules is the whole
+     * mechanism, and a decision table buried in an anonymous inner class is one nobody can pin. This
+     * is unit-testable in milliseconds, which is the only way the {@link Phase#CASCADE} branch ever
+     * gets exercised: reaching it for real needs a corpse.</p>
+     *
+     * <p>The order, and why each rule outranks the next:</p>
+     * <ol>
+     *   <li><b>The group is already down</b> — this scenario never ran against a live system, so
+     *       nothing it reports is about the product. Outranks everything, including its own
+     *       declared phase.</li>
+     *   <li><b>The harness is not answering</b> — a failure raised while the client is dying is not
+     *       a contract violation, however confidently the scenario had declared CONTRACT.</li>
+     *   <li><b>An {@link ArrangementFailure}</b> — a helper threw it, which beats whatever phase the
+     *       scenario had most recently declared.</li>
+     *   <li><b>No scenario at all</b> — the failure happened before or inside the shared setup.</li>
+     *   <li>Otherwise the scenario's own <b>declared</b> phase. Declared, never guessed.</li>
+     * </ol>
+     */
+    public static Phase classify(Throwable failure, Scenario scenario,
+                                 boolean harnessAlive, boolean groupAlreadyDown) {
+        if (groupAlreadyDown) {
+            return Phase.CASCADE;
+        }
+        if (!harnessAlive) {
+            return Phase.HARNESS;
+        }
+        if (failure instanceof ArrangementFailure) {
+            return Phase.ARRANGEMENT;
+        }
+        if (scenario == null) {
+            return Phase.HARNESS;
+        }
+        return scenario.phase();
+    }
+
+    /** Visible for the decision-table unit test: build a scenario with a phase already declared. */
+    public static Scenario declaring(Phase phase) {
+        Scenario s = new Scenario("unit", "unit", null);
+        s.step(phase, "declared by the unit test");
+        return s;
+    }
+
     /** Thrown by arrangement helpers so a scaffolding failure cannot be mistaken for a verdict. */
     public static final class ArrangementFailure extends AssertionError {
         private static final long serialVersionUID = 1L;
