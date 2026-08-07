@@ -1478,6 +1478,7 @@ public final class ForgeTestClientBootstrap {
                     // First END-phase tick: Display.create() has returned and
                     // the LWJGL window is up. Honour the start-state override.
                     applyInitialWindowState();
+                    installNonWarpingMouseHelper();
                 }
                 CLIENT_TICKS.incrementAndGet();
                 // Deferred connection teardown: this event runs on the client thread OUTSIDE
@@ -1488,6 +1489,65 @@ public final class ForgeTestClientBootstrap {
                     action.run();
                 }
             }
+        }
+    }
+
+    private static final AtomicBoolean MOUSE_HELPER_INSTALLED = new AtomicBoolean(false);
+
+    /**
+     * Stop the test client from ever moving the developer's OS cursor.
+     *
+     * <p>Vanilla warps the physical pointer on BOTH transitions, and this harness runs its window
+     * parked at {@code -32000,-32000}, so both warps land off the desktop and Windows clamps the
+     * cursor to a screen edge — the machine's owner is typing in another window and their pointer
+     * jumps into the corner:</p>
+     *
+     * <ul>
+     *   <li>{@code grabMouseCursor()} — {@code Mouse.setGrabbed(true)}, on the client taking
+     *       in-game focus. Forge already guards this one behind {@code -Dfml.noGrab=true}, which
+     *       {@code RealClientHarness} passes.</li>
+     *   <li>{@code ungrabMouseCursor()} — {@code Mouse.setCursorPosition(width/2, height/2)}, on
+     *       every loss of focus. <b>Nothing guards this one</b>, and losing focus is exactly what
+     *       happens the moment the developer clicks somewhere else, so it fires repeatedly.</li>
+     * </ul>
+     *
+     * <p>Replacing the helper closes both halves at their source and keeps the grab-independent
+     * part ({@code mouseXYChange}) working. The harness needs no OS cursor at all: look is driven
+     * through {@code setLook} and raw mouse deltas go straight to the client's own static entry
+     * points, neither of which reads the pointer.</p>
+     */
+    private static void installNonWarpingMouseHelper() {
+        if (!MOUSE_HELPER_INSTALLED.compareAndSet(false, true)) {
+            return;
+        }
+        // The escape hatch, and the only way to observe the behaviour this method removes: set
+        // -Dforge.test.client.cursor.warp=true (with -Dfml.noGrab=false) and the client warps the
+        // desktop cursor exactly like vanilla. That is the control leg for "the fix does anything"
+        // — it will physically take the pointer, so it is opt-in and never the default.
+        if (Boolean.parseBoolean(System.getProperty("forge.test.client.cursor.warp", "false"))) {
+            System.out.println("[forge-test] cursor warp ENABLED by request — vanilla MouseHelper "
+                    + "kept; this client may move the desktop cursor");
+            return;
+        }
+        try {
+            Minecraft mc = Minecraft.getMinecraft();
+            mc.mouseHelper = new net.minecraft.util.MouseHelper() {
+                @Override
+                public void grabMouseCursor() {
+                    // no-op: never take the pointer away from whoever is using this desktop.
+                }
+
+                @Override
+                public void ungrabMouseCursor() {
+                    // no-op: vanilla warps the pointer to the window centre here, and this window
+                    // is off-screen, so the warp reads as "my cursor jumped to the corner".
+                }
+            };
+            System.out.println("[forge-test] installed non-warping MouseHelper "
+                    + "(the client will not move the desktop cursor)");
+        } catch (Throwable ignored) {
+            // Best-effort, exactly like the window state: a client that cannot swap its helper is
+            // still a usable client, and failing the run over a cursor would be worse.
         }
     }
 
