@@ -489,9 +489,16 @@ final class VSBridge {
      * position + body&rarr;world attitude + linear velocity), or {@code null} if no ship is
      * loaded. Nearest-to-a-point (not "first") so a shared server carrying several ships
      * disambiguates by build site. Only primitive/MC types cross back to AR core.
+     *
+     * <p>{@code maxDist} bounds the search: when the nearest loaded ship is farther than that from
+     * the query point the answer is {@code null} — "no ship here" — rather than a distant one.
+     * Pass {@link Double#POSITIVE_INFINITY} for the unbounded query. A world holding several ships
+     * cannot attribute an unbounded answer to the ship the caller meant: the moment that ship
+     * unloads or flies off, the lookup silently starts describing its neighbour instead, and
+     * nothing in the answer says so.</p>
      */
-    static double[] nearestShipState(World world, double x, double y, double z) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static double[] nearestShipState(World world, double x, double y, double z, double maxDist) {
+        PhysicsObject physo = nearestShip(world, x, y, z, maxDist);
         if (physo == null) {
             return null;
         }
@@ -1183,8 +1190,9 @@ final class VSBridge {
      * {@code (x,y,z)}, or {@code null} if no ship is loaded. Read-only; used by the flight HUD and by
      * the test probe that pins "a centred flight cursor brings the ship's spin to rest".
      */
-    static double[] nearestShipAngularVelocity(World world, double x, double y, double z) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static double[] nearestShipAngularVelocity(World world, double x, double y, double z,
+                                               double maxDist) {
+        PhysicsObject physo = nearestShip(world, x, y, z, maxDist);
         if (physo == null) {
             return null;
         }
@@ -1193,6 +1201,11 @@ final class VSBridge {
     }
 
     private static PhysicsObject nearestShip(World world, double x, double y, double z) {
+        return nearestShip(world, x, y, z, Double.POSITIVE_INFINITY);
+    }
+
+    private static PhysicsObject nearestShip(World world, double x, double y, double z,
+                                             double maxDist) {
         PhysicsObject best = null;
         double bestDistSq = Double.MAX_VALUE;
         ImmutableList<PhysicsObject> ships =
@@ -1204,6 +1217,9 @@ final class VSBridge {
                 bestDistSq = distSq;
                 best = physo;
             }
+        }
+        if (best != null && Double.isFinite(maxDist) && bestDistSq > maxDist * maxDist) {
+            return null;
         }
         return best;
     }

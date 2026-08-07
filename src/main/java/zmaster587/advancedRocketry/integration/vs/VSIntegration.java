@@ -803,10 +803,16 @@ public final class VSIntegration {
      * cross the gate.
      */
     public static double[] nearestShipAngularVelocity(World world, double x, double y, double z) {
+        return nearestShipAngularVelocity(world, x, y, z, Double.POSITIVE_INFINITY);
+    }
+
+    /** Distance-bounded {@link #nearestShipAngularVelocity(World, double, double, double)}. */
+    public static double[] nearestShipAngularVelocity(World world, double x, double y, double z,
+                                                      double maxDist) {
         if (!isAvailable()) {
             return null;
         }
-        return VSBridge.nearestShipAngularVelocity(world, x, y, z);
+        return VSBridge.nearestShipAngularVelocity(world, x, y, z, maxDist);
     }
 
     /**
@@ -980,10 +986,22 @@ public final class VSIntegration {
      * absent or no ship is loaded. Only AR-core/MC types cross the gate.
      */
     public static double[] nearestShipState(World world, double x, double y, double z) {
+        return nearestShipState(world, x, y, z, Double.POSITIVE_INFINITY);
+    }
+
+    /**
+     * As {@link #nearestShipState(World, double, double, double)}, but answering {@code null} when
+     * the nearest loaded ship is farther than {@code maxDist} from the query point. A caller that
+     * means ONE ship needs this: an unbounded nearest lookup on a world holding several ships
+     * starts describing a neighbour the moment the intended ship unloads or flies off, and says
+     * nothing about having done so.
+     */
+    public static double[] nearestShipState(World world, double x, double y, double z,
+                                            double maxDist) {
         if (!isAvailable()) {
             return null;
         }
-        return VSBridge.nearestShipState(world, x, y, z);
+        return VSBridge.nearestShipState(world, x, y, z, maxDist);
     }
 
     /**

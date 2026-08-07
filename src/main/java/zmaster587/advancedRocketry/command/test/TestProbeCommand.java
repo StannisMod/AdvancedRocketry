@@ -736,15 +736,23 @@ public class TestProbeCommand extends CommandBase {
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadAllShips(world) + "}");
             return;
         }
-        // ship-info <dim> <x> <y> <z> — state of the loaded ship nearest to (x,y,z).
+        // ship-info <dim> <x> <y> <z> [maxDist] — state of the loaded ship nearest to (x,y,z).
+        //
+        // maxDist BOUNDS the lookup, and a caller that means one particular ship should pass it: on
+        // a world holding several ships the unbounded form answers with a NEIGHBOUR the moment the
+        // intended ship unloads or flies off, and the answer looks identical either way. Omitted =
+        // unbounded, which is right only while the world holds exactly one ship.
         if (args.length >= 5 && "ship-info".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
+            double maxDist = args.length >= 6
+                    ? parseDoubleOr(args[5], Double.POSITIVE_INFINITY) : Double.POSITIVE_INFINITY;
             double[] s = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipState(
-                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0),
+                    parseDoubleOr(args[4], 0), maxDist);
             if (s == null) {
                 send(sender, "{\"managed\":false}");
                 return;
@@ -765,7 +773,7 @@ public class TestProbeCommand extends CommandBase {
             // cursor and the ship stopped turning" from "it is still turning, slowly".
             double[] omega = zmaster587.advancedRocketry.integration.vs.VSIntegration
                     .nearestShipAngularVelocity(world, parseDoubleOr(args[2], 0),
-                            parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+                            parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0), maxDist);
             m.put("omegaX", omega == null ? 0.0 : omega[0]);
             m.put("omegaY", omega == null ? 0.0 : omega[1]);
             m.put("omegaZ", omega == null ? 0.0 : omega[2]);
