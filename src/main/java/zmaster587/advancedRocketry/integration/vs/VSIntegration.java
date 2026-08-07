@@ -1005,6 +1005,46 @@ public final class VSIntegration {
     }
 
     /**
+     * The identity (VS ship uuid, as a string) of the loaded ship nearest to {@code (x,y,z)} within
+     * {@code maxDist}, or {@code null} when VS is absent or there is no such ship.
+     *
+     * <p>Captured once, at a moment the caller can defend — its own ship freshly assembled at a
+     * spot nothing else occupies — it turns every later question into
+     * {@link #shipStateById(World, String)}, which cannot answer about a different ship however far
+     * this one travels. The distance bound is only how the FIRST answer is attributed; it is not an
+     * identity, and it is a full 3-D distance, so it says nothing about a ship that then climbs.</p>
+     */
+    public static String nearestShipId(World world, double x, double y, double z, double maxDist) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.nearestShipId(world, x, y, z, maxDist);
+    }
+
+    /**
+     * State of the loaded ship named by {@code shipId}, in the layout of
+     * {@link #nearestShipState(World, double, double, double)}, or {@code null} when VS is absent or
+     * that ship is not loaded here. Position-independent.
+     */
+    public static double[] shipStateById(World world, String shipId) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipStateById(world, shipId);
+    }
+
+    /**
+     * The world-frame angular velocity {@code [x,y,z]} (rad/s) of the ship named by
+     * {@code shipId}, or {@code null} when VS is absent or that ship is not loaded here.
+     */
+    public static double[] shipAngularVelocityById(World world, String shipId) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipAngularVelocityById(world, shipId);
+    }
+
+    /**
      * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
      * nearest to {@code (x,y,z)}; a safe no-op returning false when VS is absent or no
      * ship is loaded.

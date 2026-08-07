@@ -487,8 +487,7 @@ final class VSBridge {
      * State of the loaded ship whose world position is nearest to {@code (x,y,z)}, as a
      * flat array {@code [posX, posY, posZ, qw, qx, qy, qz, velX, velY, velZ]} (world-frame
      * position + body&rarr;world attitude + linear velocity), or {@code null} if no ship is
-     * loaded. Nearest-to-a-point (not "first") so a shared server carrying several ships
-     * disambiguates by build site. Only primitive/MC types cross back to AR core.
+     * loaded. Only primitive/MC types cross back to AR core.
      *
      * <p>{@code maxDist} bounds the search: when the nearest loaded ship is farther than that from
      * the query point the answer is {@code null} — "no ship here" — rather than a distant one.
@@ -496,17 +495,78 @@ final class VSBridge {
      * cannot attribute an unbounded answer to the ship the caller meant: the moment that ship
      * unloads or flies off, the lookup silently starts describing its neighbour instead, and
      * nothing in the answer says so.</p>
+     *
+     * <p><b>A bound is a mitigation, not an identity.</b> The distance it compares is the FULL 3-D
+     * one ({@link #nearestShip}), so a bound sized against how far apart two ships are BUILT says
+     * nothing about how far one of them then FLIES: a caller that means one particular ship and
+     * lets it move should capture {@link #nearestShipId} once, while its ship is provably the only
+     * candidate, and use {@link #shipStateById} afterwards.</p>
      */
     static double[] nearestShipState(World world, double x, double y, double z, double maxDist) {
         PhysicsObject physo = nearestShip(world, x, y, z, maxDist);
         if (physo == null) {
             return null;
         }
+        return stateOf(physo);
+    }
+
+    /**
+     * The IDENTITY of the loaded ship nearest to {@code (x,y,z)} within {@code maxDist} — its VS
+     * ship uuid, as a string — or {@code null} when there is none.
+     *
+     * <p>This is the one call in this family that a caller is meant to make at a moment it can
+     * defend: right after its own assembly, when the queried spot provably holds its ship and no
+     * other. Everything afterwards goes through {@link #shipStateById}, which has no distance term
+     * to be wrong about.</p>
+     */
+    static String nearestShipId(World world, double x, double y, double z, double maxDist) {
+        PhysicsObject physo = nearestShip(world, x, y, z, maxDist);
+        return physo == null ? null : physo.getShipData().getUuid().toString();
+    }
+
+    /**
+     * State of the loaded ship with this uuid, in the same layout as {@link #nearestShipState}, or
+     * {@code null} when the id names no ship that is loaded here (unloaded, deleted, another world,
+     * or not a uuid at all). Position-independent: the ship may be anywhere.
+     */
+    static double[] shipStateById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
+        return physo == null ? null : stateOf(physo);
+    }
+
+    /**
+     * The world-frame angular velocity {@code [x,y,z]} (rad/s) of the loaded ship with this uuid,
+     * or {@code null} when the id names no loaded ship here.
+     */
+    static double[] shipAngularVelocityById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
+        if (physo == null) {
+            return null;
+        }
+        Vector3dc w = physo.getPhysicsData().getAngularVelocity();
+        return new double[]{w.x(), w.y(), w.z()};
+    }
+
+    private static double[] stateOf(PhysicsObject physo) {
         ShipTransform transform = physo.getShipData().getShipTransform();
         Vec3d pos = transform.getShipPositionVec3d();
         Quaterniond q = transform.rotationQuaternion(TransformType.SUBSPACE_TO_GLOBAL);
         Vector3dc vel = physo.getPhysicsData().getLinearVelocity();
         return new double[]{pos.x, pos.y, pos.z, q.w, q.x, q.y, q.z, vel.x(), vel.y(), vel.z()};
+    }
+
+    /** The loaded ship this uuid names, or null — including when the string is not a uuid. */
+    private static PhysicsObject shipById(World world, String shipId) {
+        if (shipId == null || shipId.isEmpty()) {
+            return null;
+        }
+        UUID uuid;
+        try {
+            uuid = UUID.fromString(shipId);
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
+        return ValkyrienUtils.getServerShipManager(world).getPhysObjectFromUUID(uuid);
     }
 
     /**
