@@ -518,6 +518,26 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command("close_screen")));
     }
 
+    /**
+     * Return the CLIENT-owned state a scenario can dirty to what a freshly-booted client holds:
+     * closes any open screen, clears the chat backlog, clears the action-bar overlay and its
+     * countdown, and releases every held key.
+     *
+     * <p>Only needed when one harness carries more than one scenario. Measured 2026-08-06: on the
+     * second scenario of a shared run, ALL FOUR of those channels were still carrying the first
+     * scenario's state. The chat backlog is the dangerous one — a scenario that asserts "the player
+     * was told X" by searching the last N lines passes on the PREVIOUS scenario's identical line,
+     * with no stimulus behind it.</p>
+     *
+     * <p>Position and inventory are NOT reset here — they are the server's, and a caller resets
+     * them through the command channel (a teleport, a clear). The response reports what was found
+     * dirty ({@code clearedScreen}, {@code clearedChatLines}, {@code clearedOverlay},
+     * {@code clearedOverlayTicks}) so a caller can assert on the reset rather than trust it.</p>
+     */
+    public JsonObject resetClientState() throws IOException {
+        return assertOk(execute(command("reset_client_state")));
+    }
+
     public void shutdown() throws IOException {
         assertOk(execute(command("shutdown")));
     }

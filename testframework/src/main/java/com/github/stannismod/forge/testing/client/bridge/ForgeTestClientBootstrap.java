@@ -429,6 +429,74 @@ public final class ForgeTestClientBootstrap {
                     }
                     return ok();
                 });
+            case "reset_client_state":
+                // Puts the client back to the state a freshly-booted one is in, for the
+                // channels that measurably survive a scenario when ONE harness carries
+                // several. Measured 2026-08-06, all four fired at once on the second
+                // scenario of a shared run: an open GuiModular, an action-bar overlay
+                // still counting down at overlayTicks=50, an inherited hotbar, and a
+                // player still standing where the previous scenario left him.
+                //
+                // Position and inventory are the SERVER's to reset (a tp / clear through
+                // the command channel); everything reset here is client-owned state the
+                // server cannot reach. The response reports what was actually found dirty
+                // so a caller can assert on the reset instead of trusting it — a reset
+                // nobody checks is indistinguishable from no reset at all.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+
+                    String hadScreen = mc.currentScreen == null
+                            ? "" : mc.currentScreen.getClass().getName();
+                    if (mc.player != null) {
+                        mc.player.closeScreen();
+                    } else {
+                        mc.displayGuiScreen(null);
+                    }
+                    response.addProperty("clearedScreen", hadScreen);
+
+                    // Chat backlog: a scenario asserting "the player was told X" searches
+                    // the last N lines, so a previous scenario's identical line is a false
+                    // green with no stimulus behind it at all.
+                    int clearedLines = 0;
+                    String clearedOverlay = "";
+                    int clearedOverlayTicks = 0;
+                    if (mc.ingameGUI != null) {
+                        try {
+                            net.minecraft.client.gui.GuiNewChat chat = mc.ingameGUI.getChatGUI();
+                            java.lang.reflect.Field linesF = findField(chat.getClass(), "chatLines");
+                            linesF.setAccessible(true);
+                            clearedLines = ((List<?>) linesF.get(chat)).size();
+                            chat.clearChatMessages(true);
+
+                            java.lang.reflect.Field overlayF =
+                                    findField(mc.ingameGUI.getClass(), "overlayMessage");
+                            overlayF.setAccessible(true);
+                            clearedOverlay = String.valueOf(overlayF.get(mc.ingameGUI));
+                            overlayF.set(mc.ingameGUI, "");
+
+                            // overlayTicks is the real gate: the overlay STRING lingers
+                            // after expiry, so only the countdown says "still on screen".
+                            java.lang.reflect.Field overlayTimeF =
+                                    findField(mc.ingameGUI.getClass(), "overlayMessageTime");
+                            overlayTimeF.setAccessible(true);
+                            clearedOverlayTicks = overlayTimeF.getInt(mc.ingameGUI);
+                            overlayTimeF.setInt(mc.ingameGUI, 0);
+                        } catch (Throwable t) {
+                            throw new IllegalStateException("reset_client_state chat/overlay: " + t, t);
+                        }
+                    }
+                    response.addProperty("clearedChatLines", clearedLines);
+                    response.addProperty("clearedOverlay", clearedOverlay);
+                    response.addProperty("clearedOverlayTicks", clearedOverlayTicks);
+
+                    // A key left down by set_key/holdKey keeps driving production input
+                    // handlers into the next scenario.
+                    net.minecraft.client.settings.KeyBinding.unPressAllKeys();
+                    response.addProperty("keysReleased", true);
+
+                    return response;
+                });
             case "report_state":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
