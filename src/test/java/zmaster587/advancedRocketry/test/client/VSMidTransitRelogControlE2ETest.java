@@ -29,7 +29,7 @@ import static org.junit.Assert.assertTrue;
  * whether his client's input chain then reaches the arrived ship's computer — is observable only
  * with a real client logging out and back in around a real (probe-driven) transit.</p>
  *
- * <p><b>Shape.</b> The probe transit stack of {@code VSShipTransitCrewE2ETest}, but over a ship
+ * <p><b>Shape.</b> The probe transit stack of the crewed-transit scenarios, but over a ship
  * that can actually FLY: {@code space transit-setup-empty} installs the stack with an EMPTY origin
  * cell, and the real {@code with-pilot-seat} fixture is built there with the real assembler — the
  * piloted setup's bare 3x3 deck has no propulsion, so a held key can move nothing and a control
