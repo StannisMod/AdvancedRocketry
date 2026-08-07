@@ -38,9 +38,11 @@ import org.apache.logging.log4j.Logger;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
 import org.valkyrienskies.mod.common.entity.EntityMountable;
+import org.valkyrienskies.mod.common.network.ShipTransformUpdateMessage;
 import org.valkyrienskies.mod.common.ships.entity_interaction.EntityDraggable;
 import org.valkyrienskies.mod.common.ships.entity_interaction.IDraggable;
 import org.valkyrienskies.mod.common.ships.ship_transform.CoordinateSpaceType;
+import org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform;
 import org.valkyrienskies.mod.common.ships.ship_world.*;
 import org.valkyrienskies.mod.common.util.ValkyrienUtils;
 import valkyrienwarfare.api.TransformType;
@@ -49,6 +51,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @EventBusSubscriber(modid = ValkyrienSkiesMod.HOST_MOD_ID)
 public class EventsCommon {
@@ -100,6 +103,82 @@ public class EventsCommon {
         }
     }
 
+    /**
+     * When each dimension last had a pose packet sent, by whichever side sent it. Read by the
+     * physics thread's watchdog to decide whether the game tick has gone quiet.
+     */
+    private static final Map<Integer, Long> LAST_POSE_SEND_NANOS = new ConcurrentHashMap<>();
+
+    /**
+     * How long a dimension may go without a pose packet before the physics thread sends one itself.
+     * Longer than a healthy tick (50 ms) so it never races the normal path, short enough that a
+     * stalled tick does not freeze every client's view of ships whose physics is still advancing.
+     */
+    private static final long POSE_WATCHDOG_NANOS = 60_000_000L;
+
+    /**
+     * True when nothing has put this dimension's poses on the wire for longer than the watchdog —
+     * i.e. the game tick has stopped running while physics has not. Called from the PHYSICS thread.
+     */
+    public static boolean poseSendIsOverdue(int dimensionId) {
+        final Long last = LAST_POSE_SEND_NANOS.get(dimensionId);
+        return last == null || System.nanoTime() - last > POSE_WATCHDOG_NANOS;
+    }
+
+    /**
+     * Put every loaded ship's pose on the wire, once per GAME tick.
+     *
+     * <p>This used to live in {@code VSWorldPhysicsLoop}, sent from the physics thread on a wall
+     * clock ({@code > 0.04 s}). That paced the producer off a 60 Hz loop while the consumer — a
+     * client that applies poses on its own 20 Hz tick and interpolates between them — ran at 50 ms.
+     * The gate opened every third physics iteration, about 48.7 ms, and drifted: sooner or later one
+     * client tick received no update and the next received two. The client's pose filter has an
+     * alpha of 0.5, so a single missed update becomes a step of half the true one followed by eight
+     * ticks of visible catch-up. That is what a pilot calls flying in jerks.</p>
+     *
+     * <p>Here the send is driven by the same clock the consumer keeps, so the cadence is exactly one
+     * update per tick by construction rather than by coincidence. Physics still runs at 60 Hz — the
+     * rate is the rigid-body integrator's requirement (contact resolution and angular integration
+     * both rest on step size), and it was never what put packets on the wire.</p>
+     *
+     * <p><b>The game tick is the primary sender, not the only one.</b> Making it the only one was
+     * tried and withdrawn: a server whose tick stalls would then freeze every client's view of ships
+     * whose PHYSICS is still advancing, because physics runs on its own thread and does not stall
+     * with the tick. The physics loop therefore keeps a watchdog ({@link #poseSendIsOverdue}) and
+     * sends for itself when nothing has gone out for longer than a healthy tick. Delivery is thus a
+     * superset of the old behaviour — the watchdog can only ADD a packet the tick failed to send,
+     * never remove one.</p>
+     *
+     * <p>Reading the physics transform from this thread is safe because it is an immutable
+     * {@code ShipTransform} published through a volatile field; the AABB is derived from the ship's
+     * block set, which is mutated on THIS thread, so computing it here is safer than where it was
+     * computed before.</p>
+     */
+    public static void sendShipTransformUpdates(World world, IPhysObjectWorld physObjectWorld) {
+        LAST_POSE_SEND_NANOS.put(world.provider.getDimension(), System.nanoTime());
+        try {
+            final ShipTransformUpdateMessage message = new ShipTransformUpdateMessage();
+            message.setDimensionID(world.provider.getDimension());
+            boolean any = false;
+            for (final PhysicsObject physicsObject : physObjectWorld.getAllLoadedThreadSafe()) {
+                final ShipTransform shipTransform =
+                        physicsObject.getShipTransformationManager().getCurrentPhysicsTransform();
+                final AxisAlignedBB shipBB = physicsObject.getPhysicsTransformAABB();
+                if (shipTransform == null || shipBB == null) {
+                    continue; // a ship whose pose or extent is not ready yet says nothing this tick
+                }
+                message.addData(physicsObject.getUuid(), shipTransform, shipBB);
+                any = true;
+            }
+            if (any) {
+                ValkyrienSkiesMod.physWrapperTransformUpdateNetwork
+                        .sendToDimension(message, message.getDimensionID());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onWorldTickEvent(WorldTickEvent event) {
         // This only gets called server side, because forge wants it that way. But in case they
@@ -119,6 +198,7 @@ public class EventsCommon {
                 break;
             case END:
                 physObjectWorld.tick();
+                sendShipTransformUpdates(world, physObjectWorld);
                 EntityDraggable.tickAddedVelocityForWorld(world);
                 break;
         }

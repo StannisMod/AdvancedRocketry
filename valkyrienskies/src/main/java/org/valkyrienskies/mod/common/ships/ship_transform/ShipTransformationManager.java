@@ -21,7 +21,14 @@ public class ShipTransformationManager {
     private ShipTransform prevTickTransform;
     // Used exclusively by the physics engine; should never even be used by the
     // client.
-    private ShipTransform currentPhysicsTransform;
+    /**
+     * Written by the physics thread, READ by the game thread — the game tick is what puts a ship's
+     * pose on the wire. Volatile for that handoff and nothing more: a {@link ShipTransform} is
+     * immutable (every field final), so publishing the reference safely publishes the whole pose and
+     * no lock or copy is needed. Without volatile the reader may keep seeing a stale reference for
+     * an unbounded time, which is a pose that silently stops advancing.
+     */
+    private volatile ShipTransform currentPhysicsTransform;
     private ShipTransform prevPhysicsTransform;
 
     public ShipTransformationManager(PhysicsObject parent, ShipTransform initialTransform) {

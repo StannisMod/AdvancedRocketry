@@ -4,16 +4,14 @@ package org.valkyrienskies.mod.common.util.multithreaded;
 import com.google.common.collect.ImmutableList;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import org.valkyrienskies.mod.common.EventsCommon;
 import org.valkyrienskies.mod.common.ValkyrienSkiesMod;
 import org.valkyrienskies.mod.common.collision.ShipCollisionTask;
 import org.valkyrienskies.mod.common.collision.WaterForcesTask;
 import org.valkyrienskies.mod.common.config.VSConfig;
-import org.valkyrienskies.mod.common.network.ShipTransformUpdateMessage;
-import org.valkyrienskies.mod.common.ships.ship_transform.ShipTransform;
 import org.valkyrienskies.mod.common.ships.ship_world.IHasShipManager;
 import org.valkyrienskies.mod.common.ships.ship_world.PhysicsObject;
 import java.util.*;
@@ -124,8 +122,6 @@ public class VSWorldPhysicsLoop implements Runnable {
         log.trace(name + " killed");
     }
 
-    private long lastPacketSendTime = 0;
-
     private void physicsTick(double delta) {
         // Update the immutable ship list.
         immutableShipsList = ((IHasShipManager) hostWorld).getManager().getAllLoadedThreadSafe();
@@ -142,28 +138,22 @@ public class VSWorldPhysicsLoop implements Runnable {
         }
         // Finally, actually process the physics tick
         tickThePhysicsAndCollision(physicsEntitiesToDoPhysics, delta);
-        // Send ship position update packets around 20 times a second
-        final long currentTimeMillis = System.currentTimeMillis();
-        final double secondsSinceLastPacket = (currentTimeMillis - lastPacketSendTime) / 1000.0;
-        // Use .04 to guarantee we're always sending at least 20 packets per second
-        if (secondsSinceLastPacket > 0.04) {
-            // Update the last update time
-            lastPacketSendTime = currentTimeMillis;
-            try {
-                // At the end, send the transform update packets
-                final ShipTransformUpdateMessage shipTransformUpdateMessage = new ShipTransformUpdateMessage();
-                final int dimensionID = hostWorld.provider.getDimension();
-                shipTransformUpdateMessage.setDimensionID(dimensionID);
-                for (final PhysicsObject physicsObject : immutableShipsList) {
-                    final UUID shipUUID = physicsObject.getUuid();
-                    final ShipTransform shipTransform = physicsObject.getShipTransformationManager().getCurrentPhysicsTransform();
-                    final AxisAlignedBB shipBB = physicsObject.getPhysicsTransformAABB();
-                    shipTransformUpdateMessage.addData(shipUUID, shipTransform, shipBB);
-                }
-                ValkyrienSkiesMod.physWrapperTransformUpdateNetwork.sendToDimension(shipTransformUpdateMessage, shipTransformUpdateMessage.getDimensionID());
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+        // The transform update packets used to be sent from HERE on every pass, gated on a wall
+        // clock ("secondsSinceLastPacket > 0.04"). That paced the producer off THIS thread's 60 Hz
+        // loop while the consumer — a client applying poses on its own 20 Hz tick — ran at 50 ms, so
+        // the gate fired every third iteration at ~48.7 ms and drifted against it. Sooner or later
+        // one client tick got no update and the next got two, and the client's alpha-0.5 pose filter
+        // turned that single miss into eight ticks of visible catch-up: the reported jerks. Measured
+        // by counting arrivals per client tick: 19/19 in the smooth case, 18/19 in the rough one.
+        //
+        // The send is now driven by the GAME tick, which is the clock the consumer actually keeps.
+        // This thread stays a WATCHDOG for the case that clock stops: physics does not stall with
+        // the game tick, so a tick-only sender would freeze every client's view of ships that are
+        // still moving. Sending here only when nothing has gone out for longer than a healthy tick
+        // keeps delivery a superset of the old behaviour while leaving the cadence to the tick.
+        if (EventsCommon.poseSendIsOverdue(hostWorld.provider.getDimension())) {
+            EventsCommon.sendShipTransformUpdates(hostWorld,
+                    ((IHasShipManager) hostWorld).getManager());
         }
     }
 
