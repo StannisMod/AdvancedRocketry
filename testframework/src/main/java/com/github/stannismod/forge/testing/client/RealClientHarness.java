@@ -234,6 +234,17 @@ public final class RealClientHarness implements AutoCloseable {
         javaArgs.add("-D" + PROP_WINDOW_START_STATE + "="
                 + System.getProperty(PROP_WINDOW_START_STATE, "offscreen"));
         javaArgs.add("-Djava.awt.headless=true");
+        // NEVER take the developer's mouse. Vanilla grabs the OS cursor the moment the client
+        // takes in-game focus (Minecraft.setIngameFocus -> MouseHelper.grabMouseCursor), and the
+        // window this harness runs is parked at -32000,-32000 — so the grab warps the physical
+        // cursor off the desktop and Windows clamps it to the screen edge. Forge's own escape
+        // hatch turns the grab half off; the RELEASE half is handled in the client bootstrap,
+        // which installs a MouseHelper that also refuses to warp on ungrab (vanilla's ungrab does
+        // Mouse.setCursorPosition to the window centre — the same jump in reverse, and it fires
+        // every time the developer clicks another window).
+        // The harness never needs a real cursor: look is driven through setLook and raw deltas go
+        // straight to the client's own entry points, neither of which reads the OS pointer.
+        javaArgs.add("-Dfml.noGrab=true");
         javaArgs.add("-Dforge.test.client=true");
         javaArgs.add("-Dforge.test.client.port=" + controlPort);
         // Forward the wall-clock multiplier so the client-side ceilings (waitTicks, waitForWorld,

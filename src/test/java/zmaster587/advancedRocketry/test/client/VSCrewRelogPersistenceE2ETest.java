@@ -1,9 +1,10 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 
 import org.junit.Assume;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Matcher;
@@ -24,7 +25,14 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
  */
-public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest {
+
+    @Override
+    protected String subsystem() {
+        return "vs-crew-relog";
+    }
+
 
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern BUILDER_POS =
@@ -965,21 +973,16 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractClientE2ETest {
     }
 
     private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
+        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS);
     }
 
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
-    }
 
     private int count(String sub) throws Exception {
         Matcher m = COUNT.matcher(exec("artest vs " + sub + " 0"));
         return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
-    private boolean serverHasVs() throws Exception {
-        return exec("artest vs available").contains("\"available\":true");
-    }
 
     private double readDouble(String json, Pattern p) {
         Matcher m = p.matcher(json);

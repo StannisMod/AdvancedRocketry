@@ -1,9 +1,9 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
-
 import org.junit.Assume;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Matcher;
@@ -33,8 +33,27 @@ import static org.junit.Assert.assertTrue;
  * ship one leaves behind cannot poison the next. Both assert the DESIRED contract, so both are RED
  * until the station-keeping (hover survives dismount) and capture-handoff fixes land - they are the
  * repro, written where a client e2e belongs instead of a manual playtest.</p>
+ *
+ * <h2>One client for all twelve scenarios</h2>
+ *
+ * <p>Measured 2026-08-07 over the whole ship client tier: these twelve scenarios cost <b>19.4
+ * minutes across twelve client boots</b> — 97 s each, of which the body is a small minority. They
+ * were the tier's wall-clock floor. Sharing one harness is what removes it, and the base coordinates
+ * below are unchanged: the scenarios already stood 100 blocks apart, which is a plot allocator by
+ * hand, and each one's ground is the ground its green runs were taken on.</p>
+ *
+ * <p>Two gates had to become scoped to survive a shared world, both marked at their call sites: the
+ * pilot seat is now located INSIDE this scenario's own ship ({@code vs find-seat} at its base)
+ * instead of taking the first pilot seat in the world, and "has the ship unloaded?" reads this
+ * scenario's own base rather than a whole-dimension ship count that a neighbour's ship answers.</p>
  */
-public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETest {
+
+    @Override
+    protected String subsystem() {
+        return "vs-deck-capture";
+    }
 
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern BUILDER_POS =
@@ -46,8 +65,14 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
     private static final Pattern PLAYER_Y = Pattern.compile("\"playerY\":(-?[0-9.E\\-]+)");
     private static final Pattern OBSTACLES = Pattern.compile("\"shipSupportObstacles\":(-?\\d+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+    private static final Pattern SEAT_X = Pattern.compile("\"seatX\":(-?\\d+)");
+    private static final Pattern SEAT_Y = Pattern.compile("\"seatY\":(-?\\d+)");
+    private static final Pattern SEAT_Z = Pattern.compile("\"seatZ\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-deck";
+
+    /** Ships in dim 0's registry immediately after {@link #buildShip} created this scenario's. */
+    private int shipsInRegistryAfterBuild;
 
     // ---- Bug: a walking client player on a grounded deck falls through it -----------------------
 
@@ -189,24 +214,32 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         // player brings it back. This drives that path in-harness: build, walk away until the ship's
         // chunks unload (VS saves it to the registry), then return to its deck.
         double[] ship = buildShip(bx, by, bz);
-        assertTrue("the ship must be loaded before we unload it", count("ship-count") >= 1);
+        int registryAfterBuild = shipsInRegistryAfterBuild;
+        assertTrue("the ship must be loaded before we unload it", shipLoadedAt(bx, by, bz));
 
         // Walk away far enough that nothing tickets the ship's chunks; the harness warmup holds no
         // ticket, so idle chunks unload. Belt and braces: drop any tickets a prior step left.
         exec("artest chunk release-all");
         exec("tp @a " + (bx + 4000) + " 120 " + (bz + 4000) + " 0 0");
-        int loaded = 1;
-        for (int i = 0; i < 80 && loaded > 0; i++) {
+        // Scoped to THIS ship: a whole-dimension "no ship is loaded" gate would wait on every
+        // neighbour scenario's ship as well, and would answer about theirs rather than ours.
+        boolean stillLoaded = true;
+        for (int i = 0; i < 80 && stillLoaded; i++) {
             bot().waitTicks(10);
-            loaded = count("ship-count");
+            stillLoaded = shipLoadedAt(bx, by, bz);
         }
         // If the harness will not unload the ship, we cannot honestly exercise the reload path this way -
         // SKIP rather than pass vacuously (a false green is worse than no test). This flags that the
         // reload axis needs a different mechanism (or a real session restart), which is a real result.
-        Assume.assumeTrue("harness did not unload the ship within the budget (loaded=" + loaded
-                + "); the reload axis needs another mechanism", loaded == 0);
+        Assume.assumeTrue("harness did not unload this scenario's ship within the budget (still"
+                + " loaded at " + bx + "," + by + "," + bz + "); the reload axis needs another"
+                + " mechanism", !stillLoaded);
+        // The registry must not have LOST it. Compared against the count taken right after this
+        // scenario's own assembly, so it stays a statement about this ship on a shared world.
         assertTrue("the unloaded ship must survive in the registry (a saved ship): "
-                + exec("artest vs ship-count-all 0"), count("ship-count-all") >= 1);
+                        + exec("artest vs ship-count-all 0") + " after build it was "
+                        + registryAfterBuild,
+                count("ship-count-all") >= registryAfterBuild);
 
         // Return to the ship exactly as re-entering a docked ship from a saved world, and stand on it.
         exec("tp @a " + ship[0] + " " + (ship[1] + 4) + " " + ship[2] + " 0 0");
@@ -219,7 +252,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         System.out.println("[deckcap] reloaded server=" + server);
         System.out.println("[deckcap] reloaded capture=" + capture);
         System.out.println("[deckcap] reloaded serverY=" + serverY + " clientY=" + clientY
-                + " loadedNow=" + count("ship-count"));
+                + " loadedNow=" + shipLoadedAt(bx, by, bz));
 
         assertTrue("a reloaded ship must come back when the player returns to its deck: " + server,
                 server.contains("\"shipLoaded\":true"));
@@ -329,18 +362,20 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         // then fell and flipped".
         exec("artest chunk release-all");
         exec("tp @a " + (bx + 4000) + " 120 " + (bz + 4000) + " 0 0");
-        int loaded = 1;
-        for (int i = 0; i < 80 && loaded > 0; i++) {
+        // Scoped to THIS ship, like the saved-ship scenario above: on a shared world a whole-dimension
+        // count answers about whichever neighbour's ship is loaded.
+        boolean stillLoaded = true;
+        for (int i = 0; i < 80 && stillLoaded; i++) {
             bot().waitTicks(10);
-            loaded = count("ship-count");
+            stillLoaded = shipLoadedAt(bx, by, bz);
         }
-        Assume.assumeTrue("harness did not unload the ship (loaded=" + loaded + "); cannot exercise the "
-                + "reload path", loaded == 0);
+        Assume.assumeTrue("harness did not unload this scenario's ship at " + bx + "," + by + ","
+                + bz + "; cannot exercise the reload path", !stillLoaded);
 
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         // Event-gated VS reload barrier (load-scaled ceiling + early exit): a fixed 40-iteration budget
         // can miss a slow async reload under concurrent-fork load and hard-fail the downstream parse.
-        ClientPoll.until(bot()::waitTicks, () -> count("ship-count"), n -> n >= 1, 5, 40);
+        ClientPoll.until(bot()::waitTicks, () -> shipLoadedAt(bx, by, bz) ? 1 : 0, n -> n >= 1, 5, 40);
         bot().waitTicks(80); // give a ship that lost its hold time to visibly fall
 
         double afterY = readDouble(shipInfo(bx, by, bz), POS_Y);
@@ -547,14 +582,9 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         System.out.println("[deckcap] force-invert upY=" + invertedUpY + " info=" + info0);
         Assume.assumeTrue("could not spin the ship inverted (upY=" + invertedUpY + ")", invertedUpY < -0.85);
 
-        // ENTER the seat on the inverted ship.
-        String mountInfo = exec("artest vs seat-mount 0");
-        assertTrue("seat-mount must find the seat on the inverted ship: " + mountInfo,
-                mountInfo.contains("\"seatFound\":true"));
-        Matcher dm = DUMMY_ID.matcher(mountInfo);
-        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
-        assertTrue("bot must mount the inverted ship's seat",
-                exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
+        // ENTER the seat on the inverted ship — located inside THIS ship, not "the first seat in
+        // the world" (see mountPilotSeatOfShipAt).
+        mountPilotSeatOfShipAt(bx, by, bz);
         bot().waitTicks(20);
 
         // SYMPTOM "after entering, the ship does not react": a turn command must actually move it.
@@ -779,6 +809,9 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         int all = spawned.value;
         assertTrue("assembly must create a NEW VS ship (was " + shipsBefore + ", now " + all + ")",
                 all > shipsBefore);
+        // Recorded so a later "is my ship still in the registry?" can be a statement about THIS
+        // scenario's ship on a world that also holds its neighbours'.
+        shipsInRegistryAfterBuild = all;
         bot().waitTicks(40);
 
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
@@ -807,15 +840,30 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
     /** Build the ship and sit the bot on its pilot seat; returns the ship's world position. */
     private double[] buildAndBoardShip(int bx, int by, int bz) throws Exception {
         double[] ship = buildShip(bx, by, bz);
-        String mountInfo = exec("artest vs seat-mount 0");
-        assertTrue("seat-mount must find the pilot seat: " + mountInfo,
-                mountInfo.contains("\"seatFound\":true"));
-        Matcher dm = DUMMY_ID.matcher(mountInfo);
-        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
-        assertTrue("bot must mount the seat dummy",
-                exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
+        mountPilotSeatOfShipAt(bx, by, bz);
         bot().waitTicks(10); // let the mount replicate and the client recognise the pilot seat
         return ship;
+    }
+
+    /**
+     * Sit the bot on the pilot seat of the ship built AT THIS BASE.
+     *
+     * <p>{@code artest vs seat-mount <dim>} takes the first {@code TilePilotSeat} in the world's
+     * loaded-tile list, with no position filter — unambiguous when the world holds exactly one ship,
+     * and a scenario mounting a NEIGHBOUR's ship once several scenarios share a world. {@code
+     * find-seat} resolves the shipyard bounds at a given world anchor and searches inside that ship
+     * only, so the seat is located by identity rather than by being first.</p>
+     */
+    private void mountPilotSeatOfShipAt(int bx, int by, int bz) throws Exception {
+        String seat = exec("artest vs find-seat 0 " + bx + " " + by + " " + bz);
+        assertTrue("find-seat must locate the pilot seat INSIDE the ship built at this base ("
+                + bx + "," + by + "," + bz + "): " + seat, seat.contains("\"seatFound\":true"));
+        String mountInfo = exec("artest vs seat-mount-at 0 " + readInt(seat, SEAT_X) + " "
+                + readInt(seat, SEAT_Y) + " " + readInt(seat, SEAT_Z));
+        Matcher dm = DUMMY_ID.matcher(mountInfo);
+        assertTrue("seat-mount-at must report a dummy id: " + mountInfo, dm.find());
+        assertTrue("bot must mount the seat dummy: " + mountInfo,
+                exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
     }
 
     private String assembleFixture(int baseX, int baseY, int baseZ) throws Exception {
@@ -836,11 +884,8 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
     }
 
     private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
-    }
-
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
+        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS);
     }
 
     private int count(String sub) throws Exception {
@@ -848,8 +893,13 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractClientE2ETest {
         return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
-    private boolean serverHasVs() throws Exception {
-        return exec("artest vs available").contains("\"available\":true");
+    /**
+     * Is THIS scenario's ship loaded at its own base? The scoped replacement for a whole-dimension
+     * {@code vs ship-count}: with one boot per test that count had exactly one ship to report on,
+     * and on a shared client it answers with whichever neighbour's ship happens to be loaded.
+     */
+    private boolean shipLoadedAt(int bx, int by, int bz) throws Exception {
+        return shipInfo(bx, by, bz).contains("\"managed\":true");
     }
 
     private double readDouble(String json, Pattern p) {

@@ -429,6 +429,56 @@ public final class ForgeTestClientBootstrap {
                     }
                     return ok();
                 });
+            case "reset_client_state":
+                // Puts the client back to the state a freshly-booted one is in, for the
+                // channels that measurably survive a scenario when ONE harness carries
+                // several. Measured 2026-08-06, all four fired at once on the second
+                // scenario of a shared run: an open GuiModular, an action-bar overlay
+                // still counting down at overlayTicks=50, an inherited hotbar, and a
+                // player still standing where the previous scenario left him.
+                //
+                // Position and inventory are the SERVER's to reset (a tp / clear through
+                // the command channel); everything reset here is client-owned state the
+                // server cannot reach. The response reports what was actually found dirty
+                // so a caller can assert on the reset instead of trusting it — a reset
+                // nobody checks is indistinguishable from no reset at all.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+
+                    String hadScreen = mc.currentScreen == null
+                            ? "" : mc.currentScreen.getClass().getName();
+                    if (mc.player != null) {
+                        mc.player.closeScreen();
+                    } else {
+                        mc.displayGuiScreen(null);
+                    }
+                    response.addProperty("clearedScreen", hadScreen);
+
+                    clearChatAndOverlay(mc, response);
+
+                    // A key left down by set_key/holdKey keeps driving production input
+                    // handlers into the next scenario.
+                    net.minecraft.client.settings.KeyBinding.unPressAllKeys();
+                    response.addProperty("keysReleased", true);
+
+                    return response;
+                });
+            case "clear_chat":
+                // The observation channel ALONE, with the screen left exactly as it is.
+                //
+                // A test that reads "the player was told X" must clear the chat immediately
+                // before the stimulus, because the harness itself writes to that channel —
+                // every server command echoes a FORGE_TEST_DONE marker into it. But a GUI
+                // test's stimulus is a click on an OPEN screen, and reset_client_state closes
+                // the screen, so using it to arm the channel destroys the arrangement it was
+                // called to protect. Hence this narrower verb: same chat/overlay wipe, no
+                // screen close, no key release.
+                return runOnClientThread(() -> {
+                    JsonObject response = ok();
+                    clearChatAndOverlay(Minecraft.getMinecraft(), response);
+                    return response;
+                });
             case "report_state":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
@@ -1393,6 +1443,50 @@ public final class ForgeTestClientBootstrap {
         }
     }
 
+    /**
+     * Wipes the chat backlog and the action-bar overlay, and reports what was found there.
+     *
+     * <p>Shared by {@code reset_client_state} (which also closes the screen and releases keys)
+     * and {@code clear_chat} (which does not). The chat backlog is the dangerous channel in a
+     * shared harness: an assertion of the form "the player was told X" searches the last N
+     * lines, so a previous scenario's identical line — or one of the harness's own
+     * {@code FORGE_TEST_DONE} markers — satisfies it with no stimulus behind it at all.</p>
+     *
+     * <p>{@code overlayMessageTime} is the real gate for the action bar: the overlay STRING
+     * lingers after expiry, so only the countdown says "still on screen".</p>
+     */
+    private static void clearChatAndOverlay(Minecraft mc, JsonObject response) {
+        int clearedLines = 0;
+        String clearedOverlay = "";
+        int clearedOverlayTicks = 0;
+        if (mc.ingameGUI != null) {
+            try {
+                net.minecraft.client.gui.GuiNewChat chat = mc.ingameGUI.getChatGUI();
+                java.lang.reflect.Field linesF = findField(chat.getClass(), "chatLines");
+                linesF.setAccessible(true);
+                clearedLines = ((List<?>) linesF.get(chat)).size();
+                chat.clearChatMessages(true);
+
+                java.lang.reflect.Field overlayF =
+                        findField(mc.ingameGUI.getClass(), "overlayMessage");
+                overlayF.setAccessible(true);
+                clearedOverlay = String.valueOf(overlayF.get(mc.ingameGUI));
+                overlayF.set(mc.ingameGUI, "");
+
+                java.lang.reflect.Field overlayTimeF =
+                        findField(mc.ingameGUI.getClass(), "overlayMessageTime");
+                overlayTimeF.setAccessible(true);
+                clearedOverlayTicks = overlayTimeF.getInt(mc.ingameGUI);
+                overlayTimeF.setInt(mc.ingameGUI, 0);
+            } catch (Throwable t) {
+                throw new IllegalStateException("clear chat/overlay: " + t, t);
+            }
+        }
+        response.addProperty("clearedChatLines", clearedLines);
+        response.addProperty("clearedOverlay", clearedOverlay);
+        response.addProperty("clearedOverlayTicks", clearedOverlayTicks);
+    }
+
     private static java.lang.reflect.Field findField(Class<?> type, String fieldName) throws NoSuchFieldException {
         Class<?> current = type;
         while (current != null) {
@@ -1413,6 +1507,7 @@ public final class ForgeTestClientBootstrap {
                     // First END-phase tick: Display.create() has returned and
                     // the LWJGL window is up. Honour the start-state override.
                     applyInitialWindowState();
+                    installNonWarpingMouseHelper();
                 }
                 CLIENT_TICKS.incrementAndGet();
                 // Deferred connection teardown: this event runs on the client thread OUTSIDE
@@ -1423,6 +1518,65 @@ public final class ForgeTestClientBootstrap {
                     action.run();
                 }
             }
+        }
+    }
+
+    private static final AtomicBoolean MOUSE_HELPER_INSTALLED = new AtomicBoolean(false);
+
+    /**
+     * Stop the test client from ever moving the developer's OS cursor.
+     *
+     * <p>Vanilla warps the physical pointer on BOTH transitions, and this harness runs its window
+     * parked at {@code -32000,-32000}, so both warps land off the desktop and Windows clamps the
+     * cursor to a screen edge — the machine's owner is typing in another window and their pointer
+     * jumps into the corner:</p>
+     *
+     * <ul>
+     *   <li>{@code grabMouseCursor()} — {@code Mouse.setGrabbed(true)}, on the client taking
+     *       in-game focus. Forge already guards this one behind {@code -Dfml.noGrab=true}, which
+     *       {@code RealClientHarness} passes.</li>
+     *   <li>{@code ungrabMouseCursor()} — {@code Mouse.setCursorPosition(width/2, height/2)}, on
+     *       every loss of focus. <b>Nothing guards this one</b>, and losing focus is exactly what
+     *       happens the moment the developer clicks somewhere else, so it fires repeatedly.</li>
+     * </ul>
+     *
+     * <p>Replacing the helper closes both halves at their source and keeps the grab-independent
+     * part ({@code mouseXYChange}) working. The harness needs no OS cursor at all: look is driven
+     * through {@code setLook} and raw mouse deltas go straight to the client's own static entry
+     * points, neither of which reads the pointer.</p>
+     */
+    private static void installNonWarpingMouseHelper() {
+        if (!MOUSE_HELPER_INSTALLED.compareAndSet(false, true)) {
+            return;
+        }
+        // The escape hatch, and the only way to observe the behaviour this method removes: set
+        // -Dforge.test.client.cursor.warp=true (with -Dfml.noGrab=false) and the client warps the
+        // desktop cursor exactly like vanilla. That is the control leg for "the fix does anything"
+        // — it will physically take the pointer, so it is opt-in and never the default.
+        if (Boolean.parseBoolean(System.getProperty("forge.test.client.cursor.warp", "false"))) {
+            System.out.println("[forge-test] cursor warp ENABLED by request — vanilla MouseHelper "
+                    + "kept; this client may move the desktop cursor");
+            return;
+        }
+        try {
+            Minecraft mc = Minecraft.getMinecraft();
+            mc.mouseHelper = new net.minecraft.util.MouseHelper() {
+                @Override
+                public void grabMouseCursor() {
+                    // no-op: never take the pointer away from whoever is using this desktop.
+                }
+
+                @Override
+                public void ungrabMouseCursor() {
+                    // no-op: vanilla warps the pointer to the window centre here, and this window
+                    // is off-screen, so the warp reads as "my cursor jumped to the corner".
+                }
+            };
+            System.out.println("[forge-test] installed non-warping MouseHelper "
+                    + "(the client will not move the desktop cursor)");
+        } catch (Throwable ignored) {
+            // Best-effort, exactly like the window state: a client that cannot swap its helper is
+            // still a usable client, and failing the run over a cursor would be worse.
         }
     }
 

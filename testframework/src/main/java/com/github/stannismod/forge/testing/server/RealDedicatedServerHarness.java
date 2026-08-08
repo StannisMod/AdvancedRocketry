@@ -200,10 +200,48 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
             }
+            // Preserve the server log at a stable location BEFORE the temp dir is wiped. The
+            // client harness has done this for its side for a while; the server side had nothing,
+            // so every diagnostic the SERVER writes — the mod's own ERROR/WARN reports about a
+            // crossing, a reseat, a tick that gave up — died with the directory, and a failing
+            // client e2e could only ever be read from the client's half of the story. `close()`
+            // has already stopped the child (TestClient.close sends `stop` and waits), so the log
+            // is flushed by the time we copy.
+            try {
+                Path serverLog = root.resolve("logs").resolve("latest.log");
+                if (Files.isRegularFile(serverLog)) {
+                    Files.copy(serverLog, preservedLogPath(), StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    // No log4j file appender in this launcher layout: fall back to the console
+                    // transcript we have been reading all along, so the preserved path is never
+                    // silently empty (an absent file reads as "the server said nothing").
+                    Files.write(preservedLogPath(), client.transcriptSnapshot(),
+                            StandardCharsets.UTF_8);
+                }
+            } catch (IOException ignored) {
+                // Best-effort only — never block close on preserve failure.
+            }
             if (cleanupOnClose) {
                 deleteRecursively(root);
             }
         }
+    }
+
+    /**
+     * The stable post-mortem location of the last server log, one file PER TEST-JVM (the PID
+     * suffix), mirroring the client harness's {@code forge-test-client-last-pid*.log}: a single
+     * fixed name would let concurrent forks clobber each other's diagnostics, exactly when
+     * parallel runs make failures interesting.
+     *
+     * <p>Last-boot-wins within one JVM. A class whose failing test is not the last one to run
+     * therefore loses its log — filter to the single method when the log is the evidence.</p>
+     */
+    public static Path preservedLogPath() {
+        String jvm = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+        int at = jvm.indexOf('@');
+        String pid = at > 0 ? jvm.substring(0, at) : jvm;
+        return Paths.get(System.getProperty("java.io.tmpdir"),
+                "forge-test-server-last-pid" + pid + ".log");
     }
 
     /**

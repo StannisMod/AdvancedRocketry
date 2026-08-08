@@ -29,7 +29,7 @@ import static org.junit.Assert.assertTrue;
  * whether his client's input chain then reaches the arrived ship's computer — is observable only
  * with a real client logging out and back in around a real (probe-driven) transit.</p>
  *
- * <p><b>Shape.</b> The probe transit stack of {@code VSShipTransitCrewE2ETest}, but over a ship
+ * <p><b>Shape.</b> The probe transit stack of the crewed-transit scenarios, but over a ship
  * that can actually FLY: {@code space transit-setup-empty} installs the stack with an EMPTY origin
  * cell, and the real {@code with-pilot-seat} fixture is built there with the real assembler — the
  * piloted setup's bare 3x3 deck has no propulsion, so a held key can move nothing and a control
@@ -181,18 +181,27 @@ public class VSMidTransitRelogControlE2ETest extends AbstractClientE2ETest {
         // keep ticking to drive the retries while observing the CLIENT.
         boolean seatedOnArrival = false;
         int reseatBudget = (int) (60 * TestTimeouts.factor());
+        String lastReseatTick = "";
         for (int i = 0; i < reseatBudget && !seatedOnArrival; i++) {
-            exec("artest space transit-tick");
+            lastReseatTick = exec("artest space transit-tick");
             bot().waitTicks(2);
             seatedOnArrival = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;
         }
 
         // ---- ASSERT 1: the relogged pilot is SEATED on his ship in the target cell. -------------
+        // The arrival re-seat is the one leg of this scenario that fails MUTELY — it drops its
+        // pending entry without logging, unlike the departure boarding leg — so the failure
+        // message carries the server's own account of it: whether the retry loop was still
+        // running when we stopped ticking (`reseating`), where the seat match stopped
+        // (`reseatBlock`), and who wrote the rider's position last (the arrival trace). Without
+        // them a red here says only "not riding", which names no step.
         JsonObject riding = bot().reportRidingEntity();
         assertTrue("a pilot who relogged mid-transit must be re-seated on his ship ON ARRIVAL: "
                 + riding + " (targetDim=" + targetDim
-                + ", clientDim=" + bot().reportWeather().get("dim").getAsInt() + ")",
+                + ", clientDim=" + bot().reportWeather().get("dim").getAsInt() + ")"
+                + " lastTick=" + lastReseatTick
+                + " arrival=" + exec("artest vs arrival-trace"),
                 riding.get("riding").getAsBoolean());
         assertTrue("the re-mounted entity must be the ship's seat dummy: " + riding,
                 riding.get("entityClass").getAsString().endsWith("EntityDummy"));

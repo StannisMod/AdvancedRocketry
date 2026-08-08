@@ -1,10 +1,11 @@
 package zmaster587.advancedRocketry.test.client;
 
 import com.github.stannismod.forge.testing.TestTimeouts;
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
 
 import org.junit.Assume;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,7 +27,14 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Gated on real VS - run with {@code -PwithVS}.</p>
  */
-public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest {
+
+    @Override
+    protected String subsystem() {
+        return "vs-crew-boarding";
+    }
+
 
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern BUILDER_POS =
@@ -35,6 +43,9 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(\\d+)");
+    private static final Pattern SEAT_X = Pattern.compile("\"seatX\":(-?\\d+)");
+    private static final Pattern SEAT_Y = Pattern.compile("\"seatY\":(-?\\d+)");
+    private static final Pattern SEAT_Z = Pattern.compile("\"seatZ\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-deck";
     private static final String SHIP_CAMERA = "zmaster587.advancedRocketry.client.ShipFrameCamera";
@@ -472,14 +483,25 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         return buildAndBoardShip(bx, by, bz, VARIANT);
     }
 
+    private int readIntFrom(String json, Pattern p) {
+        Matcher m = p.matcher(json);
+        assertTrue("expected an integer in: " + json, m.find());
+        return Integer.parseInt(m.group(1));
+    }
+
     private double[] buildAndBoardShip(int bx, int by, int bz, String variant) throws Exception {
         double[] ship = buildShip(bx, by, bz, variant);
-        String mountInfo = exec("artest vs seat-mount 0");
-        assertTrue("seat-mount must find the pilot seat: " + mountInfo,
-                mountInfo.contains("\"seatFound\":true"));
+        // The seat is located INSIDE this scenario's own ship: `vs seat-mount <dim>` takes the first
+        // pilot seat in the world's loaded-tile list with no position filter, which is unambiguous
+        // only while the world holds one ship, and mounts a neighbour's once scenarios share one.
+        String seat = exec("artest vs find-seat 0 " + bx + " " + by + " " + bz);
+        assertTrue("find-seat must locate the pilot seat INSIDE the ship built at this base ("
+                + bx + "," + by + "," + bz + "): " + seat, seat.contains("\"seatFound\":true"));
+        String mountInfo = exec("artest vs seat-mount-at 0 " + readIntFrom(seat, SEAT_X) + " "
+                + readIntFrom(seat, SEAT_Y) + " " + readIntFrom(seat, SEAT_Z));
         Matcher dm = DUMMY_ID.matcher(mountInfo);
-        assertTrue("seat-mount must report a dummy id: " + mountInfo, dm.find());
-        assertTrue("bot must mount the seat dummy",
+        assertTrue("seat-mount-at must report a dummy id: " + mountInfo, dm.find());
+        assertTrue("bot must mount the seat dummy: " + mountInfo,
                 exec("artest player mount-entity " + dm.group(1)).contains("\"mounted\":true"));
         bot().waitTicks(10);
         return ship;
@@ -588,12 +610,10 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
     }
 
     private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
+        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                + " " + SHIP_QUERY_RADIUS);
     }
 
-    private String exec(String cmd) throws Exception {
-        return String.join("\n", serverClient().execute(cmd));
-    }
 
     /** One CLIENT-side subspace-census static (ShipFrameTravel.census*), as a plain string. */
     private String censusStatic(String field) throws Exception {
@@ -624,9 +644,6 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractClientE2ETest {
         return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 
-    private boolean serverHasVs() throws Exception {
-        return exec("artest vs available").contains("\"available\":true");
-    }
 
     private double readDouble(String json, Pattern p) {
         Matcher m = p.matcher(json);

@@ -216,16 +216,23 @@ public class VSFlightSmoothnessAcrossJumpE2ETest extends AbstractClientE2ETest {
 
         boolean seatedOnArrival = false;
         int reseatBudget = (int) (60 * TestTimeouts.factor());
+        String lastReseatTick = "";
         for (int i = 0; i < reseatBudget && !seatedOnArrival; i++) {
-            exec("artest space transit-tick");
+            lastReseatTick = exec("artest space transit-tick");
             bot().waitTicks(2);
             seatedOnArrival = bot().reportRidingEntity().get("riding").getAsBoolean()
                     && bot().reportWeather().get("dim").getAsInt() == targetDim;
         }
+        // The arrival re-seat gives up WITHOUT logging (only the departure boarding leg reports on
+        // exhaustion), so a red here would otherwise name no step. Carry the server's own account:
+        // whether the retry loop was still running when we stopped ticking (`reseating`), where the
+        // seat match stopped (`reseatBlock`), and who wrote the rider's position last.
         assertTrue("ARRANGEMENT: the pilot must arrive SEATED in the target cell, or the post-jump "
                         + "leg has no pilot and measures a drifting hulk. riding="
                         + bot().reportRidingEntity() + " clientDim="
-                        + bot().reportWeather().get("dim").getAsInt() + " targetDim=" + targetDim,
+                        + bot().reportWeather().get("dim").getAsInt() + " targetDim=" + targetDim
+                        + " lastTick=" + lastReseatTick
+                        + " arrival=" + exec("artest vs arrival-trace"),
                 seatedOnArrival);
 
         // The crossing re-pastes the ship, so its flight computer is at a NEW subspace block: read

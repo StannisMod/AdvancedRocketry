@@ -537,6 +537,85 @@ public final class ClientBot implements Closeable {
         assertOk(execute(command("close_screen")));
     }
 
+    /**
+     * Return the CLIENT-owned state a scenario can dirty to what a freshly-booted client holds:
+     * closes any open screen, clears the chat backlog, clears the action-bar overlay and its
+     * countdown, and releases every held key.
+     *
+     * <p>Only needed when one harness carries more than one scenario. Measured 2026-08-06: on the
+     * second scenario of a shared run, ALL FOUR of those channels were still carrying the first
+     * scenario's state. The chat backlog is the dangerous one — a scenario that asserts "the player
+     * was told X" by searching the last N lines passes on the PREVIOUS scenario's identical line,
+     * with no stimulus behind it.</p>
+     *
+     * <p>Position and inventory are NOT reset here — they are the server's, and a caller resets
+     * them through the command channel (a teleport, a clear). The response reports what was found
+     * dirty ({@code clearedScreen}, {@code clearedChatLines}, {@code clearedOverlay},
+     * {@code clearedOverlayTicks}) so a caller can assert on the reset rather than trust it.</p>
+     */
+    public JsonObject resetClientState() throws IOException {
+        return assertOk(execute(command("reset_client_state")));
+    }
+
+    /**
+     * Clear the chat backlog and the action-bar overlay, leaving the open screen and held keys
+     * ALONE. Returns the same {@code clearedChatLines} / {@code clearedOverlay} /
+     * {@code clearedOverlayTicks} fields {@link #resetClientState()} does.
+     *
+     * <p>Use this to arm a chat observation immediately before a stimulus that is a click on an
+     * OPEN GUI: {@link #resetClientState()} closes the screen, so calling it there would destroy
+     * the arrangement it was called to protect.</p>
+     */
+    public JsonObject clearChat() throws IOException {
+        return assertOk(execute(command("clear_chat")));
+    }
+
+    /**
+     * Is the client still answering? Answers within {@code timeoutMillis} whatever the client does.
+     *
+     * <p>This exists because the command channel's own read timeout is <b>two minutes, scaled by
+     * the fork factor</b> ({@link #ClientBot} sets it) — six minutes at eight forks. That is right
+     * for a command: a starved client thread queue genuinely takes a long time. It is wrong for a
+     * liveness question asked on a failure path, and the two death modes are not alike:</p>
+     *
+     * <ul>
+     *   <li>the client process <b>exited</b> — the socket is closed, {@code readLine} returns null
+     *       and the ordinary channel already throws instantly;</li>
+     *   <li>the client process <b>hung</b> — the socket is still open and nothing ever answers, so
+     *       the ordinary channel blocks for the full six minutes, once per caller.</li>
+     * </ul>
+     *
+     * <p>A caller deciding "is the rest of this class worth running" must get the same fast answer
+     * in both. So this borrows the socket with its own short timeout and restores the original.</p>
+     *
+     * <p><b>Trade, stated:</b> a merely SLOW client can be reported dead. A normal round trip is
+     * milliseconds, so pass something generous (seconds, scaled by the fork factor) — never a value
+     * close to a real round trip, or a loaded box starts declaring corpses.</p>
+     *
+     * @return true if the client answered a trivial command in time; false on ANY failure
+     */
+    public boolean isAlive(int timeoutMillis) {
+        int previous;
+        try {
+            previous = socket.getSoTimeout();
+        } catch (Throwable alreadyGone) {
+            return false;
+        }
+        try {
+            socket.setSoTimeout(Math.max(1, timeoutMillis));
+            execute(command("report_state"));
+            return true;
+        } catch (Throwable dead) {
+            return false;
+        } finally {
+            try {
+                socket.setSoTimeout(previous);
+            } catch (Throwable ignored) {
+                // The socket is gone; the caller already has its answer.
+            }
+        }
+    }
+
     public void shutdown() throws IOException {
         assertOk(execute(command("shutdown")));
     }

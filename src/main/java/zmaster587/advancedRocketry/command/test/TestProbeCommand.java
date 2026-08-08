@@ -768,42 +768,65 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
-        // ship-info <dim> <x> <y> <z> — state of the loaded ship nearest to (x,y,z).
+        // ship-info <dim> id <shipId> — the ship report keyed on the ship's own IDENTITY. There is
+        // no distance term to be wrong about: the ship may be anywhere, and an id naming nothing
+        // loaded here answers managed:false, which is a loud arrangement failure rather than a
+        // quiet description of somebody else's ship. This is the form a caller that means ONE
+        // particular ship should use for the whole of its scenario, having captured the id once
+        // from the positional form below at a moment it can defend.
+        if (args.length >= 4 && "ship-info".equalsIgnoreCase(args[0])
+                && "id".equalsIgnoreCase(args[2])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            String shipId = args[3];
+            double[] s = zmaster587.advancedRocketry.integration.vs.VSIntegration.shipStateById(
+                    world, shipId);
+            if (s == null) {
+                send(sender, "{\"managed\":false,\"id\":\"" + shipId + "\"}");
+                return;
+            }
+            double[] omega = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipAngularVelocityById(world, shipId);
+            send(sender, jsonMap(shipInfoMap(shipId, s, omega)));
+            return;
+        }
+        // ship-info <dim> <x> <y> <z> [maxDist] — state of the loaded ship NEAREST to (x,y,z).
+        //
+        // maxDist bounds the lookup: without it, on a world holding several ships, the answer is a
+        // NEIGHBOUR the moment the intended ship unloads or flies off, and it looks identical
+        // either way. But the bound is a mitigation and not an identity, and the distance it
+        // compares is the full 3-D one — so a bound sized against how far apart ships are BUILT
+        // says nothing about how far one of them then CLIMBS. Use this form to capture "id" once,
+        // then ask by id.
         if (args.length >= 5 && "ship-info".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
+            double maxDist = args.length >= 6
+                    ? parseDoubleOr(args[5], Double.POSITIVE_INFINITY) : Double.POSITIVE_INFINITY;
             double[] s = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipState(
-                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0),
+                    parseDoubleOr(args[4], 0), maxDist);
             if (s == null) {
                 send(sender, "{\"managed\":false}");
                 return;
             }
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("managed", true);
-            m.put("posX", s[0]);
-            m.put("posY", s[1]);
-            m.put("posZ", s[2]);
-            m.put("qw", s[3]);
-            m.put("qx", s[4]);
-            m.put("qy", s[5]);
-            m.put("qz", s[6]);
-            m.put("velX", s[7]);
-            m.put("velY", s[8]);
-            m.put("velZ", s[9]);
+            // WHICH ship answered. Without it the reply is unattributable by construction: two
+            // ships produce the same shape of report and nothing in it says which one this is.
+            String shipId = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipId(
+                    world, parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0),
+                    parseDoubleOr(args[4], 0), maxDist);
             // Angular velocity (rad/s): without it a test cannot tell "the pilot centred the flight
             // cursor and the ship stopped turning" from "it is still turning, slowly".
             double[] omega = zmaster587.advancedRocketry.integration.vs.VSIntegration
                     .nearestShipAngularVelocity(world, parseDoubleOr(args[2], 0),
-                            parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
-            m.put("omegaX", omega == null ? 0.0 : omega[0]);
-            m.put("omegaY", omega == null ? 0.0 : omega[1]);
-            m.put("omegaZ", omega == null ? 0.0 : omega[2]);
-            m.put("omega", omega == null ? 0.0
-                    : Math.sqrt(omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2]));
-            send(sender, jsonMap(m));
+                            parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0), maxDist);
+            send(sender, jsonMap(shipInfoMap(shipId, s, omega)));
             return;
         }
         // to-world <dim> <x> <y> <z> <subX> <subY> <subZ> — map a SUBSPACE point of the ship whose
@@ -1098,6 +1121,14 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true"
                     + ",\"count\":" + zmaster587.advancedRocketry.space.ArrivalTrace.SERVER.size()
                     + ",\"events\":\"" + zmaster587.advancedRocketry.space.ArrivalTrace.dumpServer() + "\""
+                    // Why the last re-seat did NOT seat everyone, in the re-seat's own words: whether a
+                    // ship claims the arrival point, how many seat tiles the scan reached, and per seat
+                    // the three things the match discriminates on. Empty means the last re-seat seated
+                    // everyone - it is cleared on success, so "" is a real answer, not a missing one.
+                    // The arrival re-seat has no other voice: it gives up SILENTLY (only the DEPARTURE
+                    // boarding leg logs on exhaustion), so without this a failed arrival re-seat leaves
+                    // nothing behind at all.
+                    + ",\"reseatBlock\":\"" + zmaster587.advancedRocketry.space.CrewTransfer.lastReseatBlock() + "\""
                     + "}");
             return;
         }
@@ -1664,6 +1695,38 @@ public class TestProbeCommand extends CommandBase {
         // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
         // that applied and declined every entity look identical from outside the JVM; these counters
         // tell them apart, and a resolved tick that saw zero obstacles means bodies fall through decks.
+        // afc-clear - drop ALL FOUR static BRING-UP channels the flight probes write:
+        // debugFlightInput (the held Free Flight input `ff-input` sets) plus the three command
+        // channels (`force-vel`, `force-rot`, `point`). Every one is `static volatile` on the tile
+        // class, and both readers fall back to them for ANY flight computer with no per-tile value
+        // of its own - TileAdvancedFlightComputer.update() takes
+        // `pilotInput != null ? pilotInput : debugFlightInput`, and the controller mixin does the
+        // same for the command triple. So a probe throttle is not aimed at the ship the caller
+        // named: it keeps flying every other ship in the world until something clears it.
+        //
+        // Under one boot per test there was never a later scenario to notice. On a shared client it
+        // is worth ~30 blocks of unasked-for climb, and the four must be cleared TOGETHER - clearing
+        // only the command triple moved a measured overshoot by 0.01 blocks, because the held INPUT
+        // was the one still driving. Reports what was set, so a caller asserts the clear rather than
+        // trusting it.
+        if (args.length >= 1 && "afc-clear".equalsIgnoreCase(args[0])) {
+            boolean hadInput = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    .debugFlightInput != null;
+            boolean hadVel = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    .debugCommandedVelocity != null;
+            boolean hadAng = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    .debugCommandedAngVel != null;
+            boolean hadAtt = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    .debugTargetAttitude != null;
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugCommandedVelocity = null;
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugCommandedAngVel = null;
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugTargetAttitude = null;
+            send(sender, "{\"ok\":true,\"clearedFlightInput\":" + hadInput
+                    + ",\"clearedVelocity\":" + hadVel
+                    + ",\"clearedAngVel\":" + hadAng + ",\"clearedAttitude\":" + hadAtt + "}");
+            return;
+        }
         // afc-debug - READ-ONLY. What the flight controller last commanded, from the physics thread.
         if (args.length >= 1 && "afc-debug".equalsIgnoreCase(args[0])) {
             double[] s = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugControllerState;
@@ -1841,7 +1904,8 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
-                + "|ship-info <dim> <x> <y> <z>|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
+                + "|ship-info <dim> <x> <y> <z> [maxDist]|ship-info <dim> id <shipId>"
+                + "|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
                 + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-occupy <dim> <x> <y> <z>|seat-delivery|arrival-trace"
                 + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
                 + "|subspace-census [<dim> <id>]\"}");
@@ -1857,6 +1921,33 @@ public class TestProbeCommand extends CommandBase {
         if ("shipframe".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.Mode.SHIP_FRAME;
         if ("status".equals(word)) return zmaster587.advancedRocketry.integration.vs.ShipLocalMoveControl.getMode();
         return null;
+    }
+
+    /**
+     * The {@code ship-info} report body, built in ONE place so the positional and the id-keyed
+     * forms cannot drift into two different shapes — a caller that switches from the first to the
+     * second must not have to re-learn the reply.
+     */
+    private static Map<String, Object> shipInfoMap(String shipId, double[] s, double[] omega) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("managed", true);
+        m.put("id", shipId == null ? "" : shipId);
+        m.put("posX", s[0]);
+        m.put("posY", s[1]);
+        m.put("posZ", s[2]);
+        m.put("qw", s[3]);
+        m.put("qx", s[4]);
+        m.put("qy", s[5]);
+        m.put("qz", s[6]);
+        m.put("velX", s[7]);
+        m.put("velY", s[8]);
+        m.put("velZ", s[9]);
+        m.put("omegaX", omega == null ? 0.0 : omega[0]);
+        m.put("omegaY", omega == null ? 0.0 : omega[1]);
+        m.put("omegaZ", omega == null ? 0.0 : omega[2]);
+        m.put("omega", omega == null ? 0.0
+                : Math.sqrt(omega[0] * omega[0] + omega[1] * omega[1] + omega[2] * omega[2]));
+        return m;
     }
 
     private static net.minecraft.world.WorldServer vsWorld(ICommandSender sender, int dim) {
@@ -3111,6 +3202,12 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
                     + ",\"crewDim\":" + transitTm.crewDimensionOf("t")
                     + ",\"hyperDim\":" + zmaster587.advancedRocketry.space.HyperspaceWorld.dimId()
+                    // How many arrived ships are still retrying their crew re-seat. This tells a
+                    // never-seated crew apart from a re-seat that RAN OUT of retries: >0 means the
+                    // loop is still trying (the caller simply stopped ticking), 0 with an unseated
+                    // crew means it either succeeded or gave up - and the arrival leg gives up
+                    // without a word, so nothing else distinguishes the two.
+                    + ",\"reseating\":" + transitTm.reseatingCount()
                     + ",\"ships\":\"" + ships + "\"}");
             return;
         }

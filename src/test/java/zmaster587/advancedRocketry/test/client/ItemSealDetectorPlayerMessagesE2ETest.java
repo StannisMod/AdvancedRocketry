@@ -1,14 +1,13 @@
 package zmaster587.advancedRocketry.test.client;
 
-import com.github.stannismod.forge.testing.junit.AbstractClientE2ETest;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -25,12 +24,8 @@ import static org.junit.Assert.assertTrue;
  * client.</p>
  *
  * <p>This e2e pins exactly that — a real {@code EntityPlayerMP} holds an
- * {@code ItemSealDetector}, {@code onItemUse} runs against a placed
- * fixture (driven through {@code /artest player try-seal-detect} so we
- * don't have to wrangle the player into a precise right-click pose),
- * and the outbound {@code SPacketChat} packet is captured by a Netty
- * chat-tap so we can read the translation key the production code
- * dispatched.</p>
+ * {@code ItemSealDetector}, right-clicks a placed fixture through the real
+ * client, and the i18n-RESOLVED reply is read off the client's own chat.</p>
  *
  * <p>Fixtures mirror {@code SealDetectorDispatchTest} (stone /
  * cobblestone &rarr; "sealed", air / leaves / sand &rarr; "notsealmat",
@@ -47,48 +42,47 @@ import static org.junit.Assert.assertTrue;
  * ({@code TestProbeCommand.handleSealDetector}) makes the cross-pin
  * fail loud — that's the whole point of running them side by side.</p>
  *
+ * <h2>Why this class is the shared-harness pilot</h2>
+ *
+ * <p>Six scenarios that used to cost six full server+client boots (~11 minutes of which ~99 % was
+ * startup) now cost one. It was chosen as the first migration because it is the one that can go
+ * WRONG in the interesting way: <b>three of its six methods expect the identical chat line</b>
+ * ("Material will not hold a seal"). In a shared world with no chat reset, the leaves scenario finds
+ * the air scenario's leftover line the instant it looks, and passes without the production path
+ * running at all — a silent false green in three places. The base class's per-scenario reset asserts
+ * an EMPTY chat backlog for exactly this reason;
+ * {@link #aaChatBacklogIsEmptyWhenAScenarioStarts()} pins it from this side too, and every branch
+ * scenario re-reads the backlog immediately BEFORE its right-click, so a regression in the reset
+ * reddens here rather than going quiet.</p>
+ *
  * <p>Gated by {@code forge.test.client.enabled=true}; auto-skips on
  * headless CI.</p>
  */
-public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest {
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractSharedClientE2ETest {
 
-    private static final int DIM = 0;
-    private static final int Y = 150;
-    private static final int Z = 300;
+    private static final int Y = Plot.DEFAULT_Y;
 
-    // Distinct from SealDetectorDispatchTest (200..260 / y=80 / z=200)
-    // and InventoryBypassRedirectE2ETest (-200..-200) to avoid fixture
-    // clashes if testClient runs all suites in one JVM.
-    private static final int X_STONE       = 300;
-    private static final int X_COBBLESTONE = 310;
-    private static final int X_AIR         = 320;
-    private static final int X_LEAVES      = 330;
-    private static final int X_SAND        = 340;
-    private static final int X_SLAB        = 350;
+    /** Offsets INSIDE this scenario's own plot; the plot itself is what separates scenarios. */
+    private static final int FIXTURE_DX = 32;
+    private static final int FIXTURE_DZ = 32;
+    private static final int PERCH_DZ = FIXTURE_DZ - 2;
 
     private static final Pattern BRANCH = Pattern.compile("\"branch\":\"([^\"]+)\"");
+
+    @Override
+    protected String subsystem() {
+        return "seal-detector";
+    }
 
     private void forceLoadAround(int x, int z) throws Exception {
         int cx = x >> 4;
         int cz = z >> 4;
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                serverClient().execute("artest chunk forceload " + DIM
-                        + " " + (cx + dx) + " " + (cz + dz));
+                exec("artest chunk forceload " + plot().dim + " " + (cx + dx) + " " + (cz + dz));
             }
         }
-    }
-
-    private void place(int x, String blockId) throws Exception {
-        forceLoadAround(x, Z);
-        String resp = String.join("\n", serverClient().execute(
-                "artest place " + DIM + " " + x + " " + Y + " " + Z + " " + blockId));
-        // Air placement is a no-op for /artest place but force-loads the
-        // chunk — accept either "placed":true or a "placed":false echoing
-        // that the block was already there.
-        assertFalse("place must not error at " + x + "," + Y + "," + Z
-                        + " with " + blockId + "; resp=" + resp,
-                resp.contains("\"error\""));
     }
 
     private String fieldOf(Pattern p, String src, String label) {
@@ -105,54 +99,100 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
             held = bot().reportPlayerItems().getAsJsonObject("held").get("id").getAsString();
             if (itemId.equals(held)) return;
         }
-        throw new AssertionError("client never rendered " + itemId + " in hand; held=" + held);
+        scenario().arrangementFailed("the client never rendered " + itemId
+                + " in hand within 200 ticks; held=" + held
+                + " — the detector was never in the player's hand, so no branch could dispatch");
     }
 
-    /** Stages the fixture at (x, Y, Z), stands the player on a stone perch one
+    /** Stages the fixture in this scenario's plot, stands the player on a stone perch one
      *  block away holding the seal detector, RIGHT-CLICKS the fixture through
      *  the real client ({@code interactBlock} &rarr; CPacketPlayerTryUseItemOnBlock),
-     *  and asserts the i18n-RESOLVED reply lands on the player's chat overlay.
+     *  and asserts the i18n-RESOLVED reply lands on the player's chat.
      *  Cross-pins the branch against the server-tier seal-detector mirror. */
-    private void assertSealDetectorBranch(int x, String fixtureBlock, String expected,
+    private void assertSealDetectorBranch(String fixtureBlock, String expected,
                                           String expectedChatText) throws Exception {
-        place(x, fixtureBlock);
-        // Perch for the player one block south of the fixture.
-        String perch = String.join("\n", serverClient().execute(
-                "artest place " + DIM + " " + x + " " + Y + " " + (Z - 2) + " minecraft:stone"));
-        assertFalse("perch place must not error: " + perch, perch.contains("\"error\""));
+        int dim = plot().dim;
+        int x = plot().x(FIXTURE_DX);
+        int z = plot().z(FIXTURE_DZ);
+        int perchZ = plot().z(PERCH_DZ);
 
-        String give = String.join("\n", serverClient().execute(
-                "artest player give-held advancedrocketry:sealdetector"));
-        assertTrue("give-held sealdetector must succeed: " + give, give.contains("\"ok\":true"));
-        serverClient().execute("tp @a " + (x + 0.5) + " " + (Y + 1) + " " + (Z - 1.5));
+        scenario()
+                // What the SERVER thinks is at the fixture coordinate, and which branch its own
+                // mirror would dispatch there. Between them they separate "the fixture was never
+                // placed" from "it was placed and production chose a different branch" — the two
+                // readings a bare "the chat line never arrived" cannot tell apart.
+                .describeOnFailureWith(
+                        "artest block at " + dim + " " + x + " " + Y + " " + z,
+                        "artest seal-detector check " + dim + " " + x + " " + Y + " " + z)
+                .arranging("place the " + fixtureBlock + " fixture at " + x + "," + Y + "," + z);
+
+        forceLoadAround(x, z);
+        String placed = exec("artest place " + dim + " " + x + " " + Y + " " + z + " " + fixtureBlock);
+        // Air placement is a no-op for /artest place but force-loads the chunk — accept either
+        // "placed":true or a "placed":false echoing that the block was already there.
+        scenario().requireArranged("place must not error at " + x + "," + Y + "," + z
+                + " with " + fixtureBlock + "; resp=" + placed, !placed.contains("\"error\""));
+
+        scenario().arranging("perch the player two blocks south of the fixture");
+        String perch = exec("artest place " + dim + " " + x + " " + Y + " " + perchZ + " minecraft:stone");
+        scenario().requireArranged("perch place must not error: " + perch, !perch.contains("\"error\""));
+
+        scenario().arranging("give the seal detector and wait for the CLIENT to render it in hand");
+        String give = exec("artest player give-held advancedrocketry:sealdetector");
+        scenario().requireArranged("give-held sealdetector must succeed: " + give,
+                give.contains("\"ok\":true"));
+        exec("tp @a " + (x + 0.5) + " " + (Y + 1) + " " + (z - 1.5));
         waitForHeld("advancedrocketry:sealdetector");
 
-        // The REAL right-click on the fixture block from the client.
-        bot().interactBlock(x, Y, Z);
+        // Arm the observation channel at the LAST moment before the stimulus. The arrangement above
+        // issues ~13 server commands and every one of them echoes a "[Server] FORGE_TEST_DONE
+        // <uuid>" line into the player's chat — measured, 13 lines in the backlog on this class's
+        // first shared run. Without this, a line matching the expected text proves nothing about
+        // THIS right-click. Nothing between here and interactBlock may be a server command.
+        scenario().measuring("arm the chat channel immediately before the right-click");
+        armChatObservation();
 
-        // The player must READ the branch's resolved message on their chat.
+        scenario().asserting("the player reads the " + expected + " reply on their own chat");
+        bot().interactBlock(x, Y, z);
+
         boolean found = false;
-        String newest = "";
-        // 20-line window + 200-tick poll: the harness' console markers
-        // ([Server] FORGE_TEST_DONE …) also land on the overlay and can
-        // push the reply down, and a loaded box stretches the roundtrip.
+        String seen = "";
         for (int waited = 0; waited < 200 && !found; waited += 10) {
             bot().waitTicks(10);
             com.google.gson.JsonArray lines = bot().reportChat(20).getAsJsonArray("lines");
+            seen = lines.toString();
             for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i).getAsString();
-                if (newest.isEmpty()) newest = line;
-                if (line.contains(expectedChatText)) { found = true; break; }
+                if (lines.get(i).getAsString().contains(expectedChatText)) {
+                    found = true;
+                    break;
+                }
             }
         }
         assertTrue("client chat must show '" + expectedChatText + "' for " + fixtureBlock
-                + " at " + x + "," + Y + "," + Z + " (newest line: '" + newest + "')", found);
+                + " at " + x + "," + Y + "," + z + "; backlog was empty before the click and now"
+                + " holds: " + seen, found);
 
-        // Cross-pin against the server-tier dispatch mirror.
-        String checkResp = String.join("\n", serverClient().execute(
-                "artest seal-detector check " + DIM + " " + x + " " + Y + " " + Z));
+        scenario().asserting("production dispatch and the server-tier mirror agree on the branch");
+        String checkResp = exec("artest seal-detector check " + dim + " " + x + " " + Y + " " + z);
         assertEquals("production dispatch and server-tier mirror must agree on branch for "
                         + fixtureBlock, expected, fieldOf(BRANCH, checkResp, "branch"));
+    }
+
+    // ── the reset's own witness, from this side ───────────────────────────────
+
+    /**
+     * Named to sort FIRST so it runs before any scenario has written to chat, and again meaningful
+     * on every later run of the class: it pins that a scenario is handed an empty backlog. If the
+     * shared-harness reset ever stops clearing chat, this reddens — instead of the three
+     * same-message scenarios below quietly passing on each other's leftovers.
+     */
+    @Test
+    public void aaChatBacklogIsEmptyWhenAScenarioStarts() throws Exception {
+        scenario().asserting("a scenario starts with an empty chat backlog");
+        com.google.gson.JsonObject chat = bot().reportChat(20);
+        scenario().record("lines", chat.get("lines")).record("overlayTicks", chat.get("overlayTicks"));
+        assertEquals("a shared-harness scenario must start with no chat lines: " + chat.get("lines"),
+                0, chat.get("count").getAsInt());
     }
 
     // ───────────────────── sealed branch ──────────────────────────────────
@@ -160,7 +200,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
     /** Solid ROCK material full-block &rarr; "sealed". */
     @Test
     public void stoneFixtureDispatchesSealedMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_STONE, "minecraft:stone", "sealed", "Should hold a nice seal");
+        assertSealDetectorBranch("minecraft:stone", "sealed", "Should hold a nice seal");
     }
 
     /** Pins that "sealed" isn't pinned to the singular stone block —
@@ -168,7 +208,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  "sealed", per SealableBlockHandler.isBlockSealed's material gate. */
     @Test
     public void cobblestoneFixtureDispatchesSealedMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_COBBLESTONE, "minecraft:cobblestone", "sealed", "Should hold a nice seal");
+        assertSealDetectorBranch("minecraft:cobblestone", "sealed", "Should hold a nice seal");
     }
 
     // ───────────────────── notsealmat branch ──────────────────────────────
@@ -176,14 +216,14 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
     /** Material.AIR is on the default materialBanList &rarr; "notsealmat". */
     @Test
     public void airFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_AIR, "minecraft:air", "notsealmat", "Material will not hold a seal");
+        assertSealDetectorBranch("minecraft:air", "notsealmat", "Material will not hold a seal");
     }
 
     /** Material.LEAVES is on the default materialBanList — multi-material
      *  ban-list pin (not just AIR). */
     @Test
     public void leavesFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_LEAVES, "minecraft:leaves", "notsealmat", "Material will not hold a seal");
+        assertSealDetectorBranch("minecraft:leaves", "notsealmat", "Material will not hold a seal");
     }
 
     /** Material.SAND is on the default materialBanList — silent removal
@@ -191,7 +231,7 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  regression). */
     @Test
     public void sandFixtureDispatchesNotSealMatMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_SAND, "minecraft:sand", "notsealmat", "Material will not hold a seal");
+        assertSealDetectorBranch("minecraft:sand", "notsealmat", "Material will not hold a seal");
     }
 
     // ───────────────────── other branch ───────────────────────────────────
@@ -201,7 +241,6 @@ public class ItemSealDetectorPlayerMessagesE2ETest extends AbstractClientE2ETest
      *  short-circuiting on the non-IFluidBlock check). */
     @Test
     public void stoneSlabFixtureDispatchesOtherMessageToPlayer() throws Exception {
-        assertSealDetectorBranch(X_SLAB, "minecraft:stone_slab", "other", "Air will leak through this block");
+        assertSealDetectorBranch("minecraft:stone_slab", "other", "Air will leak through this block");
     }
-
 }
