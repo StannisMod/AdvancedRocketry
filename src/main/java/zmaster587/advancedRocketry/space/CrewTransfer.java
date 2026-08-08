@@ -202,8 +202,26 @@ public final class CrewTransfer {
                 ArrivalTrace.server("reseat.setPos t=" + dstWorld.getTotalWorldTime()
                         + " p=" + player.getEntityId() + " toY=" + ArrivalTrace.fmt(seatWorld[1]));
             }
-            if (player.getRidingEntity() instanceof EntityDummy) {
+            // "Already seated" means seated ON THIS SEAT — riding the dummy bound to it, in this
+            // world. Any other dummy is a leftover mount, and treating one as proof of a finished
+            // re-seat is how a crossing loses its pilot: the transfer above carries him into the
+            // target dimension WITHOUT dismounting him (vanilla's transferPlayerToDimension goes
+            // through removeEntityDangerously, which — unlike removeEntity — leaves the ride
+            // intact), so he arrives still bound to the departure hull's dummy, in the world he
+            // just left. Skipping the mount then reported the whole crew seated while his client
+            // could not even see what he was riding.
+            EntityDummy seatDummy = zmaster587.advancedRocketry.block.BlockPilotSeat
+                    .boundDummyAt(dstWorld, seat.getPos());
+            Entity ridden = player.getRidingEntity();
+            if (ridden instanceof EntityDummy && ridden == seatDummy) {
                 continue; // already re-seated by an earlier retry
+            }
+            if (ridden instanceof EntityDummy) {
+                // Any OTHER dummy is a stale mount and must not stop the re-seat. The swap needs no
+                // dismount here — the mount below is forced, and a forced startRiding dismounts
+                // first — which is also how the pre-assembly rebind below does it.
+                ArrivalTrace.server("reseat.staleMount t=" + dstWorld.getTotalWorldTime()
+                        + " p=" + player.getEntityId() + " stale=" + ridden.getEntityId());
             }
             // The BlockPilotSeat mount recipe: a dummy at the seat's live world position, bound
             // to the seat's (new) subspace block, and the player riding it. Reuse the seat's

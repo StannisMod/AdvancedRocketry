@@ -1089,6 +1089,14 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true"
                     + ",\"count\":" + zmaster587.advancedRocketry.space.ArrivalTrace.SERVER.size()
                     + ",\"events\":\"" + zmaster587.advancedRocketry.space.ArrivalTrace.dumpServer() + "\""
+                    // Why the last re-seat did NOT seat everyone, in the re-seat's own words: whether a
+                    // ship claims the arrival point, how many seat tiles the scan reached, and per seat
+                    // the three things the match discriminates on. Empty means the last re-seat seated
+                    // everyone - it is cleared on success, so "" is a real answer, not a missing one.
+                    // The arrival re-seat has no other voice: it gives up SILENTLY (only the DEPARTURE
+                    // boarding leg logs on exhaustion), so without this a failed arrival re-seat leaves
+                    // nothing behind at all.
+                    + ",\"reseatBlock\":\"" + zmaster587.advancedRocketry.space.CrewTransfer.lastReseatBlock() + "\""
                     + "}");
             return;
         }
@@ -3156,6 +3164,12 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
                     + ",\"crewDim\":" + transitTm.crewDimensionOf("t")
                     + ",\"hyperDim\":" + zmaster587.advancedRocketry.space.HyperspaceWorld.dimId()
+                    // How many arrived ships are still retrying their crew re-seat. This tells a
+                    // never-seated crew apart from a re-seat that RAN OUT of retries: >0 means the
+                    // loop is still trying (the caller simply stopped ticking), 0 with an unseated
+                    // crew means it either succeeded or gave up - and the arrival leg gives up
+                    // without a word, so nothing else distinguishes the two.
+                    + ",\"reseating\":" + transitTm.reseatingCount()
                     + ",\"ships\":\"" + ships + "\"}");
             return;
         }

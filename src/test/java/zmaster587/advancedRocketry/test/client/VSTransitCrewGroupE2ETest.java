@@ -625,14 +625,39 @@ private String chat() throws Exception {
                 if (!hudNow.contains("HYPERSPACE")) {
                     continue; // not across yet: nothing sampled here is about hyperspace
                 }
-                // Baseline the frame counters a few ticks INTO the corridor rather than on the
-                // frame the HUD flips. They are CUMULATIVE client-side counters and this is an
-                // equality pin, so a single frame rendered at the crossing — where the client's
-                // dimension state is neither the cell's nor the corridor's — reads as "the ring
-                // was drawn in hyperspace". Measured 2026-08-07 on the shared client: exactly one,
-                // and the same body alone never saw it because there the counter had never left 0.
-                // The window given up is the crossing itself; the claim is about the corridor.
-                bot().waitTicks(4);
+                // Baseline the frame counters once the CLIENT'S OWN dimension is the corridor —
+                // not a fixed number of ticks after the HUD flips. They are CUMULATIVE client-side
+                // counters and this is an equality pin, so every frame the client draws while it
+                // still believes it is in the cell reads as "the ring was drawn in hyperspace".
+                // The HUD is server-driven state; the ring is drawn by the client's own renderer
+                // off the client's own dimension, so that dimension is the condition to wait on.
+                // A tick count is only a guess at how long the handover takes, and the guess
+                // scales with load: measured 2026-08-07 the leak was exactly one frame and a
+                // 4-tick pause covered it, then on 2026-08-08 the same pause let TWO through under
+                // full-gate load (expected:<122> but was:<124>). Waiting on the state cannot be
+                // out-run by a slower handover.
+                int hyperDimNow = readInt(lastTick, "hyperDim");
+                for (int settle = 0; settle < 40
+                        && bot().reportWeather().get("dim").getAsInt() != hyperDimNow; settle++) {
+                    bot().waitTicks(1);
+                }
+                assertEquals("ARRANGEMENT: the client never reached the corridor's own dimension, so "
+                                + "the ring baseline below would be taken in the cell it left",
+                        hyperDimNow, bot().reportWeather().get("dim").getAsInt());
+                // The client's dimension is necessary but not sufficient: measured 2026-08-08, one
+                // ring frame still lands AFTER it flips (the leak went 2 -> 1 when the wait moved
+                // from 4 ticks to this state). So wait for the renderer ITSELF to say it is in the
+                // corridor — its own frame counter advancing — and baseline only then. The window
+                // given up is exactly the handover frame, which the claim was never about; a ring
+                // frame drawn while the corridor is provably being drawn is a real one.
+                long tunnelAtFlip = tunnelFrames();
+                for (int settle = 0; settle < 40 && tunnelFrames() <= tunnelAtFlip; settle++) {
+                    bot().waitTicks(1);
+                }
+                assertTrue("ARRANGEMENT: the corridor renderer never drew a frame after the client "
+                                + "entered hyperspace (corridor frames stuck at " + tunnelAtFlip
+                                + "), so there is no corridor to baseline the ring against",
+                        tunnelFrames() > tunnelAtFlip);
                 ringAtStart = ringFrames();
                 tunnelAtStart = tunnelFrames();
                 scenario().record("ringAtStart", ringAtStart)
