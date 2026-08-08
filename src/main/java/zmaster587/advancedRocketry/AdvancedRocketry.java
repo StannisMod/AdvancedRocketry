@@ -1203,6 +1203,9 @@ public class AdvancedRocketry {
         // Carries a pre-assembly boarding across the asynchronous ship assembly (core assembly
         // glue - registered unconditionally, works with the space subsystem down).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.AssemblyCrewRebind());
+        // Hyperspace is a void with ships in it and nothing else: leaving your ship out there is
+        // fatal. Idle on every tick that has no hyperspace world and no player in it.
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.HyperspaceVoid());
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.util.DelayedActionBar());
         // Position-writer timeline around ship crossings (ungated diagnostics, probe-readable).
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.ArrivalTrace.Hooks());
