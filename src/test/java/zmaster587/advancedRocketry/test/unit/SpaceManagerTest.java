@@ -88,6 +88,11 @@ public class SpaceManagerTest {
         @Override public boolean isLive(int dimId) {
             return !worldRemovedBehindOurBack.contains(dimId);
         }
+
+        /** Slots with somebody standing in them, whatever the controller's refcount says. */
+        final java.util.Set<Integer> occupied = new java.util.LinkedHashSet<>();
+
+        @Override public boolean hasOccupants(int dimId) { return occupied.contains(dimId); }
     }
 
     /** Mutable tick source. */
@@ -187,6 +192,78 @@ public class SpaceManagerTest {
         // cell1 was clean => discarded, and its freed slot re-bound to cell3.
         assertEquals(1, binder.discards.size());
         assertEquals(dim + ":" + cell(3).cellKey(), binder.loads.get(binder.loads.size() - 1));
+    }
+
+    /**
+     * A cell nobody CLAIMS but somebody is standing in is not evictable. A zero refcount means "no
+     * claim", never "empty": a crew member carried into a cell aboard a ship holds none, and a jump
+     * releases the origin cell's own count one line after dismounting its crew into it.
+     *
+     * <p>The control is the same arrangement with the body absent — without it a green here could
+     * just as well mean the LRU picked the other cell for an unrelated reason.</p>
+     */
+    @Test
+    public void aCellWithSomebodyStandingInItIsNotEvictedUnderHim() {
+        FakeBinder binder = new FakeBinder(10, 11);
+        Clock clock = new Clock();
+        SpaceManager m = mgr(binder, clock, never());
+
+        clock.tick = 1; int dim1 = m.materialize(cell(1));
+        clock.tick = 2; m.materialize(cell(2));
+        clock.tick = 3; m.dematerialize(cell(1)); // cell1 idle and OLDEST: the LRU victim
+        clock.tick = 4; m.dematerialize(cell(2));
+        binder.occupied.add(dim1);                // ...but somebody is in it
+
+        clock.tick = 5; m.materialize(cell(3));
+
+        assertTrue("the cell somebody is standing in must survive the pool pressure",
+                m.isLoaded(cell(1)));
+        assertFalse("the next-oldest UNOCCUPIED cell is what gets evicted instead",
+                m.isLoaded(cell(2)));
+        assertTrue(m.isLoaded(cell(3)));
+    }
+
+    /** The control for the leg above: with nobody in it, that same cell IS the victim. */
+    @Test
+    public void aCellWithNobodyInItIsEvictedByTheSameArrangement() {
+        FakeBinder binder = new FakeBinder(10, 11);
+        Clock clock = new Clock();
+        SpaceManager m = mgr(binder, clock, never());
+
+        clock.tick = 1; m.materialize(cell(1));
+        clock.tick = 2; m.materialize(cell(2));
+        clock.tick = 3; m.dematerialize(cell(1));
+        clock.tick = 4; m.dematerialize(cell(2));
+
+        clock.tick = 5; m.materialize(cell(3));
+
+        assertFalse("nobody in it: the oldest idle cell is evicted", m.isLoaded(cell(1)));
+        assertTrue(m.isLoaded(cell(2)));
+    }
+
+    /**
+     * When every idle cell has somebody in it, the pool is exhausted rather than emptied under
+     * anyone. Refusing to bind is the right failure: it is recoverable and it is visible, where an
+     * eviction under an occupant is neither.
+     */
+    @Test
+    public void poolExhaustedRatherThanEvictingUnderTheOnlyOccupant() {
+        FakeBinder binder = new FakeBinder(10);
+        SpaceManager m = mgr(binder, new Clock(), never());
+
+        int dim1 = m.materialize(cell(1));
+        m.dematerialize(cell(1));   // no claim left...
+        binder.occupied.add(dim1);  // ...but he is still standing in it
+
+        try {
+            m.materialize(cell(2));
+            fail("expected PoolExhaustedException rather than an eviction under the occupant");
+        } catch (SpaceManager.PoolExhaustedException expected) {
+            assertTrue(m.isLoaded(cell(1)));
+            assertFalse(m.isLoaded(cell(2)));
+            assertTrue("nothing may have been unloaded or discarded",
+                    binder.unloads.isEmpty() && binder.discards.isEmpty());
+        }
     }
 
     @Test

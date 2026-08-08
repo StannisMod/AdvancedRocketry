@@ -302,13 +302,24 @@ public final class SpaceManager {
         return -1;
     }
 
-    /** The least-recently-visited loaded cell with no occupants, or {@code null} if none is idle. */
+    /**
+     * The least-recently-visited loaded cell with no occupants, or {@code null} if none is idle.
+     *
+     * <p>"No occupants" is two questions, not one: nobody holds a CLAIM on the cell (refcount zero),
+     * and nobody is standing IN it. The second is asked of the world itself, because a body can be in
+     * a cell with no claim behind it — a crew member carried in aboard a ship, or a jump's crew,
+     * dismounted into the origin cell one line before that cell's own count is released. Evicting
+     * under them unbinds or discards the world they are standing in.</p>
+     */
     private String lruEvictableCell() {
         String victim = null;
         long oldest = Long.MAX_VALUE;
         for (Map.Entry<String, Integer> e : refCount.entrySet()) {
             if (e.getValue() != 0 || !loadedCellToSlot.containsKey(e.getKey())) {
                 continue;
+            }
+            if (binder.hasOccupants(loadedCellToSlot.get(e.getKey()))) {
+                continue; // somebody is in there; a zero refcount is not permission
             }
             long visit = metaOf(e.getKey()).lastVisitTick;
             if (visit < oldest) {

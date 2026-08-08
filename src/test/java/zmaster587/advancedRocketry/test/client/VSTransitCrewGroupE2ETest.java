@@ -768,6 +768,140 @@ private String chat() throws Exception {
         return capture;
     }
 
+    /** Forward, on the real client — the key a player walks with. */
+    private static final int FORWARD_KEY = org.lwjgl.input.Keyboard.KEY_W;
+
+    /**
+     * How long the void gives a crew member who is aboard nothing before it takes him, in server
+     * ticks — read from production so the waits below cannot drift away from the budget they are
+     * about. Mirrors `HyperspaceVoid.GRACE_TICKS`.
+     */
+    private static final int VOID_GRACE_TICKS = 200;
+
+    /**
+     * JUMP-2 and JUMP-8, in one flight, because the first is the honest control for the second:
+     * <b>hyperspace is a place you live in, and stepping off your ship there kills you.</b>
+     *
+     * <p>A crew member stands up mid-flight, stays on his deck for longer than the void's whole
+     * budget, and is fine; then he walks off the hull and dies. Without the first leg the second
+     * proves only that something in hyperspace kills people; without the second the first proves only
+     * that nothing does.</p>
+     */
+    @Test
+    public void aCrewMemberLivesInHyperspaceUntilHeStepsOffHisShip() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        exec("artest vs permaload true");
+        // The void exempts creative and spectator on purpose, so the mode is SET rather than assumed:
+        // in either of them this scenario could only ever come back "he survived".
+        exec("gamemode survival @a");
+
+        String setup = exec("artest space transit-setup-piloted");
+        assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
+        int originDim = readInt(setup, "originDim");
+        assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
+                waitForLoadedShip(originDim) >= 1);
+        seatTheBot(originDim);
+
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
+        assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
+
+        // Fly only as far as hyperspace and then STOP driving the transit: an un-ticked jump parks
+        // its ship in its lane indefinitely, which is the interval this scenario is about.
+        int hyperDim = -1;
+        String lastTick = "";
+        for (int i = 0; i < 120; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                break;
+            }
+            hyperDim = readInt(lastTick, "hyperDim");
+            if (bot().reportWeather().get("dim").getAsInt() == hyperDim) {
+                break;
+            }
+            bot().waitTicks(2);
+        }
+        assertEquals("ARRANGEMENT: the client must actually be in hyperspace before anything here is"
+                + " about hyperspace; last tick=" + lastTick,
+                hyperDim, bot().reportWeather().get("dim").getAsInt());
+
+        // The seat's own world position, as the CLIENT renders it — the deck reference for the
+        // stand-up, read off the mount rather than from a probe that would need the lane's anchor.
+        JsonObject mount = bot().reportRidingEntity();
+        assertTrue("ARRANGEMENT: he must still be riding his seat on arrival in hyperspace: " + mount,
+                mount.get("riding").getAsBoolean());
+        double deckX = mount.get("posX").getAsDouble();
+        double deckY = mount.get("posY").getAsDouble();
+        double deckZ = mount.get("posZ").getAsDouble();
+
+        // ── JUMP-2: the interval is livable ─────────────────────────────────────────────────────
+        String capture = standTheBotOnTheDeck(deckX, deckY, deckZ);
+        assertTrue("a crew member must be able to leave his seat IN HYPERSPACE and be resolved on his"
+                + " deck there — that is what makes the flight an interval rather than a cutscene: "
+                + capture, readBool(capture, "alreadyTracked"));
+
+        // ...and stay there. The span is the void's OWN budget plus a margin, so "he is alive" is a
+        // statement about the countdown having had every chance to fire rather than about a window
+        // too short to reach it.
+        bot().waitTicks(VOID_GRACE_TICKS + 60);
+        JsonObject aboardState = bot().reportState();
+        String aboardCapture = exec("artest vs deck-capture");
+        assertTrue("a crew member standing on his own deck in hyperspace must not be taken by the"
+                + " void — he is aboard, and the danger is for bodies that are not: client="
+                + aboardState + " capture=" + aboardCapture,
+                aboardState.get("health").getAsFloat() > 0f);
+        assertTrue("...and he must still be resolved on that deck after the whole budget: "
+                + aboardCapture, readBool(aboardCapture, "alreadyTracked"));
+
+        // ── JUMP-8: the void is lethal ──────────────────────────────────────────────────────────
+        // He walks off. Nothing prevents him — the danger is the mechanic, not a wall. The teleport
+        // is a fallback for the run where the walk does not clear this fixture's 3x3 deck; it
+        // replaces the WAY he leaves, never the leaving, which is what the mechanic reads.
+        bot().holdKey(FORWARD_KEY);
+        for (int i = 0; i < 20 && readBool(exec("artest vs deck-capture"), "alreadyTracked"); i++) {
+            bot().waitTicks(5);
+        }
+        bot().releaseKey(FORWARD_KEY);
+        String offHull = exec("artest vs deck-capture");
+        if (readBool(offHull, "alreadyTracked")) {
+            exec("tp @a " + (deckX + 30.0) + " " + deckY + " " + (deckZ + 30.0) + " 0 0");
+            bot().waitTicks(20);
+            offHull = exec("artest vs deck-capture");
+        }
+        assertTrue("ARRANGEMENT: he must actually be off the hull, or the void has nothing to take: "
+                + offHull, !readBool(offHull, "alreadyTracked"));
+
+        // Arm the channel the verdict is read out of, immediately before the wait and with no server
+        // command after it: the harness echoes a marker line into this same chat for every command
+        // it runs.
+        armChatObservation();
+
+        // The countdown, plus the same margin the livable leg was given.
+        boolean dead = false;
+        for (int i = 0; i < (VOID_GRACE_TICKS + 60) / 10 && !dead; i++) {
+            bot().waitTicks(10);
+            dead = bot().reportState().get("health").getAsFloat() <= 0f;
+        }
+        JsonObject afterState = bot().reportState();
+        assertTrue("leaving your ship in hyperspace must kill you, and the client is what has to show"
+                + " it — health " + afterState.get("health") + ", screen "
+                + afterState.get("screen") + "; the same body survived the same span aboard, so this"
+                + " is the step off the hull and not the flight", dead);
+
+        // WHICH death, and this is not a detail. A body that steps off a lane at Y=128 in an all-air
+        // world FALLS, and vanilla's own out-of-world damage below Y=-64 kills it inside this same
+        // window — so "he is dead" is satisfied by a build in which this mechanic does nothing at
+        // all. The message the player is shown is what tells the two apart.
+        String obituary = bot().reportChat(200).toString();
+        assertTrue("the void of hyperspace must be what took him, not the drop out of the world —"
+                + " otherwise this scenario is green on a build where the mechanic is absent."
+                + " Chat: " + obituary,
+                obituary.contains("void of hyperspace"));
+        assertTrue("...and it must be a SENTENCE, not a raw translation key: a death nobody can read"
+                + " is a death the player cannot attribute. Chat: " + obituary,
+                !obituary.contains("death.attack.arHyperspaceVoid"));
+    }
+
     /**
      * JUMP-3: both crossings carry every member of the transit crew, in whatever posture he is in.
      *

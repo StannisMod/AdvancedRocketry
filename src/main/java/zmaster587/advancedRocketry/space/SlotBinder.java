@@ -77,4 +77,22 @@ public interface SlotBinder {
     default boolean isLive(int dimId) {
         return true;
     }
+
+    /**
+     * Whether slot {@code dimId}'s world currently has anyone in it.
+     *
+     * <p>The controller's refcount is a claim taken by whoever MATERIALIZED a cell, and a body can be
+     * in a cell without any of them holding one: a crew member carried in on a ship, a player who
+     * walked in behind someone else's claim, a jump that released the origin cell's count one line
+     * after dismounting its crew into it. Eviction therefore asks the world who is standing in it
+     * rather than trusting a counter to have been incremented — the same "derive it from state, not
+     * from transitions" rule the durable aboard record is written by, and for the same reason: a
+     * paired claim is only as good as the pairing nobody forgot.</p>
+     *
+     * <p>Defaults to {@code false}: a recording test fake models no players, so nothing it binds is
+     * ever occupied unless it says so.</p>
+     */
+    default boolean hasOccupants(int dimId) {
+        return false;
+    }
 }

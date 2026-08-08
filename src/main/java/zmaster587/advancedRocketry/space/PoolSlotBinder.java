@@ -53,4 +53,11 @@ public final class PoolSlotBinder implements SlotBinder {
     public boolean isLive(int dimId) {
         return net.minecraftforge.common.DimensionManager.getWorld(dimId) != null;
     }
+
+    @Override
+    public boolean hasOccupants(int dimId) {
+        net.minecraft.world.WorldServer world =
+                net.minecraftforge.common.DimensionManager.getWorld(dimId);
+        return world != null && !world.playerEntities.isEmpty();
+    }
 }
