@@ -129,6 +129,16 @@ public final class JumpGate {
             return 0L;
         }
 
+        /** How many capacitors the drive can actually draw from. Zero is a ship to BUILD. */
+        default int capacitorCount() {
+            return 0;
+        }
+
+        /** What those capacitors hold when full. Below the burst cost, waiting never helps. */
+        default long capacitorCapacity() {
+            return 0L;
+        }
+
         /** Charge available across every capacitor aboard, right now. */
         default long capacitorCharge() {
             return 0L;
@@ -211,7 +221,15 @@ public final class JumpGate {
     public static final String MSG_NO_DRIVE = "msg.jumpgate.nodrive";
     /** The window does not enclose the whole hull — possible, and it will cost the hull. */
     public static final String MSG_WINDOW_UNDERSIZED = "msg.jumpgate.windowundersized";
-    /** The capacitor cannot dump the burst that opens the window. */
+    /** There is no capacitor for the drive to draw from — nothing aboard can ever open a window. */
+    public static final String MSG_NO_CAPACITOR = "msg.jumpgate.nocapacitor";
+    /**
+     * The capacitors aboard cannot HOLD the burst this drive needs, full or not. A ship to rebuild:
+     * every second of waiting buys exactly nothing, which is why it must not share a message with
+     * the one below.
+     */
+    public static final String MSG_CAPACITOR_TOO_SMALL = "msg.jumpgate.capacitortoosmall";
+    /** The capacitor is big enough and is still filling — the only one of the three that is a WAIT. */
     public static final String MSG_CAPACITOR_LOW = "msg.jumpgate.capacitorlow";
     /** Not enough energy aboard for the whole flight — possible, and it may end early. */
     public static final String MSG_ENERGY_SHORTFALL = "msg.jumpgate.energyshortfall";
@@ -316,13 +334,23 @@ public final class JumpGate {
             @Override
             public Objection check(ShipContext ship) {
                 // Hard, because this one is physics: without the burst the window does not open at
-                // all. A capacitor too small to ever hold the burst is a ship to rebuild, not a ship
-                // to warn - which is exactly what "physically impossible" means here.
+                // all. But "not enough" is THREE different instructions to the pilot, and saying the
+                // same sentence for all of them is worse than saying nothing: he reads any of them
+                // as "wait", and two of them never come true by waiting. Measured on a playtest —
+                // a ship with no capacitor at all was reported as "the hyperdrive does not charge".
                 if (ship.drivePower() <= 0L) {
                     return null; // already refused above; do not tell the pilot the same thing twice
                 }
-                return ship.capacitorCharge() >= ship.burstCost() ? null
-                        : new Objection(Severity.HARD, MSG_CAPACITOR_LOW);
+                if (ship.capacitorCharge() >= ship.burstCost()) {
+                    return null;
+                }
+                if (ship.capacitorCount() <= 0) {
+                    return new Objection(Severity.HARD, MSG_NO_CAPACITOR);      // build one
+                }
+                if (ship.capacitorCapacity() < ship.burstCost()) {
+                    return new Objection(Severity.HARD, MSG_CAPACITOR_TOO_SMALL); // build a bigger one
+                }
+                return new Objection(Severity.HARD, MSG_CAPACITOR_LOW);          // wait
             }
         });
         REGISTERED.get(Stage.SUPPLY).add(new Predicate() {

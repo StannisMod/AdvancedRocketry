@@ -81,6 +81,16 @@ public final class ShipNavigation implements JumpGate.ShipContext {
     }
 
     @Override
+    public int capacitorCount() {
+        return drive().capacitors().size();
+    }
+
+    @Override
+    public long capacitorCapacity() {
+        return drive().capacitorCapacity();
+    }
+
+    @Override
     public long capacitorCharge() {
         return drive().capacitorCharge(SpaceSubsystem.spaceClock());
     }

@@ -692,6 +692,12 @@ public class TileNavigationComputer extends TileInventoryHatch
         out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.burst"))
                 .append(' ').append(drive.capacitorCharge(now))
                 .append('/').append(stats.burstCost()).append('\n');
+        // What the bank IS, beside what is in it. A charge of 0/40000 reads as "wait" whether
+        // the ship has no capacitor at all or one that can never hold that much, and a pilot who
+        // cannot tell those apart waits for something that is never coming.
+        out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.capacitors"))
+                .append(' ').append(drive.capacitors().size())
+                .append(" (").append(drive.capacitorCapacity()).append(")\n");
         long cooldown = drive.cooldownTicks(now);
         if (cooldown > 0L) {
             out.append(LibVulpes.proxy.getLocalizedString("msg.navcomputer.cooldown"))

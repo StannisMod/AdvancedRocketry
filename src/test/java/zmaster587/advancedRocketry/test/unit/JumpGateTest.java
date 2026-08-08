@@ -9,6 +9,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -34,6 +35,8 @@ public class JumpGateTest {
         long drivePower = 8_000L;
         long burstCost = 160_000L;
         long capacitorCharge = 160_000L;
+        int capacitorCount = 1;
+        long capacitorCapacity = 160_000L;
         long hullOutsideWindow = 0L;
         long storedEnergy = 1_000_000L;
         long flightEnergyCost = 400_000L;
@@ -66,6 +69,16 @@ public class JumpGateTest {
         @Override
         public long burstCost() {
             return burstCost;
+        }
+
+        @Override
+        public int capacitorCount() {
+            return capacitorCount;
+        }
+
+        @Override
+        public long capacitorCapacity() {
+            return capacitorCapacity;
         }
 
         @Override
@@ -268,6 +281,51 @@ public class JumpGateTest {
         assertFalse("without the burst the window does not open at all - that is physics",
                 verdict.allowed());
         assertEquals(JumpGate.MSG_CAPACITOR_LOW, verdict.firstMessage());
+    }
+
+    /**
+     * The three ways a jump can be short of its burst are three different instructions to the pilot,
+     * and telling him the same sentence for all of them is what sent a playtest looking for a fault
+     * that was not there: he read "not enough charge" as "wait" and waited, with nothing aboard that
+     * could ever charge.
+     *
+     * <p>Pinned as three DISTINCT messages rather than three specific strings — what matters is that
+     * the pilot can tell "build one" from "build a bigger one" from "wait".</p>
+     */
+    @Test
+    public void theThreeWaysToBeShortOfABurstAreToldApart() {
+        FakeShip missing = new FakeShip();
+        missing.capacitorCount = 0;
+        missing.capacitorCapacity = 0L;
+        missing.capacitorCharge = 0L;
+
+        FakeShip tooSmall = new FakeShip();
+        tooSmall.capacitorCount = 1;
+        tooSmall.capacitorCapacity = tooSmall.burstCost - 1L;   // can never hold the burst
+        tooSmall.capacitorCharge = tooSmall.capacitorCapacity;  // ...and it is already FULL
+
+        FakeShip charging = new FakeShip();
+        charging.capacitorCount = 1;
+        charging.capacitorCapacity = charging.burstCost;        // big enough
+        charging.capacitorCharge = charging.burstCost - 1L;     // just not there yet
+
+        String noneMsg = JumpGate.check(missing).firstMessage();
+        String smallMsg = JumpGate.check(tooSmall).firstMessage();
+        String waitMsg = JumpGate.check(charging).firstMessage();
+
+        assertFalse("no capacitor is still a hard refusal", JumpGate.check(missing).allowed());
+        assertFalse("a capacitor that can never hold the burst is a hard refusal",
+                JumpGate.check(tooSmall).allowed());
+        assertFalse("a capacitor still filling is a hard refusal", JumpGate.check(charging).allowed());
+
+        assertNotEquals("a ship with NO capacitor must not be told the same thing as one whose "
+                + "capacitor is merely filling - the first is a build, the second is a wait",
+                noneMsg, waitMsg);
+        assertNotEquals("a capacitor too small to EVER hold the burst must not be told the same "
+                + "thing as one that is filling - the first will never come true by waiting",
+                smallMsg, waitMsg);
+        assertNotEquals("an absent capacitor and an undersized one are different builds",
+                noneMsg, smallMsg);
     }
 
     @Test
