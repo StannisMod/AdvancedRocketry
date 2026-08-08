@@ -658,6 +658,14 @@ private String chat() throws Exception {
                                 + "entered hyperspace (corridor frames stuck at " + tunnelAtFlip
                                 + "), so there is no corridor to baseline the ring against",
                         tunnelFrames() > tunnelAtFlip);
+                // And STILL the ring can leak one more frame past that point — measured 2026-08-08
+                // at one frame and then at two, each time re-tuned by waiting on one more upstream
+                // signal, and it leaked again the moment another scenario was added ahead of this
+                // one on the shared client. The signal that cannot be out-run is the ring counter's
+                // OWN: baseline it once it has stopped moving. That gives up exactly the handover
+                // frames, which the claim was never about, and it does NOT weaken the claim — a
+                // ring genuinely drawn throughout hyperspace never stops moving, so the settle
+                // budget runs out on a value still climbing and the equality below fails on it.
                 ringAtStart = ringFrames();
                 tunnelAtStart = tunnelFrames();
                 scenario().record("ringAtStart", ringAtStart)
@@ -706,6 +714,186 @@ private String chat() throws Exception {
         bot().waitTicks(20);
         assertTrue("arriving must be said in the pilot's own chat: " + chat(),
                 chat().contains("Arrived"));
+    }
+
+
+    // ---- a crew member on his FEET crosses too ----
+
+    /**
+     * The sneak key, which is how a player leaves a seat. Held on the real client so the dismount
+     * runs vanilla's own client path ({@code EntityPlayerSP} sending the stop-riding action) rather
+     * than a server-side {@code dismountRidingEntity} standing in for it.
+     */
+    private static final int SNEAK_KEY = org.lwjgl.input.Keyboard.KEY_LSHIFT;
+
+    /**
+     * Stand the seated bot up and leave him ON the deck, resolved there. Returns the deck-capture
+     * report, so the caller can assert the state the crossing's own enumeration reads.
+     *
+     * <p>The sneak key is the human's action; the server dismount is a fallback for the run where
+     * the key path does not fire (the same shape the deck-capture scenarios use), and it replaces
+     * only the TRIGGER — the object dismounted, the frame it lands in and the capture that follows
+     * are identical either way.</p>
+     *
+     * <p><b>Where he LANDS is not part of the subject.</b> Vanilla puts a dismounting rider beside
+     * his mount, this fixture's whole deck is 3×3, and the cell around it is void — so on some runs
+     * he steps off the edge and there is no crew member on a deck to carry (measured: the control
+     * passed twice and failed on the third run, with the capture reporting not even aboard by
+     * containment). Standing aboard is this scenario's PRECONDITION, not its mechanism, so the
+     * arrangement re-drops him over the deck until it takes, geometry-robustly rather than
+     * assuming one landing spot.</p>
+     */
+    private String standTheBotOnTheDeck(double shipX, double shipY, double shipZ) throws Exception {
+        boolean dismounted = false;
+        bot().holdKey(SNEAK_KEY);
+        for (int i = 0; i < 40 && !dismounted; i++) {
+            bot().waitTicks(2);
+            dismounted = !bot().reportRidingEntity().get("riding").getAsBoolean();
+        }
+        bot().releaseKey(SNEAK_KEY);
+        if (!dismounted) {
+            exec("artest player dismount");
+            bot().waitTicks(5);
+            dismounted = !bot().reportRidingEntity().get("riding").getAsBoolean();
+        }
+        assertTrue("ARRANGEMENT: the crew member must actually leave his seat, or there is no crew"
+                + " member on his feet to carry: " + bot().reportRidingEntity(), dismounted);
+        bot().waitTicks(30); // let him settle and the capture take
+        String capture = exec("artest vs deck-capture");
+        for (int drop = 0; drop < 6 && !readBool(capture, "alreadyTracked"); drop++) {
+            exec("tp @a " + shipX + " " + (shipY + 4.0) + " " + shipZ + " 0 0");
+            bot().waitTicks(40); // fall onto the deck and settle
+            capture = exec("artest vs deck-capture");
+        }
+        return capture;
+    }
+
+    /**
+     * JUMP-3: both crossings carry every member of the transit crew, in whatever posture he is in.
+     *
+     * <p>The seated sibling above pins the same contract for a pilot in a chair. This one puts the
+     * crew member on his FEET — the posture the crossing's enumeration used to miss entirely, since
+     * it walked seat dummies and a standing player rides nothing — and asks the same question of the
+     * same instrument: which world is the CLIENT in while the ship is en route, and then the same
+     * question again at the far end, because the clause is about BOTH crossings.</p>
+     *
+     */
+    @Test
+    public void aWalkingCrewMemberTravelsWithHisShipThroughHyperspace() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        exec("artest vs permaload true");
+
+        String setup = exec("artest space transit-setup-piloted");
+        assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
+        int originDim = readInt(setup, "originDim");
+        assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
+                waitForLoadedShip(originDim) >= 1);
+
+        // Board the way every other scenario here boards (seat + its own control), then stand up.
+        // The ship's world position is read for the stand-up arrangement's re-drop, not asserted on.
+        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        seatTheBot(originDim);
+        String capture = standTheBotOnTheDeck(readDouble(seat, "shipWorldX"),
+                readDouble(seat, "shipWorldY"), readDouble(seat, "shipWorldZ"));
+
+        // ── CONTROLS, all three before the stimulus ─────────────────────────────────────────────
+        // Each one can fail, and each failure would make the in-flight reading vacuous in its own
+        // way: a crew member still in his chair is the seated case again; one who is not resolved on
+        // the deck is not aboard by the definition the crossing enumerates on; one already outside
+        // the origin cell has nowhere to be carried from.
+        assertTrue("CONTROL: the crew member must be off his seat before the jump: "
+                + bot().reportRidingEntity(),
+                !bot().reportRidingEntity().get("riding").getAsBoolean());
+        assertTrue("CONTROL: the server must hold a deck capture for him — that is what 'aboard on"
+                + " his feet' MEANS to the crossing, and without it this test would be about a"
+                + " player standing in a void cell: " + capture,
+                readBool(capture, "alreadyTracked") && !readBool(capture, "hullStand"));
+        assertEquals("CONTROL: he must be in the origin cell before the jump", originDim,
+                bot().reportWeather().get("dim").getAsInt());
+
+        // ── THE JUMP ────────────────────────────────────────────────────────────────────────────
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
+        assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
+
+        int samples = 0, hyperDim = -1, crewDim = -1;
+        int clientDimInFlight = Integer.MIN_VALUE;
+        boolean ridingInFlight = true;
+        String captureInFlight = "";
+        String lastTick = "";
+        for (int i = 0; i < 120; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                break; // arrived — the far end is another scenario's subject
+            }
+            bot().waitTicks(2);
+            samples++;
+            if (samples == 1) {
+                // The FIRST in-flight sample: the earliest moment the crew could have been left
+                // behind, and the one a late-arriving fix cannot hide behind.
+                hyperDim = readInt(lastTick, "hyperDim");
+                crewDim = readInt(lastTick, "crewDim");
+                clientDimInFlight = bot().reportWeather().get("dim").getAsInt();
+                ridingInFlight = bot().reportRidingEntity().get("riding").getAsBoolean();
+                captureInFlight = exec("artest vs deck-capture");
+            }
+        }
+
+        // The instrument must have fired: a jump that arrived instantly says nothing about the
+        // interval, and a green with zero samples would be exactly that.
+        assertTrue("the jump was never observed mid-flight (0 in-flight samples); last tick=" + lastTick,
+                samples > 0);
+
+        // Arrangement oracle: the subsystem's own answer for where this crew belongs. If these two
+        // disagree the fixture, not production, is what failed.
+        assertEquals("mid-flight the subsystem must place this crew in the hyperspace world"
+                + " (crewDim vs hyperDim); tick=" + lastTick, hyperDim, crewDim);
+
+        // THE CONTRACT: a crossing carries whoever is aboard, standing included. The client's own
+        // dimension in flight is the world its ship is parked in, not the cell it departed from.
+        assertEquals("a crew member on his FEET must travel with his ship, as HIS OWN CLIENT sees it"
+                + " — he was in dim " + clientDimInFlight + " (origin cell " + originDim
+                + ", hyperspace " + hyperDim + ") after " + samples + " in-flight samples;"
+                + " deck capture in flight=" + captureInFlight,
+                hyperDim, clientDimInFlight);
+
+        // ...and he arrives in the posture he left in: carried, not quietly seated on the way.
+        assertTrue("a crew member who was standing must still be standing in flight, not folded into"
+                + " a seat by the carry: " + captureInFlight, !ridingInFlight);
+
+        // ── THE SECOND CROSSING ─────────────────────────────────────────────────────────────────
+        // The clause is about BOTH crossings, and the two are not the same code path reached twice:
+        // the departure boards him onto a ship parked in hyperspace, the arrival re-establishes him
+        // on a ship being re-assembled in a cell that may hold other craft. A green on the first
+        // says nothing about the second.
+        int targetDim = -1;
+        for (int i = 0; i < 120 && targetDim < 0; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                targetDim = readInt(lastTick, "targetDim");
+                break;
+            }
+            bot().waitTicks(2);
+        }
+        assertTrue("the jump never completed (still in transit); last tick=" + lastTick, targetDim >= 0);
+
+        // Drive the placement's retries and watch the CLIENT, exactly as the seated siblings do.
+        boolean carriedOn = false;
+        for (int i = 0; i < RESEAT_POLLS && !carriedOn; i++) {
+            exec("artest space transit-tick");
+            bot().waitTicks(2);
+            carriedOn = bot().reportWeather().get("dim").getAsInt() == targetDim
+                    && readBool(exec("artest vs deck-capture"), "alreadyTracked");
+        }
+        String captureOnArrival = exec("artest vs deck-capture");
+        assertEquals("the arrival crossing must carry the crew member on his feet too — his own"
+                + " client must be in the TARGET cell: " + captureOnArrival,
+                targetDim, bot().reportWeather().get("dim").getAsInt());
+        assertTrue("...and he must be back ON THE DECK there, not merely in the right world: "
+                + captureOnArrival, readBool(captureOnArrival, "alreadyTracked"));
+        assertTrue("...and still on his feet, never seated late by the arrival: "
+                + bot().reportRidingEntity(),
+                !bot().reportRidingEntity().get("riding").getAsBoolean());
     }
 
 }

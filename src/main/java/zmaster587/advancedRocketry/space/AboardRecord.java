@@ -160,15 +160,15 @@ public final class AboardRecord {
      * A crew member on his feet: the ship, and the deck point he stands on, expressed against the
      * flight computer by {@link ShipRelativePoint}.
      *
-     * <p>The point comes from the deck resolver's own committed ship-frame position rather than
-     * from the player's world position converted back: the resolver is what decides where an aboard
-     * body is, and a second conversion here would be a second opinion to disagree with it.</p>
+     * <p>The offset itself is derived by {@link ShipRelativePoint#deckOffsetOfAboardBody} — the one
+     * definition of "where on this ship is this body", shared with the crossing that carries a crew
+     * member on his feet. Two copies of that derivation would be two chances to disagree about the
+     * same player.</p>
      */
     private static ShipAboardTag.Aboard standingRecord(World world, EntityPlayer player,
                                                        GalacticCoord presence) {
         String vsShipId = ShipFrameTravel.aboardShipId(player);
-        double[] deckPoint = ShipFrameTravel.aboardShipFramePoint(player);
-        if (vsShipId == null || deckPoint == null) {
+        if (vsShipId == null) {
             return null;
         }
         BlockPos afcPos = ShipRelativePoint.flightComputerOfShip(world, vsShipId);
@@ -176,8 +176,10 @@ public final class AboardRecord {
         if (shipId == null) {
             return null;
         }
-        double[] offset = ShipRelativePoint.offsetOfSubspacePoint(
-                afcPos, deckPoint[0], deckPoint[1], deckPoint[2]);
+        double[] offset = ShipRelativePoint.deckOffsetOfAboardBody(world, player, afcPos);
+        if (offset == null) {
+            return null;
+        }
         return ShipAboardTag.Aboard.standing(shipId, presence, offset[0], offset[1], offset[2]);
     }
 

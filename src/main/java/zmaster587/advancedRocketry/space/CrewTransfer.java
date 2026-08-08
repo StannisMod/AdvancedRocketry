@@ -21,18 +21,33 @@ import zmaster587.advancedRocketry.tile.TilePilotSeat;
  * goes stale. This class owns the two halves around the crossing:
  *
  * <ol>
- *   <li>{@link #capture}: BEFORE the cut — enumerate the seated crew at the ship's live world
- *       position (riders live in the WORLD frame, never in the shipyard box), record each rider
- *       against its seat's AFC-link offset (the one binding that IS invariant under re-assembly),
- *       and retire the old dummies (their seat blocks are about to stop existing).</li>
- *   <li>{@link #reseat}: AFTER re-assembly — find each seat's NEW subspace position by matching
- *       the recorded link offset over the fresh ship's seat tiles, transfer the rider into the
- *       destination world, and re-mount it on a freshly-bound dummy (the
- *       {@code BlockPilotSeat} mount recipe).</li>
+ *   <li>{@link #capture}: BEFORE the cut — enumerate the crew at the ship's live world position
+ *       (riders live in the WORLD frame, never in the shipyard box), record each of them against a
+ *       binding that IS invariant under re-assembly, and retire the old dummies (their seat blocks
+ *       are about to stop existing).</li>
+ *   <li>{@link #reseat}: AFTER re-assembly — re-establish each of them on the rebuilt ship and
+ *       transfer them into the destination world.</li>
  * </ol>
  *
- * <p>Scope: SEATED crew (a pilot on a linked pilot seat). Walking crew waits on the extreme-pose
- * collision fix. Server main thread only.</p>
+ * <h2>Both postures of being aboard</h2>
+ *
+ * A crew member is carried in whatever posture he is in; SEATED and STANDING are two shapes of one
+ * membership, not two populations:
+ *
+ * <ul>
+ *   <li><b>SEATED</b> — a pilot on a linked pilot seat. Recorded by his seat's AFC-link offset and
+ *       re-mounted at the far end on a freshly-bound dummy (the {@code BlockPilotSeat} mount
+ *       recipe).</li>
+ *   <li><b>STANDING</b> — a crew member on his feet on the deck. Recorded by the deck point he
+ *       stands on relative to the same flight computer, and placed back at that point on the far
+ *       side, HELD there until his ship exists: the re-assembly is asynchronous, and a body handed
+ *       to world gravity meanwhile falls off (or through) a deck that is not there yet.</li>
+ * </ul>
+ *
+ * <p>The two are recorded against the same landmark for the same reason — the flight computer is
+ * what survives a ship being rebuilt into a fresh subspace.</p>
+ *
+ * <p>Server main thread only.</p>
  */
 public final class CrewTransfer {
 
@@ -52,12 +67,23 @@ public final class CrewTransfer {
         return lastReseatBlock;
     }
 
-    /** One captured rider: the player and the seat's AFC-link offset that re-identifies its seat
-     *  on the re-assembled ship (relative offsets survive the rigid relocation; absolute subspace
-     *  coordinates do not). */
+    /**
+     * One captured crew member: the player, the posture he was aboard in, and the flight-computer-
+     * relative binding that re-identifies where he belongs on the re-assembled ship (relative
+     * offsets survive the rigid relocation; absolute subspace coordinates do not).
+     *
+     * <p>The posture decides which of the two offsets carries the meaning — a seat lands on a block
+     * and stays integral, a body on its feet stands at a continuous point — exactly as the durable
+     * aboard record splits them, and this reuses that record's {@code Posture} rather than minting a
+     * second vocabulary for the same distinction.</p>
+     */
     public static final class Crew {
         public final EntityPlayerMP player;
+        public final ShipAboardTag.Posture posture;
+        /** SEATED: the seat's AFC-link offset. Zero and meaningless when the posture is STANDING. */
         public final int afcDx, afcDy, afcDz;
+        /** STANDING: the deck point, relative to the computer. Zero when the posture is SEATED. */
+        public final double standDx, standDy, standDz;
 
         /** Whether this rider has already been told his seat is held by someone else — the reseat
          *  retries every tick until the whole crew resolves, and the message must not repeat. */
@@ -65,9 +91,29 @@ public final class CrewTransfer {
 
         public Crew(EntityPlayerMP player, int afcDx, int afcDy, int afcDz) {
             this.player = player;
+            this.posture = ShipAboardTag.Posture.SEATED;
             this.afcDx = afcDx;
             this.afcDy = afcDy;
             this.afcDz = afcDz;
+            this.standDx = 0.0D;
+            this.standDy = 0.0D;
+            this.standDz = 0.0D;
+        }
+
+        private Crew(EntityPlayerMP player, double dx, double dy, double dz) {
+            this.player = player;
+            this.posture = ShipAboardTag.Posture.STANDING;
+            this.afcDx = 0;
+            this.afcDy = 0;
+            this.afcDz = 0;
+            this.standDx = dx;
+            this.standDy = dy;
+            this.standDz = dz;
+        }
+
+        /** A crew member on his feet at {@code (dx,dy,dz)} from his ship's flight computer. */
+        public static Crew standing(EntityPlayerMP player, double dx, double dy, double dz) {
+            return new Crew(player, dx, dy, dz);
         }
     }
 
@@ -139,7 +185,38 @@ public final class CrewTransfer {
                 dummy.setDead();
             }
         }
+        crew.addAll(walkStanding(world, afcPos, detach));
         return crew;
+    }
+
+    /**
+     * The crew members of this ship who are on their FEET, and the deck point each of them stands
+     * on. A {@code detach} pass also pins each of them where he is: the next thing that happens to
+     * this ship is that its blocks are cut, and a body standing on a deck that stops existing is a
+     * body falling through a void cell until something puts it back.
+     *
+     * <p>Keyed by IDENTITY, not by a box. A standing crew member rides nothing, so there is no
+     * dummy to find him through, and the box the seated scan uses is a proxy for "on this ship"
+     * that a body one block outside it would defeat. The deck resolver already answers the exact
+     * question — which ship is this body aboard — so the enumeration walks the world's players and
+     * keeps the ones whose answer is the ship being crossed.</p>
+     */
+    private static List<Crew> walkStanding(WorldServer world, BlockPos afcPos, boolean detach) {
+        List<Crew> standing = new ArrayList<>();
+        for (net.minecraft.entity.player.EntityPlayer p : world.playerEntities) {
+            if (!(p instanceof EntityPlayerMP) || p.getRidingEntity() instanceof EntityDummy) {
+                continue; // a seated crew member is the loop above's; never carry one twice
+            }
+            double[] offset = ShipRelativePoint.deckOffsetOfAboardBody(world, p, afcPos);
+            if (offset == null) {
+                continue;
+            }
+            standing.add(Crew.standing((EntityPlayerMP) p, offset[0], offset[1], offset[2]));
+            if (detach) {
+                zmaster587.advancedRocketry.integration.vs.DeckHold.pinInPlace((EntityPlayerMP) p);
+            }
+        }
+        return standing;
     }
 
     /**
@@ -165,6 +242,13 @@ public final class CrewTransfer {
         List<TilePilotSeat> seats = seatsOfShipAt(dstWorld, anchor, vsShipUuid);
         boolean allSeated = true;
         for (Crew rider : crew) {
+            if (rider.posture == ShipAboardTag.Posture.STANDING) {
+                // A crew member on his feet has no seat to look for: he is put back at his own deck
+                // point and held there. Same retry contract as the seated branch — false means the
+                // ship is not up yet, and the caller comes back next tick.
+                allSeated &= placeOnDeck(dstWorld, anchor, rider, expectedShipId, vsShipUuid);
+                continue;
+            }
             TilePilotSeat seat = matchSeat(seats, rider, expectedShipId, DURABLE_SHIP_ID);
             // Registry-keyed, NOT physo-keyed: an arriving ship has nobody near it — the crew who would
             // load it are the ones this method is carrying across — so asking a question only a LOADED
@@ -176,19 +260,9 @@ public final class CrewTransfer {
                 allSeated = false; // seat tile or ship transform not up yet — retry
                 continue;
             }
-            EntityPlayerMP player = rider.player;
-            if (player.hasDisconnected()) {
-                // A rider who RELOGGED mid-crossing: the captured reference is the pre-relog
-                // entity, replaced wholesale by his fresh login. Re-resolve by UUID — the durable
-                // identity — so the arrival still seats the RETURNED player (a mid-transit relog
-                // must hand control back on arrival). Genuinely-offline crew stays skipped: the
-                // login restore owns whoever comes back after the crossing is over.
-                EntityPlayerMP fresh = player.getServer() == null ? null
-                        : player.getServer().getPlayerList().getPlayerByUUID(player.getUniqueID());
-                if (fresh == null || fresh.hasDisconnected()) {
-                    continue;
-                }
-                player = fresh;
+            EntityPlayerMP player = liveEntityOf(rider.player);
+            if (player == null) {
+                continue;
             }
             if (player.dimension != dstWorld.provider.getDimension()) {
                 final double tx = seatWorld[0], ty = seatWorld[1], tz = seatWorld[2];
@@ -254,6 +328,117 @@ public final class CrewTransfer {
         lastReseatBlock = allSeated ? "" : describeReseatBlock(dstWorld, anchor, seats, crew,
                 expectedShipId, vsShipUuid);
         return allSeated;
+    }
+
+    /**
+     * The live player behind a captured record, or {@code null} when there is none right now.
+     *
+     * <p>A crew member who RELOGGED mid-crossing is a different entity object: the captured
+     * reference is the pre-relog one, replaced wholesale by his fresh login. He is re-resolved by
+     * UUID — the durable identity — so an arrival still hands control back to the RETURNED player.
+     * Genuinely-offline crew answers {@code null} and is skipped: the login restore owns whoever
+     * comes back after the crossing is over.</p>
+     */
+    private static EntityPlayerMP liveEntityOf(EntityPlayerMP player) {
+        if (!player.hasDisconnected()) {
+            return player;
+        }
+        EntityPlayerMP fresh = player.getServer() == null ? null
+                : player.getServer().getPlayerList().getPlayerByUUID(player.getUniqueID());
+        return fresh == null || fresh.hasDisconnected() ? null : fresh;
+    }
+
+    /**
+     * Put a crew member who was on his FEET back on the deck of the ship that arrived: at the same
+     * point relative to its flight computer, at rest, and HELD there until his own client has taken
+     * the deck capture over.
+     *
+     * <p>Returns {@code false} while the arrived ship cannot yet say where that point is in the
+     * world — the caller retries next tick, exactly as it does for a seat that has not come up. The
+     * body stays where it is meanwhile, pinned by the hold the capture installed: nothing is moved
+     * half-way and then abandoned, which is what {@code D207-9}'s "hold the body, do not race the
+     * client" costs and buys.</p>
+     *
+     * <p>The two questions this asks are both keyed by IDENTITY: which flight computer belongs to
+     * the ship that crossed, and where that ship's transform puts the point. Neither is a lookup by
+     * position, because a destination that already holds another craft would answer both of them
+     * about the stranger.</p>
+     */
+    private static boolean placeOnDeck(WorldServer dstWorld, BlockPos anchor, Crew rider,
+            java.util.UUID expectedShipId, java.util.UUID vsShipUuid) {
+        EntityPlayerMP player = liveEntityOf(rider.player);
+        if (player == null) {
+            return true; // offline: his durable aboard record puts him back when he returns
+        }
+        BlockPos afcPos = flightComputerOfShipAt(dstWorld, anchor, vsShipUuid, expectedShipId);
+        double[] sub = ShipRelativePoint.subspacePointOf(
+                afcPos, rider.standDx, rider.standDy, rider.standDz);
+        // Registry-keyed for the same reason the seat lookup is: an arriving ship has nobody near
+        // it — the crew who would load it are the ones this method is carrying — so a question only
+        // a LOADED ship can answer would make the placement wait on force-loading the ship against
+        // the physics mod's own unload of it.
+        double[] deckWorld = sub == null ? null
+                : VSIntegration.getRegisteredSubspacePointWorldPosition(
+                        dstWorld, afcPos, sub[0], sub[1], sub[2]);
+        if (deckWorld == null) {
+            return false; // the ship has not been rebuilt here yet: retry
+        }
+        if (player.dimension != dstWorld.provider.getDimension()) {
+            final double tx = deckWorld[0], ty = deckWorld[1], tz = deckWorld[2];
+            player.getServer().getPlayerList().transferPlayerToDimension(player,
+                    dstWorld.provider.getDimension(),
+                    (world, entity, yaw) -> entity.setLocationAndAngles(tx, ty, tz, yaw, 0f));
+            ArrivalTrace.server("deck.dimTransfer t=" + dstWorld.getTotalWorldTime()
+                    + " p=" + player.getEntityId() + " toY=" + ArrivalTrace.fmt(ty));
+        } else {
+            player.setPositionAndUpdate(deckWorld[0], deckWorld[1], deckWorld[2]);
+        }
+        // At rest, relative to the deck: a crossing may take a couple of ticks of his movement, and
+        // whatever motion he carried belongs to a world he is no longer in.
+        player.motionX = 0.0D;
+        player.motionY = 0.0D;
+        player.motionZ = 0.0D;
+        player.fallDistance = 0.0f;
+        // The ship is named by the identity it crossed with, not by whatever is loaded here now: the
+        // hold outlives the moment, and the ship it waits for is precisely the one that arrived.
+        zmaster587.advancedRocketry.integration.vs.DeckHold.holdOnDeck(player,
+                vsShipUuid == null
+                        ? VSIntegration.shipIdManagingBlock(dstWorld, afcPos) : vsShipUuid.toString(),
+                sub[0], sub[1], sub[2]);
+        ArrivalTrace.server("deck.place t=" + dstWorld.getTotalWorldTime()
+                + " p=" + player.getEntityId() + " y=" + ArrivalTrace.fmt(deckWorld[1]));
+        return true;
+    }
+
+    /**
+     * The SUBSPACE position of the flight computer of the ship that arrived at {@code anchor}, or
+     * {@code null} while it is not reachable yet. The standing half of what {@link #seatsOfShipAt}
+     * does for seats, over the same shipyard box and with the same chunk force-load, and filtered by
+     * the DURABLE ship id so a neighbouring craft's computer is never taken for this one's.
+     */
+    private static BlockPos flightComputerOfShipAt(WorldServer world, BlockPos anchor,
+            java.util.UUID vsShipUuid, java.util.UUID expectedShipId) {
+        AxisAlignedBB yard = yardOfTheShipWeMean(world, anchor, vsShipUuid);
+        forceLoadYard(world, yard);
+        for (TileEntity te : world.loadedTileEntityList) {
+            if (!(te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                continue;
+            }
+            BlockPos p = te.getPos();
+            boolean inYard = yard != null && yard.contains(new net.minecraft.util.math.Vec3d(
+                    p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5));
+            boolean nearAnchor = p.distanceSq(anchor) <= RIDER_RANGE * RIDER_RANGE;
+            if (!inYard && !nearAnchor) {
+                continue;
+            }
+            if (expectedShipId != null && !expectedShipId.equals(
+                    ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
+                            .shipIdOrNull())) {
+                continue; // another craft's computer sharing the neighbourhood
+            }
+            return p;
+        }
+        return null;
     }
 
     /**
@@ -411,19 +596,7 @@ public final class CrewTransfer {
             java.util.UUID vsShipUuid) {
         List<TilePilotSeat> seats = new ArrayList<>();
         AxisAlignedBB yard = yardOfTheShipWeMean(world, anchor, vsShipUuid);
-        // Force-load the shipyard's chunks before reading the world's tile list — the same
-        // force-load-then-scan idiom shipBlockAt/flightComputerAt use. Unloading a ship queues its
-        // shipyard chunks for unload, and a seat tile in an unloaded chunk is absent from
-        // loadedTileEntityList, so without this the scan silently finds nothing on exactly the ship
-        // that has nobody near it. Loading a CHUNK is not loading the ship: it costs no physics
-        // object and does not fight VS's own load policy.
-        if (yard != null) {
-            for (int cx = ((int) yard.minX) >> 4; cx <= (((int) yard.maxX) >> 4); cx++) {
-                for (int cz = ((int) yard.minZ) >> 4; cz <= (((int) yard.maxZ) >> 4); cz++) {
-                    world.getChunkProvider().provideChunk(cx, cz);
-                }
-            }
-        }
+        forceLoadYard(world, yard);
         for (TileEntity te : world.loadedTileEntityList) {
             if (!(te instanceof TilePilotSeat)) {
                 continue;
@@ -439,6 +612,25 @@ public final class CrewTransfer {
             }
         }
         return seats;
+    }
+
+    /**
+     * Force-load {@code yard}'s chunks before anything reads the world's tile list over it — the
+     * same force-load-then-scan idiom {@code shipBlockAt}/{@code flightComputerAt} use. Unloading a
+     * ship queues its shipyard chunks for unload, and a tile in an unloaded chunk is absent from
+     * {@code loadedTileEntityList}, so without this a scan silently finds nothing on exactly the
+     * ship that has nobody near it. Loading a CHUNK is not loading the ship: it costs no physics
+     * object and does not fight VS's own load policy.
+     */
+    private static void forceLoadYard(WorldServer world, AxisAlignedBB yard) {
+        if (yard == null) {
+            return;
+        }
+        for (int cx = ((int) yard.minX) >> 4; cx <= (((int) yard.maxX) >> 4); cx++) {
+            for (int cz = ((int) yard.minZ) >> 4; cz <= (((int) yard.maxZ) >> 4); cz++) {
+                world.getChunkProvider().provideChunk(cx, cz);
+            }
+        }
     }
 
     /**

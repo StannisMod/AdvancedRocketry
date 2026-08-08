@@ -11,9 +11,22 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Re-seats a returning player on the deck he logged out on: a body that logs out ABOARD a ship
- * logs back in ABOARD it, at the same subspace point and at any ship attitude, and is never handed
- * to world gravity while the capture re-seeds.
+ * Holds a body on the deck it belongs on while nothing else can: the server pins it every tick and
+ * asks its client to capture, so it is never handed to world gravity during a window in which its
+ * ship is absent, unloaded or still being re-assembled.
+ *
+ * <h2>Who needs holding</h2>
+ *
+ * <ul>
+ *   <li>a player <b>returning from a logout</b> aboard a ship — {@link #onPlayerLoggedIn} arms the
+ *       hold from his durable aboard record. This is the original consumer and the shape everything
+ *       below reuses.</li>
+ *   <li>a crew member <b>on his feet across a crossing</b> — his ship is cut out from under him at
+ *       the departure and re-assembled asynchronously at the far end, so for both windows he is a
+ *       body in a world with no ship under it. {@link #pinInPlace} covers the near side (there is
+ *       nothing left to resolve against) and {@link #holdOnDeck} the far one (the crossing already
+ *       knows which ship and which point).</li>
+ * </ul>
  *
  * <p>The ABOARD capture is in-memory; what survives the relog is the durable aboard record
  * ({@link zmaster587.advancedRocketry.space.ShipAboardTag}: the ship's DURABLE id plus his deck
@@ -36,7 +49,7 @@ import java.util.UUID;
  * an excluded state (the player relogs into creative flight - his movement is his own), or when
  * the window expires (ship gone: clean vanilla handover, never a half-capture).</p>
  */
-public final class RelogDeckHold {
+public final class DeckHold {
 
     /** How long a returning player is held for his ship to load and his client to seed, in
      *  server ticks. Ship chunk-load plus client world join comfortably fit; a missing ship
@@ -59,7 +72,7 @@ public final class RelogDeckHold {
         int ticksLeft = HOLD_WINDOW_TICKS;
         int untilRetry;
         /** Whether the returning client has been ASKED to capture yet. The hold may not conclude
-         *  before it has: see the exit rule in {@link RelogDeckHold#onPlayerTick}. */
+         *  before it has: see the exit rule in {@link DeckHold#onPlayerTick}. */
         boolean seedSent;
 
         /** Non-null once the ship has been found; the pin and the capture packet need this shape. */
@@ -93,7 +106,52 @@ public final class RelogDeckHold {
         }
     }
 
-    private final Map<UUID, Hold> holds = new HashMap<>();
+    /**
+     * The live holds, keyed by player UUID — and STATIC, because the callers that arm one are not
+     * events on this handler. A crossing decides mid-tick that a body has to be held; it holds no
+     * reference to the single instance Forge's event bus owns, and handing one around would be a
+     * second way to reach the same map. One instance is registered ({@code AdvancedRocketry}), so
+     * the tick that services these entries is the tick that would have serviced an instance field.
+     */
+    private static final Map<UUID, Hold> HOLDS = new HashMap<>();
+
+    /**
+     * Pin {@code player} exactly where he is, with no ship to resolve against — the shape a crew
+     * member on his feet needs while his ship is being CUT out from under him.
+     *
+     * <p>It deliberately carries no ship id. The ship this body belongs to is, for the length of
+     * this window, in no world at all: it has been cut here and not yet re-assembled there. A hold
+     * that named it would spend the window pumping a ship load in the world it just left, and find
+     * nothing every time. What the body needs meanwhile is only to stop falling, which is exactly
+     * what an unresolved hold does. The far side re-arms it with {@link #holdOnDeck} once there is
+     * a ship to be held against.</p>
+     */
+    public static void pinInPlace(EntityPlayerMP player) {
+        if (player != null) {
+            HOLDS.put(player.getUniqueID(), new Hold(null, 0.0, 0.0, 0.0));
+        }
+    }
+
+    /**
+     * Hold {@code player} on a KNOWN ship's deck point: pin him to the current world image of the
+     * SUBSPACE point {@code (subX,subY,subZ)} on ship {@code vsShipId}, and keep asking his client
+     * to capture it until it does.
+     *
+     * <p>This is the far side of a crossing. The caller has already resolved which ship arrived and
+     * where on it the body belongs, so no lookup is needed — and re-arming an existing hold is
+     * harmless: the window restarts and the pin lands on the same point.</p>
+     */
+    public static void holdOnDeck(EntityPlayerMP player, String vsShipId,
+                                  double subX, double subY, double subZ) {
+        if (player != null && vsShipId != null) {
+            HOLDS.put(player.getUniqueID(), Hold.on(vsShipId, subX, subY, subZ));
+        }
+    }
+
+    /** Whether a hold is currently pinning {@code player}. */
+    public static boolean isHeld(EntityPlayerMP player) {
+        return player != null && HOLDS.containsKey(player.getUniqueID());
+    }
 
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
@@ -107,7 +165,7 @@ public final class RelogDeckHold {
                 zmaster587.advancedRocketry.space.ShipAboardTag.of(event.player);
         if (aboard != null
                 && aboard.posture == zmaster587.advancedRocketry.space.ShipAboardTag.Posture.STANDING) {
-            holds.put(event.player.getUniqueID(),
+            HOLDS.put(event.player.getUniqueID(),
                     new Hold(aboard.shipId, aboard.standDx, aboard.standDy, aboard.standDz));
         }
         // AFTER the anchor hold: a displaced pilot's hold below must win over the (older) anchor.
@@ -170,7 +228,7 @@ public final class RelogDeckHold {
             }
             // The same hold a standing relog gets: pin against gravity, ask his client to
             // capture the deck point. Wins over any (older) record hold registered above.
-            holds.put(player.getUniqueID(), Hold.on(shipId, subX, subY, subZ));
+            HOLDS.put(player.getUniqueID(), Hold.on(shipId, subX, subY, subZ));
         } else {
             // Not on a managed ship (e.g. the craft was disassembled meanwhile): stand him at
             // the seat block itself, plain world frame.
@@ -208,7 +266,7 @@ public final class RelogDeckHold {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.player != null) {
-            holds.remove(event.player.getUniqueID());
+            HOLDS.remove(event.player.getUniqueID());
         }
     }
 
@@ -219,7 +277,7 @@ public final class RelogDeckHold {
             return;
         }
         EntityPlayerMP player = (EntityPlayerMP) event.player;
-        Hold hold = holds.get(player.getUniqueID());
+        Hold hold = HOLDS.get(player.getUniqueID());
         if (hold == null) {
             return;
         }
@@ -230,17 +288,17 @@ public final class RelogDeckHold {
         // across his own deck. The hold therefore may not end until at least one capture request has
         // gone out; the client's own pending slot then survives its ship streaming in.
         if (ShipFrameTravel.isResolving(player) && hold.seedSent) {
-            holds.remove(player.getUniqueID());
+            HOLDS.remove(player.getUniqueID());
             return;
         }
         // An excluded state - riding, elytra, creative flight, water/ladder, levitation - owns its
         // own movement and ends any capture; the seed would refuse anyway.
         if (ShipFrameTravel.isExcludedFromCapture(player)) {
-            holds.remove(player.getUniqueID());
+            HOLDS.remove(player.getUniqueID());
             return;
         }
         if (--hold.ticksLeft <= 0) {
-            holds.remove(player.getUniqueID()); // ship never came back: clean vanilla handover
+            HOLDS.remove(player.getUniqueID()); // ship never came back: clean vanilla handover
             return;
         }
         // A returning body is a FRESH entity, and the physics mod arms its own per-entity drag

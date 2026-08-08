@@ -1165,7 +1165,7 @@ public class AdvancedRocketry {
         // survives a relog, at any ship attitude.
         // Safe without VS on the classpath: every ship call inside goes through the
         // VSIntegration seam, which no-ops when the physics mod is absent.
-        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.integration.vs.RelogDeckHold());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.integration.vs.DeckHold());
         // Async weather info injection
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.weather.PlanetWeatherEventHandler());
         // Acid rain damage on planets flagged acidicRain

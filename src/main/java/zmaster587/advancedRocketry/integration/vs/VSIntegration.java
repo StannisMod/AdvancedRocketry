@@ -933,6 +933,24 @@ public final class VSIntegration {
     }
 
     /**
+     * The world position {@code [x, y, z]} of the SUBSPACE point {@code (sx, sy, sz)} on the ship
+     * that manages {@code managedBlock}, asked of the registry so it answers for an UNLOADED ship
+     * too; {@code null} when VS is absent or no registered ship owns that block.
+     *
+     * <p>The continuous counterpart of {@link #getRegisteredSeatWorldPosition}: where that one puts
+     * a rider on a seat BLOCK, this one puts a crew member on his feet back at the deck point he
+     * was standing on. Both are keyed on a block the ship owns, so the frame the caller must supply
+     * is the same one — a managed SUBSPACE block, never a world anchor.</p>
+     */
+    public static double[] getRegisteredSubspacePointWorldPosition(World world, BlockPos managedBlock,
+                                                                   double sx, double sy, double sz) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.registeredSubspacePointToWorld(world, managedBlock, sx, sy, sz);
+    }
+
+    /**
      * Whether Valkyrien Skies ship support (its per-world ship manager) is attached to
      * {@code world}. Used by the space slot-pool spike to confirm VS lights up on a
      * dynamically-created pool world, not just the vanilla/AR dimensions. {@code false} when VS

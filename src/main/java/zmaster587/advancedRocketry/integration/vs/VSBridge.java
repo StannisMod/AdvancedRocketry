@@ -278,6 +278,28 @@ final class VSBridge {
         return ship.isPresent() ? seatWorldFrom(ship.get().getShipTransform(), seatPos) : null;
     }
 
+    /**
+     * The WORLD position of an arbitrary SUBSPACE point {@code (sx,sy,sz)} on the ship that manages
+     * {@code managedBlock}, taken off the REGISTRY — loaded or not — or {@code null} when no
+     * registered ship owns that block.
+     *
+     * <p>{@link #registeredSeatWorldPosition}'s continuous twin, and it exists for the same reason:
+     * a crew re-seat on arrival is carrying the only bodies that would make the ship load, so it
+     * cannot be gated on the ship being loaded. A seat lands on a block and gets the mount-point
+     * fudge; a crew member on his feet stands at a continuous deck point and gets none — the point
+     * handed in here is already exactly where he belongs.</p>
+     */
+    static double[] registeredSubspacePointToWorld(World world, BlockPos managedBlock,
+                                                   double sx, double sy, double sz) {
+        Optional<ShipData> ship = ValkyrienUtils.getShipManagingBlock(world, managedBlock);
+        if (!ship.isPresent()) {
+            return null;
+        }
+        Vec3d w = ship.get().getShipTransform()
+                .transform(new Vec3d(sx, sy, sz), TransformType.SUBSPACE_TO_GLOBAL);
+        return new double[]{w.x, w.y, w.z};
+    }
+
     /** The one place a seat's subspace block is mapped through a ship transform. The {@code +0.2}
      *  vertical offset mirrors the mount point {@code BlockPilotSeat} spawns at. */
     private static double[] seatWorldFrom(ShipTransform transform, BlockPos seatPos) {
