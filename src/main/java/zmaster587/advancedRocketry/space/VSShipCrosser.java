@@ -279,7 +279,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
 
     @Override
     public boolean parkedShipPresent(BlockPos hyperAnchor) {
-        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        WorldServer hyper = HyperspaceWorld.getIfLoaded();
         if (hyper == null || hyperAnchor == null) {
             return false;
         }
@@ -293,7 +293,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     @Override
     public List<Integer> parkedShipLanes(int laneSearchLimit) {
         List<Integer> lanes = new ArrayList<>();
-        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        WorldServer hyper = HyperspaceWorld.getIfLoaded();
         if (hyper == null) {
             return lanes;
         }
@@ -316,7 +316,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
 
     @Override
     public boolean disposeParkedLane(int laneIndex) {
-        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        WorldServer hyper = HyperspaceWorld.getIfLoaded();
         if (hyper == null) {
             return false;
         }

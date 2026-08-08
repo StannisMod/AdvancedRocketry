@@ -85,6 +85,20 @@ public final class HyperspaceWorld {
         return world;
     }
 
+    /**
+     * The hyperspace world if it is ALREADY loaded, else {@code null} — never creating it.
+     *
+     * <p>The counterpart of {@link #getOrCreate()}, for a reader whose question is about what is in
+     * hyperspace rather than about putting something there. Creating the world as a side effect of
+     * inspecting it is not free: it wipes the folder, pins the dimension loaded and starts ticking a
+     * chunk provider, all at a point in the boot the caller did not intend to reach. And the honest
+     * answer to "what is parked in hyperspace" when hyperspace was never loaded this session is
+     * "nothing", which is exactly what a null lets the caller say.</p>
+     */
+    public static WorldServer getIfLoaded() {
+        return dimId == Integer.MIN_VALUE ? null : DimensionManager.getWorld(dimId);
+    }
+
     /** The hyperspace dimension id, or {@link Integer#MIN_VALUE} if it has not been created yet. */
     public static int dimId() {
         return dimId;

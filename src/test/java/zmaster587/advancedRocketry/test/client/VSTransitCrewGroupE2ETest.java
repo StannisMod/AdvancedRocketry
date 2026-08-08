@@ -900,6 +900,17 @@ private String chat() throws Exception {
         assertTrue("...and it must be a SENTENCE, not a raw translation key: a death nobody can read"
                 + " is a death the player cannot attribute. Chat: " + obituary,
                 !obituary.contains("death.attack.arHyperspaceVoid"));
+
+        // Fly the jump out. Every other scenario here ends with its ship delivered, and this one
+        // deliberately stopped ticking mid-flight — leaving a hull parked in the world every later
+        // scenario shares, with a crew record for a player who is no longer alive to be re-seated.
+        // Ending the transit puts the shared world back the way this scenario found it.
+        for (int i = 0; i < 200; i++) {
+            if (readInt(exec("artest space transit-tick"), "inTransit") == 0) {
+                break;
+            }
+            bot().waitTicks(2);
+        }
     }
 
     /**
