@@ -44,6 +44,16 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     private final Map<String, List<CrewTransfer.Crew>> crewStash = new HashMap<>();
 
     /**
+     * The non-crew bodies stowed out of the ship at each cut, keyed by ship id, until the far side is
+     * ready to put them back. In-memory only, and that is the right lifetime: unlike the crew, whose
+     * UUIDs the transit record persists, a stowed mob exists ONLY here between the two moments, so a
+     * restart while a jump is in flight loses it — hyperspace does not survive one either (TASK-224),
+     * and a body that came back without the ship it was standing on would be worse than one that did
+     * not come back at all.
+     */
+    private final Map<String, List<AboardBodies.Stowed>> bodyStash = new HashMap<>();
+
+    /**
      * Target slot dim &rarr; the arrival-guard cause last reported for it. An arrival is retried every
      * tick, so an un-deduplicated line would be 200 copies of itself; keeping the last cause still
      * reports a SECOND, different cause for the same slot, which is the case where repetition carries
@@ -102,8 +112,8 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
-                                                            int targetSlotDim) {
+    public ShipCrossingService.Crossed arriveFromHyperspace(String shipId, HyperspaceTiles.Tile tile,
+                                                            BlockPos hyperAnchor, int targetSlotDim) {
         WorldServer hyper = HyperspaceWorld.getOrCreate();
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (hyper == null || dst == null || hyperAnchor == null) {
@@ -120,6 +130,17 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
             return null;
         }
         arrivalGuardWarned.remove(targetSlotDim);
+        // The SECOND cut of the jump, so the second stow: whatever is loose on the deck in hyperspace
+        // has to come out before the blocks under it do. The departure's stow was released here when
+        // the crew boarded, so this is the same bodies, one leg on.
+        BlockPos hyperAfc = VSIntegration.flightComputerAt(hyper, hyperAnchor.getX() + 0.5,
+                hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5);
+        if (hyperAfc != null) {
+            List<AboardBodies.Stowed> bodies = AboardBodies.capture(hyper, hyperAfc);
+            if (!bodies.isEmpty()) {
+                bodyStash.put(shipId, bodies);
+            }
+        }
         // Redundant since the pool took to holding every slot a cell is bound to, and kept anyway: this is
         // the call site that can least afford to lose the world, because VS is still assembling the ship
         // here and an unload would discard it mid-flight. Stating the hold locally costs nothing and does
@@ -225,7 +246,22 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         BlockPos afcPos = VSIntegration.flightComputerAt(src,
                 srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5);
         if (afcPos == null) {
-            return Collections.emptyList(); // no flight computer on this ship - carry no crew
+            // A departure that carries NOTHING — no crew, no loose body — because it could not find
+            // the ship at the anchor it was given. That is a different failure from "there was nobody
+            // aboard", and it used to be the same silence.
+            LOGGER.warn("[SPACE] depart capture found no flight computer at anchor {} in slot dim {}: "
+                    + "this jump carries neither crew nor anything else that was aboard",
+                    srcAnchor, srcSlotDim);
+            return Collections.emptyList();
+        }
+        // Everything that is not crew comes out FIRST, and it is deliberately ahead of the crew's own
+        // guards. A mob on the deck and a dropped item are carried by the same ship-relative point as
+        // the crew — they simply need no negotiation with a client, so they are stowed rather than
+        // held — but the guards below answer about the CREW's needs, and a crewless ship that failed
+        // one of them used to take its loose bodies down with it, silently.
+        List<AboardBodies.Stowed> bodies = AboardBodies.capture(src, afcPos);
+        if (!bodies.isEmpty()) {
+            bodyStash.put(shipId, bodies);
         }
         // The ship's live WORLD position, keyed by the AFC's SUBSPACE block: getShipWorldPosition takes a
         // managed subspace block (as entry/descent pass their afcPos), NOT the world anchor - passing the world
@@ -248,12 +284,21 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     @Override
     public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId, UUID vsShipUuid) {
         List<CrewTransfer.Crew> stash = crewStash.get(shipId);
-        if (stash == null || stash.isEmpty()) {
-            return true; // crewless, restored (stash wiped on restart), or already reseated - nothing to do
+        List<AboardBodies.Stowed> bodies = bodyStash.get(shipId);
+        boolean anyCrew = stash != null && !stash.isEmpty();
+        boolean anyBodies = bodies != null && !bodies.isEmpty();
+        if (!anyCrew && !anyBodies) {
+            return true; // crewless, restored (stash wiped on restart), or already placed - nothing to do
         }
         WorldServer dst = DimensionManager.getWorld(targetSlotDim);
         if (dst == null || arrivalAnchor == null) {
             return false; // target world not up yet - retry next tick
+        }
+        // The stowed bodies are placed on the same retry loop and reported through the same verdict:
+        // a jump is not finished while a mob that was standing on the deck is still in a map here.
+        boolean bodiesPlaced = !anyBodies || releaseStowed(dst, arrivalAnchor, shipId, bodies);
+        if (!anyCrew) {
+            return bodiesPlaced;
         }
         // NOTE: no load pump here on purpose (see settleArrivedPose for the other half of this). The
         // re-seat used to force-load every ship in the target cell each retry so the re-assembled seat
@@ -267,14 +312,37 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // crew's own seat sat tens of thousands of blocks away in the same world.
         if (CrewTransfer.reseat(dst, arrivalAnchor, stash, toUuid(shipId), vsShipUuid)) {
             crewStash.remove(shipId);
-            return true;
+            return bodiesPlaced;
         }
         return false;
+    }
+
+    /**
+     * Put the bodies stowed for {@code shipId} back on the ship that arrived at {@code anchor}, and
+     * drop the stash once they are down. {@code false} means the ship is not rebuilt here yet, which
+     * is the same "come back next tick" the crew placement answers with — and nothing has been placed,
+     * so a retry cannot duplicate anything.
+     */
+    private boolean releaseStowed(WorldServer world, BlockPos anchor, String shipId,
+                                  List<AboardBodies.Stowed> bodies) {
+        BlockPos afcPos = VSIntegration.flightComputerAt(world, anchor.getX() + 0.5,
+                anchor.getY() + 0.5, anchor.getZ() + 0.5);
+        if (afcPos == null || AboardBodies.release(world, afcPos, bodies) == 0) {
+            return false;
+        }
+        bodyStash.remove(shipId);
+        return true;
     }
 
     @Override
     public int parkedDim() {
         return HyperspaceWorld.dimId();
+    }
+
+    @Override
+    public boolean hasStowedBodies(String shipId) {
+        List<AboardBodies.Stowed> bodies = bodyStash.get(shipId);
+        return bodies != null && !bodies.isEmpty();
     }
 
     @Override
@@ -337,12 +405,22 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     @Override
     public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId, UUID vsShipUuid) {
         List<CrewTransfer.Crew> stash = crewStash.get(shipId);
-        if (stash == null || stash.isEmpty()) {
+        List<AboardBodies.Stowed> bodies = bodyStash.get(shipId);
+        boolean anyCrew = stash != null && !stash.isEmpty();
+        boolean anyBodies = bodies != null && !bodies.isEmpty();
+        if (!anyCrew && !anyBodies) {
             return true; // crewless, or a restored transit whose stash did not survive the restart
         }
         WorldServer dst = DimensionManager.getWorld(parkedDim);
         if (dst == null || anchor == null) {
             return false; // hyperspace not up yet - retry next tick
+        }
+        // The stowed bodies come back out here, onto the parked hull, and the ARRIVAL cut stows them
+        // again — the same two-leg shape the crew has, for the same reason: the far side is a fresh
+        // re-assembly and nothing that was written down against the old one survives it.
+        boolean bodiesPlaced = !anyBodies || releaseStowed(dst, anchor, shipId, bodies);
+        if (!anyCrew) {
+            return bodiesPlaced;
         }
         // Deliberately does NOT remove the stash: these same records seat the crew again at the far
         // end, and only their flight-computer link offsets can re-identify a seat on a ship that has
@@ -350,7 +428,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         //
         // Named by identity, and hyperspace is where that matters most: every ship in flight is parked
         // in the same world, so "the ship at this anchor" has neighbours by construction.
-        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId), vsShipUuid);
+        return CrewTransfer.reseat(dst, anchor, stash, toUuid(shipId), vsShipUuid) && bodiesPlaced;
     }
 
     @Override

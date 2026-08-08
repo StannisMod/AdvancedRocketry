@@ -114,8 +114,8 @@ public class ShipTransitManagerTest {
         }
 
         @Override
-        public ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
-                                                                int targetSlotDim) {
+        public ShipCrossingService.Crossed arriveFromHyperspace(String shipId, HyperspaceTiles.Tile tile,
+                                                                BlockPos hyperAnchor, int targetSlotDim) {
             arrivals.add(targetSlotDim + "@" + tile.index);
             if (arriveFailCount > 0) {
                 arriveFailCount--;

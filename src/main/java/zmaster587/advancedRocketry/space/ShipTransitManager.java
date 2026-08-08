@@ -79,7 +79,8 @@ public final class ShipTransitManager {
          * identity it carries, or {@code null} if the crossing failed. The ship stays parked in the
          * paste lane until {@link #settleArrivedPose} moves it onto the coordinate it was aimed at.
          */
-        ShipCrossingService.Crossed arriveFromHyperspace(HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
+        ShipCrossingService.Crossed arriveFromHyperspace(String shipId, HyperspaceTiles.Tile tile,
+                                                        BlockPos hyperAnchor,
                                                          int targetSlotDim);
 
         /**
@@ -210,6 +211,17 @@ public final class ShipTransitManager {
          * <p>Defaults to {@code false}: a pure state-machine test has no world, and answering "yes"
          * would make every restored transit wait for a ship nothing can produce.</p>
          */
+        /**
+         * Whether the crossing stowed anything for {@code shipId} that still has to be put back — the
+         * bodies aboard that are not crew. The state machine cannot see them (they are the crossing's
+         * business, not the flight's), and it must not queue a placement leg for a jump that has
+         * nothing to place: measured 2026-08-08, queuing one unconditionally reddened a NEIGHBOURING
+         * subsystem's e2e on a matched pair, and a leg with no work is exactly the leg to not create.
+         */
+        default boolean hasStowedBodies(String shipId) {
+            return false;
+        }
+
         default boolean parkedShipPresent(BlockPos hyperAnchor) {
             return false;
         }
@@ -459,7 +471,11 @@ public final class ShipTransitManager {
         // uses. Ordering is safe in a way the arrival's is not - the parked ship never moves again
         // before the arrival crossing cuts it - so there is no seat-then-move window here.
         int parkedDim = crosser.parkedDim();
-        if (!crew.isEmpty() && parkedDim != Integer.MIN_VALUE) {
+        // Queued when there is something to put back — the crew, or the bodies the crossing stowed
+        // off the deck. The leg is "put back what was aboard" and the crew is only its best-known
+        // member; but a leg for a jump carrying NOTHING is work that does not exist, and creating one
+        // is not free (it reddened a neighbouring subsystem's e2e on a matched pair).
+        if ((!crew.isEmpty() || crosser.hasStowedBodies(shipId)) && parkedDim != Integer.MIN_VALUE) {
             reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true, t.vsShipUuid));
         }
         // The crew is told it has departed, on the same channel and in the same voice as everything
@@ -521,7 +537,8 @@ public final class ShipTransitManager {
             if (t.pasteAnchor == null) {
                 ShipCrossingService.Crossed arrived = t.restored
                         ? crosser.completeRestored(t.snapshot, t.targetSlotDim)
-                        : crosser.arriveFromHyperspace(t.tile, t.hyperAnchor, t.targetSlotDim);
+                        : crosser.arriveFromHyperspace(entry.getKey(), t.tile, t.hyperAnchor,
+                                t.targetSlotDim);
                 if (arrived != null) {
                     t.pasteAnchor = arrived.anchor;
                     // The arrival's identity WINS over the one the jump departed with. Normally they are
@@ -568,19 +585,21 @@ public final class ShipTransitManager {
                 // trigger measuring from the cell centre and firing anyway.
                 ledgerSettle(entry.getKey(), t.arrivalCoord);
                 space.markDirty(t.target);
-                // Hand any aboard crew to the best-effort reseat retry. The transit is already settled and
-                // removed, so a save in the reseat window exports nothing for it - the crew reseat can lag a
-                // few ticks (async re-assembly) without ever risking a duplicate ship on restart.
-                if (!t.crew.isEmpty()) {
+                // Hand whatever was aboard - crew and stowed bodies alike - to the best-effort
+                // placement retry. The transit is already settled and removed, so a save in that
+                // window exports nothing for it: the placement can lag a few ticks (async
+                // re-assembly) without ever risking a duplicate ship on restart.
+                if (!t.crew.isEmpty() || crosser.hasStowedBodies(entry.getKey())) {
                     reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false,
                             t.vsShipUuid));
-                    // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
-                    // the crew has no control in flight and no number to watch, so arriving is the one
-                    // moment the flight has to announce itself. Said on the NORMAL path only - the two
-                    // recovery branches below have their own, louder message, and a crew that got both
-                    // would read the failure as routine.
-                    crosser.messageCrew(t.crew, "msg.shiptransit.arrived");
                 }
+                // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
+                // the crew has no control in flight and no number to watch, so arriving is the one
+                // moment the flight has to announce itself. Said on the NORMAL path only - the two
+                // recovery branches below have their own, louder message, and a crew that got both
+                // would read the failure as routine. A crewless jump tells nobody, which is what an
+                // empty crew list means.
+                crosser.messageCrew(t.crew, "msg.shiptransit.arrived");
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
                 // An arrival is a block paste into a cell; it has no right to fail, and every branch
@@ -629,9 +648,9 @@ public final class ShipTransitManager {
                 it.remove();
                 ledgerSettle(entry.getKey(), t.arrivalCoord); // same coordinate as the normal path
                 space.markDirty(t.target);
-                if (!t.crew.isEmpty()) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor, false,
-                            t.vsShipUuid));
+                if (!t.crew.isEmpty() || crosser.hasStowedBodies(entry.getKey())) {
+                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, t.pasteAnchor,
+                            false, t.vsShipUuid));
                 }
                 LOGGER.error("[SPACE] transit arrival for ship {} did not complete normally after {} ticks "
                         + "and was finished the hard way - the ship is in cell {} (slot {}) at its paste "

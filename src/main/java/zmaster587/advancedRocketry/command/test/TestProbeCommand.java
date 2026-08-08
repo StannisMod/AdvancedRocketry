@@ -3211,6 +3211,62 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"ships\":\"" + ships + "\"}");
             return;
         }
+        // loose-body <dim> <x> <y> <z>: drop ONE item entity at a world point, and
+        // loose-body-count <dim> <x> <y> <z> <radius>: how many item entities are within radius of one.
+        //
+        // The pair exists because a jump's promise about non-crew bodies has no other observer. A crew
+        // member reports himself through his own client; a dropped item reports nothing, and the only
+        // honest question about it is "is it there". Deliberately an ITEM rather than a mob: an item
+        // has no AI to walk it out of the volume under test, so a body that moved between the arrange
+        // and the assert moved because something moved it.
+        if (args.length >= 5 && "loose-body".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer w = server.getWorld(parseIntOr(args[1], 0));
+            if (w == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double bx = parseDoubleOr(args[2], 0), by = parseDoubleOr(args[3], 0),
+                    bz = parseDoubleOr(args[4], 0);
+            net.minecraft.entity.item.EntityItem body = new net.minecraft.entity.item.EntityItem(
+                    w, bx, by, bz, new net.minecraft.item.ItemStack(net.minecraft.init.Items.DIAMOND));
+            body.motionX = 0;
+            body.motionY = 0;
+            body.motionZ = 0;
+            // A dropped item despawns after 5 minutes and cannot be picked up for the first 10 ticks;
+            // neither matters over a jump, but the pickup delay is set anyway so nothing sweeps it up.
+            body.setPickupDelay(Integer.MAX_VALUE);
+            w.spawnEntity(body);
+            // Whether production would call this body ABOARD, at the moment it is dropped. Without it a
+            // test can only ask "is something near the ship", which a body falling past the ship also
+            // satisfies — and the difference between those two is the whole subject.
+            String vsShipId = args.length >= 6 ? args[5] : null;
+            boolean aboard = false;
+            if (vsShipId != null) {
+                net.minecraft.util.math.AxisAlignedBB stay = zmaster587.advancedRocketry.integration.vs
+                        .VSIntegration.subspaceStayRegion(w, vsShipId, 1.0);
+                double[] local = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .toShipFrameFor(w, vsShipId, bx, by, bz);
+                aboard = stay != null && local != null && stay.contains(
+                        new net.minecraft.util.math.Vec3d(local[0], local[1], local[2]));
+            }
+            send(sender, "{\"ok\":true,\"entityId\":" + body.getEntityId()
+                    + ",\"aboard\":" + aboard + "}");
+            return;
+        }
+        if (args.length >= 6 && "loose-body-count".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer w = server.getWorld(parseIntOr(args[1], 0));
+            if (w == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            double bx = parseDoubleOr(args[2], 0), by = parseDoubleOr(args[3], 0),
+                    bz = parseDoubleOr(args[4], 0), r = parseDoubleOr(args[5], 8);
+            java.util.List<net.minecraft.entity.item.EntityItem> found = w.getEntitiesWithinAABB(
+                    net.minecraft.entity.item.EntityItem.class,
+                    new net.minecraft.util.math.AxisAlignedBB(bx, by, bz, bx, by, bz).grow(r));
+            send(sender, "{\"ok\":true,\"count\":" + found.size() + "}");
+            return;
+        }
         // transit-refresh: run the periodic re-cut of every parked ship's block snapshot, on demand.
         //
         // `refreshed` is how many transits actually got a FRESH cut from hyperspace this call, and it is
