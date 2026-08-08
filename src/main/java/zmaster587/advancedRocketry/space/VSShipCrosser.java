@@ -47,7 +47,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
      * The non-crew bodies stowed out of the ship at each cut, keyed by ship id, until the far side is
      * ready to put them back. In-memory only, and that is the right lifetime: unlike the crew, whose
      * UUIDs the transit record persists, a stowed mob exists ONLY here between the two moments, so a
-     * restart while a jump is in flight loses it — hyperspace does not survive one either (TASK-224),
+     * restart while a jump is in flight loses it — hyperspace does not survive one either,
      * and a body that came back without the ship it was standing on would be worse than one that did
      * not come back at all.
      */
