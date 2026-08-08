@@ -11,6 +11,12 @@ import net.minecraftforge.common.DimensionManager;
  * TEs run, passengers walk) for the whole transit. Ships are spaced across it by {@link HyperspaceTiles}
  * so they never see or collide with one another.
  *
+ * <p><b>It is not durable yet, and the reason is measured.</b> Its chunks live in a folder named
+ * after the world rather than after the per-boot dimension id ({@code SpaceSlotPool#hyperspaceSubfolder}),
+ * which is the half of durability this side owns — but the folder is still wiped at each (re)init.
+ * See {@link #getOrCreate()} for what a two-boot restart actually measured, and
+ * {@code HyperspaceSurvivesARestartE2ETest} for the witness that will go green when it holds.</p>
+ *
  * <p>Registered upfront by {@link #register()} (a cheap Forge map entry, mirroring the slot pool) with
  * the void {@link WorldProviderSpaceSlot} provider (an all-air world - the transit lanes are the only
  * content); the world itself is loaded lazily by {@link #getOrCreate()} on the first transit. Server main
@@ -55,11 +61,22 @@ public final class HyperspaceWorld {
         // wipes VS's per-world ship registry (a ship crossed here would vanish on the next getOrCreate).
         WorldServer world = DimensionManager.getWorld(dimId);
         if (world == null) {
-            // Ephemeral hyperspace: wipe any persisted chunk folder BEFORE init, so a ship left parked by a
-            // mid-transit quit is not reloaded as an untracked, keep-loaded ghost (ShipTransitManager holds
-            // transit state in memory only and is empty on restart). The world then regenerates as clean
-            // void. Only ever reached when the world is NOT loaded, so this never wipes under a live world.
-            SpaceSlotPool.deleteUnboundSlotStore(dimId);
+            // The folder is wiped before each (re)init, so hyperspace starts every boot as clean void
+            // and a hull left by a mid-transit quit is never reloaded as an untracked ghost. Only ever
+            // reached when the world is NOT loaded, so this never wipes under a live world.
+            //
+            // This is NOT the design any more — it is what the design is BLOCKED ON, and the block was
+            // measured rather than assumed. Everything a durable hyperspace needs on our side exists:
+            // the folder is named after the world rather than after a per-boot dimension id, a transit
+            // record carries its lane and its anchor, a restore reclaims the lane and adopts the hull
+            // that is standing in it, and the boot reconciliation disposes of the hulls no record
+            // claims. What does not hold is the physics mod's own per-world ship data: measured
+            // 2026-08-08 across a real two-boot restart, hyperspace's registry serialised EMPTY
+            // (140 bytes on disk, against 1350 for a cell holding one ship) while its in-memory
+            // registry was answering "one ship" moments earlier. Keeping the folder without that
+            // would accumulate hull blocks nothing can ever adopt, so the wipe stays until the ships
+            // themselves round-trip.
+            SpaceSlotPool.deleteHyperspaceStore();
             DimensionManager.initDimension(dimId);
             world = DimensionManager.getWorld(dimId);
         }
@@ -75,11 +92,10 @@ public final class HyperspaceWorld {
 
     /**
      * Server-stop teardown: release the keep-loaded pin. The dim id is kept STABLE across a same-JVM
-     * re-open (no leak): hyperspace is now EPHEMERAL — {@link #getOrCreate()} wipes its chunk folder before
-     * each (re)init — so reusing the same id never reloads a ghost ship. Keeping the id also avoids the old
-     * churn of one leaked dim registration + one orphan {@code slot<oldId>} folder per re-open. The
-     * {@link DimensionType} and the dimension registration both stay JVM-global; a later re-open simply
-     * re-inits the same (freshly-wiped) world.
+     * re-open, which costs nothing and avoids the churn of one leaked dim registration per re-open. It is
+     * no longer load-bearing either way: the world's content is keyed by its FOLDER, not by its id. The
+     * {@link DimensionType} and the dimension registration both stay JVM-global; a later re-open re-inits
+     * the same (freshly-wiped) world.
      */
     public static void reset() {
         if (dimId != Integer.MIN_VALUE) {

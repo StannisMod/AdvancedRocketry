@@ -338,11 +338,34 @@ public final class SpaceSlotPool {
     }
 
     /**
+     * The on-disk chunk subfolder of the shared HYPERSPACE world — a constant, named after what the
+     * world IS rather than after the dimension id it happens to hold this boot.
+     *
+     * <p>That distinction is the whole of hyperspace's durability. Its id is minted per boot by a
+     * free-id scan, so a folder named after the id relocates the world's content on any boot where
+     * the scan lands elsewhere: the ships would still be on disk and the world would come back empty
+     * beside them. The pool's cells already work this way — {@code cell_<key>} — for the same
+     * reason, and this is the same fix applied to the one world that was still keyed by its id.</p>
+     */
+    public static String hyperspaceSubfolder() {
+        return "advRocketry/hyperspace";
+    }
+
+    /**
      * Delete an UNBOUND slot dimension's on-disk chunk folder ({@link #unboundSlotSubfolder}). Makes the
      * hyperspace world ephemeral: called before each (re)init so a ship left parked by a mid-transit quit
      * is never reloaded as an untracked ghost — the world regenerates as clean void. No-op if the server
      * or folder is absent. Server thread only.
      */
+    public static void deleteHyperspaceStore() {
+        net.minecraft.server.MinecraftServer server =
+                net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (server != null) {
+            java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
+            deleteDir(new java.io.File(worldDir, hyperspaceSubfolder()));
+        }
+    }
+
     public static void deleteUnboundSlotStore(int dimId) {
         net.minecraft.server.MinecraftServer server =
                 net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();

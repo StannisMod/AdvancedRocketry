@@ -232,6 +232,15 @@ public final class SpaceSubsystem {
                     AdvancedRocketry.logger.info("[SPACE] restored {} in-flight transit(s) from disk",
                             records.size());
                 }
+                // JUMP-10, and it belongs HERE — after the last record has been imported. Hyperspace
+                // outlives the server, so a hull can outlive the record that put it there; every ship
+                // found in it is matched against the transits that claim a lane and the rest are
+                // disposed of. Run one record too early and a perfectly good ship looks unclaimed.
+                int disposed = transitManager.reconcileParkedShips();
+                if (disposed > 0) {
+                    AdvancedRocketry.logger.warn("[SPACE] disposed of {} ship(s) parked in hyperspace "
+                            + "that no transit record claims", disposed);
+                }
             }
         }
     }

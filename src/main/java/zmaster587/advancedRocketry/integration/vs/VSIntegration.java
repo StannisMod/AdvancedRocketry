@@ -951,6 +951,38 @@ public final class VSIntegration {
     }
 
     /**
+     * Every ship the registry knows in {@code world}, as uuid -> world position; empty when the
+     * physics mod is absent. Registry-keyed, so it answers for ships nobody is near.
+     */
+    public static java.util.Map<java.util.UUID, double[]> registeredShipPoses(World world) {
+        if (!isAvailable() || world == null) {
+            return java.util.Collections.emptyMap();
+        }
+        return VSBridge.registeredShipPoses(world);
+    }
+
+    /**
+     * The uuid of the registered ship parked within {@code HyperspaceTiles.SPACING_BLOCKS / 4} of
+     * {@code (x,y,z)}, or {@code null}. For a PARKED ship, whose transform does not move and whose
+     * neighbours are a lane apart; never for a lookup where "nearest" could mean anything.
+     */
+    public static java.util.UUID shipUuidAt(World world, double x, double y, double z) {
+        if (!isAvailable() || world == null) {
+            return null;
+        }
+        return VSBridge.shipUuidNear(world, x, y, z,
+                zmaster587.advancedRocketry.space.HyperspaceTiles.SPACING_BLOCKS / 4.0);
+    }
+
+    /**
+     * Deregister {@code uuid} in {@code world} when nothing holds it loaded — the disposal of a hull
+     * no record claims. {@code false} when the physics mod is absent or that ship is loaded.
+     */
+    public static boolean releaseShipIfNothingLoaded(World world, java.util.UUID uuid) {
+        return isAvailable() && world != null && VSBridge.releaseShipIfNothingLoaded(world, uuid);
+    }
+
+    /**
      * Whether Valkyrien Skies ship support (its per-world ship manager) is attached to
      * {@code world}. Used by the space slot-pool spike to confirm VS lights up on a
      * dynamically-created pool world, not just the vanilla/AR dimensions. {@code false} when VS

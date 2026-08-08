@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.space;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTTagString;
 
@@ -42,10 +43,32 @@ public final class TransitRecord {
     public final List<UUID> crew;
     /** The packed ship as {@link StorageChunk} NBT, or {@code null} if none has been cut. */
     public final NBTTagCompound snapshot;
+    /**
+     * The hyperspace lane this ship is parked in, or {@code -1} for a transit that holds none.
+     *
+     * <p>Persisted because hyperspace outlives the server: the ship is still standing in that lane
+     * after a restart, and a restore that did not reclaim the index would hand the same lane to the
+     * next departure and paste a second ship into the first one.</p>
+     */
+    public final int laneIndex;
+    /**
+     * Where the ship's blocks actually landed in that lane, or {@code null} for a transit with no
+     * physical ship. The lane's parking position is a pure function of its index, but the assembly
+     * anchor is where the re-assembly SEEDED, which is what every later lookup about this ship is
+     * keyed on.
+     */
+    public final BlockPos hyperAnchor;
 
     public TransitRecord(String shipId, GalacticCoord origin, GalacticCoord target, long distanceBlocks,
                          long travelledBlocks, long arrivalTick, long lastTicked, long speed,
                          List<UUID> crew, NBTTagCompound snapshot) {
+        this(shipId, origin, target, distanceBlocks, travelledBlocks, arrivalTick, lastTicked, speed,
+                crew, snapshot, -1, null);
+    }
+
+    public TransitRecord(String shipId, GalacticCoord origin, GalacticCoord target, long distanceBlocks,
+                         long travelledBlocks, long arrivalTick, long lastTicked, long speed,
+                         List<UUID> crew, NBTTagCompound snapshot, int laneIndex, BlockPos hyperAnchor) {
         this.shipId = shipId;
         this.origin = origin;
         this.target = target;
@@ -56,6 +79,8 @@ public final class TransitRecord {
         this.speed = speed;
         this.crew = crew == null ? new ArrayList<UUID>() : new ArrayList<>(crew);
         this.snapshot = snapshot;
+        this.laneIndex = laneIndex;
+        this.hyperAnchor = hyperAnchor;
     }
 
     public NBTTagCompound writeToNBT() {
@@ -85,6 +110,14 @@ public final class TransitRecord {
         if (snapshot != null) {
             nbt.setTag("snapshot", snapshot);
         }
+        // Absent rather than -1/0 when there is no lane, so a reader tells "this transit holds no
+        // lane" from "lane zero" — index 0 is a real, and the first, lane.
+        if (laneIndex >= 0) {
+            nbt.setInteger("lane", laneIndex);
+        }
+        if (hyperAnchor != null) {
+            nbt.setLong("hyperAnchor", hyperAnchor.toLong());
+        }
         return nbt;
     }
 
@@ -109,6 +142,8 @@ public final class TransitRecord {
                 nbt.getLong("lastTicked"),
                 nbt.getLong("speed"),
                 crew,
-                snapshot);
+                snapshot,
+                nbt.hasKey("lane") ? nbt.getInteger("lane") : -1,
+                nbt.hasKey("hyperAnchor") ? BlockPos.fromLong(nbt.getLong("hyperAnchor")) : null);
     }
 }

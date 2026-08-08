@@ -196,6 +196,41 @@ public final class ShipTransitManager {
          * such world (the pure state-machine tests, and any build without the ship integration). A
          * caller that gets {@code MIN_VALUE} must not try to put anything there.
          */
+        /**
+         * Whether a ship is actually registered at {@code hyperAnchor} in the parked world — the
+         * evidence a restored transit needs before it treats itself as still having a physical ship.
+         *
+         * <p>Hyperspace outlives the server now, so a jump interrupted by a restart usually comes
+         * back with its hull still standing in its lane. "Usually" is not "always": the folder can be
+         * deleted, an older save may predate durability, and a crash can leave a lane empty. The
+         * record is what says a ship BELONGS there; this says whether one IS there, and a transit
+         * that gets {@code false} falls back to rebuilding from its block snapshot, which is what
+         * that snapshot has always been for.</p>
+         *
+         * <p>Defaults to {@code false}: a pure state-machine test has no world, and answering "yes"
+         * would make every restored transit wait for a ship nothing can produce.</p>
+         */
+        default boolean parkedShipPresent(BlockPos hyperAnchor) {
+            return false;
+        }
+
+        /**
+         * The hyperspace lanes that currently hold a registered ship, searching lane indices below
+         * {@code laneSearchLimit}. The raw material of the boot-time reconciliation: everything in
+         * here that no restored transit claims is a ship nothing is flying.
+         */
+        default List<Integer> parkedShipLanes(int laneSearchLimit) {
+            return Collections.emptyList();
+        }
+
+        /**
+         * Dispose of the ship parked in lane {@code laneIndex} — a hull no record claims. Returns
+         * whether anything was disposed of.
+         */
+        default boolean disposeParkedLane(int laneIndex) {
+            return false;
+        }
+
         default int parkedDim() {
             return Integer.MIN_VALUE;
         }
@@ -788,7 +823,8 @@ public final class ShipTransitManager {
             Transit t = e.getValue();
             out.add(new TransitRecord(e.getKey(), t.integrator.origin(), t.target,
                     t.integrator.distanceBlocks(), t.integrator.travelledBlocks(), t.arrivalTick,
-                    t.lastTicked, t.speed, t.crew, t.snapshot));
+                    t.lastTicked, t.speed, t.crew, t.snapshot,
+                    t.tile == null ? -1 : t.tile.index, t.hyperAnchor));
         }
         return out;
     }
@@ -855,25 +891,83 @@ public final class ShipTransitManager {
                 || transits.containsKey(record.shipId)) {
             return; // absent / blank / corrupt id, or already flying (idempotent restore)
         }
-        // A snapshot-less record cannot rematerialize the ship's blocks (origin was cut, hyperspace is
-        // ephemeral) - a restored transit for it would only spin to MAX_ARRIVAL_ATTEMPTS then silently delete
-        // it. The depart-time floor snapshot makes this unreachable in normal operation; drop a corrupt one.
-        if (record.snapshot == null) {
-            LOGGER.error("[SPACE] persisted transit for ship {} has no block snapshot - cannot restore the "
-                    + "ship; dropping the record", record.shipId);
+        // Reclaim the LANE first, whatever else is true of this record: the index is taken by a hull
+        // that is standing there right now, and an allocator that does not know would hand it to the
+        // next departure and paste a second ship into the first one. Reclaiming a lane whose ship
+        // turns out to be gone costs one index out of a supply the tiles class calls unbounded.
+        HyperspaceTiles.Tile tile = null;
+        if (record.laneIndex >= 0) {
+            tiles.reserve(record.laneIndex);
+            tile = HyperspaceTiles.tile(record.laneIndex);
+        }
+        // Is the ship still there? Hyperspace persists, so the ordinary answer is yes and the jump
+        // resumes as the ship it has always been — same lane, same hull, same crew placement. The
+        // snapshot stays the fallback for the record whose lane came back empty.
+        boolean parked = record.hyperAnchor != null && crosser.parkedShipPresent(record.hyperAnchor);
+        // Neither a hull nor a snapshot is nothing to restore. The check is here, AFTER the lane has
+        // been reclaimed and the ship looked for, because a parked ship makes a snapshot-less record
+        // perfectly restorable — and it used to be rejected out of hand, back when the only way to
+        // rebuild a jump was to paste its blocks.
+        if (!parked && record.snapshot == null) {
+            LOGGER.error("[SPACE] persisted transit for ship {} has neither a ship parked in hyperspace "
+                    + "nor a block snapshot - there is nothing to restore; dropping the record",
+                    record.shipId);
             return;
         }
-        Transit t = new Transit(record.origin, record.target, null, null, record.speed,
+        Transit t = new Transit(record.origin, record.target, parked ? tile : null,
+                parked ? record.hyperAnchor : null, record.speed,
                 record.arrivalTick, record.lastTicked,
                 new ShipTransit(record.origin, record.target, record.distanceBlocks,
                         record.travelledBlocks));
-        t.restored = true;
+        t.restored = !parked;
         t.snapshot = record.snapshot;
         if (record.crew != null) {
             t.crew.addAll(record.crew);
         }
         transits.put(record.shipId, t);
         ledgerBeginTransit(record.shipId, record.target);
+    }
+
+    /**
+     * Match every ship found in hyperspace against the transits that claim one, and dispose of the
+     * rest. Returns how many were disposed of.
+     *
+     * <p>The obligation a durable hyperspace creates. While the world was wiped on every boot the
+     * question could not arise; now a hull can outlive the record that put it there — a save copied
+     * without its data file, a crash between the block write and the record write, a jump whose
+     * record was dropped as corrupt. Such a hull is a ship nobody is flying, parked forever in a
+     * world that is force-kept-loaded, and it holds a lane that would otherwise be reused.</p>
+     *
+     * <p>Run ONCE at boot, after every record has been imported — before that the claimed set is
+     * incomplete and a perfectly good ship would look unclaimed. Matching is by LANE, not by
+     * identity: a lane is the address a record stores and a ship parks at, and reading a hull's own
+     * durable id would mean force-loading each shipyard to find its flight computer.</p>
+     *
+     * <p>"Disposed of" is deregistration plus retirement of the lane, not a block wipe: a hull the
+     * physics mod no longer knows about is inert, and its blocks sit in a far subspace shipyard that
+     * nothing loads. Retiring the lane is what stops a later departure being pasted into it.</p>
+     */
+    public int reconcileParkedShips() {
+        java.util.Set<Integer> claimed = new java.util.HashSet<>();
+        for (Transit t : transits.values()) {
+            if (t.tile != null) {
+                claimed.add(t.tile.index);
+            }
+        }
+        int disposed = 0;
+        for (Integer lane : crosser.parkedShipLanes(tiles.allocatedLaneCount() + 1)) {
+            if (lane == null || claimed.contains(lane)) {
+                continue;
+            }
+            if (crosser.disposeParkedLane(lane)) {
+                tiles.reserve(lane); // never hand this lane out: its blocks are still lying in it
+                disposed++;
+                LOGGER.warn("[SPACE] hyperspace lane {} held a ship no transit record claims - disposed "
+                        + "of it. A hull nobody is flying would otherwise sit in a permanently loaded "
+                        + "world for the life of the save.", lane);
+            }
+        }
+        return disposed;
     }
 
     /** Free a transit's hyperspace lane; a restored transit holds none ({@code tile == null}). */

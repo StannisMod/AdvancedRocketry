@@ -81,7 +81,29 @@ public class ShipTransitManagerTest {
         // world", which suppresses the departure-side boarding entirely - so a test that wants to see
         // that leg has to name a world for it.
         int parkedDimToReturn = Integer.MIN_VALUE;
+        // Durable hyperspace: which anchors still have a ship standing at them after the restart, and
+        // which lanes hold one at all. Empty by default — the interface's own default answers "no
+        // ship, no lanes", which is the ephemeral world every existing test was written against.
+        final java.util.Set<BlockPos> parkedAnchors = new java.util.HashSet<>();
+        final List<Integer> lanesWithAShip = new ArrayList<>();
+        final List<Integer> disposedLanes = new ArrayList<>();
         final List<String> order = new ArrayList<>();       // shared call order: pins capture-before-depart
+
+        @Override
+        public boolean parkedShipPresent(BlockPos hyperAnchor) {
+            return parkedAnchors.contains(hyperAnchor);
+        }
+
+        @Override
+        public List<Integer> parkedShipLanes(int laneSearchLimit) {
+            return new ArrayList<>(lanesWithAShip);
+        }
+
+        @Override
+        public boolean disposeParkedLane(int laneIndex) {
+            disposedLanes.add(laneIndex);
+            return true;
+        }
 
         @Override
         public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
@@ -855,5 +877,137 @@ public class ShipTransitManagerTest {
         // The crew was dismounted by captureCrew before the (failed) cut; the abort must re-seat them onto the
         // still-present origin ship rather than leaving the pilot ejected.
         assertFalse("an aborted jump re-seats the crew it dismounted", crosser.reseatCalls.isEmpty());
+    }
+
+    // -- durable hyperspace: a restart is something a jump SURVIVES (JUMP-9 / JUMP-10) ------------
+
+    @Test
+    public void aRestoredTransitKeepsTheLaneAndTheShipItLeftParkedIn() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos parkedAt = HyperspaceTiles.tilePos(3);
+        crosser.parkedAnchors.add(parkedAt);          // hyperspace kept it across the restart
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10_000L, 0L, 7L,
+                new ArrayList<UUID>(), new NBTTagCompound(), 3, parkedAt));
+
+        // The two questions a returning crew member's placement is decided by. Both answer "nowhere"
+        // for a transit with no physical ship, and both have to answer about the parked hull now.
+        assertEquals("a jump whose ship is still parked resumes with that ship, so its crew belongs"
+                + " in the parked world", crosser.parkedDim(), mgr.crewDimensionOf(ship));
+        assertEquals("...and at the ship, not at the world origin", parkedAt, mgr.hyperspaceAnchorOf(ship));
+    }
+
+    @Test
+    public void aRestoredTransitWhoseLaneCameBackEmptyStillRebuildsFromItsSnapshot() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();   // parkedAnchors empty: the hull did not survive
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10L, 0L,
+                ARRIVE_IN_ONE_TICK, new ArrayList<UUID>(), new NBTTagCompound(), 3,
+                HyperspaceTiles.tilePos(3)));
+        mgr.tick();
+
+        assertFalse("with no ship in its lane the jump falls back to pasting its snapshot - which is"
+                + " what that snapshot has always been for", crosser.restoredCompletions.isEmpty());
+    }
+
+    @Test
+    public void aReclaimedLaneIsNeverHandedToTheNextDeparture() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos parkedAt = HyperspaceTiles.tilePos(0);
+        crosser.parkedAnchors.add(parkedAt);
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
+                0L, 10_000L, 0L, 7L, new ArrayList<UUID>(), new NBTTagCompound(), 0, parkedAt));
+
+        int originDim = space.materialize(cell(3));
+        mgr.beginTransit("fresh", cell(3), originDim, new BlockPos(0, 64, 0), cell(4), 7L);
+
+        assertFalse("a departure must not be pasted into the lane a restored ship is standing in",
+                crosser.departs.contains(originDim + "@0"));
+    }
+
+    @Test
+    public void bootDisposesOfEveryParkedShipNoRecordClaims() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos claimedLane = HyperspaceTiles.tilePos(1);
+        crosser.parkedAnchors.add(claimedLane);
+        crosser.lanesWithAShip.add(0);   // a hull whose record did not survive
+        crosser.lanesWithAShip.add(1);   // ...and one that did
+        crosser.lanesWithAShip.add(4);   // another orphan
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
+                0L, 10_000L, 0L, 7L, new ArrayList<UUID>(), new NBTTagCompound(), 1, claimedLane));
+
+        int disposed = mgr.reconcileParkedShips();
+
+        assertEquals("both unclaimed hulls disposed of", 2, disposed);
+        assertTrue("the orphans, by lane: " + crosser.disposedLanes,
+                crosser.disposedLanes.contains(0) && crosser.disposedLanes.contains(4));
+        assertFalse("the ship a record DOES claim is left alone - this is a check, not a demolition",
+                crosser.disposedLanes.contains(1));
+    }
+
+    @Test
+    public void aRecordWithNeitherAShipNorASnapshotIsDropped() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10L, 0L, 7L,
+                new ArrayList<UUID>(), null, 2, HyperspaceTiles.tilePos(2)));
+
+        assertFalse("nothing to restore: no hull in the lane and no blocks on record",
+                mgr.isInTransit(ship));
+    }
+
+    @Test
+    public void aSnapshotlessRecordSurvivesWhenItsShipIsStillParked() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos parkedAt = HyperspaceTiles.tilePos(2);
+        crosser.parkedAnchors.add(parkedAt);
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser,
+                new ShipLedger(), () -> 0L);
+        String ship = UUID.randomUUID().toString();
+
+        mgr.importTransit(new TransitRecord(ship, cell(1), cell(2), 4_000_000L, 0L, 10_000L, 0L, 7L,
+                new ArrayList<UUID>(), null, 2, parkedAt));
+
+        assertTrue("a ship standing in its lane needs no stored blocks to be restorable - the record"
+                + " that used to be rejected out of hand is the ordinary case now",
+                mgr.isInTransit(ship));
+    }
+
+    @Test
+    public void anExportedTransitCarriesTheLaneItIsParkedIn() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), new FakeCrosser(),
+                new ShipLedger(), () -> 500L);
+        String ship = UUID.randomUUID().toString();
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit(ship, cell(1), originDim, new BlockPos(0, 64, 0), cell(2), 7L);
+
+        TransitRecord r = mgr.exportTransits().get(0);
+        assertTrue("the lane is persisted, or a restore cannot know which one is taken",
+                r.laneIndex >= 0);
+        assertEquals("...and where in it the hull actually landed",
+                HyperspaceTiles.tilePos(r.laneIndex), r.hyperAnchor);
     }
 }

@@ -46,6 +46,59 @@ public final class HyperspaceTiles {
         return new Tile(idx, tilePos(idx));
     }
 
+    /**
+     * Take lane {@code index} for a transit being restored from disk, so the ship parked there keeps
+     * the lane it left in and no later allocation is handed it.
+     *
+     * <p>Restoration runs before any departure, and the indices it reclaims are arbitrary — a save
+     * may hold lanes 0 and 4 with nothing in between. So this both marks {@code index} used and makes
+     * the gap it opens allocatable: without that, reclaiming lane 4 would push {@code next} past 0-3
+     * and quietly retire three perfectly good lanes on every boot.</p>
+     */
+    public void reserve(int index) {
+        if (index < 0) {
+            return;
+        }
+        if (index >= next) {
+            for (int gap = next; gap < index; gap++) {
+                free.add(gap);
+            }
+            next = index + 1;
+            return;
+        }
+        free.remove(index);
+    }
+
+    /**
+     * The lane whose parking position {@code (x,z)} sits in, searching indices below
+     * {@code searchLimit}, or {@code -1} when the point is not in any of them.
+     *
+     * <p>Lanes are {@link #SPACING_BLOCKS} apart and a parked ship never moves, so "which lane is
+     * this ship in" is answered by proximity with an unambiguous margin: half a lane's spacing can
+     * only ever contain one lane's parking spot. Used at boot to attribute the ships found in
+     * hyperspace to the transits that claim them.</p>
+     */
+    public static int laneIndexAt(double x, double z, int searchLimit) {
+        double bestDistSq = (SPACING_BLOCKS / 2.0) * (SPACING_BLOCKS / 2.0);
+        int best = -1;
+        for (int index = 0; index < searchLimit; index++) {
+            BlockPos pos = tilePos(index);
+            double dx = pos.getX() - x;
+            double dz = pos.getZ() - z;
+            double distSq = dx * dx + dz * dz;
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = index;
+            }
+        }
+        return best;
+    }
+
+    /** How far the lane allocator has extended — the bound a lane search has to cover. */
+    public int allocatedLaneCount() {
+        return next;
+    }
+
     /** Release {@code tile}'s lane back to the free set so a later transit can reuse it. */
     public void free(Tile tile) {
         if (tile != null && tile.index >= 0 && tile.index < next) {
@@ -70,6 +123,15 @@ public final class HyperspaceTiles {
     /** Number of lanes currently in use (allocated minus freed, counting retired lanes as in use). */
     public int inUseCount() {
         return next - free.size();
+    }
+
+    /**
+     * Lane {@code index} as a value, without allocating it — for a transit restored from disk, which
+     * already HAS its lane and is only re-acquiring the handle to it. Pair it with {@link #reserve}:
+     * this hands out the value, that one tells the allocator the index is spoken for.
+     */
+    public static Tile tile(int index) {
+        return new Tile(index, tilePos(index));
     }
 
     /** The world position of lane {@code index} - a fixed function of the index (no state). */

@@ -460,6 +460,42 @@ final class VSBridge {
      * under the accounting that empties its block set, which is the whole reason a crossing must not
      * deregister up front. Returns whether it released anything.</p>
      */
+    /**
+     * Every ship the REGISTRY knows in {@code world}, as uuid -> its transform position. Loaded or
+     * not: the boot-time hyperspace reconciliation runs with nobody near any of these ships, which
+     * is exactly the state the loaded set is empty in.
+     */
+    static java.util.Map<UUID, double[]> registeredShipPoses(World world) {
+        java.util.Map<UUID, double[]> out = new java.util.LinkedHashMap<>();
+        for (ShipData ship : ValkyrienUtils.getQueryableData(world).getShips()) {
+            Vec3d p = ship.getShipTransform().getShipPositionVec3d();
+            out.put(ship.getUuid(), new double[]{p.x, p.y, p.z});
+        }
+        return out;
+    }
+
+    /**
+     * The uuid of the registered ship whose SHIPYARD claim owns the blocks at world point
+     * {@code (x,y,z)}... which is not a question the claim can answer, so this asks the one that is
+     * both answerable and right for a PARKED ship: which registered ship's transform sits within
+     * {@code radius} of the point. A parked ship does not move, and hyperspace lanes are 2048 blocks
+     * apart, so a radius well under half that spacing cannot admit a neighbour.
+     */
+    static UUID shipUuidNear(World world, double x, double y, double z, double radius) {
+        double bestSq = radius * radius;
+        UUID best = null;
+        for (ShipData ship : ValkyrienUtils.getQueryableData(world).getShips()) {
+            Vec3d p = ship.getShipTransform().getShipPositionVec3d();
+            double dx = p.x - x, dy = p.y - y, dz = p.z - z;
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq < bestSq) {
+                bestSq = distSq;
+                best = ship.getUuid();
+            }
+        }
+        return best;
+    }
+
     static boolean releaseShipIfNothingLoaded(World world, UUID uuid) {
         if (uuid == null) {
             return false;

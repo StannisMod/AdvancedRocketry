@@ -40,8 +40,14 @@ public class WorldProviderSpaceSlot extends WorldProviderSpace {
         // (two slots must never bind the same cell simultaneously -- the pool enforces that). The unbound
         // path goes through SpaceSlotPool so the hyperspace-folder wipe (deleteUnboundSlotStore) provably
         // targets the exact folder this provider reads/writes.
-        return cell == null
-                ? SpaceSlotPool.unboundSlotSubfolder(getDimension())
-                : "advRocketry/spacepool/cell_" + cell;
+        if (cell != null) {
+            return "advRocketry/spacepool/cell_" + cell;
+        }
+        // The one unbound slot that is not scratch: hyperspace holds every ship in flight and now
+        // outlives the server, so its content is named after the world rather than after whichever
+        // dimension id this boot's free-id scan handed it.
+        return getDimension() == HyperspaceWorld.dimId()
+                ? SpaceSlotPool.hyperspaceSubfolder()
+                : SpaceSlotPool.unboundSlotSubfolder(getDimension());
     }
 }

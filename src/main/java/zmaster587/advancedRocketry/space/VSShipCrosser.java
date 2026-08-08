@@ -278,6 +278,63 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
+    public boolean parkedShipPresent(BlockPos hyperAnchor) {
+        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        if (hyper == null || hyperAnchor == null) {
+            return false;
+        }
+        // Asked of the REGISTRY, not of the loaded set. This runs at boot, when nobody is anywhere
+        // near a parked ship, and the physics mod decides loadedness from player proximity every
+        // tick — so "is it loaded" would answer no for every ship that is perfectly well there.
+        return VSIntegration.shipUuidAt(hyper, hyperAnchor.getX() + 0.5,
+                hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5) != null;
+    }
+
+    @Override
+    public List<Integer> parkedShipLanes(int laneSearchLimit) {
+        List<Integer> lanes = new ArrayList<>();
+        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        if (hyper == null) {
+            return lanes;
+        }
+        for (Map.Entry<UUID, double[]> ship : VSIntegration.registeredShipPoses(hyper).entrySet()) {
+            double[] pos = ship.getValue();
+            int lane = HyperspaceTiles.laneIndexAt(pos[0], pos[2], laneSearchLimit);
+            if (lane >= 0) {
+                lanes.add(lane);
+            } else {
+                // A ship in this world that is in no lane at all. Nothing parks outside a lane, so it
+                // is either debris from an interrupted crossing or something another mod put here;
+                // either way no record can claim it, and the reconciliation cannot address it by lane.
+                LOGGER.warn("[SPACE] a ship in hyperspace sits in no lane ({}, {}, {}) - it is not "
+                        + "reachable by the lane reconciliation and will be left alone",
+                        (long) pos[0], (long) pos[1], (long) pos[2]);
+            }
+        }
+        return lanes;
+    }
+
+    @Override
+    public boolean disposeParkedLane(int laneIndex) {
+        WorldServer hyper = HyperspaceWorld.getOrCreate();
+        if (hyper == null) {
+            return false;
+        }
+        BlockPos lane = HyperspaceTiles.tilePos(laneIndex);
+        UUID uuid = VSIntegration.shipUuidAt(hyper, lane.getX() + 0.5, lane.getY() + 0.5,
+                lane.getZ() + 0.5);
+        if (uuid == null) {
+            return false;
+        }
+        // Deregistration, not a block wipe. A hull the physics mod no longer knows about is inert:
+        // its blocks sit in a far subspace shipyard that nothing loads, claims or ticks, and cutting
+        // them would mean force-loading a shipyard to delete blocks nobody can reach. What has to
+        // stop is the ship EXISTING as a ship in a permanently loaded world; the caller retires the
+        // lane so nothing is ever pasted on top of what is left.
+        return VSIntegration.releaseShipIfNothingLoaded(hyper, uuid);
+    }
+
+    @Override
     public boolean boardCrew(int parkedDim, BlockPos anchor, String shipId, UUID vsShipUuid) {
         List<CrewTransfer.Crew> stash = crewStash.get(shipId);
         if (stash == null || stash.isEmpty()) {
