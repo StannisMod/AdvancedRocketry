@@ -786,6 +786,13 @@ private String chat() throws Exception {
      * budget, and is fine; then he walks off the hull and dies. Without the first leg the second
      * proves only that something in hyperspace kills people; without the second the first proves only
      * that nothing does.</p>
+     *
+     * <p><b>Livable also means it still LOOKS like a flight.</b> Hyperspace has no bodies in its sky
+     * and its descent ring is deliberately suppressed, so the corridor is the only thing that tells a
+     * crew member the ship is moving. It is drawn by the client's own sky renderer, and this is the
+     * scenario that puts a crew member in hyperspace on his FEET — so the corridor is read here, in
+     * the same window that proves he is alive on his deck. The ring's suppression is NOT re-pinned
+     * here: that is the seated scenario's subject, and its baseline is order-sensitive.</p>
      */
     @Test
     public void aCrewMemberLivesInHyperspaceUntilHeStepsOffHisShip() throws Exception {
@@ -796,12 +803,35 @@ private String chat() throws Exception {
         // in either of them this scenario could only ever come back "he survived".
         exec("gamemode survival @a");
 
+        // Vanilla runs the sky pass only at renderDistanceChunks >= 4 and the harness pins the client
+        // at 2, so without this the sky renderer never executes and every corridor reading below is
+        // honestly zero for the wrong reason. Read back off the client's own field rather than
+        // assumed; restored by this family's reset, not by an @After.
+        JsonObject rd = bot().setRenderDistance(SKY_RENDER_DISTANCE);
+        previousRenderDistance = rd.get("previous").getAsInt();
+        assertTrue("the sky pass gate must be open, read back off the client's own field: " + rd,
+                rd.get("skyPassEnabled").getAsBoolean());
+
         String setup = exec("artest space transit-setup-piloted");
         assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
         int originDim = readInt(setup, "originDim");
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
         seatTheBot(originDim);
+
+        // ── CONTROL, in the origin cell ─────────────────────────────────────────────────────────
+        // Two readings the hyperspace ones are read against. Without the first, "the corridor did not
+        // advance" cannot be told from "this renderer never ran"; without the second, "the corridor
+        // advanced in hyperspace" is a first reading rather than a change.
+        long skyInCell = skyFrames();
+        long tunnelInCell = tunnelFrames();
+        bot().waitTicks(20);
+        assertTrue("CONTROL: this sky renderer must run in an ordinary cell, or every corridor"
+                        + " reading below is a zero for the wrong reason (sky frames " + skyInCell
+                        + " -> " + skyFrames() + ")",
+                skyFrames() > skyInCell);
+        assertEquals("CONTROL: the hyperspace corridor must NOT be drawn in an ordinary cell",
+                tunnelInCell, tunnelFrames());
 
         String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
@@ -839,6 +869,34 @@ private String chat() throws Exception {
         assertTrue("a crew member must be able to leave his seat IN HYPERSPACE and be resolved on his"
                 + " deck there — that is what makes the flight an interval rather than a cutscene: "
                 + capture, readBool(capture, "alreadyTracked"));
+
+        // ── JUMP-2, the visible half: the backdrop belongs to the FLIGHT, not to the seat ────────
+        // The arrangement first, because both facts are the axis of the claim: he must be off his
+        // seat (or this is the seated case again) and still in hyperspace (or this is a cell's sky).
+        JsonObject standing = bot().reportRidingEntity();
+        assertTrue("ARRANGEMENT: he must be on his FEET, or this leg is the seated case again: "
+                + standing, !standing.get("riding").getAsBoolean());
+        assertEquals("ARRANGEMENT: he must still be in hyperspace, or this reads a cell's sky",
+                hyperDim, bot().reportWeather().get("dim").getAsInt());
+
+        long skyStanding = skyFrames();
+        long tunnelStanding = tunnelFrames();
+        bot().waitTicks(20);
+        long skyAfterStanding = skyFrames();
+        long tunnelAfterStanding = tunnelFrames();
+        // The renderer itself, first: a corridor counter standing still means nothing until the
+        // renderer that would move it is known to be running.
+        assertTrue("CONTROL: the sky renderer must still be running in hyperspace, or 'the corridor"
+                        + " stopped' cannot be told from 'nothing renders here' (sky frames "
+                        + skyStanding + " -> " + skyAfterStanding + ")",
+                skyAfterStanding > skyStanding);
+        assertTrue("the corridor must keep being drawn for a crew member who has LEFT HIS SEAT: it"
+                        + " is the only thing in hyperspace that says the ship is moving — no bodies"
+                        + " are synced there and the descent ring is suppressed — so a backdrop that"
+                        + " stops when he stands up reads as the flight itself having stopped"
+                        + " (corridor frames " + tunnelStanding + " -> " + tunnelAfterStanding
+                        + ", sky frames " + skyStanding + " -> " + skyAfterStanding + ")",
+                tunnelAfterStanding > tunnelStanding);
 
         // ...and stay there. The span is the void's OWN budget plus a margin, so "he is alive" is a
         // statement about the countdown having had every chance to fire rather than about a window

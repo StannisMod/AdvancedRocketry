@@ -12,6 +12,7 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
 
 import zmaster587.advancedRocketry.entity.EntityDummy;
+import zmaster587.advancedRocketry.space.HyperspaceWorld;
 
 /**
  * The corridor a ship flies down while it is in hyperspace.
@@ -31,7 +32,8 @@ import zmaster587.advancedRocketry.entity.EntityDummy;
  * corridor with the mouse, which reads as the world turning rather than the ship travelling. It is
  * taken from the entity the pilot is riding, whose rotation {@link EntityDummy} glues to the ship's
  * attitude every tick — and interpolated across the frame, so it sweeps with the camera when the
- * ship turns instead of stepping at the tick rate.
+ * ship turns instead of stepping at the tick rate. A crew member on his feet rides nothing, so for
+ * him the same attitude is read off the ship he is standing on; see {@link #shipHeading}.
  *
  * <p>Drawn inside the sky renderer, so the camera is already at the origin of this frame and the
  * depth mask is already off: the corridor is a backdrop, and the ship draws over it.
@@ -51,17 +53,66 @@ public final class HyperspaceTunnel {
     public static volatile long framesDrawn = 0L;
 
     /**
-     * The jump phase of the ship the local player is riding, or 0 when he is not aboard one in
-     * flight. The client learns this from the seat entity it is already tracking; there is no
-     * separate channel and nothing for the client to compute.
+     * Whether {@code world} is hyperspace, i.e. whether this frame is being drawn during a jump.
+     *
+     * <p><b>The corridor is a property of the WORLD, not of what the viewer is sitting on.</b> It
+     * used to be read off the jump phase published on the seat dummy, which answers 0 for anyone
+     * riding nothing — so a crew member who stood up mid-flight lost the corridor, and with it the
+     * only thing in hyperspace that says the ship is moving (no bodies are synced there and the
+     * descent ring is suppressed). An empty, motionless sky reads as the flight having stopped. The
+     * posture was never the question; being in hyperspace is, and that is the same primary fact the
+     * server derives the phase from.</p>
+     *
+     * <p>The id comes from {@code PacketSlotDimSync}: a remote client cannot derive it, since
+     * hyperspace is registered server-side. Until it arrives {@link HyperspaceWorld#dimId()} is
+     * {@link Integer#MIN_VALUE}, which no real dimension id can equal, so an unsynced client draws
+     * no corridor rather than drawing one everywhere.</p>
      */
-    public static int localTransitPhase() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null) {
-            return 0;
-        }
+    public static boolean isHyperspace(net.minecraft.world.World world) {
+        int hyper = HyperspaceWorld.dimId();
+        return world != null && hyper != Integer.MIN_VALUE
+                && world.provider.getDimension() == hyper;
+    }
+
+    /**
+     * Which way the SHIP is pointing, as {@code {yaw, pitch}} in degrees — the corridor's axis.
+     *
+     * <p>Three sources, in order of how directly each knows the ship:</p>
+     * <ol>
+     *   <li><b>The seat the viewer is riding.</b> {@link EntityDummy} glues its rotation to the
+     *       ship's attitude every tick, and vanilla has already copied that tick's value into
+     *       {@code prev*}, so this one can be INTERPOLATED across the frame — it sweeps with the
+     *       camera in a turn instead of stepping at the tick rate.</li>
+     *   <li><b>The ship the viewer is standing on.</b> A crew member on his feet rides nothing, so
+     *       the same attitude is asked of the physics integration directly, by containment. It has
+     *       no previous-frame value to interpolate against; a ship parked in its transit lane is not
+     *       turning, so there is nothing for the interpolation to smooth.</li>
+     *   <li><b>The viewer's own look.</b> Last resort only, for a body in hyperspace that is aboard
+     *       no ship at all. It swings the corridor with the mouse, which reads as the world turning
+     *       rather than the ship travelling — which is why it is never used while a ship can be
+     *       found, and why anyone in that state is about to be taken by the void anyway.</li>
+     * </ol>
+     */
+    private static float[] shipHeading(Minecraft mc, net.minecraft.world.World world,
+                                       float partialTicks) {
         Entity riding = mc.player.getRidingEntity();
-        return riding instanceof EntityDummy ? ((EntityDummy) riding).getTransitPhase() : 0;
+        if (riding == null) {
+            zmaster587.advancedRocketry.api.FreeFlightPhysics.Quat attitude =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipAttitudeAt(
+                            world, mc.player.posX, mc.player.posY, mc.player.posZ);
+            if (attitude != null) {
+                float[] euler = zmaster587.advancedRocketry.api.FreeFlightPhysics
+                        .eulerFromQuat(attitude);
+                return new float[] {euler[0], euler[1]};
+            }
+        }
+        Entity axisSource = riding != null ? riding : mc.player;
+        return new float[] {
+                axisSource.prevRotationYaw + net.minecraft.util.math.MathHelper.wrapDegrees(
+                        axisSource.rotationYaw - axisSource.prevRotationYaw) * partialTicks,
+                axisSource.prevRotationPitch
+                        + (axisSource.rotationPitch - axisSource.prevRotationPitch) * partialTicks
+        };
     }
 
     /** Draw the corridor for this frame. Call from inside a sky renderer. */
@@ -70,16 +121,8 @@ public final class HyperspaceTunnel {
         if (mc == null || mc.player == null || world == null) {
             return;
         }
-        Entity riding = mc.player.getRidingEntity();
-        Entity axisSource = riding != null ? riding : mc.player;
-
-        // The ship's forward, from the entity glued to it, at this FRAME rather than at the last
-        // tick: the camera is interpolated, so an axis that stepped would swim against it in a turn.
-        float yaw = axisSource.prevRotationYaw + net.minecraft.util.math.MathHelper.wrapDegrees(
-                axisSource.rotationYaw - axisSource.prevRotationYaw) * partialTicks;
-        float pitch = axisSource.prevRotationPitch
-                + (axisSource.rotationPitch - axisSource.prevRotationPitch) * partialTicks;
-        float[] a = CorridorGeometry.axis(yaw, pitch);
+        float[] heading = shipHeading(mc, world, partialTicks);
+        float[] a = CorridorGeometry.axis(heading[0], heading[1]);
         float ax = a[0], ay = a[1], az = a[2];
 
         // Any two vectors perpendicular to the axis will do for the ring plane; pick the one that

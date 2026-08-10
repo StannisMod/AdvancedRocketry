@@ -99,9 +99,34 @@ public final class HyperspaceWorld {
         return dimId == Integer.MIN_VALUE ? null : DimensionManager.getWorld(dimId);
     }
 
-    /** The hyperspace dimension id, or {@link Integer#MIN_VALUE} if it has not been created yet. */
+    /**
+     * Which dimension hyperspace is <b>on this side</b>, or {@link Integer#MIN_VALUE} when this side
+     * does not know yet.
+     *
+     * <p>A remote client never runs {@link #register()} — the id is server state — so it is told the
+     * id once and remembers it through {@link #adoptFromServer(int)}. A local registration wins
+     * whenever there is one: on an integrated server this JVM IS the server and its own id is the
+     * fact, while an adopted copy is only a message about someone's.</p>
+     */
     public static int dimId() {
-        return dimId;
+        return dimId != Integer.MIN_VALUE ? dimId : adoptedDimId;
+    }
+
+    /**
+     * The hyperspace dim id as the connected server reports it. Consulted only where this side did
+     * not register hyperspace itself, i.e. on a remote client.
+     *
+     * <p>Kept in its own field rather than written into {@link #dimId} so a client that later hosts
+     * a world of its own does not start out believing another server's id is registered here — it is
+     * not, and {@link #register()} would then skip the registration entirely.</p>
+     */
+    private static int adoptedDimId = Integer.MIN_VALUE;
+
+    /** Learn the server's hyperspace dim id. {@link Integer#MIN_VALUE} means "none yet" — ignored. */
+    public static void adoptFromServer(int id) {
+        if (id != Integer.MIN_VALUE) {
+            adoptedDimId = id;
+        }
     }
 
     /**
