@@ -301,6 +301,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int telescopePassiveRadiusSectors;
     @ConfigProperty
+    public int telescopeSurveyDataPerStep;
+    @ConfigProperty
     public boolean allowNonArBiomesInTerraforming;
     @ConfigProperty
     public double oxygenVentPowerMultiplier;
@@ -534,6 +536,7 @@ public class ARConfiguration {
         arConfig.telescopeScanBaseTicks = config.get(PLANET, "telescopeScanBaseTicks", 200, "Ticks one STEP of a survey takes before distance is counted - the cost of holding the instrument on a patch of sky at all. Only applies with planetsMustBeDiscovered on; without research, an observation is instant.", 0, Integer.MAX_VALUE).getInt();
         arConfig.telescopeScanTicksPerSector = config.get(PLANET, "telescopeScanTicksPerSector", 100, "Extra ticks per sector of distance, per step. This is what makes a far region a longer survey than a near one.", 0, Integer.MAX_VALUE).getInt();
         arConfig.telescopeScanCellsPerStep = config.get(PLANET, "telescopeScanCellsPerStep", 5, "How many cells of the region one step of a survey resolves. This is the bound that stops a sweep from enumerating everything at once.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeSurveyDataPerStep = config.get(PLANET, "telescopeSurveyDataPerStep", 0, "Distance data one step of a survey consumes, drawn from the observatory's data buses the same way its asteroid scan draws. A step with too little data waits rather than resolving, so an unfed instrument stalls instead of working for free. Zero (the default) means a survey costs nothing - what it should cost is a balance question, not a mechanic one.", 0, Integer.MAX_VALUE).getInt();
         arConfig.telescopePassiveRadiusSectors = config.get(PLANET, "telescopePassiveRadiusSectors", 2, "How far, in sectors, the passive local radar reaches around the observatory's own cell. Passive is the mode that costs nothing and watches the neighbourhood; the directed survey is what looks far away.", 0, Integer.MAX_VALUE).getInt();
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();

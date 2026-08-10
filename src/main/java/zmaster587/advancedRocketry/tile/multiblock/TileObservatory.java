@@ -928,6 +928,17 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             return;
         }
 
+        // A step is paid for in distance data, the same currency the asteroid scan spends. An
+        // instrument with too little waits instead of resolving — it stalls rather than working for
+        // free, and the deadline is not moved, so it resumes the moment it is fed.
+        int cost = Math.max(0, ARConfiguration.getCurrentConfig().telescopeSurveyDataPerStep);
+        if (cost > 0) {
+            if (extractData(cost, DataType.DISTANCE, EnumFacing.UP, false) < cost) {
+                return;
+            }
+            extractData(cost, DataType.DISTANCE, EnumFacing.UP, true);
+        }
+
         lastScanDiscoveries += TelescopeScan.resolveBatch(UniverseRegistry.get(world), activeScan,
                 activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames());
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);

@@ -2109,6 +2109,34 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
 
+        if ("handover".equalsIgnoreCase(verb) && args.length >= 8) {
+            // Carry the crystal from the observatory to a navigation computer — the physical act a
+            // player performs, and the only way to ask whether what a telescope wrote is what a ship
+            // can then be aimed by. The stack itself moves; nothing is copied or re-derived.
+            net.minecraft.item.ItemStack written = scope.getStackInSlot(
+                    zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL);
+            if (!zmaster587.advancedRocketry.item.ItemMemoryCrystal.isCrystal(written)) {
+                send(sender, "{\"error\":\"no crystal in the observatory\"}");
+                return;
+            }
+            BlockPos navPos = new BlockPos(parseIntOr(args[5], 0), parseIntOr(args[6], 0),
+                    parseIntOr(args[7], 0));
+            world.getChunkProvider().provideChunk(navPos.getX() >> 4, navPos.getZ() >> 4);
+            zmaster587.advancedRocketry.tile.TileNavigationComputer nav = navAt(world, navPos);
+            if (nav == null) {
+                send(sender, "{\"error\":\"no navigation computer at that position\"}");
+                return;
+            }
+            scope.setInventorySlotContents(
+                    zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL,
+                    net.minecraft.item.ItemStack.EMPTY);
+            nav.setInventorySlotContents(zmaster587.advancedRocketry.tile.TileNavigationComputer.SLOT_SHIP,
+                    written);
+            send(sender, "{\"ok\":true,\"addresses\":"
+                    + zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(written).size() + "}");
+            return;
+        }
+
         if ("scan".equalsIgnoreCase(verb) && args.length >= 9) {
             if (scope.scanOrigin() == null) {
                 send(sender, "{\"ok\":false,\"reason\":\"noOrigin\",\"dim\":"
@@ -9081,6 +9109,7 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeScanTicksPerSector",
                     "telescopeScanCellsPerStep",
                     "telescopePassiveRadiusSectors",
+                    "telescopeSurveyDataPerStep",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
                     "planetsMustBeDiscovered"));
@@ -18042,7 +18071,7 @@ public class TestProbeCommand extends CommandBase {
 
     private void handleChunk(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | release <dim> <cx> <cz> | release-all | list\"}");
+            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | cycle <dim> <cx> <cz> | release <dim> <cx> <cz> | release-all | list\"}");
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
@@ -18085,6 +18114,51 @@ public class TestProbeCommand extends CommandBase {
             CHUNK_TICKETS.put(key, ticket);
             send(sender, "{\"ok\":true,\"dim\":" + dim
                     + ",\"cx\":" + cx + ",\"cz\":" + cz + "}");
+            return;
+        }
+        if ("cycle".equals(sub) && args.length >= 4) {
+            // Save a chunk, drop it, and read it back from disk — a REAL unload/reload, which is the
+            // only way to ask a tile whether its own state survives one. Nothing else in the probe
+            // surface can: a force-loaded chunk never leaves memory, so a test against it proves
+            // that the object was never collected rather than that its NBT round-trips.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int cx = parseIntOr(args[2], Integer.MIN_VALUE);
+            int cz = parseIntOr(args[3], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.world.gen.ChunkProviderServer provider = world.getChunkProvider();
+            net.minecraft.world.chunk.Chunk loaded = provider.getLoadedChunk(cx, cz);
+            boolean wasLoaded = loaded != null;
+            boolean dropped = false;
+            if (wasLoaded) {
+                try {
+                    world.saveAllChunks(true, null);
+                } catch (net.minecraft.world.MinecraftException failed) {
+                    send(sender, "{\"error\":\"could not save before unloading\",\"msg\":\""
+                            + escapeJson(failed.getMessage()) + "\"}");
+                    return;
+                }
+                provider.queueUnload(loaded);
+                // Drain the unload queue on this call rather than waiting for a natural tick: a test
+                // that has to sleep for an unload cannot say whether it ever happened.
+                //
+                // The liveness check reads the map DIRECTLY on purpose. `getLoadedChunk` clears
+                // `unloadQueued` as a side effect, so asking it "is the chunk gone yet" cancels the
+                // very unload being waited for — measured: the probe reported dropped=false forever
+                // while doing nothing but un-queueing its own request.
+                long key = net.minecraft.util.math.ChunkPos.asLong(cx, cz);
+                for (int drain = 0; drain < 8 && provider.id2ChunkMap.containsKey(key); drain++) {
+                    provider.tick();
+                }
+                dropped = !provider.id2ChunkMap.containsKey(key);
+            }
+            net.minecraft.world.chunk.Chunk fresh = provider.provideChunk(cx, cz);
+            send(sender, "{\"ok\":true,\"wasLoaded\":" + wasLoaded + ",\"dropped\":" + dropped
+                    + ",\"reloaded\":" + (fresh != null)
+                    + ",\"sameInstance\":" + (fresh == loaded) + "}");
             return;
         }
         if ("release".equals(sub) && args.length >= 4) {

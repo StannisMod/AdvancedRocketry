@@ -215,6 +215,84 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
     }
 
     @Test
+    public void aSurveyInFlightSurvivesItsChunkBeingUnloaded() throws Exception {
+        final int x = 4540;
+        // Research on, one cell a step, a step long enough that the sweep is certainly mid-region
+        // when the chunk goes away.
+        surveySetup(true, 1, 10);
+        observatoryWithCrystal(x);
+
+        String started = exec("artest telescope scan " + where(x) + " 1 0 0 3");
+        assertTrue("the survey did not start: " + started, started.contains("\"ok\":true"));
+        Thread.sleep(1500L);
+        String before = exec("artest telescope info " + where(x));
+        assertTrue("the survey must still be running to be interrupted: " + before,
+                before.contains("\"scanning\":true"));
+        long doneBefore = field(before, "cellsDone");
+        String region = text(before, "min");
+
+        String cycled = exec("artest chunk cycle 0 " + (x >> 4) + " " + (CZ >> 4));
+        assertTrue("the chunk was never actually dropped, so nothing was proven: " + cycled,
+                cycled.contains("\"dropped\":true") && cycled.contains("\"reloaded\":true"));
+
+        String after = exec("artest telescope info " + where(x));
+        assertTrue("the survey did not come back with the chunk: " + after,
+                after.contains("\"scanning\":true"));
+        assertEquals("it must come back looking at the same region", region, text(after, "min"));
+        assertTrue("and must not have forgotten the cells it had already surveyed: was "
+                        + doneBefore + ", now " + field(after, "cellsDone"),
+                field(after, "cellsDone") >= doneBefore);
+    }
+
+    @Test
+    public void anUnfedInstrumentStallsInsteadOfSurveyingForFree() throws Exception {
+        final int x = 4580;
+        surveySetup(true, 1, 1);
+        // A price no bare observatory can pay: it has no data buses, so it has no distance data.
+        exec("artest config set telescopeSurveyDataPerStep 50");
+        try {
+            observatoryWithCrystal(x);
+            String started = exec("artest telescope scan " + where(x) + " 1 0 0 2");
+            assertTrue("the survey did not start: " + started, started.contains("\"ok\":true"));
+
+            Thread.sleep(2000L);
+            String after = exec("artest telescope info " + where(x));
+            assertTrue("an instrument with no data must still be waiting, not finished: " + after,
+                    after.contains("\"scanning\":true"));
+            assertEquals("and must not have resolved a single cell on credit",
+                    0L, field(after, "cellsDone"));
+        } finally {
+            exec("artest config set telescopeSurveyDataPerStep 0");
+        }
+    }
+
+    @Test
+    public void whatTheTelescopeWroteIsWhatAShipCanBeAimedBy() throws Exception {
+        final int x = 4620;
+        surveySetup(false, 4, 1);
+        String[] home = observatoryWithCrystal(x);
+        systemAt(Long.parseLong(home[0]) + 3, home[1], home[2]);
+
+        exec("artest telescope scan " + where(x) + " 1 0 0 3");
+        String surveyed = awaitSurveyComplete(x);
+        assertTrue("the survey must have written something to hand over: " + surveyed,
+                field(surveyed, "addresses") >= 1);
+
+        // Carry the crystal to a navigation computer, the way a player would.
+        int navX = x + 4;
+        String placed = exec("artest nav place 0 " + navX + " " + CY + " " + CZ);
+        assertTrue("could not place a navigation computer: " + placed, placed.contains("\"ok\":true"));
+        String handed = exec("artest telescope handover " + where(x) + " " + navX + " " + CY + " " + CZ);
+        assertTrue("the crystal did not reach the console: " + handed, handed.contains("\"ok\":true"));
+        assertTrue("and it must arrive holding what the telescope wrote: " + handed,
+                field(handed, "addresses") >= 1);
+
+        String status = exec("artest nav status 0 " + navX + " " + CY + " " + CZ);
+        assertTrue("the console must read the telescope's own crystal: " + status,
+                field(status, "ship") >= 1);
+    }
+
+    @Test
     public void aFartherRegionIsALongerSurveyOnTheRealClock() throws Exception {
         final int x = 4500;
         surveySetup(true, 2, 40);
