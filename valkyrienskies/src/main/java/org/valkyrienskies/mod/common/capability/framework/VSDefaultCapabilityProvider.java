@@ -14,8 +14,20 @@ public class VSDefaultCapabilityProvider<K> implements ICapabilitySerializable<N
     private final K inst;
 
     public VSDefaultCapabilityProvider(Capability<K> capability) {
+        this(capability, null);
+    }
+
+    /**
+     * @param owner the world this capability is being attached to, remembered only so its save and
+     *              load log lines can name the dimension they belong to (may be {@code null}).
+     */
+    public VSDefaultCapabilityProvider(Capability<K> capability,
+        @Nullable net.minecraft.world.World owner) {
         this.thisCapability = capability;
         this.inst = capability.getDefaultInstance();
+        if (inst instanceof VSDefaultCapability) {
+            ((VSDefaultCapability<?>) inst).setOwner(owner);
+        }
     }
 
     @Override

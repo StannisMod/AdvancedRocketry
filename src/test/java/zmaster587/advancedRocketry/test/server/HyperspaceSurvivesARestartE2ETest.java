@@ -12,7 +12,6 @@ import com.github.stannismod.forge.testing.server.RealDedicatedServerHarness;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -31,42 +30,58 @@ import static org.junit.Assert.assertTrue;
  * re-read from disk. That is exactly the half this test exists to measure, so this class manages its
  * own harnesses rather than extending the one-harness base.
  *
- * <h2>What it measures, and what it deliberately does not</h2>
+ * <h2>What it measures</h2>
  *
- * The subject is the WORLD's durability: hyperspace's chunks now live in a folder named after the
- * world rather than after the dimension id this boot happened to mint, and nothing wipes it any
- * more. So the question is whether the ships in it — their blocks AND the physics mod's own registry
- * entry for them — come back.
+ * Two things, in the order that makes a failure readable:
  *
- * <h2>RED, and deliberately so — it is the criterion, not a regression</h2>
+ * <ol>
+ *   <li><b>The jump came back as the SHIP</b> — production's restore found the hull still standing in
+ *       its lane and resumed the jump on it ({@code transitsParked}). A jump whose lane came back
+ *       empty is still "in transit" and still arrives, by pasting the block snapshot it carries, so
+ *       the count of jumps cannot tell a survived hull from a rebuilt copy. The snapshot path is what
+ *       a jump silently degrades to when hyperspace does not come back, which is why this is asserted
+ *       first.</li>
+ *   <li><b>The hull itself survived</b> — the ship is still registered in hyperspace, from the
+ *       physics mod's own per-world registry, read on a fresh JVM off the same world root.</li>
+ * </ol>
  *
- * <p>Measured 2026-08-08 on this box: <b>1 ship in hyperspace before the restart, 0 after</b>, with
- * the dimension id even landing on 86 both times, so the id was never the variable. The evidence
- * says the loss is on the WRITE side and belongs to the physics mod's per-world data, not to the
- * folder: after boot 1 the origin cell's {@code capabilities.dat} was <b>1350 bytes</b> (it still
- * held a ship) while hyperspace's was <b>140</b> — an empty registry — and the run's own debug log
- * shows exactly one 3.9 KB serialisation, which by size is the cell's. Hyperspace's in-memory
- * registry had answered "one ship" moments earlier, so the object that gets serialised is not the
- * one the crossing populated, or it is emptied before the save reaches it.</p>
+ * <p>Hyperspace's chunks live in a folder named after the world rather than after the dimension id
+ * this boot happened to mint, and nothing wipes it: the ids differ freely between the two boots and
+ * the content does not move.</p>
  *
- * <p>Until that is fixed the folder is wiped at every (re)init on purpose — keeping it would only
- * accumulate hull blocks nothing can ever adopt — so this test is {@code @Ignore}d. Un-ignoring it
- * means deleting the annotation, nothing else: the scenario, the control and the assertion are all
- * exactly what a working durable hyperspace has to satisfy.</p>
+ * <h2>Why the arrangement hands the jump to production</h2>
  *
- * <p>It does NOT exercise production's transit restore. The {@code artest space transit-*} probes
- * build a PRIVATE transit manager, invisible to the production save/restore wiring, so a record
- * written by one is not read by the other. The record half is pinned in {@code testUnit}
- * ({@code ShipTransitManagerTest}: reclaiming the lane, adopting the parked hull, falling back to
- * the snapshot when the lane came back empty, and disposing of what no record claims); this pins the
- * physical half those decisions are made about.
+ * <p>The {@code artest space transit-*} probes build a PRIVATE transit manager, so a jump they start
+ * is invisible to production's save and restore. Left that way, the hull this test parks looks to the
+ * boot reconciliation exactly like a hull no record claims — and it is collected, correctly. So the
+ * arrangement calls {@code transit-claim} before the shutdown: being claimed is the difference
+ * between a ship in flight and abandoned debris, and only a claimed jump is the subject here.</p>
+ *
+ * <p>The record's own decisions — reclaiming the lane, adopting the parked hull, falling back to the
+ * snapshot when the lane came back empty, disposing of what no record claims — are pinned in
+ * {@code testUnit} ({@code ShipTransitManagerTest}); this pins the physical half those decisions are
+ * made about, across a real restart.</p>
  */
 public class HyperspaceSurvivesARestartE2ETest {
 
-    /** Slow enough that the ship is still parked in its lane when the server goes down. */
-    private static final long PARK_SPEED = 100_000L;
+    /**
+     * Slow enough that the ship is still parked in its lane when the server goes down AND for the
+     * whole of the next boot. The cells sit a sector (4M blocks) apart, so one block per tick is
+     * roughly forever: production picks the restored jump up and advances it from this boot's clock,
+     * and a speed that merely outlasts the shutdown would let it ARRIVE while boot 2 is coming up —
+     * an empty hyperspace that looks exactly like a lost one.
+     */
+    private static final long PARK_SPEED = 1L;
 
     private static final Pattern INT = Pattern.compile("\"%s\":(-?\\d+)");
+
+    /**
+     * A per-world ship registry holding nothing weighs this on disk. Diagnostic only — it separates
+     * the registries worth printing from the ~100 empty ones every space dim writes, and it is a
+     * lower bound rather than an exact figure, so a payload that only just carries something still
+     * prints.
+     */
+    private static final long EMPTY_REGISTRY_BYTES = 200L;
 
     private Path root;
     private RealDedicatedServerHarness harness;
@@ -126,9 +141,6 @@ public class HyperspaceSurvivesARestartE2ETest {
         return false;
     }
 
-    @Ignore("Measured red: the physics mod's per-world ship registry serialises EMPTY for hyperspace "
-            + "(140 bytes vs 1350 for a cell holding one ship). Un-ignore by deleting this line once "
-            + "that round-trips; the scenario itself needs no change.")
     @Test
     public void aShipParkedInHyperspaceIsStillThereAfterTheServerRestarts() throws Exception {
         // ── boot 1: put a real ship into hyperspace and shut the server down under it ────────────
@@ -158,16 +170,42 @@ public class HyperspaceSurvivesARestartE2ETest {
         assertTrue("ARRANGEMENT: a ship must actually be registered in hyperspace (dim "
                 + hyperDimBefore + ") before the restart - found " + parkedBefore, parkedBefore >= 1);
 
+        // Hand the jump to PRODUCTION, so what crosses the restart is a claimed jump rather than a
+        // hull sitting in a lane. It is the arrangement's job because the probe stack builds its own
+        // transit manager: without the claim the boot reconciliation is right to collect the hull, and
+        // this test would be measuring an abandoned ship rather than a jump in flight.
+        String claim = exec("artest space transit-claim");
+        assertTrue("ARRANGEMENT: production must take the claim, or nothing on the far side of the"
+                + " restart is restoring a jump: " + claim,
+                readBool(claim, "ok") && readIntOr(claim, "claimed", 0) >= 1);
+
         // No explicit save: what survives has to survive the shutdown save alone, which is the only
         // save a real operator's stop ever runs.
         harness.close();
         harness = null;
+
+        // Boot 1's own account of that save, read BETWEEN the boots. Both readings have to be taken
+        // here: boot 2 re-inits hyperspace (rewriting its data file) and the preserved server log is
+        // one file per test JVM, so boot 2 overwrites both. A reading taken after the whole run
+        // describes boot 2 while appearing to describe boot 1.
+        String savedRegistries = capabilityFilesOnDisk();
+        String boot1Serialisations = serialisationLines();
 
         // ── boot 2: a brand new server JVM, same world root ──────────────────────────────────────
         harness = RealDedicatedServerHarness.startWith(root, false);
         String status = exec("artest space subsystem-status");
         assertTrue("the production subsystem must come up again on boot 2, or nothing below is"
                 + " exercising it: " + status, status.contains("\"registered\":true"));
+
+        // The jump resumed as the SHIP, not as a copy of it. A restored transit that found its lane
+        // empty is still "in transit" and still arrives — by pasting the block snapshot it carries —
+        // so the count of jumps alone cannot tell a survived hull from a rebuilt one, and the snapshot
+        // path is exactly what a jump degrades to when hyperspace does not come back. Asserted BEFORE
+        // the ship count below, because this is the reading that says which product came back.
+        assertTrue("a jump restored across the restart must still be carrying its parked hull, not"
+                        + " falling back to the block snapshot: " + status
+                        + "\n  registries on disk after boot 1: " + savedRegistries,
+                readIntOr(status, "transitsParked", 0) >= 1);
 
         // Re-derive hyperspace's id on THIS boot rather than reusing boot 1's: the id is minted per
         // boot by a free-id scan, and the whole point of naming the folder after the world is that
@@ -182,6 +220,71 @@ public class HyperspaceSurvivesARestartE2ETest {
                 + " restart - that is what makes a jump something a restart is survivable BY."
                 + " Hyperspace was dim " + hyperDimBefore + " on boot 1 and dim " + hyperDimAfter
                 + " on boot 2, holding " + parkedBefore + " ship(s) before and " + parkedAfter
-                + " after", parkedBefore, parkedAfter);
+                + " after.\n  registries on disk after boot 1: " + savedRegistries
+                + "\n  boot 1 serialisations: " + boot1Serialisations,
+                parkedBefore, parkedAfter);
+    }
+
+    /**
+     * Every per-world ship registry the save holds, with its size — the on-disk half of the reading.
+     * Which world each file belongs to is in its PATH, so a payload can be attributed to a dimension
+     * instead of guessed at from its size.
+     */
+    private String capabilityFilesOnDisk() {
+        Path space = root.resolve("world").resolve("advRocketry");
+        if (!Files.isDirectory(space)) {
+            return "no " + space + " on disk at all";
+        }
+        StringBuilder out = new StringBuilder();
+        int empty = 0;
+        try (java.util.stream.Stream<Path> tree = Files.walk(space)) {
+            java.util.List<Path> dats = tree
+                    .filter(p -> p.getFileName().toString().equals("capabilities.dat"))
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            for (Path p : dats) {
+                // Every space dim writes one of these and almost all of them are the empty payload;
+                // listing a hundred of those buries the two that carry a ship. The count is kept so
+                // "nothing was written at all" stays distinguishable from "everything was empty".
+                if (Files.size(p) <= EMPTY_REGISTRY_BYTES) {
+                    empty++;
+                    continue;
+                }
+                out.append("\n    ").append(space.relativize(p)).append(" = ")
+                        .append(Files.size(p)).append(" bytes");
+            }
+        } catch (Exception e) {
+            return "could not be read: " + e;
+        }
+        return (out.length() == 0 ? "every registry on disk is empty" : out.toString())
+                + "\n    (" + empty + " further registries hold no ship)";
+    }
+
+    /**
+     * What the physics mod said it wrote, from the server log the harness preserves at close. Each
+     * line names the world and the ship count, so "one big payload and several empty ones" can be
+     * attributed rather than inferred from the sizes.
+     */
+    private String serialisationLines() {
+        try {
+            Path log = RealDedicatedServerHarness.preservedLogPath();
+            if (!Files.isRegularFile(log)) {
+                return "no preserved server log at " + log;
+            }
+            java.util.List<String> hits = new java.util.ArrayList<>();
+            for (String line : Files.readAllLines(log, java.nio.charset.StandardCharsets.UTF_8)) {
+                if (line.contains("VS serialization") || line.contains("VS deserialization")) {
+                    hits.add(line.substring(Math.max(0, line.indexOf("VS "))));
+                }
+            }
+            if (hits.isEmpty()) {
+                return "the server log holds no VS (de)serialization line at all";
+            }
+            // The tail is the shutdown save; earlier lines are autosaves of the same worlds.
+            return "\n    " + String.join("\n    ",
+                    hits.subList(Math.max(0, hits.size() - 20), hits.size()));
+        } catch (Exception e) {
+            return "could not be read: " + e;
+        }
     }
 }

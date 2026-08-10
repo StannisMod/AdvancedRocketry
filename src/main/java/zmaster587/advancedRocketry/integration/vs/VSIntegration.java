@@ -1096,6 +1096,17 @@ public final class VSIntegration {
     }
 
     /**
+     * DIAGNOSTIC: identity of the ship registry {@code world} answers with, matching the hex the
+     * physics mod prints when it serialises that world. {@code "?"} when VS is absent.
+     */
+    public static String queryableIdentity(World world) {
+        if (!isAvailable()) {
+            return "?";
+        }
+        return VSBridge.queryableIdentity(world);
+    }
+
+    /**
      * DIAGNOSTIC: the transform positions of every queryable ship in {@code world}, as
      * {@code "x,y,z;x,y,z"}. Asks about no point, so a caller can find out WHERE a ship is rather than
      * only whether one answers for a place it guessed. Empty when VS is absent or holds no ships.

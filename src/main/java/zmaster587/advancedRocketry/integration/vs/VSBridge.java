@@ -386,6 +386,17 @@ final class VSBridge {
     }
 
     /**
+     * DIAGNOSTIC: the identity of the ship-registry object {@code world} answers with, as the same
+     * hex the physics mod's own save/load log lines print. A count says how many ships a registry
+     * holds; only the identity says whether the registry a reader is being answered from is the one
+     * that gets written to disk.
+     */
+    static String queryableIdentity(World world) {
+        return Integer.toHexString(
+                System.identityHashCode(ValkyrienUtils.getQueryableData(world)));
+    }
+
+    /**
      * Force every known ship in {@code world} loaded and physics-enabled. VS only loads a
      * ship when a player is near its wrapper; a ship freshly assembled with no player
      * nearby (e.g. an automated server) stays in the registry but unloaded — it never
@@ -496,11 +507,18 @@ final class VSBridge {
         return best;
     }
 
+    /**
+     * Deregister {@code uuid} unless the physics mod is still holding it. "Holding" is asked of the
+     * MANAGER as one question, because a ship can be in its hands without being loaded: while its
+     * chunks stream in it has no physics object yet, and deregistering it in that window throws out of
+     * the world tick on the next chunk-provider pass and takes the dedicated server with it. Asking
+     * only "is a physics object loaded" is what leaves that window open.
+     */
     static boolean releaseShipIfNothingLoaded(World world, UUID uuid) {
         if (uuid == null) {
             return false;
         }
-        if (ValkyrienUtils.getServerShipManager(world).getPhysObjectFromUUID(uuid) != null) {
+        if (ValkyrienUtils.getServerShipManager(world).isShipInUse(uuid)) {
             return false;
         }
         ValkyrienUtils.getQueryableData(world).removeShip(uuid);

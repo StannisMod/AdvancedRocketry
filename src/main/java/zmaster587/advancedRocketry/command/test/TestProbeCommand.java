@@ -713,7 +713,9 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         // ship-count-all <dim> — total ships loaded OR not (distinguishes created-but-
-        // unloaded from never-created).
+        // unloaded from never-created). Reports the REGISTRY's identity beside the count, in the
+        // same hex the physics mod prints when it serialises a world: a count read here and a count
+        // written to disk can only be compared once both name the object they came from.
         if (args.length >= 2 && "ship-count-all".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
@@ -721,7 +723,10 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             send(sender, "{\"count\":"
-                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(world) + "}");
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableShipCount(world)
+                    + ",\"registry\":\""
+                    + zmaster587.advancedRocketry.integration.vs.VSIntegration.queryableIdentity(world)
+                    + "\"}");
             return;
         }
         // load-ships <dim> — force all known ships loaded + physics-enabled (a headless
@@ -2688,6 +2693,11 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"slotDimsAlsoBodies\":[" + collisions + "]"
                     + ",\"ledger\":" + (led == null ? -1 : led.size())
                     + ",\"transits\":" + (tm == null ? -1 : tm.inTransitCount())
+                    // Of those, how many carry a real hull parked in hyperspace rather than a block
+                    // snapshot to paste at the far end. A restored jump reports the same "transits"
+                    // either way, and the two are different products: one resumes the ship you were
+                    // flying, the other rebuilds a copy of it.
+                    + ",\"transitsParked\":" + (tm == null ? -1 : tm.parkedTransitCount())
                     // Still-armed vs fired: the only way to know a save point actually reached an armed
                     // fault, and therefore the only way to wait for the WORLD AUTOSAVE rather than for
                     // a save some command asked for.
@@ -3294,6 +3304,33 @@ public class TestProbeCommand extends CommandBase {
             boolean hasSnapshot = !transitExport.isEmpty() && transitExport.get(0).snapshot != null;
             send(sender, "{\"ok\":true,\"count\":" + transitExport.size()
                     + ",\"hasSnapshot\":" + hasSnapshot + "}");
+            return;
+        }
+        // transit-claim: hand the probe stack's in-flight records to the PRODUCTION transit manager, so
+        // the jump this stack started becomes a jump production knows about — it goes into production's
+        // durable save at the next save point and comes back through production's restore on the next
+        // boot. Without it the probe's jump is invisible to production, and the hull it parks in
+        // hyperspace looks to the boot reconciliation exactly like a hull no record claims: something to
+        // collect. Being claimed is the difference between a ship in flight and abandoned debris, so a
+        // test whose parked ship must SURVIVE a restart has to give production the claim.
+        if (args.length >= 1 && "transit-claim".equalsIgnoreCase(args[0])) {
+            if (transitTm == null) {
+                send(sender, "{\"error\":\"transit not set up\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.ShipTransitManager prod =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.transit();
+            if (prod == null) {
+                send(sender, "{\"error\":\"production transit manager is not up\"}");
+                return;
+            }
+            int claimed = 0;
+            for (zmaster587.advancedRocketry.space.TransitRecord r : transitTm.exportTransits()) {
+                prod.importTransit(r);
+                claimed++;
+            }
+            send(sender, "{\"ok\":true,\"claimed\":" + claimed
+                    + ",\"inTransit\":" + prod.inTransitCount() + "}");
             return;
         }
         // transit-restore: simulate a restart. THROW AWAY the live transit manager (its parked hyperspace

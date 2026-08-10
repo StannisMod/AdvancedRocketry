@@ -709,6 +709,26 @@ public final class ShipTransitManager {
         return transits.size();
     }
 
+    /**
+     * How many jumps in flight are carrying a real HULL parked in hyperspace, as opposed to a block
+     * snapshot they will paste at the far end.
+     *
+     * <p>The difference is what a restart is survivable BY: a jump restored with its hull resumes as
+     * the same ship, keeping whatever is standing on its deck, while one restored from a snapshot
+     * rebuilds a copy at the destination and nothing that was aboard comes with it. Both count as "in
+     * transit", so {@link #inTransitCount()} cannot tell them apart — and the fallback is exactly what
+     * a jump silently degrades to when hyperspace does not come back.</p>
+     */
+    public int parkedTransitCount() {
+        int parked = 0;
+        for (Transit t : transits.values()) {
+            if (t.tile != null) {
+                parked++;
+            }
+        }
+        return parked;
+    }
+
     /** Number of arrived ships whose crew reseat is still retrying (0 once every jump's crew is re-seated). */
     public int reseatingCount() {
         return reseating.size();
