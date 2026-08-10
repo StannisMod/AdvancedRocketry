@@ -100,6 +100,22 @@ private int waitForLoadedShip(int dim) throws Exception {
         return Pattern.compile("\"" + key + "\":true").matcher(json).find();
     }
 
+    /**
+     * Cumulative server-tick samples the flight recorder holds for one tile, out of a motion-trace
+     * reply. Scoped to the {@code "game"} object on purpose: the reply carries several channels and
+     * each of them has its own {@code seen}, so a flat read answers with whichever came first — the
+     * PHYSICS channel, which is a different clock and a different claim.
+     */
+    private static long gameSeen(String traceJson) {
+        int at = traceJson.indexOf("\"game\":");
+        assertTrue("expected a \"game\" channel in the motion trace: " + traceJson, at >= 0);
+        // A key that was never driven has no ring, and the reply then carries no "seen" at all -
+        // which is an ANSWER ("nothing ever ticked here"), not a malformed reply. Reading it as a
+        // parse failure hides the finding behind the instrument: the first cut of this helper threw
+        // on exactly the reading the leg exists to detect.
+        return readIntOr(traceJson.substring(at), "seen", 0);
+    }
+
     /** Blocks per tick for the jump. Slow enough that the ship stays parked for tens of ticks. */
 private static final long PARK_SPEED = 100_000L;
 
@@ -833,6 +849,22 @@ private String chat() throws Exception {
         assertEquals("CONTROL: the hyperspace corridor must NOT be drawn in an ordinary cell",
                 tunnelInCell, tunnelFrames());
 
+        // A third control, for the machinery leg in hyperspace further down: the same recorder, the
+        // same channel and the same way of deriving the key, asked of a ship that is plainly alive
+        // in an ordinary cell. Without it, silence in hyperspace cannot be told from a key nobody
+        // ever writes under - and the two ask for opposite investigations.
+        String cellSeat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        String cellAfcKey = originDim + " " + readInt(cellSeat, "afcX")
+                + " " + readInt(cellSeat, "afcY") + " " + readInt(cellSeat, "afcZ");
+        long cellTileTicks = gameSeen(exec("artest vs motion-trace " + cellAfcKey));
+        bot().waitTicks(20);
+        long cellTileTicksAfter = gameSeen(exec("artest vs motion-trace " + cellAfcKey));
+        assertTrue("CONTROL: the ship's flight computer must be recording server ticks in an"
+                        + " ordinary cell, or the hyperspace reading below is a zero for the wrong"
+                        + " reason (samples " + cellTileTicks + " -> " + cellTileTicksAfter
+                        + " for " + cellAfcKey + ")",
+                cellTileTicksAfter > cellTileTicks);
+
         String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
 
@@ -897,6 +929,39 @@ private String chat() throws Exception {
                         + " (corridor frames " + tunnelStanding + " -> " + tunnelAfterStanding
                         + ", sky frames " + skyStanding + " -> " + skyAfterStanding + ")",
                 tunnelAfterStanding > tunnelStanding);
+
+        // ── JUMP-2, the machinery half: his ship is a LIVE world, not a paused one ──────────────
+        // "Livable" is not only about him being able to move: the clause says the ship's tile
+        // entities TICK during the flight, which is what makes the interval a place where things
+        // keep working rather than a freeze-frame he happens to be standing in. The flight computer
+        // is the tile to ask, because its per-tick recorder is keyed on dimension AND subspace
+        // position — so the answer is about THIS ship in THIS world and cannot be a global counter
+        // answering for whatever else the server is doing.
+        String hyperSeat = exec("artest vs find-seat " + hyperDim
+                + " " + (long) deckX + " " + (long) deckY + " " + (long) deckZ);
+        int afcX = readInt(hyperSeat, "afcX");
+        int afcY = readInt(hyperSeat, "afcY");
+        int afcZ = readInt(hyperSeat, "afcZ");
+        String afcKey = hyperDim + " " + afcX + " " + afcY + " " + afcZ;
+        long tileTicksBefore = gameSeen(exec("artest vs motion-trace " + afcKey));
+        bot().waitTicks(20);
+        long tileTicksAfter = gameSeen(exec("artest vs motion-trace " + afcKey));
+        assertTrue("the ship's flight computer must keep TICKING while the ship is parked in"
+                        + " hyperspace — a jump during which the ship's machinery stops is a"
+                        + " cutscene with a player standing in it (server-tick samples "
+                        + tileTicksBefore + " -> " + tileTicksAfter + " for the computer at "
+                        + afcX + "," + afcY + "," + afcZ + " in dim " + hyperDim + "; the SAME"
+                        + " instrument read " + cellTileTicks + " -> " + cellTileTicksAfter
+                        + " for the same ship in its origin cell, so the recorder and the key"
+                        + " derivation are not what is silent here)",
+                tileTicksAfter > tileTicksBefore);
+        // CONTROL: the same question one thousand blocks along, where no tile of this ship lives.
+        // Without it a rising count could be the recorder answering for the whole server rather
+        // than for the computer this leg named.
+        long noTileThere = gameSeen(exec("artest vs motion-trace "
+                + hyperDim + " " + (afcX + 1000) + " " + afcY + " " + afcZ));
+        assertEquals("CONTROL: a subspace address with no tile at it must report no ticks at all,"
+                + " or the reading above describes the server and not this ship", 0L, noTileThere);
 
         // ...and stay there. The span is the void's OWN budget plus a margin, so "he is alive" is a
         // statement about the countdown having had every chance to fire rather than about a window

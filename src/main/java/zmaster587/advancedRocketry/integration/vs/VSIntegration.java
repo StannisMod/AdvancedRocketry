@@ -352,11 +352,8 @@ public final class VSIntegration {
         // which for a managed ship is nowhere near the subspace shipyard box, so an AABB query over the
         // cut box would find none of them.
         for (zmaster587.advancedRocketry.entity.EntityDummy dummy
-                : srcWorld.getEntities(zmaster587.advancedRocketry.entity.EntityDummy.class, d -> {
-                    net.minecraft.util.math.BlockPos seat = d == null ? null : d.getSeatPos();
-                    return seat != null && tight.contains(new net.minecraft.util.math.Vec3d(
-                            seat.getX() + 0.5D, seat.getY() + 0.5D, seat.getZ() + 0.5D));
-                })) {
+                : srcWorld.getEntities(zmaster587.advancedRocketry.entity.EntityDummy.class,
+                        d -> boundToCutBlocks(d == null ? null : d.getSeatPos(), tight))) {
             dummy.removePassengers();
             dummy.setDead();
         }
@@ -1245,5 +1242,26 @@ public final class VSIntegration {
             return false;
         }
         return VSBridge.commandNearestShipAttitude(world, x, y, z, qw, qx, qy, qz);
+    }
+
+    /**
+     * Is a seat dummy bound to blocks a crossing is taking away — i.e. does the SEAT it is glued to
+     * lie inside {@code cutBox}?
+     *
+     * <p>This is the whole of "nothing comes back bound to what was removed", and it is a decision
+     * about the seat, never about the dummy. A dummy rides at its ship's WORLD position, which for a
+     * managed ship is megablocks from the subspace shipyard the cut box covers, so asking where the
+     * dummy is finds none of them and leaves every rider mounted on a chair whose ship has gone.</p>
+     *
+     * <p>A dummy with no seat binding is never matched: it is bound to nothing, so nothing the cut
+     * removes can be what it is bound to.</p>
+     */
+    public static boolean boundToCutBlocks(net.minecraft.util.math.BlockPos seatPos,
+                                           net.minecraft.util.math.AxisAlignedBB cutBox) {
+        if (seatPos == null || cutBox == null) {
+            return false;
+        }
+        return cutBox.contains(new net.minecraft.util.math.Vec3d(
+                seatPos.getX() + 0.5D, seatPos.getY() + 0.5D, seatPos.getZ() + 0.5D));
     }
 }

@@ -67,6 +67,10 @@ public class ShipTransitManagerTest {
         int reseatFailCount;                                // fail reseatCrew this many times, then succeed
         final List<String> captureCalls = new ArrayList<>();
         final List<String> reseatCalls = new ArrayList<>();
+        // WHERE each reseat was aimed. The dim alone cannot tell an abort's "put him back where he
+        // was" from an arrival's "seat him at the far end": the abort happens before the ship has
+        // gone anywhere, so both name a real world and only the anchor separates them.
+        final List<BlockPos> reseatAnchors = new ArrayList<>();
         // Identity seam: which ship each crossing produced, and which one every later step was told to
         // act on. A jump keeps ONE identity, so departedAs is what the settle and the re-seat must be
         // handed - unless a crossing reports it could not keep it (arrivesAs / restoredAs), which is
@@ -174,6 +178,7 @@ public class ShipTransitManagerTest {
         public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId,
                                   UUID vsShipUuid) {
             reseatCalls.add(targetSlotDim + "@" + shipId);
+            reseatAnchors.add(arrivalAnchor);
             reseatedAs.add(vsShipUuid);
             if (reseatFailCount > 0) {
                 reseatFailCount--;
@@ -813,6 +818,54 @@ public class ShipTransitManagerTest {
         assertTrue("captured crew keeps the transit alive (paused, not arrived)", mgr.isInTransit("s"));
         assertEquals("a manned crew-online transit does not advance while its crew is offline",
                 before, mgr.remainingDistance("s"), 0.0);
+    }
+
+    @Test
+    public void anAbortedDepartureIsANoOpForTheCrew() {
+        // A jump that never leaves must leave nobody worse off. The capture runs FIRST — it has to,
+        // the crossing is about to cut the blocks the crew is standing on — so by the time the cut
+        // refuses, everyone aboard is already dismounted and standing in a cell whose ship is still
+        // right there. Doing nothing at that point ejects the whole crew for a jump that did not
+        // happen; the only honest end is to put them back exactly where they were.
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID());
+        crosser.crewToCapture.add(UUID.randomUUID()); // a pilot and a passenger, not just a pilot
+        crosser.failDepart = true;                    // the cut refuses
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        BlockPos originAnchor = new BlockPos(0, 64, 0);
+        boolean began = mgr.beginTransit("s", cell(1), originDim, originAnchor, cell(2),
+                ARRIVE_IN_ONE_TICK);
+
+        assertFalse("a departure whose cut refused has not begun", began);
+        // The crew WAS taken off the ship, which is what makes the put-back obligatory rather than
+        // optional. Without this the test would pass on a manager that never captured at all.
+        assertEquals("the capture ran before the cut refused", 1, crosser.captureCalls.size());
+        assertEquals("the aborted departure put its crew back, once", 1, crosser.reseatCalls.size());
+        assertEquals("back into the cell they never left", originDim + "@s", crosser.reseatCalls.get(0));
+        assertEquals("and onto the ship still sitting at its own anchor - not at the far end",
+                originAnchor, crosser.reseatAnchors.get(0));
+
+        // Nothing else moved: no flight exists, and the lane the attempt reserved went back to the
+        // allocator rather than being held by a jump that is not happening.
+        assertFalse("no flight was created", mgr.isInTransit("s"));
+        assertEquals("nothing is in transit", 0, mgr.inTransitCount());
+        assertEquals("and nobody is left waiting to be re-seated later", 0, mgr.reseatingCount());
+        assertTrue("the origin cell is still loaded under them - the refcount handoff belongs to a"
+                + " departure that happened", space.isLoaded(cell(1)));
+        assertEquals("and it is the same world they were standing in", originDim,
+                space.slotDimOf(cell(1)));
+
+        // The lane came back: the next departure gets the same index, which it cannot do if the
+        // aborted attempt is still holding it.
+        crosser.failDepart = false;
+        assertTrue(mgr.beginTransit("s", cell(1), originDim, originAnchor, cell(2),
+                ARRIVE_IN_ONE_TICK));
+        assertEquals("the aborted attempt freed its lane for the next jump",
+                crosser.departs.get(0), crosser.departs.get(1));
     }
 
     @Test

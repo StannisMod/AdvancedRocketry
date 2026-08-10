@@ -53,6 +53,8 @@ public final class ShipAboardTag {
     private static final String SHIP_ID = "shipId";
     /** Present and true only for a STANDING record; its absence reads as SEATED. */
     private static final String STANDING = "standing";
+    /** Present and true only for a record taken mid-jump; its absence reads as "not in a jump". */
+    private static final String IN_TRANSIT = "inTransit";
     private static final int TAG_COMPOUND = 10;
     private static final int TAG_STRING = 8;
 
@@ -78,6 +80,17 @@ public final class ShipAboardTag {
         public final UUID shipId;
         /** The cell the ship was in, or {@code null} when it is in none (a ship on a planet). */
         public final GalacticCoord coord;
+        /**
+         * Was the ship MID-JUMP when this was taken — parked in the shared hyperspace world rather
+         * than in any cell?
+         *
+         * <p>It is the second, independent way a record can say "he was out in space", and it exists
+         * because the first one cannot speak here: hyperspace is in no cell, so {@link #coord} is
+         * null for everyone aboard a jumping ship. Without this the only remaining evidence is the
+         * dimension he was saved in, and hyperspace's id is minted fresh by a free-id scan on every
+         * boot — so it is evidence that expires exactly when it is needed, at a restart.</p>
+         */
+        public final boolean inTransit;
         public final Posture posture;
         /** SEATED: the seat's link offset. Zero and meaningless when {@link #posture} is STANDING. */
         public final int afcDx, afcDy, afcDz;
@@ -86,27 +99,31 @@ public final class ShipAboardTag {
 
         /** A crew member in a seat, identified by that seat's flight-computer link offset. */
         public Aboard(UUID shipId, GalacticCoord coord, int afcDx, int afcDy, int afcDz) {
+            this(shipId, coord, false, Posture.SEATED, afcDx, afcDy, afcDz, 0.0D, 0.0D, 0.0D);
+        }
+
+        private Aboard(UUID shipId, GalacticCoord coord, boolean inTransit, Posture posture,
+                       int afcDx, int afcDy, int afcDz, double dx, double dy, double dz) {
             this.shipId = shipId;
             this.coord = coord;
-            this.posture = Posture.SEATED;
+            this.inTransit = inTransit;
+            this.posture = posture;
             this.afcDx = afcDx;
             this.afcDy = afcDy;
             this.afcDz = afcDz;
-            this.standDx = 0.0D;
-            this.standDy = 0.0D;
-            this.standDz = 0.0D;
-        }
-
-        private Aboard(UUID shipId, GalacticCoord coord, double dx, double dy, double dz) {
-            this.shipId = shipId;
-            this.coord = coord;
-            this.posture = Posture.STANDING;
-            this.afcDx = 0;
-            this.afcDy = 0;
-            this.afcDz = 0;
             this.standDx = dx;
             this.standDy = dy;
             this.standDz = dz;
+        }
+
+        /**
+         * The same record, marked as taken mid-jump. Kept as a derivation rather than a constructor
+         * argument so every existing way of building a record still reads as what it is, and the one
+         * caller that knows the ship is in hyperspace is the only one that has to say so.
+         */
+        public Aboard inTransit() {
+            return new Aboard(shipId, coord, true, posture,
+                    afcDx, afcDy, afcDz, standDx, standDy, standDz);
         }
 
         /**
@@ -116,16 +133,29 @@ public final class ShipAboardTag {
          */
         public static Aboard standing(UUID shipId, GalacticCoord coord,
                                       double dx, double dy, double dz) {
-            return new Aboard(shipId, coord, dx, dy, dz);
+            return new Aboard(shipId, coord, false, Posture.STANDING, 0, 0, 0, dx, dy, dz);
         }
 
         /**
          * Whether this record also says WHERE IN SPACE the ship was. A record without it is
          * ship-relative only: it can put a crew member back on his deck, but it must never be used
          * to decide which dimension he belongs in — the ship it names is in no cell.
+         *
+         * <p>Strictly about a CELL. A jumping ship is in space and in no cell, so a mid-jump record
+         * answers false here and says so through {@link #inTransit} instead.</p>
          */
         public boolean hasPresence() {
             return coord != null;
+        }
+
+        /**
+         * Whether this record is durable evidence that its owner was OUT IN SPACE — in a cell, or
+         * mid-jump between two. This is the question the login path has to answer, and neither half
+         * answers it alone: a cell is absent for a jumping ship, and the transit flag is absent for
+         * a settled one.
+         */
+        public boolean saysSpaceborne() {
+            return hasPresence() || inTransit;
         }
 
         @Override
@@ -138,6 +168,7 @@ public final class ShipAboardTag {
             }
             Aboard other = (Aboard) o;
             return posture == other.posture
+                    && inTransit == other.inTransit
                     && afcDx == other.afcDx && afcDy == other.afcDy && afcDz == other.afcDz
                     && Double.compare(standDx, other.standDx) == 0
                     && Double.compare(standDy, other.standDy) == 0
@@ -150,6 +181,7 @@ public final class ShipAboardTag {
         public int hashCode() {
             int result = shipId == null ? 0 : shipId.hashCode();
             result = 31 * result + (coord == null ? 0 : coord.hashCode());
+            result = 31 * result + (inTransit ? 1 : 0);
             result = 31 * result + posture.hashCode();
             result = 31 * result + afcDx;
             result = 31 * result + afcDy;
@@ -163,6 +195,7 @@ public final class ShipAboardTag {
         @Override
         public String toString() {
             return "Aboard[ship=" + shipId + ", coord=" + coord
+                    + (inTransit ? ", inTransit" : "")
                     + (posture == Posture.SEATED
                             ? ", seatOffset=(" + afcDx + "," + afcDy + "," + afcDz + ")"
                             : ", standOffset=(" + standDx + "," + standDy + "," + standDz + ")")
@@ -193,6 +226,11 @@ public final class ShipAboardTag {
         sub.setString(SHIP_ID, aboard.shipId.toString());
         if (aboard.coord != null) {
             aboard.coord.writeToNBT(sub); // writes the "galacticCoord" sub-tag
+        }
+        // Written only when true, for the same reason the standing keys are: a record that says
+        // nothing about a jump is a record taken outside one, and the common shape stays unchanged.
+        if (aboard.inTransit) {
+            sub.setBoolean(IN_TRANSIT, true);
         }
         sub.setInteger("afcDx", aboard.afcDx);
         sub.setInteger("afcDy", aboard.afcDy);
@@ -238,12 +276,12 @@ public final class ShipAboardTag {
                 ? GalacticCoord.readFromNBT(sub) : null;
         // Absent posture key means SEATED — the only shape that existed when the tag was introduced,
         // and the shape a seated record still writes.
-        if (sub.getBoolean(STANDING)) {
-            return Aboard.standing(shipId, coord,
-                    sub.getDouble("standDx"), sub.getDouble("standDy"), sub.getDouble("standDz"));
-        }
-        return new Aboard(shipId, coord,
-                sub.getInteger("afcDx"), sub.getInteger("afcDy"), sub.getInteger("afcDz"));
+        Aboard aboard = sub.getBoolean(STANDING)
+                ? Aboard.standing(shipId, coord,
+                        sub.getDouble("standDx"), sub.getDouble("standDy"), sub.getDouble("standDz"))
+                : new Aboard(shipId, coord,
+                        sub.getInteger("afcDx"), sub.getInteger("afcDy"), sub.getInteger("afcDz"));
+        return sub.getBoolean(IN_TRANSIT) ? aboard.inTransit() : aboard;
     }
 
     /** Drop the record from {@code forgeData}. A no-op when there is none, and it touches nothing
