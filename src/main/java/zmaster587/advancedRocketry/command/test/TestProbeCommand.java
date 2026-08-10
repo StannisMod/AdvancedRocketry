@@ -94,6 +94,9 @@ public class TestProbeCommand extends CommandBase {
                 case "drive":
                     handleDrive(server, sender, tail(args));
                     break;
+                case "telescope":
+                    handleTelescope(server, sender, tail(args));
+                    break;
                 case "dim":
                     handleDim(sender, tail(args));
                     break;
@@ -2008,6 +2011,172 @@ public class TestProbeCommand extends CommandBase {
      *   /artest drive hull    &lt;dim&gt; &lt;afcX&gt; &lt;afcY&gt; &lt;afcZ&gt; &lt;dx-&gt; &lt;dy-&gt; &lt;dz-&gt; &lt;dx+&gt; &lt;dy+&gt; &lt;dz+&gt;
      * </pre>
      */
+    /**
+     * The observatory's region scan, as the machine itself sees it. Every verb drives PRODUCTION code
+     * on the SERVER and reports what production answered; nothing here re-derives what it observes.
+     *
+     * <p>The subject is the observatory tile at an exact (dim, pos) — an identity by construction, not
+     * a nearest-match. {@code system} has no tile subject and is dispatched before the lookup.</p>
+     *
+     * <pre>
+     *   /artest telescope system  &lt;sectorX&gt; &lt;sectorY&gt; &lt;sectorZ&gt; [name]
+     *   /artest telescope place   &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;
+     *   /artest telescope crystal &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;
+     *   /artest telescope scan    &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; &lt;dx&gt; &lt;dy&gt; &lt;dz&gt; &lt;distance&gt;
+     *   /artest telescope info    &lt;dim&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt;
+     * </pre>
+     */
+    private void handleTelescope(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 4) {
+            send(sender, "{\"error\":\"usage: telescope system|place|crystal|scan|info ...\"}");
+            return;
+        }
+        String verb = args[0];
+
+        if ("system".equalsIgnoreCase(verb)) {
+            // Mint a star of our own and put a system at a cell, so a scan has something determinate
+            // to find. A fresh star id never moves an existing system's placement.
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            int starId = zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                    .getNextFreeStarId();
+            zmaster587.advancedRocketry.api.dimension.solar.StellarBody star =
+                    new zmaster587.advancedRocketry.api.dimension.solar.StellarBody();
+            star.setId(starId);
+            star.setName(args.length > 4 ? args[4] : ("probe-star-" + starId));
+            zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().addStar(star);
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            reg.place(cell, starId);
+            send(sender, "{\"ok\":true,\"starId\":" + starId + ",\"name\":\"" + star.getName()
+                    + "\",\"cellKey\":\"" + cell.cellKey() + "\"}");
+            return;
+        }
+
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: telescope place|crystal|scan|info <dim> <x> <y> <z> [...]\"}");
+            return;
+        }
+        net.minecraft.world.WorldServer world = server.getWorld(parseIntOr(args[1], 0));
+        if (world == null) {
+            send(sender, "{\"error\":\"no such dim\"}");
+            return;
+        }
+        BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        world.getChunkProvider().provideChunk(pos.getX() >> 4, pos.getZ() >> 4);
+
+        if ("place".equalsIgnoreCase(verb)) {
+            world.setBlockState(pos, zmaster587.advancedRocketry.api.AdvancedRocketryBlocks
+                    .blockObservatory.getDefaultState(), 3);
+            send(sender, "{\"ok\":" + (observatoryAt(world, pos) != null) + "}");
+            return;
+        }
+
+        zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope = observatoryAt(world, pos);
+        if (scope == null) {
+            send(sender, "{\"error\":\"no observatory at that position\"}");
+            return;
+        }
+
+        if ("crystal".equalsIgnoreCase(verb)) {
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemMemoryCrystal);
+            // A deliberately BLANK crystal: the starter addresses would make every count a test
+            // asserts depend on the world's planet list rather than on what the scan resolved.
+            zmaster587.advancedRocketry.item.ItemMemoryCrystal.writeMemory(stack,
+                    new zmaster587.advancedRocketry.navigation.CrystalMemory());
+            scope.setInventorySlotContents(
+                    zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL, stack);
+            send(sender, "{\"ok\":true,\"addresses\":" + crystalAddresses(scope) + "}");
+            return;
+        }
+
+        if ("scan".equalsIgnoreCase(verb) && args.length >= 9) {
+            if (scope.getActiveScan() != null) {
+                send(sender, "{\"ok\":false,\"reason\":\"busy\"}");
+                return;
+            }
+            if (scope.scanOrigin() == null) {
+                send(sender, "{\"ok\":false,\"reason\":\"noOrigin\",\"dim\":"
+                        + world.provider.getDimension() + "}");
+                return;
+            }
+            boolean started = scope.beginRegionScan(parseIntOr(args[5], 1), parseIntOr(args[6], 0),
+                    parseIntOr(args[7], 0), parseIntOr(args[8], 1));
+            zmaster587.advancedRocketry.universe.RegionScan scan = scope.getActiveScan();
+            send(sender, "{\"ok\":" + started + telescopeScanFields(scope, scan, world) + "}");
+            return;
+        }
+
+        if ("info".equalsIgnoreCase(verb)) {
+            send(sender, "{\"ok\":true" + telescopeScanFields(scope, scope.getActiveScan(), world) + "}");
+            return;
+        }
+
+        send(sender, "{\"error\":\"unknown telescope verb — try system|place|crystal|scan|info\"}");
+    }
+
+    /**
+     * The scan half of a telescope reply. The sector COUNT ships with the corners it was computed
+     * from, and the deadline with the clock it is measured against, so a stuck number says which
+     * component is stuck. {@code side} is stated because every field here is the server's answer.
+     */
+    private String telescopeScanFields(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope,
+                                       zmaster587.advancedRocketry.universe.RegionScan scan,
+                                       net.minecraft.world.WorldServer world) {
+        long now = world.getTotalWorldTime();
+        zmaster587.advancedRocketry.space.GalacticCoord origin = scope.scanOrigin();
+        StringBuilder out = new StringBuilder();
+        out.append(",\"side\":\"server\",\"now\":").append(now)
+                .append(",\"origin\":").append(origin == null ? "null" : "\"" + origin.cellKey() + "\"")
+                .append(",\"scanning\":").append(scan != null)
+                .append(",\"addresses\":").append(crystalAddresses(scope))
+                .append(",\"lastDiscoveries\":").append(scope.getLastScanDiscoveries())
+                // Where the OPERATOR has the instrument pointed — the tile's own pick, which is what
+                // a GUI click changes and what the next scan will use. Distinct from the region a
+                // running scan is already looking at, below.
+                .append(",\"aim\":").append(scope.scanDirectionIndex())
+                .append(",\"aimDistance\":").append(scope.getScanDistance());
+        if (scan != null) {
+            out.append(",\"min\":\"").append(scan.min().cellKey())
+                    .append("\",\"max\":\"").append(scan.max().cellKey())
+                    .append("\",\"sectors\":").append(scan.sectorCount())
+                    .append(",\"distance\":").append(scan.distanceSectors())
+                    .append(",\"start\":").append(scan.startTick())
+                    .append(",\"deadline\":").append(scan.deadlineTick())
+                    .append(",\"duration\":").append(scan.durationTicks())
+                    .append(",\"progress\":").append(scan.progress(now))
+                    .append(",\"complete\":").append(scan.isComplete(now));
+        }
+        return out.toString();
+    }
+
+    /** How many addresses the crystal in the observatory's scan slot holds; -1 when there is none. */
+    private int crystalAddresses(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope) {
+        net.minecraft.item.ItemStack stack = scope.getStackInSlot(
+                zmaster587.advancedRocketry.tile.multiblock.TileObservatory.SLOT_CRYSTAL);
+        if (!zmaster587.advancedRocketry.item.ItemMemoryCrystal.isCrystal(stack)) {
+            return -1;
+        }
+        return zmaster587.advancedRocketry.item.ItemMemoryCrystal.memoryOf(stack).size();
+    }
+
+    private zmaster587.advancedRocketry.tile.multiblock.TileObservatory observatoryAt(
+            net.minecraft.world.World world, BlockPos pos) {
+        net.minecraft.tileentity.TileEntity te = world.getTileEntity(pos);
+        if (te instanceof zmaster587.libVulpes.tile.multiblock.TilePlaceholder) {
+            te = ((zmaster587.libVulpes.tile.multiblock.TilePlaceholder) te).getReplacedTileEntity();
+        }
+        return te instanceof zmaster587.advancedRocketry.tile.multiblock.TileObservatory
+                ? (zmaster587.advancedRocketry.tile.multiblock.TileObservatory) te : null;
+    }
+
     private void handleDrive(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length < 5) {
             send(sender, "{\"error\":\"usage: drive build|info|charge|arm|press|hull <dim> <afcX> <afcY> <afcZ> ...\"}");
@@ -8886,7 +9055,15 @@ public class TestProbeCommand extends CommandBase {
                     // rocketRequireFuel: RocketRequireFuelDisableAssemblesTest flips it
                     // off to pin that a valid rocket still assembles (no fuel-adequacy
                     // gate) — the regression the weight-system merge introduced.
-                    "rocketRequireFuel"));
+                    "rocketRequireFuel",
+                    // The telescope's reach and what a look costs in time, all read at scan START,
+                    // so flipping them at runtime is enough to exercise a short scan in a test
+                    // without waiting out a production-length observation.
+                    "telescopeScanRangeSectors",
+                    "telescopeScanHalfWidthSectors",
+                    "telescopeScanMaxSectors",
+                    "telescopeScanBaseTicks",
+                    "telescopeScanTicksPerSector"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {

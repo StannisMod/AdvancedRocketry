@@ -24,7 +24,12 @@ import zmaster587.advancedRocketry.inventory.modules.ModuleData;
 import zmaster587.advancedRocketry.inventory.modules.ModuleItemSlotButton;
 import zmaster587.advancedRocketry.item.IDataItem;
 import zmaster587.advancedRocketry.item.ItemAsteroidChip;
+import zmaster587.advancedRocketry.item.ItemMemoryCrystal;
+import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.tile.hatch.TileDataBus;
+import zmaster587.advancedRocketry.universe.RegionScan;
+import zmaster587.advancedRocketry.universe.TelescopeScan;
+import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.advancedRocketry.util.Asteroid;
 import zmaster587.advancedRocketry.util.Asteroid.StackEntry;
 import zmaster587.advancedRocketry.util.IDataInventory;
@@ -98,13 +103,28 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final byte SYNC_PRINTED = 14;
     private static final byte REQUEST_REOPEN = 15;
     private static final byte SYNC_SEED = 16;
+    private static final byte PICK_DIRECTION = 17;
+    private static final byte PICK_DISTANCE = 18;
+    private static final byte START_SCAN = 19;
+    /** Progress id of the region-scan bar; the machine's own bar keeps id 0. */
+    private static final int PROGRESS_SCAN = 1;
+    /**
+     * The directions a region scan can be aimed, in the order the pick button cycles them. Six axes
+     * rather than a free vector: a telescope is pointed at a patch of sky, and a patch is what the
+     * sector box already is.
+     */
+    private static final int[][] SCAN_DIRECTIONS = {
+            {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {0, -1, 0}};
+    private static final String[] SCAN_DIRECTION_NAMES = {"+X", "-X", "+Z", "-Z", "+Y", "-Y"};
     private final int dataConsumedPerRefresh = 100; // Distance data consumed per scan
     private boolean pendingReopenAfterSeedSync = false;
     // Dont allow duplicate chipwrites for the same seed + button
     private java.util.HashSet<Integer> printedButtonsThisSeed = new java.util.HashSet<>();
     private long printedSetSeed = -1; // track which seed the set belongs to
+    /** The slot a memory crystal goes in, so a region scan has somewhere to write what it resolves. */
+    public static final int SLOT_CRYSTAL = 5;
     int openProgress;
-    EmbeddedInventory inv = new EmbeddedInventory(5);
+    EmbeddedInventory inv = new EmbeddedInventory(6);
     private int viewDistance;
     private int lastButton;
     private long lastSeed;
@@ -113,6 +133,16 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private HashMap<Integer, String> buttonType = new HashMap<>();
     private boolean isOpen;
     private ModuleTab tabModule;
+    /** The observation in flight, or {@code null} when the instrument is idle. */
+    private RegionScan activeScan;
+    /** How many addresses the last finished scan wrote — what the operator gets told he learned. */
+    private int lastScanDiscoveries;
+    /** Which way the operator has the instrument pointed, as an index into {@link #SCAN_DIRECTIONS}. */
+    private int scanDirection;
+    /** How far out, in sectors, he has it aimed. Clamped to the configured reach when it is used. */
+    private int scanDistance = 1;
+    /** Client-side only: which way the distance button just pressed wants to move the aim. */
+    private int pendingDistanceDelta;
 
     public TileObservatory() {
         openProgress = 0;
@@ -121,7 +151,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastSeed = -1;
         completionTime = observationTime;
         dataCables = new LinkedList<>();
-        tabModule = new ModuleTab(4, 0, 0, this, 2, new String[]{LibVulpes.proxy.getLocalizedString("msg.tooltip.data"), LibVulpes.proxy.getLocalizedString("msg.tooltip.asteroidselection")}, new ResourceLocation[][]{TextureResources.tabData, TextureResources.tabAsteroid});
+        tabModule = new ModuleTab(4, 0, 0, this, 3, new String[]{
+                LibVulpes.proxy.getLocalizedString("msg.tooltip.data"),
+                LibVulpes.proxy.getLocalizedString("msg.tooltip.asteroidselection"),
+                LibVulpes.proxy.getLocalizedString("msg.tooltip.regionscan")},
+                new ResourceLocation[][]{TextureResources.tabData, TextureResources.tabAsteroid,
+                        TextureResources.tabPlanet});
     }
 
     public float getOpenProgress() {
@@ -259,6 +294,10 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             timeAlive = 0x1;
         }
 
+        if (!world.isRemote) {
+            completeRegionScanIfDue();
+        }
+
         if ((world.isRemote && isOpen) || (!world.isRemote && isRunning() && getMachineEnabled() && ((!world.isRaining() && world.canBlockSeeSky(pos.add(0, 1, 0)) && !world.isDaytime()) || world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId))) {
 
             if (!isOpen) {
@@ -338,6 +377,17 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             int[] arr = printedButtonsThisSeed.stream().mapToInt(Integer::intValue).toArray();
             nbt.setIntArray("printedButtons", arr);
         }
+
+        // The scan travels to the client whole, so the tab computes its bar and its text from the
+        // same object and the same arithmetic the server uses — never from a second, drifting copy.
+        if (activeScan != null) {
+            NBTTagCompound scan = new NBTTagCompound();
+            activeScan.writeToNBT(scan);
+            nbt.setTag("regionScan", scan);
+        }
+        nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("scanDirection", scanDirection);
+        nbt.setInteger("scanDistance", scanDistance);
     }
 
     @Override
@@ -355,9 +405,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         printedButtonsThisSeed.clear();
         int[] arr = nbt.getIntArray("printedButtons");
         if (arr != null) for (int v : arr) printedButtonsThisSeed.add(v);
+        activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
+        lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        scanDirection = nbt.getInteger("scanDirection");
+        scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
+
         if (world != null && world.isRemote && prevSeed != lastSeed) {
-            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();      
-        }        
+            zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
+        }
     }
 
     @Override
@@ -370,6 +425,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             int[] arr = printedButtonsThisSeed.stream().mapToInt(Integer::intValue).toArray();
             nbt.setIntArray("printedButtons", arr);
         }
+
+        if (activeScan != null) {
+            NBTTagCompound scan = new NBTTagCompound();
+            activeScan.writeToNBT(scan);
+            nbt.setTag("regionScan", scan);
+        }
+        nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("scanDirection", scanDirection);
+        nbt.setInteger("scanDistance", scanDistance);
         return nbt;
     }
 
@@ -382,6 +446,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         printedButtonsThisSeed.clear();
         int[] arr = nbt.getIntArray("printedButtons");
         if (arr != null) for (int v : arr) printedButtonsThisSeed.add(v);
+
+        activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
+        lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        scanDirection = nbt.getInteger("scanDirection");
+        scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
     }
 
 
@@ -584,6 +653,42 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             modules.add(panRight);
 
 
+        } else if (tabModule.getTab() == 2) {
+            // The region scan: where to point, how far out, the crystal it writes to, and how far
+            // along the current look is. Everything shown here is read from the tile's own state, so
+            // the client draws what the server actually has rather than a local guess.
+            modules.add(new ModuleSlotArray(8, 18, this, SLOT_CRYSTAL, SLOT_CRYSTAL + 1));
+            modules.add(new ModuleText(30, 22,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.crystal"), 0x2d2d2d, false));
+
+            modules.add(new ModuleText(8, 46,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.direction")
+                            + " " + SCAN_DIRECTION_NAMES[scanDirectionIndex()], 0x2d2d2d, false));
+            modules.add(new ModuleButton(120, 42, 3, SCAN_DIRECTION_NAMES[scanDirectionIndex()], this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.direction.tooltip"), 40, 18));
+
+            modules.add(new ModuleText(8, 70,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance")
+                            + " " + scanDistance, 0x2d2d2d, false));
+            modules.add(new ModuleButton(100, 66, 4, "-", this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance.tooltip"), 18, 18));
+            modules.add(new ModuleButton(142, 66, 5, "+", this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance.tooltip"), 18, 18));
+
+            modules.add(new ModuleProgress(8, 94, PROGRESS_SCAN, new ProgressBarImage(217, 0, 17, 17,
+                    234, 0, EnumFacing.DOWN, TextureResources.progressBars), this));
+            ModuleButton scanRegion = new ModuleButton(100, 94, 6,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.region"), this,
+                    zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.region.tooltip"), 64, 18);
+            scanRegion.setColor(activeScan == null ? 0x00ff00 : 0xff0000);
+            modules.add(scanRegion);
+
+            modules.add(new ModuleText(8, 116, scanStatusText(), 0x2d2d2d, false));
+
         } else if (tabModule.getTab() == 0) {
             modules.add(new ModulePower(18, 20, getBatteries()));
             modules.add(toggleSwitch = new ModuleToggleSwitch(160, 5, 0, "", this, zmaster587.libVulpes.inventory.TextureResources.buttonToggleImage, 11, 26, getMachineEnabled()));
@@ -631,6 +736,125 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return viewDistance + 10;
     }
 
+    /**
+     * Aim the instrument at a region and start looking. Server side; one observation at a time.
+     *
+     * <p>The distance is in galactic sectors and is clamped to the configured reach rather than
+     * refused — asking to see farther than the instrument can gets you the instrument's reach.</p>
+     *
+     * @return {@code false} when the machine is already looking somewhere, or when it does not know
+     *         where it is standing and so has nothing to aim FROM
+     */
+    public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSectors) {
+        if (world == null || world.isRemote || activeScan != null) {
+            return false;
+        }
+        GalacticCoord origin = scanOrigin();
+        if (origin == null) {
+            return false;
+        }
+        activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSectors,
+                world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
+        markDirty();
+        return true;
+    }
+
+    /** The observation in flight, or {@code null}. */
+    @Nullable
+    public RegionScan getActiveScan() {
+        return activeScan;
+    }
+
+    /** Which of {@link #SCAN_DIRECTIONS} the operator has selected, always in range. */
+    public int scanDirectionIndex() {
+        return Math.floorMod(scanDirection, SCAN_DIRECTIONS.length);
+    }
+
+    /** How far out the operator has the instrument aimed, in sectors. */
+    public int getScanDistance() {
+        return scanDistance;
+    }
+
+    /** What the tab tells the operator the instrument is doing right now. */
+    private String scanStatusText() {
+        if (activeScan != null) {
+            return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.looking")
+                    + " " + Math.round(activeScan.progress(world.getTotalWorldTime()) * 100f) + "%";
+        }
+        if (lastScanDiscoveries > 0) {
+            return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.found")
+                    + " " + lastScanDiscoveries;
+        }
+        return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.idle");
+    }
+
+    @Override
+    public int getProgress(int id) {
+        if (id != PROGRESS_SCAN) {
+            return super.getProgress(id);
+        }
+        return activeScan == null ? 0
+                : (int) Math.max(0L, Math.min(activeScan.durationTicks(),
+                        world.getTotalWorldTime() - activeScan.startTick()));
+    }
+
+    @Override
+    public int getTotalProgress(int id) {
+        if (id != PROGRESS_SCAN) {
+            return super.getTotalProgress(id);
+        }
+        return activeScan == null ? 0 : (int) activeScan.durationTicks();
+    }
+
+    @Override
+    public float getNormallizedProgress(int id) {
+        if (id != PROGRESS_SCAN) {
+            return super.getNormallizedProgress(id);
+        }
+        // The same computation the server does, off the same clock the client is given: an
+        // observation is a deadline, so a bar is read, never accumulated.
+        return activeScan == null ? 0f : activeScan.progress(world.getTotalWorldTime());
+    }
+
+    /** How many addresses the last finished observation added to the crystal. */
+    public int getLastScanDiscoveries() {
+        return lastScanDiscoveries;
+    }
+
+    /** Where this observatory stands, in galactic terms, or {@code null} if its world has no address. */
+    @Nullable
+    public GalacticCoord scanOrigin() {
+        UniverseRegistry registry = UniverseRegistry.get(world);
+        if (registry == null) {
+            return null;
+        }
+        return registry.coordForPlanet(world.provider.getDimension()).orElse(null);
+    }
+
+    /**
+     * Write a finished observation onto the crystal in the machine.
+     *
+     * <p>A finished scan with no crystal to write to is <b>kept</b>, not discarded: the light has
+     * arrived and the instrument is holding the picture, so slotting a crystal afterwards still gets
+     * you what was seen. Losing an hour's observation to a forgotten crystal would be a punishment
+     * for nothing.</p>
+     */
+    private void completeRegionScanIfDue() {
+        if (activeScan == null || !activeScan.isComplete(world.getTotalWorldTime())) {
+            return;
+        }
+        ItemStack crystal = getStackInSlot(SLOT_CRYSTAL);
+        if (!ItemMemoryCrystal.isCrystal(crystal)) {
+            return; // held until there is something to write on
+        }
+        long now = world.getTotalWorldTime();
+        lastScanDiscoveries = TelescopeScan.recordInto(UniverseRegistry.get(world), activeScan, crystal, now);
+        activeScan = null;
+        markDirty();
+        IBlockState state = world.getBlockState(pos);
+        world.notifyBlockUpdate(pos, state, state, 2);
+    }
+
     @Override
     public void onInventoryButtonPressed(int buttonId) {
         super.onInventoryButtonPressed(buttonId);
@@ -653,12 +877,25 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             lastType = buttonType.get(lastButton - LIST_OFFSET);
             PacketHandler.sendToServer(new PacketMachine(this, BUTTON_PRESS));
         }
-        if (buttonId == 2) {         
+        if (buttonId == 2) {
             if (world != null && world.isRemote) {
                 pendingReopenAfterSeedSync = true;
             }
             PacketHandler.sendToServer(new PacketMachine(this, SEED_CHANGE));
 
+        }
+
+        // The region-scan tab. Each press is a request to the SERVER — the pick lives on the tile,
+        // so what the operator chose survives him closing the GUI and is what the scan actually uses.
+        if (buttonId == 3) {
+            PacketHandler.sendToServer(new PacketMachine(this, PICK_DIRECTION));
+        }
+        if (buttonId == 4 || buttonId == 5) {
+            pendingDistanceDelta = buttonId == 4 ? -1 : 1;
+            PacketHandler.sendToServer(new PacketMachine(this, PICK_DISTANCE));
+        }
+        if (buttonId == 6) {
+            PacketHandler.sendToServer(new PacketMachine(this, START_SCAN));
         }
     }
 
@@ -709,6 +946,27 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 lastType = buttonType.get(lastButton - LIST_OFFSET);
                 markDirty();
                 world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 2);
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                        getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == PICK_DIRECTION || id == PICK_DISTANCE) {
+                if (id == PICK_DIRECTION) {
+                    scanDirection = (scanDirectionIndex() + 1) % SCAN_DIRECTIONS.length;
+                } else {
+                    int reach = Math.max(1, ARConfiguration.getCurrentConfig().telescopeScanRangeSectors);
+                    scanDistance = Math.max(1, Math.min(reach, scanDistance + nbt.getInteger("d")));
+                }
+                markDirty();
+                IBlockState st = world.getBlockState(pos);
+                world.notifyBlockUpdate(pos, st, st, 2);
+                player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
+                        getWorld(), pos.getX(), pos.getY(), pos.getZ());
+            }
+            else if (id == START_SCAN) {
+                int[] aim = SCAN_DIRECTIONS[scanDirectionIndex()];
+                beginRegionScan(aim[0], aim[1], aim[2], scanDistance);
+                IBlockState st = world.getBlockState(pos);
+                world.notifyBlockUpdate(pos, st, st, 2);
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                         getWorld(), pos.getX(), pos.getY(), pos.getZ());
             }
@@ -803,6 +1061,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             out.writeBoolean(getMachineEnabled());
             // lastType optional; you set it "" on scan, so you can skip it
         }
+        if (id == PICK_DISTANCE) {
+            out.writeInt(pendingDistanceDelta);
+        }
     }
 
     @Override
@@ -830,6 +1091,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             nbt.setInteger("lb", in.readInt());
             nbt.setBoolean("io", in.readBoolean());
             nbt.setBoolean("en", in.readBoolean());
+        }
+        if (packetId == PICK_DISTANCE) {
+            nbt.setInteger("d", in.readInt());
         }
     }
 
@@ -901,6 +1165,10 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         // output slot(s)
         if (slot == 2) {
             return false;
+        }
+
+        if (slot == SLOT_CRYSTAL) {
+            return ItemMemoryCrystal.isCrystal(stack);
         }
 
         return true;

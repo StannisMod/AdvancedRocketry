@@ -287,6 +287,16 @@ public class ARConfiguration {
     @ConfigProperty
     public int planetDiscoveryChance;
     @ConfigProperty
+    public int telescopeScanRangeSectors;
+    @ConfigProperty
+    public int telescopeScanHalfWidthSectors;
+    @ConfigProperty
+    public int telescopeScanMaxSectors;
+    @ConfigProperty
+    public int telescopeScanBaseTicks;
+    @ConfigProperty
+    public int telescopeScanTicksPerSector;
+    @ConfigProperty
     public boolean allowNonArBiomesInTerraforming;
     @ConfigProperty
     public double oxygenVentPowerMultiplier;
@@ -514,6 +524,11 @@ public class ARConfiguration {
         //Planet
         arConfig.planetsMustBeDiscovered = config.get(PLANET, "planetsMustBeDiscovered", false, "Planets must be discovered in the warp controller before being visible").getBoolean();
         arConfig.planetDiscoveryChance = config.get(PLANET, "planetDiscoveryChance", 5, "Chance of planet discovery in the warp controller, chance is 1/n", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanRangeSectors = config.get(PLANET, "telescopeScanRangeSectors", 24, "How far, in galactic sectors, an observatory's region scan can be aimed. This is the instrument's horizon: beyond it the sky is not resolvable, which is what keeps an endless universe from being read off a telescope. A scan aimed farther is clamped to this.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanHalfWidthSectors = config.get(PLANET, "telescopeScanHalfWidthSectors", 1, "Half-width, in sectors, of the box one region scan covers. 0 means a single sector, 1 a 3x3x3 neighbourhood, and so on. Narrowed automatically when the resulting box would exceed telescopeScanMaxSectors.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanMaxSectors = config.get(PLANET, "telescopeScanMaxSectors", 64, "Hard ceiling on how many sectors one region scan may enumerate. The width above is narrowed until the box fits under this.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanBaseTicks = config.get(PLANET, "telescopeScanBaseTicks", 200, "Ticks a region scan takes before distance is counted - the cost of pointing the instrument at all.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeScanTicksPerSector = config.get(PLANET, "telescopeScanTicksPerSector", 100, "Extra ticks per sector of distance. This is what makes a far region a longer look than a near one.", 0, Integer.MAX_VALUE).getInt();
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
