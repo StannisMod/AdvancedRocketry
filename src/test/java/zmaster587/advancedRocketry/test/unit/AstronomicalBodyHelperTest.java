@@ -147,4 +147,75 @@ public class AstronomicalBodyHelperTest {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // The reference frame, pinned by VALUE.
+    //
+    // The assertions above are mostly relative — thicker is warmer, farther is cooler — and a
+    // relative assertion cannot notice that a scale constant moved: rescale the atmosphere axis and
+    // "thicker is warmer" still holds while every temperature is wrong. These pin the absolute
+    // numbers instead, each derived from the frame's own definitions (100 distance units = 1 AU,
+    // 48 days = a year, 8 = a lunar month) rather than recorded from a run.
+    //
+    // They exist so that naming the scale constants can be shown to change nothing — and they stay
+    // afterwards as the guard for the next edit. The temperature ones matter most: the distance
+    // scale and the atmosphere scale are both 100 and live four lines apart, so a well-meant
+    // search-and-replace can silently corrupt one of them.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    public void orbitalPeriodFollowsTheThreeHalvesPowerLawExactly() {
+        // Four times the distance is eight times the period.
+        assertEquals(384.0, AstronomicalBodyHelper.getOrbitalPeriod(400, 1.0f), 1e-9);
+        // A bigger star pulls the same distance into a shorter year.
+        assertEquals(31.176914536239792, AstronomicalBodyHelper.getOrbitalPeriod(150, 2.0f), 1e-9);
+    }
+
+    @Test
+    public void moonPeriodScalesWithParentMassAndDistanceExactly() {
+        // Four times the parent mass halves the period.
+        assertEquals(4.0, AstronomicalBodyHelper.getMoonOrbitalPeriod(100f, 4.0f), 1e-9);
+        assertEquals(22.627416997969522, AstronomicalBodyHelper.getMoonOrbitalPeriod(200f, 1.0f), 1e-9);
+    }
+
+    @Test
+    public void temperatureAtOneAuUnderOneAtmosphereIsPinned() {
+        // 1 AU, one atmosphere: the radiative balance times the greenhouse term.
+        assertEquals(287, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 100, 100));
+    }
+
+    @Test
+    public void aVacuumWorldGetsTheBareRadiativeBalance() {
+        // atmPressure 0 falls to the max(1, ...) floor — no greenhouse lift at all.
+        assertEquals(255, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 100, 0));
+    }
+
+    @Test
+    public void temperatureAtFourAuIsPinned() {
+        assertEquals(143, AstronomicalBodyHelper.getAverageTemperature(sunLikeStar(), 400, 100));
+    }
+
+    @Test
+    public void brightnessFallsWithTheSquareOfDistanceExactly() {
+        assertEquals(0.25, AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 200), 1e-9);
+    }
+
+    // The tick-taking overloads of the theta helpers do NOT touch the mod proxy — only the no-arg
+    // forms do, which is what the class note above excludes. They carry the same law, so the wrap
+    // is checkable here as well as in the integration test.
+
+    @Test
+    public void orbitalThetaWrapsOncePerPeriod() {
+        long periodTicks = (long) (48.0 * 24000.0);
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, 0L), 1e-9);
+        assertEquals(Math.PI / 2.0,
+                AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, periodTicks / 4L), 1e-9);
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(100, 1.0f, periodTicks), 1e-9);
+    }
+
+    @Test
+    public void aDegenerateOrbitStaysAddressableRatherThanNaN() {
+        assertEquals(0.0, AstronomicalBodyHelper.getOrbitalThetaAt(0, 1.0f, 12345L), 1e-9);
+        assertEquals(0.0, AstronomicalBodyHelper.getMoonOrbitalThetaAt(100, 0f, 12345L), 1e-9);
+    }
+
 }

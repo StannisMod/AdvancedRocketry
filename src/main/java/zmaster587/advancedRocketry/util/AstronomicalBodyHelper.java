@@ -4,6 +4,43 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 
 public class AstronomicalBodyHelper {
+
+    // ─── The reference frame ───────────────────────────────────────────────────
+    // Named per MEANING, not per value. Three of these are 100 and they are NOT the same quantity:
+    // a distance scale, an atmosphere scale and a star-temperature scale all shared the literal in
+    // this one file, which made a search-and-replace on "100" a silent way to corrupt the
+    // temperature formula. Never collapse them because the numbers happen to match.
+    //
+    // They are ints so that every use site states the arithmetic it wants: the original mixed 100f
+    // and 100d for the SAME scale, and float-vs-double division is not always the same number once
+    // narrowed. The casts below are deliberate and preserve each site's original type exactly.
+
+    /** Distance units in one astronomical unit — the scale the whole system is written in. */
+    public static final int DISTANCE_UNITS_PER_AU = 100;
+    /** Atmosphere-density units in one Earth atmosphere. NOT the distance scale. */
+    public static final int ATM_PRESSURE_UNITS_PER_ATMOSPHERE = 100;
+    /** Star-temperature units in one Sol. NOT the distance scale either. */
+    public static final int TEMPERATURE_UNITS_PER_SOL = 100;
+    /** Kelvin per unit of {@link StellarBody#getTemperature()}. */
+    public static final int KELVIN_PER_STAR_TEMPERATURE_UNIT = 58;
+    /** Solar radii in one astronomical unit — carries a star's size into the distance frame. */
+    public static final int SOLAR_RADII_PER_AU = 215;
+
+    // ─── The calendar ──────────────────────────────────────────────────────────
+    // Inherited from upstream: "One MC Year is 48 MC days (16 IRL Hours), one month is 8 MC Days".
+    // The two are leading coefficients of the same power law at two reference distances — one for
+    // planets around a star, one for moons around a planet. Their ratio (six months to a year) is a
+    // FICTION CHOICE, not a derivation, which is why the month is written independently rather than
+    // as a fraction of the year: changing one does NOT change the other. If that relation is ever
+    // meant to hold, encode it deliberately and record the decision here.
+
+    /** Days in one year: the orbital period one AU from a size-1 star. */
+    public static final int DAYS_PER_YEAR = 48;
+    /** Days in one lunar month: a moon's period at the reference distance from a mass-1 parent. */
+    public static final int DAYS_PER_LUNAR_MONTH = 8;
+    /** Ticks in one day — the platform's rate, NOT a planet's rotational period (that is per-dim). */
+    public static final int TICKS_PER_DAY = 24000;
+
     /**
      * Returns the size multiplier for a body at the input distance, relative to either 1AU or the moon's orbital distance, depending on parent body
      *
@@ -12,7 +49,7 @@ public class AstronomicalBodyHelper {
      */
     public static float getBodySizeMultiplier(float orbitalDistance) {
         //Returns size multiplier relative to Earth standard (1AU = 100 Distance)
-        return 100f / orbitalDistance;
+        return (float) DISTANCE_UNITS_PER_AU / orbitalDistance;
     }
 
     /**
@@ -24,7 +61,8 @@ public class AstronomicalBodyHelper {
      */
     public static double getOrbitalPeriod(int orbitalDistance, float solarSize) {
         //One MC Year is 48 MC days (16 IRL Hours), one month is 8 MC Days
-        return 48d * Math.pow(Math.pow((orbitalDistance / (100d * solarSize)), 3), 0.5d);
+        return DAYS_PER_YEAR
+                * Math.pow(Math.pow((orbitalDistance / ((double) DISTANCE_UNITS_PER_AU * solarSize)), 3), 0.5d);
     }
 
     /**
@@ -37,7 +75,8 @@ public class AstronomicalBodyHelper {
     public static double getMoonOrbitalPeriod(float orbitalDistance, float planetaryMass) {
         //One (lunar) MC month is 8 MC days, so the moon orbits in 8
         //The same a the function for planets, but since gravity is directly correlated with mass uses the gravity of the plant for mass
-        return 8d * Math.pow(Math.pow((orbitalDistance / 100d), 3) / planetaryMass, 0.5d);
+        return DAYS_PER_LUNAR_MONTH
+                * Math.pow(Math.pow((orbitalDistance / (double) DISTANCE_UNITS_PER_AU), 3) / planetaryMass, 0.5d);
     }
 
     /**
@@ -60,7 +99,7 @@ public class AstronomicalBodyHelper {
      * @return the angle around the star in RADIANS
      */
     public static double getOrbitalThetaAt(int orbitalDistance, float solarSize, long worldTick) {
-        double periodTicks = 24000d * getOrbitalPeriod(orbitalDistance, solarSize);
+        double periodTicks = (double) TICKS_PER_DAY * getOrbitalPeriod(orbitalDistance, solarSize);
         if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
             // A degenerate orbit (zero distance, or a star with no size recorded) does not move.
             // Answering 0 keeps it addressable instead of handing every caller a NaN coordinate.
@@ -90,7 +129,8 @@ public class AstronomicalBodyHelper {
     public static double getMoonOrbitalThetaAt(int orbitalDistance, float parentGravitationalMultiplier,
                                                long worldTick) {
         //Because the function is still in AU and solar mass, some correctional factors to convert to those units
-        double periodTicks = 24000d * getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier);
+        double periodTicks = (double) TICKS_PER_DAY
+                * getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier);
         if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
             return 0d;
         }
@@ -112,7 +152,7 @@ public class AstronomicalBodyHelper {
         float degreeOrbitalTheta = (float) (currentOrbitalTheta * 180 / Math.PI);
         //Computer the number of rotations per revolution and use that for how fast the planet would seem to orbit from the moon
         //Planet will not move at all if it is tidally locked
-        float planetPositionTheta = (((float) (AstronomicalBodyHelper.getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier) * 24000) / rotationalPeriod) - 1) * degreeOrbitalTheta;
+        float planetPositionTheta = (((float) (AstronomicalBodyHelper.getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier) * TICKS_PER_DAY) / rotationalPeriod) - 1) * degreeOrbitalTheta;
         //Add the base orbital theta so the planet is in the correct place
         return (planetPositionTheta + (float) (baseOrbitalTheta * 180 / Math.PI)) % 360;
     }
@@ -126,15 +166,16 @@ public class AstronomicalBodyHelper {
      * @return the temperature of the planet in Kelvin
      */
     public static int getAverageTemperature(StellarBody star, int orbitalDistance, int atmPressure) {
-        int starSurfaceTemperature = 58 * star.getTemperature();
-        float starRadius = star.getSize() / 215f;
+        int starSurfaceTemperature = KELVIN_PER_STAR_TEMPERATURE_UNIT * star.getTemperature();
+        float starRadius = star.getSize() / (float) SOLAR_RADII_PER_AU;
         //Gives output in AU
-        float planetaryOrbitalRadius = orbitalDistance / 100f;
+        float planetaryOrbitalRadius = orbitalDistance / (float) DISTANCE_UNITS_PER_AU;
         //Albedo is 0.3f hardcoded because of inability to easily calculate
         double averageWithoutAtmosphere = starSurfaceTemperature * Math.pow(starRadius / (2 * planetaryOrbitalRadius), 0.5) * Math.pow((1f - 0.3f), 0.25);
         //Slightly kludgey solution that works out mostly for Venus and well for Earth, without being overly complex
         //Output is in Kelvin
-        return (int) (averageWithoutAtmosphere * Math.max(1, (1.125d * Math.pow((atmPressure / 100d), 0.25))));
+        return (int) (averageWithoutAtmosphere
+                * Math.max(1, (1.125d * Math.pow((atmPressure / (double) ATM_PRESSURE_UNITS_PER_ATMOSPHERE), 0.25))));
     }
 
     /**
@@ -153,8 +194,8 @@ public class AstronomicalBodyHelper {
         //Normal stars are 1.0 times this value, black holes with accretion discs emit less and so modify it
         float lightMultiplier = 1.0f;
         //Make all values ratios of Earth normal to get ratio compared to Earth
-        float normalizedStarTemperature = star.getTemperature() / 100f;
-        float planetaryOrbitalRadius = orbitalDistance / 100f;
+        float normalizedStarTemperature = star.getTemperature() / (float) TEMPERATURE_UNITS_PER_SOL;
+        float planetaryOrbitalRadius = orbitalDistance / (float) DISTANCE_UNITS_PER_AU;
         //Check to see if the star is a black hole
         boolean blackHole = star.isBlackHole();
         Iterable<StellarBody> subs = star.getSubStars();

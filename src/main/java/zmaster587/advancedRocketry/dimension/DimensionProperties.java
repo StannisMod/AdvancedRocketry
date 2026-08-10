@@ -71,6 +71,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public static final int MIN_DISTANCE = 1;
     public static final int MAX_GRAVITY = 400;
     public static final int MIN_GRAVITY = 0;
+    /**
+     * A planet's rotational period when nothing else determines it: the default day length, and the
+     * scale the gravity-derived period is expressed in. Numerically equal to
+     * {@link zmaster587.advancedRocketry.util.AstronomicalBodyHelper#TICKS_PER_DAY} but a DIFFERENT
+     * quantity — that one is the platform's tick rate, this one is a per-planet property that most
+     * planets do not keep. Do not collapse them.
+     */
+    public static final int DEFAULT_ROTATIONAL_PERIOD = 24000;
     public static final int WEATHER_START_LENGTH = 168000;
     public static final int WEATHER_PROLONGATION_LENGTH = 12000;
 
@@ -449,7 +457,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         sunriseSunsetColors = new float[]{.7f, .2f, .2f, 1};
         ringColor = new float[]{.4f, .4f, .7f};
         gravitationalMultiplier = 1;
-        rotationalPeriod = 24000;
+        rotationalPeriod = DEFAULT_ROTATIONAL_PERIOD;
         orbitalDist = 100;
         originalAtmosphereDensity = atmosphereDensity = 100;
         childPlanets = new HashSet<>();

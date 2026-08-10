@@ -78,7 +78,7 @@ public final class ARDimensionWorldInfo extends WorldInfo {
      */
     public static long computeSleepWakeTime(long current, int rotationalPeriod) {
         if (rotationalPeriod <= 0) {
-            rotationalPeriod = 24000;
+            rotationalPeriod = zmaster587.advancedRocketry.dimension.DimensionProperties.DEFAULT_ROTATIONAL_PERIOD;
         }
         long next = current + rotationalPeriod;
         return next - Math.floorMod(next, (long) rotationalPeriod);

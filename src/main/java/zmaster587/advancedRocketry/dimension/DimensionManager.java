@@ -337,7 +337,8 @@ public class DimensionManager implements IGalaxy {
             properties.ringColor[2] = properties.skyColor[2];
         }
 
-        properties.rotationalPeriod = (int) (Math.pow((1 / properties.gravitationalMultiplier), 3) * 24000);
+        properties.rotationalPeriod = (int) (Math.pow((1 / properties.gravitationalMultiplier), 3)
+                * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD);
 
         properties.addBiomes(properties.getViableBiomes(true));
         properties.initDefaultAttributes();
