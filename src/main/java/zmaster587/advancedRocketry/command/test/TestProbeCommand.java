@@ -2097,11 +2097,19 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
 
+        if ("abort".equalsIgnoreCase(verb)) {
+            boolean stopped = scope.abortRegionScan();
+            send(sender, "{\"ok\":" + stopped + telescopeScanFields(scope, scope.getActiveScan(), world) + "}");
+            return;
+        }
+
+        if ("passive".equalsIgnoreCase(verb)) {
+            boolean started = scope.beginPassiveSweep();
+            send(sender, "{\"ok\":" + started + telescopeScanFields(scope, scope.getActiveScan(), world) + "}");
+            return;
+        }
+
         if ("scan".equalsIgnoreCase(verb) && args.length >= 9) {
-            if (scope.getActiveScan() != null) {
-                send(sender, "{\"ok\":false,\"reason\":\"busy\"}");
-                return;
-            }
             if (scope.scanOrigin() == null) {
                 send(sender, "{\"ok\":false,\"reason\":\"noOrigin\",\"dim\":"
                         + world.provider.getDimension() + "}");
@@ -2142,17 +2150,24 @@ public class TestProbeCommand extends CommandBase {
                 // a GUI click changes and what the next scan will use. Distinct from the region a
                 // running scan is already looking at, below.
                 .append(",\"aim\":").append(scope.scanDirectionIndex())
-                .append(",\"aimDistance\":").append(scope.getScanDistance());
+                .append(",\"aimDistance\":").append(scope.getScanDistance())
+                .append(",\"passive\":").append(scope.isPassive());
         if (scan != null) {
+            // The cell counts ship beside the region they are counted over, and the next deadline
+            // beside the clock it is measured against: a sweep that will not advance must be able to
+            // say which of the three is stuck.
             out.append(",\"min\":\"").append(scan.min().cellKey())
                     .append("\",\"max\":\"").append(scan.max().cellKey())
-                    .append("\",\"sectors\":").append(scan.sectorCount())
+                    .append("\",\"cells\":").append(scan.totalCells())
+                    .append(",\"cellsDone\":").append(scan.cellsDone())
+                    .append(",\"cellsPerStep\":").append(scan.cellsPerStep())
                     .append(",\"distance\":").append(scan.distanceSectors())
                     .append(",\"start\":").append(scan.startTick())
-                    .append(",\"deadline\":").append(scan.deadlineTick())
-                    .append(",\"duration\":").append(scan.durationTicks())
-                    .append(",\"progress\":").append(scan.progress(now))
-                    .append(",\"complete\":").append(scan.isComplete(now));
+                    .append(",\"stepDeadline\":").append(scan.stepDeadline())
+                    .append(",\"ticksPerStep\":").append(scan.ticksPerStep())
+                    .append(",\"estimatedTicks\":").append(scan.estimatedTicks())
+                    .append(",\"progress\":").append(scan.progress())
+                    .append(",\"stepDue\":").append(scan.stepDue(now));
         }
         return out.toString();
     }
@@ -9063,7 +9078,12 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeScanHalfWidthSectors",
                     "telescopeScanMaxSectors",
                     "telescopeScanBaseTicks",
-                    "telescopeScanTicksPerSector"));
+                    "telescopeScanTicksPerSector",
+                    "telescopeScanCellsPerStep",
+                    "telescopePassiveRadiusSectors",
+                    // The research master switch. A survey is instant without it and paced by the
+                    // time curve with it, so both halves of boundary B need it flippable at runtime.
+                    "planetsMustBeDiscovered"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {

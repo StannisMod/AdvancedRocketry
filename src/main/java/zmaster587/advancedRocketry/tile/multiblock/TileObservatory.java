@@ -106,6 +106,8 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private static final byte PICK_DIRECTION = 17;
     private static final byte PICK_DISTANCE = 18;
     private static final byte START_SCAN = 19;
+    private static final byte ABORT_SCAN = 20;
+    private static final byte PASSIVE_SWEEP = 21;
     /** Progress id of the region-scan bar; the machine's own bar keeps id 0. */
     private static final int PROGRESS_SCAN = 1;
     /**
@@ -143,6 +145,8 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private int scanDistance = 1;
     /** Client-side only: which way the distance button just pressed wants to move the aim. */
     private int pendingDistanceDelta;
+    /** Watching the neighbourhood rather than a distant patch. The two modes are exclusive. */
+    private boolean passive;
 
     public TileObservatory() {
         openProgress = 0;
@@ -388,6 +392,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
+        nbt.setBoolean("scanPassive", passive);
     }
 
     @Override
@@ -409,6 +414,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
+        passive = nbt.getBoolean("scanPassive");
 
         if (world != null && world.isRemote && prevSeed != lastSeed) {
             zmaster587.advancedRocketry.AdvancedRocketry.proxy.clearObservatoryScrollCache();
@@ -434,6 +440,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
+        nbt.setBoolean("scanPassive", passive);
         return nbt;
     }
 
@@ -451,6 +458,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
+        passive = nbt.getBoolean("scanPassive");
     }
 
 
@@ -684,10 +692,25 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.region"), this,
                     zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.region.tooltip"), 64, 18);
-            scanRegion.setColor(activeScan == null ? 0x00ff00 : 0xff0000);
+            scanRegion.setColor(activeScan == null ? 0x00ff00 : 0xffff00);
             modules.add(scanRegion);
 
+            if (activeScan != null) {
+                modules.add(new ModuleButton(166, 94, 7,
+                        LibVulpes.proxy.getLocalizedString("msg.observetory.scan.abort"), this,
+                        zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                        LibVulpes.proxy.getLocalizedString("msg.observetory.scan.abort.tooltip"), 40, 18));
+            }
+            modules.add(new ModuleButton(166, 42, 8,
+                    LibVulpes.proxy.getLocalizedString(passive
+                            ? "msg.observetory.scan.mode.passive" : "msg.observetory.scan.mode.active"),
+                    this, zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.mode.tooltip"), 40, 18));
+
             modules.add(new ModuleText(8, 116, scanStatusText(), 0x2d2d2d, false));
+            modules.add(new ModuleText(8, 128,
+                    LibVulpes.proxy.getLocalizedString("msg.observetory.scan.keepcrystal"),
+                    0x8d2d2d, false));
 
         } else if (tabModule.getTab() == 0) {
             modules.add(new ModulePower(18, 20, getBatteries()));
@@ -746,15 +769,57 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
      *         where it is standing and so has nothing to aim FROM
      */
     public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSectors) {
-        if (world == null || world.isRemote || activeScan != null) {
+        if (world == null || world.isRemote) {
             return false;
         }
         GalacticCoord origin = scanOrigin();
         if (origin == null) {
             return false;
         }
+        // Re-aiming mid-sweep is allowed and costs only the cell in flight: every cell already
+        // resolved is already written to the crystal, so there is nothing else to lose.
         activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSectors,
                 world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
+        passive = false;
+        lastScanDiscoveries = 0;
+        markDirty();
+        return true;
+    }
+
+    /** Stop looking. Free — an aim the operator regrets must not have to be waited out. */
+    public boolean abortRegionScan() {
+        if (world == null || world.isRemote || activeScan == null) {
+            return false;
+        }
+        activeScan = null;
+        markDirty();
+        return true;
+    }
+
+    /**
+     * Point the instrument at its own neighbourhood instead of at a distant patch — a local radar
+     * with its data ready, growing outward from the cell the observatory stands in.
+     *
+     * <p>Passive and active are one mode at a time: an observatory staring into deep space genuinely
+     * cannot watch what is close, and a second set of scanners is the expensive cure.</p>
+     */
+    public boolean beginPassiveSweep() {
+        if (world == null || world.isRemote) {
+            return false;
+        }
+        GalacticCoord origin = scanOrigin();
+        if (origin == null) {
+            return false;
+        }
+        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusSectors);
+        GalacticCoord lo = GalacticCoord.ofSectorLocal(origin.sectorX() - radius,
+                origin.sectorY() - radius, origin.sectorZ() - radius, 0L, 0L, 0L);
+        GalacticCoord hi = GalacticCoord.ofSectorLocal(origin.sectorX() + radius,
+                origin.sectorY() + radius, origin.sectorZ() + radius, 0L, 0L, 0L);
+        activeScan = RegionScan.box(lo, hi, radius, world.getTotalWorldTime(),
+                RegionScan.Tuning.fromConfig());
+        passive = true;
+        lastScanDiscoveries = 0;
         markDirty();
         return true;
     }
@@ -775,11 +840,16 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return scanDistance;
     }
 
+    /** Whether the instrument is watching its own neighbourhood rather than a distant patch. */
+    public boolean isPassive() {
+        return passive;
+    }
+
     /** What the tab tells the operator the instrument is doing right now. */
     private String scanStatusText() {
         if (activeScan != null) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.looking")
-                    + " " + Math.round(activeScan.progress(world.getTotalWorldTime()) * 100f) + "%";
+                    + " " + activeScan.cellsDone() + "/" + activeScan.totalCells();
         }
         if (lastScanDiscoveries > 0) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.found")
@@ -793,9 +863,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (id != PROGRESS_SCAN) {
             return super.getProgress(id);
         }
-        return activeScan == null ? 0
-                : (int) Math.max(0L, Math.min(activeScan.durationTicks(),
-                        world.getTotalWorldTime() - activeScan.startTick()));
+        return activeScan == null ? 0 : activeScan.cellsDone();
     }
 
     @Override
@@ -803,7 +871,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (id != PROGRESS_SCAN) {
             return super.getTotalProgress(id);
         }
-        return activeScan == null ? 0 : (int) activeScan.durationTicks();
+        return activeScan == null ? 0 : activeScan.totalCells();
     }
 
     @Override
@@ -811,9 +879,9 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (id != PROGRESS_SCAN) {
             return super.getNormallizedProgress(id);
         }
-        // The same computation the server does, off the same clock the client is given: an
-        // observation is a deadline, so a bar is read, never accumulated.
-        return activeScan == null ? 0f : activeScan.progress(world.getTotalWorldTime());
+        // Cells resolved, not ticks elapsed: what the operator is owed is how much of the sky has
+        // been read, and a step that takes longer at distance must not make the bar lie about it.
+        return activeScan == null ? 0f : activeScan.progress();
     }
 
     /** How many addresses the last finished observation added to the crystal. */
@@ -840,16 +908,32 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
      * for nothing.</p>
      */
     private void completeRegionScanIfDue() {
-        if (activeScan == null || !activeScan.isComplete(world.getTotalWorldTime())) {
+        if (activeScan == null) {
             return;
         }
         ItemStack crystal = getStackInSlot(SLOT_CRYSTAL);
         if (!ItemMemoryCrystal.isCrystal(crystal)) {
-            return; // held until there is something to write on
+            return; // the picture is held until there is something to write it on
         }
         long now = world.getTotalWorldTime();
-        lastScanDiscoveries = TelescopeScan.recordInto(UniverseRegistry.get(world), activeScan, crystal, now);
-        activeScan = null;
+
+        // Without the research master switch, an observation is not a matter of time: what the
+        // instrument can reach, it has already resolved. With it on, the sweep advances a bounded
+        // number of cells per step and the time curve is the mechanic.
+        boolean instant = !ARConfiguration.getCurrentConfig().planetsMustBeDiscovered;
+        int cells = instant
+                ? activeScan.totalCells() - activeScan.cellsDone()
+                : activeScan.cellsDueAt(now);
+        if (cells <= 0) {
+            return;
+        }
+
+        lastScanDiscoveries += TelescopeScan.resolveBatch(UniverseRegistry.get(world), activeScan,
+                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames());
+        activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
+        if (activeScan.isComplete()) {
+            activeScan = null;
+        }
         markDirty();
         IBlockState state = world.getBlockState(pos);
         world.notifyBlockUpdate(pos, state, state, 2);
@@ -896,6 +980,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
         if (buttonId == 6) {
             PacketHandler.sendToServer(new PacketMachine(this, START_SCAN));
+        }
+        if (buttonId == 7) {
+            PacketHandler.sendToServer(new PacketMachine(this, ABORT_SCAN));
+        }
+        if (buttonId == 8) {
+            PacketHandler.sendToServer(new PacketMachine(this, PASSIVE_SWEEP));
         }
     }
 
@@ -962,9 +1052,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),
                         getWorld(), pos.getX(), pos.getY(), pos.getZ());
             }
-            else if (id == START_SCAN) {
-                int[] aim = SCAN_DIRECTIONS[scanDirectionIndex()];
-                beginRegionScan(aim[0], aim[1], aim[2], scanDistance);
+            else if (id == START_SCAN || id == ABORT_SCAN || id == PASSIVE_SWEEP) {
+                if (id == ABORT_SCAN) {
+                    abortRegionScan();
+                } else if (id == PASSIVE_SWEEP) {
+                    beginPassiveSweep();
+                } else {
+                    int[] aim = SCAN_DIRECTIONS[scanDirectionIndex()];
+                    beginRegionScan(aim[0], aim[1], aim[2], scanDistance);
+                }
                 IBlockState st = world.getBlockState(pos);
                 world.notifyBlockUpdate(pos, st, st, 2);
                 player.openGui(LibVulpes.instance, GuiHandler.guiId.MODULARNOINV.ordinal(),

@@ -498,12 +498,14 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
         int[] at = buildObservatoryAndStandBesideIt();
         String where = dim + " " + at[0] + " " + at[1] + " " + at[2];
 
-        scenario().arranging("a blank crystal in the machine, and observations short enough to watch");
+        scenario().arranging("a blank crystal in the machine, and the default (no-research) regime");
+        // The default game: without the research master switch a survey is not a matter of time —
+        // what the instrument reaches, it resolves. That is what the player at this GUI sees, so it
+        // is what this drives.
+        exec("artest config set planetsMustBeDiscovered false");
         exec("artest config set telescopeScanBaseTicks 0");
-        // Long enough that the look is still running when the press is checked, short enough to
-        // finish inside the scenario: 3 sectors x 40 ticks = 6 seconds. At one tick per sector the
-        // whole observation was over before the first assertion could see it (measured).
-        exec("artest config set telescopeScanTicksPerSector 40");
+        exec("artest config set telescopeScanTicksPerSector 1");
+        exec("artest config set telescopeScanHalfWidthSectors 1");
         exec("artest config set telescopeScanRangeSectors 24");
         String crystal = exec("artest telescope crystal " + where);
         scenario().requireArranged("could not put a crystal in the observatory: " + crystal,
@@ -543,18 +545,13 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
         bot().clickButtonById(6);
         bot().waitTicks(20);
 
-        String started = exec("artest telescope info " + where);
-        assertTrue("pressing Observe on the real GUI must start an observation: " + started,
-                started.contains("\"scanning\":true"));
-
-        scenario().measuring("wait for the observation to finish and read the crystal");
-        String done = started;
-        for (int attempt = 0; attempt < 20 && done.contains("\"scanning\":true"); attempt++) {
+        scenario().measuring("the crystal in the machine, after a survey driven only by clicks");
+        String done = exec("artest telescope info " + where);
+        for (int attempt = 0; attempt < 20 && readInt(done, TELESCOPE_ADDRESSES) < 1; attempt++) {
             bot().waitTicks(20);
             done = exec("artest telescope info " + where);
         }
-        assertTrue("the observation never finished: " + done, !done.contains("\"scanning\":true"));
-        assertTrue("a scan driven entirely from the GUI left the crystal empty: " + done,
+        assertTrue("a survey driven entirely from the GUI left the crystal empty: " + done,
                 readInt(done, TELESCOPE_ADDRESSES) >= 1);
 
         bot().closeScreen();

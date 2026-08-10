@@ -4,6 +4,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import org.junit.After;
 import org.junit.Test;
 
+import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.navigation.CrystalMemory;
@@ -11,6 +12,7 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.InfoTier;
 import zmaster587.advancedRocketry.universe.RegionScan;
+import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.TelescopeScan;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
@@ -23,22 +25,24 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Contract tests for the telescope's region scan: what an observation costs in time, how far it can
- * reach, how much of the sky one look may enumerate, and what a discovery writes onto a crystal.
- * Pure-JUnit — no MC bootstrap; the registry's generator and star lookup are the injectable seams.
+ * Contract tests for the telescope's region survey: how far it can reach, how much of the sky one
+ * STEP may resolve, that a sweep works through its region and can be resumed, and what a discovery
+ * writes onto a crystal. Pure-JUnit — no MC bootstrap; the registry's generator and star lookup are
+ * the injectable seams.
  *
- * <p>These pin player-facing promises — a far look takes longer, the horizon is the configured reach,
- * an unknown system is discoverable, a telescope's word is coarse and dated — and the save contract
- * that an observation outlives the chunk it started in. They do not pin the time formula, the box
- * arithmetic or the storage shape.</p>
+ * <p>These pin player-facing promises — a far survey costs more than a near one, the horizon is the
+ * configured reach, one step never enumerates the sky, an unknown system is discoverable, and what a
+ * telescope writes is a BODY at the coarsest grade, dated — plus the save contract that a sweep
+ * outlives the chunk it started in and resumes where it stood. They do not pin the time formula, the
+ * sweep order or the storage shape.</p>
  */
 public class TelescopeRegionScanTest {
 
     private static final GalacticCoord HOME = GalacticCoord.ofSectorLocal(0, 0, 0, 0, 0, 0);
 
-    /** Reach 10 sectors, a 3x3x3 look, a generous budget, 100 ticks to point plus 50 per sector. */
+    /** Reach 10 sectors, a 3×3×3 region, room for it, 100 ticks a step plus 50 per sector, 2 cells a step. */
     private static RegionScan.Tuning tuning() {
-        return new RegionScan.Tuning(10, 1, 512, 100, 50);
+        return new RegionScan.Tuning(10, 1, 512, 100, 50, 2);
     }
 
     private static StellarBody star(int id) {
@@ -61,14 +65,14 @@ public class TelescopeRegionScanTest {
     // ── the instrument ────────────────────────────────────────────────────────
 
     @Test
-    public void aFartherRegionTakesLongerToLookAt() {
-        // The whole point of a region scan: distance is paid for in time.
+    public void aFartherRegionIsALongerSurvey() {
+        // The whole point of aiming far: distance is paid for in time.
         RegionScan near = RegionScan.directed(HOME, 1, 0, 0, 2, 0L, tuning());
         RegionScan far = RegionScan.directed(HOME, 1, 0, 0, 8, 0L, tuning());
 
-        assertTrue("a farther region must take longer to resolve: near=" + near.durationTicks()
-                        + " far=" + far.durationTicks(),
-                far.durationTicks() > near.durationTicks());
+        assertTrue("a farther region must take longer to survey: near=" + near.estimatedTicks()
+                        + " far=" + far.estimatedTicks(),
+                far.estimatedTicks() > near.estimatedTicks());
     }
 
     @Test
@@ -81,85 +85,137 @@ public class TelescopeRegionScanTest {
         assertEquals("an aim past the horizon must be answered at the horizon",
                 reached.distanceSectors(), overreached.distanceSectors());
         assertEquals("and must cost what the horizon costs",
-                reached.durationTicks(), overreached.durationTicks());
+                reached.estimatedTicks(), overreached.estimatedTicks());
         assertEquals("the region itself must be the one at the horizon",
                 reached.min().cellKey(), overreached.min().cellKey());
     }
 
     @Test
-    public void oneLookNeverEnumeratesMoreThanItsSectorBudget() {
-        // The structural guard against reading an endless procedural universe off one instrument: ask
-        // for a 9x9x9 look with a budget of 27 and the budget wins.
-        RegionScan.Tuning greedy = new RegionScan.Tuning(10, 4, 27, 100, 50);
-        RegionScan scan = RegionScan.directed(HOME, 1, 1, 0, 3, 0L, greedy);
+    public void oneStepNeverResolvesMoreThanItsCellBudget() {
+        // The structural guard against reading an endless procedural universe off one instrument:
+        // a survey may cover a large region, but never in one step.
+        RegionScan.Tuning wide = new RegionScan.Tuning(10, 2, 1000, 100, 50, 3);
+        RegionScan scan = RegionScan.directed(HOME, 1, 1, 0, 3, 0L, wide);
 
-        assertTrue("a scan may never enumerate more sectors than its budget: " + scan.sectorCount(),
-                scan.sectorCount() <= 27);
+        assertTrue("the fixture must be a region worth sweeping", scan.totalCells() > 3);
+        assertEquals("a step may never resolve more cells than its budget",
+                3, scan.cellsDueAt(scan.stepDeadline()));
     }
 
     @Test
-    public void aScanWithNoDirectionIsRefused() {
+    public void aRegionNeverExceedsItsCeiling() {
+        // Ask for a 9×9×9 region with room for 27 cells and the ceiling wins.
+        RegionScan.Tuning greedy = new RegionScan.Tuning(10, 4, 27, 100, 50, 2);
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 3, 0L, greedy);
+
+        assertTrue("a survey may never cover more than its ceiling: " + scan.totalCells(),
+                scan.totalCells() <= 27);
+    }
+
+    @Test
+    public void aSweepWorksThroughItsRegionAndFinishes() {
+        // The automation the instrument exists for: one aim, then it works through the patch.
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 2, 0L, tuning());
+        int total = scan.totalCells();
+        assertTrue("the fixture must need more than one step", total > scan.cellsPerStep());
+
+        long now = scan.stepDeadline();
+        int guard = 0;
+        while (!scan.isComplete() && guard++ < 1000) {
+            int due = scan.cellsDueAt(now);
+            assertTrue("a due step must have cells to resolve", due > 0);
+            scan = scan.advanced(now, due);
+            now = scan.stepDeadline();
+        }
+
+        assertTrue("the sweep must finish", scan.isComplete());
+        assertEquals("and must have covered every cell of its region", total, scan.cellsDone());
+    }
+
+    @Test
+    public void nothingIsResolvedBeforeTheStepIsDue() {
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 2, 1_000L, tuning());
+        assertEquals("a step that is not due yet resolves nothing",
+                0, scan.cellsDueAt(scan.stepDeadline() - 1));
+        assertTrue("and the one that is due resolves cells",
+                scan.cellsDueAt(scan.stepDeadline()) > 0);
+    }
+
+    @Test
+    public void everyCellOfTheRegionIsVisitedExactlyOnce() {
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 2, 0L, tuning());
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < scan.totalCells(); i++) {
+            assertTrue("the sweep order must not repeat a cell: " + scan.cellAt(i).cellKey(),
+                    seen.add(scan.cellAt(i).cellKey()));
+        }
+        assertEquals("and must cover the whole region", scan.totalCells(), seen.size());
+    }
+
+    @Test
+    public void aSurveyWithNoDirectionIsRefused() {
         try {
             RegionScan.directed(HOME, 0, 0, 0, 4, 0L, tuning());
-            fail("a scan with no direction does not name a region and must be refused");
+            fail("a survey with no direction does not name a region and must be refused");
         } catch (IllegalArgumentException expected) {
             // the contract: the caller is told, rather than silently given some default sky
         }
     }
 
     @Test
-    public void progressIsReadOffTheClock() {
-        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 4, 1000L, tuning());
-        long done = scan.deadlineTick();
-
-        assertEquals("nothing has been resolved at the moment it starts", 0f, scan.progress(1000L), 1e-6f);
-        assertEquals("it is finished at its deadline", 1f, scan.progress(done), 1e-6f);
-        float midway = scan.progress(1000L + (done - 1000L) / 2);
-        assertTrue("and part-done in between, not 0 and not 1: " + midway, midway > 0f && midway < 1f);
-    }
-
-    @Test
-    public void anObservationOutlivesTheChunkItStartedIn() {
-        // A scan is a deadline, not a counter: it is saved, reloaded, and still finishes on time —
-        // which is what lets an observatory be unloaded mid-look without owing a tick replay.
+    public void aSweepResumesWhereItStoodAfterTheChunkComesBack() {
+        // A survey is a deadline plus a cursor, not a counter: it is saved mid-sweep, reloaded, and
+        // continues — which is what lets an observatory be unloaded without owing a tick replay.
         RegionScan started = RegionScan.directed(HOME, 1, 0, -1, 6, 5_000L, tuning());
+        RegionScan halfway = started.advanced(started.stepDeadline(), started.cellsPerStep());
         NBTTagCompound nbt = new NBTTagCompound();
-        started.writeToNBT(nbt);
+        halfway.writeToNBT(nbt);
 
         RegionScan reloaded = RegionScan.readFromNBT(nbt);
-        assertNotNull("a saved scan must come back", reloaded);
+        assertNotNull("a saved survey must come back", reloaded);
         assertEquals("it must come back looking at the same region",
-                started.min().cellKey(), reloaded.min().cellKey());
-        assertEquals(started.max().cellKey(), reloaded.max().cellKey());
-        assertFalse("and it is not finished a tick early",
-                reloaded.isComplete(started.deadlineTick() - 1));
-        assertTrue("but is finished at the tick it was always going to finish",
-                reloaded.isComplete(started.deadlineTick()));
+                halfway.min().cellKey(), reloaded.min().cellKey());
+        assertEquals(halfway.max().cellKey(), reloaded.max().cellKey());
+        assertEquals("and must not have forgotten what it already surveyed",
+                halfway.cellsDone(), reloaded.cellsDone());
+        assertEquals("nor when its next step lands", halfway.stepDeadline(), reloaded.stepDeadline());
     }
 
     @Test
     public void nothingIsStoredForAnObservatoryThatIsNotLooking() {
-        assertNull("an absent scan must read back as absent, not as a scan at tick zero",
+        assertNull("an absent survey must read back as absent, not as a survey at tick zero",
                 RegionScan.readFromNBT(new NBTTagCompound()));
     }
 
-    // ── what a look discovers ─────────────────────────────────────────────────
+    // ── what a survey discovers ───────────────────────────────────────────────
 
-    /** A registry holding three systems: two inside the scanned box, one well outside it. */
+    /** A registry holding two systems with bodies, plus one well outside the surveyed region. */
     private UniverseRegistry threeSystems() {
         UniverseRegistry.setGenerator(new EmptyGalaxyGenerator());
         UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
 
         UniverseRegistry registry = new UniverseRegistry();
-        registry.place(cell(4, 0, 0), 4);    // dead centre of the box
-        registry.place(cell(5, 1, 0), 5);    // corner of the box
-        registry.place(cell(9, 0, 0), 9);    // beyond it
+        registry.place(cell(4, 0, 0), 4);
+        registry.addPoi(new SystemBody(cell(4, 0, 0), SystemBodyKind.STAR, Constants.INVALID_PLANET, 4));
+        registry.addPoi(new SystemBody(cell(4, 0, 0), SystemBodyKind.PLANET, 401, 4));
+
+        registry.place(cell(5, 1, 0), 5);
+        registry.addPoi(new SystemBody(cell(5, 1, 0), SystemBodyKind.PLANET, 501, 5));
+
+        registry.place(cell(9, 0, 0), 9);
+        registry.addPoi(new SystemBody(cell(9, 0, 0), SystemBodyKind.PLANET, 901, 9));
         return registry;
     }
 
-    /** The scan the fixture above is built around: 4 sectors out along +X, one sector wide. */
+    /** The survey the fixture is built around: 4 sectors out along +X, one sector wide. */
     private RegionScan boxAroundFourthSector() {
         return RegionScan.directed(HOME, 1, 0, 0, 4, 0L, tuning());
+    }
+
+    /** Resolve the whole region at once — what the instant path does when research is off. */
+    private int surveyAll(UniverseRegistry registry, RegionScan scan, CrystalMemory crystal, long tick) {
+        return TelescopeScan.resolveBatch(registry, scan, 0, scan.totalCells(), crystal, tick,
+                dimId -> "Body-" + dimId);
     }
 
     @Test
@@ -167,11 +223,26 @@ public class TelescopeRegionScanTest {
         UniverseRegistry registry = threeSystems();
         CrystalMemory crystal = new CrystalMemory();
 
-        TelescopeScan.recordInto(registry, boxAroundFourthSector(), crystal, 7_000L);
+        surveyAll(registry, boxAroundFourthSector(), crystal, 7_000L);
 
-        assertTrue("the system the instrument was pointed at must be learned", crystal.knows(cell(4, 0, 0)));
-        assertTrue("so must the one at the edge of the same region", crystal.knows(cell(5, 1, 0)));
-        assertFalse("a system outside the scanned region must NOT be", crystal.knows(cell(9, 0, 0)));
+        assertNotNull("the body the instrument was pointed at must be learned", crystal.forBody(401));
+        assertNotNull("so must the one at the edge of the same region", crystal.forBody(501));
+        assertNull("a system outside the surveyed region must NOT be", crystal.forBody(901));
+    }
+
+    @Test
+    public void aSurveyWritesTheBODIESItResolved() {
+        // The payoff of a discovery is not a coordinate: an entry that names a body is what lets the
+        // console show what is known about it, and what lets a pilot aim at it.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+
+        surveyAll(registry, boxAroundFourthSector(), crystal, 7_000L);
+
+        CrystalEntry planet = crystal.forBody(401);
+        assertNotNull("the region's planet must have its own address", planet);
+        assertTrue("and that address must name the body, not just its cell", planet.namesBody());
+        assertEquals("named the way every other screen names it", "Body-401", planet.name());
     }
 
     @Test
@@ -181,31 +252,56 @@ public class TelescopeRegionScanTest {
         // new: a knowledge gate anywhere on this path leaves it missing and this test red.
         UniverseRegistry registry = threeSystems();
         CrystalMemory crystal = new CrystalMemory();
-        crystal.record(new CrystalEntry(cell(4, 0, 0), "Star-4", SystemBodyKind.STAR,
-                InfoTier.TELESCOPE, 1_000L));
-        assertFalse("the fixture must start ignorant of the system under test",
-                crystal.knows(cell(5, 1, 0)));
+        crystal.record(new CrystalEntry(cell(4, 0, 0), "Body-401", SystemBodyKind.PLANET,
+                InfoTier.TELESCOPE, 1_000L, 401));
+        assertNull("the fixture must start ignorant of the body under test", crystal.forBody(501));
 
-        TelescopeScan.recordInto(registry, boxAroundFourthSector(), crystal, 7_000L);
+        surveyAll(registry, boxAroundFourthSector(), crystal, 7_000L);
 
-        assertTrue("a telescope discovers what nobody knew, or it discovers nothing",
-                crystal.knows(cell(5, 1, 0)));
+        assertNotNull("a telescope discovers what nobody knew, or it discovers nothing",
+                crystal.forBody(501));
     }
 
     @Test
     public void whatATelescopeWritesIsCoarseAndDated() {
-        // The graded-discovery ladder: a point of light resolved from far away may claim the coarsest
-        // tier and no more, and it carries when it was seen so a later, closer look supersedes it.
+        // The graded-discovery ladder: a body resolved from very far away may claim the coarsest
+        // grade and no more, and it carries when it was seen so a closer look supersedes it.
         UniverseRegistry registry = threeSystems();
         CrystalMemory crystal = new CrystalMemory();
 
-        TelescopeScan.recordInto(registry, boxAroundFourthSector(), crystal, 7_000L);
-        CrystalEntry learned = crystal.get(cell(4, 0, 0));
+        surveyAll(registry, boxAroundFourthSector(), crystal, 7_000L);
+        CrystalEntry learned = crystal.forBody(401);
 
         assertNotNull(learned);
-        assertEquals("a region scan resolves no more than telescope-grade detail",
+        assertEquals("a region survey resolves no more than telescope-grade detail",
                 InfoTier.TELESCOPE, learned.detail());
         assertEquals("and dates what it saw", 7_000L, learned.observedTick());
-        assertFalse("a system is an address, not a place to land", learned.namesBody());
+    }
+
+    @Test
+    public void aSweepWritesOnlyTheCellsItHasReached() {
+        // What makes the sweep a mechanic rather than a formality: the crystal fills as the
+        // instrument works, not all at the end.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+        RegionScan scan = boxAroundFourthSector();
+
+        int firstCellWithContent = -1;
+        for (int i = 0; i < scan.totalCells(); i++) {
+            if (scan.cellAt(i).cellKey().equals(cell(4, 0, 0).cellKey())) {
+                firstCellWithContent = i;
+                break;
+            }
+        }
+        assertTrue("the fixture's system must lie inside the swept region", firstCellWithContent >= 0);
+
+        TelescopeScan.resolveBatch(registry, scan, 0, firstCellWithContent, crystal, 7_000L,
+                dimId -> "Body-" + dimId);
+        assertNull("a cell the sweep has not reached yet must not be on the crystal",
+                crystal.forBody(401));
+
+        TelescopeScan.resolveBatch(registry, scan, firstCellWithContent, 1, crystal, 7_100L,
+                dimId -> "Body-" + dimId);
+        assertNotNull("and must land the moment the sweep reaches it", crystal.forBody(401));
     }
 }
