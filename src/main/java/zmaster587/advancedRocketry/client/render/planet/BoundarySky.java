@@ -148,7 +148,7 @@ public class BoundarySky extends IRenderHandler {
         // the jump phase from — and not the seat the viewer happens to be on. Keyed on the seat, a
         // crew member who stood up mid-flight got a cell's descent ring in the transit corridor and
         // no corridor at all, which reads as the flight having stopped.
-        if (HyperspaceTunnel.isHyperspace(world)) {
+        if (zmaster587.advancedRocketry.space.HyperspaceWorld.isHyperspace(world)) {
             HyperspaceTunnel.render(partialTicks, world);
             GlStateManager.enableTexture2D();
             restoreState();

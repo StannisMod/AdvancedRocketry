@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.test.unit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import org.junit.After;
 import org.junit.Before;
@@ -17,7 +18,7 @@ import zmaster587.advancedRocketry.space.HyperspaceWorld;
  * <p>What is pinned here is the SERVER's answer, which needs no world to express. The client's half -
  * that a reader on a remote world picks the told value, and that the telling is forgotten when the
  * connection ends - is observable ONLY through a world that reports itself remote, so it belongs to a
- * client test and is deliberately not faked here. An assertion routed through {@code dimIdFor(null)}
+ * client test and is deliberately not faked here. An assertion routed through a world-less call
  * would read the server's field and stay green however the client's side behaved.</p>
  */
 public class HyperspaceDimIdIsAskedPerSideTest {
@@ -41,11 +42,10 @@ public class HyperspaceDimIdIsAskedPerSideTest {
     }
 
     @Test
-    public void withNoWorldToAskAboutTheAnswerIsThisSidesOwn() {
+    public void nothingIsHyperspaceWhenThereIsNoWorldToAskAbout() {
         HyperspaceWorld.adoptFromServer(45);
 
-        assertEquals("a caller with no world in hand is server-side by construction - the client"
-                + " always has one - so it gets the local registration, absent here",
-                Integer.MIN_VALUE, HyperspaceWorld.dimIdFor(null));
+        assertFalse("a question about no world has one honest answer, and it is not a crash",
+                HyperspaceWorld.isHyperspace(null));
     }
 }

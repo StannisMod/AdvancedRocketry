@@ -104,10 +104,11 @@ public final class HyperspaceWorld {
      * {@link #register()} minted, so a caller reasoning about worlds this JVM is simulating is
      * reading the fact rather than a report of one.
      *
-     * <p>Client-side code must not call this. Both ids live in JVM-global statics, so a client that
-     * hosted a single-player world earlier in the same launch still has one — and it names a world
-     * that is gone, not the server it is now connected to. Use {@link #dimIdFor(World)}, which picks
-     * by the side the world is on rather than by the caller's belief about where it runs.</p>
+     * <p>It exists for the one caller that needs the NUMBER rather than the answer: the slot-dim sync
+     * packet, which sends it. Anything asking whether a world IS hyperspace wants
+     * {@link #isHyperspace(World)} instead — both ids live in JVM-global statics, and a client that
+     * hosted a single-player world earlier in the same launch still has one of them, naming a world
+     * that is gone rather than the server it is now connected to.</p>
      */
     public static int dimId() {
         return dimId;
@@ -126,20 +127,23 @@ public final class HyperspaceWorld {
     private static int adoptedDimId = Integer.MIN_VALUE;
 
     /**
-     * Which dimension hyperspace is, asked for the side {@code world} is on: the local registration
-     * on a server, the id the connected server reported on a client. {@link Integer#MIN_VALUE} when
-     * that side does not know, which no real dimension id equals - so an unsynced client answers
-     * "nowhere" rather than "everywhere".
+     * Is {@code world} hyperspace?
      *
-     * <p>The side is a property of the world, not something a call site should be trusted to know
-     * about itself: a tile entity, a world provider and a sky renderer all run on both, and each of
-     * them holds the world it is asking about.</p>
+     * <p>Asked as one question rather than handed out as an id, because the id alone is not an
+     * answer: which dimension hyperspace is depends on the SIDE, and the side is a property of the
+     * world, not something a call site should be trusted to know about itself — a tile entity, a
+     * world provider and a sky renderer all run on both. A server compares against the registration
+     * it made; a client against what its server reported, and against nothing else.</p>
+     *
+     * <p>False whenever this side does not know yet: an unsynced client says "not here" everywhere
+     * rather than picking a dimension at random. {@code null} is not hyperspace either.</p>
      */
-    public static int dimIdFor(World world) {
+    public static boolean isHyperspace(World world) {
         if (world == null) {
-            return dimId;
+            return false;
         }
-        return world.isRemote ? adoptedDimId : dimId;
+        int hyper = world.isRemote ? adoptedDimId : dimId;
+        return hyper != Integer.MIN_VALUE && world.provider.getDimension() == hyper;
     }
 
     /** Learn the server's hyperspace dim id. {@link Integer#MIN_VALUE} means "none yet" — ignored. */

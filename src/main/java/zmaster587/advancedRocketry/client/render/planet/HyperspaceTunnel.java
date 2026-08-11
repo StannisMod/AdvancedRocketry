@@ -53,28 +53,6 @@ public final class HyperspaceTunnel {
     public static volatile long framesDrawn = 0L;
 
     /**
-     * Whether {@code world} is hyperspace, i.e. whether this frame is being drawn during a jump.
-     *
-     * <p><b>The corridor is a property of the WORLD, not of what the viewer is sitting on.</b> It
-     * used to be read off the jump phase published on the seat dummy, which answers 0 for anyone
-     * riding nothing — so a crew member who stood up mid-flight lost the corridor, and with it the
-     * only thing in hyperspace that says the ship is moving (no bodies are synced there and the
-     * descent ring is suppressed). An empty, motionless sky reads as the flight having stopped. The
-     * posture was never the question; being in hyperspace is, and that is the same primary fact the
-     * server derives the phase from.</p>
-     *
-     * <p>The id comes from {@code PacketSlotDimSync}: a remote client cannot derive it, since
-     * hyperspace is registered server-side. Until it arrives {@link HyperspaceWorld#dimId()} is
-     * {@link Integer#MIN_VALUE}, which no real dimension id can equal, so an unsynced client draws
-     * no corridor rather than drawing one everywhere.</p>
-     */
-    public static boolean isHyperspace(net.minecraft.world.World world) {
-        int hyper = HyperspaceWorld.dimIdFor(world);
-        return world != null && hyper != Integer.MIN_VALUE
-                && world.provider.getDimension() == hyper;
-    }
-
-    /**
      * Which way the SHIP is pointing, as {@code {yaw, pitch}} in degrees — the corridor's axis.
      *
      * <p>Three sources, in order of how directly each knows the ship:</p>
