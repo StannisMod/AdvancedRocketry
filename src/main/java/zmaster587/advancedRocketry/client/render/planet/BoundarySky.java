@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
+import zmaster587.advancedRocketry.space.HyperspaceWorld;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
 import java.util.List;
@@ -130,7 +131,13 @@ public class BoundarySky extends IRenderHandler {
         // In hyperspace this same provider serves the transit lanes, and nothing below belongs
         // there: no cell is loaded, so no body is ever synced. The corridor replaces them, and it
         // is the only thing that tells a pilot with no controls and no readout that he is moving.
-        if (HyperspaceTunnel.localTransitPhase() > 0) {
+        //
+        // Gated on the WORLD, which is the primary fact and true of everyone in it. The gate used to
+        // be the jump phase published on the seat entity, so it answered 0 for anybody riding
+        // nothing: a crew member who stood up mid-flight lost the corridor, and hyperspace has
+        // nothing else in its sky, so the sky went empty and still. Being aboard is not the same as
+        // sitting down, and the backdrop of a world is not a property of the chair.
+        if (HyperspaceWorld.isHyperspaceOnClient(world.provider.getDimension())) {
             HyperspaceTunnel.render(partialTicks, world);
             GlStateManager.enableTexture2D();
             restoreState();

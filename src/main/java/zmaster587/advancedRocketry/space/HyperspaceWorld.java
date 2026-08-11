@@ -27,6 +27,18 @@ public final class HyperspaceWorld {
     private static DimensionType type;
     private static int dimId = Integer.MIN_VALUE;
 
+    /**
+     * What the SERVER said its hyperspace dimension id is, as told to this client by the slot-dim
+     * sync. Deliberately a second field rather than a client write into {@link #dimId}: a client JVM
+     * that has joined a dedicated server and then opens a single-player world would otherwise carry
+     * that server's id into {@link #register()}, which skips registration whenever the id is already
+     * set and would leave the integrated server with a dimension nobody registered.
+     *
+     * <p>Written only by the sync packet's client handler, read only by client code. Never consulted
+     * on the server, where {@link #dimId} is the answer.</p>
+     */
+    private static int serverToldClientDimId = Integer.MIN_VALUE;
+
     private HyperspaceWorld() { }
 
     /**
@@ -102,6 +114,30 @@ public final class HyperspaceWorld {
     /** The hyperspace dimension id, or {@link Integer#MIN_VALUE} if it has not been created yet. */
     public static int dimId() {
         return dimId;
+    }
+
+    /**
+     * Client-side: record the hyperspace dimension id the server just sent. Called from the slot-dim
+     * sync's client handler; on an integrated server it stores the value the server already holds.
+     */
+    public static void rememberOnClient(int id) {
+        serverToldClientDimId = id;
+    }
+
+    /**
+     * Client-side: is {@code dimension} the hyperspace world?
+     *
+     * <p>This is the CLIENT's way of asking the question a server answers with {@link #dimId()}. It
+     * exists because hyperspace and the pool cells share one {@link WorldProviderSpaceSlot}, so a
+     * client cannot tell which of the two it is standing in from the provider, the biome, or what has
+     * been synced to it — and "no bodies in the sky" is true of an empty cell as well.</p>
+     *
+     * <p>Answers {@code false} until the sync has arrived, which is never a window a player can be in
+     * hyperspace during: the id is registered upfront at subsystem init and the sync is sent while the
+     * client is still connecting, before anything can move him into a slot world.</p>
+     */
+    public static boolean isHyperspaceOnClient(int dimension) {
+        return serverToldClientDimId != Integer.MIN_VALUE && dimension == serverToldClientDimId;
     }
 
     /**

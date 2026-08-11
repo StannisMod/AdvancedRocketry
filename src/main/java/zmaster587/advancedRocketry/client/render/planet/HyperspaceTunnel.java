@@ -51,20 +51,12 @@ public final class HyperspaceTunnel {
     public static volatile long framesDrawn = 0L;
 
     /**
-     * The jump phase of the ship the local player is riding, or 0 when he is not aboard one in
-     * flight. The client learns this from the seat entity it is already tracking; there is no
-     * separate channel and nothing for the client to compute.
+     * Draw the corridor for this frame. Call from inside a sky renderer, having already established
+     * that this world IS hyperspace — the caller owns that gate, and it is a question about the
+     * WORLD. This class used to answer it itself by reading the jump phase off the seat entity the
+     * player was riding, which made the corridor a property of sitting down: standing up returned 0
+     * and emptied a sky that has nothing else in it.
      */
-    public static int localTransitPhase() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null) {
-            return 0;
-        }
-        Entity riding = mc.player.getRidingEntity();
-        return riding instanceof EntityDummy ? ((EntityDummy) riding).getTransitPhase() : 0;
-    }
-
-    /** Draw the corridor for this frame. Call from inside a sky renderer. */
     public static void render(float partialTicks, net.minecraft.world.World world) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || world == null) {

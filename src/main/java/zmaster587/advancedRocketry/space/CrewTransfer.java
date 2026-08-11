@@ -143,6 +143,53 @@ public final class CrewTransfer {
         return walk(world, afcPos, shipWorldPos, false);
     }
 
+    /**
+     * Re-read the postures of an ALREADY-captured crew against the ship they are aboard right now,
+     * and return the records the far end should be re-established from.
+     *
+     * <p>A jump has TWO cuts, and between them the ship is a place its crew lives in: they may stand
+     * up, walk the deck, or take a different chair. The first cut's capture answers where each of them
+     * was when the jump fired; replaying that at the second returns a posture that can be an entire
+     * flight out of date, which from the cockpit looks like standing up in the corridor and being
+     * folded back into the seat on arrival.
+     *
+     * <p><b>Read-only against the world</b>: nothing is dismounted and no dummy is retired, so how the
+     * crossing treats a still-mounted rider is exactly as it was. A crew member the live enumeration
+     * cannot find keeps his earlier record — offline, taken by the void, and momentarily unresolvable
+     * all look alike from here, and dropping the record would strand whoever IS still aboard.
+     *
+     * <p>Anyone now found on his FEET is pinned where he stands, for the same reason {@link #capture}
+     * pins him: the blocks under him are about to be cut.
+     */
+    public static List<Crew> refreshPostures(WorldServer world, BlockPos afcPos,
+            double[] shipWorldPos, List<Crew> captured) {
+        if (captured == null || captured.isEmpty()) {
+            return captured;
+        }
+        List<Crew> live = peek(world, afcPos, shipWorldPos);
+        List<Crew> out = new ArrayList<>(captured.size());
+        for (Crew was : captured) {
+            Crew now = null;
+            for (Crew c : live) {
+                // By UUID, never by entity identity: a crew member who relogged mid-flight is a
+                // different object with the same player.
+                if (c.player.getUniqueID().equals(was.player.getUniqueID())) {
+                    now = c;
+                    break;
+                }
+            }
+            if (now == null) {
+                out.add(was);
+                continue;
+            }
+            if (now.posture == ShipAboardTag.Posture.STANDING) {
+                zmaster587.advancedRocketry.integration.vs.DeckHold.pinInPlace(now.player);
+            }
+            out.add(now);
+        }
+        return out;
+    }
+
     /** The shared enumeration behind {@link #capture} / {@link #peek}; {@code detach} is the only
      *  difference between them. */
     private static List<Crew> walk(WorldServer world, BlockPos afcPos, double[] shipWorldPos,

@@ -25,9 +25,16 @@ import java.util.List;
  * or grows — always BEFORE anything can relocate a player into a slot (the sequencing contract).
  *
  * <p>Wire contract (same-version): the server's slot {@code DimensionType} id, then a
- * count-prefixed list of dim ids. The client registers the type under the SERVER's id; a
- * client-side id collision means a mismatched client/server mod set and is logged, never masked.
- * On an integrated server both sides share the JVM-global registration, so this is a no-op.</p>
+ * count-prefixed list of dim ids, then WHICH of them is hyperspace ({@link Integer#MIN_VALUE} when
+ * it is not registered). The client registers the type under the SERVER's id; a client-side id
+ * collision means a mismatched client/server mod set and is logged, never masked. On an integrated
+ * server both sides share the JVM-global registration, so the registration half is a no-op.</p>
+ *
+ * <p><b>Why hyperspace is named separately.</b> The list alone says which dims are slot worlds and
+ * nothing about which one is the transit host — and the client needs exactly that to know it is
+ * flying a jump rather than parked in a cell, because hyperspace and the cells share one
+ * {@link WorldProviderSpaceSlot}. The backdrop used to be gated on the seat entity's synced jump
+ * phase instead, which meant standing up emptied the sky.</p>
  */
 public class PacketSlotDimSync extends BasePacket {
 
@@ -36,6 +43,7 @@ public class PacketSlotDimSync extends BasePacket {
 
     private int typeId = Integer.MIN_VALUE;
     private List<Integer> dims = new ArrayList<>();
+    private int hyperDim = Integer.MIN_VALUE;
 
     public PacketSlotDimSync() {
     }
@@ -49,6 +57,7 @@ public class PacketSlotDimSync extends BasePacket {
         if (hyper != Integer.MIN_VALUE) {
             p.dims.add(hyper);
         }
+        p.hyperDim = hyper;
         return p;
     }
 
@@ -65,6 +74,7 @@ public class PacketSlotDimSync extends BasePacket {
         for (Integer d : dims) {
             buffer.writeInt(d);
         }
+        buffer.writeInt(hyperDim);
     }
 
     @Override
@@ -76,6 +86,7 @@ public class PacketSlotDimSync extends BasePacket {
         for (int i = 0; i < n; i++) {
             dims.add(buffer.readInt());
         }
+        hyperDim = buffer.readInt();
     }
 
     @Override
@@ -85,6 +96,10 @@ public class PacketSlotDimSync extends BasePacket {
 
     @Override
     public void executeClient(EntityPlayer player) {
+        // Ahead of every guard below, and deliberately: which dim is hyperspace is independent of the
+        // DimensionType negotiation, and the sky's gate should not be lost to a mod-set mismatch it has
+        // nothing to do with.
+        HyperspaceWorld.rememberOnClient(hyperDim);
         if (typeId == Integer.MIN_VALUE) {
             return;
         }

@@ -140,6 +140,18 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
             if (!bodies.isEmpty()) {
                 bodyStash.put(shipId, bodies);
             }
+            // The same second cut re-reads the CREW's posture, for the reason the bodies above are
+            // re-stowed: the deck they are on has been livable for the whole flight. Without this the
+            // arrival re-establishes everyone as he was when the jump FIRED, so a crew member who
+            // stood up in the corridor is put back in the chair on arrival — a posture he left a
+            // flight ago. Read-only: it changes the records, not the world.
+            List<CrewTransfer.Crew> stashed = crewStash.get(shipId);
+            double[] hyperShipPos = stashed == null || stashed.isEmpty()
+                    ? null : VSIntegration.getShipWorldPosition(hyper, hyperAfc);
+            if (hyperShipPos != null) {
+                crewStash.put(shipId, CrewTransfer.refreshPostures(
+                        hyper, hyperAfc, hyperShipPos, stashed));
+            }
         }
         // Redundant since the pool took to holding every slot a cell is bound to, and kept anyway: this is
         // the call site that can least afford to lose the world, because VS is still assembling the ship
