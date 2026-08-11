@@ -90,13 +90,21 @@ public final class DescentController {
     }
 
     /**
-     * Pure trigger predicate for the flight computer's proximity check: descent fires only from a
-     * space-subsystem (slot) world — the INVERSE of {@code shouldTriggerEntry} — only with a pilot
-     * actually flying, and only once the ship has closed within the descent radius of a body.
+     * Pure trigger predicate for the flight computer's proximity check: descent fires from a
+     * space-subsystem (slot) world — the INVERSE of {@code shouldTriggerEntry} — once the ship has
+     * closed within the descent radius of a body.
+     *
+     * <p><b>It does not ask who is at the controls, and it must not.</b> Crossing this radius IS
+     * entering the body's atmosphere: a physical event at a physical surface, which does not check
+     * whether a player is holding a key. This predicate carried a {@code pilotPresent} conjunct
+     * until 2026-08-11 that every production call site passed as a literal {@code true} — so it
+     * evaluated nothing here while the real gate sat at the call site, and what that gate excluded
+     * was a ship under retained autopilot cruise: the one flight mode with nobody watching, flying
+     * to a boundary it was then forbidden to cross.</p>
      */
-    public static boolean shouldTriggerDescent(boolean isSpaceSubsystemWorld, boolean pilotPresent,
+    public static boolean shouldTriggerDescent(boolean isSpaceSubsystemWorld,
                                                double shipDistanceToBody, long radiusBlocks) {
-        return isSpaceSubsystemWorld && pilotPresent && shipDistanceToBody <= radiusBlocks;
+        return isSpaceSubsystemWorld && shipDistanceToBody <= radiusBlocks;
     }
 
     /**

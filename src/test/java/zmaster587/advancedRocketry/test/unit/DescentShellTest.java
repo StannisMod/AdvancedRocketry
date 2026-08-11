@@ -26,7 +26,7 @@ public class DescentShellTest {
 
     private static boolean triggers(double distanceToCentre) {
         return zmaster587.advancedRocketry.space.DescentController
-                .shouldTriggerDescent(true, true, distanceToCentre, R);
+                .shouldTriggerDescent(true, distanceToCentre, R);
     }
 
     @Test

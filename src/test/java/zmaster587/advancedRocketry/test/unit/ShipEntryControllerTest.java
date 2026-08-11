@@ -322,15 +322,19 @@ public class ShipEntryControllerTest {
         assertEquals(1, ops.crossings);
     }
 
+    /**
+     * The trigger is WORLD and ALTITUDE, and nothing else — see the twin note on
+     * {@code DescentControllerTest}. The "no pilot, no entry" leg went with the parameter it
+     * exercised: production always passed it {@code true}, and an unmanned ship above the orbit
+     * line is now meant to leave.
+     */
     @Test
-    public void triggerPredicateGatesOnWorldPilotAndCeiling() {
-        assertTrue(ShipEntryController.shouldTriggerEntry(false, true, 1001.0, 1000));
-        assertFalse("no pilot, no entry",
-                ShipEntryController.shouldTriggerEntry(false, false, 1001.0, 1000));
+    public void triggerPredicateGatesOnWorldAndCeilingOnly() {
+        assertTrue(ShipEntryController.shouldTriggerEntry(false, 1001.0, 1000));
         assertFalse("below the ceiling",
-                ShipEntryController.shouldTriggerEntry(false, true, 999.0, 1000));
+                ShipEntryController.shouldTriggerEntry(false, 999.0, 1000));
         assertFalse("never from a space-subsystem world",
-                ShipEntryController.shouldTriggerEntry(true, true, 1001.0, 1000));
+                ShipEntryController.shouldTriggerEntry(true, 1001.0, 1000));
     }
 
     /**
@@ -347,7 +351,7 @@ public class ShipEntryControllerTest {
                 line < 1000);
         assertTrue("a ship must be able to EXCEED the line before the clamp stops it (line " + line
                         + ", clamp 1000)",
-                ShipEntryController.shouldTriggerEntry(false, true, 1000.0, line));
+                ShipEntryController.shouldTriggerEntry(false, 1000.0, line));
 
         // A clamp raised well above the orbit line leaves the configured orbit height in charge.
         assertEquals(1000, ShipEntryController.effectiveEntryCeiling(1000, 2_000_000.0));

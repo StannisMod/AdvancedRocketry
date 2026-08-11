@@ -210,6 +210,35 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private transient Boolean arLastPilotPresent = null;
 
     /**
+     * How often the descend-target list is rebuilt while the ship stays in one cell. A safety net
+     * only: the list is rebuilt IMMEDIATELY whenever the ship's cell changes, and this bounds how
+     * long a universe edit made under a parked ship (a POI registered in its cell) can go unseen.
+     */
+    private static final int DESCEND_TARGET_RESOLVE_TICKS = 20;
+
+    /** Cell key the cached {@link #descendTargets} were resolved for; {@code null} = never resolved. */
+    private transient String descendTargetsCell = null;
+
+    /**
+     * The descend targets of the ship's own cell, held between ticks.
+     *
+     * <p><b>Why this is cached and the proximity check is not.</b> Which bodies are IN a cell is a
+     * constant: a body's cell is its durable NAME, derived once at a fixed reference tick and
+     * thereafter recorded, and the membership test is on that name. Where each body sits INSIDE the
+     * cell is what moves. So the expensive half — {@code bodiesAt} re-deriving a whole system per
+     * call, with no cache anywhere beneath it — recomputes an answer that does not change, while
+     * the cheap half (one orbital evaluation and a distance compare per target) is the only part
+     * that has to run per tick.</p>
+     *
+     * <p>Holding the body objects across ticks is safe BY THEIR DESIGN, not by luck: a
+     * {@code SystemBody} carries its orbital LAW rather than a position, and the moment is chosen
+     * by whoever asks — so {@code addressAt(now)} on a body resolved a second ago is still live.
+     * A frozen list of frozen positions would be the bug; this is a frozen list of laws.</p>
+     */
+    private transient java.util.List<zmaster587.advancedRocketry.universe.SystemBody> descendTargets =
+            java.util.Collections.emptyList();
+
+    /**
      * The attitude the ship is being held at - a PERSISTENT reference the pilot's rates steer, not a
      * fresh reading of where the ship happens to be pointing.
      *
@@ -387,21 +416,24 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
 
         // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
         FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
-        // "Flying" for the entry ceiling check = a held input OR the auto-takeoff autopilot driving.
-        boolean flying = in != null || autoTakeoffEngaged;
 
-        // Entry on-ramp: a ship climbing past the launch dimension's orbit ceiling enters space.
-        // Never from a space-subsystem world (slot cells and hyperspace share the void provider),
-        // and only while a pilot is flying (manual throttle or the autopilot) — a station-keeping
-        // hulk drifting high stays put.
+        // NEITHER CROSSING ASKS WHETHER ANYONE IS AT THE CONTROLS. Both used to be gated on a
+        // "flying" flag that meant "an input is held right now", which is not a property of the
+        // world: an atmosphere does not check whose hands are on the stick, going in or coming out.
+        // The gate's stated case — an unmanned hulk drifting up and launching itself — is a state
+        // this same method does not produce: with no input a ship either falls (never flown, no
+        // station-keeping) or is commanded to HOLD. The only way an unmanned ship rises is a
+        // retained non-zero cruise setpoint, i.e. the autopilot, i.e. exactly the ship that SHOULD
+        // cross. What the flag actually excluded was that autopilot: it would fly to a boundary and
+        // then refuse to cross it, which is the one flight mode nobody is watching.
         boolean onPlanetSide =
                 !(world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
 
-        // Descent trigger (the inverse of the entry ceiling check): a SETTLED slot-world ship whose
-        // pilot is flying, closed within the descent radius of a descend-target body, drops into that
-        // body's planet dim. Proximity reads the ledger coord (self-reported above) + the body POIs of
+        // Descent trigger (the inverse of the entry ceiling check): a SETTLED slot-world ship that
+        // has closed within the descent radius of a descend-target body drops into that body's
+        // planet dim. Proximity reads the ledger coord (self-reported above) + the body POIs of
         // the ship's own cell — no VS enumeration. Only planets/moons with a real dim are targets.
-        if (flying && !onPlanetSide && shipId != null) {
+        if (!onPlanetSide && shipId != null) {
             zmaster587.advancedRocketry.space.DescentController descentCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
             zmaster587.advancedRocketry.space.ShipLedger descentLedger =
@@ -416,19 +448,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                     if (reg != null) {
                         zmaster587.advancedRocketry.space.GalacticCoord shipCoord = settled.coord;
                         long radius = zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS;
-                        for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(shipCoord)) {
-                            if (!body.isDescendTarget()) {
-                                continue;
-                            }
-                            // Ship and body are in the SAME cell here (bodiesAt filters by name), so
-                            // both sit in one frame and its motion cancels: the in-cell delta is the
-                            // true distance without a frame lookup. A moon's offset is live, hence
-                            // the tick.
+                        for (zmaster587.advancedRocketry.universe.SystemBody body
+                                : descendTargetsIn(reg, shipCoord)) {
+                            // Ship and body are in the SAME cell here (the list is filtered by name),
+                            // so both sit in one frame and its motion cancels: the in-cell delta is
+                            // the true distance without a frame lookup. A moon's offset is live,
+                            // hence the tick.
                             double distance = Math.sqrt(shipCoord.staticFrameDistanceSqTo(
                                     body.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
                                             .spaceClock())));
                             if (zmaster587.advancedRocketry.space.DescentController
-                                        .shouldTriggerDescent(true, true, distance, radius)
+                                        .shouldTriggerDescent(true, distance, radius)
                                     && descentCtl.requestDescent(world.provider.getDimension(),
                                             getPos(), shipId, body.dimId())) {
                                 // The crossing started: this tile was cut out of the slot world - stop
@@ -454,14 +484,14 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             }
         }
 
-        if (flying && onPlanetSide) {
+        if (onPlanetSide) {
             zmaster587.advancedRocketry.space.ShipEntryController entryCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
             double[] shipPos = VSIntegration.getShipWorldPosition(world, getPos());
             int ceiling = entryCeiling();
             if (entryCtl != null && shipPos != null && !entryLatched
                     && zmaster587.advancedRocketry.space.ShipEntryController
-                            .shouldTriggerEntry(false, true, shipPos[1], ceiling)
+                            .shouldTriggerEntry(false, shipPos[1], ceiling)
                     && entryCtl.requestEntry(world.provider.getDimension(), getPos(),
                             getOrCreateShipId())) {
                 // The crossing started: this tile has just been cut out of the world - do not
@@ -590,6 +620,37 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // error of rate/gain, so without it the ship visibly lags the pilot's hand.
         targetAttitude = new double[]{target.w, target.x, target.y, target.z};
         commandedAngVel = FreeFlightPhysics.bodyRatesToWorldOmega(target, pitchRate, yawRate, rollRate);
+    }
+
+    /**
+     * The descend-target bodies of {@code shipCoord}'s cell, rebuilt only when it can have changed.
+     *
+     * <p>Rebuilt at once on a CELL CHANGE — the only thing that alters which bodies are in range —
+     * and otherwise once per {@link #DESCEND_TARGET_RESOLVE_TICKS} as a bound on staleness. The
+     * slow rebuild is phased by this tile's own position rather than run on a shared {@code % N}
+     * boundary, so a cell holding several ships does not stack every one of their rebuilds onto the
+     * same tick.</p>
+     */
+    private java.util.List<zmaster587.advancedRocketry.universe.SystemBody> descendTargetsIn(
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg,
+            zmaster587.advancedRocketry.space.GalacticCoord shipCoord) {
+        String key = shipCoord.cellKey();
+        boolean cellChanged = !key.equals(descendTargetsCell);
+        boolean dueForRefresh = Math.floorMod(world.getTotalWorldTime(), DESCEND_TARGET_RESOLVE_TICKS)
+                == Math.floorMod(getPos().hashCode(), DESCEND_TARGET_RESOLVE_TICKS);
+        if (!cellChanged && !dueForRefresh) {
+            return descendTargets;
+        }
+        java.util.List<zmaster587.advancedRocketry.universe.SystemBody> found =
+                new java.util.ArrayList<>();
+        for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(shipCoord)) {
+            if (b.isDescendTarget()) {
+                found.add(b);
+            }
+        }
+        descendTargets = found;
+        descendTargetsCell = key;
+        return found;
     }
 
     /** Length of a 3-vector channel, treating "no command" (null) as zero. */

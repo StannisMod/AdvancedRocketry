@@ -389,18 +389,25 @@ public class DescentControllerTest {
                 arrival > TerrainHeightFinder.MAX_BUILD_Y);
     }
 
+    /**
+     * The trigger is WORLD and GEOMETRY, and nothing else.
+     *
+     * <p>The "no pilot, no descent" leg this used to carry is gone with the parameter it exercised:
+     * every production call site passed that conjunct as a literal {@code true}, so the leg pinned a
+     * path production could not reach — and the behaviour it appeared to protect (a ship crossing an
+     * atmosphere with nobody at the controls) is now deliberately ALLOWED, because crossing is a
+     * physical event and the one ship it excluded was the autopilot.</p>
+     */
     @Test
-    public void triggerPredicateGatesOnWorldPilotAndRadius() {
+    public void triggerPredicateGatesOnWorldAndRadiusOnly() {
         long r = ShipEntryController.DESCENT_RADIUS_BLOCKS;
-        assertTrue("in space, pilot flying, inside the radius",
-                DescentController.shouldTriggerDescent(true, true, r - 1.0, r));
+        assertTrue("in space, inside the radius",
+                DescentController.shouldTriggerDescent(true, r - 1.0, r));
         assertTrue("exactly on the radius still triggers",
-                DescentController.shouldTriggerDescent(true, true, r, r));
-        assertFalse("no pilot, no descent",
-                DescentController.shouldTriggerDescent(true, false, 0.0, r));
+                DescentController.shouldTriggerDescent(true, r, r));
         assertFalse("outside the radius",
-                DescentController.shouldTriggerDescent(true, true, r + 1.0, r));
+                DescentController.shouldTriggerDescent(true, r + 1.0, r));
         assertFalse("never from a planet-side world",
-                DescentController.shouldTriggerDescent(false, true, 0.0, r));
+                DescentController.shouldTriggerDescent(false, 0.0, r));
     }
 }

@@ -1050,6 +1050,15 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true}");
             return;
         }
+        // ff-input-clear — drop the held Free Flight input. `debugFlightInput` is a STATIC, so it
+        // outlives the scenario that set it and every later one on the same server inherits it. A
+        // test whose whole subject is "nobody is at the controls" must therefore clear it rather
+        // than assume it, or it passes for the previous scenario's reason and proves nothing.
+        if (args.length >= 1 && "ff-input-clear".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
+            send(sender, "{\"ok\":true,\"cleared\":true}");
+            return;
+        }
         // seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll> — drive the ship through the
         // PILOT SEAT path server-side: find the loaded pilot seat, resolve its linked AFC via the
         // stored offset, and set that AFC's per-tile pilot input. Bisects the seat->AFC->force

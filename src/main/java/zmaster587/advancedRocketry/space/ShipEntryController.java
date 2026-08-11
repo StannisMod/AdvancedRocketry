@@ -89,13 +89,21 @@ public final class ShipEntryController {
     }
 
     /**
-     * Pure trigger predicate for the flight computer's ceiling check: entry fires only from a
-     * planet-side dimension (never a slot/hyperspace world), only with a pilot actually flying,
-     * and only once the ship's pose has climbed past the dimension's orbit line.
+     * Pure trigger predicate for the flight computer's ceiling check: entry fires from a
+     * planet-side dimension (never a slot/hyperspace world) once the ship's pose has climbed past
+     * the dimension's orbit line.
+     *
+     * <p><b>It does not ask who is at the controls</b> — see the same note on
+     * {@code DescentController.shouldTriggerDescent}. Leaving an atmosphere is as physical as
+     * entering one, and the {@code pilotPresent} conjunct this carried until 2026-08-11 was passed
+     * as a literal {@code true} by every production call site. The case its call-site gate was
+     * documented to protect — an unmanned hulk drifting up and launching itself — is not a state
+     * the flight computer produces: with no input a ship falls or is commanded to hold, and the
+     * only way it rises is a retained cruise setpoint, which is a ship under way.</p>
      */
-    public static boolean shouldTriggerEntry(boolean isSpaceSubsystemWorld, boolean pilotPresent,
+    public static boolean shouldTriggerEntry(boolean isSpaceSubsystemWorld,
                                              double shipWorldY, int orbitHeight) {
-        return !isSpaceSubsystemWorld && pilotPresent && shipWorldY > orbitHeight;
+        return !isSpaceSubsystemWorld && shipWorldY > orbitHeight;
     }
 
     /**
