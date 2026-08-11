@@ -359,7 +359,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public List<Integer> parkedShipLanes(int laneSearchLimit) {
+    public List<Integer> parkedShipLanes() {
         List<Integer> lanes = new ArrayList<>();
         WorldServer hyper = HyperspaceWorld.getIfLoaded();
         if (hyper == null) {
@@ -367,7 +367,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         }
         for (Map.Entry<UUID, double[]> ship : VSIntegration.registeredShipPoses(hyper).entrySet()) {
             double[] pos = ship.getValue();
-            int lane = HyperspaceTiles.laneIndexAt(pos[0], pos[2], laneSearchLimit);
+            int lane = HyperspaceTiles.laneIndexAt(pos[0], pos[2]);
             if (lane >= 0) {
                 lanes.add(lane);
             } else {

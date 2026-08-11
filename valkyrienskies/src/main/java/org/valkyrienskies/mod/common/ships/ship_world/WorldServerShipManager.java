@@ -438,6 +438,26 @@ public class WorldServerShipManager implements IPhysObjectWorld {
         this.spawnQueue.add(ImmutableTriple.of(spawnPos, data, blockFinderType));
     }
 
+    /**
+     * Is this ship in the manager's hands right now — loaded, queued to load, or streaming its chunks
+     * in the background?
+     *
+     * <p>Anything about to DEREGISTER a ship has to ask THIS and not merely "is it loaded". A ship
+     * whose chunks are being streamed has no {@link PhysicsObject} yet, so it answers "not loaded" to
+     * {@link #getPhysObjectFromUUID(UUID)} while the loader is still holding its id; removing its
+     * {@link ShipData} in that window throws {@code IllegalStateException} out of the world tick from
+     * {@link #getBackgroundShipChunks()} on the very next chunk-provider tick, with nothing between
+     * the throw and the server loop. The three queues below are the whole of "in the manager's
+     * hands", and each of them dereferences its ids against the registry.</p>
+     */
+    public boolean isShipInUse(@Nonnull UUID shipID) {
+        enforceGameThread();
+        return loadedShips.containsKey(shipID)
+            || loadQueue.contains(shipID)
+            || backgroundLoadQueue.contains(shipID)
+            || loadingInBackground.contains(shipID);
+    }
+
     @Override
     public void queueShipLoad(@Nonnull UUID shipID) {
         enforceGameThread();

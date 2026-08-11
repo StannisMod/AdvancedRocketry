@@ -177,6 +177,46 @@ public class ShipAboardTagTest {
     }
 
     @Test
+    public void aCrewMemberCarriedThroughAJumpIsStillEvidenceOfBeingOutInSpace() {
+        // The case with NEITHER of the usual pieces of evidence. A jumping ship is in no cell, so
+        // the record carries no coordinate; and the world it is parked in has its dimension id
+        // re-minted by a free-id scan on every boot, so the id he was saved under stops naming
+        // anything at exactly the event this has to survive - a restart. Left to those two, a pilot
+        // who quit mid-jump comes back at spawn while his ship waits in hyperspace.
+        ShipAboardTag.Aboard seatedMidJump =
+                new ShipAboardTag.Aboard(SHIP, null, 0, 2, -3).inTransit();
+        assertFalse("hyperspace is no cell, so there is still no presence",
+                seatedMidJump.hasPresence());
+        assertTrue("but the record must still say he was out in space",
+                seatedMidJump.saysSpaceborne());
+
+        NBTTagCompound forgeData = new NBTTagCompound();
+        ShipAboardTag.write(forgeData, seatedMidJump);
+        ShipAboardTag.Aboard restored = ShipAboardTag.read(forgeData);
+        assertNotNull("a mid-jump record must survive the round-trip", restored);
+        assertEquals(seatedMidJump, restored);
+        assertEquals(seatedMidJump.hashCode(), restored.hashCode());
+        assertTrue("the jump must come back with it, or the restart eats it", restored.inTransit);
+        assertTrue(restored.saysSpaceborne());
+
+        // Standing carries it too: a crew member walks the deck during the flight, and the posture
+        // he happens to be in when he quits cannot decide whether he is found again.
+        ShipAboardTag.Aboard standingMidJump =
+                ShipAboardTag.Aboard.standing(SHIP, null, 1.5D, 0.0D, -2.5D).inTransit();
+        NBTTagCompound standingData = new NBTTagCompound();
+        ShipAboardTag.write(standingData, standingMidJump);
+        assertEquals(standingMidJump, ShipAboardTag.read(standingData));
+
+        // The control, and it is the half that must NOT change: a ship parked on a planet is in no
+        // cell either, and it opens nothing. Without this the flag would read as "any record with
+        // no coordinate", which is the bug it is meant to fix, inverted.
+        ShipAboardTag.Aboard planetSide = ShipAboardTag.Aboard.standing(SHIP, null, 1.5D, 0D, -2.5D);
+        assertFalse("a ship parked on a planet is not a ship in a jump", planetSide.inTransit);
+        assertFalse("and it must not open the space restore", planetSide.saysSpaceborne());
+        assertTrue("while a ship in a cell does, as it always did", sample().saysSpaceborne());
+    }
+
+    @Test
     public void clearRemovesTheRecordAndIsIdempotent() {
         NBTTagCompound forgeData = new NBTTagCompound();
         ShipAboardTag.write(forgeData, sample());

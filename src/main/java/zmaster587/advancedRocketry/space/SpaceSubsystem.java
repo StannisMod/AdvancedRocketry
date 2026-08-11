@@ -220,10 +220,22 @@ public final class SpaceSubsystem {
             if (instance != null) {
                 instance.importVisits(data.loadVisits());
             }
-            // Recreate any in-flight jump so a transit survives a restart: each record advances logically
-            // and, on arrival, pastes its persisted block snapshot into the target cell (the hyperspace
-            // world it was parked in is ephemeral). The ledger is re-marked IN_TRANSIT inside importTransit.
+            // Recreate any in-flight jump so a transit survives a restart: a record whose hull is still
+            // standing in its lane resumes as that same ship, and one whose lane came back empty falls
+            // back to the block snapshot it carries. The ledger is re-marked IN_TRANSIT inside
+            // importTransit.
             if (transitManager != null) {
+                // LOAD hyperspace first, and this is load-bearing rather than tidy. Both readers below
+                // ask what is standing in a lane, and both ask it of the world only IF IT IS LOADED —
+                // an honest refusal to create a world as a side effect of inspecting one. Hyperspace is
+                // otherwise loaded lazily by the first crossing, which happens long after this runs, so
+                // without this every record would see an empty lane and take the snapshot path, and the
+                // reconciliation below would find nothing to collect however many hulls were there.
+                // Skipped entirely when the save has no hyperspace folder: then there is provably
+                // nothing parked, and loading would pin an empty world on every boot of every save.
+                if (SpaceSlotPool.hyperspaceStoreExists()) {
+                    HyperspaceWorld.getOrCreate();
+                }
                 java.util.List<TransitRecord> records = data.loadTransits();
                 for (TransitRecord r : records) {
                     transitManager.importTransit(r);

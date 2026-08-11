@@ -143,7 +143,12 @@ public class BoundarySky extends IRenderHandler {
         // both wrong there: the ring marks a descent boundary in a world nothing descends to, and
         // no cell is loaded so no body is ever synced. The corridor replaces them, and it is the
         // only thing that tells a pilot with no controls and no readout that he is moving.
-        if (HyperspaceTunnel.localTransitPhase() > 0) {
+        //
+        // The gate is the WORLD this frame is drawn in — the same primary fact the server derives
+        // the jump phase from — and not the seat the viewer happens to be on. Keyed on the seat, a
+        // crew member who stood up mid-flight got a cell's descent ring in the transit corridor and
+        // no corridor at all, which reads as the flight having stopped.
+        if (zmaster587.advancedRocketry.space.HyperspaceWorld.isHyperspace(world)) {
             HyperspaceTunnel.render(partialTicks, world);
             GlStateManager.enableTexture2D();
             restoreState();

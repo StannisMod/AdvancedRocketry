@@ -100,6 +100,22 @@ private int waitForLoadedShip(int dim) throws Exception {
         return Pattern.compile("\"" + key + "\":true").matcher(json).find();
     }
 
+    /**
+     * Cumulative server-tick samples the flight recorder holds for one tile, out of a motion-trace
+     * reply. Scoped to the {@code "game"} object on purpose: the reply carries several channels and
+     * each of them has its own {@code seen}, so a flat read answers with whichever came first — the
+     * PHYSICS channel, which is a different clock and a different claim.
+     */
+    private static long gameSeen(String traceJson) {
+        int at = traceJson.indexOf("\"game\":");
+        assertTrue("expected a \"game\" channel in the motion trace: " + traceJson, at >= 0);
+        // A key that was never driven has no ring, and the reply then carries no "seen" at all -
+        // which is an ANSWER ("nothing ever ticked here"), not a malformed reply. Reading it as a
+        // parse failure hides the finding behind the instrument: the first cut of this helper threw
+        // on exactly the reading the leg exists to detect.
+        return readIntOr(traceJson.substring(at), "seen", 0);
+    }
+
     /** Blocks per tick for the jump. Slow enough that the ship stays parked for tens of ticks. */
 private static final long PARK_SPEED = 100_000L;
 
@@ -786,6 +802,13 @@ private String chat() throws Exception {
      * budget, and is fine; then he walks off the hull and dies. Without the first leg the second
      * proves only that something in hyperspace kills people; without the second the first proves only
      * that nothing does.</p>
+     *
+     * <p><b>Livable also means it still LOOKS like a flight.</b> Hyperspace has no bodies in its sky
+     * and its descent ring is deliberately suppressed, so the corridor is the only thing that tells a
+     * crew member the ship is moving. It is drawn by the client's own sky renderer, and this is the
+     * scenario that puts a crew member in hyperspace on his FEET — so the corridor is read here, in
+     * the same window that proves he is alive on his deck. The ring's suppression is NOT re-pinned
+     * here: that is the seated scenario's subject, and its baseline is order-sensitive.</p>
      */
     @Test
     public void aCrewMemberLivesInHyperspaceUntilHeStepsOffHisShip() throws Exception {
@@ -796,12 +819,51 @@ private String chat() throws Exception {
         // in either of them this scenario could only ever come back "he survived".
         exec("gamemode survival @a");
 
+        // Vanilla runs the sky pass only at renderDistanceChunks >= 4 and the harness pins the client
+        // at 2, so without this the sky renderer never executes and every corridor reading below is
+        // honestly zero for the wrong reason. Read back off the client's own field rather than
+        // assumed; restored by this family's reset, not by an @After.
+        JsonObject rd = bot().setRenderDistance(SKY_RENDER_DISTANCE);
+        previousRenderDistance = rd.get("previous").getAsInt();
+        assertTrue("the sky pass gate must be open, read back off the client's own field: " + rd,
+                rd.get("skyPassEnabled").getAsBoolean());
+
         String setup = exec("artest space transit-setup-piloted");
         assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
         int originDim = readInt(setup, "originDim");
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
         seatTheBot(originDim);
+
+        // ── CONTROL, in the origin cell ─────────────────────────────────────────────────────────
+        // Two readings the hyperspace ones are read against. Without the first, "the corridor did not
+        // advance" cannot be told from "this renderer never ran"; without the second, "the corridor
+        // advanced in hyperspace" is a first reading rather than a change.
+        long skyInCell = skyFrames();
+        long tunnelInCell = tunnelFrames();
+        bot().waitTicks(20);
+        assertTrue("CONTROL: this sky renderer must run in an ordinary cell, or every corridor"
+                        + " reading below is a zero for the wrong reason (sky frames " + skyInCell
+                        + " -> " + skyFrames() + ")",
+                skyFrames() > skyInCell);
+        assertEquals("CONTROL: the hyperspace corridor must NOT be drawn in an ordinary cell",
+                tunnelInCell, tunnelFrames());
+
+        // A third control, for the machinery leg in hyperspace further down: the same recorder, the
+        // same channel and the same way of deriving the key, asked of a ship that is plainly alive
+        // in an ordinary cell. Without it, silence in hyperspace cannot be told from a key nobody
+        // ever writes under - and the two ask for opposite investigations.
+        String cellSeat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        String cellAfcKey = originDim + " " + readInt(cellSeat, "afcX")
+                + " " + readInt(cellSeat, "afcY") + " " + readInt(cellSeat, "afcZ");
+        long cellTileTicks = gameSeen(exec("artest vs motion-trace " + cellAfcKey));
+        bot().waitTicks(20);
+        long cellTileTicksAfter = gameSeen(exec("artest vs motion-trace " + cellAfcKey));
+        assertTrue("CONTROL: the ship's flight computer must be recording server ticks in an"
+                        + " ordinary cell, or the hyperspace reading below is a zero for the wrong"
+                        + " reason (samples " + cellTileTicks + " -> " + cellTileTicksAfter
+                        + " for " + cellAfcKey + ")",
+                cellTileTicksAfter > cellTileTicks);
 
         String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
@@ -839,6 +901,67 @@ private String chat() throws Exception {
         assertTrue("a crew member must be able to leave his seat IN HYPERSPACE and be resolved on his"
                 + " deck there — that is what makes the flight an interval rather than a cutscene: "
                 + capture, readBool(capture, "alreadyTracked"));
+
+        // ── The visible half: the backdrop belongs to the FLIGHT, not to the seat ────────────────
+        // The arrangement first, because both facts are the axis of the claim: he must be off his
+        // seat (or this is the seated case again) and still in hyperspace (or this is a cell's sky).
+        JsonObject standing = bot().reportRidingEntity();
+        assertTrue("ARRANGEMENT: he must be on his FEET, or this leg is the seated case again: "
+                + standing, !standing.get("riding").getAsBoolean());
+        assertEquals("ARRANGEMENT: he must still be in hyperspace, or this reads a cell's sky",
+                hyperDim, bot().reportWeather().get("dim").getAsInt());
+
+        long skyStanding = skyFrames();
+        long tunnelStanding = tunnelFrames();
+        bot().waitTicks(20);
+        long skyAfterStanding = skyFrames();
+        long tunnelAfterStanding = tunnelFrames();
+        // The renderer itself, first: a corridor counter standing still means nothing until the
+        // renderer that would move it is known to be running.
+        assertTrue("CONTROL: the sky renderer must still be running in hyperspace, or 'the corridor"
+                        + " stopped' cannot be told from 'nothing renders here' (sky frames "
+                        + skyStanding + " -> " + skyAfterStanding + ")",
+                skyAfterStanding > skyStanding);
+        assertTrue("the corridor must keep being drawn for a crew member who has LEFT HIS SEAT: it"
+                        + " is the only thing in hyperspace that says the ship is moving — no bodies"
+                        + " are synced there and the descent ring is suppressed — so a backdrop that"
+                        + " stops when he stands up reads as the flight itself having stopped"
+                        + " (corridor frames " + tunnelStanding + " -> " + tunnelAfterStanding
+                        + ", sky frames " + skyStanding + " -> " + skyAfterStanding + ")",
+                tunnelAfterStanding > tunnelStanding);
+
+        // ── The machinery half: his ship is a LIVE world, not a paused one ──────────────────────
+        // "Livable" is not only about him being able to move: the ship's tile entities have to TICK
+        // during the flight, which is what makes the interval a place where things
+        // keep working rather than a freeze-frame he happens to be standing in. The flight computer
+        // is the tile to ask, because its per-tick recorder is keyed on dimension AND subspace
+        // position — so the answer is about THIS ship in THIS world and cannot be a global counter
+        // answering for whatever else the server is doing.
+        String hyperSeat = exec("artest vs find-seat " + hyperDim
+                + " " + (long) deckX + " " + (long) deckY + " " + (long) deckZ);
+        int afcX = readInt(hyperSeat, "afcX");
+        int afcY = readInt(hyperSeat, "afcY");
+        int afcZ = readInt(hyperSeat, "afcZ");
+        String afcKey = hyperDim + " " + afcX + " " + afcY + " " + afcZ;
+        long tileTicksBefore = gameSeen(exec("artest vs motion-trace " + afcKey));
+        bot().waitTicks(20);
+        long tileTicksAfter = gameSeen(exec("artest vs motion-trace " + afcKey));
+        assertTrue("the ship's flight computer must keep TICKING while the ship is parked in"
+                        + " hyperspace — a jump during which the ship's machinery stops is a"
+                        + " cutscene with a player standing in it (server-tick samples "
+                        + tileTicksBefore + " -> " + tileTicksAfter + " for the computer at "
+                        + afcX + "," + afcY + "," + afcZ + " in dim " + hyperDim + "; the SAME"
+                        + " instrument read " + cellTileTicks + " -> " + cellTileTicksAfter
+                        + " for the same ship in its origin cell, so the recorder and the key"
+                        + " derivation are not what is silent here)",
+                tileTicksAfter > tileTicksBefore);
+        // CONTROL: the same question one thousand blocks along, where no tile of this ship lives.
+        // Without it a rising count could be the recorder answering for the whole server rather
+        // than for the computer this leg named.
+        long noTileThere = gameSeen(exec("artest vs motion-trace "
+                + hyperDim + " " + (afcX + 1000) + " " + afcY + " " + afcZ));
+        assertEquals("CONTROL: a subspace address with no tile at it must report no ticks at all,"
+                + " or the reading above describes the server and not this ship", 0L, noTileThere);
 
         // ...and stay there. The span is the void's OWN budget plus a margin, so "he is alive" is a
         // statement about the countdown having had every chance to fire rather than about a window

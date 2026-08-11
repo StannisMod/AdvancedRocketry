@@ -42,6 +42,14 @@ public abstract class VSDefaultCapability<K> {
     @Nonnull
     private K instance;
     private Supplier<K> factory;
+    /**
+     * The world this capability was attached to, purely so the save/load log lines can say WHICH
+     * world they belong to. A serialisation line that reports only a size and a class name cannot be
+     * attributed to a dimension, so "one big payload and several empty ones" is unreadable the moment
+     * a save holds more than one world with ships in it.
+     */
+    @Nullable
+    private net.minecraft.world.World owner;
 
     public VSDefaultCapability(Class<K> kClass, Supplier<K> factory) {
         this(kClass, factory, VSJacksonUtil.getDefaultMapper());
@@ -55,13 +63,35 @@ public abstract class VSDefaultCapability<K> {
         this.mapper = mapper;
     }
 
+    /** Remember which world owns this capability, for the save/load log lines. */
+    public void setOwner(@Nullable net.minecraft.world.World owner) {
+        this.owner = owner;
+    }
+
+    /** {@code dim<N>/server|client}, or {@code ?} when this capability was attached without a world. */
+    private String ownerName() {
+        if (owner == null) {
+            return "?";
+        }
+        return "dim" + owner.provider.getDimension() + (owner.isRemote ? "/client" : "/server");
+    }
+
+    /**
+     * What the payload CONTAINS, beside how big it is. Overridden where the stored object has a
+     * meaningful population count; a size alone cannot distinguish "this world has nothing in it"
+     * from "this world's contents were dropped before the save".
+     */
+    protected String describe(K instance) {
+        return instance.getClass().getSimpleName();
+    }
+
     @Nullable
     public NBTTagByteArray writeNBT(EnumFacing side) {
         long time = System.currentTimeMillis();
         byte[] value;
         try {
             value = getMapper().writeValueAsBytes(instance);
-            log.debug("VS serialization took {} ms. Writing data of size {} KB. ({})", System.currentTimeMillis() - time, value.length / Math.pow(2, 10), instance.getClass().getSimpleName());
+            log.debug("VS serialization took {} ms. Writing data of size {} KB. ({} {} inst@{})", System.currentTimeMillis() - time, value.length / Math.pow(2, 10), ownerName(), describe(instance), Integer.toHexString(System.identityHashCode(instance)));
         } catch (Exception ex) {
             log.fatal("Something just broke horrifically. Be wary of your data. This will crash the game in future releases", ex);
             value = new byte[0];
@@ -74,7 +104,7 @@ public abstract class VSDefaultCapability<K> {
         try {
             byte[] value = ((NBTTagByteArray) base).getByteArray();
             this.instance = mapper.readValue(value, kClass);
-            log.info("VS deserialization took {} ms. Reading data of size {} KB.", System.currentTimeMillis() - time, value.length / Math.pow(2, 10));
+            log.info("VS deserialization took {} ms. Reading data of size {} KB. ({} {} inst@{})", System.currentTimeMillis() - time, value.length / Math.pow(2, 10), ownerName(), describe(this.instance), Integer.toHexString(System.identityHashCode(this.instance)));
         } catch (IOException | ClassCastException ex) {
             log.fatal("Failed to read your ship data? Ships will probably be missing", ex);
             this.instance = factory.get();
