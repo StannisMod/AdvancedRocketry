@@ -1995,6 +1995,84 @@ public class TestProbeCommand extends CommandBase {
     private static int[] entrySlotDims;
 
     /**
+     * A {@link zmaster587.advancedRocketry.space.SlotBinder} that carries every world operation out
+     * against the real pool but is only allowed to BIND the slots {@code own} — the ones the probe
+     * stack asking for it just registered.
+     *
+     * <p><b>Why any probe-installed manager needs this.</b>
+     * {@link zmaster587.advancedRocketry.space.PoolSlotBinder#slotDims()} answers with EVERY
+     * registered slot, and slots are APPENDED per registration and never removed: a second probe
+     * stack in one server boot therefore sees its predecessor's slots as free candidates, and a third
+     * sees two predecessors'. So which slot a given scenario's cell lands in depends on how many
+     * scenarios ran before it in that JVM — the manager is correct, the ARRANGEMENT drifts under it,
+     * and each scenario's own report ({@code "dims"}) names slots the binder was never restricted to.
+     *
+     * <p>Two measured consequences of leaving it unnarrowed, one per probe stack that skipped it: the
+     * pool-of-1 eviction probe found enough free slots that nothing was ever evicted and reported
+     * {@code pass=false} while measuring nothing; and the entry on-ramp reddened deterministically the
+     * moment a third consumer was added to one boot.
+     *
+     * <p>Scratch dims are appended, never renumbered, so the ids in {@code own} stay valid for the
+     * whole boot.</p>
+     *
+     * <p>The eviction probe keeps its own hand-rolled twin of this on purpose: that one leaves
+     * {@code isLive}/{@code hasOccupants} as the INTERFACE defaults, while this delegates them to the
+     * production binder. Which of the two a probe wants is a real difference, and switching that one
+     * over is a change to a passing measurement, not a cleanup.</p>
+     */
+    private static zmaster587.advancedRocketry.space.SlotBinder ownSlotsOnly(final int[] own) {
+        return new zmaster587.advancedRocketry.space.SlotBinder() {
+            private final zmaster587.advancedRocketry.space.PoolSlotBinder real =
+                    new zmaster587.advancedRocketry.space.PoolSlotBinder();
+
+            @Override
+            public int[] slotDims() {
+                return own.clone();
+            }
+
+            @Override
+            public void load(int dimId, String cellKey) {
+                real.load(dimId, cellKey);
+            }
+
+            @Override
+            public void unload(int dimId) {
+                real.unload(dimId);
+            }
+
+            @Override
+            public void discard(int dimId) {
+                real.discard(dimId);
+            }
+
+            @Override
+            public void deleteStore(String cellKey) {
+                real.deleteStore(cellKey);
+            }
+
+            @Override
+            public boolean hasStored(String cellKey) {
+                return real.hasStored(cellKey);
+            }
+
+            @Override
+            public java.util.List<String> storedCells() {
+                return real.storedCells();
+            }
+
+            @Override
+            public boolean isLive(int dimId) {
+                return real.isLive(dimId);
+            }
+
+            @Override
+            public boolean hasOccupants(int dimId) {
+                return real.hasOccupants(dimId);
+            }
+        };
+    }
+
+    /**
      * Navigation-computer probes: place a computer, stock it with crystals, drive its crystal
      * operations, and ask the jump gate what it would say. Everything here drives PRODUCTION code -
      * the probe only arranges the world and reports what production answered.
@@ -3568,8 +3646,12 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 1 && "entry-setup".equalsIgnoreCase(args[0])) {
             int n = args.length >= 2 ? parseIntOr(args[1], 2) : 2;
             entrySlotDims = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(n);
+            // Narrowed to the slots THIS setup just registered — see ownSlotsOnly. A plain
+            // PoolSlotBinder lets this stack bind any slot in the whole pool, including every earlier
+            // consumer's, so the slot a scenario's cell lands in would depend on how many scenarios ran
+            // before it in this JVM while the report below still names only its own two.
             entryMgr = new zmaster587.advancedRocketry.space.SpaceManager(
-                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+                    ownSlotsOnly(entrySlotDims),
                     () -> (long) server.getTickCounter(),
                     new zmaster587.advancedRocketry.space.SpaceManager.Config(
                             zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
