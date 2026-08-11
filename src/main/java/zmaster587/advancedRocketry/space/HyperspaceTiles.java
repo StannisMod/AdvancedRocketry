@@ -91,8 +91,12 @@ public final class HyperspaceTiles {
         int gz = (int) Math.round(z / SPACING_BLOCKS);
         double dx = (double) gx * SPACING_BLOCKS - x;
         double dz = (double) gz * SPACING_BLOCKS - z;
-        if (dx * dx + dz * dz >= (SPACING_BLOCKS / 2.0) * (SPACING_BLOCKS / 2.0)) {
-            return -1; // between lanes: nothing parks there
+        // Negated rather than written as `>=`, so a NaN coordinate lands here instead of falling
+        // through: NaN fails every comparison, and `Math.round(NaN)` is 0, so a `>=` test would send
+        // a ship with a broken transform to lane 0 and have the reconciliation retire a lane nothing
+        // is standing in.
+        if (!(dx * dx + dz * dz < (SPACING_BLOCKS / 2.0) * (SPACING_BLOCKS / 2.0))) {
+            return -1; // between lanes (or nowhere at all): nothing parks there
         }
         // Which ring that grid cell belongs to is fixed by the cell, and a ring is a contiguous run
         // of indices, so only that run has to be walked - a few dozen steps for any lane a save can

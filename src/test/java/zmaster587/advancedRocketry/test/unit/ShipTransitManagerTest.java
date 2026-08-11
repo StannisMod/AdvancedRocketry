@@ -1040,7 +1040,8 @@ public class ShipTransitManagerTest {
         BlockPos claimedLane = HyperspaceTiles.tilePos(1);
         crosser.parkedAnchors.add(claimedLane);
         crosser.shipsParkedAt.add(claimedLane);
-        // Two rings further out than anything the surviving record touches.
+        // A ring further out than anything the surviving record touches, and well past the reach the
+        // allocator would have had: it reclaimed lane 1, so a bound derived from it stopped at 3.
         crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(12));
         ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
 
