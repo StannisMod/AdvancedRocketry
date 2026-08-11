@@ -478,6 +478,19 @@ public final class ShipTransitManager {
         if ((!crew.isEmpty() || crosser.hasStowedBodies(shipId)) && parkedDim != Integer.MIN_VALUE) {
             reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true, t.vsShipUuid));
         }
+        // The same fact on the two channels it has to reach, said in one place so they cannot
+        // drift: the crew in chat, and whoever is reading the server's log about somebody else's
+        // ship. Transit used to log ONLY its failures — entry and descent both announce their
+        // crossings — so a log could not answer "did it depart, is it in flight, did it arrive",
+        // and a report had to be diagnosed by re-querying the ledger by hand.
+        //
+        // The log line is deliberately OUTSIDE the crew check below. A crewless jump tells nobody,
+        // which is right for chat and exactly wrong for a log: an unmanned ship crossing on its
+        // autopilot is the case with no witness at all, and therefore the one an operator most
+        // needs a line for.
+        LOGGER.info("[SPACE] transit departed: ship {} {} -> {} ({} blocks, ETA {} ticks, crew {})",
+                shipId, origin.cellKey(), target.cellKey(), distanceBlocks, arrivalTick - now,
+                crew.size());
         // The crew is told it has departed, on the same channel and in the same voice as everything
         // else this subsystem says. Said here rather than at the key press: the press only starts a
         // spool, and a jump that is refused above this line must not have announced itself first.
@@ -598,7 +611,10 @@ public final class ShipTransitManager {
                 // moment the flight has to announce itself. Said on the NORMAL path only - the two
                 // recovery branches below have their own, louder message, and a crew that got both
                 // would read the failure as routine. A crewless jump tells nobody, which is what an
-                // empty crew list means.
+                // empty crew list means. The LOG line beside it is unconditional for the reason
+                // given at the departure: a crewless arrival is the one nobody witnesses.
+                LOGGER.info("[SPACE] transit settled: ship {} at {} (slot {}, crew {})",
+                        entry.getKey(), t.arrivalCoord.cellKey(), t.targetSlotDim, t.crew.size());
                 crosser.messageCrew(t.crew, "msg.shiptransit.arrived");
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
