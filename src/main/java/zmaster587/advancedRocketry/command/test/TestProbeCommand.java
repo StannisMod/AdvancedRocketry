@@ -15959,6 +15959,62 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"posZ\":" + player.posZ + "}");
             return;
         }
+        if ("far-tp".equals(sub) && args.length >= 4) {
+            // /artest player far-tp <x> <y> <z>
+            //
+            // Delivers a CONNECTED player to an arbitrary coordinate, including one
+            // millions of blocks out, without the anti-cheat having any say in it.
+            // NetHandlerPlayServer's speed check ("moved too quickly!") measures the
+            // client's next movement packet against the position captured at the top of
+            // the tick, and it is skipped entirely while invulnerableDimensionChange is
+            // armed — the flag vanilla itself sets on every dimension change and clears
+            // when the client acknowledges the teleport, adopting the destination as the
+            // last good position. Arming the same flag and then calling the same
+            // setPlayerLocation a dimension transfer calls makes this the production
+            // delivery minus the change of dimension.
+            //
+            // What a caller DOES have to avoid: Valkyrien Skies vetoes any teleport into
+            // its reserved shipyard region, silently — the command reports success and
+            // the player does not move. That region is the half-open quadrant
+            // chunkX >= CHUNK_X_START - MAX_CHUNK_RADIUS && chunkZ >= -MAX_CHUNK_RADIUS
+            // (see ShipChunkAllocator), so with the shipped constants any destination
+            // with X >= 5,094,416 and Z >= -25,584 is refused. Compare the reported posX
+            // with what you asked for rather than trusting "ok":true.
+            //
+            // Deliberately does NOT generate terrain: the caller arranges the
+            // destination (forceload + fill) so that an arrival into thin air is a
+            // finding, not a silently patched one.
+            if (player.connection == null) {
+                send(sender, "{\"error\":\"far-tp needs a connected player (no connection on \""
+                        + escapeJson(player.getName()) + "\")\"}");
+                return;
+            }
+            double tx;
+            double ty;
+            double tz;
+            try {
+                tx = Double.parseDouble(args[1]);
+                ty = Double.parseDouble(args[2]);
+                tz = Double.parseDouble(args[3]);
+            } catch (NumberFormatException e) {
+                send(sender, "{\"error\":\"usage: /artest player far-tp <x> <y> <z>\"}");
+                return;
+            }
+            double fromX = player.posX;
+            player.motionX = 0;
+            player.motionY = 0;
+            player.motionZ = 0;
+            player.fallDistance = 0;
+            player.invulnerableDimensionChange = true;
+            player.connection.setPlayerLocation(tx, ty, tz, player.rotationYaw, player.rotationPitch);
+            server.getPlayerList().serverUpdateMovingPlayer(player);
+            send(sender, "{\"ok\":true,\"player\":\"" + escapeJson(player.getName()) + "\""
+                    + ",\"fromX\":" + fromX
+                    + ",\"posX\":" + player.posX
+                    + ",\"posY\":" + player.posY
+                    + ",\"posZ\":" + player.posZ + "}");
+            return;
+        }
         if ("held-air".equals(sub)) {
             // Probe the air-buffer NBT on the player's chest-armor slot
             // (the canonical AR space-suit slot — ItemSpaceChest wraps
