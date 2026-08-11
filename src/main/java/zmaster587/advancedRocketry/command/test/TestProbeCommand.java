@@ -4288,6 +4288,19 @@ public class TestProbeCommand extends CommandBase {
             info.put("chunkGeneratorClass", chunkGeneratorClassOf(world));
             info.put("saveDir", (world != null && world.provider.getSaveFolder() != null)
                     ? world.provider.getSaveFolder() : "null");
+            // The world-generation identity this dimension PUBLISHES through the vanilla WorldInfo
+            // API — the channel a foreign WorldType reads when it configures itself. It is reported
+            // next to the overworld's own value because the failure mode is not "wrong name" but
+            // "somebody else's name": a secondary world's WorldInfo delegates both of these, so a
+            // planet can silently answer with the save's world type and an empty options string.
+            info.put("worldType", (world != null && world.getWorldInfo().getTerrainType() != null)
+                    ? world.getWorldInfo().getTerrainType().getName() : "null");
+            info.put("generatorOptions", world != null ? world.getWorldInfo().getGeneratorOptions() : "null");
+            net.minecraft.world.WorldServer overworld = net.minecraftforge.common.DimensionManager.getWorld(0);
+            info.put("overworldWorldType", (overworld != null && overworld.getWorldInfo().getTerrainType() != null)
+                    ? overworld.getWorldInfo().getTerrainType().getName() : "null");
+            info.put("overworldGeneratorOptions",
+                    overworld != null ? overworld.getWorldInfo().getGeneratorOptions() : "null");
             info.put("isARPlanet", DimensionManager.getInstance().isDimensionCreated(dim));
             if (props != null) {
                 info.put("name", props.getName());
@@ -9239,7 +9252,7 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 4 && "create-terrain-dim".equalsIgnoreCase(args[0])) {
-            // worldgen create-terrain-dim <newDimId> <templateDimId> <terrainSource> [param]
+            // worldgen create-terrain-dim <newDimId> <templateDimId> <terrainSource> [param] [generatorOptions]
             // Register a new PLANET dimension by cloning an existing AR planet's
             // DimensionProperties (inheriting star / atmosphere / gravity linkage so
             // headless worldprovider-init doesn't NPE), re-id'ing it, and setting a
@@ -9251,6 +9264,7 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.dimension.TerrainSource terrain =
                     zmaster587.advancedRocketry.dimension.TerrainSource.byName(args[3]);
             String param = args.length >= 5 ? args[4] : "";
+            String generatorOptions = args.length >= 6 ? args[5] : "";
             zmaster587.advancedRocketry.dimension.DimensionManager dm =
                     zmaster587.advancedRocketry.dimension.DimensionManager.getInstance();
             if (dm.isDimensionCreated(newId)) {
@@ -9275,6 +9289,7 @@ public class TestProbeCommand extends CommandBase {
                     props.setTerrainWorldType(param);
                 else if (terrain == zmaster587.advancedRocketry.dimension.TerrainSource.TEMPLATE)
                     props.setTerrainTemplate(param);
+                props.setTerrainGeneratorOptions(generatorOptions);
                 boolean registered = dm.registerDim(props, true);
                 // Belt-and-braces: ensure Forge knows the dim under the planet provider
                 // even if registerDim's internal guard skipped it.

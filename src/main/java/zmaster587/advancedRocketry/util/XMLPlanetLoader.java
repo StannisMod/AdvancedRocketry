@@ -107,6 +107,7 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_TERRAIN_SOURCE = "terrainSource";
     private static final String ELEMENT_TERRAIN_WORLDTYPE = "terrainWorldType";
     private static final String ELEMENT_TERRAIN_TEMPLATE = "terrainTemplate";
+    private static final String ELEMENT_TERRAIN_GENERATOR_OPTIONS = "terrainGeneratorOptions";
     private static final String ELEMENT_RIVER_OVERRIDE = "forceRiverGeneration";
     private static final String ELEMENT_OREGEN = "oreGen";
     private static final String ELEMENT_LASER_DRILL_ORES = "laserDrillOres";
@@ -448,6 +449,8 @@ public class XMLPlanetLoader {
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_WORLDTYPE, properties.getTerrainWorldType()));
         if (!properties.getTerrainTemplate().isEmpty())
             nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_TEMPLATE, properties.getTerrainTemplate()));
+        if (!properties.getTerrainGeneratorOptions().isEmpty())
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TERRAIN_GENERATOR_OPTIONS, properties.getTerrainGeneratorOptions()));
 
         if (properties.oreProperties != null) {
             nodePlanet.appendChild(XMLOreLoader.writeOreEntryXML(doc, properties.oreProperties));
@@ -1074,6 +1077,9 @@ public class XMLPlanetLoader {
                 properties.setTerrainWorldType(planetPropertyNode.getTextContent().trim());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_TEMPLATE)) {
                 properties.setTerrainTemplate(planetPropertyNode.getTextContent().trim());
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TERRAIN_GENERATOR_OPTIONS)) {
+                // NOT trimmed: a generator settings string is opaque to us and may be whitespace-significant.
+                properties.setTerrainGeneratorOptions(planetPropertyNode.getTextContent());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_HASRINGS))
                 properties.hasRings = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_CAN_DECORATE))

@@ -297,6 +297,14 @@ public abstract class AbstractSharedClientE2ETest {
         String screen = state.has("screen") ? state.get("screen").getAsString() : "";
         int overlayTicks = chat.has("overlayTicks") ? chat.get("overlayTicks").getAsInt() : -1;
         int chatLines = chat.has("count") ? chat.get("count").getAsInt() : -1;
+        // `report_state` omits the player block entirely when the client has no player — mid
+        // dimension change, or after the connection died. Dereferencing it raises a bare NPE from
+        // this line, which names the RESET as the failure and hides the previous scenario that
+        // actually wedged the client; measured 2026-08-10, that cost an investigation aimed at an
+        // unrelated production change for want of one sentence.
+        assertTrue("the client has no player, so this scenario cannot be arranged at all — the"
+                + " PREVIOUS scenario left the connection or the dimension change unfinished."
+                + " client state=" + state, state.has("playerX") && state.has("playerZ"));
         double px = state.get("playerX").getAsDouble();
         double pz = state.get("playerZ").getAsDouble();
 

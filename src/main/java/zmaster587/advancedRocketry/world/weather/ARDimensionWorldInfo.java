@@ -304,6 +304,17 @@ public final class ARDimensionWorldInfo extends WorldInfo {
     public void setTerrainType(WorldType type) {
     }
 
+    /**
+     * Delegated like every other read. This wrapper's own {@code super()} state is inert, so an
+     * un-overridden getter answers from a {@link WorldInfo} that was never populated — here that
+     * would be the empty string, silently replacing whatever the wrapped info publishes and
+     * un-configuring the dimension's chunk generator.
+     */
+    @Override
+    public String getGeneratorOptions() {
+        return delegate.getGeneratorOptions();
+    }
+
     @Override
     public boolean areCommandsAllowed() {
         return delegate.areCommandsAllowed();

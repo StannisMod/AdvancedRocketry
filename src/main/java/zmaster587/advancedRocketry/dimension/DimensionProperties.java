@@ -189,6 +189,13 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     private TerrainSource terrainSource = TerrainSource.NATIVE;
     private String terrainWorldType = ""; // foreign WorldType name for MOD_WORLDTYPE
     private String terrainTemplate = "";  // template folder name for TEMPLATE
+    /**
+     * The settings string handed to this dimension's chunk generator — vanilla's "generator options",
+     * per dimension instead of per save. A foreign {@link net.minecraft.world.WorldType} receives it
+     * as the second argument of {@code getChunkGenerator}, and reads it back off this world's
+     * {@code WorldInfo} when it identifies itself; an empty string means "your defaults".
+     */
+    private String terrainGeneratorOptions = "";
     //public int target_sea_level;
 
     // modId must be declared explicitly: this @SidedProxy lives outside the @Mod class, and the jar
@@ -255,6 +262,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = TerrainSource.NATIVE;
         terrainWorldType = "";
         terrainTemplate = "";
+        terrainGeneratorOptions = "";
 
         //target_sea_level = seaLevel;
         //water_can_exist = true;
@@ -477,6 +485,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = TerrainSource.NATIVE;
         terrainWorldType = "";
         terrainTemplate = "";
+        terrainGeneratorOptions = "";
         laserDrillOres = new ArrayList<>();
     }
 
@@ -1713,6 +1722,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainSource = nbt.hasKey("terrainSource") ? TerrainSource.byName(nbt.getString("terrainSource")) : TerrainSource.NATIVE;
         terrainWorldType = nbt.getString("terrainWorldType");
         terrainTemplate = nbt.getString("terrainTemplate");
+        terrainGeneratorOptions = nbt.getString("terrainGeneratorOptions");
         canGenerateCraters = nbt.getBoolean("canGenerateCraters");
         canGenerateGeodes = nbt.getBoolean("canGenerateGeodes");
         canGenerateStructures = nbt.getBoolean("canGenerateStructures");
@@ -2088,6 +2098,8 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
             nbt.setString("terrainWorldType", terrainWorldType);
         if (!terrainTemplate.isEmpty())
             nbt.setString("terrainTemplate", terrainTemplate);
+        if (!terrainGeneratorOptions.isEmpty())
+            nbt.setString("terrainGeneratorOptions", terrainGeneratorOptions);
         nbt.setBoolean("canGenerateCraters", canGenerateCraters);
         nbt.setBoolean("canGenerateGeodes", canGenerateGeodes);
         nbt.setBoolean("canGenerateStructures", canGenerateStructures);
@@ -2367,6 +2379,14 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
     public void setTerrainTemplate(String terrainTemplate) {
         this.terrainTemplate = terrainTemplate == null ? "" : terrainTemplate;
+    }
+
+    public String getTerrainGeneratorOptions() {
+        return terrainGeneratorOptions;
+    }
+
+    public void setTerrainGeneratorOptions(String terrainGeneratorOptions) {
+        this.terrainGeneratorOptions = terrainGeneratorOptions == null ? "" : terrainGeneratorOptions;
     }
 
     public void setGenerateCraters(boolean canGenerateCraters) {
