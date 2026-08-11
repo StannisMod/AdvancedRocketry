@@ -97,6 +97,11 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
     private static final Pattern TARGET = Pattern.compile("\"target\":(null|\"[^\"]*\")");
     private static final Pattern ARMED = Pattern.compile("\"armed\":(true|false)");
 
+    // Observatory region-scan probe fields.
+    private static final Pattern TELESCOPE_ORIGIN = Pattern.compile("\"origin\":\"([^\"]*)\"");
+    private static final Pattern TELESCOPE_AIM_DISTANCE = Pattern.compile("\"aimDistance\":(\\d+)");
+    private static final Pattern TELESCOPE_ADDRESSES = Pattern.compile("\"addresses\":(-?\\d+)");
+
     // Railgun probe fields.
     private static final Pattern FIRED = Pattern.compile("\"fired\":(true|false)");
     private static final Pattern DEST_MATCHED = Pattern.compile("\"destMatched\":(\\d+)");
@@ -401,6 +406,153 @@ public class MachineGuiClientGroupE2ETest extends AbstractSharedClientE2ETest {
                 findSlotWithItem(after, CHIP, false) != -1);
         assertTrue("chip still left behind in the player inventory: " + after,
                 findSlotWithItem(after, CHIP, true) == -1);
+
+        bot().closeScreen();
+    }
+
+    // ── observatory: the region scan ──────────────────────────────────────────
+
+    /**
+     * Builds the observatory as a REAL multiblock and stands the player beside its controller.
+     *
+     * <p>A bare controller block is not enough here, and the difference is not cosmetic: a
+     * multiblock machine refuses to open its GUI until its structure validates, so a lone block
+     * right-clicks to nothing at all (measured — the click returned PASS with no screen). The
+     * fixture's footprint runs from the controller towards +Z and +Y, so the player is placed on the
+     * -Z side, which is the one face left in the open.</p>
+     */
+    private int[] buildObservatoryAndStandBesideIt() throws Exception {
+        int dim = plot().dim;
+        int x = plot().x(MACHINE_DX);
+        int z = plot().z(MACHINE_DZ);
+
+        scenario().arranging("build the observatory multiblock at " + x + "," + Y + "," + z);
+        warmupPlotChunks();
+        String fixture = exec("artest fixture multiblock observatory " + dim + " " + x + " " + Y
+                + " " + z);
+        scenario().requireArranged("fixture multiblock observatory failed: " + fixture,
+                fixture.contains("\"ok\":true"));
+
+        String completed = "";
+        for (int attempt = 0; attempt < 8; attempt++) {
+            completed = exec("artest machine try-complete " + dim + " " + x + " " + Y + " " + z);
+            if (completed.contains("\"isComplete\":true")) {
+                break;
+            }
+            bot().waitTicks(10);
+        }
+        scenario().requireArranged("the observatory structure never validated: " + completed,
+                completed.contains("\"isComplete\":true"));
+
+        // Stand on the structure's open face, one block from the controller, looking at it. The
+        // footing is not decoration: the fixture clears its own footprint to air, and a player
+        // teleported into that air FALLS — measured, and it reads exactly like a dead click,
+        // because the server silently drops an interaction from out of reach.
+        StringBuilder footing = new StringBuilder();
+        for (int dx = -1; dx <= 1; dx++) {
+            footing.append(exec("artest place " + dim + " " + (x + dx) + " " + Y + " " + (z - 1)
+                    + " minecraft:stone")).append(' ');
+        }
+        // Stand in the MIDDLE of the footing block, not at its edge: the block at z-1 spans
+        // [z-1, z), so z-1.5 is half a block beyond it and over open air.
+        //
+        // Re-issued rather than waited out: a single teleport followed by a fixed wait puts the
+        // player on a footing his own client has not received yet, and he falls through it — the
+        // same fall, to the same fraction of a block, every time. Standing still is a convergence,
+        // so it is polled.
+        double standingY = 0;
+        for (int attempt = 0; attempt < 6; attempt++) {
+            exec("tp @a " + (x + 0.5) + " " + (Y + 1) + " " + (z - 0.5) + " 0 0");
+            bot().waitTicks(20);
+            standingY = bot().reportState().get("playerY").getAsDouble();
+            if (Math.abs(standingY - (Y + 1)) <= 1.0) {
+                break;
+            }
+        }
+        scenario().requireArranged("the player fell off the footing (y=" + standingY + ", wanted "
+                + (Y + 1) + ") — every click from here would be out of reach."
+                + " footingPlacements=" + footing
+                + " blockUnderFoot=" + bot().blockState(x, Y, z - 1)
+                + " controller=" + bot().blockState(x, Y, z),
+                Math.abs(standingY - (Y + 1)) <= 1.0);
+        return new int[]{x, Y, z};
+    }
+
+    /**
+     * The telescope's third tab, driven with nothing but clicks: switch to it, aim the instrument
+     * farther out, press Observe, and let the observation finish — then check the crystal sitting in
+     * the machine holds an address it did not have before.
+     *
+     * <p>The button ids are the tile's own module ids, which libVulpes puts straight on the
+     * GuiButton: 2 is the third tab (the tab strip numbers itself from 0), 5 is the distance
+     * increment and 6 is Observe. The tab strip and the machine share one id space, which is why the
+     * scan controls were given ids above the strip's.</p>
+     *
+     * <p>The aim is read back from the SERVER after the clicks and the fixture system is placed at
+     * whatever distance the clicks actually produced — so the arrangement follows the GUI rather
+     * than assuming it worked.</p>
+     */
+    @Test
+    public void theOperatorAimsTheTelescopeAndObservesWithNothingButClicks() throws Exception {
+        int dim = plot().dim;
+        int[] at = buildObservatoryAndStandBesideIt();
+        String where = dim + " " + at[0] + " " + at[1] + " " + at[2];
+
+        scenario().arranging("a blank crystal in the machine, and the default (no-research) regime");
+        // The default game: without the research master switch a survey is not a matter of time —
+        // what the instrument reaches, it resolves. That is what the player at this GUI sees, so it
+        // is what this drives.
+        exec("artest config set planetsMustBeDiscovered false");
+        exec("artest config set telescopeScanBaseTicks 0");
+        exec("artest config set telescopeScanTicksPerSector 1");
+        exec("artest config set telescopeScanHalfWidthSectors 1");
+        exec("artest config set telescopeScanRangeSectors 24");
+        String crystal = exec("artest telescope crystal " + where);
+        scenario().requireArranged("could not put a crystal in the observatory: " + crystal,
+                crystal.contains("\"ok\":true"));
+
+        String before = exec("artest telescope info " + where);
+        scenario().requireArranged("the observatory's world must have a galactic address: " + before,
+                before.contains("\"origin\":\""));
+        String[] home = readGroup(before, TELESCOPE_ORIGIN).split("_");
+        scenario().record("origin", readGroup(before, TELESCOPE_ORIGIN));
+
+        scenario().arranging("open the observatory and switch to its region-scan tab");
+        String screen = openMachineGui(at);
+        scenario().record("screen", screen)
+                .describeOnFailureWith("artest telescope info " + where);
+        bot().clickButtonById(2);
+        bot().waitTicks(20);
+
+        scenario().asserting("the aim buttons reach the machine, and Observe starts the look");
+        bot().clickButtonById(5);
+        bot().waitTicks(15);
+        bot().clickButtonById(5);
+        bot().waitTicks(15);
+
+        String aimed = exec("artest telescope info " + where);
+        long aimDistance = readInt(aimed, TELESCOPE_AIM_DISTANCE);
+        assertTrue("clicking the distance button twice must move the aim out from 1: " + aimed,
+                aimDistance > 1);
+
+        // Put a system exactly where the operator has it pointed — the default aim is +X, and the
+        // distance is whatever his clicks produced.
+        String system = exec("artest telescope system " + (Long.parseLong(home[0]) + aimDistance)
+                + " " + home[1] + " " + home[2]);
+        scenario().requireArranged("could not place a system to be found: " + system,
+                system.contains("\"ok\":true"));
+
+        bot().clickButtonById(6);
+        bot().waitTicks(20);
+
+        scenario().measuring("the crystal in the machine, after a survey driven only by clicks");
+        String done = exec("artest telescope info " + where);
+        for (int attempt = 0; attempt < 20 && readInt(done, TELESCOPE_ADDRESSES) < 1; attempt++) {
+            bot().waitTicks(20);
+            done = exec("artest telescope info " + where);
+        }
+        assertTrue("a survey driven entirely from the GUI left the crystal empty: " + done,
+                readInt(done, TELESCOPE_ADDRESSES) >= 1);
 
         bot().closeScreen();
     }
