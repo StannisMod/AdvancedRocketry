@@ -335,7 +335,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // The single source of this gate is the ship's presence in the shared hyperspace world:
         // ships exist there exactly while parked mid-transit. Deliberate-exit and the exit-warning
         // channel stay OUTSIDE this gate when they land — they are the survival path mid-transit.
-        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
+        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimIdFor(world);
         if (hyperDim != Integer.MIN_VALUE && world.provider.getDimension() == hyperDim) {
             commandedVelocity = null;
             commandedAngVel = null;
@@ -709,7 +709,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // Asking the transit registry first would make the readout depend on the ship being findable
         // under the id the registry happens to use, and a pilot who is demonstrably in hyperspace
         // would then be told nothing at all.
-        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimId();
+        int hyperDim = zmaster587.advancedRocketry.space.HyperspaceWorld.dimIdFor(world);
         if (world == null || hyperDim == Integer.MIN_VALUE
                 || world.provider.getDimension() != hyperDim) {
             return zmaster587.advancedRocketry.space.ShipTransitManager.Phase.NONE;

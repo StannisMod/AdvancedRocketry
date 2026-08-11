@@ -1,6 +1,7 @@
 package zmaster587.advancedRocketry.space;
 
 import net.minecraft.world.DimensionType;
+import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
@@ -98,21 +99,25 @@ public final class HyperspaceWorld {
     }
 
     /**
-     * Which dimension hyperspace is <b>on this side</b>, or {@link Integer#MIN_VALUE} when this side
-     * does not know yet.
+     * Which dimension hyperspace is <b>on this server</b>, or {@link Integer#MIN_VALUE} when this
+     * side has not registered it. THE SERVER'S ANSWER, and only ever that: it is the id
+     * {@link #register()} minted, so a caller reasoning about worlds this JVM is simulating is
+     * reading the fact rather than a report of one.
      *
-     * <p>A remote client never runs {@link #register()} — the id is server state — so it is told the
-     * id once and remembers it through {@link #adoptFromServer(int)}. A local registration wins
-     * whenever there is one: on an integrated server this JVM IS the server and its own id is the
-     * fact, while an adopted copy is only a message about someone's.</p>
+     * <p>Client-side code must not call this. Both ids live in JVM-global statics, so a client that
+     * hosted a single-player world earlier in the same launch still has one — and it names a world
+     * that is gone, not the server it is now connected to. Use {@link #dimIdFor(World)}, which picks
+     * by the side the world is on rather than by the caller's belief about where it runs.</p>
      */
     public static int dimId() {
-        return dimId != Integer.MIN_VALUE ? dimId : adoptedDimId;
+        return dimId;
     }
 
     /**
-     * The hyperspace dim id as the connected server reports it. Consulted only where this side did
-     * not register hyperspace itself, i.e. on a remote client.
+     * The hyperspace dim id as the connected server reports it. The client's ONLY source, with no
+     * fallback to a local registration: an id this JVM minted for a world of its own says nothing
+     * about the server on the other end of the connection, and a wrong id here draws the transit
+     * corridor over an ordinary cell (or leaves a jump with a static sky) rather than failing loudly.
      *
      * <p>Kept in its own field rather than written into {@link #dimId} so a client that later hosts
      * a world of its own does not start out believing another server's id is registered here — it is
@@ -120,11 +125,37 @@ public final class HyperspaceWorld {
      */
     private static int adoptedDimId = Integer.MIN_VALUE;
 
+    /**
+     * Which dimension hyperspace is, asked for the side {@code world} is on: the local registration
+     * on a server, the id the connected server reported on a client. {@link Integer#MIN_VALUE} when
+     * that side does not know, which no real dimension id equals - so an unsynced client answers
+     * "nowhere" rather than "everywhere".
+     *
+     * <p>The side is a property of the world, not something a call site should be trusted to know
+     * about itself: a tile entity, a world provider and a sky renderer all run on both, and each of
+     * them holds the world it is asking about.</p>
+     */
+    public static int dimIdFor(World world) {
+        if (world == null) {
+            return dimId;
+        }
+        return world.isRemote ? adoptedDimId : dimId;
+    }
+
     /** Learn the server's hyperspace dim id. {@link Integer#MIN_VALUE} means "none yet" — ignored. */
     public static void adoptFromServer(int id) {
         if (id != Integer.MIN_VALUE) {
             adoptedDimId = id;
         }
+    }
+
+    /**
+     * Forget the connected server's hyperspace id. Called when the client disconnects: the next
+     * server's id has nothing to do with this one, and a value kept across the gap would let the
+     * client answer confidently about a world it has left.
+     */
+    public static void forgetServerId() {
+        adoptedDimId = Integer.MIN_VALUE;
     }
 
     /**

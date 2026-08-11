@@ -69,7 +69,7 @@ public final class HyperspaceTunnel {
      * no corridor rather than drawing one everywhere.</p>
      */
     public static boolean isHyperspace(net.minecraft.world.World world) {
-        int hyper = HyperspaceWorld.dimId();
+        int hyper = HyperspaceWorld.dimIdFor(world);
         return world != null && hyper != Integer.MIN_VALUE
                 && world.provider.getDimension() == hyper;
     }
