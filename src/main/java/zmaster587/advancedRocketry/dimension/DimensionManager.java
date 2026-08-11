@@ -384,6 +384,17 @@ public class DimensionManager implements IGalaxy {
         properties.averageTemperature = AstronomicalBodyHelper.getAverageTemperature(properties.getStar(), properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity());
         properties.setGasGiant(true);
 
+        // Rings belong to giants, and on a giant they are the RULE rather than a flourish: all four of
+        // the Solar System's have them, because only a body that massive has a Roche limit reaching far
+        // enough past its own surface for a moon to have come apart out there. The rocky-planet path
+        // still rolls its rare 1-in-50; this is the same story told where it actually happens.
+        if (random.nextInt(4) != 0) {
+            properties.setHasRings(true);
+            properties.ringColor[0] = properties.skyColor[0];
+            properties.ringColor[1] = properties.skyColor[1];
+            properties.ringColor[2] = properties.skyColor[2];
+        }
+
         // Add all gasses for the default world
         for (FluidGasGiantGas gas : AdvancedRocketryFluids.getGasGiantGasses()) {
             if (((properties.gravitationalMultiplier * 100) >= gas.getMinGravity()) && (gas.getMaxGravity() >= (properties.gravitationalMultiplier * 100)) && 0 > (Math.random() - gas.getChance())) {
@@ -1078,6 +1089,12 @@ public class DimensionManager implements IGalaxy {
         zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(galaxyGenConfig == null
                 ? null
                 : new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(galaxyGenConfig));
+
+        // Install the authored planet-type table for the same reason and on the same terms: it is a
+        // JVM-global, so an absent (or trimmed) <planetType> section must restore the stock set rather
+        // than leave the previous world's presets standing.
+        zmaster587.advancedRocketry.universe.PlanetTypes.setPresets(
+                dimCouplingList == null ? null : dimCouplingList.planetTypes);
 
         // make sure to set dim offset back to original to make things consistant
         DimensionManager.dimOffset = dimOffset;

@@ -39,12 +39,16 @@ public final class SystemBody {
     /** No content may sit outside its own cell — a cell is a whole neighbourhood — so an offset is bounded. */
     private static final long MAX_IN_CELL = GalacticCoord.HALF_CELL - 1L;
 
+    /** Sentinel for {@link #orbitalDistance()}: this body has no orbit of its own (a star, a POI). */
+    public static final int ORBIT_UNKNOWN = 0;
+
     private final GalacticCoord name;
     private final CellFrame frame;
     private final BodyEphemeris offsetLaw;
     private final SystemBodyKind kind;
     private final int dimId;
     private final int starId;
+    private final int orbitalDistance;
 
     /**
      * A body at rest in a STATIC frame — the reading for a POI, a fixture, or anything derived
@@ -52,13 +56,24 @@ public final class SystemBody {
      * the (constant) in-cell offset.
      */
     public SystemBody(GalacticCoord address, SystemBodyKind kind, int dimId, int starId) {
+        this(address, kind, dimId, starId, ORBIT_UNKNOWN);
+    }
+
+    /** The same, carrying the body's orbital radius — see {@link #orbitalDistance()}. */
+    public SystemBody(GalacticCoord address, SystemBodyKind kind, int dimId, int starId,
+                      int orbitalDistance) {
         this(requireAddress(address).cellCentre(), CellFrame.staticAt(address),
                 BodyEphemeris.fixed(address.localX(), address.localY(), address.localZ()),
-                kind, dimId, starId);
+                kind, dimId, starId, orbitalDistance);
     }
 
     public SystemBody(GalacticCoord name, CellFrame frame, BodyEphemeris offsetLaw,
                       SystemBodyKind kind, int dimId, int starId) {
+        this(name, frame, offsetLaw, kind, dimId, starId, ORBIT_UNKNOWN);
+    }
+
+    public SystemBody(GalacticCoord name, CellFrame frame, BodyEphemeris offsetLaw,
+                      SystemBodyKind kind, int dimId, int starId, int orbitalDistance) {
         if (name == null) {
             throw new NullPointerException("name");
         }
@@ -71,6 +86,7 @@ public final class SystemBody {
         this.kind = kind;
         this.dimId = dimId;
         this.starId = starId;
+        this.orbitalDistance = orbitalDistance;
     }
 
     private static GalacticCoord requireAddress(GalacticCoord address) {
@@ -138,6 +154,31 @@ public final class SystemBody {
         return starId;
     }
 
+    /**
+     * How far this body orbits its primary, in Advanced Rocketry distance units (100 = 1 AU), or
+     * {@link #ORBIT_UNKNOWN} for a body with no orbit of its own.
+     *
+     * <p>It travels WITH the body rather than being recomputed from the body's cell, because a cell is
+     * coarse — a whole neighbourhood — while the orbit is what every physical property of the world is
+     * derived from. Recovering it from the address would make a planet's temperature a function of the
+     * placement arithmetic, so a tuning change to the layout would silently re-climate every world in
+     * the galaxy.</p>
+     */
+    public int orbitalDistance() {
+        return orbitalDistance;
+    }
+
+    /**
+     * This body with a realized dimension attached. Used exactly once per body, when a descent turns it
+     * from a scanned dot into a world; everything else about it — its name, its frame, its orbit — is
+     * carried over untouched, because realization materializes what was already derived and changes
+     * nothing about where the body is.
+     */
+    public SystemBody withDimId(int newDimId) {
+        return newDimId == dimId ? this
+                : new SystemBody(name, frame, offsetLaw, kind, newDimId, starId, orbitalDistance);
+    }
+
     /** {@code true} iff this body can be descended into as a walkable dimension. */
     public boolean isDescendTarget() {
         return kind.canDescend() && dimId != Constants.INVALID_PLANET;
@@ -161,7 +202,7 @@ public final class SystemBody {
     public SystemBody withFrame(CellFrame newFrame) {
         return newFrame == null || newFrame.equals(frame)
                 ? this
-                : new SystemBody(name, newFrame, offsetLaw, kind, dimId, starId);
+                : new SystemBody(name, newFrame, offsetLaw, kind, dimId, starId, orbitalDistance);
     }
 
     public void writeToNBT(NBTTagCompound nbt) {
@@ -171,6 +212,9 @@ public final class SystemBody {
         nbt.setString("kind", kind.name());
         nbt.setInteger("dimId", dimId);
         nbt.setInteger("starId", starId);
+        if (orbitalDistance != ORBIT_UNKNOWN) {
+            nbt.setInteger("orbitalDist", orbitalDistance);
+        }
     }
 
     public static SystemBody readFromNBT(NBTTagCompound nbt) {
@@ -184,7 +228,8 @@ public final class SystemBody {
         return new SystemBody(name, CellFrame.readFromNBT(nbt, name), BodyEphemeris.readFromNBT(nbt),
                 kind,
                 nbt.hasKey("dimId") ? nbt.getInteger("dimId") : Constants.INVALID_PLANET,
-                nbt.getInteger("starId"));
+                nbt.getInteger("starId"),
+                nbt.getInteger("orbitalDist"));
     }
 
     @Override
@@ -197,6 +242,7 @@ public final class SystemBody {
         }
         SystemBody other = (SystemBody) o;
         return dimId == other.dimId && starId == other.starId && kind == other.kind
+                && orbitalDistance == other.orbitalDistance
                 && name.equals(other.name) && offsetLaw.equals(other.offsetLaw)
                 && frame.equals(other.frame);
     }
@@ -207,6 +253,7 @@ public final class SystemBody {
         result = 31 * result + kind.hashCode();
         result = 31 * result + dimId;
         result = 31 * result + starId;
+        result = 31 * result + orbitalDistance;
         result = 31 * result + offsetLaw.hashCode();
         return result;
     }

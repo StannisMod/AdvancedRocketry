@@ -119,8 +119,13 @@ public final class SystemBodiesProducer {
             if (found != null) {
                 for (SystemBody b : found) {
                     BlockDelta dir = b.absoluteAt(worldTick).minus(observer);
+                    // "Can a ship land here", not "does a world already exist". A procedural planet has
+                    // no dimension until a descent mints one, so highlighting only realized bodies
+                    // would hide the descent boundary of every world nobody has visited — which is
+                    // precisely the set a pilot is out there looking for. The flag is a render hint;
+                    // the logic that needs a real dimension still asks isDescendTarget().
                     bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
-                            renderDimIdOf(b), b.isDescendTarget()));
+                            renderDimIdOf(b), b.kind().canDescend()));
                 }
             }
             byDim.put(slotDim, bodies);

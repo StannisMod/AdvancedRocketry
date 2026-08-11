@@ -628,6 +628,84 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         return true;
     }
 
+    /**
+     * The star of the system whose neighbourhood contains {@code coord} — pinned snapshot, catalogue
+     * entry, or the generator's fabrication, in that order.
+     *
+     * <p>The pin comes FIRST and that ordering is the point: a touched procedural system's star is
+     * frozen in the save, so a later seed or config edit cannot warm it up under the planets that were
+     * derived from it. Realization needs this to materialize a body's physics, and the star it uses must
+     * be the one the scan already described.</p>
+     */
+    public Optional<StellarBody> starAt(GalacticCoord coord) {
+        Optional<GalacticCoord> anchorOpt = anchorForCell(coord);
+        if (!anchorOpt.isPresent()) {
+            return Optional.empty();
+        }
+        GalacticCoord anchor = anchorOpt.get();
+        PinnedSystem pinned = pinnedSystems.get(anchor.cellKey());
+        if (pinned != null) {
+            return Optional.of(pinned.toStar());
+        }
+        Integer id = byCell.get(anchor.cellKey());
+        if (id != null) {
+            return Optional.ofNullable(starLookup.apply(id));
+        }
+        Optional<StarSystem> sys = generator.systemAt(worldSeed, anchor);
+        return sys.isPresent() ? Optional.of(sys.get().star()) : Optional.<StellarBody>empty();
+    }
+
+    /**
+     * Attach a realized dimension to the pinned body standing at {@code bodyCell}, and record that
+     * cell as the dimension's durable NAME. Returns whether a body was rewritten.
+     *
+     * <p>Only a PINNED system can be rewritten, and that is not a limitation but the mechanism: a body
+     * is pinned the moment anything touches it, so by the time a descent asks for a dimension the
+     * snapshot it is being written into already exists. Rewriting a derived body would be writing into
+     * a list that is regenerated on the next query.</p>
+     *
+     * <p>Idempotent by construction — a body that already carries this dimension is left exactly as it
+     * is, so a second descent into the same cell reuses the world rather than minting another.</p>
+     */
+    public boolean realizeBody(GalacticCoord bodyCell, int dimId) {
+        Optional<GalacticCoord> anchorOpt = anchorForCell(bodyCell);
+        if (!anchorOpt.isPresent()) {
+            return false;
+        }
+        PinnedSystem pinned = pinnedSystems.get(anchorOpt.get().cellKey());
+        if (pinned == null) {
+            return false;
+        }
+        GalacticCoord cell = bodyCell.cellCentre();
+        for (int i = 0; i < pinned.bodies.size(); i++) {
+            SystemBody body = pinned.bodies.get(i);
+            if (!body.kind().canDescend() || !body.name().sameCell(cell)) {
+                continue;
+            }
+            if (body.dimId() == dimId) {
+                return true;
+            }
+            if (body.dimId() != Constants.INVALID_PLANET) {
+                continue; // another body of this cell (a moon) already holds a world of its own
+            }
+            pinned.bodies.set(i, body.withDimId(dimId));
+            namesByDim.put(dimId, new RecordedName(cell, pinned.starId));
+            markDirty();
+            return true;
+        }
+        return false;
+    }
+
+    /** The realized dimension of the descend-target body at {@code bodyCell}, if it has one. */
+    public OptionalInt realizedDimAt(GalacticCoord bodyCell) {
+        for (SystemBody body : bodiesAt(bodyCell)) {
+            if (body.kind().canDescend() && body.dimId() != Constants.INVALID_PLANET) {
+                return OptionalInt.of(body.dimId());
+            }
+        }
+        return OptionalInt.empty();
+    }
+
     /** The POIs at a system's cell (a copy), excluding the derived star/planet/moon bodies. */
     public List<SystemBody> poisAt(GalacticCoord systemCoord) {
         List<SystemBody> list = poiOverrides.get(systemCoord.cellCentre().cellKey());

@@ -28,6 +28,9 @@ import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.PlanetTypePreset;
+import zmaster587.advancedRocketry.universe.PlanetTypes;
+import zmaster587.advancedRocketry.universe.TerrainOption;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -61,6 +64,24 @@ public class XMLPlanetLoader {
     // between authored anchors; absent -> authored anchors only. All attrs are balance knobs with defaults.
     private static final String ELEMENT_GALAXYGEN = "galaxyGen";
     private static final String ELEMENT_STARTYPE = "starType";
+    // A planet TYPE preset: the named region of parameter space a world can land in, plus everything
+    // that follows from being that kind of world. Present -> replaces the whole stock table.
+    private static final String ELEMENT_PLANETTYPE = "planetType";
+    private static final String ELEMENT_TYPE_PRESSURE = "pressure";
+    private static final String ELEMENT_TYPE_TEMPERATURE = "temperature";
+    private static final String ELEMENT_TYPE_GRAVITY = "gravity";
+    private static final String ELEMENT_TYPE_TERRAIN = "terrain";
+    private static final String ELEMENT_TYPE_GEN = "gen";
+    private static final String ATTR_MIN = "min";
+    private static final String ATTR_MAX = "max";
+    private static final String ATTR_SOURCE = "source";
+    private static final String ATTR_WORLDTYPE = "worldType";
+    private static final String ATTR_TEMPLATE_PATH = "path";
+    private static final String ATTR_GENTYPE = "genType";
+    private static final String ATTR_OPTIONS = "options";
+    private static final String ATTR_GASGIANT = "gasGiant";
+    private static final String ATTR_ALLOWS_OXYGEN = "allowsOxygen";
+    private static final String ATTR_TIDALLY_LOCKABLE = "tidallyLockable";
     private static final String ATTR_DENSITY = "density";
     private static final String ATTR_MINSPACING = "minSpacing";
     private static final String ATTR_CLUSTERSCALE = "clusterScale";
@@ -92,6 +113,10 @@ public class XMLPlanetLoader {
     private static final String ELEMENT_FOGCOLOR = "fogColor";
     private static final String ELEMENT_SKYCOLOR = "skyColor";
     private static final String ELEMENT_GRAVITY = "gravitationalMultiplier";
+    private static final String ELEMENT_MASS = "mass";
+    private static final String ELEMENT_RADIUS = "radius";
+    private static final String ELEMENT_TIDALLY_LOCKED = "tidallyLocked";
+    private static final String ELEMENT_METALLICITY = "metallicity";
     private static final String ELEMENT_DISTANCE = "orbitalDistance";
     private static final String ELEMENT_BASEORBITTHETA = "orbitalTheta";
     private static final String ELEMENT_PHI = "orbitalPhi";
@@ -234,6 +259,208 @@ public class XMLPlanetLoader {
         return new GalaxyGenConfig(density, minSpacing, clusterScale, voidFraction, types);
     }
 
+    /**
+     * Parse one {@code <planetType>} element into a preset.
+     *
+     * <pre>{@code
+     * <planetType name="ice" weight="20" allowsOxygen="false">
+     *   <pressure    min="0"  max="80"/>
+     *   <temperature min="0"  max="175"/>
+     *   <gravity     min="10" max="140"/>
+     *   <terrain>
+     *     <gen source="MOD_WORLDTYPE" worldType="RTG" options="" weight="3"/>
+     *     <gen source="NATIVE"        genType="0"                weight="2"/>
+     *     <gen source="TEMPLATE"      path="frozen_ruins"        weight="1"/>
+     *   </terrain>
+     *   <biomeIds>advancedrocketry:moondark;10,minecraft:ice_flats;30</biomeIds>
+     *   <oreGen>...</oreGen>
+     * </planetType>
+     * }</pre>
+     *
+     * <p>Ranges are in the game's own units: pressure in atmosphere-density units (100 = 1 atm),
+     * temperature in KELVIN, gravity in percent of Earth's. Every attribute has a default, so a
+     * {@code <planetType name="x"/>} with nothing else is a valid (if very greedy) preset.</p>
+     */
+    private PlanetTypePreset readPlanetType(Node node) {
+        String name = attr(node, ATTR_NAME);
+        PlanetTypePreset.Builder b = PlanetTypePreset.builder(name == null ? "" : name)
+                .weight(attrInt(node, ATTR_WEIGHT, 10))
+                .gasGiant(attrBool(node, ATTR_GASGIANT, false))
+                .allowsOxygen(attrBool(node, ATTR_ALLOWS_OXYGEN, false))
+                .tidallyLockable(attrBool(node, ATTR_TIDALLY_LOCKABLE, true));
+
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            String tag = child.getNodeName();
+            if (ELEMENT_TYPE_PRESSURE.equalsIgnoreCase(tag)) {
+                b.pressure(attrInt(child, ATTR_MIN, DimensionProperties.MIN_ATM_PRESSURE),
+                        attrInt(child, ATTR_MAX, DimensionProperties.MAX_ATM_PRESSURE));
+            } else if (ELEMENT_TYPE_TEMPERATURE.equalsIgnoreCase(tag)) {
+                b.temperature(attrInt(child, ATTR_MIN, 0), attrInt(child, ATTR_MAX, 5000));
+            } else if (ELEMENT_TYPE_GRAVITY.equalsIgnoreCase(tag)) {
+                b.gravity(attrInt(child, ATTR_MIN, DimensionProperties.MIN_GRAVITY),
+                        attrInt(child, ATTR_MAX, DimensionProperties.MAX_GRAVITY));
+            } else if (ELEMENT_TYPE_TERRAIN.equalsIgnoreCase(tag)) {
+                NodeList gens = child.getChildNodes();
+                for (int j = 0; j < gens.getLength(); j++) {
+                    Node gen = gens.item(j);
+                    if (ELEMENT_TYPE_GEN.equalsIgnoreCase(gen.getNodeName())) {
+                        b.terrain(new TerrainOption(
+                                TerrainSource.byName(attr(gen, ATTR_SOURCE)),
+                                attr(gen, ATTR_WORLDTYPE),
+                                attr(gen, ATTR_TEMPLATE_PATH),
+                                attrInt(gen, ATTR_GENTYPE, 0),
+                                attr(gen, ATTR_OPTIONS),
+                                attrInt(gen, ATTR_WEIGHT, 1)));
+                    }
+                }
+            } else if (ELEMENT_BIOMEIDS.equalsIgnoreCase(tag)) {
+                b.biomes(child.getTextContent());
+            } else if (ELEMENT_OREGEN.equalsIgnoreCase(tag)) {
+                b.ores(XMLOreLoader.loadOre(child));
+            } else if (ELEMENT_SEALEVEL.equalsIgnoreCase(tag)) {
+                b.seaLevel(parseIntOr(child.getTextContent(), PlanetTypePreset.SEA_LEVEL_UNSET));
+            } else if (ELEMENT_OCEANBLOCK.equalsIgnoreCase(tag)) {
+                b.oceanBlock(child.getTextContent());
+            }
+        }
+        return b.build();
+    }
+
+    /**
+     * Apply an authored biome palette — the {@code <biomeIds>} format — to a planet.
+     *
+     * <p>Public and shared because a planet TYPE declares its palette in exactly the same language a
+     * planet does, and a realized procedural world has to mean by it precisely what an authored world
+     * means. Two parsers for one format is two chances for a pack's entry to work in one place and be
+     * ignored in the other.</p>
+     *
+     * <p>Format: comma-separated entries of {@code biome} or {@code biome;weight}, where {@code biome}
+     * is a registry name (preferred) or a raw numeric id (legacy, and modset-dependent). A malformed
+     * entry is warned about and skipped; it never aborts the rest of the list.</p>
+     */
+    public static void applyBiomeList(DimensionProperties properties, String authoredList) {
+        if (properties == null || authoredList == null || authoredList.trim().isEmpty()) {
+            return;
+        }
+        for (String s : authoredList.split(",")) {
+            if (s.trim().isEmpty()) {
+                continue;
+            }
+            int biomeWeight = 30;
+            String[] weightSplit = s.trim().split(";");
+
+            //Try to get a weight out of the semicolon separator
+            if (weightSplit.length > 1) {
+                try {
+                    biomeWeight = Integer.parseInt(weightSplit[1].trim());
+                    if (biomeWeight == 0) {
+                        AdvancedRocketry.logger.warn("Weight cannot be 0! Setting weight to default");
+                        biomeWeight = 30;
+                    }
+                } catch (NumberFormatException e) {
+                    biomeWeight = 30;
+                    AdvancedRocketry.logger.warn(weightSplit[1] + " is not a valid biome weight");
+                }
+            }
+
+            //Check whether we have numeric IDs (bad!) or RL ids
+            ResourceLocation location = new ResourceLocation(weightSplit[0]);
+            if (Biome.REGISTRY.containsKey(location)) {
+                Biome biome = Biome.REGISTRY.getObject(location);
+                if (biome == null)
+                    AdvancedRocketry.logger.warn("Error adding " + weightSplit[0]); //TODO: more detailed error msg
+                else
+                    properties.addBiomeWeighted(biome, biomeWeight);
+            } else {
+                try {
+                    int biome = Integer.parseInt(weightSplit[0]);
+
+                    if (!properties.addBiome(biome))
+                        AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id"); //TODO: more detailed error msg
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id or name"); //TODO: more detailed error msg
+                }
+            }
+        }
+    }
+
+    private static boolean attrBool(Node node, String name, boolean def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        return Boolean.parseBoolean(v.trim());
+    }
+
+    private static int parseIntOr(String text, int def) {
+        if (text == null || text.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** Emit a preset so a re-read round-trips the authored table. */
+    private static Element writePlanetType(Document doc, PlanetTypePreset preset) {
+        Element e = doc.createElement(ELEMENT_PLANETTYPE);
+        e.setAttribute(ATTR_NAME, preset.name());
+        e.setAttribute(ATTR_WEIGHT, Integer.toString(preset.weight()));
+        if (preset.gasGiant()) {
+            e.setAttribute(ATTR_GASGIANT, "true");
+        }
+        if (preset.allowsOxygen()) {
+            e.setAttribute(ATTR_ALLOWS_OXYGEN, "true");
+        }
+        if (!preset.tidallyLockable()) {
+            e.setAttribute(ATTR_TIDALLY_LOCKABLE, "false");
+        }
+        e.appendChild(range(doc, ELEMENT_TYPE_PRESSURE, preset.minPressure(), preset.maxPressure()));
+        e.appendChild(range(doc, ELEMENT_TYPE_TEMPERATURE, preset.minTemperature(), preset.maxTemperature()));
+        e.appendChild(range(doc, ELEMENT_TYPE_GRAVITY, preset.minGravity(), preset.maxGravity()));
+        Element terrain = doc.createElement(ELEMENT_TYPE_TERRAIN);
+        for (TerrainOption option : preset.terrain()) {
+            Element gen = doc.createElement(ELEMENT_TYPE_GEN);
+            gen.setAttribute(ATTR_SOURCE, option.source().name());
+            if (!option.worldType().isEmpty()) {
+                gen.setAttribute(ATTR_WORLDTYPE, option.worldType());
+            }
+            if (!option.template().isEmpty()) {
+                gen.setAttribute(ATTR_TEMPLATE_PATH, option.template());
+            }
+            if (option.source() == TerrainSource.NATIVE) {
+                gen.setAttribute(ATTR_GENTYPE, Integer.toString(option.genType()));
+            }
+            if (!option.options().isEmpty()) {
+                gen.setAttribute(ATTR_OPTIONS, option.options());
+            }
+            gen.setAttribute(ATTR_WEIGHT, Integer.toString(option.weight()));
+            terrain.appendChild(gen);
+        }
+        e.appendChild(terrain);
+        if (!preset.biomes().isEmpty()) {
+            e.appendChild(createTextNode(doc, ELEMENT_BIOMEIDS, preset.biomes()));
+        }
+        if (preset.seaLevel() != PlanetTypePreset.SEA_LEVEL_UNSET) {
+            e.appendChild(createTextNode(doc, ELEMENT_SEALEVEL, Integer.toString(preset.seaLevel())));
+        }
+        if (!preset.oceanBlock().isEmpty()) {
+            e.appendChild(createTextNode(doc, ELEMENT_OCEANBLOCK, preset.oceanBlock()));
+        }
+        return e;
+    }
+
+    private static Element range(Document doc, String tag, int min, int max) {
+        Element e = doc.createElement(tag);
+        e.setAttribute(ATTR_MIN, Integer.toString(min));
+        e.setAttribute(ATTR_MAX, Integer.toString(max));
+        return e;
+    }
+
     private static Element writeGalaxyGen(Document doc, GalaxyGenConfig cfg) {
         Element e = doc.createElement(ELEMENT_GALAXYGEN);
         e.setAttribute(ATTR_DENSITY, Double.toString(cfg.density));
@@ -305,6 +532,12 @@ public class XMLPlanetLoader {
         IGalaxyGenerator activeGenerator = UniverseRegistry.getGenerator();
         if (activeGenerator instanceof ClusteredGalaxyGenerator) {
             galaxyElement.appendChild(writeGalaxyGen(doc, ((ClusteredGalaxyGenerator) activeGenerator).config()));
+            // The planet-type table travels with the generator, and only with it: an authored-anchors-only
+            // world has nothing that draws a type, so writing the presets there would put a section into
+            // the file that nothing reads.
+            for (PlanetTypePreset preset : PlanetTypes.presets()) {
+                galaxyElement.appendChild(writePlanetType(doc, preset));
+            }
         }
 
         TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -395,6 +628,19 @@ public class XMLPlanetLoader {
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_FOGCOLOR, properties.fogColor[0] + "," + properties.fogColor[1] + "," + properties.fogColor[2]));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_SKYCOLOR, properties.skyColor[0] + "," + properties.skyColor[1] + "," + properties.skyColor[2]));
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_GRAVITY, (int) (properties.getGravitationalMultiplier() * 100f)));
+        // Bulk properties are written only when the planet HAS them, so a catalogue that never stated a
+        // mass round-trips to the same file it came from.
+        if (properties.hasBulkProperties()) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_MASS, Double.toString(properties.getMass())));
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_RADIUS, Double.toString(properties.getRadius())));
+        }
+        if (properties.isTidallyLocked()) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_TIDALLY_LOCKED, "true"));
+        }
+        if (properties.getMetallicity() != 1d) {
+            nodePlanet.appendChild(createTextNode(doc, ELEMENT_METALLICITY,
+                    Double.toString(properties.getMetallicity())));
+        }
         nodePlanet.appendChild(createTextNode(doc, ELEMENT_DISTANCE, properties.getOrbitalDist()));
         // Written as fractional degrees, not truncated to whole ones: these two angles are the only
         // authored inputs a body's durable CELL NAME is derived from, and one degree at a large
@@ -779,8 +1025,35 @@ public class XMLPlanetLoader {
 
                 try {
                     properties.gravitationalMultiplier = Math.min(Math.max(Integer.parseInt(planetPropertyNode.getTextContent()), DimensionProperties.MIN_GRAVITY), DimensionProperties.MAX_GRAVITY) / 100f;
+                    // Stating a gravity makes it an OVERRIDE: a planet that also declares a mass and a
+                    // radius keeps the gravity its author wrote, so adding bulk properties to an
+                    // existing planet cannot change how it plays.
+                    properties.setGravityAuthored(true);
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Invalid gravitationalMultiplier specified"); //TODO: more detailed error msg
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_MASS)) {
+                try {
+                    properties.setBulk(Double.parseDouble(planetPropertyNode.getTextContent()),
+                            properties.getRadius());
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid mass specified for dimension " + properties.getId());
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RADIUS)) {
+                try {
+                    properties.setBulk(properties.getMass(),
+                            Double.parseDouble(planetPropertyNode.getTextContent()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid radius specified for dimension " + properties.getId());
+                }
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_TIDALLY_LOCKED)) {
+                properties.setTidallyLocked(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
+            } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_METALLICITY)) {
+                try {
+                    properties.setMetallicity(Double.parseDouble(planetPropertyNode.getTextContent()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Invalid metallicity specified for dimension "
+                            + properties.getId());
                 }
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_DISTANCE)) {
 
@@ -839,46 +1112,7 @@ public class XMLPlanetLoader {
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RIVER_OVERRIDE))
                 properties.hasRivers = Boolean.parseBoolean(planetPropertyNode.getTextContent());
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_BIOMEIDS)) {
-
-                String[] biomeList = planetPropertyNode.getTextContent().split(",");
-                for (String s : biomeList) {
-
-                    int biomeWeight = 30;
-                    String[] weightSplit = s.split(";");
-
-                    //Try to get a weight out of the semicolon separator
-                    if (weightSplit.length > 1) {
-                        try {
-                            biomeWeight = Integer.parseInt(weightSplit[1]);
-                            if (biomeWeight == 0) {
-                                AdvancedRocketry.logger.warn("Weight cannot be 0! Setting weight to default");
-                                biomeWeight = 30;
-                            }
-                        } catch (NumberFormatException e) {
-                            biomeWeight = 30;
-                            AdvancedRocketry.logger.warn(weightSplit[1] + " is not a valid biome weight");
-                        }
-                    }
-
-                    //Check whether we have numeric IDs (bad!) or RL ids
-                    ResourceLocation location = new ResourceLocation(weightSplit[0]);
-                    if (Biome.REGISTRY.containsKey(location)) {
-                        Biome biome = Biome.REGISTRY.getObject(location);
-                        if (biome == null)
-                            AdvancedRocketry.logger.warn("Error adding " + weightSplit[0]); //TODO: more detailed error msg
-                        else
-                            properties.addBiomeWeighted(biome, biomeWeight);
-                    } else {
-                        try {
-                            int biome = Integer.parseInt(weightSplit[0]);
-
-                            if (!properties.addBiome(biome))
-                                AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id"); //TODO: more detailed error msg
-                        } catch (NumberFormatException e) {
-                            AdvancedRocketry.logger.warn(weightSplit[0] + " is not a valid biome id or name"); //TODO: more detailed error msg
-                        }
-                    }
-                }
+                applyBiomeList(properties, planetPropertyNode.getTextContent());
             } else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_CRATER_BIOMEIDS)) {
 
                 String[] biomeList = planetPropertyNode.getTextContent().split(",");
@@ -1322,6 +1556,11 @@ public class XMLPlanetLoader {
                 masterNode = masterNode.getNextSibling();
                 continue;
             }
+            if (masterNode.getNodeName().equalsIgnoreCase(ELEMENT_PLANETTYPE)) {
+                coupling.planetTypes.add(readPlanetType(masterNode));
+                masterNode = masterNode.getNextSibling();
+                continue;
+            }
             if (!masterNode.getNodeName().equals("star")) {
                 masterNode = masterNode.getNextSibling();
                 continue;
@@ -1398,6 +1637,8 @@ public class XMLPlanetLoader {
         public Map<Integer, GalacticCoord> anchorCoords = new HashMap<>();
         // Procedural-galaxy generation config from an optional <galaxyGen> element; null = authored-only.
         public GalaxyGenConfig galaxyGenConfig = null;
+        // Authored <planetType> presets. Empty -> the stock table stands.
+        public List<PlanetTypePreset> planetTypes = new ArrayList<>();
 
     }
 }

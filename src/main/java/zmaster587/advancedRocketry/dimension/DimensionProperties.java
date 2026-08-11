@@ -196,6 +196,54 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      * {@code WorldInfo} when it identifies itself; an empty string means "your defaults".
      */
     private String terrainGeneratorOptions = "";
+
+    // ─── Bulk properties: mass and radius are PRIMARY, gravity is derived from them ────────────────
+    /**
+     * This body's mass in Earth masses, or {@link #BULK_UNSET} when nothing has stated one.
+     *
+     * <p>Mass and radius are the PRIMARY bulk properties and surface gravity is what falls out of them
+     * ({@code g = M/R²}) — not the other way round. That ordering is what lets a scan advertise a
+     * planet's mass ({@code PlanetInfoField.MASS} is promised at telescope tier, for every planet,
+     * authored ones included) and what makes the zoning of a procedural system physical rather than
+     * tabulated: a big cold body accretes gas and becomes a giant, a small hot one cannot hold air.</p>
+     *
+     * <p>{@link #gravitationalMultiplier} REMAINS an explicit override. A planet whose XML states a
+     * gravity keeps exactly that gravity, whatever its mass and radius say, so no authored world moves
+     * when this arrives; the derivation only fills in a gravity nobody stated.</p>
+     */
+    private double mass = BULK_UNSET;
+    /** This body's radius in Earth radii, or {@link #BULK_UNSET}. See {@link #mass}. */
+    private double radius = BULK_UNSET;
+    /**
+     * Whether {@link #gravitationalMultiplier} was STATED rather than derived. The single bit that keeps
+     * "authored planets are unchanged" true: it is set by the XML element, by the public setter and by
+     * anything that assigns the field directly through the legacy path, and it makes
+     * {@link #setBulk} leave the gravity alone.
+     */
+    private boolean gravityAuthored;
+    /**
+     * Whether this world keeps one face permanently to its star.
+     *
+     * <p>An explicit flag and not a {@code rotationalPeriod} of zero: zero is mapped back to a full day
+     * by the sleep arithmetic, so it would silently mean "an ordinary planet" — the one value that
+     * cannot express this. A locked world has no day/night cycle at all, which is a different statement
+     * from "its day is long".</p>
+     */
+    private boolean tidallyLocked;
+    /**
+     * The parent star's metal content relative to Sol, and therefore how metal-rich this world's ore is.
+     *
+     * <p>It scales the METALLIC entries of whatever ore palette this world's climate earns it; it does
+     * not decide which kinds of deposit are possible. Climate answers "what sort of deposits", the star
+     * answers "how much metal is in them", and the two multiply rather than compete.</p>
+     */
+    private double metallicity = 1d;
+    /** Lazily-built, never persisted: this world's own scaled copy of the shared climate ore table. */
+    private transient OreGenProperties scaledOreCache;
+    private transient double scaledOreCacheFor = Double.NaN;
+
+    /** Sentinel for {@link #mass} / {@link #radius}: nobody has stated one. */
+    public static final double BULK_UNSET = 0d;
     //public int target_sea_level;
 
     // modId must be declared explicitly: this @SidedProxy lives outside the @Mod class, and the jar
@@ -453,7 +501,19 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     public OreGenProperties getOreGenProperties(World world) {
         if (oreProperties != null)
             return oreProperties;
-        return OreGenProperties.getOresForPressure(AtmosphereTypes.getAtmosphereTypeFromValue(originalAtmosphereDensity), Temps.getTempFromValue(getAverageTemp()));
+        OreGenProperties climate = OreGenProperties.getOresForPressure(
+                AtmosphereTypes.getAtmosphereTypeFromValue(originalAtmosphereDensity),
+                Temps.getTempFromValue(getAverageTemp()));
+        if (climate == null || metallicity == 1d)
+            return climate;
+        // The climate table is a SHARED static object — one instance per (pressure, temperature) cell,
+        // handed to every world that lands in it — so a per-planet scaling must never mutate it. This
+        // world gets its own copy instead, cached because ore generation asks per chunk.
+        if (scaledOreCache == null || scaledOreCacheFor != metallicity) {
+            scaledOreCache = climate.withMetalsScaled(metallicity);
+            scaledOreCacheFor = metallicity;
+        }
+        return scaledOreCache;
     }
 
     /**
@@ -487,6 +547,91 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         terrainTemplate = "";
         terrainGeneratorOptions = "";
         laserDrillOres = new ArrayList<>();
+        mass = BULK_UNSET;
+        radius = BULK_UNSET;
+        gravityAuthored = false;
+        tidallyLocked = false;
+        metallicity = 1d;
+        scaledOreCache = null;
+        scaledOreCacheFor = Double.NaN;
+    }
+
+    // ─── Bulk properties ───────────────────────────────────────────────────────
+
+    /** This body's mass in Earth masses, or {@link #BULK_UNSET} when nobody has stated one. */
+    public double getMass() {
+        return mass;
+    }
+
+    /** This body's radius in Earth radii, or {@link #BULK_UNSET}. */
+    public double getRadius() {
+        return radius;
+    }
+
+    public boolean hasBulkProperties() {
+        return mass > BULK_UNSET && radius > BULK_UNSET;
+    }
+
+    /**
+     * State this body's mass and radius, deriving surface gravity from them unless a gravity was
+     * explicitly authored.
+     *
+     * @param massEarths   mass in Earth masses
+     * @param radiusEarths radius in Earth radii
+     */
+    public void setBulk(double massEarths, double radiusEarths) {
+        this.mass = Math.max(0d, massEarths);
+        this.radius = Math.max(0d, radiusEarths);
+        if (!gravityAuthored && hasBulkProperties()) {
+            gravitationalMultiplier = (float) derivedGravity(this.mass, this.radius);
+        }
+    }
+
+    /**
+     * Surface gravity in Earth gravities from mass and radius — {@code g = M/R²} — clamped to the range
+     * the game can actually run a player in. The floor is the same one the legacy random generator has
+     * always used; the ceiling is {@link #MAX_GRAVITY}.
+     */
+    public static double derivedGravity(double massEarths, double radiusEarths) {
+        double g = massEarths / Math.max(1e-6d, radiusEarths * radiusEarths);
+        double lo = 0.05d;
+        double hi = MAX_GRAVITY / 100d;
+        if (Double.isNaN(g) || g < lo) {
+            return lo;
+        }
+        return g > hi ? hi : g;
+    }
+
+    /** Whether a gravity was STATED for this body rather than derived from its bulk. */
+    public boolean isGravityAuthored() {
+        return gravityAuthored;
+    }
+
+    /** Mark this body's {@link #gravitationalMultiplier} as authored — the XML/override path. */
+    public void setGravityAuthored(boolean authored) {
+        this.gravityAuthored = authored;
+    }
+
+    /**
+     * Whether this world keeps one face to its star: no day/night cycle at all, rather than a long day.
+     */
+    public boolean isTidallyLocked() {
+        return tidallyLocked;
+    }
+
+    public void setTidallyLocked(boolean locked) {
+        this.tidallyLocked = locked;
+    }
+
+    /** The parent star's metal content relative to Sol — see {@link #metallicity}. */
+    public double getMetallicity() {
+        return metallicity;
+    }
+
+    public void setMetallicity(double value) {
+        this.metallicity = (Double.isNaN(value) || value <= 0d) ? 1d : value;
+        this.scaledOreCache = null;
+        this.scaledOreCacheFor = Double.NaN;
     }
 
     public List<Fluid> getHarvestableGasses() {
@@ -505,6 +650,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     @Override
     public void setGravitationalMultiplier(float mult) {
         gravitationalMultiplier = mult;
+        // Stating a gravity is what makes it an override: from here on the mass/radius derivation must
+        // not touch it, or an authored planet would silently change the moment it gained a mass.
+        gravityAuthored = true;
     }
 
     public List<SpawnListEntryNBT> getSpawnListEntries() {
@@ -1687,6 +1835,15 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         }
 
         gravitationalMultiplier = nbt.getFloat("gravitationalMultiplier");
+        // Bulk properties, written only when stated: an absent key leaves the sentinel, so a world
+        // saved before planets had a mass reloads with exactly the gravity it already had.
+        mass = nbt.hasKey("mass") ? nbt.getDouble("mass") : BULK_UNSET;
+        radius = nbt.hasKey("radius") ? nbt.getDouble("radius") : BULK_UNSET;
+        gravityAuthored = nbt.getBoolean("gravityAuthored");
+        tidallyLocked = nbt.getBoolean("tidallyLocked");
+        metallicity = nbt.hasKey("metallicity") ? nbt.getDouble("metallicity") : 1d;
+        scaledOreCache = null;
+        scaledOreCacheFor = Double.NaN;
         orbitalDist = nbt.getInteger("orbitalDist");
         orbitTheta = nbt.getDouble("orbitTheta");
         baseOrbitTheta = nbt.getDouble("baseOrbitTheta");
@@ -2066,6 +2223,23 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
 
         nbt.setInteger("starId", starId);
         nbt.setFloat("gravitationalMultiplier", gravitationalMultiplier);
+        // Non-default-only, the terrainSource idiom: a planet that never stated a mass writes no mass
+        // key, so its NBT stays byte-identical to what it wrote before bulk properties existed.
+        if (mass > BULK_UNSET) {
+            nbt.setDouble("mass", mass);
+        }
+        if (radius > BULK_UNSET) {
+            nbt.setDouble("radius", radius);
+        }
+        if (gravityAuthored) {
+            nbt.setBoolean("gravityAuthored", true);
+        }
+        if (tidallyLocked) {
+            nbt.setBoolean("tidallyLocked", true);
+        }
+        if (metallicity != 1d) {
+            nbt.setDouble("metallicity", metallicity);
+        }
         nbt.setInteger("orbitalDist", orbitalDist);
         nbt.setDouble("orbitTheta", orbitTheta);
         nbt.setDouble("baseOrbitTheta", baseOrbitTheta);

@@ -4099,6 +4099,161 @@ public class TestProbeCommand extends CommandBase {
             send(sender, out.toString());
             return;
         }
+        // gen-install <density> <minSpacing> <clusterScale> <voidFraction> [seed]: install a procedural
+        // galaxy generator and bind a seed. A world with no <galaxyGen> in its planetDefs runs the
+        // authored-anchors-only default, so without this there are no procedural systems to realize at
+        // all and every test about them would be a test about an empty universe. `gen-reset` puts the
+        // default back; a shared-server class MUST call it, because the generator is a JVM global.
+        if (args.length >= 5 && "gen-install".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            double density = parseDoubleOr(args[1], 0.9d);
+            int minSpacing = parseIntOr(args[2], 8);
+            int clusterScale = parseIntOr(args[3], 8);
+            double voidFraction = parseDoubleOr(args[4], 0d);
+            long seed = args.length >= 6 ? parseLongOr(args[5], 0L) : reg.worldSeed();
+            zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(
+                    new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(
+                            new zmaster587.advancedRocketry.universe.GalaxyGenConfig(density, minSpacing,
+                                    clusterScale, voidFraction, null)));
+            reg.bindWorldSeed(seed);
+            send(sender, "{\"ok\":true,\"seed\":" + seed + ",\"minSpacing\":" + minSpacing + "}");
+            return;
+        }
+        if (args.length >= 1 && "gen-reset".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(null);
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        // find-procedural <radius>: the first cell in a box around the origin that holds a body a ship
+        // could land on but that has NO dimension yet — the precondition of every realization test, and
+        // the thing that is impossible to write down as a literal because it depends on the seed.
+        if (args.length >= 2 && "find-procedural".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            long r = parseIntOr(args[1], 8);
+            for (long x = -r; x <= r; x++) {
+                for (long y = -r; y <= r; y++) {
+                    for (long z = -r; z <= r; z++) {
+                        zmaster587.advancedRocketry.space.GalacticCoord cell =
+                                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(x, y, z,
+                                        0L, 0L, 0L);
+                        for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                            if (b.kind().canDescend()
+                                    && b.dimId() == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                send(sender, "{\"ok\":true,\"sx\":" + x + ",\"sy\":" + y + ",\"sz\":" + z
+                                        + ",\"cellKey\":\"" + cell.cellKey() + "\",\"kind\":\"" + b.kind()
+                                        + "\",\"orbitalDist\":" + b.orbitalDistance()
+                                        + ",\"starId\":" + b.starId() + "}");
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            send(sender, "{\"ok\":false,\"reason\":\"no unrealized landable body in range\"}");
+            return;
+        }
+        // derived <sx> <sy> <sz>: what the DERIVATION says about the body in that cell, without
+        // realizing anything. This is the answer a telescope gives from across the system, and the whole
+        // point of it is that a landing has to agree with it — so a test compares this against the
+        // realized dimension's own properties rather than against a literal it wrote itself.
+        if (args.length >= 4 && "derived".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            if (reg == null) {
+                send(sender, "{\"error\":\"registry unavailable\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            java.util.Optional<zmaster587.advancedRocketry.space.GalacticCoord> anchor =
+                    reg.anchorForCell(cell);
+            java.util.Optional<zmaster587.advancedRocketry.api.dimension.solar.StellarBody> star =
+                    reg.starAt(cell);
+            zmaster587.advancedRocketry.universe.SystemBody target = null;
+            int variant = 0;
+            int seen = 0;
+            for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                if (b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.STAR
+                        || b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.STATION_SLOT
+                        || b.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.ASTEROID_BELT) {
+                    continue;
+                }
+                if (target == null && b.kind().canDescend()) {
+                    target = b;
+                    variant = seen;
+                }
+                seen++;
+            }
+            if (target == null || !anchor.isPresent() || !star.isPresent()) {
+                send(sender, "{\"ok\":false,\"reason\":\"no landable body derivable at that cell\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.BodyProfile p =
+                    zmaster587.advancedRocketry.universe.PlanetDerivation.derive(reg.worldSeed(),
+                            anchor.get(), target.name(), variant, star.get(),
+                            target.kind() == zmaster587.advancedRocketry.universe.SystemBodyKind.MOON,
+                            target.orbitalDistance());
+            send(sender, "{\"ok\":true,\"type\":\"" + p.typeName() + "\",\"orbitalDist\":"
+                    + p.orbitalDistance() + ",\"mass\":" + p.massEarths() + ",\"radius\":"
+                    + p.radiusEarths() + ",\"gravity\":" + p.gravityPercent() + ",\"pressure\":"
+                    + p.pressure() + ",\"temperature\":" + p.temperatureKelvin() + ",\"oxygen\":"
+                    + p.hasOxygen() + ",\"locked\":" + p.tidallyLocked() + ",\"metallicity\":"
+                    + p.metallicity() + ",\"terrainSource\":\"" + p.terrain().source() + "\"}");
+            return;
+        }
+        // realize <sx> <sy> <sz>: mint the dimension for the landable body in that cell and report what
+        // the world it produced actually carries. The realization path a descent drives, called
+        // directly, so the properties can be compared with `derived` without flying anything.
+        if (args.length >= 4 && "realize".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            parseIntOr(args[1], 0), parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                            0L, 0L, 0L);
+            int dimId = zmaster587.advancedRocketry.universe.PlanetRealizer.realize(server, cell);
+            if (dimId == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                send(sender, "{\"ok\":false,\"reason\":\"nothing landable in that cell\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.dimension.DimensionProperties props =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionPropertiesOrNull(dimId);
+            if (props == null) {
+                send(sender, "{\"ok\":false,\"dim\":" + dimId + ",\"reason\":\"no properties registered\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                    zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+            boolean descendTarget = false;
+            if (reg != null) {
+                for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                    if (b.dimId() == dimId && b.isDescendTarget()) {
+                        descendTarget = true;
+                    }
+                }
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dimId + ",\"name\":\"" + props.getName()
+                    + "\",\"orbitalDist\":" + props.getOrbitalDist() + ",\"mass\":" + props.getMass()
+                    + ",\"radius\":" + props.getRadius() + ",\"gravity\":"
+                    + Math.round(props.getGravitationalMultiplier() * 100f) + ",\"pressure\":"
+                    + props.getAtmosphereDensity() + ",\"temperature\":" + props.averageTemperature
+                    + ",\"oxygen\":" + props.hasOxygen + ",\"locked\":" + props.isTidallyLocked()
+                    + ",\"metallicity\":" + props.getMetallicity() + ",\"gasGiant\":"
+                    + props.isGasGiant() + ",\"terrainSource\":\"" + props.getTerrainSource()
+                    + "\",\"descendTarget\":" + descendTarget + ",\"starId\":" + props.getStarId() + "}");
+            return;
+        }
         // find-afc <dim>: report a subspace block position + durable ship id of the settled ship in slot
         // <dim>, so a descent e2e can drive requestDescent for it. Located via the ledger coord (headless
         // the AFC does not tick, so the coord stays the settle coord) -> world pose -> the queryable ship

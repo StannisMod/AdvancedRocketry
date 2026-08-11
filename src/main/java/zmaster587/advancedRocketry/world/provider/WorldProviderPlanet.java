@@ -515,9 +515,24 @@ public class WorldProviderPlanet extends WorldProvider implements IPlanetaryProv
         return 63;
     }
 
+    /**
+     * Where a tidally-locked world's sun sits, permanently. Zero is noon in vanilla's angle convention
+     * ({@code (time % period) / period - 0.25} is zero at midday), so a locked world stands under a sun
+     * that never sets.
+     *
+     * <p>One sky serves a whole dimension, so this expresses the half of tidal locking a per-dimension
+     * value CAN express — that there is no day/night cycle at all. The permanently-dark hemisphere and
+     * the temperate terminator strip between them are a property of WHERE you stand, which a single
+     * celestial angle has no way to say; they belong to the terrain and biome layer.</p>
+     */
+    private static final float TIDALLY_LOCKED_CELESTIAL_ANGLE = 0f;
+
     @Override
     public float calculateCelestialAngle(long p_76563_1_, float p_76563_3_) {
         int rotationalPeriod;
+        if (getDimensionProperties(new BlockPos(0, 0, 0)).isTidallyLocked()) {
+            return TIDALLY_LOCKED_CELESTIAL_ANGLE;
+        }
         rotationalPeriod = getRotationalPeriod(new BlockPos(0, 0, 0));
 
 

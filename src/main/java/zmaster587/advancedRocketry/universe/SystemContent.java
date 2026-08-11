@@ -150,8 +150,12 @@ public final class SystemContent {
             BodyEphemeris planetLaw = orbitLawOf(planet, star);
             GalacticCoord planetName = nameOf(planet, planetLaw, anchor, minSpacingCells, starId, names);
             CellFrame planetFrame = CellFrame.of(anchorAbs, planetLaw);
+            // The orbit travels on the body for authored systems too, so the field means the same thing
+            // for the whole catalogue: how far this body is from its star. A body that knew its orbit
+            // only when it was procedural would be a field that lies for half the galaxy.
             bodies.add(new SystemBody(planetName, planetFrame, BodyEphemeris.STATIC,
-                    kindOf(planet, SystemBodyKind.PLANET), planet.getId(), starId));
+                    kindOf(planet, SystemBodyKind.PLANET), planet.getId(), starId,
+                    planet.getOrbitalDist()));
 
             for (int moonId : planet.getChildPlanets()) {
                 DimensionProperties moon = DimensionManager.getInstance().getDimensionProperties(moonId);
@@ -160,8 +164,12 @@ public final class SystemContent {
                 }
                 // A moon shares its parent's NAME and its parent's FRAME, and keeps its own live offset
                 // inside it: a planet-and-its-moons is one destination that moves as one.
+                // A moon carries its PARENT's distance from the star — what warms a moon is where its
+                // planet is; how far it sits from the planet is in its ephemeris, which is what
+                // positions it. Same convention as the procedural side.
                 bodies.add(new SystemBody(planetName, planetFrame, moonLawOf(moon, planet),
-                        kindOf(moon, SystemBodyKind.MOON), moon.getId(), starId));
+                        kindOf(moon, SystemBodyKind.MOON), moon.getId(), starId,
+                        planet.getOrbitalDist()));
             }
         }
         auditOneRealBodyPerCell(bodies, starId);

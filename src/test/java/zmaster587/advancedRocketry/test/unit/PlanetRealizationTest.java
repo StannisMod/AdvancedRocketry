@@ -1,0 +1,248 @@
+package zmaster587.advancedRocketry.test.unit;
+
+import org.junit.After;
+import org.junit.Test;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
+
+import zmaster587.advancedRocketry.api.Constants;
+import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
+import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.universe.SystemBodyKind;
+import zmaster587.advancedRocketry.universe.UniverseRegistry;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * Contract tests for the registry half of realization — the half that decides whether a body has a
+ * world, and therefore the half that has to be idempotent.
+ *
+ * <p>Minting the dimension itself needs a live server and is pinned by the server e2e. What is pinned
+ * HERE is the property that makes minting safe to drive from a per-tick proximity check: asking twice
+ * gives the same answer, and a body that already has a world is never handed a second one. If that ever
+ * stopped holding, a pilot hovering at the descent boundary would allocate a dimension per tick.</p>
+ */
+public class PlanetRealizationTest {
+
+    private static final long SEED = 0x5EED5EEDL;
+
+    @After
+    public void resetSeams() {
+        UniverseRegistry.setGenerator(null);
+        UniverseRegistry.setStarLookup(null);
+    }
+
+    /**
+     * A dense, void-free galaxy so a small sweep is guaranteed to find systems. The spacing is
+     * deliberately tiny: a system's anchor is seated in the MIDDLE BAND of its super-cell, so at the
+     * production spacing of 512 the nearest anchor is hundreds of cells from the origin and a
+     * unit-test-sized sweep finds an empty universe.
+     */
+    private static UniverseRegistry registryWithProceduralGalaxy() {
+        UniverseRegistry reg = new UniverseRegistry();
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
+                new GalaxyGenConfig(0.9d, 4, 8, 0.0d, null)));
+        reg.bindWorldSeed(SEED);
+        return reg;
+    }
+
+    /** The first cell in a small sweep holding a body a ship could land on but that has no world. */
+    private static GalacticCoord findLandableCell(UniverseRegistry reg) {
+        for (long x = -8; x <= 8; x++) {
+            for (long y = -8; y <= 8; y++) {
+                for (long z = -8; z <= 8; z++) {
+                    GalacticCoord cell = GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L);
+                    for (SystemBody b : reg.bodiesAt(cell)) {
+                        if (b.kind().canDescend() && b.dimId() == Constants.INVALID_PLANET) {
+                            return cell;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    @Test
+    public void theProceduralGalaxyOffersLandableBodiesThatHaveNoWorldYet() {
+        // The precondition of everything below, and the defect the whole batch exists to fix: the
+        // generator places bodies a ship could stand on, and not one of them is a descent target.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull("a dense procedural galaxy must contain landable bodies", cell);
+        for (SystemBody b : reg.bodiesAt(cell)) {
+            if (b.kind().canDescend()) {
+                assertFalse("an unrealized body must not advertise itself as a descent target",
+                        b.isDescendTarget());
+            }
+        }
+    }
+
+    @Test
+    public void realizingABodyMakesItADescentTargetAndRecordsItsCellName() {
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+
+        assertTrue("touching a procedural system must pin it before anything is written into it",
+                reg.pinSystem(cell));
+        assertTrue("the pinned body must accept a dimension", reg.realizeBody(cell, 4242));
+
+        OptionalInt realized = reg.realizedDimAt(cell);
+        assertTrue("the cell must now report a realized world", realized.isPresent());
+        assertEquals(4242, realized.getAsInt());
+
+        boolean sawTarget = false;
+        for (SystemBody b : reg.bodiesAt(cell)) {
+            if (b.dimId() == 4242) {
+                assertTrue("a realized body must be a descent target", b.isDescendTarget());
+                sawTarget = true;
+            }
+        }
+        assertTrue(sawTarget);
+
+        assertEquals("the body's cell must be recorded as that dimension's durable name",
+                Optional.of(cell.cellCentre()), reg.recordedName(4242));
+    }
+
+    @Test
+    public void asecondDescentIntoTheSameCellReusesTheWorld() {
+        // The idempotency contract. The trigger is a per-tick proximity check, so "ask again" is the
+        // normal case, not an edge one — a pilot who hovers at the boundary must not mint a dimension
+        // per tick.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+        reg.pinSystem(cell);
+        assertTrue(reg.realizeBody(cell, 777));
+
+        assertEquals("asking again must answer the SAME world", 777,
+                reg.realizedDimAt(cell).getAsInt());
+        assertTrue("re-realizing with the same id is a no-op, not a failure",
+                reg.realizeBody(cell, 777));
+        assertEquals(777, reg.realizedDimAt(cell).getAsInt());
+    }
+
+    @Test
+    public void aBodyThatAlreadyHasAWorldRefusesASecondOne() {
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+        reg.pinSystem(cell);
+        assertTrue(reg.realizeBody(cell, 100));
+
+        assertFalse("a body must never be re-pointed at a different world", reg.realizeBody(cell, 200));
+        assertEquals("and it must still hold the first one", 100, reg.realizedDimAt(cell).getAsInt());
+    }
+
+    @Test
+    public void anUnpinnedSystemCannotBeRealizedIntoAtAll() {
+        // Not a limitation but the mechanism: a derived body list is regenerated on the next query, so
+        // writing a dimension into one would be writing into a value that is about to be thrown away.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+        assertFalse("an unpinned system must refuse the rewrite rather than lose it silently",
+                reg.realizeBody(cell, 55));
+        assertFalse(reg.realizedDimAt(cell).isPresent());
+    }
+
+    @Test
+    public void aPinnedSystemsStarSurvivesAChangeOfGenerator() {
+        // Realization derives a body's physics from its STAR, so the star a landing uses has to be the
+        // one the scan described — even after a config edit that would have fabricated a different one.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+        reg.pinSystem(cell);
+
+        Optional<StellarBody> before = reg.starAt(cell);
+        assertTrue("a pinned system must have a star", before.isPresent());
+
+        // A pack edit: a different spacing, a different density, a whole different galaxy.
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
+                new GalaxyGenConfig(0.2d, 32, 4, 0.5d, null)));
+
+        Optional<StellarBody> after = reg.starAt(cell);
+        assertTrue(after.isPresent());
+        assertEquals("a pinned star's identity must not move", before.get().getId(),
+                after.get().getId());
+        assertEquals("nor its temperature", before.get().getTemperature(), after.get().getTemperature());
+        assertEquals("nor its size", before.get().getSize(), after.get().getSize(), 0f);
+    }
+
+    @Test
+    public void aRealizedBodyKeepsItsCellItsOrbitAndItsKind() {
+        // Realization materializes what was derived; it must not MOVE the body. An address a player
+        // wrote down before landing has to keep denoting the world they landed on.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+
+        SystemBody before = null;
+        for (SystemBody b : reg.bodiesAt(cell)) {
+            if (b.kind().canDescend()) {
+                before = b;
+                break;
+            }
+        }
+        assertNotNull(before);
+        reg.pinSystem(cell);
+        assertTrue(reg.realizeBody(cell, 999));
+
+        SystemBody after = null;
+        for (SystemBody b : reg.bodiesAt(cell)) {
+            if (b.dimId() == 999) {
+                after = b;
+                break;
+            }
+        }
+        assertNotNull(after);
+        assertEquals("the cell name must not move", before.name(), after.name());
+        assertEquals("the orbit must not move", before.orbitalDistance(), after.orbitalDistance());
+        assertEquals("the kind must not change", before.kind(), after.kind());
+        assertEquals("the owning system must not change", before.starId(), after.starId());
+        assertNotEquals("but it must now have a world", before.dimId(), after.dimId());
+    }
+
+    @Test
+    public void aProceduralBodyCarriesTheOrbitItsPhysicsWasDerivedFrom() {
+        // The orbit travels ON the body so a pinned system's worlds stay derivable after any change to
+        // the placement arithmetic. A body with no orbit would have no climate.
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        GalacticCoord cell = findLandableCell(reg);
+        assertNotNull(cell);
+        List<SystemBody> here = reg.bodiesAt(cell);
+        boolean checked = false;
+        for (SystemBody b : here) {
+            if (b.kind() == SystemBodyKind.STAR) {
+                continue;
+            }
+            assertTrue("a procedural body must carry a real orbital distance, got "
+                    + b.orbitalDistance(), b.orbitalDistance() > 0);
+            checked = true;
+        }
+        assertTrue(checked);
+    }
+
+    @Test
+    public void theOrbitSurvivesAnNbtRoundTrip() {
+        SystemBody body = new SystemBody(GalacticCoord.ofSectorLocal(3, 4, 5, 0, 0, 0),
+                SystemBodyKind.PLANET, 12, -7, 1234);
+        net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
+        body.writeToNBT(nbt);
+        SystemBody back = SystemBody.readFromNBT(nbt);
+        assertEquals("a pinned body's orbit must survive the save, or its world is not re-derivable",
+                1234, back.orbitalDistance());
+        assertEquals(body, back);
+    }
+}

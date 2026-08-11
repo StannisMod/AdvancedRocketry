@@ -339,9 +339,15 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void tinySpacingDegeneratesConsistentlyIntoTheAnchorCell() {
-        // minSpacing=1: the super-cell IS one cell, so every body clamps into the anchor cell — degenerate
-        // but consistent (attribution still exact, nothing escapes the box).
+    public void tinySpacingDegeneratesIntoALoneStar() {
+        // minSpacing=1: the super-cell IS one cell, and the star already holds it. A second real body
+        // would have to share that cell, which at most one real body per cell forbids — so the system
+        // degenerates to its star alone. Degenerate but CONSISTENT: attribution stays exact, nothing
+        // escapes the box, and no cell ends up with two destinations in it.
+        //
+        // (Before the retinue gained a distinctness rule this read "every body clamps into the anchor
+        // cell", which was the same arrangement described from the other side — and describing it that
+        // way made the invariant violation sound like the intended behaviour.)
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
                 new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null));
         boolean checkedAny = false;
@@ -352,9 +358,10 @@ public class ClusteredGalaxyGeneratorTest {
                 continue;
             }
             checkedAny = true;
-            for (SystemBody body : gen.bodiesFor(SEED, c)) {
-                assertTrue("with s=1 every body stays in the anchor cell", body.name().sameCell(c));
-            }
+            List<SystemBody> bodies = gen.bodiesFor(SEED, c);
+            assertEquals("a one-cell neighbourhood can host exactly one real body", 1, bodies.size());
+            assertEquals("and that body is the star", SystemBodyKind.STAR, bodies.get(0).kind());
+            assertTrue("which holds the anchor cell", bodies.get(0).name().sameCell(c));
         }
         assertTrue(checkedAny);
     }

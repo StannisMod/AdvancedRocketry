@@ -417,7 +417,11 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                         zmaster587.advancedRocketry.space.GalacticCoord shipCoord = settled.coord;
                         long radius = zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS;
                         for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(shipCoord)) {
-                            if (!body.isDescendTarget()) {
+                            // A procedural body has no dimension until somebody flies down to it, so the
+                            // filter here is "can this be landed on", not "does it already have a world".
+                            // The world is minted below, once the ship is genuinely close enough to
+                            // descend — a scan must never allocate a dimension.
+                            if (!body.kind().canDescend()) {
                                 continue;
                             }
                             // Ship and body are in the SAME cell here (bodiesAt filters by name), so
@@ -427,10 +431,21 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                             double distance = Math.sqrt(shipCoord.staticFrameDistanceSqTo(
                                     body.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
                                             .spaceClock())));
-                            if (zmaster587.advancedRocketry.space.DescentController
-                                        .shouldTriggerDescent(true, true, distance, radius)
-                                    && descentCtl.requestDescent(world.provider.getDimension(),
-                                            getPos(), shipId, body.dimId())) {
+                            if (!zmaster587.advancedRocketry.space.DescentController
+                                    .shouldTriggerDescent(true, true, distance, radius)) {
+                                continue;
+                            }
+                            int targetDim = body.dimId();
+                            if (targetDim == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                targetDim = zmaster587.advancedRocketry.universe.PlanetRealizer
+                                        .realize(server, body.name());
+                                if (targetDim
+                                        == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
+                                    continue; // nothing landable here after all
+                                }
+                            }
+                            if (descentCtl.requestDescent(world.provider.getDimension(),
+                                            getPos(), shipId, targetDim)) {
                                 // The crossing started: this tile was cut out of the slot world - stop
                                 // publishing from a stale tick. The re-assembled ship resumes planet-side.
                                 return;
