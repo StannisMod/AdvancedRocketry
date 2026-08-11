@@ -297,6 +297,20 @@ public abstract class AbstractSharedClientE2ETest {
         String screen = state.has("screen") ? state.get("screen").getAsString() : "";
         int overlayTicks = chat.has("overlayTicks") ? chat.get("overlayTicks").getAsInt() : -1;
         int chatLines = chat.has("count") ? chat.get("count").getAsInt() : -1;
+        // IS THERE A CLIENT AT ALL — asked before anything is asserted ABOUT one, and it is a
+        // different question from all three below. Every other read in this method is guarded; these
+        // two were not, so a reportState() carrying no player — exactly what a crashed or
+        // disconnected client answers — died here on a bare NullPointerException with no message.
+        // That is the worst place in the file to lose the diagnosis: the assertions immediately
+        // below exist to name what the previous scenario left behind, and none of them was ever
+        // reached, so ONE failing scenario presented as N indistinguishable NPEs and reading it
+        // cost a full control matrix to discover that all but the first were cascade.
+        assertTrue("the client reports NO PLAYER, so it is GONE rather than dirty — a previous"
+                + " scenario took it down, and this scenario plus every one after it is downstream"
+                + " of that rather than failing on its own subject. Look at the FIRST red in this"
+                + " class, not at this one. reportState()=" + state
+                + ", resetClientState()=" + cleared,
+                state != null && state.has("playerX") && state.has("playerZ"));
         double px = state.get("playerX").getAsDouble();
         double pz = state.get("playerZ").getAsDouble();
 
@@ -316,7 +330,12 @@ public abstract class AbstractSharedClientE2ETest {
         double health = state.has("health") ? state.get("health").getAsDouble() : -1.0;
         for (int waited = 0; waited < 40 && health < 19.5; waited += 5) {
             bot().waitTicks(5);
-            health = bot().reportState().get("health").getAsDouble();
+            // Guarded like every other read here: a client that dies DURING the poll would
+            // otherwise reproduce the same bare NPE this method was just taught not to throw, one
+            // loop iteration later and with the guard above already passed.
+            JsonObject polled = bot().reportState();
+            health = polled != null && polled.has("health")
+                    ? polled.get("health").getAsDouble() : -1.0;
         }
         assertTrue("a scenario must start at full health as the CLIENT renders it, or a"
                 + " damage-observing scenario measures the previous one's leftovers; client"

@@ -2808,6 +2808,20 @@ public class TestProbeCommand extends CommandBase {
                                 .append(bodyAt.absoluteZ() - e.coord.absoluteZ()).append(']')
                                 .append(",\"distance\":")
                                 .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(bodyAt)))
+                                // "distance" is to the body's CENTRE — what the descent trigger
+                                // compares. "boundaryDistance" is what a pilot has left to fly
+                                // before he crosses into the atmosphere, which is a different
+                                // number and the one a readout must show. Reported ALONGSIDE rather
+                                // than instead of, so an existing caller keeps its meaning and a
+                                // new one cannot pick the wrong quantity by accident.
+                                .append(",\"boundaryDistance\":")
+                                .append((long) zmaster587.advancedRocketry.space.DescentShell
+                                        .distanceToShell(
+                                                Math.sqrt(e.coord.staticFrameDistanceSqTo(bodyAt)), b))
+                                .append(",\"shellRadius\":")
+                                .append(b.isDescendTarget()
+                                        ? zmaster587.advancedRocketry.space.DescentShell.radiusAround(b)
+                                        : 0L)
                                 .append('}');
                     }
                 }
@@ -2851,6 +2865,16 @@ public class TestProbeCommand extends CommandBase {
                             .append(",\"distance\":").append((long) Math.sqrt(
                                     (double) b.localX * b.localX + (double) b.localY * b.localY
                                             + (double) b.localZ * b.localZ))
+                            // The shell as SENT, and the range the client's own label derives from
+                            // it. A test that asserts the label's number must read it from here
+                            // rather than recompute it, or it checks its own arithmetic.
+                            .append(",\"shellRadius\":").append(b.boundaryRadius)
+                            .append(",\"boundaryDistance\":").append((long)
+                                    zmaster587.advancedRocketry.space.DescentShell.distanceToShell(
+                                            Math.sqrt((double) b.localX * b.localX
+                                                    + (double) b.localY * b.localY
+                                                    + (double) b.localZ * b.localZ),
+                                            b.boundaryRadius))
                             .append('}');
                 }
                 out.append("]}");

@@ -22,8 +22,15 @@ import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import java.util.List;
 
 /**
- * Slot-world sky renderer for a settled tier-2 ship: draws the descent boundary ring plus a
- * billboard for every nearby system body the server has synced for THIS slot dimension.
+ * Slot-world sky renderer for a settled tier-2 ship: draws a billboard for every nearby system body
+ * the server has synced for THIS slot dimension.
+ *
+ * <p><b>There is no fixed horizon band here, and there must not be one.</b> This renderer used to
+ * draw a "descent boundary ring" at a constant radius in the CAMERA's frame — a band the viewpoint
+ * could never leave, identical at ten blocks from a planet and at ten million, with no coupling to
+ * the descent radius it was named after. It asserted "a descent boundary is here" in every cell,
+ * including cells with nothing to descend to. A boundary belongs to a BODY: it is drawn around the
+ * body's own bearing, at the angle that body's shell actually subtends.</p>
  *
  * <p>The body data comes from {@link PacketSystemBodiesSync#bodiesForDim(int)} (the shared
  * server-&gt;client render channel), keyed on {@code world.provider.getDimension()}. Bodies flagged
@@ -31,7 +38,7 @@ import java.util.List;
  * body the ship will descend into once inside its proximity radius.</p>
  *
  * <p>This provider replaces the ENTIRE sky rather than adding to one, so whatever is not drawn here is
- * not drawn at all -- hence the starfield alongside the ring and the billboards.</p>
+ * not drawn at all -- hence the starfield alongside the billboards.</p>
  *
  * <p>Everything emitted here is wound to face the camera and drawn with vanilla's back-face culling
  * left on, matching {@link RenderPlanetarySky}. That is a hard requirement, not a style choice: the sky
@@ -46,10 +53,11 @@ import java.util.List;
 public class BoundarySky extends IRenderHandler {
 
     // Render tunables (appearance-only; never pinned by a test).
-    private static final float BOUNDARY_RADIUS = 100.0F;
-    private static final float BOUNDARY_HEIGHT = 6.0F;
-    private static final int BOUNDARY_SEGMENTS = 48;
     private static final float BODY_DISTANCE = 90.0F;
+    /** Sky-frame radius the boundary circle is emitted on. Inside the starfield, around the body. */
+    private static final float BOUNDARY_SKY_RADIUS = 95.0F;
+    /** Samples around one boundary circle. Enough that a great circle does not read as a polygon. */
+    private static final int BOUNDARY_SEGMENTS = 64;
     /** Sky-frame scale the label text is drawn at, so it reads at the billboard's distance. */
     private static final float LABEL_SCALE = 0.28F;
 
@@ -64,52 +72,32 @@ public class BoundarySky extends IRenderHandler {
     public static volatile int labelsDrawnLastFrame;
 
     /**
-     * Frames on which the descent-boundary ring has been drawn. It exists so "the ring is suppressed
-     * in hyperspace" is a statement a test can falsify: a counter that only ever goes up cannot tell
-     * a suppressed ring from a sky renderer that stopped running altogether, so the corridor's own
-     * counter is read in the same breath and the pair has to move in opposite directions.
+     * How many atmosphere boundaries the client's LAST FRAME drew. Same shape as the label counter
+     * and for the same reason: "a boundary is drawn for a descend target and for nothing else" is
+     * a claim a test can only take without looking at pixels if the renderer counts what it drew.
+     *
+     * <p>Read it beside {@link #skyFramesDrawn}, never alone — a zero here means "no boundary was
+     * drawn" only if the renderer ran at all, and the two are separate questions.</p>
      */
-    public static volatile long ringFramesDrawn = 0L;
+    public static volatile int boundariesDrawnLastFrame;
 
     /**
      * Frames on which this sky renderer ran AT ALL, counted before any branch inside it.
      *
-     * <p>Without it the ring counter answers two different questions with the same zero: "the ring
-     * was suppressed" and "nothing rendered here". The first control leg written against that pair
-     * could not tell them apart, and said so by failing on its own arrangement.</p>
+     * <p>It is what makes "X was not drawn" falsifiable: a per-feature counter that stays at zero
+     * cannot tell "the feature was suppressed" from "nothing rendered here", and the first control
+     * leg written without this pair could not tell them apart and said so by failing on its own
+     * arrangement.</p>
      */
     public static volatile long skyFramesDrawn = 0L;
 
     private final Minecraft mc = Minecraft.getMinecraft();
 
-    // Cached static geometry: the descent boundary ring (position-only; colour set at call time).
-    private final int glBoundaryList;
     // Cached static geometry: the shared starfield, so empty space is not a black void.
     private final int glStarList;
 
     public BoundarySky() {
-        int lists = GLAllocation.generateDisplayLists(2);
-        this.glBoundaryList = lists;
-        this.glStarList = lists + 1;
-
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        GL11.glNewList(this.glBoundaryList, GL11.GL_COMPILE);
-        buffer.begin(GL11.GL_QUAD_STRIP, DefaultVertexFormats.POSITION);
-        for (int i = 0; i <= BOUNDARY_SEGMENTS; i++) {
-            double ang = (Math.PI * 2.0D * i) / BOUNDARY_SEGMENTS;
-            float x = (float) (Math.cos(ang) * BOUNDARY_RADIUS);
-            float z = (float) (Math.sin(ang) * BOUNDARY_RADIUS);
-            // TOP vertex before BOTTOM. The strip advances anticlockwise around +Y, so this pairing is
-            // what makes each quad wind anticlockwise -- i.e. front-facing -- as seen from INSIDE the
-            // cylinder. The camera is always inside it: the ring is drawn in the camera-centred sky
-            // frame, at a radius no viewpoint can leave. Emitting bottom-first faces the ring outwards
-            // and vanilla's GL_CULL_FACE/GL_BACK (enabled in EntityRenderer.renderWorldPass just before
-            // the sky pass, and never turned off here) discards every quad of it.
-            buffer.pos(x, BOUNDARY_HEIGHT, z).endVertex();
-            buffer.pos(x, -BOUNDARY_HEIGHT, z).endVertex();
-        }
-        Tessellator.getInstance().draw();
-        GL11.glEndList();
+        this.glStarList = GLAllocation.generateDisplayLists(1);
 
         // The starfield is the mod's existing one, compiled into a list of our own rather than
         // duplicated: same seed, same 2000 quads, same radius as every other AR sky. Without it a slot
@@ -135,14 +123,13 @@ public class BoundarySky extends IRenderHandler {
 
         GlStateManager.disableTexture2D();
 
-        // Stars first: the ring and the billboards are meant to sit in front of them.
+        // Stars first: the billboards are meant to sit in front of them.
         GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
         GL11.glCallList(this.glStarList);
 
-        // In hyperspace this same provider serves the transit lanes, and the two things below are
-        // both wrong there: the ring marks a descent boundary in a world nothing descends to, and
-        // no cell is loaded so no body is ever synced. The corridor replaces them, and it is the
-        // only thing that tells a pilot with no controls and no readout that he is moving.
+        // In hyperspace this same provider serves the transit lanes, and nothing below belongs
+        // there: no cell is loaded, so no body is ever synced. The corridor replaces them, and it
+        // is the only thing that tells a pilot with no controls and no readout that he is moving.
         if (HyperspaceTunnel.localTransitPhase() > 0) {
             HyperspaceTunnel.render(partialTicks, world);
             GlStateManager.enableTexture2D();
@@ -150,16 +137,24 @@ public class BoundarySky extends IRenderHandler {
             return;
         }
 
-        // Descent boundary ring (untextured colour band).
-        GlStateManager.color(0.35F, 0.65F, 1.0F, 0.35F);
-        GL11.glCallList(this.glBoundaryList);
-        ringFramesDrawn++;
+        // The atmosphere boundaries FIRST, untextured, while the texture unit is still off: they
+        // belong behind the bodies they surround, and drawing them here saves toggling the texture
+        // unit twice per frame.
+        int boundaries = 0;
+        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
+        if (bodies != null) {
+            GlStateManager.color(0.35F, 0.65F, 1.0F, 0.55F);
+            for (PacketSystemBodiesSync.RenderBody body : bodies) {
+                boundaries += drawBoundary(buffer, body) ? 1 : 0;
+            }
+        }
+        boundariesDrawnLastFrame = boundaries;
+
         GlStateManager.enableTexture2D();
 
         // One billboard per synced body.
         int labelled = 0;
         if (bodies != null && !bodies.isEmpty()) {
-            BufferBuilder buffer = Tessellator.getInstance().getBuffer();
             boolean labels = SkyLabels.enabled();
             for (PacketSystemBodiesSync.RenderBody body : bodies) {
                 labelled += drawBody(buffer, body, labels) ? 1 : 0;
@@ -168,6 +163,78 @@ public class BoundarySky extends IRenderHandler {
         labelsDrawnLastFrame = labelled;
 
         restoreState();
+    }
+
+    /**
+     * Draw {@code body}'s atmosphere boundary: the circle on the sky where its shell meets the
+     * viewer's line of sight. Returns whether anything was emitted.
+     *
+     * <p><b>Why a circle around the body and not a band around the camera.</b> The boundary is a
+     * sphere of radius R about the body, so from a distance d it subtends a half-angle
+     * {@code asin(R/d)} about the body's own bearing. That makes it a thing in the world: it OPENS
+     * as the ship closes, and at the crossing it is a great circle — the boundary is all around
+     * you, because you are on it. A fixed band at the camera's horizon can express none of that; it
+     * is identical at every distance, which is why the one this replaced said nothing.</p>
+     *
+     * <p><b>No singularity, deliberately.</b> Points are sampled ON the sky sphere as
+     * {@code cosθ·n + sinθ·(cosφ·u + sinφ·v)} rather than projected onto the billboard plane, where
+     * the radius would go as {@code tan θ} and blow up exactly at the crossing. The ratio is
+     * clamped at 1, so at or inside the shell θ is a right angle and the great circle is the honest
+     * limit rather than a NaN.</p>
+     *
+     * <p>Emitted as a LINE LOOP: the sky pass runs with {@code GL_CULL_FACE}/{@code GL_BACK} on
+     * (see the class note), and a filled band would have to be wound correctly for a viewpoint that
+     * moves through it — the failure mode being silent invisibility. A line has no facing.</p>
+     */
+    private boolean drawBoundary(BufferBuilder buffer, PacketSystemBodiesSync.RenderBody body) {
+        // A body with no shell has no boundary to draw. Read off the number the SERVER sent rather
+        // than off the kind, so the renderer never has to know which kinds have one.
+        if (!body.descendTarget || body.boundaryRadius <= 0L)
+            return false;
+
+        double dx = body.localX;
+        double dy = body.localY;
+        double dz = body.localZ;
+        double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1.0E-6D)
+            return false;
+
+        double nx = dx / len, ny = dy / len, nz = dz / len;
+        // The angle comes from the same place the range beside the body does, so the circle and the
+        // number can never describe two different surfaces.
+        double theta = zmaster587.advancedRocketry.space.DescentShell
+                .boundaryHalfAngle(len, body.boundaryRadius);
+        double ct = Math.cos(theta), st = Math.sin(theta);
+
+        // Any axis not parallel to n spans the perpendicular plane with it. Take the world axis n is
+        // LEAST aligned with: a fixed choice degenerates to a zero-length cross product for a body
+        // that happens to lie along it, and that body is precisely the one dead ahead.
+        double hx = 0.0D, hy = 0.0D, hz = 0.0D;
+        double ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+        if (ax <= ay && ax <= az) {
+            hx = 1.0D;
+        } else if (ay <= az) {
+            hy = 1.0D;
+        } else {
+            hz = 1.0D;
+        }
+        double ux = ny * hz - nz * hy, uy = nz * hx - nx * hz, uz = nx * hy - ny * hx;
+        double ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (ul < 1.0E-9D)
+            return false;
+        ux /= ul; uy /= ul; uz /= ul;
+        double vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
+
+        buffer.begin(GL11.GL_LINE_LOOP, DefaultVertexFormats.POSITION);
+        for (int i = 0; i < BOUNDARY_SEGMENTS; i++) {
+            double phi = (Math.PI * 2.0D * i) / BOUNDARY_SEGMENTS;
+            double cp = Math.cos(phi), sp = Math.sin(phi);
+            buffer.pos((ct * nx + st * (cp * ux + sp * vx)) * BOUNDARY_SKY_RADIUS,
+                    (ct * ny + st * (cp * uy + sp * vy)) * BOUNDARY_SKY_RADIUS,
+                    (ct * nz + st * (cp * uz + sp * vz)) * BOUNDARY_SKY_RADIUS).endVertex();
+        }
+        Tessellator.getInstance().draw();
+        return true;
     }
 
     /**
@@ -251,13 +318,30 @@ public class BoundarySky extends IRenderHandler {
     }
 
     /**
-     * Write the body's name and its current distance under the billboard, inside the already-rotated
-     * body frame so the text faces the camera exactly as the quad does.
+     * Write the body's name and the range still to fly under the billboard, inside the
+     * already-rotated body frame so the text faces the camera exactly as the quad does.
+     *
+     * <p><b>The number is the distance to the body's ATMOSPHERE, not to the body.</b> Crossing that
+     * surface is what puts the ship on the planet, so it is the only range a pilot on approach can
+     * act on: a body-centre range tells him to cover a distance he does not have to cover, and
+     * still reads a whole shell's worth of blocks at the very instant he crosses. A body with no
+     * shell to cross — a star, anything not a descend target — carries a zero radius and is
+     * therefore labelled with its plain distance by the same arithmetic, with no special case
+     * here.</p>
+     *
+     * <p>The billboard's SIZE keeps using the distance to the body itself
+     * ({@link ApparentSize#halfSizeFor}, at the call site): how big a thing looks is a property of
+     * the thing, how far there is left to fly is a property of the approach. They are easy to
+     * conflate because both are "distance to that body", and conflating them would shrink a planet
+     * to nothing exactly as you arrive.</p>
      */
     private boolean drawLabel(PacketSystemBodiesSync.RenderBody body, float half, double distance) {
         if (mc.fontRenderer == null)
             return false;
-        String text = nameOf(body) + "  " + ApparentSize.formatDistance(distance);
+        String text = nameOf(body) + "  "
+                + ApparentSize.formatDistance(
+                        zmaster587.advancedRocketry.space.DescentShell.distanceToShell(
+                                distance, body.boundaryRadius));
         GlStateManager.pushMatrix();
         // The sky frame's +Y is up while the font renders DOWN its own +Y, so both axes are negated
         // here; without it every label reads upside down and mirrored.

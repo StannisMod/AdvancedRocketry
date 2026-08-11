@@ -521,10 +521,6 @@ private String hud() throws Exception {
                 "lastFreeFlightHud").get("value").getAsString();
     }
 
-    private long ringFrames() throws Exception {
-        return readCounter(SKY, "ringFramesDrawn");
-    }
-
     /** Frames on which this sky renderer ran at all, whatever it decided to draw. */
 private long skyFrames() throws Exception {
         return readCounter(SKY, "skyFramesDrawn");
@@ -572,21 +568,15 @@ private String chat() throws Exception {
         seatTheBot(originDim);
 
         // ── CONTROL, in an ordinary cell ────────────────────────────────────────────────────────
-        // The ring is what a cell draws. Establishing that its counter MOVES here is what makes it
-        // standing still in flight evidence of suppression rather than of a dead renderer.
         long skyBefore = skyFrames();
-        long ringBefore = ringFrames();
         long tunnelBefore = tunnelFrames();
         bot().waitTicks(20);
-        // First that the sky renderer runs here at all. Without this the ring assertion below answers
-        // two questions with one zero, and "suppressed" is indistinguishable from "never reached".
+        // The sky renderer must run here at all. Without it "the corridor is drawn in hyperspace"
+        // answers two questions with one number, and "the corridor came up" is indistinguishable
+        // from "the sky pass never ran".
         assertTrue("this sky renderer must run in an ordinary cell (sky frames " + skyBefore + " -> "
                         + skyFrames() + "); nothing else in this test means anything if it does not",
                 skyFrames() > skyBefore);
-        assertTrue("the descent-boundary ring must be drawn in an ordinary cell, or its standing still "
-                        + "in flight is not evidence of anything (ring frames "
-                        + ringBefore + " -> " + ringFrames() + ")",
-                ringFrames() > ringBefore);
         assertEquals("the hyperspace corridor must NOT be drawn in an ordinary cell",
                 tunnelBefore, tunnelFrames());
         assertTrue("the HUD must not name a jump phase before the jump: " + hud(),
@@ -605,13 +595,11 @@ private String chat() throws Exception {
         //
         // The sky window opens on the first sample where the CLIENT is observably in hyperspace, not
         // on the tick the server was told to depart. Between those two the client is still standing
-        // in the cell it left and its sky is still that cell's; counting those frames against "the
-        // ring is suppressed in hyperspace" would measure the crossing rather than the corridor.
-        long ringAtStart = -1L;
+        // in the cell it left and drawing that cell's sky, so a baseline taken there would count the
+        // crossing rather than the corridor.
         long tunnelAtStart = -1L;
         int samples = 0;
         String hudInFlight = "";
-        long ringInFlight = -1L;
         long tunnelInFlight = -1L;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
@@ -621,64 +609,29 @@ private String chat() throws Exception {
             }
             bot().waitTicks(2);
             String hudNow = hud();
-            if (ringAtStart < 0) {
+            if (tunnelAtStart < 0) {
                 if (!hudNow.contains("HYPERSPACE")) {
                     continue; // not across yet: nothing sampled here is about hyperspace
                 }
-                // Baseline the frame counters once the CLIENT'S OWN dimension is the corridor —
-                // not a fixed number of ticks after the HUD flips. They are CUMULATIVE client-side
-                // counters and this is an equality pin, so every frame the client draws while it
-                // still believes it is in the cell reads as "the ring was drawn in hyperspace".
-                // The HUD is server-driven state; the ring is drawn by the client's own renderer
-                // off the client's own dimension, so that dimension is the condition to wait on.
-                // A tick count is only a guess at how long the handover takes, and the guess
-                // scales with load: measured 2026-08-07 the leak was exactly one frame and a
-                // 4-tick pause covered it, then on 2026-08-08 the same pause let TWO through under
-                // full-gate load (expected:<122> but was:<124>). Waiting on the state cannot be
-                // out-run by a slower handover.
+                // Baseline once the CLIENT'S OWN dimension is the corridor, not a fixed number of
+                // ticks after the HUD flips. The HUD is server-driven state; the sky is drawn by the
+                // client's own renderer off the client's own dimension, so that dimension is the
+                // condition to wait on. A tick count is only a guess at how long the handover takes,
+                // and the guess scales with load.
                 int hyperDimNow = readInt(lastTick, "hyperDim");
                 for (int settle = 0; settle < 40
                         && bot().reportWeather().get("dim").getAsInt() != hyperDimNow; settle++) {
                     bot().waitTicks(1);
                 }
                 assertEquals("ARRANGEMENT: the client never reached the corridor's own dimension, so "
-                                + "the ring baseline below would be taken in the cell it left",
+                                + "the baseline below would be taken in the cell it left",
                         hyperDimNow, bot().reportWeather().get("dim").getAsInt());
-                // The client's dimension is necessary but not sufficient: measured 2026-08-08, one
-                // ring frame still lands AFTER it flips (the leak went 2 -> 1 when the wait moved
-                // from 4 ticks to this state). So wait for the renderer ITSELF to say it is in the
-                // corridor — its own frame counter advancing — and baseline only then. The window
-                // given up is exactly the handover frame, which the claim was never about; a ring
-                // frame drawn while the corridor is provably being drawn is a real one.
-                long tunnelAtFlip = tunnelFrames();
-                for (int settle = 0; settle < 40 && tunnelFrames() <= tunnelAtFlip; settle++) {
-                    bot().waitTicks(1);
-                }
-                assertTrue("ARRANGEMENT: the corridor renderer never drew a frame after the client "
-                                + "entered hyperspace (corridor frames stuck at " + tunnelAtFlip
-                                + "), so there is no corridor to baseline the ring against",
-                        tunnelFrames() > tunnelAtFlip);
-                // And STILL the ring can leak one more frame past that point — measured 2026-08-08
-                // at one frame and then at two, each time re-tuned by waiting on one more upstream
-                // signal, and it leaked again the moment another scenario was added ahead of this
-                // one on the shared client. The signal that cannot be out-run is the ring counter's
-                // OWN: baseline it once it has stopped moving. That gives up exactly the handover
-                // frames, which the claim was never about, and it does NOT weaken the claim — a
-                // ring genuinely drawn throughout hyperspace never stops moving, so the settle
-                // budget runs out on a value still climbing and the equality below fails on it.
-                ringAtStart = ringFrames();
                 tunnelAtStart = tunnelFrames();
-                scenario().record("ringAtStart", ringAtStart)
-                        .record("tunnelAtStart", tunnelAtStart);
+                scenario().record("tunnelAtStart", tunnelAtStart);
             }
             samples++;
             hudInFlight = hudNow;
-            ringInFlight = ringFrames();
             tunnelInFlight = tunnelFrames();
-            // Per-sample, so a future red says WHERE the ring moved instead of only that it did.
-            if (ringInFlight != ringAtStart) {
-                scenario().record("ringMovedAtSample" + samples, ringInFlight);
-            }
         }
 
         // The instrument must have fired: a jump that arrived instantly proves nothing about the
@@ -697,12 +650,6 @@ private String chat() throws Exception {
         assertTrue("the corridor must be drawn in hyperspace (corridor frames " + tunnelAtStart
                         + " -> " + tunnelInFlight + " over " + samples + " samples)",
                 tunnelInFlight > tunnelAtStart);
-
-        assertEquals("the descent-boundary ring must NOT be drawn in hyperspace - there is nothing to "
-                        + "descend to there, and the same renderer draws it unconditionally for a cell "
-                        + "(ring frames over the flight, with the corridor advancing " + tunnelAtStart
-                        + " -> " + tunnelInFlight + ")",
-                ringAtStart, ringInFlight);
 
         // ── ARRIVAL ─────────────────────────────────────────────────────────────────────────────
         for (int i = 0; i < 60 && readInt(lastTick, "inTransit") != 0; i++) {
