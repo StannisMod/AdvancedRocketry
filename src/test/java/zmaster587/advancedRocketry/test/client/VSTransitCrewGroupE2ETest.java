@@ -902,7 +902,7 @@ private String chat() throws Exception {
                 + " deck there — that is what makes the flight an interval rather than a cutscene: "
                 + capture, readBool(capture, "alreadyTracked"));
 
-        // ── JUMP-2, the visible half: the backdrop belongs to the FLIGHT, not to the seat ────────
+        // ── The visible half: the backdrop belongs to the FLIGHT, not to the seat ────────────────
         // The arrangement first, because both facts are the axis of the claim: he must be off his
         // seat (or this is the seated case again) and still in hyperspace (or this is a cell's sky).
         JsonObject standing = bot().reportRidingEntity();
@@ -930,9 +930,9 @@ private String chat() throws Exception {
                         + ", sky frames " + skyStanding + " -> " + skyAfterStanding + ")",
                 tunnelAfterStanding > tunnelStanding);
 
-        // ── JUMP-2, the machinery half: his ship is a LIVE world, not a paused one ──────────────
-        // "Livable" is not only about him being able to move: the clause says the ship's tile
-        // entities TICK during the flight, which is what makes the interval a place where things
+        // ── The machinery half: his ship is a LIVE world, not a paused one ──────────────────────
+        // "Livable" is not only about him being able to move: the ship's tile entities have to TICK
+        // during the flight, which is what makes the interval a place where things
         // keep working rather than a freeze-frame he happens to be standing in. The flight computer
         // is the tile to ask, because its per-tick recorder is keyed on dimension AND subspace
         // position — so the answer is about THIS ship in THIS world and cannot be a global counter
