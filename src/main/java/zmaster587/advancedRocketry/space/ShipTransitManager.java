@@ -227,11 +227,16 @@ public final class ShipTransitManager {
         }
 
         /**
-         * The hyperspace lanes that currently hold a registered ship, searching lane indices below
-         * {@code laneSearchLimit}. The raw material of the boot-time reconciliation: everything in
-         * here that no restored transit claims is a ship nothing is flying.
+         * The hyperspace lanes that currently hold a registered ship. The raw material of the
+         * boot-time reconciliation: everything in here that no restored transit claims is a ship
+         * nothing is flying.
+         *
+         * <p>Takes no bound. Each ship's lane is derived from where that ship is standing, so the
+         * answer covers every hull in the world rather than every hull the allocator happens to know
+         * about - which at boot is only what the surviving records reclaimed, i.e. never the hulls
+         * this is being asked for.</p>
          */
-        default List<Integer> parkedShipLanes(int laneSearchLimit) {
+        default List<Integer> parkedShipLanes() {
             return Collections.emptyList();
         }
 
@@ -994,16 +999,26 @@ public final class ShipTransitManager {
             }
         }
         int disposed = 0;
-        for (Integer lane : crosser.parkedShipLanes(tiles.allocatedLaneCount() + 1)) {
+        for (Integer lane : crosser.parkedShipLanes()) {
             if (lane == null || claimed.contains(lane)) {
                 continue;
             }
+            // Take the lane on OBSERVATION, before trying to get rid of what is in it. Whether the
+            // hull can be deregistered right now is a different question from whether something is
+            // standing there, and only the second one decides what may be parked here. Guarding the
+            // reserve on a successful disposal left the lane allocatable in exactly the case where a
+            // ship is provably still in it - and a disposal can fail for reasons that have nothing to
+            // do with this lane, such as the physics mod still streaming the hull's chunks.
+            tiles.reserve(lane);
             if (crosser.disposeParkedLane(lane)) {
-                tiles.reserve(lane); // never hand this lane out: its blocks are still lying in it
                 disposed++;
                 LOGGER.warn("[SPACE] hyperspace lane {} held a ship no transit record claims - disposed "
                         + "of it. A hull nobody is flying would otherwise sit in a permanently loaded "
                         + "world for the life of the save.", lane);
+            } else {
+                LOGGER.error("[SPACE] hyperspace lane {} holds a ship no transit record claims and it "
+                        + "could not be deregistered; the lane is retired so no departure is parked on "
+                        + "top of it, but the hull stays in a permanently loaded world", lane);
             }
         }
         return disposed;

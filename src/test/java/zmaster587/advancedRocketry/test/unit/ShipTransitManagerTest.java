@@ -89,8 +89,14 @@ public class ShipTransitManagerTest {
         // which lanes hold one at all. Empty by default — the interface's own default answers "no
         // ship, no lanes", which is the ephemeral world every existing test was written against.
         final java.util.Set<BlockPos> parkedAnchors = new java.util.HashSet<>();
-        final List<Integer> lanesWithAShip = new ArrayList<>();
+        // WHERE the hulls are standing, not which lanes they are in. The difference is the arrangement's
+        // whole honesty here: a canned list of lane numbers answers the "which lane is this ship in"
+        // question in production's place, and that question is where the defect lived. This resolves a
+        // position the same way production does, so the arrangement can be wrong about a lane exactly
+        // when production is.
+        final java.util.Set<BlockPos> shipsParkedAt = new java.util.HashSet<>();
         final List<Integer> disposedLanes = new ArrayList<>();
+        boolean disposeSucceeds = true;
         final List<String> order = new ArrayList<>();       // shared call order: pins capture-before-depart
 
         @Override
@@ -99,14 +105,21 @@ public class ShipTransitManagerTest {
         }
 
         @Override
-        public List<Integer> parkedShipLanes(int laneSearchLimit) {
-            return new ArrayList<>(lanesWithAShip);
+        public List<Integer> parkedShipLanes() {
+            List<Integer> lanes = new ArrayList<>();
+            for (BlockPos at : shipsParkedAt) {
+                int lane = HyperspaceTiles.laneIndexAt(at.getX(), at.getZ());
+                if (lane >= 0) {
+                    lanes.add(lane);
+                }
+            }
+            return lanes;
         }
 
         @Override
         public boolean disposeParkedLane(int laneIndex) {
             disposedLanes.add(laneIndex);
-            return true;
+            return disposeSucceeds;
         }
 
         @Override
@@ -997,9 +1010,9 @@ public class ShipTransitManagerTest {
         FakeCrosser crosser = new FakeCrosser();
         BlockPos claimedLane = HyperspaceTiles.tilePos(1);
         crosser.parkedAnchors.add(claimedLane);
-        crosser.lanesWithAShip.add(0);   // a hull whose record did not survive
-        crosser.lanesWithAShip.add(1);   // ...and one that did
-        crosser.lanesWithAShip.add(4);   // another orphan
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(0));   // a hull whose record did not survive
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(1));   // ...and one that did
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(4));   // another orphan
         ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
 
         mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
@@ -1012,6 +1025,60 @@ public class ShipTransitManagerTest {
                 crosser.disposedLanes.contains(0) && crosser.disposedLanes.contains(4));
         assertFalse("the ship a record DOES claim is left alone - this is a check, not a demolition",
                 crosser.disposedLanes.contains(1));
+    }
+
+    /**
+     * The reconciliation must find a hull WHEREVER it is standing, and the lanes it has to reach are
+     * precisely the ones no surviving record points at. Anything that derives the reach from what the
+     * records reclaimed asks the orphans to announce themselves.
+     */
+    @Test
+    public void anOrphanIsFoundInALaneNoSurvivingRecordCameNear() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos claimedLane = HyperspaceTiles.tilePos(1);
+        crosser.parkedAnchors.add(claimedLane);
+        crosser.shipsParkedAt.add(claimedLane);
+        // Two rings further out than anything the surviving record touches.
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(12));
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
+                0L, 10_000L, 0L, 7L, new ArrayList<UUID>(), new NBTTagCompound(), 1, claimedLane));
+
+        int disposed = mgr.reconcileParkedShips();
+
+        assertEquals("the far orphan is the one this exists for: it is the hull whose record is gone,"
+                + " so nothing points at its lane - disposed of: " + crosser.disposedLanes, 1, disposed);
+        assertTrue("by lane: " + crosser.disposedLanes, crosser.disposedLanes.contains(12));
+    }
+
+    /**
+     * The other half of the same promise, and the one that used to be silent: a lane is spoken for
+     * because a hull is STANDING in it, not because we managed to get rid of that hull.
+     */
+    @Test
+    public void aLaneWhoseHullCouldNotBeDisposedOfIsStillNeverHandedOut() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(0));
+        crosser.disposeSucceeds = false; // e.g. the hull's chunks are still streaming in
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        int disposed = mgr.reconcileParkedShips();
+
+        assertEquals("nothing was disposed of - that is the premise, not the claim", 0, disposed);
+        assertTrue("CONTROL: the reconciliation must have tried, or the lane is untouched for the"
+                + " wrong reason", crosser.disposedLanes.contains(0));
+
+        int originDim = space.materialize(cell(3));
+        mgr.beginTransit("fresh", cell(3), originDim, new BlockPos(0, 64, 0), cell(4), 7L);
+
+        assertFalse("a departure must not be parked on top of a hull that is provably still there:"
+                + " departures so far " + crosser.departs,
+                crosser.departs.contains(originDim + "@0"));
     }
 
     @Test
