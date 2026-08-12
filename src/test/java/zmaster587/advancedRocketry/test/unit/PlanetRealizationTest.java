@@ -332,7 +332,7 @@ public class PlanetRealizationTest {
 
     @Test
     public void theOrbitSurvivesAnNbtRoundTrip() {
-        SystemBody body = new SystemBody(GalacticCoord.ofSectorLocal(3, 4, 5, 0, 0, 0),
+        SystemBody body = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(3, 4, 5, 0, 0, 0),
                 SystemBodyKind.PLANET, 12, -7, 1234);
         net.minecraft.nbt.NBTTagCompound nbt = new net.minecraft.nbt.NBTTagCompound();
         body.writeToNBT(nbt);

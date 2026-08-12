@@ -3886,8 +3886,9 @@ public class TestProbeCommand extends CommandBase {
             int starId = parseIntOr(args[9], 0);
             zmaster587.advancedRocketry.space.GalacticCoord coord =
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
+            // A POI planted by hand does not move — say so, rather than letting a constructor decide.
             zmaster587.advancedRocketry.universe.SystemBody body =
-                    new zmaster587.advancedRocketry.universe.SystemBody(coord, kind, dimId, starId);
+                    zmaster587.advancedRocketry.universe.SystemBody.fixedAt(coord, kind, dimId, starId);
             reg.addPoi(body);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + coord.cellKey() + "\",\"descendTarget\":"
                     + body.isDescendTarget() + "}");

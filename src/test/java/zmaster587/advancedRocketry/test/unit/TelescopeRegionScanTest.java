@@ -196,14 +196,14 @@ public class TelescopeRegionScanTest {
 
         UniverseRegistry registry = new UniverseRegistry();
         registry.place(cell(4, 0, 0), 4);
-        registry.addPoi(new SystemBody(cell(4, 0, 0), SystemBodyKind.STAR, Constants.INVALID_PLANET, 4));
-        registry.addPoi(new SystemBody(cell(4, 0, 0), SystemBodyKind.PLANET, 401, 4));
+        registry.addPoi(SystemBody.fixedAt(cell(4, 0, 0), SystemBodyKind.STAR, Constants.INVALID_PLANET, 4));
+        registry.addPoi(SystemBody.fixedAt(cell(4, 0, 0), SystemBodyKind.PLANET, 401, 4));
 
         registry.place(cell(5, 1, 0), 5);
-        registry.addPoi(new SystemBody(cell(5, 1, 0), SystemBodyKind.PLANET, 501, 5));
+        registry.addPoi(SystemBody.fixedAt(cell(5, 1, 0), SystemBodyKind.PLANET, 501, 5));
 
         registry.place(cell(9, 0, 0), 9);
-        registry.addPoi(new SystemBody(cell(9, 0, 0), SystemBodyKind.PLANET, 901, 9));
+        registry.addPoi(SystemBody.fixedAt(cell(9, 0, 0), SystemBodyKind.PLANET, 901, 9));
         return registry;
     }
 

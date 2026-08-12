@@ -67,7 +67,7 @@ public class SystemBodiesProducerTest {
         // Ship parked OFF the cell centre; a planet sitting AT the cell centre (local 0,0,0).
         GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 100L, 50L, -30L);
         GalacticCoord planet = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L);
-        SystemBody body = new SystemBody(planet, SystemBodyKind.PLANET, 3, 7);
+        SystemBody body = SystemBody.fixedAt(planet, SystemBodyKind.PLANET, 3, 7);
 
         ShipLedger ledger = new ShipLedger();
         ledger.settle(UUID.randomUUID(), ship);
@@ -97,7 +97,7 @@ public class SystemBodiesProducerTest {
         // just the local delta (documents the component-wise sector-aware formula).
         GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 100L, 0L, 0L);
         GalacticCoord body = GalacticCoord.ofSectorLocal(1L, 0L, 0L, 0L, 0L, 0L);
-        SystemBody star = new SystemBody(body, SystemBodyKind.STAR, Constants.INVALID_PLANET, 7);
+        SystemBody star = SystemBody.fixedAt(body, SystemBodyKind.STAR, Constants.INVALID_PLANET, 7);
 
         ShipLedger ledger = new ShipLedger();
         ledger.settle(UUID.randomUUID(), ship);
@@ -115,7 +115,7 @@ public class SystemBodiesProducerTest {
     public void nonDescendBodyCarriesDescendTargetFalse() {
         GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 5L, 0L, 0L);
         GalacticCoord beltCoord = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L);
-        SystemBody belt = new SystemBody(beltCoord, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7);
+        SystemBody belt = SystemBody.fixedAt(beltCoord, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7);
 
         ShipLedger ledger = new ShipLedger();
         ledger.settle(UUID.randomUUID(), ship);
@@ -137,7 +137,7 @@ public class SystemBodiesProducerTest {
         // one of those bodies vanished from his sky and the blank was indistinguishable from a void.
         GalacticCoord cell = GalacticCoord.ofSectorLocal(57L, 0L, 5L, 0L, 0L, 0L);
         GalacticCoord shipPos = GalacticCoord.ofSectorLocal(57L, 0L, 5L, 125L, 0L, -1016L);
-        SystemBody moon = new SystemBody(GalacticCoord.ofSectorLocal(57L, 0L, 5L, 2900L, 0L, 0L),
+        SystemBody moon = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(57L, 0L, 5L, 2900L, 0L, 0L),
                 SystemBodyKind.MOON, 4, 7);
 
         ShipLedger ledger = new ShipLedger();
@@ -161,7 +161,7 @@ public class SystemBodiesProducerTest {
         ShipLedger ledger = new ShipLedger();
         ledger.beginTransit(UUID.randomUUID(), GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L));
 
-        SystemBody body = new SystemBody(GalacticCoord.ORIGIN, SystemBodyKind.PLANET, 3, 7);
+        SystemBody body = SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.PLANET, 3, 7);
         BodyLookup always = new BodyLookup() {
             @Override
             public List<SystemBody> skyBodiesAt(GalacticCoord cell) {
@@ -180,7 +180,7 @@ public class SystemBodiesProducerTest {
         // member whose ship departed without him, a passenger, a player put there by an on-ramp). His
         // sky is the cell's, measured from the only point that is his if no ship is: the cell centre.
         GalacticCoord cell = GalacticCoord.ofSectorLocal(4L, 1L, 2L, 0L, 0L, 0L);
-        SystemBody planet = new SystemBody(GalacticCoord.ofSectorLocal(4L, 1L, 2L, 0L, 5000L, 0L),
+        SystemBody planet = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(4L, 1L, 2L, 0L, 5000L, 0L),
                 SystemBodyKind.PLANET, 3, 7);
 
         Map<Integer, List<RenderBody>> byDim = SystemBodiesProducer.buildByDim(
@@ -199,7 +199,7 @@ public class SystemBodiesProducerTest {
         GalacticCoord cell = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L);
         GalacticCoord settledAt = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 700L, 0L, 0L);
         GalacticCoord inboundTo = GalacticCoord.ofSectorLocal(0L, 0L, 0L, -900L, 0L, 0L);
-        SystemBody planet = new SystemBody(cell, SystemBodyKind.PLANET, 3, 7);
+        SystemBody planet = SystemBody.fixedAt(cell, SystemBodyKind.PLANET, 3, 7);
 
         ShipLedger ledger = new ShipLedger();
         ledger.beginTransit(UUID.randomUUID(), inboundTo);
@@ -238,9 +238,9 @@ public class SystemBodiesProducerTest {
     public void everyLiveCellKeysItsOwnSlotDim() {
         GalacticCoord shipA = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 10L, 0L, 0L);
         GalacticCoord shipB = GalacticCoord.ofSectorLocal(5L, 0L, 0L, 0L, 0L, 0L);
-        final SystemBody planetA = new SystemBody(GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L),
+        final SystemBody planetA = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 0L, 0L),
                 SystemBodyKind.PLANET, 3, 7);
-        final SystemBody planetB = new SystemBody(GalacticCoord.ofSectorLocal(5L, 0L, 0L, 0L, 0L, 0L),
+        final SystemBody planetB = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(5L, 0L, 0L, 0L, 0L, 0L),
                 SystemBodyKind.MOON, 4, 7);
 
         ShipLedger ledger = new ShipLedger();
@@ -276,7 +276,7 @@ public class SystemBodiesProducerTest {
         // dimension to key its sky under, and the only wrong answer is to invent one: keying the feed
         // to a stale or borrowed id points a cell's bodies at a world holding somebody else's cell.
         GalacticCoord ship = GalacticCoord.ofSectorLocal(4L, 0L, 0L, 0L, 0L, 0L);
-        SystemBody planet = new SystemBody(ship, SystemBodyKind.PLANET, 3, 7);
+        SystemBody planet = SystemBody.fixedAt(ship, SystemBodyKind.PLANET, 3, 7);
 
         ShipLedger ledger = new ShipLedger();
         ledger.settle(UUID.randomUUID(), ship);
@@ -296,7 +296,7 @@ public class SystemBodiesProducerTest {
         // The "no world" sentinel must never become a dimension key, and neither must a cell key the
         // coordinate parser cannot read back - both would put a body list under an id nothing renders.
         GalacticCoord cell = GalacticCoord.ofSectorLocal(1L, 1L, 1L, 0L, 0L, 0L);
-        SystemBody planet = new SystemBody(cell, SystemBodyKind.PLANET, 3, 7);
+        SystemBody planet = SystemBody.fixedAt(cell, SystemBodyKind.PLANET, 3, 7);
 
         Map<String, Integer> hostile = new LinkedHashMap<>();
         hostile.put(cell.cellKey(), SpaceManager.UNBOUND_SLOT);
@@ -393,8 +393,8 @@ public class SystemBodiesProducerTest {
     @Test
     public void anAuthoredStarIsFedItsOwnProxyDimensionAndAProceduralOneIsNot() {
         GalacticCoord cell = GalacticCoord.ORIGIN;
-        SystemBody authored = new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, 4);
-        SystemBody procedural = new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, -9);
+        SystemBody authored = SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, 4);
+        SystemBody procedural = SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, -9);
         GalacticCoord ship = GalacticCoord.ofSectorLocal(0L, 0L, 0L, 500L, 0L, 0L);
         ShipLedger ledger = new ShipLedger();
         ledger.settle(UUID.randomUUID(), ship);
@@ -419,7 +419,7 @@ public class SystemBodiesProducerTest {
                         .isEmpty());
         // A missing ledger is NOT a missing feed: the cell is live, so its sky is drawn - from the
         // cell centre, because there is no ship to measure it from.
-        SystemBody planet = new SystemBody(GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 800L, 0L),
+        SystemBody planet = SystemBody.fixedAt(GalacticCoord.ofSectorLocal(0L, 0L, 0L, 0L, 800L, 0L),
                 SystemBodyKind.PLANET, 3, 7);
         Map<Integer, List<RenderBody>> byDim =
                 SystemBodiesProducer.buildByDim(live(cell, 1), null, lookupIn(cell, planet));

@@ -472,9 +472,9 @@ public class UniverseRegistryTest {
     public void poiStoreRoundTripsThroughNbt() {
         UniverseRegistry source = new UniverseRegistry();
         GalacticCoord sys = GalacticCoord.ofSectorLocal(3, 3, 3, 0, 0, 0);
-        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, 50_000, 0, 0),
+        source.addPoi(SystemBody.fixedAt(GalacticCoord.ofSectorLocal(3, 3, 3, 50_000, 0, 0),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 7));
-        source.addPoi(new SystemBody(GalacticCoord.ofSectorLocal(3, 3, 3, -20_000, 10_000, 0),
+        source.addPoi(SystemBody.fixedAt(GalacticCoord.ofSectorLocal(3, 3, 3, -20_000, 10_000, 0),
                 SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET, 7));
         assertTrue("adding a POI must mark dirty", source.isDirty());
 
@@ -514,7 +514,7 @@ public class UniverseRegistryTest {
         assertFalse("a procedural system must have bodies", procedural.isEmpty());
         int before = procedural.size();
 
-        reg.addPoi(new SystemBody(
+        reg.addPoi(SystemBody.fixedAt(
                 GalacticCoord.ofSectorLocal(found.sectorX(), found.sectorY(), found.sectorZ(), 100_000, 0, 0),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, -5));
         List<SystemBody> merged = reg.bodiesAt(found);
@@ -704,7 +704,7 @@ public class UniverseRegistryTest {
         assertTrue("the fixture's void cell must belong to the system",
                 reg.anchorForCell(voidCell).isPresent());
         assertTrue("...and hold no body of its own", reg.bodiesAt(voidCell).isEmpty());
-        reg.addPoi(new SystemBody(voidCell.plusLocalSaturating(1_000L, 0L, 0L),
+        reg.addPoi(SystemBody.fixedAt(voidCell.plusLocalSaturating(1_000L, 0L, 0L),
                 SystemBodyKind.STATION_SLOT, Constants.INVALID_PLANET, 6007));
 
         List<SystemBody> sky = reg.skyBodiesAt(voidCell);

@@ -55,14 +55,27 @@ public final class SystemBody {
      * without a system to ride. {@code address}'s sector triple becomes the name and its local offset
      * the (constant) in-cell offset.
      */
-    public SystemBody(GalacticCoord address, SystemBodyKind kind, int dimId, int starId) {
-        this(address, kind, dimId, starId, ORBIT_UNKNOWN);
+    /**
+     * A body that DOES NOT MOVE — pinned to a static frame at its own cell, forever.
+     *
+     * <p>Named rather than offered as a plain constructor on purpose. This used to be
+     * {@code new SystemBody(address, kind, dimId, starId, orbit)}, and it read like the ordinary way
+     * to make a body while silently choosing immobility: the procedural generator built every planet
+     * through it, so a whole galaxy of worlds stood still relative to their stars while the same
+     * systems authored in XML orbited. A body that does not move is a real and legitimate thing — a
+     * star at its own system's anchor, a belt centred on that star — but it is a CHOICE, and the
+     * choice now has to be spelled.</p>
+     *
+     * <p>For a body that moves, pass its {@link CellFrame} and {@link BodyEphemeris} explicitly.</p>
+     */
+    public static SystemBody fixedAt(GalacticCoord address, SystemBodyKind kind, int dimId, int starId) {
+        return fixedAt(address, kind, dimId, starId, ORBIT_UNKNOWN);
     }
 
     /** The same, carrying the body's orbital radius — see {@link #orbitalDistance()}. */
-    public SystemBody(GalacticCoord address, SystemBodyKind kind, int dimId, int starId,
-                      int orbitalDistance) {
-        this(requireAddress(address).cellCentre(), CellFrame.staticAt(address),
+    public static SystemBody fixedAt(GalacticCoord address, SystemBodyKind kind, int dimId, int starId,
+                                     int orbitalDistance) {
+        return new SystemBody(requireAddress(address).cellCentre(), CellFrame.staticAt(address),
                 BodyEphemeris.fixed(address.localX(), address.localY(), address.localZ()),
                 kind, dimId, starId, orbitalDistance);
     }

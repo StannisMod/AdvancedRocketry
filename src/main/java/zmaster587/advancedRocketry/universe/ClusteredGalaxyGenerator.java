@@ -193,7 +193,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         StellarBody star = sys.get().star();
         List<SystemBody> bodies = new ArrayList<>();
         // The star sits at the anchor cell's centre.
-        bodies.add(new SystemBody(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+        // A star does not move inside its own system: its frame IS the system's anchor.
+        bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
 
         // Bodies orbit at cell-scale radii: min 1 cell out (never the anchor cell), max = the bounded
         // neighbourhood radius. The anchor sits in the middle band of its super-cell (>= 3s/8 from every
@@ -321,7 +322,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         int clamped = Math.max(1, orbit);
         GalacticCoord addr = placeBody(seed, anchor, index, clamped, star, s, taken);
         if (addr != null) {
-            bodies.add(new SystemBody(addr, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET,
+            // A belt is centred on the star it rings, so as a whole it does not travel round it.
+            bodies.add(SystemBody.fixedAt(addr, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET,
                     starId, clamped));
         }
     }
