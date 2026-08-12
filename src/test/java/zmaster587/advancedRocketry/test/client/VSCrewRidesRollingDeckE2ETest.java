@@ -121,7 +121,13 @@ public class VSCrewRidesRollingDeckE2ETest extends AbstractClientE2ETest {
 
         // The ship does not stay at the pad base. Find it, then drop the bot ONTO it: standing next
         // to a ship would prove nothing.
+        // The scenario's ONE positional lookup, at the only moment it is defensible: the ship was
+        // just assembled here and has not moved. Its IDENTITY is taken with it, and the roll command
+        // below names THIS ship rather than whichever hull happens to be nearest the build spot.
         String where = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
+        Matcher shipIdM = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(where);
+        assertTrue("ARRANGEMENT: ship-info must name WHICH ship answered: " + where, shipIdM.find());
+        String shipId = shipIdM.group(1);
         assertTrue("ship must be managed: " + where, where.contains("\"managed\":true"));
         exec("tp @a " + readDouble(where, POS_X) + " " + (readDouble(where, POS_Y) + 4)
                 + " " + readDouble(where, POS_Z) + " 0 0");
@@ -144,7 +150,7 @@ public class VSCrewRidesRollingDeckE2ETest extends AbstractClientE2ETest {
 
         // Roll the ship about its nose. Quaternion (w,x,y,z) for ROLL_DEG about +Z.
         double half = Math.toRadians(ROLL_DEG) / 2.0;
-        String point = exec("artest vs point 0 " + BX + " " + BY + " " + BZ
+        String point = exec("artest vs point-by-id 0 " + shipId
                 + " " + Math.cos(half) + " 0.0 0.0 " + Math.sin(half));
         assertTrue("attitude hold must accept the roll command: " + point, point.contains("\"commanded\":true"));
         bot().waitTicks(120); // let the controller actually roll the ship

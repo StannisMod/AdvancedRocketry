@@ -108,35 +108,47 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private transient boolean cellEdgeReported = false;
 
     /**
-     * Bring-up command for the force-mode flight controller: the desired world-frame
-     * velocity {@code {x,y,z}} (blocks/s), or {@code null} when nothing is commanded.
-     * Written from the GAME thread (a test probe today; the seated pilot's input later);
-     * read on the Valkyrien Skies PHYSICS thread by the flight-controller mixin, which turns
-     * it into force. {@code volatile} for cross-thread visibility. AR-core only — carries no
-     * physics-mod type, so this class still loads fine without the physics mod installed.
-     * TODO: replace this static bring-up channel with per-tile pilot state once the pilot
-     * seat + input retarget land.
+     * Bring-up override for the force-mode flight controller, on THIS computer only: while
+     * {@link #probeCommandActive} is set the controller reads the whole command triple below
+     * instead of the pilot channels, so a caller can drive the control law directly (raw force,
+     * raw torque, absolute attitude hold) without a pilot and without the Free Flight layer in
+     * between. Desired world-frame velocity {@code {x,y,z}} (blocks/s), or {@code null} for
+     * "nothing commanded on this channel".
+     *
+     * <p><b>Per tile, and that is the whole point.</b> These began as {@code static volatile}
+     * fields, which every flight computer in the JVM read as its fallback: a command meant for one
+     * ship kept flying every other ship in the world until something cleared it, and the call that
+     * issued it reported success either way. Keyed to one computer, a command names one craft, and
+     * a caller that cannot resolve that craft gets a miss instead of somebody else's flight.</p>
+     *
+     * <p>Written from the GAME thread, read on the Valkyrien Skies PHYSICS thread by the
+     * flight-controller mixin; {@code volatile} for cross-thread visibility. AR-core only — carries
+     * no physics-mod type, so this class still loads fine without the physics mod installed.</p>
      */
-    public static volatile double[] debugCommandedVelocity = null;
+    public volatile double[] probeVelocity = null;
+
+    /** Bring-up override for the controller's ANGULAR channel: desired world-frame angular velocity
+     *  {@code {x,y,z}} (rad/s), or {@code null}. Read only while {@link #probeCommandActive}. */
+    public volatile double[] probeAngVel = null;
 
     /**
-     * Bring-up command for the force controller's ANGULAR channel: the desired world-frame
-     * angular velocity {@code {x,y,z}} (rad/s), or {@code null} when none. Same game&rarr;physics
-     * thread hand-off + AR-core-only contract as {@link #debugCommandedVelocity}; the mixin
-     * turns it into torque. TODO: fold into per-tile pilot state with the linear channel.
-     */
-    public static volatile double[] debugCommandedAngVel = null;
-
-    /**
-     * Bring-up command for ATTITUDE HOLD: the target body&rarr;world orientation as a quaternion
+     * Bring-up override for ATTITUDE HOLD: the target body&rarr;world orientation as a quaternion
      * {@code {w,x,y,z}}, or {@code null} when not holding an attitude. When set it supersedes
-     * {@link #debugCommandedAngVel} — the controller reads the ship's current orientation on
-     * the physics thread and turns the error into the angular velocity it drives toward. This
-     * is the interface Free Flight feeds: its per-tick target quaternion (from
-     * {@code integrateBodyRates} over the held pilot rates) is published here. Same game&rarr;physics
-     * hand-off + AR-core-only contract as the other channels.
+     * {@link #probeAngVel} — the controller reads the ship's current orientation on the physics
+     * thread and turns the error into the angular velocity it drives toward. This is the interface
+     * Free Flight feeds. Read only while {@link #probeCommandActive}.
      */
-    public static volatile double[] debugTargetAttitude = null;
+    public volatile double[] probeAttitude = null;
+
+    /**
+     * Whether the three {@code probe*} channels above own this computer's command this tick.
+     *
+     * <p>All-or-nothing on purpose. Per-channel fallback would mix a fresh probe attitude with a
+     * stale probe rate left by an earlier call, and the mixture is a command nobody wrote. It also
+     * outranks the pilot channels rather than yielding to them: a probe that silently lost to a
+     * ship's own autopilot would report the command it never delivered.</p>
+     */
+    public volatile boolean probeCommandActive = false;
 
     /**
      * Bring-up channel for the pilot's held {@link FreeFlightInput}. When set, this tile's
@@ -156,19 +168,19 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     public volatile FreeFlightInput pilotInput = null;
 
     /**
-     * Per-tile commanded world-frame velocity (blocks/s) that the force controller realizes,
+     * The pilot's commanded world-frame velocity (blocks/s) that the force controller realizes,
      * or {@code null} when this computer commands nothing. Written by {@link #update()} from the
-     * pilot's input; read on the physics thread by the flight-controller mixin, which prefers it
-     * over the static {@link #debugCommandedVelocity} probe channel. {@code volatile} for the
+     * pilot's input; read on the physics thread by the flight-controller mixin, which reads the
+     * {@code probe*} channels above instead while one is in force. {@code volatile} for the
      * game&rarr;physics thread hand-off; carries no physics-mod type (AR-core safe).
      */
     public volatile double[] commandedVelocity = null;
 
-    /** Per-tile angular-velocity command (rad/s), mixin-preferred over {@link #debugCommandedAngVel}. */
+    /** The pilot's angular-velocity command (rad/s), same hand-off as {@link #commandedVelocity}. */
     public volatile double[] commandedAngVel = null;
 
-    /** Per-tile attitude-hold target quaternion {@code {w,x,y,z}}, mixin-preferred over
-     *  {@link #debugTargetAttitude}. Supersedes {@link #commandedAngVel} when set. */
+    /** The pilot's attitude-hold target quaternion {@code {w,x,y,z}}. Supersedes
+     *  {@link #commandedAngVel} when set. */
     public volatile double[] targetAttitude = null;
 
     /**
@@ -247,6 +259,44 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      *  {@link #commandCruise}, for a caller that wants to read back what it set. */
     public double[] commandedCruise() {
         return new double[]{velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2]};
+    }
+
+    /**
+     * Bring-up: drive THIS computer's controller at a raw world-frame linear and angular velocity,
+     * bypassing the Free Flight layer that would normally compute them. Either half may be
+     * {@code null} for "nothing commanded on that channel"; any attitude hold is dropped, since a
+     * rate command and a pose command are different intentions and the pose would outrank the rate.
+     *
+     * <p>Re-issued per tick by its callers, the way a real pilot's client re-sends his input.</p>
+     */
+    public void commandProbeVelocity(double[] worldVelocity, double[] worldAngVel) {
+        this.probeVelocity = worldVelocity;
+        this.probeAngVel = worldAngVel;
+        this.probeAttitude = null;
+        this.probeCommandActive = true;
+    }
+
+    /**
+     * Bring-up: hold a target body&rarr;world attitude (quaternion {@code w,x,y,z}) on THIS
+     * computer's controller while hovering — linear is commanded to zero, so the ship turns in
+     * place rather than drifting off while it slews.
+     */
+    public void commandProbeAttitude(double qw, double qx, double qy, double qz) {
+        this.probeVelocity = new double[]{0.0, 0.0, 0.0};
+        this.probeAngVel = null;
+        this.probeAttitude = new double[]{qw, qx, qy, qz};
+        this.probeCommandActive = true;
+    }
+
+    /** Hand this computer back to its own pilot channels. Returns whether a probe command was in
+     *  force, so a caller asserts the release rather than trusting it. */
+    public boolean clearProbeCommand() {
+        boolean was = probeCommandActive;
+        this.probeCommandActive = false;
+        this.probeVelocity = null;
+        this.probeAngVel = null;
+        this.probeAttitude = null;
+        return was;
     }
 
     /** Diagnostic only ({@code -Dadvancedrocketry.tests=true}): last-logged presence of a live

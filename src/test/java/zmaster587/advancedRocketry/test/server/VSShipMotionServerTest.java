@@ -78,8 +78,12 @@ public class VSShipMotionServerTest extends AbstractSharedServerTest {
         String load = exec("artest vs load-ships 0");
         assertTrue("load-ships must request the ship: " + load, load.contains("\"requested\":1"));
 
-        // 3) Wait for it to become loaded, then snapshot its position.
+        // 3) Wait for it to become loaded, then take its IDENTITY and snapshot its position. The
+        //    positional lookup is used exactly once, here, while this ship is provably the only one
+        //    at the build spot; everything below asks by id, which cannot start answering for a
+        //    neighbour once this one has been pushed ten blocks away.
         double zBefore = Double.NaN;
+        String shipId = null;
         StringBuilder loadTrace = new StringBuilder();
         int loaded = 0;
         for (int i = 0; i < 40 && Double.isNaN(zBefore); i++) {
@@ -92,6 +96,7 @@ public class VSShipMotionServerTest extends AbstractSharedServerTest {
                 String info = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
                 if (info.contains("\"managed\":true")) {
                     zBefore = shipPosZ(info);
+                    shipId = shipIdOf(info);
                 }
             }
         }
@@ -103,11 +108,11 @@ public class VSShipMotionServerTest extends AbstractSharedServerTest {
         // mirrors the AFC's per-tick setpoint and defeats VS damping.
         double vz = 10.0; // blocks/second
         for (int i = 0; i < 25; i++) {
-            String push = exec("artest vs push-ship 0 " + BX + " " + BY + " " + BZ + " 0 0 " + vz);
-            assertTrue("push-ship must find the ship: " + push, push.contains("\"pushed\":true"));
+            String push = exec("artest vs push-ship-by-id 0 " + shipId + " 0 0 " + vz);
+            assertTrue("push-ship-by-id must find the ship: " + push, push.contains("\"pushed\":true"));
             Thread.sleep(60L);
         }
-        double zAfter = shipPosZ(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ));
+        double zAfter = shipPosZ(exec("artest vs ship-info 0 id " + shipId));
 
         // Model A holds: a velocity setpoint moves a bare AR-assembled ship. A strict
         // displacement (not merely "changed") pins that VS integrated the commanded
@@ -127,6 +132,13 @@ public class VSShipMotionServerTest extends AbstractSharedServerTest {
         Matcher m = POS_Z.matcher(shipInfoJson);
         assertTrue("ship-info must carry posZ: " + shipInfoJson, m.find());
         return Double.parseDouble(m.group(1));
+    }
+
+    /** The ship's own identity out of a {@code ship-info} reply — captured once, used thereafter. */
+    private String shipIdOf(String shipInfoJson) {
+        Matcher m = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(shipInfoJson);
+        assertTrue("ship-info must name WHICH ship answered: " + shipInfoJson, m.find());
+        return m.group(1);
     }
 
     private boolean serverHasVs() throws Exception {

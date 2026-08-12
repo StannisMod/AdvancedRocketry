@@ -139,15 +139,22 @@ public abstract class AbstractSharedVsClientE2ETest extends AbstractSharedClient
     protected void resetFamilyStateBeforeTeleport() throws Exception {
         exec("artest player dismount");
         exec("artest vs permaload false");
-        // The flight computer's FOUR static bring-up channels — the held Free Flight input plus the
-        // three command channels. All are `static volatile` on the tile class and both readers fall
-        // back to them for any computer with no per-tile value, so a probe throttle keeps flying
-        // EVERY ship in the world, including the next scenario's. Measured 2026-08-07: a pilot-key
-        // scenario whose ship climbed 32.7 blocks where the same body run alone climbs ~2, because
-        // an earlier scenario's `vs ff-input … full up` was still held. Asserted, not trusted: a
-        // clear nobody checks is indistinguishable from no clear.
+        // Every bring-up channel a flight probe can leave behind. Two kinds now, and both must go:
+        //
+        //  - the held Free Flight input, still `static volatile` on the tile class, which update()
+        //    falls back to for ANY computer with no pilot of its own — so a probe throttle is not
+        //    aimed at the ship its caller named; it keeps flying every other ship in the world,
+        //    including the next scenario's. Measured 2026-08-07: a pilot-key scenario whose ship
+        //    climbed 32.7 blocks where the same body run alone climbs ~2, because an earlier
+        //    scenario's `vs ff-input … full up` was still held.
+        //  - the PER-TILE probe command channels (`force-vel-by-id` and its siblings). Those name
+        //    one ship each and cannot bleed onto a neighbour, but they deliberately OUTRANK the
+        //    pilot channel, so a scenario that left one in force hands the next scenario a computer
+        //    that ignores its own pilot. The clear walks the loaded computers of every loaded world.
+        //
+        // Asserted, not trusted: a clear nobody checks is indistinguishable from no clear.
         String afcCleared = exec("artest vs afc-clear");
-        assertTrue("the flight controller's static command channels must be cleared between"
+        assertTrue("the flight computer's bring-up channels must be cleared between"
                 + " scenarios, or a later scenario's ship flies under an earlier one's throttle;"
                 + " probe replied " + afcCleared, afcCleared.contains("\"ok\":true"));
 

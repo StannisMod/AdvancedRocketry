@@ -99,7 +99,9 @@ public class VSShipDescentE2ETest extends AbstractSharedServerTest {
         String afc = null;
         for (int i = 0; i < 40 && afc == null; i++) {
             exec("artest vs load-ships " + slotDim);
-            String r = exec("artest space find-afc " + slotDim);
+            // By id: this scenario already knows which ship it flew up, and "the first settled ship
+            // in the slot" is a different question that happens to have the same answer today.
+            String r = exec("artest space find-afc " + slotDim + " " + shipId);
             if (r.contains("\"found\":true")) {
                 afc = r;
             } else {

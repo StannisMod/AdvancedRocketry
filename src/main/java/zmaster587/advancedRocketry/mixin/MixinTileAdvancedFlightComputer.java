@@ -31,8 +31,8 @@ import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
  * <p>Control law: a deadbeat toward the commanded world velocity, mass-cancelling so the
  * ship accelerates as commanded regardless of how heavy it is:
  * {@code force = mass · clamp((vDesired − vCurrent) / dt, authority)}. The command is read
- * from {@link TileAdvancedFlightComputer#debugCommandedVelocity} (game thread writes, this
- * physics thread reads).</p>
+ * from {@link TileAdvancedFlightComputer#commandedVelocity} — this tile's own, written on the
+ * game thread and read here on the physics thread.</p>
  */
 @Mixin(TileAdvancedFlightComputer.class)
 public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockController {
@@ -60,15 +60,14 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
         if (dt <= 0.0) {
             return;
         }
-        // Prefer this computer's PER-TILE command (the seated pilot's, published by its own
-        // server tick); fall back to the static bring-up channels only for the test probes.
+        // This computer's own command, and nobody else's. A bring-up probe aimed at THIS tile takes
+        // the whole triple (all-or-nothing: a per-channel mix would blend a fresh probe pose with a
+        // stale probe rate); otherwise the seated pilot's, published by this tile's own server tick.
         TileAdvancedFlightComputer self = (TileAdvancedFlightComputer) (Object) this;
-        double[] vCmd = self.commandedVelocity != null
-                ? self.commandedVelocity : TileAdvancedFlightComputer.debugCommandedVelocity;
-        double[] wCmd = self.commandedAngVel != null
-                ? self.commandedAngVel : TileAdvancedFlightComputer.debugCommandedAngVel;
-        double[] attCmd = self.targetAttitude != null
-                ? self.targetAttitude : TileAdvancedFlightComputer.debugTargetAttitude;
+        boolean probe = self.probeCommandActive;
+        double[] vCmd = probe ? self.probeVelocity : self.commandedVelocity;
+        double[] wCmd = probe ? self.probeAngVel : self.commandedAngVel;
+        double[] attCmd = probe ? self.probeAttitude : self.targetAttitude;
         if ((vCmd == null || vCmd.length < 3) && (wCmd == null || wCmd.length < 3)
                 && (attCmd == null || attCmd.length < 4)) {
             return;

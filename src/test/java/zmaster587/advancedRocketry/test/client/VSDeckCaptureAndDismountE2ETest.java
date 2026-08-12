@@ -74,6 +74,17 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
     /** Ships in dim 0's registry immediately after {@link #buildShip} created this scenario's. */
     private int shipsInRegistryAfterBuild;
 
+    /**
+     * THIS scenario's ship, by identity — captured by {@link #buildShip} at the one moment the base
+     * provably holds no other, and the address every later question uses.
+     *
+     * <p>Every question here used to be "the ship nearest my base, within a radius". That radius is a
+     * mitigation and not an identity: these scenarios deliberately tumble, invert and hover their
+     * ship, and on a shared client the neighbour built by another scenario is a candidate the whole
+     * time. An id has no distance term to be wrong about.</p>
+     */
+    private String scenarioShipId;
+
     // ---- Bug: a walking client player on a grounded deck falls through it -----------------------
 
     @Test
@@ -135,14 +146,14 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         bot().waitTicks(20); // let the seated idle pilot's hold stabilise the ship
 
         // Lift into a real hover with the pilot's own vertical-up key.
-        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double startY = readDouble(shipInfo(), POS_Y);
         bot().holdKey(Keyboard.KEY_R);
         ClientPoll.Result<Double> lift;
         try {
             // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 200-iteration budget
             // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
@@ -152,7 +163,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
                 liftedY - startY > 2.0);
         bot().waitTicks(10);
 
-        double shipYPre = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double shipYPre = readDouble(shipInfo(), POS_Y);
 
         // Dismount exactly as the maintainer did: the real sneak key. (While seated it also feeds the
         // flight brake, but a held sneak still triggers vanilla's dismount.) Confirm on the CLIENT that
@@ -174,7 +185,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
 
         // Let the now-unmanned ship reveal whether it holds or falls.
         bot().waitTicks(40);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double shipYPost = readDouble(info, POS_Y);
         double velYPost = readDouble(info, VEL_Y);
         String server = exec("artest vs player-ship-data");
@@ -277,10 +288,10 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         // cross flying up to a ship. Attitude hold does it with no pilot aboard.
         double h = Math.toRadians(45.0) / 2.0;
         assertTrue("attitude hold must accept the roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " 0.0 0.0 " + Math.sin(h)).contains("\"commanded\":true"));
         bot().waitTicks(120);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double sx = readDouble(info, POS_X), sy = readDouble(info, POS_Y), sz = readDouble(info, POS_Z);
 
         // NEGATIVE (the bug): a player who has NEVER stood on this deck flies into its airspace, off the
@@ -307,10 +318,10 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         // POSITIVE control: level the ship and land him ON the deck. Now the deck camera SHOULD engage -
         // so the negative above is a real on-deck/off-deck discrimination, not the camera never firing.
         assertTrue("attitude hold must accept levelling",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " 1.0 0.0 0.0 0.0")
+                exec("artest vs point-by-id 0 " + scenarioShipId + " 1.0 0.0 0.0 0.0")
                         .contains("\"commanded\":true"));
         bot().waitTicks(120);
-        String lvl = shipInfo(bx, by, bz);
+        String lvl = shipInfo();
         exec("tp @a " + readDouble(lvl, POS_X) + " " + (readDouble(lvl, POS_Y) + 5) + " "
                 + readDouble(lvl, POS_Z) + " 0 0");
         boolean onDeckCam = false;
@@ -335,14 +346,14 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
 
         // Fly it into a hover, then stand up: it is now an unmanned, station-keeping, hovering ship -
         // exactly the state a saved hovering ship is in on disk.
-        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double startY = readDouble(shipInfo(), POS_Y);
         bot().holdKey(org.lwjgl.input.Keyboard.KEY_R);
         ClientPoll.Result<Double> lift;
         try {
             // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 200-iteration budget
             // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(org.lwjgl.input.Keyboard.KEY_R);
@@ -352,7 +363,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
                 liftedY - startY > 2.0);
         exec("artest player dismount");
         bot().waitTicks(40);
-        double hoverY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double hoverY = readDouble(shipInfo(), POS_Y);
         assertTrue("the unmanned ship must still be hovering off the ground: " + hoverY,
                 hoverY - startY > 1.0);
 
@@ -378,7 +389,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         ClientPoll.until(bot()::waitTicks, () -> shipLoadedAt(bx, by, bz) ? 1 : 0, n -> n >= 1, 5, 40);
         bot().waitTicks(80); // give a ship that lost its hold time to visibly fall
 
-        double afterY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double afterY = readDouble(shipInfo(), POS_Y);
         System.out.println("[deckcap] reload-hover startY=" + startY + " hoverY=" + hoverY
                 + " afterReloadY=" + afterY);
         assertTrue("a hovering ship must KEEP hovering across a reload, not fall out of the sky: it was "
@@ -416,7 +427,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         // rolling the ship after the cursor centres, so a low break target overshoots to a near-vertical
         // wall; breaking at ~40 lands the settle in the steep-but-standable envelope.
         for (int i = 0; i < 220; i++) {
-            if (shipUpYFromInfo(shipInfo(bx, by, bz)) < 0.76) {
+            if (shipUpYFromInfo(shipInfo()) < 0.76) {
                 break;
             }
             if (Math.abs(clientDouble(KEY_BINDINGS, "flightCursorX")) < 0.5) {
@@ -426,7 +437,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         }
         centreFlightCursor();
         bot().waitTicks(30);
-        double tilted = shipUpYFromInfo(shipInfo(bx, by, bz));
+        double tilted = shipUpYFromInfo(shipInfo());
         // A steep but standable tilt is the subject. The client-side capture packet snaps the fresh
         // dismount onto the deck and holds it there (like a crew member who rode in and holds at 90deg).
         // Skip only if the mouse-roll under- or overshot the envelope (no tilt, or a near-vertical wall
@@ -434,7 +445,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         Assume.assumeTrue("could not tilt the ship into the steep-but-standable envelope (upY=" + tilted
                 + ")", tilted >= 0.25 && tilted < 0.80);
 
-        double[] seat = readShipInfoXYZ(shipInfo(bx, by, bz));
+        double[] seat = readShipInfoXYZ(shipInfo());
         String statsBefore = exec("artest vs shipframe-stats");
         exec("artest player dismount");
         StringBuilder traj = new StringBuilder();
@@ -513,15 +524,15 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
 
         // Roll the now-UNMANNED ship (a mounted pilot would overwrite the target) to the commanded attitude.
         assertTrue("attitude hold must accept the " + label + " roll command",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " " + qw + " 0.0 0.0 " + qz)
+                exec("artest vs point-by-id 0 " + scenarioShipId + " " + qw + " 0.0 0.0 " + qz)
                         .contains("\"commanded\":true"));
         bot().waitTicks(200); // slew to the roll and settle - stationary, not a transient
-        double tilted = shipUpYFromInfo(shipInfo(bx, by, bz));
+        double tilted = shipUpYFromInfo(shipInfo());
         // Reliable command -> a HARD assert that the regime was reached (fail loudly, not a silent skip).
         assertTrue("the ship must reach the " + label + " regime for the test to mean anything (upY="
                 + tilted + " expected [" + upYLo + "," + upYHi + "])", tilted >= upYLo && tilted <= upYHi);
 
-        double shipPosY = readShipInfoXYZ(shipInfo(bx, by, bz))[1];
+        double shipPosY = readShipInfoXYZ(shipInfo())[1];
         StringBuilder traj = new StringBuilder();
         double settledMin = Double.MAX_VALUE, settledMax = -Double.MAX_VALUE;
         for (int i = 0; i < 22; i++) {
@@ -571,13 +582,13 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         // every tick to sustain the spin until the ship is inverted.
         double upY = 1.0;
         for (int i = 0; i < 240 && upY > -0.9; i++) {
-            exec("artest vs spin-ship 0 " + ship[0] + " " + ship[1] + " " + ship[2] + " 5.0 0.0 0.0");
+            exec("artest vs spin-ship-by-id 0 " + scenarioShipId + " 5.0 0.0 0.0");
             bot().waitTicks(1);
-            upY = shipUpYFromInfo(shipInfo(bx, by, bz));
+            upY = shipUpYFromInfo(shipInfo());
         }
-        exec("artest vs spin-ship 0 " + ship[0] + " " + ship[1] + " " + ship[2] + " 0.0 0.0 0.0");
+        exec("artest vs spin-ship-by-id 0 " + scenarioShipId + " 0.0 0.0 0.0");
         bot().waitTicks(10);
-        String info0 = shipInfo(bx, by, bz);
+        String info0 = shipInfo();
         double invertedUpY = shipUpYFromInfo(info0);
         System.out.println("[deckcap] force-invert upY=" + invertedUpY + " info=" + info0);
         Assume.assumeTrue("could not spin the ship inverted (upY=" + invertedUpY + ")", invertedUpY < -0.85);
@@ -595,7 +606,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         double omegaAfter = 0.0;
         for (int i = 0; i < 20; i++) {
             bot().waitTicks(2);
-            omegaAfter = Math.max(omegaAfter, readDouble(shipInfo(bx, by, bz), OMEGA));
+            omegaAfter = Math.max(omegaAfter, readDouble(shipInfo(), OMEGA));
         }
         System.out.println("[deckcap] force-invert control cursor="
                 + clientDouble(KEY_BINDINGS, "flightCursorX") + " omegaAfter=" + omegaAfter);
@@ -639,7 +650,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         double shipUpY = clientDouble(SHIP_CAMERA, "shipUpY");
         Assume.assumeTrue("could not roll the ship inverted to test control there (shipUpY=" + shipUpY
                 + ")", shipUpY < -0.4);
-        double omegaSettled = readDouble(shipInfo(bx, by, bz), OMEGA);
+        double omegaSettled = readDouble(shipInfo(), OMEGA);
         System.out.println("[deckcap] inverted-control shipUpY=" + shipUpY + " omegaSettled=" + omegaSettled);
 
         // Now, WHILE inverted, command a fresh turn. The ship must respond - its angular velocity must
@@ -652,7 +663,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         double omegaTurning = 0.0;
         for (int i = 0; i < 30; i++) {
             bot().waitTicks(2);
-            omegaTurning = Math.max(omegaTurning, readDouble(shipInfo(bx, by, bz), OMEGA));
+            omegaTurning = Math.max(omegaTurning, readDouble(shipInfo(), OMEGA));
         }
         System.out.println("[deckcap] inverted-control cursor=" + cursor + " omegaTurning=" + omegaTurning);
 
@@ -698,7 +709,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
 
         double h = Math.toRadians(90.0) / 2.0; // 90deg roll about the nose (+Z): deck on its side
         assertTrue("attitude hold must accept the tilt",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " 0.0 0.0 " + Math.sin(h)).contains("\"commanded\":true"));
         bot().waitTicks(160); // slew to the tilt and settle - the ship is now HELD stationary
 
@@ -747,11 +758,11 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         // shy of the exact 180 axis-angle singularity so the controller converges cleanly. Quaternion
         // (w,x,y,z) = (cos80, 0, 0, sin80). This is the regime the playtest saw break.
         assertTrue("attitude hold must accept the flip",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " 0.17365 0.0 0.0 0.98481")
+                exec("artest vs point-by-id 0 " + scenarioShipId + " 0.17365 0.0 0.0 0.98481")
                         .contains("\"commanded\":true"));
         bot().waitTicks(200); // slew all the way over and settle
 
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double sx = readDouble(info, POS_X), sy = readDouble(info, POS_Y), sz = readDouble(info, POS_Z);
         exec("tp @a " + sx + " " + (sy + 1) + " " + sz + " 0 0"); // inside the AABB so the probe resolves
         bot().waitTicks(2);
@@ -817,21 +828,13 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
-        // Await the ship LOADING near this base (managed + within range) — event-gated barrier with a
-        // load-scaled ceiling + early exit, instead of a fixed budget that reds a healthy load.
-        ClientPoll.Result<double[]> loaded = ClientPoll.until(bot()::waitTicks,
-                () -> {
-                    String si = shipInfo(bx, by, bz);
-                    if (!si.contains("\"managed\":true")) {
-                        return null;
-                    }
-                    double[] c = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
-                    return distance(c, new double[]{bx, by, bz}) < 24.0 ? c : null;
-                },
-                w -> w != null, 5, 40);
-        double[] where = loaded.value;
-        assertTrue("the ship built at this base must LOAD with the client present (base " + bx + ","
-                + by + "," + bz + ")", where != null);
+        // Await the ship LOADING near this base and take its IDENTITY in the same step. This is the
+        // scenario's ONE positional lookup and the only one it can defend: the ship has just been
+        // built here and has not moved. Everything after this asks by id — these scenarios hover,
+        // tumble and invert their ship on purpose, and a distance bound cannot follow it there.
+        scenarioShipId = captureShipIdAt(bx, by, bz);
+        String si = shipInfo();
+        double[] where = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
         System.out.println("[deckcap] ship at (" + bx + "," + by + "," + bz + ") -> "
                 + java.util.Arrays.toString(where));
         return where;
@@ -883,9 +886,10 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return exec("artest vs ship-info 0 id " + scenarioShipId);
     }
 
     private int count(String sub) throws Exception {
@@ -899,7 +903,7 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
      * and on a shared client it answers with whichever neighbour's ship happens to be loaded.
      */
     private boolean shipLoadedAt(int bx, int by, int bz) throws Exception {
-        return shipInfo(bx, by, bz).contains("\"managed\":true");
+        return shipInfo().contains("\"managed\":true");
     }
 
     private double readDouble(String json, Pattern p) {

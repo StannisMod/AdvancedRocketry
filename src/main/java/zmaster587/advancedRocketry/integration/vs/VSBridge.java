@@ -29,7 +29,6 @@ import org.valkyrienskies.mod.common.util.ValkyrienUtils;
 import valkyrienwarfare.api.TransformType;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
-import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 
 /**
  * The Valkyrien Skies-facing side of the integration. Every reference to an
@@ -765,13 +764,16 @@ final class VSBridge {
     }
 
     /**
-     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
-     * nearest to {@code (x,y,z)}; returns false if no ship is loaded. Used by the test
-     * probe to prove VS physics moves a bare AR-assembled ship (flight-control model A).
+     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship named by
+     * {@code shipId}; returns false when that id names no ship loaded here. Used by the test probe
+     * to prove VS physics moves a bare AR-assembled ship (flight-control model A).
+     *
+     * <p>Keyed by identity rather than by proximity: a nearest-ship twin of this call answers for
+     * whatever craft happens to be closest, so on a world holding more than one it pushes a
+     * stranger's ship and reports success.</p>
      */
-    static boolean pushNearestShip(World world, double x, double y, double z,
-                                   double vx, double vy, double vz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean pushShipById(World world, String shipId, double vx, double vy, double vz) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
@@ -784,15 +786,14 @@ final class VSBridge {
     }
 
     /**
-     * TEST-ONLY: set the world-frame angular velocity (rad/s) of the loaded ship nearest to
-     * {@code (x,y,z)} directly, bypassing the flight controller. Lets a test spin a ship to a truly
-     * inverted attitude via free VS physics (a fresh, never-piloted ship has no controller torque, so it
-     * coasts) rather than via the attitude-hold, which stalls short of a full flip. Returns false if no
-     * ship is loaded.
+     * TEST-ONLY: set the world-frame angular velocity (rad/s) of the ship named by {@code shipId}
+     * directly, bypassing the flight controller. Lets a test spin a ship to a truly inverted
+     * attitude via free VS physics (a fresh, never-piloted ship has no controller torque, so it
+     * coasts) rather than via the attitude-hold, which stalls short of a full flip. Returns false
+     * when that id names no ship loaded here.
      */
-    static boolean spinNearestShip(World world, double x, double y, double z,
-                                   double wx, double wy, double wz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean spinShipById(World world, String shipId, double wx, double wy, double wz) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
@@ -802,46 +803,19 @@ final class VSBridge {
     }
 
     /**
-     * Command the loaded ship nearest to {@code (x,y,z)} toward a world-frame velocity. The
-     * force that realizes it is applied on the PHYSICS thread by the flight-controller mixin
-     * on the Advanced Flight Computer tile ({@code MixinTileAdvancedFlightComputer}) — VS
-     * ignores a velocity setpoint AND a game-thread force, so the only working path is a
-     * per-physics-tick force from a ship-tile controller. Here we just enable physics and
-     * publish the command that controller reads. Angular args are accepted for signature
-     * stability but not yet used. Returns false if no ship is loaded.
+     * Enable physics on the ship named by {@code shipId}; false when that id names no ship loaded
+     * here. A flag, not a load — it does not trip the spawn/proximity double-load.
+     *
+     * <p>What the force probes need before they command anything: a bare assembled ship is loaded
+     * with physics OFF, so its flight computer's controller is never stepped and a command to it
+     * would be inert.</p>
      */
-    static boolean commandNearestShipVelocity(World world, double x, double y, double z,
-                                              double vx, double vy, double vz,
-                                              double wx, double wy, double wz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean enableShipPhysicsById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
         physo.getShipData().setPhysicsEnabled(true);
-        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{vx, vy, vz};
-        TileAdvancedFlightComputer.debugCommandedAngVel = new double[]{wx, wy, wz};
-        // These static channels persist for the life of the JVM. An attitude target left behind by an
-        // earlier probe outranks a raw rate command, so a velocity probe would silently run
-        // attitude-hold against a stale orientation. Clear it: this probe commands rates, not a pose.
-        TileAdvancedFlightComputer.debugTargetAttitude = null;
-        return true;
-    }
-
-    /**
-     * Command the loaded ship nearest to {@code (x,y,z)} to HOLD a target body&rarr;world attitude
-     * (quaternion {@code w,x,y,z}) — the controller turns the orientation error into torque —
-     * while hovering (linear velocity commanded to zero). Returns false if no ship is loaded.
-     */
-    static boolean commandNearestShipAttitude(World world, double x, double y, double z,
-                                              double qw, double qx, double qy, double qz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
-        if (physo == null) {
-            return false;
-        }
-        physo.getShipData().setPhysicsEnabled(true);
-        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{0.0, 0.0, 0.0};
-        TileAdvancedFlightComputer.debugCommandedAngVel = null;
-        TileAdvancedFlightComputer.debugTargetAttitude = new double[]{qw, qx, qy, qz};
         return true;
     }
 

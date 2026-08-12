@@ -954,87 +954,94 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":" + ok + "}");
             return;
         }
-        // push-ship <dim> <x> <y> <z> <vx> <vy> <vz> — set the linear-velocity setpoint
-        // (blocks/second) of the loaded ship nearest to (x,y,z).
-        if (args.length >= 8 && "push-ship".equalsIgnoreCase(args[0])) {
+        // push-ship-by-id <dim> <shipId> <vx> <vy> <vz> — set the linear-velocity setpoint
+        // (blocks/second) of the ship NAMED by shipId.
+        if (args.length >= 6 && "push-ship-by-id".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            boolean pushed = zmaster587.advancedRocketry.integration.vs.VSIntegration.pushNearestShip(
-                    world,
-                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
-                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            boolean pushed = zmaster587.advancedRocketry.integration.vs.VSIntegration.pushShipById(
+                    world, args[2],
+                    parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0), parseDoubleOr(args[5], 0));
             send(sender, "{\"pushed\":" + pushed + ",\"count\":"
                     + zmaster587.advancedRocketry.integration.vs.VSIntegration.loadedShipCount(world) + "}");
             return;
         }
-        // spin-ship <dim> <x> <y> <z> <wx> <wy> <wz> — TEST-ONLY: set the angular velocity (rad/s) of
-        // the ship nearest to (x,y,z) directly, bypassing the controller, to spin it to a fully inverted
-        // attitude via free physics.
-        if (args.length >= 8 && "spin-ship".equalsIgnoreCase(args[0])) {
+        // spin-ship-by-id <dim> <shipId> <wx> <wy> <wz> — TEST-ONLY: set the angular velocity (rad/s)
+        // of the ship NAMED by shipId directly, bypassing the controller, to spin it to a fully
+        // inverted attitude via free physics.
+        if (args.length >= 6 && "spin-ship-by-id".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            boolean spun = zmaster587.advancedRocketry.integration.vs.VSIntegration.spinNearestShip(
-                    world,
-                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
-                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            boolean spun = zmaster587.advancedRocketry.integration.vs.VSIntegration.spinShipById(
+                    world, args[2],
+                    parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0), parseDoubleOr(args[5], 0));
             send(sender, "{\"spun\":" + spun + "}");
             return;
         }
-        // force-vel <dim> <x> <y> <z> <vx> <vy> <vz> — command a world-frame velocity on the
-        // ship nearest to (x,y,z), realized as FORCE via a per-physics-tick controller (the
-        // working flight path; velocity setpoint alone does nothing).
-        if (args.length >= 8 && "force-vel".equalsIgnoreCase(args[0])) {
-            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
-            if (world == null) {
-                send(sender, "{\"error\":\"world not loaded\"}");
-                return;
-            }
-            boolean commanded = zmaster587.advancedRocketry.integration.vs.VSIntegration.commandNearestShipVelocity(
-                    world,
-                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
-                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0),
-                    0, 0, 0);
-            send(sender, "{\"commanded\":" + commanded + "}");
+        // force-vel-by-id <dim> <shipId> <vx> <vy> <vz> — command a world-frame velocity on the ship
+        // NAMED by shipId, realized as FORCE by the per-physics-tick controller on that ship's own
+        // flight computer (the working flight path; a velocity setpoint alone does nothing).
+        //
+        // The command lands on THAT computer's own probe channel, not on a JVM-wide static — which is
+        // what these three verbs used to write, so a command aimed at one ship went on flying every
+        // other ship in the world. Both halves of the address are reported (`shipFound`,
+        // `afcResolved`) because a miss must not read as an arrangement that happened, and a ship
+        // without a flight computer has nothing to realize a force with.
+        if (args.length >= 6 && "force-vel-by-id".equalsIgnoreCase(args[0])) {
+            probeCommandVelocity(sender, args, new double[]{parseDoubleOr(args[3], 0),
+                    parseDoubleOr(args[4], 0), parseDoubleOr(args[5], 0)}, null);
             return;
         }
-        // force-rot <dim> <x> <y> <z> <wx> <wy> <wz> — command a world-frame angular velocity
-        // (rad/s) on the ship nearest to (x,y,z), realized as TORQUE by the same controller;
-        // linear is zeroed so the ship hovers in place while it rotates.
-        if (args.length >= 8 && "force-rot".equalsIgnoreCase(args[0])) {
-            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
-            if (world == null) {
-                send(sender, "{\"error\":\"world not loaded\"}");
-                return;
-            }
-            boolean commanded = zmaster587.advancedRocketry.integration.vs.VSIntegration.commandNearestShipVelocity(
-                    world,
-                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
-                    0, 0, 0,
-                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
-            send(sender, "{\"commanded\":" + commanded + "}");
+        // force-rot-by-id <dim> <shipId> <wx> <wy> <wz> — command a world-frame angular velocity
+        // (rad/s) on the ship NAMED by shipId, realized as TORQUE by the same controller; linear is
+        // zeroed so the ship hovers in place while it rotates.
+        if (args.length >= 6 && "force-rot-by-id".equalsIgnoreCase(args[0])) {
+            probeCommandVelocity(sender, args, new double[]{0, 0, 0},
+                    new double[]{parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                            parseDoubleOr(args[5], 0)});
             return;
         }
-        // point <dim> <x> <y> <z> <qw> <qx> <qy> <qz> — hold a target attitude (quaternion) on
-        // the ship nearest to (x,y,z) via torque, hovering. This is the attitude-hold interface
-        // Free Flight drives.
-        if (args.length >= 9 && "point".equalsIgnoreCase(args[0])) {
+        // point-by-id <dim> <shipId> <qw> <qx> <qy> <qz> — hold a target attitude (quaternion) on the
+        // ship NAMED by shipId via torque, hovering. This is the attitude-hold interface Free Flight
+        // drives.
+        if (args.length >= 7 && "point-by-id".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            boolean commanded = zmaster587.advancedRocketry.integration.vs.VSIntegration.commandNearestShipAttitude(
-                    world,
-                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
-                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
-                    parseDoubleOr(args[7], 0), parseDoubleOr(args[8], 0));
-            send(sender, "{\"commanded\":" + commanded + "}");
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                    probeTargetComputer(sender, world, args[2]);
+            if (afc == null) {
+                return;
+            }
+            afc.commandProbeAttitude(parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0));
+            send(sender, "{\"commanded\":true,\"shipFound\":true,\"afcResolved\":true}");
+            return;
+        }
+        // force-clear-by-id <dim> <shipId> — hand the named ship's flight computer back to its own
+        // pilot channels. A probe command is per-tile now, so it dies with the tile rather than
+        // outliving the JVM — but a scenario that hands the same ship to a pilot afterwards must say
+        // so, and `cleared` reports whether anything was actually in force.
+        if (args.length >= 3 && "force-clear-by-id".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                    probeTargetComputer(sender, world, args[2]);
+            if (afc == null) {
+                return;
+            }
+            send(sender, "{\"ok\":true,\"afcResolved\":true,\"cleared\":" + afc.clearProbeCommand() + "}");
             return;
         }
         // ff-cruise-by-id <dim> <shipId> <forward> <right> <up> — command the CRUISE of the ship named by
@@ -1793,36 +1800,40 @@ public class TestProbeCommand extends CommandBase {
         // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
         // that applied and declined every entity look identical from outside the JVM; these counters
         // tell them apart, and a resolved tick that saw zero obstacles means bodies fall through decks.
-        // afc-clear - drop ALL FOUR static BRING-UP channels the flight probes write:
-        // debugFlightInput (the held Free Flight input `ff-input` sets) plus the three command
-        // channels (`force-vel`, `force-rot`, `point`). Every one is `static volatile` on the tile
-        // class, and both readers fall back to them for ANY flight computer with no per-tile value
-        // of its own - TileAdvancedFlightComputer.update() takes
-        // `pilotInput != null ? pilotInput : debugFlightInput`, and the controller mixin does the
-        // same for the command triple. So a probe throttle is not aimed at the ship the caller
-        // named: it keeps flying every other ship in the world until something clears it.
+        // afc-clear - drop every BRING-UP channel the flight probes write, across the whole server:
+        // the held Free Flight input `ff-input` sets, which is `static volatile` on the tile class
+        // and which TileAdvancedFlightComputer.update() falls back to for ANY flight computer with
+        // no pilot of its own (`pilotInput != null ? pilotInput : debugFlightInput`) - so a probe
+        // throttle is not aimed at the ship the caller named; it keeps flying every other ship in
+        // the world until something clears it. Under one boot per test there was never a later
+        // scenario to notice. On a shared client it is worth ~30 blocks of unasked-for climb.
         //
-        // Under one boot per test there was never a later scenario to notice. On a shared client it
-        // is worth ~30 blocks of unasked-for climb, and the four must be cleared TOGETHER - clearing
-        // only the command triple moved a measured overshoot by 0.01 blocks, because the held INPUT
-        // was the one still driving. Reports what was set, so a caller asserts the clear rather than
-        // trusting it.
+        // Plus the per-tile probe COMMAND channels (`force-vel-by-id`, `force-rot-by-id`,
+        // `point-by-id`). Those name one ship each, so they cannot bleed onto a neighbour - but a
+        // scenario that leaves one in force hands the next scenario a computer that ignores its own
+        // pilot, so the sweep clears them too. It has to walk the loaded tiles of every loaded world
+        // to do it: that is the price of an addressable channel, and it is the right price.
+        //
+        // Reports what was set, so a caller asserts the clear rather than trusting it.
         if (args.length >= 1 && "afc-clear".equalsIgnoreCase(args[0])) {
             boolean hadInput = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
                     .debugFlightInput != null;
-            boolean hadVel = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
-                    .debugCommandedVelocity != null;
-            boolean hadAng = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
-                    .debugCommandedAngVel != null;
-            boolean hadAtt = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
-                    .debugTargetAttitude != null;
             zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugCommandedVelocity = null;
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugCommandedAngVel = null;
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugTargetAttitude = null;
+            int clearedComputers = 0;
+            net.minecraft.server.MinecraftServer srv = sender.getServer();
+            if (srv != null) {
+                for (net.minecraft.world.WorldServer w : srv.worlds) {
+                    for (TileEntity te : new java.util.ArrayList<TileEntity>(w.loadedTileEntityList)) {
+                        if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                                && ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
+                                        .clearProbeCommand()) {
+                            clearedComputers++;
+                        }
+                    }
+                }
+            }
             send(sender, "{\"ok\":true,\"clearedFlightInput\":" + hadInput
-                    + ",\"clearedVelocity\":" + hadVel
-                    + ",\"clearedAngVel\":" + hadAng + ",\"clearedAttitude\":" + hadAtt + "}");
+                    + ",\"clearedComputers\":" + clearedComputers + "}");
             return;
         }
         // afc-debug - READ-ONLY. What the flight controller last commanded, from the physics thread.
@@ -2054,6 +2065,55 @@ public class TestProbeCommand extends CommandBase {
         }
         net.minecraft.server.MinecraftServer server = sender.getServer();
         return server == null ? null : server.getWorld(dim);
+    }
+
+    /**
+     * The flight computer of the ship NAMED by {@code shipId}, with the ship's physics enabled so
+     * its controller is stepped at all — or {@code null} after replying with which half of the
+     * address failed. Both halves are separate answers on purpose: "that id names no ship loaded
+     * here" and "that ship carries no flight computer" are different arrangement bugs, and a single
+     * {@code false} would let a caller guess wrong about which one it has.
+     */
+    private static zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer probeTargetComputer(
+            ICommandSender sender, net.minecraft.world.WorldServer world, String shipId) {
+        java.util.UUID uuid;
+        try {
+            uuid = java.util.UUID.fromString(shipId);
+        } catch (IllegalArgumentException notAUuid) {
+            send(sender, "{\"commanded\":false,\"shipFound\":false,\"afcResolved\":false,"
+                    + "\"error\":\"shipId is not a uuid\"}");
+            return null;
+        }
+        if (!zmaster587.advancedRocketry.integration.vs.VSIntegration.enableShipPhysicsById(
+                world, shipId)) {
+            send(sender, "{\"commanded\":false,\"shipFound\":false,\"afcResolved\":false}");
+            return null;
+        }
+        BlockPos afcPos = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                .flightComputerOf(world, uuid);
+        TileEntity te = afcPos == null ? null : world.getTileEntity(afcPos);
+        if (!(te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+            send(sender, "{\"commanded\":false,\"shipFound\":true,\"afcResolved\":false}");
+            return null;
+        }
+        return (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te;
+    }
+
+    /** Shared body of {@code force-vel-by-id} / {@code force-rot-by-id}: resolve, then command. */
+    private static void probeCommandVelocity(ICommandSender sender, String[] args,
+                                             double[] worldVelocity, double[] worldAngVel) {
+        net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                probeTargetComputer(sender, world, args[2]);
+        if (afc == null) {
+            return;
+        }
+        afc.commandProbeVelocity(worldVelocity, worldAngVel);
+        send(sender, "{\"commanded\":true,\"shipFound\":true,\"afcResolved\":true}");
     }
 
     // Registry probes -----------------------------------------------------
@@ -4300,12 +4360,18 @@ public class TestProbeCommand extends CommandBase {
             send(sender, out.toString());
             return;
         }
-        // find-afc <dim>: report a subspace block position + durable ship id of the settled ship in slot
-        // <dim>, so a descent e2e can drive requestDescent for it. Located via the ledger coord (headless
-        // the AFC does not tick, so the coord stays the settle coord) -> world pose -> the queryable ship
-        // registry, NOT a loaded-TE scan (a headless slot ship's blocks are not in loadedTileEntityList).
+        // find-afc <dim> [shipId]: report a subspace block position + durable ship id of the settled ship
+        // in slot <dim>, so a descent e2e can drive requestDescent for it. Located via the ledger coord
+        // (headless the AFC does not tick, so the coord stays the settle coord) -> world pose -> the
+        // queryable ship registry, NOT a loaded-TE scan (a headless slot ship's blocks are not in
+        // loadedTileEntityList).
+        //
+        // With shipId given the answer is about THAT ship and no other. Without it, the slot's first
+        // settled ship answers — which is the honest form only while the caller's own ship is provably
+        // the only one settled there, and stops being true the moment a scenario puts two in one slot.
         if (args.length >= 2 && "find-afc".equalsIgnoreCase(args[0])) {
             int slotDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            String wantShip = args.length >= 3 ? args[2] : null;
             net.minecraft.world.WorldServer w = net.minecraftforge.common.DimensionManager.getWorld(slotDim);
             zmaster587.advancedRocketry.space.ShipLedger ledger =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
@@ -4317,7 +4383,8 @@ public class TestProbeCommand extends CommandBase {
                     : ledger.snapshot().entrySet()) {
                 zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
                 if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
-                        || slotDimOfCell(entry.coord) != slotDim) {
+                        || slotDimOfCell(entry.coord) != slotDim
+                        || (wantShip != null && !wantShip.equals(e.getKey().toString()))) {
                     continue;
                 }
                 double[] pose = zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);

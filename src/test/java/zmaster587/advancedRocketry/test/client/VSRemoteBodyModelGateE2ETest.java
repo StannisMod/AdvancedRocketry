@@ -79,6 +79,14 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
     private static final Pattern Q_Z = Pattern.compile("\"qz\":(-?[0-9.E\\-]+)");
 
     private static final String VARIANT = "with-pilot-deck";
+
+    /**
+     * THIS scenario's ship, by identity — captured by {@code buildShip} at the one moment its base
+     * provably holds no other, and the address every later question and command uses. A radius bound
+     * is a mitigation, not an identity: these scenarios roll, hover and drop the ship on purpose, and
+     * a shared client always has a neighbour in candidacy.
+     */
+    private String scenarioShipId;
     private static final String SHIP_CAMERA = "zmaster587.advancedRocketry.client.ShipFrameCamera";
 
     /** A roll steep enough that a wrongly-rotated model is unmistakable (~160 deg): at a shallow
@@ -355,13 +363,13 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
      *  tick count (under suite load the slew takes longer than any fixed wait). */
     private void rollShip(int bx, int by, int bz) throws Exception {
         assertTrue("attitude hold must accept the steep roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " " + STEEP_ROLL)
+                exec("artest vs point-by-id 0 " + scenarioShipId + " " + STEEP_ROLL)
                         .contains("\"commanded\":true"));
         double upY = 1.0;
         for (int i = 0; i < 60 && upY > -0.85; i++) {
             bot().waitTicks(10);
             // The ship's own up, world-frame, from the attitude quaternion the probe reports.
-            String info = shipInfo(bx, by, bz);
+            String info = shipInfo();
             double qx = readDouble(info, Q_X), qz = readDouble(info, Q_Z);
             upY = 1.0 - 2.0 * (qx * qx + qz * qz);
         }
@@ -526,13 +534,19 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
         int loadIters = (int) Math.ceil(40 * TestTimeouts.factor());
         for (int i = 0; i < loadIters && where == null; i++) {
             bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
+            // The scenario's ONE positional lookup, at the only moment it is defensible: the ship
+            // was just assembled here and has not moved. It yields an IDENTITY, and everything
+            // afterwards is keyed on that.
+            info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                    + " " + SHIP_QUERY_RADIUS);
             if (!info.contains("\"managed\":true")) {
                 continue;
             }
             double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
+            String foundId = readShipId(info);
+            if (distance(candidate, new double[]{bx, by, bz}) < 24.0 && foundId != null) {
                 where = candidate;
+                scenarioShipId = foundId;
             }
         }
         assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
@@ -559,9 +573,10 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity — no distance term to be wrong about. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return shipInfoById(scenarioShipId);
     }
 
 

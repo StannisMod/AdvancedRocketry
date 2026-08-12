@@ -1208,55 +1208,41 @@ public final class VSIntegration {
     }
 
     /**
-     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
-     * nearest to {@code (x,y,z)}; a safe no-op returning false when VS is absent or no
-     * ship is loaded.
+     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship named by
+     * {@code shipId}; a safe no-op returning false when VS is absent or that id names no ship
+     * loaded here.
      */
-    public static boolean pushNearestShip(World world, double x, double y, double z,
-                                          double vx, double vy, double vz) {
+    public static boolean pushShipById(World world, String shipId,
+                                       double vx, double vy, double vz) {
         if (!isAvailable()) {
             return false;
         }
-        return VSBridge.pushNearestShip(world, x, y, z, vx, vy, vz);
+        return VSBridge.pushShipById(world, shipId, vx, vy, vz);
     }
 
     /**
-     * TEST-ONLY: directly set the angular velocity (rad/s, world frame) of the loaded ship nearest to
-     * {@code (x,y,z)}, bypassing the flight controller, so a test can spin a ship to a fully inverted
-     * attitude via free physics. A safe no-op returning false when VS is absent or no ship is loaded.
+     * TEST-ONLY: directly set the angular velocity (rad/s, world frame) of the ship named by
+     * {@code shipId}, bypassing the flight controller, so a test can spin a ship to a fully
+     * inverted attitude via free physics. A safe no-op returning false when VS is absent or that
+     * id names no ship loaded here.
      */
-    public static boolean spinNearestShip(World world, double x, double y, double z,
-                                          double wx, double wy, double wz) {
+    public static boolean spinShipById(World world, String shipId,
+                                       double wx, double wy, double wz) {
         if (!isAvailable()) {
             return false;
         }
-        return VSBridge.spinNearestShip(world, x, y, z, wx, wy, wz);
+        return VSBridge.spinShipById(world, shipId, wx, wy, wz);
     }
 
     /**
-     * Command the loaded ship nearest to {@code (x,y,z)} toward a world-frame linear +
-     * angular velocity, realized as FORCE through a per-physics-tick controller (the working
-     * flight path); a safe no-op returning false when VS is absent or no ship is loaded.
+     * Enable physics on the ship named by {@code shipId} — what a bare assembled ship needs before
+     * its flight computer's controller is stepped at all. A safe no-op returning false when VS is
+     * absent or that id names no ship loaded here.
      */
-    public static boolean commandNearestShipVelocity(World world, double x, double y, double z,
-                                                     double vx, double vy, double vz,
-                                                     double wx, double wy, double wz) {
+    public static boolean enableShipPhysicsById(World world, String shipId) {
         if (!isAvailable()) {
             return false;
         }
-        return VSBridge.commandNearestShipVelocity(world, x, y, z, vx, vy, vz, wx, wy, wz);
-    }
-
-    /**
-     * Command the loaded ship nearest to {@code (x,y,z)} to hold a target attitude (quaternion
-     * {@code w,x,y,z}) via torque while hovering; a safe no-op returning false when VS is absent
-     * or no ship is loaded.
-     */
-    public static boolean commandNearestShipAttitude(World world, double x, double y, double z,
-                                                     double qw, double qx, double qy, double qz) {
-        if (!isAvailable()) {
-            return false;
-        }
-        return VSBridge.commandNearestShipAttitude(world, x, y, z, qw, qx, qy, qz);
+        return VSBridge.enableShipPhysicsById(world, shipId);
     }
 }
