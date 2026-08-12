@@ -201,7 +201,7 @@ public final class PlanetTypes {
         // The commonest body class of all — every airless moon, Mercury. Defined by having no air at
         // all, which is why its pressure band is the tight one and its temperature band is not: an
         // airless rock is as plausible baking beside its star as frozen far from it.
-        l.add(PlanetTypePreset.builder("barren").weight(30)
+        l.add(PlanetTypePreset.builder("barren").albedo(0.12d).weight(30)
                 .pressure(0, 25).temperature(0, 1500).gravity(1, 90)
                 .biomes("advancedrocketry:moon;30,advancedrocketry:moondark;20")
                 .terrain(TerrainOption.ofNative(0, 1))
@@ -209,7 +209,7 @@ public final class PlanetTypes {
 
         // Everything past the snow line, thin-aired or thick: Europa and Titan are the same class of
         // world, and which of the two you get is how much nitrogen the gravity managed to keep.
-        l.add(PlanetTypePreset.builder("ice").weight(22)
+        l.add(PlanetTypePreset.builder("ice").albedo(0.60d).weight(22)
                 .pressure(0, 1600).temperature(0, 200).gravity(1, 400)
                 .biomes("advancedrocketry:moondark;10,minecraft:ice_flats;30,minecraft:ice_mountains;20")
                 .terrain(TerrainOption.ofNative(0, 1))
@@ -217,7 +217,7 @@ public final class PlanetTypes {
 
         // Tight inner orbits, common around M dwarfs. A molten surface under whatever the rock itself
         // boiled off, which can be a great deal — hence no pressure ceiling.
-        l.add(PlanetTypePreset.builder("lava").weight(12)
+        l.add(PlanetTypePreset.builder("lava").albedo(0.10d).weight(12)
                 .pressure(0, 1600).temperature(700, 6000).gravity(5, 400)
                 .biomes("advancedrocketry:volcanic;30,advancedrocketry:volcanicbarren;20,"
                         + "advancedrocketry:hotdryrock;10")
@@ -226,7 +226,7 @@ public final class PlanetTypes {
 
         // Venus-like, and likely common in the hot zone: a thick atmosphere doing the warming, which is
         // why the band is keyed on the PRESSURE floor rather than on where the world orbits.
-        l.add(PlanetTypePreset.builder("greenhouse").weight(14)
+        l.add(PlanetTypePreset.builder("greenhouse").albedo(0.75d).weight(14)
                 .pressure(150, 1600).temperature(275, 1000).gravity(20, 400)
                 .biomes("advancedrocketry:hotdryrock;30,advancedrocketry:volcanicbarren;10")
                 .terrain(TerrainOption.ofNative(0, 1))
@@ -234,21 +234,21 @@ public final class PlanetTypes {
 
         // The commonest planet class in the galaxy, and absent from the Solar System entirely. Defined
         // by MASS, not by climate: a super-Earth is one whether it is frozen or baked.
-        l.add(PlanetTypePreset.builder("superearth").weight(16)
+        l.add(PlanetTypePreset.builder("superearth").albedo(0.30d).weight(16)
                 .pressure(0, 1600).temperature(0, 900).gravity(160, 400)
                 .biomes("advancedrocketry:stormland;30,advancedrocketry:hotdryrock;10")
                 .terrain(TerrainOption.ofNative(0, 1))
                 .build());
 
         // A common end state of water loss: warm, dry, and holding just enough air to blow it around.
-        l.add(PlanetTypePreset.builder("desert").weight(16)
+        l.add(PlanetTypePreset.builder("desert").albedo(0.30d).weight(16)
                 .pressure(0, 200).temperature(200, 700).gravity(10, 200)
                 .biomes("advancedrocketry:hotdryrock;30,minecraft:desert;20,minecraft:mesa;10")
                 .terrain(TerrainOption.ofNative(0, 1))
                 .build());
 
         // Hypothesised but plausible: no exposed continent worth the name, and a deep global sea.
-        l.add(PlanetTypePreset.builder("ocean").weight(7).allowsOxygen(true)
+        l.add(PlanetTypePreset.builder("ocean").albedo(0.10d).weight(7).allowsOxygen(true)
                 .pressure(60, 400).temperature(255, 380).gravity(50, 190)
                 .seaLevel(96)
                 .biomes("advancedrocketry:oceanspires;30,minecraft:deep_ocean;30,minecraft:ocean;20")
@@ -257,7 +257,7 @@ public final class PlanetTypes {
 
         // Life without oxygen — the crystal / stormland / alien-forest biomes, all written and nearly
         // unused today. Deliberately narrow: a find, not a background.
-        l.add(PlanetTypePreset.builder("exotic").weight(5)
+        l.add(PlanetTypePreset.builder("exotic").albedo(0.30d).weight(5)
                 .pressure(40, 1600).temperature(200, 430).gravity(10, 220)
                 .biomes("advancedrocketry:crystalchasms;30,advancedrocketry:stormland;20,"
                         + "advancedrocketry:alien_forest;10")
@@ -265,7 +265,7 @@ public final class PlanetTypes {
                 .build());
 
         // Very rare, and rare on purpose: the conjunction is physics, the oxygen on top is biology.
-        l.add(PlanetTypePreset.builder("earthlike").weight(3).allowsOxygen(true)
+        l.add(PlanetTypePreset.builder("earthlike").albedo(0.30d).weight(3).allowsOxygen(true)
                 .pressure(50, 220).temperature(255, 325).gravity(60, 145)
                 .biomes("minecraft:plains;30,minecraft:forest;25,minecraft:extreme_hills;15,"
                         + "minecraft:ocean;15,advancedrocketry:marsh;10")
@@ -275,13 +275,13 @@ public final class PlanetTypes {
         // ~10-20% of stars. A real destination — fuel skimming and moons — but never a landing.
         // Its bands are deliberately the widest in the table: a giant is a giant, and nothing else in
         // this list will ever admit one, so a gap here would leave a whole body class untyped.
-        l.add(PlanetTypePreset.builder("gasgiant").weight(14).gasGiant(true).tidallyLockable(false)
+        l.add(PlanetTypePreset.builder("gasgiant").albedo(0.50d).weight(14).gasGiant(true).tidallyLockable(false)
                 .pressure(0, 1600).temperature(0, 1500).gravity(1, 400)
                 .terrain(TerrainOption.ofNative(0, 1))
                 .build());
 
         // Neptune and Uranus: the same, further out and colder.
-        l.add(PlanetTypePreset.builder("icegiant").weight(9).gasGiant(true).tidallyLockable(false)
+        l.add(PlanetTypePreset.builder("icegiant").albedo(0.50d).weight(9).gasGiant(true).tidallyLockable(false)
                 .pressure(0, 1600).temperature(0, 250).gravity(1, 300)
                 .terrain(TerrainOption.ofNative(0, 1))
                 .build());

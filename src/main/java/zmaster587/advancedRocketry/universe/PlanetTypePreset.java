@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.util.OreGenProperties;
 
 /**
@@ -44,6 +45,7 @@ public final class PlanetTypePreset {
     private final List<TerrainOption> terrain;
     private final String biomes;
     private final OreGenProperties oreProperties;
+    private final double albedo;
 
     private PlanetTypePreset(Builder b) {
         this.name = b.name;
@@ -64,6 +66,17 @@ public final class PlanetTypePreset {
                 : Collections.unmodifiableList(new ArrayList<>(b.terrain));
         this.biomes = b.biomes == null ? "" : b.biomes.trim();
         this.oreProperties = b.oreProperties;
+        this.albedo = Math.min(Math.max(b.albedo, 0d), 1d);
+    }
+
+    /**
+     * The fraction of incident light this kind of world reflects, 0..1 — what its temperature is
+     * actually derived from, in place of the single hard-coded 0.3 that used to stand for every
+     * surface. It belongs to the type because the type IS the statement of what the surface is made
+     * of, and it closes physically: high albedo means a colder world, which is why ice stays ice.
+     */
+    public double albedo() {
+        return albedo;
     }
 
     /** The type's name — what a scan reports and what a pack overrides by. */
@@ -206,6 +219,7 @@ public final class PlanetTypePreset {
         private final List<TerrainOption> terrain = new ArrayList<>();
         private String biomes = "";
         private OreGenProperties oreProperties;
+        private double albedo = AstronomicalBodyHelper.EARTH_ALBEDO;
 
         private Builder(String name) {
             this.name = name == null ? "" : name.trim();
@@ -274,6 +288,12 @@ public final class PlanetTypePreset {
 
         public Builder ores(OreGenProperties ores) {
             this.oreProperties = ores;
+            return this;
+        }
+
+        /** 0..1; defaults to Earth's, so a type that says nothing behaves as it did before. */
+        public Builder albedo(double a) {
+            this.albedo = a;
             return this;
         }
 

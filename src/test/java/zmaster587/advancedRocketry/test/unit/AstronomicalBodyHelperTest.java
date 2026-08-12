@@ -204,12 +204,63 @@ public class AstronomicalBodyHelperTest {
     // search-and-replace can silently corrupt one of them.
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /**
+     * A world's temperature follows its ALBEDO, which its type states. The formula used to hard-code
+     * 0.3 for every surface, so an ice world and a lava world at the same distance were the same
+     * temperature — and the physical direction matters: more reflective means colder, which is what
+     * keeps ice being ice.
+     */
+    @Test
+    public void albedoCoolsAWorldAndTheDefaultIsEarths() {
+        StellarBody star = sunLikeStar();
+        int dark = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.10d);
+        int earthLike = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.30d);
+        int icy = AstronomicalBodyHelper.getAverageTemperature(star, 100, 0, 0.60d);
+
+        assertTrue("a darker surface absorbs more and runs hotter", dark > earthLike);
+        assertTrue("a more reflective surface runs colder", icy < earthLike);
+        assertEquals("the albedo-less form must still mean Earth's albedo",
+                AstronomicalBodyHelper.getAverageTemperature(star, 100, 0), earthLike);
+    }
+
     @Test
     public void orbitalPeriodFollowsTheThreeHalvesPowerLawExactly() {
         // Four times the distance is eight times the period.
         assertEquals(384.0, AstronomicalBodyHelper.getOrbitalPeriod(400, 1.0f), 1e-9);
-        // A bigger star pulls the same distance into a shorter year.
-        assertEquals(31.176914536239792, AstronomicalBodyHelper.getOrbitalPeriod(150, 2.0f), 1e-9);
+        // A heavier star pulls the same distance into a shorter year, as sqrt(M) — Kepler's third law,
+        // P = 48 * a^1.5 / sqrt(M) = 48 * 1.5^1.5 / sqrt(2). The second argument is a MASS in solar
+        // masses; while it was read as a RADIUS this line expected 31.176914536239792, i.e. 1.5^1.5/2^1.5.
+        assertEquals(62.353829072479584, AstronomicalBodyHelper.getOrbitalPeriod(150, 2.0f), 1e-9);
+    }
+
+    /**
+     * A star's year is set by its MASS. A star that states no mass supplies one from its radius through
+     * the main-sequence relation, which is exact for Sol — and is emphatically not the radius itself.
+     */
+    @Test
+    public void aYearIsKeyedOnStellarMassAndAStarWithoutOneDerivesItFromItsRadius() {
+        StellarBody sol = sunLikeStar(); // size 1.0
+        assertEquals("Sol's mass and radius are both 1, so nothing can tell them apart here",
+                1.0, sol.getMass(), 1e-6);
+        assertEquals(48.0, AstronomicalBodyHelper.getOrbitalPeriod(100, sol.getMass()), 1e-9);
+
+        StellarBody big = sunLikeStar();
+        big.setSize(2.0f);
+        // R = 2 gives M = 2^1.25 = 2.3784, so the year is 48/sqrt(2.3784) days. The mass is a float, so
+        // the exact figure below carries that narrowing — deliberately, per this file's header.
+        assertEquals(2.378414230005442, big.getMass(), 1e-6);
+        assertEquals(31.124149808586335, AstronomicalBodyHelper.getOrbitalPeriod(100, big.getMass()), 1e-9);
+        // A star two Sol-radii across is HEAVIER than two solar masses, so keying the year on its mass
+        // gives a shorter year than substituting the radius would. Any star but Sol separates the two.
+        assertTrue("a two-radius star masses more than two Suns", big.getMass() > big.getSize());
+        assertTrue("so its year is shorter than a radius substitution gives",
+                AstronomicalBodyHelper.getOrbitalPeriod(100, big.getMass())
+                        < AstronomicalBodyHelper.getOrbitalPeriod(100, big.getSize()));
+
+        StellarBody stated = sunLikeStar();
+        stated.setSize(2.0f);
+        stated.setMass(4.0f);
+        assertEquals("a stated mass wins over the derivation", 4.0, stated.getMass(), 1e-6);
     }
 
     @Test

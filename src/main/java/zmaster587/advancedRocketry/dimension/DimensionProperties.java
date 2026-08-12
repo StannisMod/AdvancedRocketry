@@ -215,6 +215,12 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     /** This body's radius in Earth radii, or {@link #BULK_UNSET}. See {@link #mass}. */
     private double radius = BULK_UNSET;
     /**
+     * The fraction of incident light this world's surface reflects, 0..1 — stated by its TYPE and
+     * used to derive its temperature. Defaults to Earth's, so a world whose type says nothing keeps
+     * exactly the temperature it had when 0.3 was hard-coded into the formula.
+     */
+    private double albedo = AstronomicalBodyHelper.EARTH_ALBEDO;
+    /**
      * Whether {@link #gravitationalMultiplier} was STATED rather than derived. The single bit that keeps
      * "authored planets are unchanged" true: it is set by the XML element, by the public setter and by
      * anything that assigns the field directly through the legacy path, and it makes
@@ -549,6 +555,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         laserDrillOres = new ArrayList<>();
         mass = BULK_UNSET;
         radius = BULK_UNSET;
+        albedo = AstronomicalBodyHelper.EARTH_ALBEDO;
         gravityAuthored = false;
         tidallyLocked = false;
         metallicity = 1d;
@@ -566,6 +573,16 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     /** This body's radius in Earth radii, or {@link #BULK_UNSET}. */
     public double getRadius() {
         return radius;
+    }
+
+    /** The fraction of incident light this world reflects, 0..1. */
+    public double getAlbedo() {
+        return albedo;
+    }
+
+    /** State this world's albedo; clamped to 0..1. */
+    public void setAlbedo(double a) {
+        this.albedo = Math.min(Math.max(a, 0d), 1d);
     }
 
     public boolean hasBulkProperties() {
@@ -1853,6 +1870,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         // saved before planets had a mass reloads with exactly the gravity it already had.
         mass = nbt.hasKey("mass") ? nbt.getDouble("mass") : BULK_UNSET;
         radius = nbt.hasKey("radius") ? nbt.getDouble("radius") : BULK_UNSET;
+        albedo = nbt.hasKey("albedo") ? nbt.getDouble("albedo") : AstronomicalBodyHelper.EARTH_ALBEDO;
         gravityAuthored = nbt.getBoolean("gravityAuthored");
         tidallyLocked = nbt.getBoolean("tidallyLocked");
         metallicity = nbt.hasKey("metallicity") ? nbt.getDouble("metallicity") : 1d;
@@ -2245,6 +2263,9 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         if (radius > BULK_UNSET) {
             nbt.setDouble("radius", radius);
         }
+        if (albedo != AstronomicalBodyHelper.EARTH_ALBEDO) {
+            nbt.setDouble("albedo", albedo);
+        }
         if (gravityAuthored) {
             nbt.setBoolean("gravityAuthored", true);
         }
@@ -2347,7 +2368,8 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
      */
     @Override
     public int getAverageTemp() {
-        averageTemperature = AstronomicalBodyHelper.getAverageTemperature(this.getStar(), this.getSolarOrbitalDistance(), this.getAtmosphereDensity());
+        averageTemperature = AstronomicalBodyHelper.getAverageTemperature(this.getStar(),
+                this.getSolarOrbitalDistance(), this.getAtmosphereDensity(), this.albedo);
 
         /*
         int temp = averageTemperature;
@@ -2458,7 +2480,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         } else {
             StellarBody host = getStar();
             if (host != null) {
-                theta = AstronomicalBodyHelper.getOrbitalThetaAt(orbitalDist, host.getSize(), worldTick);
+                theta = AstronomicalBodyHelper.getOrbitalThetaAt(orbitalDist, host.getMass(), worldTick);
             }
         }
         return (theta + baseOrbitTheta) * (isRetrograde ? -1 : 1);

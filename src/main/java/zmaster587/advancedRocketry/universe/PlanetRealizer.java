@@ -187,6 +187,8 @@ public final class PlanetRealizer {
 
         PlanetTypePreset preset = profile.preset();
         if (preset != null) {
+            // The type states what the surface is made of, so it states how much light it throws back.
+            props.setAlbedo(preset.albedo());
             if (!preset.biomes().isEmpty()) {
                 XMLPlanetLoader.applyBiomeList(props, preset.biomes());
             }
@@ -232,19 +234,16 @@ public final class PlanetRealizer {
      */
     private static int rotationalPeriodOf(BodyProfile profile, StellarBody star) {
         if (profile.tidallyLocked()) {
-            double days = AstronomicalBodyHelper.getOrbitalPeriod(profile.orbitalDistance(), star.getSize());
+            double days = AstronomicalBodyHelper.getOrbitalPeriod(profile.orbitalDistance(), star.getMass());
             double ticks = days * AstronomicalBodyHelper.TICKS_PER_DAY;
             if (!(ticks > 0d) || ticks > Integer.MAX_VALUE) {
                 return Integer.MAX_VALUE;
             }
             return (int) ticks;
         }
-        double gravity = Math.max(0.05d, profile.gravityPercent() / 100d);
-        double period = Math.pow(1d / gravity, 3) * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD;
-        if (!(period > 0d) || period > Integer.MAX_VALUE) {
-            return DimensionProperties.DEFAULT_ROTATIONAL_PERIOD;
-        }
-        return Math.max(1, (int) period);
+        // Spin is a property of the body, drawn where every other one is derived. It used to be
+        // computed here from surface GRAVITY, which does not bear on rotation at all.
+        return profile.rotationalPeriodTicks();
     }
 
     /** The angle of a body's cell about its system's anchor, in radians. */

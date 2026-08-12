@@ -33,11 +33,12 @@ public final class BodyProfile {
     private final boolean hasRings;
     private final double metallicity;
     private final TerrainOption terrain;
+    private final int rotationalPeriodTicks;
 
     public BodyProfile(SystemBodyKind kind, String typeName, PlanetTypePreset preset, int orbitalDistance,
                        double massEarths, double radiusEarths, int gravityPercent, int pressure,
                        int temperatureKelvin, boolean hasOxygen, boolean tidallyLocked, boolean hasRings,
-                       double metallicity, TerrainOption terrain) {
+                       double metallicity, TerrainOption terrain, int rotationalPeriodTicks) {
         this.kind = kind;
         this.typeName = typeName;
         this.preset = preset;
@@ -52,6 +53,7 @@ public final class BodyProfile {
         this.hasRings = hasRings;
         this.metallicity = metallicity;
         this.terrain = terrain;
+        this.rotationalPeriodTicks = Math.max(1, rotationalPeriodTicks);
     }
 
     /** What this body is as an addressable object — planet, giant, moon or belt. */
@@ -75,6 +77,11 @@ public final class BodyProfile {
     }
 
     /** Mass in Earth masses — PRIMARY, not derived from gravity. */
+    /** How long this body takes to turn once, in ticks; drawn from the seed, not derived from gravity. */
+    public int rotationalPeriodTicks() {
+        return rotationalPeriodTicks;
+    }
+
     public double massEarths() {
         return massEarths;
     }

@@ -53,6 +53,14 @@ public final class PlanetDerivation {
     private static final long SALT_TERRAIN = 0x28L;
     private static final long SALT_OXYGEN = 0x29L;
     private static final long SALT_RINGS = 0x2AL;
+    private static final long SALT_SPIN = 0x2BL;
+
+    /** A rocky world's day, as a multiple of the default, log-uniform between these. */
+    private static final double SPIN_ROCKY_MIN = 0.25d;
+    private static final double SPIN_ROCKY_MAX = 4.0d;
+    /** Giants spin fast — a real correlation, unlike the gravity law this replaces. */
+    private static final double SPIN_GIANT_MIN = 0.20d;
+    private static final double SPIN_GIANT_MAX = 0.60d;
 
     /**
      * The temperature, in Kelvin, that defines a star's REFERENCE distance — Earth's equilibrium
@@ -289,11 +297,36 @@ public final class PlanetDerivation {
                 && CellHash.norm(CellHash.ofBody(seed, key, variant, SALT_RINGS))
                         < (giant ? RING_CHANCE_GIANT : RING_CHANCE_ROCKY);
 
+        int spin = rotationalPeriodOf(seed, key, variant, giant);
+
         SystemBodyKind kind = giant ? SystemBodyKind.GAS_GIANT
                 : (moon ? SystemBodyKind.MOON : SystemBodyKind.PLANET);
         return new BodyProfile(kind, preset == null ? PlanetTypes.UNCLASSIFIED : preset.name(), preset,
                 orbitalDistance, mass, radius, gravityPercent, pressure, temperature, oxygen, locked,
-                rings, metallicity, terrain);
+                rings, metallicity, terrain, spin);
+    }
+
+    /**
+     * How long this body takes to turn once, in ticks.
+     *
+     * <p>DRAWN, not derived — and that is the honest answer. A planet's spin comes from how it
+     * accreted and what has since torqued it; nothing else this derivation knows predicts it. What it
+     * replaces was worse than a draw: {@code (1/g)^3 * DEFAULT} made the day a function of SURFACE
+     * GRAVITY, which has no bearing on rotation at all, so a half-gravity world got a day eight times
+     * longer. A drawn number is honest; a fabricated law that looks derived is not.</p>
+     *
+     * <p>Log-uniform across the band, so short and long days are equally likely by ratio rather than
+     * by difference. Giants spin fast, which IS a real correlation — angular momentum shed to a large
+     * envelope — so they take a tighter, faster band. Tidal locking overrides this entirely and is
+     * applied where the body is realized.</p>
+     */
+    static int rotationalPeriodOf(long seed, GalacticCoord key, int variant, boolean giant) {
+        double lo = giant ? SPIN_GIANT_MIN : SPIN_ROCKY_MIN;
+        double hi = giant ? SPIN_GIANT_MAX : SPIN_ROCKY_MAX;
+        double u = CellHash.norm(CellHash.ofBody(seed, key, variant, SALT_SPIN));
+        double factor = lo * Math.pow(hi / lo, u);
+        long ticks = Math.round(factor * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD);
+        return (int) Math.max(1L, Math.min(ticks, Integer.MAX_VALUE));
     }
 
     // ─── The individual laws ───────────────────────────────────────────────────

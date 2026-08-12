@@ -337,8 +337,12 @@ public class DimensionManager implements IGalaxy {
             properties.ringColor[2] = properties.skyColor[2];
         }
 
-        properties.rotationalPeriod = (int) (Math.pow((1 / properties.gravitationalMultiplier), 3)
-                * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD);
+        // A day is DRAWN, log-uniform between a quarter and four times the default. It used to be
+        // (1/g)^3 * DEFAULT — a fabricated law that made spin a function of surface gravity, which has
+        // no bearing on it, so a half-gravity world got a day eight times longer than Earth's.
+        double spinFactor = 0.25d * Math.pow(16d, random.nextDouble());
+        properties.rotationalPeriod = (int) Math.max(1L, Math.round(spinFactor
+                * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD));
 
         properties.addBiomes(properties.getViableBiomes(true));
         properties.initDefaultAttributes();

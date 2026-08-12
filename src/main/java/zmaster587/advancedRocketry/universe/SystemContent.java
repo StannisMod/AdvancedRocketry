@@ -183,7 +183,7 @@ public final class SystemContent {
     private static BodyEphemeris orbitLawOf(DimensionProperties planet, StellarBody star) {
         double periodTicks = star == null ? 0d
                 : TICKS_PER_DAY * AstronomicalBodyHelper.getOrbitalPeriod(planet.getOrbitalDist(),
-                        star.getSize());
+                        star.getMass());
         return BodyEphemeris.orbit(planet.getOrbitalDist(), planet.baseOrbitTheta, planet.orbitalPhi,
                 planet.isRetrograde, periodTicks, ORBIT_UNIT_BLOCKS);
     }

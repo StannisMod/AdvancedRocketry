@@ -25,6 +25,20 @@ public class AstronomicalBodyHelper {
     public static final int KELVIN_PER_STAR_TEMPERATURE_UNIT = 58;
     /** Solar radii in one astronomical unit — carries a star's size into the distance frame. */
     public static final int SOLAR_RADII_PER_AU = 215;
+    /**
+     * Earth's albedo — the reflectivity a world is assumed to have when its type has not stated one.
+     * It was hard-coded into the temperature formula with a comment saying it could not easily be
+     * calculated; a planet's TYPE knows what its surface is made of, so most callers can do better.
+     */
+    public static final double EARTH_ALBEDO = 0.3d;
+    /**
+     * The bare (zero-albedo) equilibrium temperature at one AU from Sol, in Kelvin — the anchor the
+     * flux form scales from. DERIVED from the constants above rather than written as a literal, so it
+     * cannot drift away from them: {@code T☉ · sqrt(R☉ / 2 AU)}.
+     */
+    private static final double REFERENCE_EQUILIBRIUM_K =
+            (double) KELVIN_PER_STAR_TEMPERATURE_UNIT * TEMPERATURE_UNITS_PER_SOL
+                    * Math.sqrt(1d / (2d * SOLAR_RADII_PER_AU));
 
     // ─── The calendar ──────────────────────────────────────────────────────────
     // Inherited from upstream: "One MC Year is 48 MC days (16 IRL Hours), one month is 8 MC Days".
@@ -34,7 +48,7 @@ public class AstronomicalBodyHelper {
     // as a fraction of the year: changing one does NOT change the other. If that relation is ever
     // meant to hold, encode it deliberately and record the decision here.
 
-    /** Days in one year: the orbital period one AU from a size-1 star. */
+    /** Days in one year: the orbital period one AU from a mass-1 star. */
     public static final int DAYS_PER_YEAR = 48;
     /** Days in one lunar month: a moon's period at the reference distance from a mass-1 parent. */
     public static final int DAYS_PER_LUNAR_MONTH = 8;
@@ -55,14 +69,21 @@ public class AstronomicalBodyHelper {
     /**
      * Returns the orbital period for a body at a given distance around its star
      *
+     * <p><b>The second argument is the star's MASS in solar masses.</b> Kepler's third law is
+     * {@code P ∝ a^1.5 / sqrt(M)}; callers used to pass the star's RADIUS, giving
+     * {@code P ∝ a^1.5 / R^1.5}. Sol is exact because its mass and radius are both 1, and everything
+     * else was wrong by {@code R^1.5/sqrt(M)} — a 2 R☉ star's year came out 1.83× too short and a
+     * 0.3 R☉ red dwarf's 2.87× too long, and red dwarfs carry most of the close-in habitable worlds.
+     * {@link StellarBody#getMass()} derives a mass from the radius where none is stated.</p>
+     *
      * @param orbitalDistance the distance from the parent body
-     * @param solarSize       the size of the sun in question
+     * @param starMassSolar   the mass of the star in question, in solar masses
      * @return the orbital period in MC Days (24000 ticks)
      */
-    public static double getOrbitalPeriod(int orbitalDistance, float solarSize) {
+    public static double getOrbitalPeriod(int orbitalDistance, float starMassSolar) {
         //One MC Year is 48 MC days (16 IRL Hours), one month is 8 MC Days
         return DAYS_PER_YEAR
-                * Math.pow(Math.pow((orbitalDistance / ((double) DISTANCE_UNITS_PER_AU * solarSize)), 3), 0.5d);
+                * Math.pow(Math.pow(orbitalDistance / (double) DISTANCE_UNITS_PER_AU, 3) / starMassSolar, 0.5d);
     }
 
     /**
@@ -90,11 +111,11 @@ public class AstronomicalBodyHelper {
      * Returns the orbital theta for a body at a given distance around its star, at this current moment
      *
      * @param orbitalDistance the distance from the parent body
-     * @param solarSize       the size of the sun in question
+     * @param starMassSolar   the mass of the star in question, in solar masses
      * @return the current angle around the star in radians
      */
-    public static double getOrbitalTheta(int orbitalDistance, float solarSize) {
-        return getOrbitalThetaAt(orbitalDistance, solarSize, AdvancedRocketry.proxy.getWorldTimeUniversal(0));
+    public static double getOrbitalTheta(int orbitalDistance, float starMassSolar) {
+        return getOrbitalThetaAt(orbitalDistance, starMassSolar, AdvancedRocketry.proxy.getWorldTimeUniversal(0));
     }
 
     /**
@@ -105,10 +126,10 @@ public class AstronomicalBodyHelper {
      *
      * @return the angle around the star in RADIANS
      */
-    public static double getOrbitalThetaAt(int orbitalDistance, float solarSize, long worldTick) {
-        double periodTicks = (double) TICKS_PER_DAY * getOrbitalPeriod(orbitalDistance, solarSize);
+    public static double getOrbitalThetaAt(int orbitalDistance, float starMassSolar, long worldTick) {
+        double periodTicks = (double) TICKS_PER_DAY * getOrbitalPeriod(orbitalDistance, starMassSolar);
         if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
-            // A degenerate orbit (zero distance, or a star with no size recorded) does not move.
+            // A degenerate orbit (zero distance, or a star with no mass recorded) does not move.
             // Answering 0 keeps it addressable instead of handing every caller a NaN coordinate.
             return 0d;
         }
@@ -173,12 +194,26 @@ public class AstronomicalBodyHelper {
      * @return the temperature of the planet in Kelvin
      */
     public static int getAverageTemperature(StellarBody star, int orbitalDistance, int atmPressure) {
-        int starSurfaceTemperature = KELVIN_PER_STAR_TEMPERATURE_UNIT * star.getTemperature();
-        float starRadius = star.getSize() / (float) SOLAR_RADII_PER_AU;
-        //Gives output in AU
-        float planetaryOrbitalRadius = orbitalDistance / (float) DISTANCE_UNITS_PER_AU;
-        //Albedo is 0.3f hardcoded because of inability to easily calculate
-        double averageWithoutAtmosphere = starSurfaceTemperature * Math.pow(starRadius / (2 * planetaryOrbitalRadius), 0.5) * Math.pow((1f - 0.3f), 0.25);
+        return getAverageTemperature(star, orbitalDistance, atmPressure, EARTH_ALBEDO);
+    }
+
+    /**
+     * The same, for a world whose ALBEDO is known — which is the one a planet's type states.
+     *
+     * <p>This is the grey body written over the flux that {@link #getStellarBrightness} already
+     * computes, rather than a second copy of the same arithmetic: {@code T = T₀ · (E·(1−a))^¼}, with
+     * {@code T₀} the bare equilibrium temperature at 1 AU from Sol. Algebraically identical to the
+     * per-star form it replaces — expand {@code E} for a single star and the radii and temperatures
+     * cancel exactly — so no world's temperature moves. What it buys is that {@code E} is a SUM over
+     * every star in the system, so a binary's worlds are warmed by both without a second code path.</p>
+     *
+     * @param albedo the fraction of incident light the surface reflects, 0..1
+     */
+    public static int getAverageTemperature(StellarBody star, int orbitalDistance, int atmPressure,
+                                            double albedo) {
+        double flux = getStellarBrightness(star, orbitalDistance);
+        double absorbed = flux * (1d - Math.min(Math.max(albedo, 0d), 1d));
+        double averageWithoutAtmosphere = REFERENCE_EQUILIBRIUM_K * Math.pow(absorbed, 0.25d);
         //Slightly kludgey solution that works out mostly for Venus and well for Earth, without being overly complex
         //Output is in Kelvin
         return (int) (averageWithoutAtmosphere

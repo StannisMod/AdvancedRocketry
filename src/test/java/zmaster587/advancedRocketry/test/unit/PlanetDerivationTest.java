@@ -76,6 +76,50 @@ public class PlanetDerivationTest {
         return out;
     }
 
+    /**
+     * A world's DAY is drawn, and it is not a function of its gravity.
+     *
+     * <p>The law this replaced was {@code (1/g)^3 * DEFAULT}: spin computed from SURFACE GRAVITY, which
+     * has no bearing on rotation, so a half-gravity world got a day eight times longer. The pin that
+     * catches a return to it is two bodies with the SAME gravity and DIFFERENT days — impossible under
+     * any function of gravity alone, and cheap to find across a spread of seeds.</p>
+     */
+    @Test
+    public void aDayIsDrawnAndIsNotAFunctionOfGravity() {
+        GalacticCoord anchor = cell(600, 0, 0);
+        StellarBody s = sol();
+        Map<Integer, Integer> spinByGravity = new HashMap<>();
+        boolean sameGravityDifferentDay = false;
+        int seen = 0;
+
+        for (int i = 0; i < 400 && !sameGravityDifferentDay; i++) {
+            BodyProfile p = PlanetDerivation.derive(SEED + i, anchor, cell(600 + i, 7, 0), 0, s, false, 140);
+            int spin = p.rotationalPeriodTicks();
+            seen++;
+            assertTrue("a day must stay inside the drawn band: " + spin,
+                    spin >= 24000 / 5 && spin <= 24000 * 5);
+            Integer earlier = spinByGravity.put(p.gravityPercent(), spin);
+            if (earlier != null && earlier.intValue() != spin) {
+                sameGravityDifferentDay = true;
+            }
+        }
+
+        assertTrue("the sweep must actually produce bodies", seen > 0);
+        assertTrue("two worlds of equal gravity must be able to have different days;"
+                + " if none did in " + seen + " bodies, spin is a function of gravity again",
+                sameGravityDifferentDay);
+    }
+
+    /** The same body answers the same day twice — a draw, not a random. */
+    @Test
+    public void aDrawnDayIsStillDeterministic() {
+        GalacticCoord anchor = cell(610, 0, 0);
+        StellarBody s = sol();
+        BodyProfile a = PlanetDerivation.derive(SEED, anchor, cell(611, 2, 0), 0, s, false, 150);
+        BodyProfile b = PlanetDerivation.derive(SEED, anchor, cell(611, 2, 0), 0, s, false, 150);
+        assertEquals(a.rotationalPeriodTicks(), b.rotationalPeriodTicks());
+    }
+
     // ─── Determinism ───────────────────────────────────────────────────────────
 
     @Test

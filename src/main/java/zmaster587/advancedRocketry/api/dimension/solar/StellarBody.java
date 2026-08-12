@@ -15,12 +15,18 @@ import java.util.List;
 
 public class StellarBody {
 
+    /** Sentinel for {@link #mass}: nobody has stated one, so it follows from the radius. */
+    public static final float MASS_UNSET = 0f;
+    /** {@code M ≈ R^1.25} — the inverse of the main-sequence {@code R ≈ M^0.8}. Exact for Sol. */
+    private static final double MAIN_SEQUENCE_MASS_EXPONENT = 1.25d;
+
     public List<StellarBody> subStars;
     int numPlanets;
     int discoveredPlanets;
     float[] color;
     int id;
     float size;
+    private float mass = MASS_UNSET;
     String name;
     short posX, posZ;
     float starSeperation;
@@ -78,6 +84,27 @@ public class StellarBody {
 
     public void setSize(float size) {
         this.size = size;
+    }
+
+    /**
+     * This star's mass in SOLAR MASSES — what an orbital law about it needs.
+     *
+     * <p>Where nothing has stated one it is derived from the radius through the main-sequence relation
+     * {@code R ≈ M^0.8}, i.e. {@code M ≈ R^1.25}, which is exact for Sol and the honest reading of a
+     * star described only by its size. Mass and radius are NOT interchangeable anywhere else: Kepler's
+     * third law is {@code P ∝ a^1.5 / sqrt(M)}, and feeding it a radius made a 2 R☉ star's planets
+     * orbit 1.83× too fast and a 0.3 R☉ red dwarf's 2.87× too slowly.</p>
+     */
+    public float getMass() {
+        if (mass > MASS_UNSET) {
+            return mass;
+        }
+        return (float) Math.pow(Math.max(0.01f, size), MAIN_SEQUENCE_MASS_EXPONENT);
+    }
+
+    /** State this star's mass in solar masses; {@link #MASS_UNSET} hands it back to the radius. */
+    public void setMass(float solarMasses) {
+        this.mass = Math.max(MASS_UNSET, solarMasses);
     }
 
     public int getPosX() {
@@ -233,6 +260,9 @@ public class StellarBody {
         nbt.setShort("posX", posX);
         nbt.setShort("posZ", posZ);
         nbt.setFloat("size", size);
+        if (mass > MASS_UNSET) {
+            nbt.setFloat("mass", mass);
+        }
         nbt.setFloat("seperation", starSeperation);
         nbt.setBoolean("isBlackHole", isBlackHole);
         nbt.setFloat("diskAngle", diskAngle);
@@ -260,6 +290,8 @@ public class StellarBody {
 
         if (nbt.hasKey("size"))
             size = nbt.getFloat("size");
+
+        mass = nbt.hasKey("mass") ? nbt.getFloat("mass") : MASS_UNSET;
 
         if (nbt.hasKey("seperation"))
             starSeperation = nbt.getFloat("seperation");
