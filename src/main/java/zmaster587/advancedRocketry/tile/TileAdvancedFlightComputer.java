@@ -204,6 +204,51 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      *  from the ship's live velocity instead of jerking the ship to the stale setpoint. */
     private boolean captureSetpointOnNextTick = false;
 
+    /**
+     * Command this ship's CRUISE directly: the body-frame velocity setpoint
+     * ({@code forward, right, up}, blocks/s) that Flight Assist holds.
+     *
+     * <p>The cruise is the thing that outlives a pilot — holding a throttle ramps it, releasing leaves
+     * it, and an unmanned ship with Assist on goes on flying it. Until this existed the ONLY way to
+     * establish one was to ramp it from a live pilot's held input, so anything wanting to fly a ship
+     * without hands on the stick could not say what it wanted: an autopilot, an auto-takeoff, or an
+     * arrangement that needs a deck already in motion.</p>
+     *
+     * <p>Two things it must do besides assigning, or it would be a setter that changes nothing:</p>
+     * <ul>
+     *   <li><b>Mark the ship as having been flown.</b> {@link #stationKeeping} is the persisted witness
+     *       the unmanned branch of {@link #update()} gates on — a never-flown ship stays deliberately
+     *       inert — so a cruise commanded without it would be silently ignored.</li>
+     *   <li><b>Cancel a pending Assist re-capture.</b> {@link #captureSetpointOnNextTick} would
+     *       otherwise overwrite this on the very next tick from the ship's live velocity.</li>
+     * </ul>
+     *
+     * <p>Server-side. A zero cruise means hover, exactly as it does when a pilot brakes to zero.</p>
+     *
+     * <p><b>UNVERIFIED: that this makes a ship FLY.</b> What is verified is only what it assigns. Four
+     * measurements, 2026-08-11, of a commanded cruise of 4 blocks/s body-up over 60 ticks on an
+     * unmanned ship: <b>+0.036</b> blocks with the hull at rest on terrain, <b>-0.0015</b> with it
+     * lifted into clear air, and an apparent <b>+11.27</b> in the one arrangement whose baseline was
+     * taken while the hull was still moving from its own assembly — i.e. that reading was the assembly,
+     * admitted by a control bound loose enough to let a 3.50-block drift pass. So this seam is written
+     * against the fields the unmanned branch of {@link #update()} reads, and nothing yet shows the ship
+     * responding. Either an arrangement is still missing (a genuinely flown ship; a ticking computer in
+     * a far subspace) or an unmanned autopilot cruise does not fly, which would be a defect in its own
+     * right. Do not cite this method as working propulsion until one of those is measured.</p>
+     */
+    public void commandCruise(double forward, double right, double up) {
+        this.velocitySetpoint = new double[]{forward, right, up};
+        this.captureSetpointOnNextTick = false;
+        this.stationKeeping = true;
+        markDirty();
+    }
+
+    /** This ship's commanded cruise ({@code forward, right, up}, blocks/s) — the twin of
+     *  {@link #commandCruise}, for a caller that wants to read back what it set. */
+    public double[] commandedCruise() {
+        return new double[]{velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2]};
+    }
+
     /** Diagnostic only ({@code -Dadvancedrocketry.tests=true}): last-logged presence of a live
      *  {@link #pilotInput}, so a playtest trace prints one line each time the seated pilot's input
      *  appears or is cleared. Not gameplay state. */

@@ -572,7 +572,31 @@ public final class VSIntegration {
         if (!isAvailable()) {
             return null;
         }
-        AxisAlignedBB yard = shipyardBoundsAt(world, x, y, z);
+        return flightComputerInYard(world, shipyardBoundsAt(world, x, y, z));
+    }
+
+    /**
+     * The SUBSPACE {@link BlockPos} of the flight computer on the ship NAMED by {@code shipUuid} — the
+     * identity-keyed twin of {@link #flightComputerAt}, and the one to reach for whenever the caller
+     * knows which ship it means.
+     *
+     * <p>{@link #flightComputerAt} is a scan built on {@link #shipyardBoundsAt}, whose own contract
+     * warns that the position-keyed box "answers for whatever craft is nearest — with no distance
+     * bound", so in a world holding more than one ship that scan searches a stranger's craft and
+     * happily returns a real, wrong flight computer. A caller that then writes to it gets a successful
+     * call and no effect on the ship it meant.</p>
+     */
+    public static BlockPos flightComputerOf(net.minecraft.world.WorldServer world,
+            java.util.UUID shipUuid) {
+        if (!isAvailable() || shipUuid == null) {
+            return null;
+        }
+        return flightComputerInYard(world, shipyardBoundsOf(world, shipUuid));
+    }
+
+    /** The flight-computer scan both resolvers share, over an already-chosen subspace shipyard box. */
+    private static BlockPos flightComputerInYard(net.minecraft.world.WorldServer world,
+            AxisAlignedBB yard) {
         if (yard == null) {
             return null;
         }

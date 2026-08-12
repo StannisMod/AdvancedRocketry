@@ -1037,6 +1037,92 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"commanded\":" + commanded + "}");
             return;
         }
+        // ff-cruise-by-id <dim> <shipId> <forward> <right> <up> — command the CRUISE of the ship named by
+        // shipId: the body-frame setpoint (blocks/s) Flight Assist holds, which is the thing that
+        // outlives a pilot. This is how an arrangement puts a deck in motion with NOBODY at the controls
+        // — the state production itself flies an unmanned ship on — rather than through an input, which
+        // a riderless seat correctly clears every tick.
+        if (args.length >= 6 && "ff-cruise-by-id".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.UUID cruiseShip;
+            try {
+                cruiseShip = java.util.UUID.fromString(args[2]);
+            } catch (IllegalArgumentException e) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false,\"error\":\"shipId is not a uuid\"}");
+                return;
+            }
+            BlockPos cruiseAfc = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .flightComputerOf(world, cruiseShip);
+            TileEntity cruiseTe = cruiseAfc == null ? null : world.getTileEntity(cruiseAfc);
+            if (!(cruiseTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer cruiseComputer =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) cruiseTe;
+            cruiseComputer.commandCruise(parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                    parseDoubleOr(args[5], 0));
+            double[] set = cruiseComputer.commandedCruise();
+            send(sender, "{\"ok\":true,\"afcResolved\":true,\"cruiseForward\":" + set[0]
+                    + ",\"cruiseRight\":" + set[1] + ",\"cruiseUp\":" + set[2] + "}");
+            return;
+        }
+        // ff-input-by-id <dim> <shipId> [<fwd> <vert> <strafe> <yaw> <pitch> <roll>] — set (or, with the
+        // axes omitted, CLEAR) the Free Flight input of the flight computer on the ship NAMED by
+        // shipId. This is the per-tile `pilotInput` a real seated pilot's control packet writes.
+        //
+        // Keyed by IDENTITY, and that is the whole point of the verb. It replaced a JVM-global static
+        // that every ship on the server shared, and the first cut of the replacement addressed the ship
+        // by POSITION — which inherits `shipyardBoundsAt`'s own documented hazard: the position-keyed
+        // box answers for whatever craft is nearest with no distance bound, so on a shared harness the
+        // scan finds a stranger's flight computer and writes to it. That returns success and moves the
+        // wrong ship, which is a FLAKE GENERATOR rather than a bug you can see. Same ruling as ledger
+        // #190 for the production crossing path: resolve the ship you mean, never the nearest one.
+        //
+        // Reports `afcResolved` and the resulting `input` state, both load-bearing: a miss must not read
+        // as an arrangement that happened. A ship whose blocks are cut (a crossing) loses this input
+        // with its tile — which is what a real pilot's client papers over by re-sending every tick, so a
+        // test that needs input on the far side re-issues it there.
+        if (args.length >= 3 && "ff-input-by-id".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.UUID shipUuid;
+            try {
+                shipUuid = java.util.UUID.fromString(args[2]);
+            } catch (IllegalArgumentException e) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false,\"error\":\"shipId is not a uuid\"}");
+                return;
+            }
+            BlockPos afcPos = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .flightComputerOf(world, shipUuid);
+            TileEntity te = afcPos == null ? null : world.getTileEntity(afcPos);
+            if (!(te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer afc =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te;
+            if (args.length >= 9) {
+                afc.setPilotInput(new zmaster587.advancedRocketry.api.FreeFlightInput(
+                        (float) parseDoubleOr(args[3], 0), (float) parseDoubleOr(args[4], 0),
+                        (float) parseDoubleOr(args[5], 0), (float) parseDoubleOr(args[6], 0),
+                        (float) parseDoubleOr(args[7], 0), (float) parseDoubleOr(args[8], 0),
+                        0f, false));
+            } else {
+                afc.setPilotInput(null);
+            }
+            send(sender, "{\"ok\":true,\"afcResolved\":true,\"input\":\""
+                    + (afc.pilotInput != null ? "SET" : "null") + "\",\"afcX\":" + afcPos.getX()
+                    + ",\"afcY\":" + afcPos.getY() + ",\"afcZ\":" + afcPos.getZ() + "}");
+            return;
+        }
         // ff-input <fwd> <vert> <strafe> <yaw> <pitch> <roll> — set the held Free Flight input
         // that the Advanced Flight Computer tile's tick runs through the FF decision layer and
         // publishes to the controller. Drives the FULL flight path (FF -> force), no seat yet.

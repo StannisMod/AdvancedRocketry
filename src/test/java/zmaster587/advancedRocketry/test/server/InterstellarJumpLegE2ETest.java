@@ -94,7 +94,9 @@ public class InterstellarJumpLegE2ETest extends AbstractSharedServerTest {
         int sx = (int) extractDouble(srcInfo, "posX");
         int sy = (int) extractDouble(srcInfo, "posY");
         int sz = (int) extractDouble(srcInfo, "posZ");
-        exec("artest vs ff-input 0 1 0 0 0 0");
+        String held = exec("artest vs ff-input-by-id 0 " + extractString(srcInfo, "id") + " 0 1 0 0 0 0");
+        assertTrue("the held input must reach this ship's flight computer: " + held,
+                held.contains("\"afcResolved\":true"));
         assertTrue("climb teleport failed", exec("artest vs teleport-ship 0 " + sx + " " + sy + " " + sz
                 + " " + sx + " " + ABOVE_CEILING_Y + " " + sz).contains("\"ok\":true"));
         exec("artest vs unpark 0 " + sx + " " + ABOVE_CEILING_Y + " " + sz);

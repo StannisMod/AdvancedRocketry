@@ -98,12 +98,14 @@ public class VSUnpilotedEntryE2ETest extends AbstractSharedServerTest {
         double sx = extractDouble(srcInfo, "posX"), sy = extractDouble(srcInfo, "posY"),
                 sz = extractDouble(srcInfo, "posZ");
 
-        // THE ONE DIFFERENCE from the piloted leg, and it is a CLEAR rather than an omission:
-        // debugFlightInput is a static that outlives the scenario setting it, so merely not setting it
-        // would let this leg inherit another scenario's held throttle and pass as a piloted climb.
-        String cleared = exec("artest vs ff-input-clear");
-        assertTrue("the static pilot channel must be verifiably clear, or this leg is the piloted one"
-                + " again: " + cleared, cleared.contains("\"ok\":true"));
+        // THE ONE DIFFERENCE from the piloted leg, and it is ASSERTED rather than assumed: this ship's
+        // own flight computer holds no pilot input. The probe reports the state it left behind, so
+        // "nobody is at the controls" is a reading rather than a hope — the earlier form of this line
+        // scrubbed a world-wide static, which said nothing about THIS ship.
+        String hands = exec("artest vs ff-input-by-id 0 " + extractString(srcInfo, "id"));
+        assertTrue("this ship's flight computer must resolve, and hold NO pilot input, or the climb"
+                + " below is the piloted leg again: " + hands,
+                hands.contains("\"afcResolved\":true") && hands.contains("\"input\":\"null\""));
 
         String tp = exec("artest vs teleport-ship 0 " + (int) sx + " " + (int) sy + " " + (int) sz
                 + " " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz);

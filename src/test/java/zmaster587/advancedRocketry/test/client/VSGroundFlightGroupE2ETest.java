@@ -258,12 +258,19 @@ public class VSGroundFlightGroupE2ETest extends AbstractSharedVsClientE2ETest {
         // total displacement (not just altitude): the ship is left tilted by the earlier rotate
         // and attitude phases, so "body up" is not world up — moving at all is the contract here.
         double[] pBefore = readVec(shipInfoById(shipId));
+        double[] at = pBefore;
         double disp = 0.0;
         for (int i = 0; i < 80 && disp <= 1.5; i++) {
-            String cmd = exec("artest vs ff-input 0 1 0 0 0 0"); // throttleVertical = full up
-            assertTrue("ff-input must be accepted: " + cmd, cmd.contains("\"ok\":true"));
+            // Addressed by SHIP and re-issued from its freshest pose each iteration. The input used to
+            // go to a server-wide static, which no pilot has; re-sending is also what a real pilot's
+            // client does every tick, and it keeps the address on a ship that is by now moving.
+            String cmd = exec("artest vs ff-input-by-id 0 " + shipId
+                    + " 0 1 0 0 0 0"); // throttleVertical = full up
+            assertTrue("the throttle must reach this ship's own flight computer: " + cmd,
+                    cmd.contains("\"afcResolved\":true"));
             bot().waitTicks(1);
             double[] p = readVec(shipInfoById(shipId));
+            at = p;
             double dx = p[0] - pBefore[0], dy = p[1] - pBefore[1], dz = p[2] - pBefore[2];
             disp = Math.sqrt(dx * dx + dy * dy + dz * dz);
         }
