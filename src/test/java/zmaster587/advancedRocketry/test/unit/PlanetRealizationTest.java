@@ -87,6 +87,49 @@ public class PlanetRealizationTest {
         }
     }
 
+    /**
+     * A moon carries TWO distances, and they are different numbers.
+     *
+     * <p>{@code SystemBody.orbitalDistance()} deliberately holds the PARENT's distance from the star,
+     * because that is what a moon's climate depends on. Its own distance from the parent lives in its
+     * ephemeris and nowhere else — which is exactly what realization needs to write into a moon's
+     * {@code orbitalDist}, since that field means "from my parent" for a moon. If the generator ever
+     * stops carrying it, a realized moon silently lands on top of its parent again.</p>
+     */
+    @Test
+    public void aMoonCarriesItsOwnDistanceFromItsParentSeparatelyFromItsParentsFromTheStar() {
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        SystemBody moon = null;
+        SystemBody itsParent = null;
+        outer:
+        for (long x = -8; x <= 8 && moon == null; x++) {
+            for (long y = -8; y <= 8; y++) {
+                for (long z = -8; z <= 8; z++) {
+                    SystemBody parent = null;
+                    for (SystemBody b : reg.bodiesAt(GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L))) {
+                        if (parent == null && b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
+                            parent = b;
+                        } else if (b.kind() == SystemBodyKind.MOON && parent != null) {
+                            moon = b;
+                            itsParent = parent;
+                            break outer;
+                        }
+                    }
+                }
+            }
+        }
+        assertNotNull("the procedural galaxy must produce a moon to test with", moon);
+        assertNotNull(itsParent);
+
+        double ownDistance = moon.offsetLaw().distUnits();
+        assertTrue("a moon's own distance from its parent must be a real, positive number: " + ownDistance,
+                ownDistance > 0d);
+        assertEquals("a moon's orbitalDistance() is its PARENT's distance from the star",
+                itsParent.orbitalDistance(), moon.orbitalDistance());
+        assertNotEquals("the two distances must not be the same number, or the seam is undetectable",
+                (double) moon.orbitalDistance(), ownDistance, 1e-9);
+    }
+
     @Test
     public void realizingABodyMakesItADescentTargetAndRecordsItsCellName() {
         UniverseRegistry reg = registryWithProceduralGalaxy();

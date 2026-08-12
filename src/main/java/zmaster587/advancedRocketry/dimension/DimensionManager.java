@@ -773,7 +773,12 @@ public class DimensionManager implements IGalaxy {
             int baseAtm = 180;
             int baseDistance = 100;
 
-            DimensionProperties properties = DimensionManager.getInstance().generateRandomGasGiant(star.getId(), "", baseDistance + 50, baseAtm, 125, 100, 100, 75);
+            // Atmosphere first, then distance — the order the signature declares. These two arguments
+            // were swapped, and it was invisible because both quantities sit near 100 while meaning
+            // entirely different things (see AstronomicalBodyHelper's header: the distance, atmosphere
+            // and star-temperature scales are three separate 100s). A giant is thick-aired and far
+            // out; swapped, it came out thin-aired at 180 distance units.
+            DimensionProperties properties = DimensionManager.getInstance().generateRandomGasGiant(star.getId(), "", baseAtm, baseDistance + 50, 125, 100, 100, 75);
 
             dimPropList.add(properties);
             if (properties.gravitationalMultiplier >= 1f) {
@@ -805,7 +810,11 @@ public class DimensionManager implements IGalaxy {
                 baseDistance = 30;
             }
 
-            DimensionProperties properties = DimensionManager.getInstance().generateRandom(star.getId(), baseDistance, baseAtm, 125, 100, 100, 75);
+            // Atmosphere first, then distance — see the gas-giant call above; the same two arguments
+            // were swapped here. The tables say what was meant: baseAtm is driven by i % 4 to 0 or 120
+            // (an atmosphere table, including the airless world every fourth planet was to be), and
+            // baseDistance by i % 3 to 170 or 30 (a distance table).
+            DimensionProperties properties = DimensionManager.getInstance().generateRandom(star.getId(), baseAtm, baseDistance, 125, 100, 100, 75);
 
             if (properties == null) continue;
 

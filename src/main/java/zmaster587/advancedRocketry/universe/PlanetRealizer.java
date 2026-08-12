@@ -92,12 +92,19 @@ public final class PlanetRealizer {
 
         List<SystemBody> here = registry.bodiesAt(bodyCell);
         SystemBody target = null;
+        SystemBody parentBody = null;
         int variant = 0;
         int seen = 0;
         for (SystemBody body : here) {
             if (body.kind() == SystemBodyKind.STAR || body.kind() == SystemBodyKind.STATION_SLOT
                     || body.kind() == SystemBodyKind.ASTEROID_BELT) {
                 continue;
+            }
+            // A moon shares its parent's cell, and the scan below can only reach one once the parent
+            // already HAS a dimension (an unrealized parent would be picked as the target first), so
+            // the parent found here is always realizable into a link.
+            if (parentBody == null && body.kind() != SystemBodyKind.MOON) {
+                parentBody = body;
             }
             // The variant is a body's rank among the worlds SHARING this cell, and it must be counted
             // exactly the way the generator assigned it — a planet is 0 and its moons follow — or a
@@ -137,7 +144,7 @@ public final class PlanetRealizer {
 
         BodyProfile profile = PlanetDerivation.derive(registry.worldSeed(), anchor, target.name(), variant,
                 star, target.kind() == SystemBodyKind.MOON, target.orbitalDistance());
-        DimensionProperties props = materialize(dimId, profile, star, anchor, target);
+        DimensionProperties props = materialize(dimId, profile, star, anchor, target, parentBody);
 
         if (!DimensionManager.getInstance().registerDim(props, true)) {
             LOGGER.error("[UNIVERSE] dimension {} was already registered while realizing {}", dimId,
@@ -162,12 +169,31 @@ public final class PlanetRealizer {
      * {@code Random}.
      */
     private static DimensionProperties materialize(int dimId, BodyProfile profile, StellarBody star,
-                                                   GalacticCoord anchor, SystemBody body) {
+                                                   GalacticCoord anchor, SystemBody body,
+                                                   SystemBody parentBody) {
         DimensionProperties props = new DimensionProperties(dimId);
         props.setName(star.getName() + " " + dimId);
         props.setStar(star);
 
         props.orbitalDist = Math.max(DimensionProperties.MIN_DISTANCE, profile.orbitalDistance());
+        // A MOON must be realized as a moon. Without this it became a planet standing at its parent's
+        // exact orbit forever, and every moon-specific path — the parent-mass period law, the moon sky,
+        // the moon branch of orbitThetaAt — was dead for it, because isMoon() answered false.
+        // Its own distance from the parent lives in its ephemeris; profile.orbitalDistance() is the
+        // PARENT's distance from the star, which is what its climate is derived from and must stay.
+        if (body != null && body.kind() == SystemBodyKind.MOON && parentBody != null
+                && parentBody.dimId() != Constants.INVALID_PLANET) {
+            DimensionProperties parentProps =
+                    DimensionManager.getInstance().getDimensionProperties(parentBody.dimId());
+            if (parentProps != null) {
+                int localOrbit = (int) Math.round(body.offsetLaw().distUnits());
+                props.orbitalDist = Math.max(DimensionProperties.MIN_DISTANCE, localOrbit);
+                props.setParentPlanet(parentProps);
+            } else {
+                LOGGER.warn("[UNIVERSE] moon {} realized without a parent: dim {} has no properties",
+                        body.name().cellKey(), parentBody.dimId());
+            }
+        }
         // The orbital angle is READ OFF the body's cell rather than drawn again, so the planet the sky
         // shows and the planet the orbital elements describe are in the same place.
         props.baseOrbitTheta = angleOf(anchor, body.name());

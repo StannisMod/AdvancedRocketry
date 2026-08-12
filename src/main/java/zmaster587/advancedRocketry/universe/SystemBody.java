@@ -101,6 +101,11 @@ public final class SystemBody {
      * passing tick nor any amount of flight changes it, and membership of a cell is decided by
      * comparing these.
      */
+    /** This body's motion law about its primary — see {@link BodyEphemeris#distUnits()}. */
+    public BodyEphemeris offsetLaw() {
+        return offsetLaw;
+    }
+
     public GalacticCoord name() {
         return name;
     }

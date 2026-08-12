@@ -72,6 +72,16 @@ public final class BodyEphemeris {
     }
 
     /** {@code true} iff this law is time-invariant — the degenerate frame of a star, or of a void cell. */
+    /**
+     * The orbital distance this law was built with, in the caller's unit — for a moon, its distance
+     * from its PARENT, which lives nowhere else: {@code SystemBody.orbitalDistance()} deliberately
+     * holds the parent's distance from the star instead, because that is what a moon's climate
+     * depends on. Zero for a fixed law.
+     */
+    public double distUnits() {
+        return distUnits;
+    }
+
     public boolean isStatic() {
         return unitBlocks == 0L || !(periodTicks > 0d) || Double.isInfinite(periodTicks)
                 || distUnits == 0d;
