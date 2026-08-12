@@ -273,7 +273,13 @@ public final class PlanetRealizer {
     }
 
     /** The angle of a body's cell about its system's anchor, in radians. */
-    private static double angleOf(GalacticCoord anchor, GalacticCoord bodyCell) {
+    /**
+     * A body's orbital angle, read off its cell rather than drawn again — so the sky, the orbital
+     * elements and the frame a body rides all put it in the same place. Shared with
+     * {@link ClusteredGalaxyGenerator}, which must build the frame from the same angle this writes
+     * into {@code baseOrbitTheta}; a second copy of this arithmetic would let the two drift.
+     */
+    static double angleOf(GalacticCoord anchor, GalacticCoord bodyCell) {
         long dx = bodyCell.sectorX() - anchor.sectorX();
         long dz = bodyCell.sectorZ() - anchor.sectorZ();
         if (dx == 0L && dz == 0L) {

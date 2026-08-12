@@ -130,6 +130,59 @@ public class PlanetRealizationTest {
                 (double) moon.orbitalDistance(), ownDistance, 1e-9);
     }
 
+    /**
+     * A procedural planet ORBITS its star, and its moons travel with it.
+     *
+     * <p>This was false: the convenience {@code SystemBody(address, kind, dimId, starId, orbit)}
+     * constructor hard-wires a static frame and a fixed offset, so every procedural planet stood
+     * still relative to its star forever — while its own moons orbited it, and while the identical
+     * system authored in XML moved. Nothing pinned it, which is why it survived.</p>
+     *
+     * <p>Two assertions, because either alone can be satisfied by the wrong thing: the planet must
+     * MOVE, and the moon must stay NEAR it while it does. A moon on its own static frame would leave
+     * its planet behind; a planet that only moved because its moon's law leaked into it would drag
+     * the separation open.</p>
+     */
+    @Test
+    public void aProceduralPlanetOrbitsItsStarAndItsMoonsTravelWithIt() {
+        UniverseRegistry reg = registryWithProceduralGalaxy();
+        SystemBody planet = null;
+        SystemBody moon = null;
+        outer:
+        for (long x = -8; x <= 8; x++) {
+            for (long y = -8; y <= 8; y++) {
+                for (long z = -8; z <= 8; z++) {
+                    SystemBody candidate = null;
+                    for (SystemBody b : reg.bodiesAt(GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L))) {
+                        if (candidate == null && b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
+                            candidate = b;
+                        } else if (b.kind() == SystemBodyKind.MOON && candidate != null) {
+                            planet = candidate;
+                            moon = b;
+                            break outer;
+                        }
+                    }
+                }
+            }
+        }
+        assertNotNull("the procedural galaxy must produce a planet with a moon", planet);
+        assertNotNull(moon);
+
+        // One Earth-like year of ticks. A body at any orbit this generator produces turns by a
+        // substantial fraction of a revolution in that time, so "did it move" is not a rounding test.
+        long later = 24000L * 48L;
+        double planetTravelled = planet.absoluteAt(0L).minus(planet.absoluteAt(later)).length();
+        assertTrue("a procedural planet must go round its star, not stand at a fixed point"
+                + " (it moved " + planetTravelled + " blocks in a year)", planetTravelled > 1000d);
+
+        double separationNow = planet.absoluteAt(0L).minus(moon.absoluteAt(0L)).length();
+        double separationLater = planet.absoluteAt(later).minus(moon.absoluteAt(later)).length();
+        assertTrue("a moon must ride its parent's frame, so their separation stays a moon's orbit"
+                + " wide while both travel (" + separationNow + " -> " + separationLater
+                + ", planet moved " + planetTravelled + ")",
+                separationLater < planetTravelled / 2d);
+    }
+
     @Test
     public void realizingABodyMakesItADescentTargetAndRecordsItsCellName() {
         UniverseRegistry reg = registryWithProceduralGalaxy();

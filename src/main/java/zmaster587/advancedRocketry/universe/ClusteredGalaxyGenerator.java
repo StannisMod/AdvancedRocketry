@@ -11,6 +11,7 @@ import java.util.Set;
 
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
+import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
@@ -226,14 +227,26 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // of being authored. Kept here rather than at realization because the nav list, the sky
             // and the descent trigger all read the kind long before anyone lands.
             BodyProfile profile = PlanetDerivation.derive(seed, cell, addr, 0, star, false, orbit);
+            // THE ORBIT LIVES IN THE FRAME, not in the body's own offset — the same shape an authored
+            // system uses (SystemContent: a planet sits at its frame origin and the FRAME goes round
+            // the star). Built with the convenience constructor, a procedural planet got
+            // CellFrame.staticAt(...) and a FIXED offset, so it stood still relative to its star
+            // forever while its own moons orbited it, and the identical system authored in XML moved.
+            double theta = PlanetRealizer.angleOf(cell, addr);
+            double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
+                    * AstronomicalBodyHelper.getOrbitalPeriod(orbit, star.getMass());
+            CellFrame bodyFrame = CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()),
+                    BodyEphemeris.orbit(orbit, theta, 0d, false, periodTicks,
+                            SystemContent.ORBIT_UNIT_BLOCKS));
             // Procedural bodies have no realized dimension yet — a descent (Layer 2) realizes one.
-            bodies.add(new SystemBody(addr, profile.kind(), Constants.INVALID_PLANET, starId, orbit));
+            bodies.add(new SystemBody(addr, bodyFrame, BodyEphemeris.STATIC, profile.kind(),
+                    Constants.INVALID_PLANET, starId, orbit));
             outermostOrbit = Math.max(outermostOrbit, orbit);
             if (profile.kind() == SystemBodyKind.GAS_GIANT
                     && (innermostGiantOrbit == 0 || orbit < innermostGiantOrbit)) {
                 innermostGiantOrbit = orbit;
             }
-            addMoons(bodies, seed, cell, addr, orbit, star, starId, profile);
+            addMoons(bodies, seed, cell, addr, bodyFrame, orbit, star, starId, profile);
         }
 
         // An inner belt is DERIVED from a giant and never rolled: it is material a giant's resonances
@@ -324,7 +337,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * thing that actually positions it.</p>
      */
     private void addMoons(List<SystemBody> bodies, long seed, GalacticCoord anchor, GalacticCoord parent,
-                          int parentOrbit, StellarBody star, int starId, BodyProfile parentProfile) {
+                          CellFrame parentFrame, int parentOrbit, StellarBody star, int starId,
+                          BodyProfile parentProfile) {
         boolean giant = parentProfile.kind() == SystemBodyKind.GAS_GIANT;
         int max = giant ? MAX_MOONS_GIANT : MAX_MOONS_ROCKY;
         double u = CellHash.norm(CellHash.ofCell(seed, parent, SALT_MOONCOUNT));
@@ -347,7 +361,9 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                     * AstronomicalBodyHelper.getMoonOrbitalPeriod(moonOrbit, (float) parentMass);
             BodyEphemeris law = BodyEphemeris.orbit(moonOrbit, theta, 0d, false, periodTicks,
                     SystemContent.MOON_UNIT_BLOCKS);
-            bodies.add(new SystemBody(parent, CellFrame.staticAt(parent), law, SystemBodyKind.MOON,
+            // A moon rides its PARENT's frame, so a planet and its moons travel as one destination.
+            // It used to ride a static frame of its own, which pinned the whole family in place.
+            bodies.add(new SystemBody(parent, parentFrame, law, SystemBodyKind.MOON,
                     Constants.INVALID_PLANET, starId, parentOrbit));
         }
     }
