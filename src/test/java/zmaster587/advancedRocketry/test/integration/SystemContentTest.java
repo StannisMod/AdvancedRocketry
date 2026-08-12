@@ -10,6 +10,7 @@ import java.util.Optional;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
+import zmaster587.advancedRocketry.space.BlockDelta;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
@@ -383,6 +384,63 @@ public class SystemContentTest {
                 moonBody.inCellOffsetAt(0L).equals(moonBody.inCellOffsetAt(quarterPeriod)));
         assertTrue("a planet is at its own cell's frame origin, so it has no offset to move",
                 planetBody.inCellOffsetAt(quarterPeriod).isZero());
+    }
+
+    /**
+     * A moon's period is set by its parent's MASS, not by the gravity you would feel standing on it.
+     *
+     * <p>The two are the same number only at one Earth radius — {@code g = M/R²} — and every orbital
+     * law here used to be handed gravity. Exact for Earth; for a Jupiter (318 Earth masses, 2.53 g)
+     * wrong by {@code sqrt(318/2.53)}, so a giant's moons crawled round it 11 times too slowly. The
+     * fixture below is that Jupiter, and the two readings are 11× apart, so a run cannot satisfy this
+     * test by accident.</p>
+     */
+    @Test
+    public void aMoonsPeriodFollowsItsParentsMassNotItsSurfaceGravity() {
+        StellarBody star = new StellarBody();
+        star.setId(4251);
+        star.setSize(1f);
+        DimensionProperties parent = planet(780, 200, 0.5);
+        parent.setBulk(318d, 11.2d); // a Jupiter: gravity falls out as M/R² = 2.53
+        DimensionProperties moon = planet(781, 127, 0.9);
+        DimensionManager.getInstance().setDimProperties(780, parent);
+        DimensionManager.getInstance().setDimProperties(781, moon);
+        parent.setStar(star);
+        moon.setParentPlanet(parent);
+
+        assertEquals("the fixture must be a giant, or the two readings coincide and prove nothing",
+                2.535d, parent.gravitationalMultiplier, 0.01d);
+
+        long massPeriodTicks = (long) (24000d
+                * AstronomicalBodyHelper.getMoonOrbitalPeriod(127f, (float) parent.getOrbitalMass()));
+        long gravityPeriodTicks = (long) (24000d
+                * AstronomicalBodyHelper.getMoonOrbitalPeriod(127f, parent.gravitationalMultiplier));
+        assertTrue("mass and gravity must give periods far enough apart to tell apart: "
+                        + massPeriodTicks + " vs " + gravityPeriodTicks,
+                gravityPeriodTicks > massPeriodTicks * 5);
+
+        SystemBody moonBody = bodyOf(SystemContent.bodiesOf(star, GalacticCoord.ORIGIN), 781);
+        assertNotNull(moonBody);
+
+        BlockDelta start = moonBody.inCellOffsetAt(0L);
+        BlockDelta afterOnePeriod = moonBody.inCellOffsetAt(massPeriodTicks);
+        BlockDelta afterHalf = moonBody.inCellOffsetAt(massPeriodTicks / 2L);
+
+        // The orbit is 127 units at MOON_UNIT_BLOCKS, so its radius is 25 400 blocks: half a turn puts
+        // the moon ~50 800 blocks from where it started, and one full turn puts it back.
+        double halfTurn = separation(start, afterHalf);
+        double fullTurn = separation(start, afterOnePeriod);
+        assertTrue("half a mass-derived period must carry the moon to the far side (was " + halfTurn + ")",
+                halfTurn > 40_000d);
+        assertTrue("one mass-derived period must bring it back (was " + fullTurn + ")",
+                fullTurn < 500d);
+    }
+
+    private static double separation(BlockDelta a, BlockDelta b) {
+        double dx = a.dx() - b.dx();
+        double dy = a.dy() - b.dy();
+        double dz = a.dz() - b.dz();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**

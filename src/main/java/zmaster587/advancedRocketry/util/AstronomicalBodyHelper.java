@@ -68,13 +68,20 @@ public class AstronomicalBodyHelper {
     /**
      * Returns the orbital period for a body at a given distance around its parent planet
      *
+     * <p><b>The second argument is a MASS, in Earth masses, and callers used to pass surface gravity.</b>
+     * The two agree only at one Earth radius — {@code g = M/R²} — so the substitution was exact for
+     * Earth and wrong by {@code sqrt(M/g)} everywhere else, which for Jupiter (M=318, g=2.53) made its
+     * moons orbit 11.2 times too slowly. Pass the body's mass; where nothing has stated one, its
+     * gravity IS the right stand-in, because a body with no stated bulk is a body assumed to be one
+     * Earth radius across.</p>
+     *
      * @param orbitalDistance the distance from the parent body
-     * @param planetaryMass   the mass of the planet in question
+     * @param planetaryMass   the mass of the planet in question, in Earth masses
      * @return the orbital period in MC Days (24000 ticks)
      */
     public static double getMoonOrbitalPeriod(float orbitalDistance, float planetaryMass) {
         //One (lunar) MC month is 8 MC days, so the moon orbits in 8
-        //The same a the function for planets, but since gravity is directly correlated with mass uses the gravity of the plant for mass
+        //The same as the function for planets, with the parent's mass in place of the star's size
         return DAYS_PER_LUNAR_MONTH
                 * Math.pow(Math.pow((orbitalDistance / (double) DISTANCE_UNITS_PER_AU), 3) / planetaryMass, 0.5d);
     }
@@ -111,12 +118,12 @@ public class AstronomicalBodyHelper {
     /**
      * Returns the orbital theta for a body at a given distance around its parent planet, at this current moment
      *
-     * @param orbitalDistance               the distance from the parent body
-     * @param parentGravitationalMultiplier the size of the parent planet in question
+     * @param orbitalDistance the distance from the parent body
+     * @param parentMassEarths the mass of the parent planet, in Earth masses
      * @return the current angle around the planet in radians
      */
-    public static double getMoonOrbitalTheta(int orbitalDistance, float parentGravitationalMultiplier) {
-        return getMoonOrbitalThetaAt(orbitalDistance, parentGravitationalMultiplier,
+    public static double getMoonOrbitalTheta(int orbitalDistance, float parentMassEarths) {
+        return getMoonOrbitalThetaAt(orbitalDistance, parentMassEarths,
                 AdvancedRocketry.proxy.getWorldTimeUniversal(0));
     }
 
@@ -126,11 +133,11 @@ public class AstronomicalBodyHelper {
      *
      * @return the angle around the parent planet in RADIANS
      */
-    public static double getMoonOrbitalThetaAt(int orbitalDistance, float parentGravitationalMultiplier,
+    public static double getMoonOrbitalThetaAt(int orbitalDistance, float parentMassEarths,
                                                long worldTick) {
         //Because the function is still in AU and solar mass, some correctional factors to convert to those units
         double periodTicks = (double) TICKS_PER_DAY
-                * getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier);
+                * getMoonOrbitalPeriod(orbitalDistance, parentMassEarths);
         if (!(periodTicks > 0d) || Double.isInfinite(periodTicks)) {
             return 0d;
         }
@@ -140,19 +147,19 @@ public class AstronomicalBodyHelper {
     /**
      * Returns the visual orbital theta for a body at a given distance around its parent planet, at this current moment, as a value from 0 - 360
      *
-     * @param rotationalPeriod              the rotational period of the moon we are rendering from
-     * @param orbitalDistance               the distance from the parent body
-     * @param parentGravitationalMultiplier the distance from the parent body
-     * @param currentOrbitalTheta           the orbital theta of the moon we are rendering from
-     * @param baseOrbitalTheta              the base orbital theta of the planet in question
+     * @param rotationalPeriod    the rotational period of the moon we are rendering from
+     * @param orbitalDistance     the distance from the parent body
+     * @param parentMassEarths    the mass of the parent planet, in Earth masses
+     * @param currentOrbitalTheta the orbital theta of the moon we are rendering from
+     * @param baseOrbitalTheta    the base orbital theta of the planet in question
      * @return the current angle around the planet normalized 0 - 360, for GL calls
      */
-    public static float getParentPlanetThetaFromMoon(int rotationalPeriod, int orbitalDistance, float parentGravitationalMultiplier, double currentOrbitalTheta, double baseOrbitalTheta) {
+    public static float getParentPlanetThetaFromMoon(int rotationalPeriod, int orbitalDistance, float parentMassEarths, double currentOrbitalTheta, double baseOrbitalTheta) {
         //Convert from radians to degrees for easier math
         float degreeOrbitalTheta = (float) (currentOrbitalTheta * 180 / Math.PI);
         //Computer the number of rotations per revolution and use that for how fast the planet would seem to orbit from the moon
         //Planet will not move at all if it is tidally locked
-        float planetPositionTheta = (((float) (AstronomicalBodyHelper.getMoonOrbitalPeriod(orbitalDistance, parentGravitationalMultiplier) * TICKS_PER_DAY) / rotationalPeriod) - 1) * degreeOrbitalTheta;
+        float planetPositionTheta = (((float) (AstronomicalBodyHelper.getMoonOrbitalPeriod(orbitalDistance, parentMassEarths) * TICKS_PER_DAY) / rotationalPeriod) - 1) * degreeOrbitalTheta;
         //Add the base orbital theta so the planet is in the correct place
         return (planetPositionTheta + (float) (baseOrbitalTheta * 180 / Math.PI)) % 360;
     }
@@ -191,37 +198,60 @@ public class AstronomicalBodyHelper {
         if (star == null || orbitalDistance <= 0) {
             return MIN_BRIGHTNESS;
         }
-        //Normal stars are 1.0 times this value, black holes with accretion discs emit less and so modify it
-        float lightMultiplier = 1.0f;
-        //Make all values ratios of Earth normal to get ratio compared to Earth
-        float normalizedStarTemperature = star.getTemperature() / (float) TEMPERATURE_UNITS_PER_SOL;
         float planetaryOrbitalRadius = orbitalDistance / (float) DISTANCE_UNITS_PER_AU;
-        //Check to see if the star is a black hole
-        boolean blackHole = star.isBlackHole();
-        Iterable<StellarBody> subs = star.getSubStars();
-        if (subs != null) {
-            for (StellarBody star2 : subs) {
-                if (star2 != null && !star2.isBlackHole()) {
-                    blackHole = false;
-                    break;
+        // EVERY star that shines on this world contributes, and what ADDS is the FLUX each one
+        // delivers here — not their luminosities. Radiant power from mutually incoherent sources
+        // superposes linearly, so E = sum of L_i / d_i², with each star's own distance under its own
+        // luminosity. Summing luminosities first and dividing once is the same number only while all
+        // the stars are equidistant from the planet.
+        //
+        // Today they are, by construction rather than by physics: a companion's separation is stored
+        // as an ANGLE in the sky (StellarBody.getStarSeparation), so there is no distance to give it,
+        // and every companion is fed the primary's. That is exact for the close binaries the model can
+        // actually describe, and it is why this sums flux terms rather than luminosities — when a
+        // companion gains a real orbital radius, only the argument below changes.
+        //
+        // This replaces a walk over the companions whose only effect was to clear a boolean: any
+        // ordinary companion turned the accretion-disc dimming OFF, after which the brightness came
+        // from the BLACK HOLE's own size and temperature at full strength, and the companion itself
+        // never contributed a photon.
+        //Returns ratio compared to a planet at 1 AU for Sol, because the other values in AR are normalized,
+        //and this works fairly well for hooking into with other mod's solar panels & such
+        double brightness = fluxOf(star, planetaryOrbitalRadius);
+        Iterable<StellarBody> companions = star.getSubStars();
+        if (companions != null) {
+            for (StellarBody companion : companions) {
+                if (companion != null) {
+                    brightness += fluxOf(companion, planetaryOrbitalRadius);
                 }
             }
         }
-        //There's no real easy way to get the light emitted by an accretion disc, so this substitutes
-        if (blackHole)
-            lightMultiplier *= 0.25;
-        //Returns ratio compared to a planet at 1 AU for Sol, because the other values in AR are normalized,
-        //and this works fairly well for hooking into with other mod's solar panels & such
-        double brightness =
-                lightMultiplier *
-                ((Math.pow(star.getSize(), 2) * Math.pow(normalizedStarTemperature, 4)) /
-                Math.pow(planetaryOrbitalRadius, 2));
 
         // Guarantee: never return 0, NaN, or Infinity
         if (!Double.isFinite(brightness) || brightness < MIN_BRIGHTNESS) {
             return MIN_BRIGHTNESS;
         }
         return brightness;
+    }
+
+    /**
+     * The flux one star delivers at {@code orbitalRadiusAu}, relative to Sol at 1 AU:
+     * {@code size² · (T/Sol)⁴ / r²} — Stefan-Boltzmann over the inverse square, both in solar units.
+     * Quartered for a black hole, because there is no easy way to model what an accretion disc emits.
+     *
+     * <p>0.25 is a power of two, so applying it to the numerator rather than to the finished quotient
+     * is exact: a system of one star returns bit-identical numbers to the version that multiplied at
+     * the end.</p>
+     */
+    private static double fluxOf(StellarBody star, float orbitalRadiusAu) {
+        //Make all values ratios of Earth normal to get ratio compared to Earth
+        float normalizedStarTemperature = star.getTemperature() / (float) TEMPERATURE_UNITS_PER_SOL;
+        double luminosity = Math.pow(star.getSize(), 2) * Math.pow(normalizedStarTemperature, 4);
+        //There's no real easy way to get the light emitted by an accretion disc, so this substitutes
+        if (star.isBlackHole()) {
+            luminosity *= 0.25d;
+        }
+        return luminosity / Math.pow(orbitalRadiusAu, 2);
     }
 
     /**

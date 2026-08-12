@@ -573,6 +573,20 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
     }
 
     /**
+     * The mass, in Earth masses, to use in a two-body orbital law about this body — what a moon's
+     * period is derived from.
+     *
+     * <p>Falls back to surface gravity when nothing has stated a mass, and that is not a fudge:
+     * {@code g = M/R²}, so gravity and mass are the same number at one Earth radius, and a body with
+     * no stated bulk is precisely a body nobody has given a radius. What it replaces IS the fudge —
+     * every caller used to pass gravity unconditionally, which is exact for Earth and off by
+     * {@code sqrt(M/g)} for everything else.</p>
+     */
+    public double getOrbitalMass() {
+        return mass > BULK_UNSET ? mass : gravitationalMultiplier;
+    }
+
+    /**
      * State this body's mass and radius, deriving surface gravity from them unless a gravity was
      * explicitly authored.
      *
@@ -2440,7 +2454,7 @@ public class DimensionProperties implements Cloneable, IDimensionProperties {
         double theta = 0d;
         if (isMoon() && getParentProperties() != null) {
             theta = AstronomicalBodyHelper.getMoonOrbitalThetaAt(orbitalDist,
-                    getParentProperties().gravitationalMultiplier, worldTick);
+                    (float) getParentProperties().getOrbitalMass(), worldTick);
         } else {
             StellarBody host = getStar();
             if (host != null) {

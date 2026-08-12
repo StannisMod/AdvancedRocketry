@@ -191,7 +191,7 @@ public final class SystemContent {
     /** A moon's orbital law about its PARENT — its offset inside the shared cell, live at every tick. */
     private static BodyEphemeris moonLawOf(DimensionProperties moon, DimensionProperties parent) {
         double periodTicks = TICKS_PER_DAY * AstronomicalBodyHelper.getMoonOrbitalPeriod(
-                moon.getOrbitalDist(), parent.gravitationalMultiplier);
+                moon.getOrbitalDist(), (float) parent.getOrbitalMass());
         return BodyEphemeris.orbit(moon.getOrbitalDist(), moon.baseOrbitTheta, moon.orbitalPhi,
                 moon.isRetrograde, periodTicks, MOON_UNIT_BLOCKS);
     }

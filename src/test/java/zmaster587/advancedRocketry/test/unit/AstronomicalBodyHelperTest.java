@@ -86,8 +86,50 @@ public class AstronomicalBodyHelperTest {
         blackHole.setBlackHole(true);
         double dimmed = AstronomicalBodyHelper.getStellarBrightness(blackHole, 100);
 
-        // Implementation multiplies by 0.25 when the primary (and all sub-stars) are black holes.
+        // A black hole emits a quarter of what its size and temperature would otherwise give.
         assertEquals(normal * 0.25, dimmed, 1e-9);
+    }
+
+    /**
+     * Every star in a system lights the worlds in it. Before this was true, the companion list was
+     * walked only to decide a boolean and no companion ever contributed a photon.
+     */
+    @Test
+    public void everyStarInASystemContributesItsOwnLight() {
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody binary = sunLikeStar();
+        binary.addSubStar(sunLikeStar());
+
+        assertEquals("two identical stars light a world twice as brightly as one does",
+                2 * alone, AstronomicalBodyHelper.getStellarBrightness(binary, 100), 1e-9);
+    }
+
+    /**
+     * A companion does not repeal the primary's nature.
+     *
+     * <p>The case this pins used to invert: any ordinary companion cleared the black-hole flag, after
+     * which the luminosity was taken from the BLACK HOLE's own size and temperature at FULL strength —
+     * so a black hole with a companion came out brighter than a bare one and lit by the wrong body,
+     * while the companion contributed nothing.</p>
+     */
+    @Test
+    public void aCompanionDoesNotTurnABlackHoleBackIntoAStar() {
+        double sunAlone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody bareHole = sunLikeStar();
+        bareHole.setBlackHole(true);
+        double holeAlone = AstronomicalBodyHelper.getStellarBrightness(bareHole, 100);
+
+        StellarBody holeWithCompanion = sunLikeStar();
+        holeWithCompanion.setBlackHole(true);
+        holeWithCompanion.addSubStar(sunLikeStar());
+        double together = AstronomicalBodyHelper.getStellarBrightness(holeWithCompanion, 100);
+
+        assertEquals("a black hole and its companion each light the world on their own terms",
+                holeAlone + sunAlone, together, 1e-9);
+        assertTrue("the hole stays dimmed: the pair is never as bright as two ordinary stars",
+                together < 2 * sunAlone);
     }
 
     @Test

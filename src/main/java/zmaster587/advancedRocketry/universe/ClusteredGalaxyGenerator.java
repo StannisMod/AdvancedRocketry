@@ -332,13 +332,19 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         if (moons > max) {
             moons = max;
         }
-        double parentGravity = Math.max(0.05d, parentProfile.gravityPercent() / 100d);
+        // A moon's period comes from its parent's MASS. Passing gravity here is exact only at one
+        // Earth radius and made a giant's moons crawl — Jupiter is 318 Earth masses but 2.53 g, a
+        // factor of sqrt(318/2.53) = 11.2 in the period. A profile with no mass falls back to gravity,
+        // which is the same number for the one-Earth-radius body an unstated bulk describes.
+        double parentMass = parentProfile.massEarths() > 0d
+                ? parentProfile.massEarths()
+                : Math.max(0.05d, parentProfile.gravityPercent() / 100d);
         for (int j = 1; j <= moons; j++) {
             int moonOrbit = MOON_MIN_ORBIT + (int) (CellHash.norm(
                     CellHash.ofBody(seed, parent, j, SALT_MOONRAD)) * MOON_ORBIT_SPAN);
             double theta = CellHash.norm(CellHash.ofBody(seed, parent, j, SALT_MOONANG)) * 2d * Math.PI;
             double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
-                    * AstronomicalBodyHelper.getMoonOrbitalPeriod(moonOrbit, (float) parentGravity);
+                    * AstronomicalBodyHelper.getMoonOrbitalPeriod(moonOrbit, (float) parentMass);
             BodyEphemeris law = BodyEphemeris.orbit(moonOrbit, theta, 0d, false, periodTicks,
                     SystemContent.MOON_UNIT_BLOCKS);
             bodies.add(new SystemBody(parent, CellFrame.staticAt(parent), law, SystemBodyKind.MOON,

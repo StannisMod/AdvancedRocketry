@@ -865,7 +865,7 @@ GL11.glPopMatrix();
 
                 //Do a whole lotta math to figure out where the parent planet is supposed to be
                 //That 0.3054325f is there because we need to do adjustments for some ^$%^$% reason and it's consistently off by 17.5 degrees
-                float planetPositionTheta = AstronomicalBodyHelper.getParentPlanetThetaFromMoon(properties.rotationalPeriod, properties.orbitalDist, parentProperties.gravitationalMultiplier, myTheta, properties.baseOrbitTheta);
+                float planetPositionTheta = AstronomicalBodyHelper.getParentPlanetThetaFromMoon(properties.rotationalPeriod, properties.orbitalDist, (float) parentProperties.getOrbitalMass(), myTheta, properties.baseOrbitTheta);
 
                 GL11.glRotatef((float) myPhi, 0f, 0f, 1f);
                 GL11.glRotatef(planetPositionTheta, 1f, 0f, 0f);
