@@ -64,6 +64,10 @@ public abstract class MixinTileAdvancedFlightComputer implements IPhysicsBlockCo
         // the whole triple (all-or-nothing: a per-channel mix would blend a fresh probe pose with a
         // stale probe rate); otherwise the seated pilot's, published by this tile's own server tick.
         TileAdvancedFlightComputer self = (TileAdvancedFlightComputer) (Object) this;
+        // Counted here, BEFORE the early-out below: the question this answers is whether the physics
+        // thread reaches this computer at all, which is a different question from whether it had
+        // anything to command.
+        self.controllerTicks++;
         boolean probe = self.probeCommandActive;
         double[] vCmd = probe ? self.probeVelocity : self.commandedVelocity;
         double[] wCmd = probe ? self.probeAngVel : self.commandedAngVel;

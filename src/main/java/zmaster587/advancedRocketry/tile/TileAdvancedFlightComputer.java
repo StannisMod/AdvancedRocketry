@@ -39,6 +39,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private static final String NBT_STATION_KEEPING = "stationKeeping";
     private static final String NBT_SHIP_ID = "shipId";
     private static final String NBT_ENTRY_LATCHED = "entryLatched";
+    private static final String NBT_CRUISE = "cruiseSetpoint";
 
     /**
      * The CRAFT's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
@@ -151,19 +152,23 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     public volatile boolean probeCommandActive = false;
 
     /**
-     * Bring-up channel for the pilot's held {@link FreeFlightInput}. When set, this tile's
-     * server tick runs the Free Flight decision layer over the ship's current attitude and
-     * publishes the resulting desired velocity + target attitude to the controller channels
-     * above. AR-core only. TODO: replace this static bring-up input with per-seat pilot state.
+     * How many times the Valkyrien Skies physics thread has invoked THIS computer's force controller.
+     *
+     * <p>Diagnostic, and it answers a question nothing else in the tree can: "is this ship's
+     * controller running at all". A ship that ignores every command has two readings — the controller
+     * runs and its force is being overwritten, or the controller never runs — and they need opposite
+     * fixes. Counted before the mixin's own early-out, so it means INVOKED, not "commanded
+     * something". Not persisted; a fresh tile starts at zero, which is the honest baseline.</p>
      */
-    public static volatile FreeFlightInput debugFlightInput = null;
+    public volatile long controllerTicks = 0L;
 
     /**
      * The seated pilot's live {@link FreeFlightInput} for THIS computer, or {@code null} when
      * nobody is piloting. Written from the server game thread when a pilot-seat packet arrives
-     * (see {@code TilePilotSeat}); read by {@link #update()}. Takes precedence over the static
-     * {@link #debugFlightInput} bring-up channel — that static one stays only as a test-probe
-     * fallback. {@code volatile} for visibility across the seat-packet and tick call sites.
+     * (see {@code TilePilotSeat}); read by {@link #update()}. The ONLY input channel: a JVM-wide
+     * static used to sit behind it as a test-probe fallback, which meant a probe throttle flew every
+     * computer that had no pilot of its own. {@code volatile} for visibility across the seat-packet
+     * and tick call sites.
      */
     public volatile FreeFlightInput pilotInput = null;
 
@@ -252,6 +257,11 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         this.velocitySetpoint = new double[]{forward, right, up};
         this.captureSetpointOnNextTick = false;
         this.stationKeeping = true;
+        markDirty();
+    }
+
+    /** Persist the cruise the pilot is ramping, so a tile reconstruction does not silently zero it. */
+    private void markCruiseDirty() {
         markDirty();
     }
 
@@ -509,8 +519,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             }
         }
 
-        // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
-        FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
+        // This computer's own pilot, and nobody else's. There is no fallback: an input that reaches
+        // no seat reaches no ship.
+        FreeFlightInput in = pilotInput;
 
         // NEITHER CROSSING ASKS WHETHER ANYONE IS AT THE CONTROLS. Both used to be gated on a
         // "flying" flag that meant "an input is held right now", which is not a property of the
@@ -699,9 +710,16 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                 captureSetpointOnNextTick = false;
             }
             // Cruise control: held throttles ramp the setpoint, releasing keeps it, cut/brake zero it.
-            velocitySetpoint = FreeFlightPhysics.shipRampSetpoint(
+            double[] rampedSetpoint = FreeFlightPhysics.shipRampSetpoint(
                     velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2],
                     in, SHIP_MAX_SPEED, SHIP_SETPOINT_RAMP);
+            // Only when it actually CHANGED: this runs every tick a pilot is aboard, and marking a
+            // tile dirty on every one of them would write the chunk twenty times a second.
+            if (rampedSetpoint[0] != velocitySetpoint[0] || rampedSetpoint[1] != velocitySetpoint[1]
+                    || rampedSetpoint[2] != velocitySetpoint[2]) {
+                velocitySetpoint = rampedSetpoint;
+                markCruiseDirty();
+            }
         }
 
         // Publish to the PER-TILE channels the controller mixin prefers (falls back to the
@@ -1131,6 +1149,15 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
         nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
         nbt.setBoolean(NBT_ENTRY_LATCHED, entryLatched);
+        // The cruise the pilot left the ship holding. Persisted for the same reason
+        // stationKeeping is: they are one piece of state read together by the unmanned branch of
+        // update(), and half of it surviving a reload is worse than neither half doing so — the ship
+        // comes back marked "has been flown" with a zeroed cruise, i.e. it silently stops flying.
+        // A computer's tile is reconstructed more often than a world reload: any chunk cycle under
+        // the ship does it, which is routine for a craft parked in a space cell.
+        nbt.setDouble(NBT_CRUISE + "F", velocitySetpoint[0]);
+        nbt.setDouble(NBT_CRUISE + "R", velocitySetpoint[1]);
+        nbt.setDouble(NBT_CRUISE + "U", velocitySetpoint[2]);
         if (shipId != null) {
             nbt.setString(NBT_SHIP_ID, shipId.toString());
         }
@@ -1150,6 +1177,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // Absent key -> entry ARMED. Only a descent arrival latches it; a fresh or unmanned ship
         // must never load latched, or it could never leave the planet it was built on.
         entryLatched = nbt.getBoolean(NBT_ENTRY_LATCHED);
+        // Absent keys -> a zero cruise, which is a hover: the same thing a never-flown ship has.
+        velocitySetpoint = new double[]{nbt.getDouble(NBT_CRUISE + "F"),
+                nbt.getDouble(NBT_CRUISE + "R"), nbt.getDouble(NBT_CRUISE + "U")};
         // Absent/malformed key -> no id yet (minted on first use); never re-mint over a valid one.
         hullExtent = null;
         if (nbt.hasKey(NBT_HULL)) {
