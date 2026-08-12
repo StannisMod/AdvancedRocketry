@@ -371,6 +371,30 @@ final class VSBridge {
     }
 
     /** Number of Valkyrien Skies ships currently loaded in {@code world}. */
+    /**
+     * The three gates Valkyrien Skies applies before it ticks a ship's physics at all, plus the size
+     * of that ship's force-controller set, as
+     * {@code [physicsReady, physicsEnabled, hasChunkCache, controllerCount]} (booleans as 0/1), or
+     * {@code null} when the id names no ship loaded here.
+     *
+     * <p>Diagnostic. A ship that ignores every command has several readings that need opposite
+     * fixes — its physics never ticks, it ticks but carries no controller, or it ticks with a
+     * controller whose force is overwritten — and the gate values tell them apart directly instead of
+     * by inference. The gates are read from {@code VSWorldPhysicsLoop}'s own selection test, so this
+     * reports what that loop decides, not a restatement of it.</p>
+     */
+    static int[] shipPhysicsGatesById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
+        if (physo == null) {
+            return null;
+        }
+        return new int[]{
+                physo.isPhysicsReady() ? 1 : 0,
+                physo.isPhysicsEnabled() ? 1 : 0,
+                physo.getCachedSurroundingChunks() != null ? 1 : 0,
+                physo.getPhysicsControllersInShip().size()};
+    }
+
     static int loadedShipCount(World world) {
         return ValkyrienUtils.getServerShipManager(world).getAllLoadedThreadSafe().size();
     }

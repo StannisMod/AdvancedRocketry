@@ -134,12 +134,29 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
 
     /**
      * The six flight channels - forward, vertical, strafe, yaw, pitch, roll - as the flight-input
-     * probe takes them. They are NOT prefixed by a dimension: the input is one server-wide channel,
-     * and reading the leading zero as a dimension id is the trap this constant exists to close.
-     * {@link #HELD_CLIMB} is a pilot holding the ship up; {@link #HANDS_OFF} is him letting go.
+     * probe takes them. {@link #HELD_CLIMB} is a pilot holding the ship up; letting go is the same
+     * verb with the channels omitted, which CLEARS the input rather than publishing a zero one - and
+     * the difference matters, because an all-zero input is still an input and keeps the computer in
+     * its piloted branch.
+     *
+     * <p>They are now issued through {@code vs ff-input-by-id <dim> <shipId> …}, which writes ONE
+     * ship's flight computer. The verb they used to go through wrote a JVM-wide static that every
+     * flight computer read as its fallback, so a throttle held here flew every other ship on the
+     * server too - and, worse for this family, it never went away: an all-zero input is still an
+     * input, so the computer took the PILOTED branch forever and re-pinned the ship's attitude every
+     * tick. That is why the inverted deck-crew leg could not roll its ship with the attitude verb and
+     * had to roll it through the input instead.</p>
      */
     protected static final String HELD_CLIMB = "0 1 0 0 0 0";
-    protected static final String HANDS_OFF = "0 0 0 0 0 0";
+
+    /**
+     * The world-frame speed, in blocks/second, at which a window's deck is driven.
+     *
+     * <p>0.2 blocks per tick: a {@link #OBSERVE_TICKS}-tick window sees 8 blocks, well over
+     * {@link #MIN_DECK_MOVE} and well under {@link #MAX_DECK_RATE}. Deterministic, because the
+     * controller realizes a commanded world velocity directly rather than integrating a setpoint.</p>
+     */
+    protected static final double WINDOW_SPEED_BLOCKS_PER_SECOND = 4.0;
 
     /**
      * How far off his ship the client may be and still count as "back at his ship". Covers the
@@ -239,6 +256,18 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
 
     /** The ship production minted for the arranged pilot, and the cell production settled it in. */
     protected String arrangedShipId;
+
+    /**
+     * The settled ship's flight computer, as {@code "x y z"} — its own subspace block position, taken
+     * from {@code space find-afc} at the same moment {@link #arrangedShipId} is.
+     *
+     * <p>Held because a tier-2 ship has TWO identities and the probe verbs split along that seam:
+     * {@link #arrangedShipId} is the DURABLE id the space ledger is keyed by, while the {@code
+     * *-by-id} command verbs resolve a VS ship uuid. Handing one to the other resolves nothing and
+     * says so. This is the bridge between them, and it is still identity addressing: a block position
+     * names exactly one tile, unlike "the ship nearest a point".</p>
+     */
+    protected String arrangedAfcPos;
     protected String arrangedCellKey;
 
     protected Path root;
@@ -515,7 +544,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         // #108's own retraction says it outright: the relog was never the variable, the SHIP'S MOTION
         // was. So the deck is put in motion for the window, and the ship's own displacement is
         // WITNESSED afterwards: without that witness a still ship reads as a clean pass again.
-        pulseThrottle();
+        commandWindowCruise(dim);
         double[] deckBefore = awaitShipPose(dim);
         assertNotNull("the ship must be live before the window opens", deckBefore);
         long fromTick = lastClientTick();
@@ -665,7 +694,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
      * the release tick cannot tell a key that is still held from a body that is still moving.</p>
      */
     protected double[] walkThenIdle(int dim) throws Exception {
-        pulseThrottle();
+        commandWindowCruise(dim);
         double[] deckBefore = awaitShipPose(dim);
         long walkFrom = lastClientTick();
         long dropsBeforeWalk = clientLong("externalMoveDrops");
@@ -771,15 +800,37 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
     }
 
     /**
-     * Set the ship moving with a bounded pulse and let go. Holding the throttle across a window
-     * instead accumulates speed run after run until the ship is at its cruise cap, which is a
-     * different regime with a different suspected defect - and the accumulation is invisible in any
-     * single window's numbers.
+     * Put THIS scenario's deck in motion for the window that follows, by commanding the ship's own
+     * cruise setpoint - the state production flies an unmanned ship on.
+     *
+     * <p><b>Why not an input, and why not a cruise setpoint.</b> These windows need a deck that moves
+     * while NOBODY is at the controls. A pilot INPUT cannot supply that: a riderless seat dummy
+     * clears its computer's pilot input every tick, on purpose, and only a JVM-wide static was immune
+     * - which is exactly why this family used one, and what it cost was that every other ship on the
+     * server flew too. A retained cruise SETPOINT is what outlives a pilot planet-side, and it was
+     * tried here first; measured twice on a settled ship in a CELL, at 4 and at 12 blocks/second, the
+     * deck travelled 0.870 and 0.862 blocks in the same window. Tripling the command changed the
+     * result by one percent, so the cruise is not being realized here at all and those numbers are
+     * drift. That is a finding about ships in cells, recorded in the ledger, and it is not this
+     * family's subject.
+     *
+     * <p>So the deck is driven through the computer's own PROBE command channel: per-tile, addressed
+     * at this ship's computer, outranking the pilot channel and cleared by nothing. What it replaces
+     * was no more production-shaped than it is - a server-wide static input - and the subject here is
+     * a BODY on a moving deck, never how the deck came to move.</p>
+     *
+     * <p>Commanded fresh before each window rather than once at the start: the channel is live state
+     * and does not survive the server restart one leg performs.</p>
      */
-    protected void pulseThrottle() throws Exception {
-        exec("artest vs ff-input " + HELD_CLIMB);
+    protected void commandWindowCruise(int dim) throws Exception {
+        assertNotNull("commandWindowCruise before the arrangement located the ship's computer",
+                arrangedAfcPos);
+        String driven = exec("artest vs force-vel-at " + dim + " " + arrangedAfcPos
+                + " 0 " + WINDOW_SPEED_BLOCKS_PER_SECOND + " 0");
+        assertTrue("ARRANGEMENT: the drive must reach THIS ship's own flight computer, or the window "
+                + "below observes a motionless deck and cannot fail: " + driven,
+                driven.contains("\"afcResolved\":true"));
         bot().waitTicks(THROTTLE_PULSE_TICKS);
-        exec("artest vs ff-input " + HANDS_OFF);
     }
 
     /**
@@ -837,7 +888,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
             bot().waitTicks(40);
             // Under MOTION, like the subject window - a re-capture measured on a motionless deck
             // would come back all zeros and could not be compared with anything.
-            pulseThrottle();
+            commandWindowCruise(dim);
             double[] deckBefore = awaitShipPose(dim);
             long fromTick = lastClientTick();
             bot().waitTicks(OBSERVE_TICKS);
@@ -1008,9 +1059,12 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         int sy = (int) Math.round(readDouble(srcInfo, "posY"));
         int sz = (int) Math.round(readDouble(srcInfo, "posZ"));
 
-        // A held throttle on the ship's flight input is what makes its computer see a pilot flying;
-        // the climb past the dimension's orbit ceiling is what makes it call for an entry.
-        exec("artest vs ff-input " + HELD_CLIMB);
+        // No throttle. Crossing an atmosphere does not ask who is at the controls - the climb past the
+        // dimension's orbit ceiling is the whole trigger - and `VSUnpilotedEntryE2ETest` pins exactly
+        // that with the ship's input explicitly CLEARED. The held throttle this used to publish was a
+        // relic of a channel that also happened to be JVM-wide, and it cost this leg twice: it flew
+        // every other ship on the server, and the all-zero input it left behind kept this ship's
+        // computer in its PILOTED branch for the rest of the scenario.
         String climb = exec("artest vs teleport-ship " + LAUNCH_DIM + " " + sx + " " + sy + " " + sz
                 + " " + sx + " " + ABOVE_CEILING_Y + " " + sz);
         assertTrue("the climb past the orbit ceiling failed: " + climb, climb.contains("\"ok\":true"));
@@ -1028,13 +1082,6 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         assertTrue("the ship never entered space through the flight computer's own tick; last "
                 + "subsystem status=" + ledgerStatus, settled);
 
-        // Let go of the throttle now that the ship is where it was flying to. The flight input is a
-        // single server-wide channel and the flight computer keeps applying it in the cell as well -
-        // only the ENTRY trigger is restricted to planet-side - so a throttle left held would fly the
-        // parked ship for the rest of the arrangement and turn every position read below into a
-        // moving target. A pilot who is about to sit still and log out is not holding it down.
-        exec("artest vs ff-input " + HANDS_OFF);
-
         // Find the slot the entry bound the cell to. Slot ids are minted per boot, so they are read
         // rather than known: the one slot dimension whose settled ship's flight computer resolves is
         // the ship's own. An entry that ended up ABANDONED settles the ledger too but leaves the
@@ -1045,6 +1092,7 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
                 + "settled without leaving a workable ship at its cell pose", slot);
         int slotDim = Integer.parseInt(slot[0]);
         arrangedShipId = slot[1];
+        arrangedAfcPos = slot[2] + " " + slot[3] + " " + slot[4];
 
         String ledgerEntry = exec("artest space ledger-get " + arrangedShipId);
         assertTrue("the entered ship must be in the production ledger: " + ledgerEntry,
@@ -1054,6 +1102,23 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         arrangedCellKey = readString(ledgerEntry, "cell");
         assertNotNull("the ledger reported no cell for the entered ship: " + ledgerEntry,
                 arrangedCellKey);
+
+        // AND SAY THAT IT HAS BEEN FLOWN. This is not decoration, and it is the one thing the deleted
+        // throttle was silently doing for the rest of the scenario: an all-zero input is still an
+        // input, so the computer took its PILOTED branch every tick, which enables the ship's physics
+        // and holds it on station. Without a pilot AND without the `stationKeeping` witness, the
+        // unmanned branch returns immediately - the ship is deliberately inert, its physics is never
+        // enabled, and a crew member standing on that deck is not resolved as aboard anything.
+        //
+        // The witness is honest here: this ship really has flown - it climbed past its planet's orbit
+        // ceiling and crossed into a cell. It lacks the flag only because the climb is arranged by a
+        // relocation rather than by a pilot at the controls. A zero cruise is a hover, exactly what
+        // production leaves a flown ship holding when nobody is aboard.
+        String holdsStation = exec("artest vs ff-cruise-at " + slotDim + " " + arrangedAfcPos
+                + " 0 0 0");
+        assertTrue("ARRANGEMENT: the settled ship must be left holding station like a flown ship, or "
+                + "its physics never comes on and nothing can be aboard its deck: " + holdsStation,
+                holdsStation.contains("\"afcResolved\":true"));
 
         return slotDim;
     }
@@ -1103,6 +1168,14 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         int sy = (int) Math.round(readDouble(srcInfo, "posY"));
         int sz = (int) Math.round(readDouble(srcInfo, "posZ"));
 
+        // The ship's identity on the GROUND, captured at the one moment it is unambiguous - freshly
+        // assembled at this fixture's own spot. It is not the same id the ledger reports after the
+        // entry: the crossing cuts the ship's blocks and re-assembles them, so the craft that flies
+        // is a different VS object. This one addresses the pilot's throttle before the crossing;
+        // `arrangedShipId` addresses everything after it.
+        String groundShipId = readString(srcInfo, "id");
+        assertNotNull("ship-info must name WHICH ship answered: " + srcInfo, groundShipId);
+
         // Board on the ground. The client has to be standing at the ship for its seat to be a loaded
         // tile at all, which is what the mount probe searches.
         exec("tp @a " + (SRC_X + 0.5) + " " + (SRC_Y + 6) + " " + (SRC_Z + 0.5) + " 0 0");
@@ -1125,8 +1198,13 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
                         + "post-arrival reading vacuous: " + groundTag,
                 groundTag.contains("\"tagged\":false"));
 
-        // Fly, with him in the chair the whole way.
-        exec("artest vs ff-input " + HELD_CLIMB);
+        // Fly, with him in the chair the whole way. Addressed to HIS ship's flight computer: a
+        // seated rider is what keeps the input alive there (a riderless dummy clears it every tick),
+        // so this is the one site in the family where a real throttle is the honest arrangement.
+        String heldClimb = exec("artest vs ff-input-by-id " + LAUNCH_DIM + " " + groundShipId
+                + " " + HELD_CLIMB);
+        assertTrue("ARRANGEMENT: the throttle must reach the seated pilot's own flight computer: "
+                + heldClimb, heldClimb.contains("\"afcResolved\":true"));
         String climb = exec("artest vs teleport-ship " + LAUNCH_DIM + " " + sx + " " + sy + " " + sz
                 + " " + sx + " " + ABOVE_CEILING_Y + " " + sz);
         assertTrue("the climb past the orbit ceiling failed: " + climb, climb.contains("\"ok\":true"));
@@ -1146,12 +1224,16 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         }
         assertTrue("the ship never entered space through the flight computer's own tick; last "
                 + "subsystem status=" + ledgerStatus, settled);
-        exec("artest vs ff-input " + HANDS_OFF);
+        // Hands off. Aimed at the ship he actually flew - the pre-crossing one - because that is the
+        // computer his throttle went to; the craft on the far side is a different VS object with a
+        // fresh tile.
+        exec("artest vs ff-input-by-id " + LAUNCH_DIM + " " + groundShipId);
 
         String[] slot = awaitSettledShipSlot();
         assertNotNull("the ledger holds a ship, but no slot dimension owns up to it", slot);
         int slotDim = Integer.parseInt(slot[0]);
         arrangedShipId = slot[1];
+        arrangedAfcPos = slot[2] + " " + slot[3] + " " + slot[4];
 
         String ledgerEntry = exec("artest space ledger-get " + arrangedShipId);
         assertTrue("the entered ship must be in the production ledger: " + ledgerEntry,
@@ -1161,6 +1243,14 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
         arrangedCellKey = readString(ledgerEntry, "cell");
         assertNotNull("the ledger reported no cell for the entered ship: " + ledgerEntry,
                 arrangedCellKey);
+
+        // The setpoint his long climb ramped is parked to a hover on the ship that came out of the
+        // crossing, and that ship is marked flown. Full deflection saturates the setpoint at the
+        // craft's 40 b/s cap inside 60 ticks - nearly three times the ceiling the observation windows
+        // require - so a ship left holding it would make every one of them unreadable.
+        String parked = exec("artest vs ff-cruise-at " + slotDim + " " + arrangedAfcPos + " 0 0 0");
+        assertTrue("ARRANGEMENT: the arrived ship must be left holding station: " + parked,
+                parked.contains("\"afcResolved\":true"));
 
         // He rode his own ship across the seam: no probe transferred him, so a wrong dimension here
         // is the crossing failing to carry its crew, not an arrangement that walked him somewhere.
@@ -1371,7 +1461,17 @@ public abstract class AbstractSpaceLoginRestoreClientTest {
                 }
                 String found = exec("artest space find-afc " + trimmed);
                 if (found.contains("\"found\":true")) {
-                    return new String[]{trimmed, readShipId(found)};
+                    // Its flight computer's own block position rides along. The ledger's id and the
+                    // VS ship uuid are DIFFERENT identities, and the by-id command verbs resolve the
+                    // second; this is how a caller holding the first reaches that ship's computer.
+                    // Its flight COMPUTER's position, not just a block of its hull - `x,y,z` is the
+                    // first non-air block in the shipyard, which is whatever the scan met first.
+                    assertTrue("the settled ship's flight computer must be locatable, and must be the"
+                            + " one whose own durable id matches the ledger's: " + found,
+                            readBool(found, "afcFound"));
+                    return new String[]{trimmed, readShipId(found),
+                            "" + readInt(found, "afcX"), "" + readInt(found, "afcY"),
+                            "" + readInt(found, "afcZ")};
                 }
                 if (found.contains("\"found\":false")) {
                     // That dimension is loaded and the ledger is readable there; if the ship is

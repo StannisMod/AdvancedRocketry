@@ -1235,6 +1235,18 @@ public final class VSIntegration {
     }
 
     /**
+     * The gates VS applies before ticking a ship's physics, plus its controller count — see
+     * {@code VSBridge.shipPhysicsGatesById}. {@code null} when VS is absent or the id names no ship
+     * loaded here.
+     */
+    public static int[] shipPhysicsGatesById(World world, String shipId) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipPhysicsGatesById(world, shipId);
+    }
+
+    /**
      * Enable physics on the ship named by {@code shipId} — what a bare assembled ship needs before
      * its flight computer's controller is stepped at all. A safe no-op returning false when VS is
      * absent or that id names no ship loaded here.

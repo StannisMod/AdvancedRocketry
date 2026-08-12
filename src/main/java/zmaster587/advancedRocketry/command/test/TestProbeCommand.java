@@ -1078,6 +1078,136 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"cruiseRight\":" + set[1] + ",\"cruiseUp\":" + set[2] + "}");
             return;
         }
+        // ff-cruise-at <dim> <x> <y> <z> <forward> <right> <up> — as `ff-cruise-by-id`, but addressing
+        // the flight computer AT THAT EXACT BLOCK rather than through the ship that carries it.
+        //
+        // It exists because a tier-2 ship has TWO identities and they are not interchangeable: the VS
+        // ship uuid, which `ff-cruise-by-id` resolves, and the DURABLE ship id the space ledger is
+        // keyed by, which is what a caller working from `space find-afc` or `space ledger-get` holds.
+        // Handing the second to the first-keyed verb resolves nothing and answers afcResolved:false.
+        // A block position is not a proximity guess — it names one tile — so this is still identity
+        // addressing, reached by ledger id -> `find-afc` -> that computer's own position.
+        if (args.length >= 8 && "ff-cruise-at".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos at = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                    parseIntOr(args[4], 0));
+            world.getChunkProvider().provideChunk(at.getX() >> 4, at.getZ() >> 4);
+            TileEntity atTe = world.getTileEntity(at);
+            if (!(atTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer atAfc =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) atTe;
+            atAfc.commandCruise(parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                    parseDoubleOr(args[7], 0));
+            double[] atSet = atAfc.commandedCruise();
+            send(sender, "{\"ok\":true,\"afcResolved\":true,\"cruiseForward\":" + atSet[0]
+                    + ",\"cruiseRight\":" + atSet[1] + ",\"cruiseUp\":" + atSet[2] + "}");
+            return;
+        }
+        // phys-diag <dim> <shipId> <afcX> <afcY> <afcZ> — why a ship is or is not responding to its own
+        // flight controller, as the gates the physics loop actually applies rather than an inference:
+        //  - physicsReady / physicsEnabled / hasChunkCache: the three conjuncts VSWorldPhysicsLoop
+        //    selects a ship by. Any false one means the ship's physics never runs at all.
+        //  - controllers: how many force controllers VS has collected for this ship. Zero means the
+        //    physics runs but this ship's flight computer was never registered as one.
+        //  - controllerTicks: how many times THIS computer's controller has actually been invoked.
+        //    Rising while the ship does not move is a different defect from stuck at zero.
+        // The three readings need opposite fixes, which is why they are separate fields.
+        if (args.length >= 6 && "phys-diag".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            int[] gates = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipPhysicsGatesById(world, args[2]);
+            BlockPos diagAt = new BlockPos(parseIntOr(args[3], 0), parseIntOr(args[4], 0),
+                    parseIntOr(args[5], 0));
+            world.getChunkProvider().provideChunk(diagAt.getX() >> 4, diagAt.getZ() >> 4);
+            TileEntity diagTe = world.getTileEntity(diagAt);
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer diagAfc =
+                    diagTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                            ? (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) diagTe : null;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("shipFound", gates != null);
+            if (gates != null) {
+                m.put("physicsReady", gates[0] == 1);
+                m.put("physicsEnabled", gates[1] == 1);
+                m.put("hasChunkCache", gates[2] == 1);
+                m.put("controllers", gates[3]);
+            }
+            m.put("afcResolved", diagAfc != null);
+            if (diagAfc != null) {
+                // WHICH tile object answered. Two consecutive reads that disagree mean the tile is
+                // being reconstructed between them, and then a command written by one call cannot be
+                // observed by the next — a fact that would otherwise read as "the command had no
+                // effect". Identity, not equality: two TileEntity instances of the same block at the
+                // same position are equal in every way that matters except the one that matters here.
+                m.put("afcIdentity", System.identityHashCode(diagAfc));
+                m.put("controllerTicks", diagAfc.controllerTicks);
+                m.put("probeActive", diagAfc.probeCommandActive);
+                m.put("probeVel", diagAfc.probeVelocity == null ? "null"
+                        : diagAfc.probeVelocity[0] + "," + diagAfc.probeVelocity[1] + ","
+                                + diagAfc.probeVelocity[2]);
+                m.put("pilotCmdVel", diagAfc.commandedVelocity == null ? "null"
+                        : diagAfc.commandedVelocity[0] + "," + diagAfc.commandedVelocity[1] + ","
+                                + diagAfc.commandedVelocity[2]);
+            }
+            send(sender, jsonMap(m));
+            return;
+        }
+        // force-vel-at <dim> <x> <y> <z> <vx> <vy> <vz> — as `force-vel-by-id`, but addressing the
+        // flight computer AT THAT EXACT BLOCK (the durable-id bridge `ff-cruise-at` documents).
+        if (args.length >= 8 && "force-vel-at".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos velAt = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                    parseIntOr(args[4], 0));
+            world.getChunkProvider().provideChunk(velAt.getX() >> 4, velAt.getZ() >> 4);
+            TileEntity velTe = world.getTileEntity(velAt);
+            if (!(velTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"commanded\":false,\"afcResolved\":false}");
+                return;
+            }
+            ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) velTe).commandProbeVelocity(
+                    new double[]{parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                            parseDoubleOr(args[7], 0)}, null);
+            send(sender, "{\"commanded\":true,\"afcResolved\":true}");
+            return;
+        }
+        // point-at <dim> <x> <y> <z> <qw> <qx> <qy> <qz> — as `point-by-id`, but addressing the flight
+        // computer AT THAT EXACT BLOCK. The same two-identities bridge `ff-cruise-at` exists for: a
+        // caller holding the space ledger's DURABLE ship id cannot feed it to a verb that resolves a
+        // VS ship uuid, and `space find-afc <dim> <durableId>` hands back this position.
+        if (args.length >= 9 && "point-at".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            BlockPos pointAt = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0),
+                    parseIntOr(args[4], 0));
+            world.getChunkProvider().provideChunk(pointAt.getX() >> 4, pointAt.getZ() >> 4);
+            TileEntity pointTe = world.getTileEntity(pointAt);
+            if (!(pointTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, "{\"commanded\":false,\"afcResolved\":false}");
+                return;
+            }
+            ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) pointTe).commandProbeAttitude(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0),
+                    parseDoubleOr(args[7], 0), parseDoubleOr(args[8], 0));
+            send(sender, "{\"commanded\":true,\"afcResolved\":true}");
+            return;
+        }
         // ff-input-by-id <dim> <shipId> [<fwd> <vert> <strafe> <yaw> <pitch> <roll>] — set (or, with the
         // axes omitted, CLEAR) the Free Flight input of the flight computer on the ship NAMED by
         // shipId. This is the per-tile `pilotInput` a real seated pilot's control packet writes.
@@ -1128,28 +1258,6 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"afcResolved\":true,\"input\":\""
                     + (afc.pilotInput != null ? "SET" : "null") + "\",\"afcX\":" + afcPos.getX()
                     + ",\"afcY\":" + afcPos.getY() + ",\"afcZ\":" + afcPos.getZ() + "}");
-            return;
-        }
-        // ff-input <fwd> <vert> <strafe> <yaw> <pitch> <roll> — set the held Free Flight input
-        // that the Advanced Flight Computer tile's tick runs through the FF decision layer and
-        // publishes to the controller. Drives the FULL flight path (FF -> force), no seat yet.
-        if (args.length >= 7 && "ff-input".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput =
-                    new zmaster587.advancedRocketry.api.FreeFlightInput(
-                            (float) parseDoubleOr(args[1], 0), (float) parseDoubleOr(args[2], 0),
-                            (float) parseDoubleOr(args[3], 0), (float) parseDoubleOr(args[4], 0),
-                            (float) parseDoubleOr(args[5], 0), (float) parseDoubleOr(args[6], 0),
-                            0f, false);
-            send(sender, "{\"ok\":true}");
-            return;
-        }
-        // ff-input-clear — drop the held Free Flight input. `debugFlightInput` is a STATIC, so it
-        // outlives the scenario that set it and every later one on the same server inherits it. A
-        // test whose whole subject is "nobody is at the controls" must therefore clear it rather
-        // than assume it, or it passes for the previous scenario's reason and proves nothing.
-        if (args.length >= 1 && "ff-input-clear".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
-            send(sender, "{\"ok\":true,\"cleared\":true}");
             return;
         }
         // seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll> — drive the ship through the
@@ -1800,25 +1908,20 @@ public class TestProbeCommand extends CommandBase {
         // whether its deck-frame sweep is finding the deck. A mixin that failed to apply and a mixin
         // that applied and declined every entity look identical from outside the JVM; these counters
         // tell them apart, and a resolved tick that saw zero obstacles means bodies fall through decks.
-        // afc-clear - drop every BRING-UP channel the flight probes write, across the whole server:
-        // the held Free Flight input `ff-input` sets, which is `static volatile` on the tile class
-        // and which TileAdvancedFlightComputer.update() falls back to for ANY flight computer with
-        // no pilot of its own (`pilotInput != null ? pilotInput : debugFlightInput`) - so a probe
-        // throttle is not aimed at the ship the caller named; it keeps flying every other ship in
-        // the world until something clears it. Under one boot per test there was never a later
-        // scenario to notice. On a shared client it is worth ~30 blocks of unasked-for climb.
+        // afc-clear - release every per-tile PROBE command channel on the server (`force-vel-by-id`,
+        // `force-rot-by-id`, `point-by-id` and their `-at` twins).
         //
-        // Plus the per-tile probe COMMAND channels (`force-vel-by-id`, `force-rot-by-id`,
-        // `point-by-id`). Those name one ship each, so they cannot bleed onto a neighbour - but a
-        // scenario that leaves one in force hands the next scenario a computer that ignores its own
-        // pilot, so the sweep clears them too. It has to walk the loaded tiles of every loaded world
-        // to do it: that is the price of an addressable channel, and it is the right price.
+        // Each names one ship, so none can bleed onto a neighbour - but they deliberately OUTRANK the
+        // pilot channel, so a scenario that leaves one in force hands the next scenario a computer
+        // that ignores its own pilot. The sweep walks the loaded computers of every loaded world:
+        // that is the price of an addressable channel, and it is the right price.
+        //
+        // There used to be a fourth thing to clear here, and it was the reason this verb exists: a
+        // JVM-wide static flight input that every computer read as its fallback, worth ~30 blocks of
+        // unasked-for climb to a scenario that commanded nothing (measured 2026-08-07). It is gone.
         //
         // Reports what was set, so a caller asserts the clear rather than trusting it.
         if (args.length >= 1 && "afc-clear".equalsIgnoreCase(args[0])) {
-            boolean hadInput = zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
-                    .debugFlightInput != null;
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
             int clearedComputers = 0;
             net.minecraft.server.MinecraftServer srv = sender.getServer();
             if (srv != null) {
@@ -1832,8 +1935,7 @@ public class TestProbeCommand extends CommandBase {
                     }
                 }
             }
-            send(sender, "{\"ok\":true,\"clearedFlightInput\":" + hadInput
-                    + ",\"clearedComputers\":" + clearedComputers + "}");
+            send(sender, "{\"ok\":true,\"clearedComputers\":" + clearedComputers + "}");
             return;
         }
         // afc-debug - READ-ONLY. What the flight controller last commanded, from the physics thread.
@@ -2014,7 +2116,13 @@ public class TestProbeCommand extends CommandBase {
         }
         send(sender, "{\"error\":\"usage: vs available|ship-count <dim>"
                 + "|ship-info <dim> <x> <y> <z> [maxDist]|ship-info <dim> id <shipId>"
-                + "|push-ship <dim> <x> <y> <z> <vx> <vy> <vz>"
+                + "|push-ship-by-id <dim> <shipId> <vx> <vy> <vz>"
+                + "|spin-ship-by-id <dim> <shipId> <wx> <wy> <wz>"
+                + "|force-vel-by-id|force-rot-by-id <dim> <shipId> <x> <y> <z>"
+                + "|point-by-id <dim> <shipId> <qw> <qx> <qy> <qz>|force-clear-by-id <dim> <shipId>"
+                + "|ff-cruise-at|force-vel-at <dim> <x> <y> <z> <a> <b> <c>"
+                + "|point-at <dim> <x> <y> <z> <qw> <qx> <qy> <qz>"
+                + "|phys-diag <dim> <shipId> <afcX> <afcY> <afcZ>"
                 + "|seat-input <dim> <fwd> <vert> <strafe> <yaw> <pitch> <roll>|seat-mount <dim>|seat-occupy <dim> <x> <y> <z>|seat-delivery|arrival-trace"
                 + "|player-ship-data|shipframe-stats|would-take-over|deck-capture [<dim> <id>]"
                 + "|subspace-census [<dim> <id>]\"}");
@@ -3839,9 +3947,6 @@ public class TestProbeCommand extends CommandBase {
             tctl.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
                     entryMgr, entryLedger, ctl, tctl, dctl);
-            // Start from a clean pilot channel: a stale static FF input from a prior test would make the
-            // AFC read "a pilot is flying" (in != null) and suppress the auto-takeoff autopilot branch.
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
             StringBuilder sb = new StringBuilder("{\"ok\":true,\"dims\":[");
             for (int i = 0; i < entrySlotDims.length; i++) {
                 if (i > 0) sb.append(',');
@@ -3932,10 +4037,9 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         // entry-clear: uninstall the probe entry stack and unload its slots (shared-harness
-        // state-leak contract). Also clears the static flight-input channel the e2e used as pilot.
+        // state-leak contract).
         if (args.length >= 1 && "entry-clear".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(null, null, null, null, null);
-            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer.debugFlightInput = null;
             if (entrySlotDims != null) {
                 for (int dim : entrySlotDims) {
                     zmaster587.advancedRocketry.space.SpaceSlotPool.unload(dim);
@@ -4392,8 +4496,31 @@ public class TestProbeCommand extends CommandBase {
                         zmaster587.advancedRocketry.integration.vs.VSIntegration
                                 .shipBlockAt(w, pose[0], pose[1], pose[2]);
                 if (block != null) {
-                    send(sender, "{\"ok\":true,\"found\":true,\"x\":" + block.getX() + ",\"y\":"
-                            + block.getY() + ",\"z\":" + block.getZ() + ",\"shipId\":\"" + e.getKey() + "\"}");
+                    // `x,y,z` is A block of the ship (first non-air in its shipyard) — what a caller
+                    // addressing "a ship by one of its blocks" needs. `afc*` is the flight COMPUTER,
+                    // which is a different block and the one a caller commanding the ship needs, and
+                    // it is CHECKED rather than assumed: the scan that finds it is position-keyed, so
+                    // the computer it returns is only this ship's if its own durable id matches the
+                    // ledger key we are answering for. A mismatch reports afcFound:false — a loud
+                    // miss, not a neighbour's computer described as this ship's.
+                    net.minecraft.util.math.BlockPos afc = zmaster587.advancedRocketry.integration.vs
+                            .VSIntegration.flightComputerAt(w, pose[0], pose[1], pose[2]);
+                    TileEntity afcTe = afc == null ? null : w.getTileEntity(afc);
+                    boolean afcIsOurs = afcTe instanceof zmaster587.advancedRocketry.tile
+                            .TileAdvancedFlightComputer
+                            && e.getKey().equals(((zmaster587.advancedRocketry.tile
+                                    .TileAdvancedFlightComputer) afcTe).shipIdOrNull());
+                    StringBuilder out2 = new StringBuilder("{\"ok\":true,\"found\":true,\"x\":");
+                    out2.append(block.getX()).append(",\"y\":").append(block.getY())
+                            .append(",\"z\":").append(block.getZ())
+                            .append(",\"shipId\":\"").append(e.getKey()).append("\"")
+                            .append(",\"afcFound\":").append(afcIsOurs);
+                    if (afcIsOurs) {
+                        out2.append(",\"afcX\":").append(afc.getX())
+                                .append(",\"afcY\":").append(afc.getY())
+                                .append(",\"afcZ\":").append(afc.getZ());
+                    }
+                    send(sender, out2.append('}').toString());
                     return;
                 }
             }

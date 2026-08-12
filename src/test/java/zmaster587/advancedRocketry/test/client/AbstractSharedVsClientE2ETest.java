@@ -28,12 +28,13 @@ import static org.junit.Assert.assertTrue;
  *       subject IS the unload (a reload, a client-load gate) would then silently measure the
  *       affordance instead of the product. It is reset to OFF, so a scenario that needs it SETS
  *       it.</li>
- *   <li><b>The flight computer's static bring-up channels.</b>
- *       {@code TileAdvancedFlightComputer.debugFlightInput} and the three command channels beside
- *       it are {@code static volatile}, and both readers fall back to them for EVERY flight
- *       computer that has no per-tile value of its own. So a probe throttle is not aimed at the
- *       ship it named: it keeps flying every other ship in the world, including the next
- *       scenario's, until something clears it. Under one boot per test there was never a next
+ *   <li><b>The flight computer's probe command channels.</b> They are per-tile and name one ship
+ *       each, so they cannot bleed onto a neighbour — but they deliberately OUTRANK the pilot
+ *       channel, so one left in force hands the next scenario a computer that ignores its own pilot.
+ *       They replaced four {@code static volatile} channels that every computer read as a fallback,
+ *       where a probe throttle was not aimed at the ship it named at all: it kept flying every other
+ *       ship in the world, including the next
+ *       scenario's, until something cleared it. Under one boot per test there was never a next
  *       scenario, which is why this only surfaced here.</li>
  * </ol>
  *
@@ -139,18 +140,15 @@ public abstract class AbstractSharedVsClientE2ETest extends AbstractSharedClient
     protected void resetFamilyStateBeforeTeleport() throws Exception {
         exec("artest player dismount");
         exec("artest vs permaload false");
-        // Every bring-up channel a flight probe can leave behind. Two kinds now, and both must go:
+        // Release every per-tile PROBE command channel on the server. They name one ship each and
+        // cannot bleed onto a neighbour, but they deliberately OUTRANK the pilot channel, so a
+        // scenario that left one in force hands the next scenario a computer that ignores its own
+        // pilot. The clear walks the loaded computers of every loaded world.
         //
-        //  - the held Free Flight input, still `static volatile` on the tile class, which update()
-        //    falls back to for ANY computer with no pilot of its own — so a probe throttle is not
-        //    aimed at the ship its caller named; it keeps flying every other ship in the world,
-        //    including the next scenario's. Measured 2026-08-07: a pilot-key scenario whose ship
-        //    climbed 32.7 blocks where the same body run alone climbs ~2, because an earlier
-        //    scenario's `vs ff-input … full up` was still held.
-        //  - the PER-TILE probe command channels (`force-vel-by-id` and its siblings). Those name
-        //    one ship each and cannot bleed onto a neighbour, but they deliberately OUTRANK the
-        //    pilot channel, so a scenario that left one in force hands the next scenario a computer
-        //    that ignores its own pilot. The clear walks the loaded computers of every loaded world.
+        // This verb was born for a worse problem, now gone: a JVM-wide static flight input every
+        // computer read as its fallback. Measured 2026-08-07 — a pilot-key scenario whose ship
+        // climbed 32.7 blocks where the same body run alone climbs ~2, because an earlier scenario's
+        // throttle was still held on a channel that belonged to nobody.
         //
         // Asserted, not trusted: a clear nobody checks is indistinguishable from no clear.
         String afcCleared = exec("artest vs afc-clear");
