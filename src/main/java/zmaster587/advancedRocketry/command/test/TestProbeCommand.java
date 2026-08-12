@@ -1135,24 +1135,58 @@ public class TestProbeCommand extends CommandBase {
                     + "}");
             return;
         }
-        // seat-mount <dim> — spawn the pilot seat's dummy mount and return its entity id, so a
-        // test bot can `player mount-entity <id>` and become the ship's pilot. Mirrors
-        // BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a ship block).
+        // seat-mount <dim> [near <x> <y> <z> [maxDist]] — spawn the pilot seat's dummy mount and
+        // return its entity id, so a test bot can `player mount-entity <id>` and become the ship's
+        // pilot. Mirrors BlockPilotSeat.onBlockActivated server-side (the bot cannot right-click a
+        // ship block). Without "near" the FIRST loaded seat answers, which is only defensible on a
+        // world holding one ship — the reply carries "seatsLoaded" so a caller can see when it is not.
         if (args.length >= 2 && "seat-mount".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            // WHICH seat. The bare form takes the first loaded one, and on a world holding several
+            // ships that is a coin toss reported as a fact: it once mounted a pilot onto a ship
+            // 16,000,000 blocks away from the one under test, and the reply was indistinguishable
+            // from success. So the seat COUNT now travels in every reply, and a caller that means
+            // one particular ship names it with "near <x> <y> <z> [maxDist]" — resolved through that
+            // ship's chunk CLAIM, an identity, rather than through whichever seat is nearest.
+            java.util.List<zmaster587.advancedRocketry.tile.TilePilotSeat> seats =
+                    new java.util.ArrayList<>();
             for (TileEntity te : world.loadedTileEntityList) {
                 if (te instanceof zmaster587.advancedRocketry.tile.TilePilotSeat) {
-                    seat = (zmaster587.advancedRocketry.tile.TilePilotSeat) te;
+                    seats.add((zmaster587.advancedRocketry.tile.TilePilotSeat) te);
+                }
+            }
+            String wantShipId = null;
+            if (args.length >= 6 && "near".equalsIgnoreCase(args[2])) {
+                double maxDist = args.length >= 7
+                        ? parseDoubleOr(args[6], Double.POSITIVE_INFINITY) : Double.POSITIVE_INFINITY;
+                wantShipId = zmaster587.advancedRocketry.integration.vs.VSIntegration.nearestShipId(
+                        world, parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0),
+                        parseDoubleOr(args[5], 0), maxDist);
+                if (wantShipId == null) {
+                    send(sender, "{\"seatFound\":false,\"reason\":\"no loaded ship near that point\""
+                            + ",\"seatsLoaded\":" + seats.size() + "}");
+                    return;
+                }
+            }
+            zmaster587.advancedRocketry.tile.TilePilotSeat seat = null;
+            for (zmaster587.advancedRocketry.tile.TilePilotSeat candidate : seats) {
+                if (wantShipId == null) {
+                    seat = candidate;
+                    break;
+                }
+                if (wantShipId.equals(zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .shipIdOwningBlock(world, candidate.getPos()))) {
+                    seat = candidate;
                     break;
                 }
             }
             if (seat == null) {
-                send(sender, "{\"seatFound\":false}");
+                send(sender, "{\"seatFound\":false,\"seatsLoaded\":" + seats.size()
+                        + (wantShipId == null ? "" : ",\"wantedShip\":\"" + wantShipId + "\"") + "}");
                 return;
             }
             BlockPos sp = seat.getPos();
@@ -1169,6 +1203,7 @@ public class TestProbeCommand extends CommandBase {
             }
             send(sender, "{\"seatFound\":true,\"dummyId\":" + dummy.getEntityId()
                     + ",\"reused\":" + reused
+                    + ",\"seatsLoaded\":" + seats.size()
                     + ",\"seatX\":" + sp.getX() + ",\"seatY\":" + sp.getY() + ",\"seatZ\":" + sp.getZ() + "}");
             return;
         }

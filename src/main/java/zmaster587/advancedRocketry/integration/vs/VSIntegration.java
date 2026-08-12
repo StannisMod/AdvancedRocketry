@@ -518,6 +518,22 @@ public final class VSIntegration {
      * and {@link #shipBlockHeight}.
      */
     /**
+     * The identity (VS ship uuid, as a string) of the ship that OWNS a subspace block position, or
+     * {@code null} when VS is absent or the position belongs to no loaded ship.
+     *
+     * <p>Answered from the ship's chunk claim — which contains the block or does not — so it is an
+     * identity and not a proximity. A caller holding one block of a ship (a pilot seat, a hatch) uses
+     * this to say which ship that block belongs to on a world where several ships are loaded at once
+     * and their subspace yards are neighbours.</p>
+     */
+    public static String shipIdOwningBlock(World world, net.minecraft.util.math.BlockPos pos) {
+        if (!isAvailable()) {
+            return null;
+        }
+        return VSBridge.shipIdOwningBlock(world, pos);
+    }
+
+    /**
      * A single subspace block position of the VS ship whose world BB contains {@code (x,y,z)}, or
      * {@code null} when VS is absent / no ship is there / its shipyard is empty. Located through the
      * queryable ship registry (headless-reliable, unlike a loaded-TE scan), so a test harness can hand
