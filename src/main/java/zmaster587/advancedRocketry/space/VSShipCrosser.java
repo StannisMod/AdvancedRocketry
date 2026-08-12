@@ -72,8 +72,62 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                 targetSlotDim, cause);
     }
 
+    /**
+     * The VS uuid to cross at {@code srcAnchor}, or {@code null} to fall back to the positional
+     * resolution this method exists to replace.
+     *
+     * <p><b>It may never turn a departure that would have worked into a failure.</b> Only a POSITIVE
+     * mismatch refuses — the craft at the anchor carries a durable id and it is somebody else's. Every
+     * other outcome (no flight computer resolvable there, no durable id minted on it, the physics mod
+     * not naming the craft) proceeds exactly as before and SAYS that it could not verify. The
+     * defect being closed is "the anchor silently selected a stranger's craft"; a check that also
+     * blocks the cases it cannot judge trades one silent failure for a loud one and is not an
+     * improvement.</p>
+     *
+     * <p>Requiring the flight computer here was tried and reverted: the capture path has warned
+     * "found no flight computer at anchor" on these departures for as long as it has existed, without
+     * stopping them, because the crossing needs only a shipyard box.</p>
+     */
+    private java.util.UUID identifyShipAtAnchor(WorldServer src, BlockPos srcAnchor, String shipId,
+                                                int srcSlotDim) {
+        double ax = srcAnchor.getX() + 0.5, ay = srcAnchor.getY() + 0.5, az = srcAnchor.getZ() + 0.5;
+        // The comparison is only meaningful when the caller named a REAL ship. Some departures are
+        // driven under a synthetic id, and a synthetic id is not an identity claim — it cannot be
+        // compared, so there is nothing to refuse. Checking it anyway is a false positive that blocks
+        // a jump which would have worked, which is the one thing this method must never do.
+        java.util.UUID expected = null;
+        if (shipId != null) {
+            try {
+                expected = java.util.UUID.fromString(shipId);
+            } catch (IllegalArgumentException notAnIdentity) {
+                expected = null;
+            }
+        }
+        BlockPos afcPos = VSIntegration.flightComputerAt(src, ax, ay, az);
+        net.minecraft.tileentity.TileEntity te = afcPos == null ? null : src.getTileEntity(afcPos);
+        if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
+            java.util.UUID found = ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
+                    .shipIdOrNull();
+            if (expected != null && found != null && !found.equals(expected)) {
+                LOGGER.error("[SPACE] depart REFUSED: the craft at anchor {} in slot dim {} is ship "
+                                + "{}, not the departing ship {} - the anchor selected somebody "
+                                + "else's craft and cutting it would move the wrong ship. Nothing "
+                                + "is cut.",
+                        srcAnchor, srcSlotDim, found, shipId);
+                return REFUSED;
+            }
+        }
+        return VSIntegration.shipUuidAt(src, ax, ay, az);
+    }
+
+    /** Returned by {@link #identifyShipAtAnchor} when the anchor provably names a DIFFERENT ship —
+     *  distinct from {@code null}, which only means "could not verify, cross as before". */
+    private static final java.util.UUID REFUSED =
+            java.util.UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     @Override
     public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                          String shipId,
                                                           HyperspaceTiles.Tile tile) {
         WorldServer src = DimensionManager.getWorld(srcSlotDim);
         WorldServer hyper = HyperspaceWorld.getOrCreate();
@@ -95,9 +149,18 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                     srcSlotDim);
             return null;
         }
+        // WHICH ship is departing, established before anything is cut. The anchor selects a craft by
+        // PROXIMITY, and a cell can hold a second one — or a blockless remnant of one, which a
+        // crossing is documented to leave behind. Resolving that box and cutting it is how a jump
+        // came back "the shipyard holds no blocks": the box belonged to a stranger while the ship
+        // that should have jumped sat untouched with its blocks elsewhere.
+        java.util.UUID departing = identifyShipAtAnchor(src, srcAnchor, shipId, srcSlotDim);
+        if (REFUSED.equals(departing)) {
+            return null; // a different ship is at this anchor; identifyShipAtAnchor said so
+        }
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 src, srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5,
-                hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
+                departing, hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
         if (!res.ok()) {
             LOGGER.warn("[SPACE] depart aborted: the crossing out of slot dim {} at anchor {} produced "
                     + "no ship in hyperspace",

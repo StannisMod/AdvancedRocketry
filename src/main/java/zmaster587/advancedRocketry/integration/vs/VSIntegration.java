@@ -280,6 +280,29 @@ public final class VSIntegration {
      */
     public static CrossResult crossShip(World srcWorld, double sx, double sy, double sz,
                                         World dstWorld, int dstX, int dstY, int dstZ) {
+        return crossShip(srcWorld, sx, sy, sz, null, dstWorld, dstX, dstY, dstZ);
+    }
+
+    /**
+     * The same crossing, naming the ship to cross by IDENTITY.
+     *
+     * <p>{@code srcShipUuid} decides which craft is cut. Given one, the shipyard comes from
+     * {@link #shipyardBoundsOf} and the identity to re-assemble under is that uuid — no position is
+     * consulted for either, and {@code (sx,sy,sz)} is kept only to say WHERE in the logs.</p>
+     *
+     * <p><b>Why the positional form is not enough.</b> It resolves the yard through
+     * {@link #shipyardBoundsAt}, whose own contract is that it "answers for whatever craft is nearest
+     * — with no distance bound", so on a world holding a second craft (or a blockless remnant of one)
+     * it hands back a stranger's box. What the caller then sees is a shipyard that "holds no blocks",
+     * because the ship whose blocks are really there has a different claim — and its jump silently
+     * does not happen while the source sits untouched. Measured on the jump departure.</p>
+     *
+     * <p>{@code null} means "resolve by position", which the overload above passes: a caller that
+     * genuinely has no identity yet is asking a different, weaker question and should say so here.</p>
+     */
+    public static CrossResult crossShip(World srcWorld, double sx, double sy, double sz,
+                                        java.util.UUID srcShipUuid,
+                                        World dstWorld, int dstX, int dstY, int dstZ) {
         // Four different ways this returns "no ship", each with its own cause and its own cost. They
         // used to be one silent null, so a caller could only report that a crossing failed - never
         // which half of it, and never that the ship had already been cut.
@@ -288,11 +311,14 @@ public final class VSIntegration {
                     srcWorld == null ? "null" : srcWorld.provider.getDimension());
             return new CrossResult(null, null, 0, 0);
         }
-        AxisAlignedBB yard = shipyardBoundsAt(srcWorld, sx, sy, sz);
+        AxisAlignedBB yard = srcShipUuid != null
+                ? shipyardBoundsOf(srcWorld, srcShipUuid) : shipyardBoundsAt(srcWorld, sx, sy, sz);
         if (yard == null) {
-            LOGGER.warn("[SPACE] crossShip: no ship claims ({},{},{}) in dim {} - nothing to cross, "
-                            + "the source is untouched",
-                    sx, sy, sz, srcWorld.provider.getDimension());
+            LOGGER.warn("[SPACE] crossShip: {} in dim {} - nothing to cross, the source is untouched",
+                    srcShipUuid != null
+                            ? "ship " + srcShipUuid + " is not registered here"
+                            : "no ship claims (" + sx + "," + sy + "," + sz + ")",
+                    srcWorld.provider.getDimension());
             return new CrossResult(null, null, 0, 0);
         }
         int yMinX = (int) yard.minX, yMinZ = (int) yard.minZ;
@@ -330,7 +356,11 @@ public final class VSIntegration {
         // chose the shipyard box being cut, so it can never name a different ship than the one this
         // crossing is moving - if that lookup is wrong the crossing is already moving the wrong craft,
         // and keeping the identity adds no risk of its own.
-        java.util.UUID srcShipId = VSBridge.queryableShipUuidAt(srcWorld, sx, sy, sz);
+        // Named by the caller when it knows which ship it means; otherwise recovered from the same
+        // point the yard above came from, so the two can never disagree with each other (they can
+        // still both be about the wrong ship — that is what the identity-keyed form removes).
+        java.util.UUID srcShipId = srcShipUuid != null
+                ? srcShipUuid : VSBridge.queryableShipUuidAt(srcWorld, sx, sy, sz);
         // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
         // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
         AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);

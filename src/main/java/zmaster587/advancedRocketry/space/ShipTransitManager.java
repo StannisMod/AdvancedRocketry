@@ -69,8 +69,15 @@ public final class ShipTransitManager {
          * <p>A crossing KEEPS the ship's identity, so the uuid this returns is the same one the ship
          * had in its origin cell and the same one it will have at the far end. That is what lets one
          * jump carry ONE identity instead of re-finding the ship by position at each leg.</p>
+         *
+         * <p>{@code shipId} is the DURABLE id of the ship meant to depart, and it is not decoration:
+         * the anchor alone selects a craft by proximity, so on a cell holding a second ship (or a
+         * blockless remnant of one) the crossing cut the wrong box and the jump silently did not
+         * happen. The implementation resolves the ship at the anchor and then CHECKS that it is the
+         * one named here before anything is cut. The arrival side already took this lesson — see the
+         * {@code vsShipUuid} parameters on the settle and re-seat calls below.</p>
          */
-        ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+        ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor, String shipId,
                                                        HyperspaceTiles.Tile tile);
 
         /**
@@ -417,7 +424,7 @@ public final class ShipTransitManager {
         // snapshot-less record - which on restart would strand + silently delete the ship. Later saves refresh
         // it from hyperspace via snapshotParked.
         NBTTagCompound initialSnapshot = crosser.snapshotSource(originSlotDim, originAnchor);
-        ShipCrossingService.Crossed departed = crosser.departToHyperspace(originSlotDim, originAnchor, tile);
+        ShipCrossingService.Crossed departed = crosser.departToHyperspace(originSlotDim, originAnchor, shipId, tile);
         BlockPos hyperAnchor = departed == null ? null : departed.anchor;
         if (hyperAnchor == null) {
             tiles.free(tile);

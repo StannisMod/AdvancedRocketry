@@ -107,6 +107,7 @@ public class ShipTransitManagerTest {
 
         @Override
         public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                              String shipId,
                                                               HyperspaceTiles.Tile tile) {
             departs.add(srcSlotDim + "@" + tile.index);
             order.add("depart");
