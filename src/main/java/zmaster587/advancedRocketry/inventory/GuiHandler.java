@@ -12,6 +12,12 @@ import zmaster587.libVulpes.inventory.modules.IModularInventory;
 
 public class GuiHandler implements IGuiHandler {
 
+    // Stateless dispatcher: every gui id that isn't AR's own OreMappingSatellite
+    // is forwarded to the libVulpes handler (see the delegation below). One
+    // shared instance — it holds no state.
+    private static final zmaster587.libVulpes.inventory.GuiHandler LIBVULPES =
+            new zmaster587.libVulpes.inventory.GuiHandler();
+
     //X coord is entity ID num if entity
     @Override
     public Object getServerGuiElement(int ID, EntityPlayer player, World world,
@@ -36,7 +42,15 @@ public class GuiHandler implements IGuiHandler {
 
             return new ContainerOreMappingSatellite((SatelliteOreMapping) satellite, player.inventory);
         }
-        return null;
+        // Delegate every non-AR gui id to the libVulpes handler. Both handlers
+        // were registered on AdvancedRocketry.instance and Forge keeps only the
+        // last one (this AR handler), so without this delegation the libVulpes
+        // gui ids opened on AdvancedRocketry.instance — e.g. the ItemStationChip
+        // button re-open (MODULARFULLSCREEN) — resolve to null and the GUI never
+        // opens. NB: this only covers libVulpes' own enum (MODULAR..MODULARFULLSCREEN,
+        // ordinals 0-3); an out-of-range id like SatelliteOreMapping.java:69's
+        // hardcoded 100 still maps to nothing (separate, pre-existing no-op). See C010.
+        return LIBVULPES.getServerGuiElement(ID, player, world, x, y, z);
     }
 
     @Override
@@ -61,7 +75,10 @@ public class GuiHandler implements IGuiHandler {
 
             return new GuiOreMappingSatellite((SatelliteOreMapping) satellite, player);
         }
-        return null;
+        // Delegate every non-AR gui id to the libVulpes handler (see the server
+        // side above for the caveat about ids outside libVulpes' 0-3 enum).
+        // Fixes the ItemStationChip button re-open. See C010.
+        return LIBVULPES.getClientGuiElement(ID, player, world, x, y, z);
     }
 
     public enum guiId {

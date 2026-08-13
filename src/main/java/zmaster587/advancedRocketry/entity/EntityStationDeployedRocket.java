@@ -522,8 +522,10 @@ public class EntityStationDeployedRocket extends EntityRocket {
 
     @Override
     public void writeDataToNetwork(ByteBuf out, byte id) {
-        super.writeDataToNetwork(out, id);
-
+        // Structural mirror of readDataFromNetwork: MENU_CHANGE carries gasId,
+        // every inherited id delegates to super exactly ONCE. (A second
+        // unconditional super call here used to double-serialise the payload
+        // for every non-MENU_CHANGE packet while the reader consumed it once.)
         if (id == PacketType.MENU_CHANGE.ordinal()) {
             out.writeShort(gasId);
         } else

@@ -102,7 +102,10 @@ public class AdvancedRocketryBlocks {
     public static Block blockBeacon;
     public static Block blockLightwoodPlanks;
     public static Block blockThermiteTorch;
-    public static Block blockTransceiver;
+    //FROZEN API symbol — the misspelling is deliberate. Dependent mods compile the field
+    //name into their bytecode, so renaming it throws NoSuchFieldError at their runtime.
+    //TODO(3.0.0): rename to blockTransceiver alongside the registry-name migration.
+    public static Block blockTransciever;
     public static Block blockMoonTurfDark;
     public static Block blockBlackHoleGenerator;
     public static Block blockEnrichedLavaFluid;

@@ -111,10 +111,6 @@ public class ItemOreScanner extends Item implements IModularInventory {
     }
 
 
-    public void interactSatellite(SatelliteBase satellite, EntityPlayer player, World world, BlockPos pos) {
-        satellite.performAction(player, world, pos);
-    }
-
     @Override
     public List<ModuleBase> getModules(int id, EntityPlayer player) {
         List<ModuleBase> modules = new LinkedList<>();

@@ -1,8 +1,11 @@
 package zmaster587.advancedRocketry.mixin;
 
 import net.minecraftforge.common.config.Configuration;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
+import zmaster587.advancedRocketry.api.Constants;
 
 import java.io.File;
 import java.util.List;
@@ -20,22 +23,29 @@ import java.util.Set;
  * atmosphere block-place, rocket inventory access) are unrelated and always
  * apply.</p>
  *
- * <p><b>Timing.</b> {@code shouldApplyMixin} is evaluated lazily, when each
- * target class first loads ({@code WorldServerMulti} at dimension creation,
- * {@code PlayerList} at server start) — late enough that the config file
- * exists. We still read the {@code .cfg} directly here rather than going
- * through {@link zmaster587.advancedRocketry.api.ARConfiguration}, because that
+ * <p><b>Timing.</b> The config is read EAGERLY, once, in {@link #onLoad} during
+ * the coremod phase; only the per-target <em>consultation</em>
+ * ({@link #shouldApplyMixin}) is lazy, as each target class first loads
+ * ({@code WorldServerMulti} at dimension creation, {@code PlayerList} at server
+ * start). The snapshot is therefore frozen for the life of the JVM. We read the
+ * {@code .cfg} directly rather than going through
+ * {@link zmaster587.advancedRocketry.api.ARConfiguration}, because that
  * singleton is populated in mod pre-init, which runs AFTER the coremod phase
- * that constructs this plugin. Reading the file ourselves removes any
- * dependence on mod-lifecycle ordering.</p>
+ * that constructs this plugin — at {@code onLoad} time there is no loaded
+ * config to ask.</p>
  *
  * <p><b>Fail-open.</b> If the config can't be read for any reason (missing
  * file on first launch, parse error), we default to {@code true} — i.e. the
  * WorldInfo mixins apply, exactly as they did before this plugin existed. A
  * disabled-by-accident subsystem would be a worse surprise than the
- * pre-existing always-on behaviour.</p>
+ * pre-existing always-on behaviour. Two of the three gated mixins additionally
+ * re-check the flag at runtime, so a fail-open weave leaves them inert rather
+ * than active; {@code MixinPlayerList} is the exception. Which branch fired is
+ * logged, because a gate stuck open is otherwise invisible.</p>
  */
 public class ARMixinPlugin implements IMixinConfigPlugin {
+
+    private static final Logger LOGGER = LogManager.getLogger("advancedrocketry");
 
     /** Fully-qualified names of the per-dimension WorldInfo mixins gated by the
      *  {@code perDimWorldInfo} master flag: wrapper install, per-dim time/sleep,
@@ -69,12 +79,18 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
     @Override
     public void onLoad(String mixinPackage) {
         try {
-            File cfgFile = new File("config/advRocketry/advancedRocketry.cfg");
+            // Resolve against the REAL game directory rather than the process
+            // CWD. Launch.minecraftHome is null unless --gameDir was passed, so
+            // mirror FMLTweaker's own fallback instead of dereferencing it.
+            File gameDir = net.minecraft.launchwrapper.Launch.minecraftHome;
+            File cfgFile = new File(gameDir != null ? gameDir : new File("."),
+                    "config/advRocketry/advancedRocketry.cfg");
             if (cfgFile.isFile()) {
+                // The Configuration(File) constructor loads the file itself.
                 Configuration cfg = new Configuration(cfgFile);
-                cfg.load();
                 perDimWorldInfo = cfg
-                        .get("Planet", "perDimWorldInfo", true)
+                        .get(Constants.CONFIG_CATEGORY_PLANET,
+                                Constants.CONFIG_KEY_PER_DIM_WORLD_INFO, true)
                         .getBoolean(true);
                 allowTimeSkipOnPlanets = cfg
                         .get("Planet", "allowTimeSkipOnPlanets", false)
@@ -82,12 +98,21 @@ public class ARMixinPlugin implements IMixinConfigPlugin {
                 allowTimeSkipOnOverworld = cfg
                         .get("Planet", "allowTimeSkipOnOverworld", true)
                         .getBoolean(true);
+            } else {
+                // First launch: the file does not exist yet. The flag's own
+                // default is true, so nothing can have been disabled — but say
+                // so, or a mis-resolved path looks identical to a fresh install.
+                LOGGER.info("AR mixin gate: no config at {} — defaulting {}=true",
+                        cfgFile.getAbsolutePath(), Constants.CONFIG_KEY_PER_DIM_WORLD_INFO);
             }
         } catch (Throwable t) {
             // Fail-open: behave exactly as before the plugin (mixins on).
             perDimWorldInfo = true;
             allowTimeSkipOnPlanets = false;
             allowTimeSkipOnOverworld = true;
+            LOGGER.warn("AR mixin gate: could not read {} — defaulting to true, "
+                            + "per-dimension WorldInfo mixins WILL be woven",
+                    Constants.CONFIG_KEY_PER_DIM_WORLD_INFO, t);
         }
     }
 
