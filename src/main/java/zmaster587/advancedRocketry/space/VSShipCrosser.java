@@ -126,10 +126,19 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     /**
-     * The VS uuid to cross at {@code srcAnchor}, or {@code null} to fall back to the positional
-     * resolution this method exists to replace.
+     * The VS uuid a jump leg should cut at its anchor, out of the identities the world offers for it:
+     * {@code byDurableId} (the craft whose own record carries this jump's durable id),
+     * {@code byPosition} (whatever craft the anchor reaches), and {@code afcNames} (what the flight
+     * computer standing at that anchor calls itself). {@link #REFUSED} when the anchor POSITIVELY
+     * names another ship; {@code null} when nothing can be resolved at all, which is the same "cross
+     * as before" the positional resolution always gave.
      *
-     * <p><b>It may never turn a departure that would have worked into a failure.</b> Only a POSITIVE
+     * <p><b>Both legs go through here</b>, and that is the point: a jump acts on the ship it NAMES,
+     * on the way out and on the way back. The two used to differ — the departure resolved by identity
+     * while the arrival cut whatever the anchor reached — and hyperspace is a shared parking world by
+     * construction, so the leg that resolved by position is the one that could deliver a stranger.</p>
+     *
+     * <p><b>It may never turn a leg that would have worked into a failure.</b> Only a POSITIVE
      * mismatch refuses — the craft at the anchor carries a durable id and it is somebody else's. Every
      * other outcome (no flight computer resolvable there, no durable id minted on it, the physics mod
      * not naming the craft) proceeds exactly as before and SAYS that it could not verify. The
@@ -141,54 +150,50 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
      * "found no flight computer at anchor" on these departures for as long as it has existed, without
      * stopping them, because the crossing needs only a shipyard box.</p>
      */
-    private java.util.UUID identifyShipAtAnchor(WorldServer src, BlockPos srcAnchor, String shipId,
-                                                int srcSlotDim) {
-        double ax = srcAnchor.getX() + 0.5, ay = srcAnchor.getY() + 0.5, az = srcAnchor.getZ() + 0.5;
-        // THE CALLER'S OWN SHIP, resolved rather than merely compared against. Everything below this
-        // block was already here and answers by PROXIMITY; the identity the caller supplied reached it
-        // only as a tripwire and was then discarded, so a departure that named its ship perfectly still
-        // crossed whatever craft the anchor reached. That is not a small gap: the check compares two
-        // DURABLE ids while the answer is a VS uuid found by position, so the two live in different
-        // identity spaces and the check can refuse but can never aim.
+    public static java.util.UUID identifyShipToCut(String leg, BlockPos anchor, String shipId,
+                                                   int dim, java.util.UUID byDurableId,
+                                                   java.util.UUID byPosition,
+                                                   java.util.UUID afcNames) {
+        // THE JUMP'S OWN SHIP, resolved rather than merely compared against. The fallback below
+        // answers by PROXIMITY; the identity the caller supplied used to reach it only as a tripwire
+        // and was then discarded, so a leg that named its ship perfectly still crossed whatever craft
+        // the anchor reached. That is not a small gap: the check compares two DURABLE ids while the
+        // answer is a VS uuid found by position, so the two live in different identity spaces and the
+        // check can refuse but can never aim.
         //
-        // The lookup is an INDEX, not a search: the durable id is carried on the ship's own record and
-        // indexed beside its uuid, so this is one hash probe however many craft the cell holds. Null
-        // for everything it cannot settle - a synthetic fixture id, a ship whose durable id was never
-        // bound - and the caller then proceeds exactly as before.
-        java.util.UUID named = VSIntegration.shipUuidOfDurableId(src, shipId);
-        if (named != null) {
-            return named;
+        // The lookup behind byDurableId is an INDEX, not a search: the durable id is carried on the
+        // ship's own record and indexed beside its uuid, so it is one hash probe however many craft
+        // the world holds. Null for everything it cannot settle - a synthetic fixture id, a ship whose
+        // durable id was never bound - and the leg then proceeds exactly as before.
+        if (byDurableId != null) {
+            return byDurableId;
         }
-        // The comparison is only meaningful when the caller named a REAL ship. Some departures are
-        // driven under a synthetic id, and a synthetic id is not an identity claim — it cannot be
-        // compared, so there is nothing to refuse. Checking it anyway is a false positive that blocks
-        // a jump which would have worked, which is the one thing this method must never do.
-        java.util.UUID expected = null;
-        if (shipId != null) {
-            try {
-                expected = java.util.UUID.fromString(shipId);
-            } catch (IllegalArgumentException notAnIdentity) {
-                expected = null;
-            }
+        // The comparison is only meaningful when the caller named a REAL ship. Some legs are driven
+        // under a synthetic id, and a synthetic id is not an identity claim — it cannot be compared,
+        // so there is nothing to refuse. Checking it anyway is a false positive that blocks a jump
+        // which would have worked, which is the one thing this method must never do.
+        java.util.UUID expected = toUuid(shipId);
+        if (expected != null && afcNames != null && !afcNames.equals(expected)) {
+            LOGGER.error("[SPACE] {} REFUSED: the craft at anchor {} in dim {} is ship {}, not the "
+                            + "ship this jump is about ({}) - the anchor selected somebody else's "
+                            + "craft and cutting it would move the wrong ship. Nothing is cut.",
+                    leg, anchor, dim, afcNames, shipId);
+            return REFUSED;
         }
-        BlockPos afcPos = VSIntegration.flightComputerAt(src, ax, ay, az);
-        net.minecraft.tileentity.TileEntity te = afcPos == null ? null : src.getTileEntity(afcPos);
-        if (te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) {
-            java.util.UUID found = ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
-                    .shipIdOrNull();
-            if (expected != null && found != null && !found.equals(expected)) {
-                LOGGER.error("[SPACE] depart REFUSED: the craft at anchor {} in slot dim {} is ship "
-                                + "{}, not the departing ship {} - the anchor selected somebody "
-                                + "else's craft and cutting it would move the wrong ship. Nothing "
-                                + "is cut.",
-                        srcAnchor, srcSlotDim, found, shipId);
-                return REFUSED;
-            }
-        }
-        return VSIntegration.shipUuidAt(src, ax, ay, az);
+        return byPosition;
     }
 
-    /** Returned by {@link #identifyShipAtAnchor} when the anchor provably names a DIFFERENT ship —
+    /** What the flight computer at {@code anchor} calls its ship, or {@code null} if there is no
+     *  computer there (or it has no durable id yet). */
+    private static java.util.UUID afcShipIdAt(WorldServer world, double ax, double ay, double az) {
+        BlockPos afcPos = VSIntegration.flightComputerAt(world, ax, ay, az);
+        net.minecraft.tileentity.TileEntity te = afcPos == null ? null : world.getTileEntity(afcPos);
+        return te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te).shipIdOrNull()
+                : null;
+    }
+
+    /** Returned by {@link #identifyShipToCut} when the anchor provably names a DIFFERENT ship —
      *  distinct from {@code null}, which only means "could not verify, cross as before". */
     private static final java.util.UUID REFUSED =
             java.util.UUID.fromString("00000000-0000-0000-0000-000000000000");
@@ -222,9 +227,15 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // crossing is documented to leave behind. Resolving that box and cutting it is how a jump
         // came back "the shipyard holds no blocks": the box belonged to a stranger while the ship
         // that should have jumped sat untouched with its blocks elsewhere.
-        java.util.UUID departing = identifyShipAtAnchor(src, srcAnchor, shipId, srcSlotDim);
+        double sax = srcAnchor.getX() + 0.5, say = srcAnchor.getY() + 0.5, saz = srcAnchor.getZ() + 0.5;
+        java.util.UUID srcByDurable = VSIntegration.shipUuidOfDurableId(src, shipId);
+        // Only asked when the durable id could not answer: locating the computer force-loads the
+        // ship's far subspace yard, and the resolved case does not need it.
+        java.util.UUID srcAfcNames = srcByDurable != null ? null : afcShipIdAt(src, sax, say, saz);
+        java.util.UUID departing = identifyShipToCut("depart", srcAnchor, shipId, srcSlotDim,
+                srcByDurable, VSIntegration.shipUuidAt(src, sax, say, saz), srcAfcNames);
         if (REFUSED.equals(departing)) {
-            return null; // a different ship is at this anchor; identifyShipAtAnchor said so
+            return null; // a different ship is at this anchor; identifyShipToCut said so
         }
         // WHO IS ALREADY IN THE LANE THIS DEPARTURE IS ABOUT TO PARK IN. The paste below writes to
         // tile.pos with no check that the lane is physically empty; the allocator only promises that
@@ -236,7 +247,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                 + " alreadyThere=[" + describeShipsNearLane(hyper, tile) + "]";
         LOGGER.info("[SPACE] depart lane census: {}", lastDepartLane);
         VSIntegration.CrossResult res = VSIntegration.crossShip(
-                src, srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5,
+                src, sax, say, saz,
                 departing, hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
         if (!res.ok()) {
             LOGGER.warn("[SPACE] depart aborted: the crossing out of slot dim {} at anchor {} produced "
@@ -332,19 +343,38 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
                     .append((int) p[0]).append(',').append((int) p[1]).append(',').append((int) p[2])
                     .append("/lane").append(HyperspaceTiles.laneIndexAt(p[0], p[2], 64));
         }
+        boolean hyperAfcIsComputer =
+                hyperAfcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
+        java.util.UUID hyperAfcNames = hyperAfcIsComputer
+                ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) hyperAfcTe)
+                        .shipIdOrNull()
+                : null;
+        // WHICH craft is cut, decided by the same rule the departure uses: the ship this jump NAMES,
+        // falling back to the anchor only where no identity can be established. Cutting by position
+        // here is what delivered a stranger into the target cell under this jump's name while the
+        // ship that jumped stayed parked in hyperspace — and hyperspace holds every ship in flight
+        // at once, so "the ship at this anchor" is a question with more than one answer by design.
+        java.util.UUID arriving = identifyShipToCut("arrival", hyperAnchor, shipId,
+                hyper.provider.getDimension(), meantToCut, aboutToCut, hyperAfcNames);
         lastArrivalCut = "jump=" + shipId + " anchor=" + hyperAnchor + " ourLane=" + tile.index
                 + " byPosition=" + aboutToCut + " byDurableId=" + meantToCut
                 + " afcAtAnchor=" + hyperAfc + " afcNames="
-                + (hyperAfcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
-                        ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) hyperAfcTe)
-                                .shipIdOrNull()
-                        : "no-computer-tile")
+                + (hyperAfcIsComputer ? hyperAfcNames : "no-computer-tile")
+                + " cutting=" + (REFUSED.equals(arriving) ? "REFUSED" : arriving)
                 + " parked=[" + parked.toString().trim() + "]";
         LOGGER.info("[SPACE] arrival cut census: {}", lastArrivalCut);
+        if (REFUSED.equals(arriving)) {
+            // Nothing is cut and nothing is lost: the ship this jump is about is still parked, and
+            // the arrival retries next tick. The transit gives up eventually, which is the right
+            // outcome — a jump that cannot find its own hull must not deliver somebody else's.
+            warnArrivalGuardOnce(targetSlotDim, "the craft at this jump's hyperspace anchor names a "
+                    + "DIFFERENT ship, so cutting it would deliver a stranger into the target cell");
+            return null;
+        }
         int dstX = tile.index * ARRIVAL_LANE_STRIDE;
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 hyper, hyperAnchor.getX() + 0.5, hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5,
-                dst, dstX, ARRIVAL_Y, 0);
+                arriving, dst, dstX, ARRIVAL_Y, 0);
         // The paste lands in the destination's BLOCK band; the ship is moved onto its real pose (and
         // unparked there) by the settle step, once the asynchronous re-assembly is queryable.
         return res.ok() ? new ShipCrossingService.Crossed(res.anchor, res.shipUuid) : null;

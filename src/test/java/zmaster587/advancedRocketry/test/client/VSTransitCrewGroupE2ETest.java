@@ -238,6 +238,45 @@ private static final long PARK_SPEED = 100_000L;
                 riding.get("entityClass").getAsString().endsWith("EntityDummy"));
         assertEquals("the client must have followed the crew into the target cell",
                 targetDim, bot().reportWeather().get("dim").getAsInt());
+
+        // ACCEPTANCE, on the crossing's own census: this jump moved the hull it NAMES, and it parked
+        // in a lane that was its alone. Both are invisible from everything asserted above - a jump
+        // that delivered a stranger's hull with this crew re-seated on it looks exactly like a
+        // successful one from the client's side, which is how the positional cut survived so long.
+        String census = exec("artest vs arrival-trace");
+        Matcher cutM = ARRIVAL_CUT.matcher(census);
+        assertTrue("the arrival must leave a cut census behind: " + census, cutM.find());
+        String cut = cutM.group(1);
+        String cutting = censusField(cut, "cutting");
+        String byDurableId = censusField(cut, "byDurableId");
+        String byPosition = censusField(cut, "byPosition");
+        // Printed, not merely asserted: which ARM the assertion below took is the whole value of it.
+        // With no durable id resolvable it degenerates into "the cut took the anchor's craft", which
+        // is what production did before there was a rule at all - a green that says nothing.
+        System.out.println("[JUMP CENSUS] " + cut);
+        // Unconditional in BOTH arms: where the jump's durable id resolves a hull, that hull is the
+        // one cut; where nothing could be established, the anchor's craft is - and saying which arm
+        // applied is the difference between a check with three answers and one with none.
+        assertEquals("the arrival cut the hull the jump names (byDurableId), or - where no identity "
+                        + "could be established - the one at its anchor. census: " + cut,
+                "null".equals(byDurableId) ? byPosition : byDurableId, cutting);
+        assertTrue("a healthy jump is never REFUSED its own hull - a refusal here means the identity "
+                + "check fires on a case it cannot judge. census: " + cut, !"REFUSED".equals(cutting));
+
+        Matcher laneM = DEPART_LANE.matcher(census);
+        assertTrue("the departure must leave a lane census behind: " + census, laneM.find());
+        String lane = laneM.group(1);
+        assertTrue("the lane this jump departed into must have been EMPTY when it was handed out - a "
+                        + "lane holding a second hull makes every later position lookup at that "
+                        + "anchor ambiguous. census: " + lane,
+                lane.contains("alreadyThere=[]"));
+    }
+
+    /** One {@code key=value} field out of a census line, or {@code "(absent)"}. Values are plain
+     *  tokens (uuids, "null", "REFUSED"); the bracketed and BlockPos fields are read whole. */
+    private static String censusField(String census, String key) {
+        Matcher m = Pattern.compile("(?:^| )" + key + "=(\\S+)").matcher(census);
+        return m.find() ? m.group(1) : "(absent)";
     }
 
 
