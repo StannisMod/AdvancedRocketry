@@ -322,8 +322,11 @@ public abstract class AbstractSharedClientE2ETest {
         assertEquals("a scenario must start with an empty chat backlog, or an assertion that"
                 + " searches the last N lines can pass on a previous scenario's identical message;"
                 + " reset reported " + cleared, 0, chatLines);
-        assertTrue("a scenario must start inside its own plot " + plot + "; the client reports the"
-                + " player at " + px + "," + pz, plot.contains(px, pz));
+        if (!plot.contains(px, pz)) {
+            org.junit.Assert.fail("a scenario must start inside its own plot " + plot
+                    + "; the client reports the player at " + px + "," + pz
+                    + diagnoseMissedPlot(plot) + " resetCleared=" + cleared);
+        }
 
         // Health is asserted on the CLIENT's own view, and polled rather than read once: the
         // set-health above is a server write and the client learns it on the next update packet.
@@ -356,6 +359,89 @@ public abstract class AbstractSharedClientE2ETest {
         scenario.record("plot", plot)
                 .record("resetCleared", cleared)
                 .record("heldAtStart", state.has("heldItem") ? state.get("heldItem").getAsString() : "?");
+    }
+
+    /**
+     * Why the between-scenario teleport did not land, sampled ONLY once the check has failed.
+     *
+     * <p>One {@code x,z} pair cannot tell the two causes apart, and they need opposite fixes: a
+     * client that never received the teleport is a round-trip that was read too early, while one
+     * that received it and ended up elsewhere has a SECOND WRITER owning the body. Measured
+     * 2026-08-12 — four scenarios of {@code VSShipFlightTelemetryE2ETest} red in two of three
+     * identical tier runs, each printing one coordinate pair outside every plot in the lane, with
+     * {@code harnessAlive=true}; nothing in the message distinguished the two, and the mode stayed
+     * unattributable for a session.</p>
+     *
+     * <p><b>It runs after the verdict is already decided, and that is deliberate.</b> The first cut
+     * of this made the plot check itself poll — which changes how many ticks every GREEN scenario
+     * spends before it starts, and the class this was written for went from 8/8 to 5 reds in the
+     * tier and 7/8 alone. An instrument that moves the arrangement is not an instrument. Everything
+     * here is a client-side read (no server command, so no chat marker) on a path that is already
+     * failing, so a passing scenario pays exactly nothing.</p>
+     */
+    private String diagnoseMissedPlot(Plot plot) throws Exception {
+        StringBuilder trail = new StringBuilder();
+        boolean arrived = false;
+        for (int sample = 0; sample < 6 && !arrived; sample++) {
+            JsonObject seen = bot().reportState();
+            trail.append(' ').append(describePlayerPoint(seen));
+            arrived = isInsidePlot(seen, plot);
+            if (!arrived) {
+                bot().waitTicks(5);
+            }
+        }
+        // WHAT IS STANDING ON THE PLOT, asked of the server. The lane is placed off the fixture
+        // diagonal so a plot never contains a ship AT ITS BASE — but a scenario that FLIES its ship
+        // can leave one anywhere, and a body teleported into ship geometry is ejected by the physics
+        // mod at a speed nothing else here produces. The first witnessed trail climbed ~300 blocks
+        // per sample with the body riding nothing, which is that signature and not gravity's.
+        // A server command is issued only here, on a scenario that has already lost its verdict, so
+        // the chat marker it echoes can no longer disturb anything.
+        String shipOnPlot;
+        try {
+            shipOnPlot = String.valueOf(serverClient().execute("artest vs ship-info " + plot.dim
+                    + " " + plot.centerX() + " " + Plot.DEFAULT_Y + " " + plot.centerZ() + " 64"));
+        } catch (Exception unavailable) {
+            shipOnPlot = "(unavailable: " + unavailable + ")";
+        }
+        return "\n  readings taken AFTER the verdict, oldest first:" + trail
+                + "\n  reached its plot while being watched: " + arrived
+                + (arrived
+                        ? " — the teleport DID land and the check above read it too early;"
+                          + " this is a round-trip budget, not a stray writer."
+                        : " — the body never arrived at all; a second writer owns it, or the"
+                          + " teleport never reached this client.")
+                + "\n  a ship within 64 blocks of the plot centre: " + shipOnPlot
+                + "\n  client world=" + bot().reportWeather()
+                + " riding=" + bot().reportRidingEntity();
+    }
+
+    /**
+     * Is the client's own player point inside {@code plot}? Absent coordinates answer {@code false}
+     * rather than throwing: a client with no player is a different failure, named by its own guard.
+     */
+    private static boolean isInsidePlot(JsonObject state, Plot plot) {
+        return state != null && state.has("playerX") && state.has("playerZ")
+                && plot.contains(state.get("playerX").getAsDouble(),
+                        state.get("playerZ").getAsDouble());
+    }
+
+    /** One observation, short enough that a whole trail stays readable on one line. */
+    private static String describePlayerPoint(JsonObject state) {
+        if (state == null || !state.has("playerX") || !state.has("playerZ")) {
+            return "(no-player)";
+        }
+        String motion = state.has("motionY")
+                ? "/v=" + round2(state.get("motionX")) + "," + round2(state.get("motionY"))
+                        + "," + round2(state.get("motionZ"))
+                : "";
+        return "(" + Math.round(state.get("playerX").getAsDouble()) + ","
+                + (state.has("playerY") ? Math.round(state.get("playerY").getAsDouble()) : '?')
+                + "," + Math.round(state.get("playerZ").getAsDouble()) + motion + ")";
+    }
+
+    private static double round2(com.google.gson.JsonElement value) {
+        return Math.round(value.getAsDouble() * 100.0) / 100.0;
     }
 
     /**

@@ -460,6 +460,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
         }
+        bindDurableIdToThisShip();
         // Telemetry first, and unconditionally: the pilot's HUD must keep reading the ship's real
         // velocity while he holds no key at all, which is exactly when the input channel is idle.
         publishHudTelemetry(attitude);
@@ -1038,6 +1039,43 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     /** The ship's durable id, or {@code null} if none has been minted yet. */
     public java.util.UUID shipIdOrNull() {
         return shipId;
+    }
+
+    /**
+     * Whether this craft's ship record already carries our durable id. Not persisted on purpose: a
+     * tile is re-created whenever its ship is re-assembled, and that is exactly when the binding has
+     * to be made again, against a possibly NEW ship record.
+     */
+    private boolean durableIdBound;
+
+    /**
+     * Tell the physics mod which of its ships our durable id names, once per tile lifetime.
+     *
+     * <p>Two identities describe one craft: the id this computer mints and persists, which survives a
+     * re-assembly and is what the transits, the durable ledger and every aboard tag are keyed by, and
+     * the physics mod's own ship uuid, which does not survive one. A caller holding the first and
+     * needing the second had no translation, so it fell back to asking which ship is NEAREST a point —
+     * exact while the world holds one craft, and silently a stranger's craft once it holds two.
+     * Binding here puts the answer on the ship's own record, where it is indexed.</p>
+     *
+     * <p>Runs on the update path, so it costs a boolean test on every tick after the first successful
+     * one, and retries until it takes: the ship is not queryable for the first few ticks after an
+     * asynchronous assembly, which is precisely when this cannot succeed yet.</p>
+     */
+    private void bindDurableIdToThisShip() {
+        if (durableIdBound) {
+            return;
+        }
+        String vsShipId = VSIntegration.shipIdManagingBlock(world, getPos());
+        if (vsShipId == null) {
+            return; // not queryable yet; try again next tick
+        }
+        try {
+            durableIdBound = VSIntegration.bindDurableShipId(
+                    world, java.util.UUID.fromString(vsShipId), getOrCreateShipId());
+        } catch (IllegalArgumentException notAUuid) {
+            durableIdBound = true; // nothing here will ever parse; stop asking
+        }
     }
 
     /** Flight Assist on/off — the one piece of flight state the ship remembers.

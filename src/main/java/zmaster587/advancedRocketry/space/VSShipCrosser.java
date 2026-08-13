@@ -91,6 +91,21 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     private java.util.UUID identifyShipAtAnchor(WorldServer src, BlockPos srcAnchor, String shipId,
                                                 int srcSlotDim) {
         double ax = srcAnchor.getX() + 0.5, ay = srcAnchor.getY() + 0.5, az = srcAnchor.getZ() + 0.5;
+        // THE CALLER'S OWN SHIP, resolved rather than merely compared against. Everything below this
+        // block was already here and answers by PROXIMITY; the identity the caller supplied reached it
+        // only as a tripwire and was then discarded, so a departure that named its ship perfectly still
+        // crossed whatever craft the anchor reached. That is not a small gap: the check compares two
+        // DURABLE ids while the answer is a VS uuid found by position, so the two live in different
+        // identity spaces and the check can refuse but can never aim.
+        //
+        // The lookup is an INDEX, not a search: the durable id is carried on the ship's own record and
+        // indexed beside its uuid, so this is one hash probe however many craft the cell holds. Null
+        // for everything it cannot settle - a synthetic fixture id, a ship whose durable id was never
+        // bound - and the caller then proceeds exactly as before.
+        java.util.UUID named = VSIntegration.shipUuidOfDurableId(src, shipId);
+        if (named != null) {
+            return named;
+        }
         // The comparison is only meaningful when the caller named a REAL ship. Some departures are
         // driven under a synthetic id, and a synthetic id is not an identity claim — it cannot be
         // compared, so there is nothing to refuse. Checking it anyway is a false positive that blocks

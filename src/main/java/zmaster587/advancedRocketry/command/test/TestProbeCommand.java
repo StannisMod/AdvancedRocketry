@@ -1595,18 +1595,50 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"managedByShip\":" + linkSeat.isManagedByShip(world) + "}");
             return;
         }
-        // find-seat <dim> <x> <y> <z> — after an async ship assembly completes, locate the ship's pilot seat in
-        // its (force-loaded) subspace shipyard and report the seat's SUBSPACE pos + the ship's WORLD pos, so a
-        // crew test can seat a bot deterministically. Mirrors flightComputerAt's force-load-then-scan idiom.
-        if (args.length >= 5 && "find-seat".equalsIgnoreCase(args[0])) {
+        // find-seat <dim> id <uuid> | find-seat <dim> <x> <y> <z> — after an async ship assembly completes,
+        // locate the ship's pilot seat in its (force-loaded) subspace shipyard and report the seat's SUBSPACE
+        // pos + the ship's WORLD pos, so a crew test can seat a bot deterministically.
+        //
+        // PREFER THE ID FORM, and the positional one is kept only for callers that genuinely do not know
+        // which ship they mean. The positional form resolves the yard through shipyardBoundsAt, whose own
+        // contract is "whatever craft is nearest that point": exact while the world holds one candidate and
+        // silently wrong the moment it holds two. The transit fixtures make two the ORDINARY case — every
+        // transit-setup call binds its origin cell to the same pool slot (a fresh cell controller's binding
+        // map is empty, so it always takes the first slot dim) and every scenario builds at the same anchor
+        // in it, so the Nth scenario shares a dimension with N-1 predecessors' leavings.
+        //
+        // Measured 2026-08-12, twice in two independent client boots: six scenarios of one transit class
+        // failing as {"ok":true,"seatFound":false} and "the subspace shipyard [...] holds no blocks", with
+        // the SAME yard box printed in both runs while the slot dim differed — i.e. this lookup kept
+        // answering with the FIRST ship ever assembled in that dimension, whose yard is empty because its
+        // jump carried the blocks away, while the ship the caller had just built sat in another yard.
+        if (args.length >= 4 && "find-seat".equalsIgnoreCase(args[0])) {
             net.minecraft.world.WorldServer world = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\"}");
                 return;
             }
-            int ax = parseIntOr(args[2], 0), ay = parseIntOr(args[3], 0), az = parseIntOr(args[4], 0);
-            net.minecraft.util.math.AxisAlignedBB yard =
-                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(
+            boolean seatById = "id".equalsIgnoreCase(args[2]);
+            if (!seatById && args.length < 5) {
+                send(sender, "{\"error\":\"find-seat needs <dim> id <uuid> or <dim> <x> <y> <z>\"}");
+                return;
+            }
+            java.util.UUID seatShipUuid = null;
+            if (seatById) {
+                try {
+                    seatShipUuid = java.util.UUID.fromString(args[3]);
+                } catch (IllegalArgumentException notAUuid) {
+                    send(sender, "{\"error\":\"find-seat id needs a well-formed uuid\"}");
+                    return;
+                }
+            }
+            int ax = seatById ? 0 : parseIntOr(args[2], 0);
+            int ay = seatById ? 0 : parseIntOr(args[3], 0);
+            int az = seatById ? 0 : parseIntOr(args[4], 0);
+            net.minecraft.util.math.AxisAlignedBB yard = seatById
+                    ? zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsOf(
+                            world, seatShipUuid)
+                    : zmaster587.advancedRocketry.integration.vs.VSIntegration.shipyardBoundsAt(
                             world, ax + 0.5, ay + 0.5, az + 0.5);
             net.minecraft.util.math.BlockPos seatSub = null;
             if (yard != null) {
@@ -3610,10 +3642,14 @@ public class TestProbeCommand extends CommandBase {
                     }
                 }
             }
-            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(
-                    w, new net.minecraft.util.math.BlockPos(1, 65, 1));
+            // Reported, like the piloted setup's, so a caller can ask about THIS ship by name instead
+            // of by the anchor every transit fixture shares.
+            java.util.UUID cubeShip =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(
+                            w, new net.minecraft.util.math.BlockPos(1, 65, 1));
             send(sender, "{\"ok\":true,\"originDim\":" + originDim
-                    + ",\"anchorX\":1,\"anchorY\":65,\"anchorZ\":1}");
+                    + ",\"anchorX\":1,\"anchorY\":65,\"anchorZ\":1"
+                    + ",\"shipId\":\"" + (cubeShip == null ? "" : cubeShip) + "\"}");
             return;
         }
         // transit-setup-empty: the transit STACK alone (pool of 2 + hyperspace + manager), origin cell
@@ -3696,12 +3732,19 @@ public class TestProbeCommand extends CommandBase {
             }
             ((zmaster587.advancedRocketry.tile.TilePilotSeat) seatTe).linkToFlightComputer(afcBuild);
             net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(1, 64, 1);
-            zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(w, anchor);
+            // The assembler RETURNS this ship's identity, and the reply carries it. Every scenario of a
+            // class shares one origin slot dim and one anchor, so an arrangement that asks about "the ship
+            // at (1,64,1)" gets whichever craft that lookup happens to reach - in practice the first ship
+            // ever assembled there, long since departed and holding an empty yard. The caller that BUILT
+            // the ship is the one caller that never has to guess.
+            java.util.UUID pilotedShip =
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.assembleTier2Ship(w, anchor);
             // Assembly is ASYNC (queued on the physics thread), so the seat + ship world pos are NOT queryable
             // yet. The caller polls `vs ship-count-all`/`load-ships`/`ship-count` for the ship, then reads the
-            // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> 1 64 1`.
+            // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> id <shipId>`.
             send(sender, "{\"ok\":true,\"originDim\":" + originDim
-                    + ",\"anchorX\":1,\"anchorY\":64,\"anchorZ\":1}");
+                    + ",\"anchorX\":1,\"anchorY\":64,\"anchorZ\":1"
+                    + ",\"shipId\":\"" + (pilotedShip == null ? "" : pilotedShip) + "\"}");
             return;
         }
         // transit-begin <originDim> <ax> <ay> <az> [speedBlocksPerTick]: start the jump (arrival
@@ -3719,6 +3762,14 @@ public class TestProbeCommand extends CommandBase {
                     parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
             long speed = args.length >= 6
                     ? Math.max(1L, Long.parseLong(args[5])) : 5_000_000L;
+            // The synthetic id, DELIBERATELY, and it is not an oversight to fix in passing. A departure
+            // under a well-formed uuid takes different production paths — the re-seat's wrong-ship
+            // filter arms (VSShipCrosser.toUuid returns null for this key on purpose) and the durable
+            // ledger gets a real subject — and these fixtures are not tuned for them. Tried
+            // 2026-08-12: every scenario of the crew-transit class then began its jump and SETTLED on
+            // the first tick, 0 in-flight samples, crewDim -1, two ships at the destination. Reverted.
+            // Departing by identity is worth doing and is its own piece of work, with the fixtures
+            // re-aimed as part of it.
             boolean began = transitTm.beginTransit("t", transitOrigin, originDim, anchor,
                     transitTarget, speed);
             send(sender, "{\"ok\":true,\"began\":" + began + ",\"inTransit\":" + transitTm.inTransitCount() + "}");

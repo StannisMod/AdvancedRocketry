@@ -1016,6 +1016,47 @@ public final class VSIntegration {
     }
 
     /**
+     * The physics mod's ship uuid for the craft carrying AR's DURABLE ship id {@code durableId}, or
+     * {@code null} when {@code world} holds no such craft.
+     *
+     * <p>This is the translation between the two identities a tier-2 ship has, and the reason a
+     * caller that KNOWS which ship it means no longer has to ask which one is nearest a point. The
+     * durable id is minted by the ship's flight computer and persisted because it outlives a
+     * re-assembly; everything in the physics mod is keyed by its own uuid. Indexed on that side, so
+     * this costs one probe.</p>
+     *
+     * <p>Answers {@code null} for a craft that was never bound — which is every craft AR does not own,
+     * and any of its own whose binding has not happened yet. A caller must treat that as "could not
+     * establish", never as "not this ship".</p>
+     */
+    public static java.util.UUID shipUuidOfDurableId(World world, String durableId) {
+        if (!isAvailable() || world == null || durableId == null) {
+            return null;
+        }
+        try {
+            return VSBridge.shipUuidOfDurableId(world, java.util.UUID.fromString(durableId));
+        } catch (IllegalArgumentException notAnIdentity) {
+            return null; // a synthetic id names no ship; the caller falls back as before
+        }
+    }
+
+    /**
+     * Bind AR's durable ship id {@code durableId} to the craft {@code vsShipUuid}, so
+     * {@link #shipUuidOfDurableId} can translate between them.
+     *
+     * <p>Called wherever a tier-2 craft becomes (or becomes again) the ship a durable id names: at
+     * assembly, and after a crossing re-assembles it at the far end. Cheap and idempotent, so binding
+     * again on a ship that already carries it costs nothing.</p>
+     *
+     * @return {@code true} when the ship was found and bound
+     */
+    public static boolean bindDurableShipId(World world, java.util.UUID vsShipUuid,
+                                            java.util.UUID durableId) {
+        return isAvailable() && world != null && vsShipUuid != null
+                && VSBridge.bindDurableId(world, vsShipUuid, durableId);
+    }
+
+    /**
      * The uuid of the registered ship parked within {@code HyperspaceTiles.SPACING_BLOCKS / 4} of
      * {@code (x,y,z)}, or {@code null}. For a PARKED ship, whose transform does not move and whose
      * neighbours are a lane apart; never for a lookup where "nearest" could mean anything.

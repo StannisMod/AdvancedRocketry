@@ -167,6 +167,44 @@ final class VSBridge {
         return claimBounds(shipByUuid(world, uuid));
     }
 
+    /**
+     * The physics mod's uuid for the ship carrying our DURABLE id {@code durableId}, or {@code null}
+     * when this world holds no such ship.
+     *
+     * <p>The translation between the two identities this mod pair keeps: ours is minted by a flight
+     * computer and persisted so it survives a re-assembly (the transit, the ledger and every aboard
+     * tag are keyed by it), theirs is the ship record's own uuid. A caller holding ours and needing
+     * theirs had no way across and fell back to "which ship is nearest this point", which is exact
+     * with one craft in the world and silently wrong with two.</p>
+     *
+     * <p>Indexed on their side, so this is a hash probe rather than a walk. See
+     * {@code QueryableShipData#getShipFromArDurableId}.</p>
+     */
+    static UUID shipUuidOfDurableId(World world, UUID durableId) {
+        if (world == null || durableId == null) {
+            return null;
+        }
+        ShipData ship = ValkyrienUtils.getQueryableData(world)
+                .getShipFromArDurableId(durableId).orElse(null);
+        return ship == null ? null : ship.getUuid();
+    }
+
+    /**
+     * Record that the ship {@code vsShipUuid} is the craft our durable id {@code durableId} names, so
+     * later lookups can go straight from one to the other. Idempotent; a {@code null} durable id
+     * clears the binding.
+     *
+     * @return {@code true} when a ship was found and bound
+     */
+    static boolean bindDurableId(World world, UUID vsShipUuid, UUID durableId) {
+        ShipData ship = shipByUuid(world, vsShipUuid);
+        if (ship == null) {
+            return false;
+        }
+        ship.setArDurableId(durableId);
+        return true;
+    }
+
     /** Human-readable identity of the ship a POSITION lookup resolves to, for diagnostics only. */
     static String describeNearestShip(World world, double x, double y, double z) {
         ShipData ship = nearestQueryableShip(world, x, y, z);

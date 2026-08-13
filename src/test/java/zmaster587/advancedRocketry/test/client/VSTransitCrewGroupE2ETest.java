@@ -64,6 +64,32 @@ public class VSTransitCrewGroupE2ETest extends AbstractSharedVsClientE2ETest {
 
     private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
 
+    private static final Pattern SETUP_SHIP_ID = Pattern.compile("\"shipId\":\"([^\"]+)\"");
+
+    /**
+     * The identity of the ship this scenario's setup just assembled.
+     *
+     * <p>Every scenario in this class runs its jump out of the SAME pool slot dimension and builds at
+     * the SAME anchor — the setup allocates a fresh cell controller each time, and a fresh controller's
+     * binding map is empty, so it always takes the first slot in the pool. Asking "the ship at
+     * (1,64,1)" in that dimension is therefore a question with several right answers, and the one the
+     * nearest-ship lookup returns is the FIRST ship ever assembled there: departed, and holding an
+     * empty shipyard. Measured twice in independent boots as {@code seatFound:false} on a ship that
+     * had just been built, with the same yard box printed under two different slot dims.</p>
+     */
+    private static String setupShipId(String setup) {
+        Matcher m = SETUP_SHIP_ID.matcher(setup);
+        assertTrue("the piloted transit setup must name the ship it assembled — without it every"
+                + " later question about that ship is a nearest-ship guess in a dimension this class"
+                + " deliberately reuses: " + setup, m.find());
+        return m.group(1);
+    }
+
+    /** {@code find-seat} keyed by identity — see {@link #setupShipId} for why never by the anchor. */
+    private String findSeat(int originDim, String shipId) throws Exception {
+        return exec("artest vs find-seat " + originDim + " id " + shipId);
+    }
+
     /** Poll for a loaded VS ship in {@code dim} (assembly is async; a headless server forces the load). */
 private int waitForLoadedShip(int dim) throws Exception {
         for (int i = 0; i < 40; i++) {
@@ -123,8 +149,9 @@ private static final long PARK_SPEED = 100_000L;
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        // Now the ship is up: locate the pilot seat's subspace pos + the ship's world pos.
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        // Now the ship is up: locate the pilot seat's subspace pos + the ship's world pos, keyed by the
+        // identity the setup handed back rather than by the anchor every scenario here shares.
+        String seat = findSeat(originDim, setupShipId(setup));
         // CONTROL (witness sensitivity): the seat must actually have been built and located, or the whole
         // "still riding after the jump" observation is vacuous.
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
@@ -229,7 +256,7 @@ private static final long PARK_SPEED = 100_000L;
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        String seat = findSeat(originDim, setupShipId(setup));
         // CONTROL (witness sensitivity): without a located seat there is nothing to sit on and every
         // later "he is aboard" reading is vacuous.
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
@@ -394,7 +421,7 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
         // actually loaded it for the nearby bot, a tick or two after the dimension transfer.
         String seat = "";
         for (int i = 0; i < 40 && !hasKey(seat, "shipWorldX"); i++) {
-            seat = execEnvelope("artest vs find-seat " + originDim + " 1 64 1");
+            seat = execEnvelope("artest vs find-seat " + originDim + " id " + setupShipId(setup));
             if (!hasKey(seat, "shipWorldX")) {
                 bot().waitTicks(5);
             }
@@ -476,8 +503,8 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
 private static final int SKY_RENDER_DISTANCE = 8;
 
     /** Put the bot in the origin cell and on the ship's pilot seat. */
-private void seatTheBot(int originDim) throws Exception {
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+private void seatTheBot(int originDim, String shipId) throws Exception {
+        String seat = findSeat(originDim, shipId);
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
                 readBool(seat, "seatFound"));
         int seatX = readInt(seat, "seatX"), seatY = readInt(seat, "seatY"), seatZ = readInt(seat, "seatZ");
@@ -565,7 +592,7 @@ private String chat() throws Exception {
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
 
         // ── CONTROL, in an ordinary cell ────────────────────────────────────────────────────────
         long skyBefore = skyFrames();
@@ -769,7 +796,7 @@ private String chat() throws Exception {
         int originDim = readInt(setup, "originDim");
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
 
         String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
@@ -905,8 +932,8 @@ private String chat() throws Exception {
 
         // Board the way every other scenario here boards (seat + its own control), then stand up.
         // The ship's world position is read for the stand-up arrangement's re-drop, not asserted on.
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
-        seatTheBot(originDim);
+        String seat = findSeat(originDim, setupShipId(setup));
+        seatTheBot(originDim, setupShipId(setup));
         String capture = standTheBotOnTheDeck(readDouble(seat, "shipWorldX"),
                 readDouble(seat, "shipWorldY"), readDouble(seat, "shipWorldZ"));
 
@@ -1045,7 +1072,7 @@ private String chat() throws Exception {
         int originDim = readInt(setup, "originDim");
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
 
         // ── READING 1, in an ordinary cell: no corridor ──────────────────────────────────────────
         long skyInCell = skyFrames();
@@ -1152,7 +1179,7 @@ private String chat() throws Exception {
 
         // Boards SEATED and jumps from the chair: that is what writes a SEATED departure record, and
         // the record is the subject here.
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
         String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
         assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
 
