@@ -55,16 +55,24 @@ public final class CrewTransfer {
      *  rider-carry box of the ship-move probes. */
     private static final double RIDER_RANGE = 8.0;
 
-    /** Why the last {@link #reseat} call could not seat its whole crew, or {@code ""} when the last
-     *  one succeeded. The re-seat is one half of an asynchronous settle whose only failure report is
-     *  "gave up after N attempts"; that report is unactionable without knowing WHICH of the seat
-     *  lookup's steps failed, so each retry records its own block here and the crossing prints it
-     *  when it gives up. Deliberately not test-gated: a harness child JVM has no test mode. */
+    /** Why the last {@link #reseat} call could not put its whole crew back aboard, or {@code ""}
+     *  when the last one succeeded. The re-seat is one half of an asynchronous settle whose only
+     *  failure report is "gave up after N attempts"; that report is unactionable without knowing
+     *  WHICH step failed, so each retry records its own block here and the crossing prints it when
+     *  it complains. Both postures write here — a seated rider's block names the seat lookup's step,
+     *  a standing one's names the deck placement's — because a crew of one standing member used to
+     *  produce a description of a seat search it never ran. Deliberately not test-gated: a harness
+     *  child JVM has no test mode. */
     private static volatile String lastReseatBlock = "";
 
     /** @see #lastReseatBlock */
     public static String lastReseatBlock() {
         return lastReseatBlock;
+    }
+
+    /** Owned by {@link SpaceDiagnostics#reset()} — see there for why a diagnostic needs an owner. */
+    static void resetDiagnostics() {
+        lastReseatBlock = "";
     }
 
     /**
@@ -288,12 +296,18 @@ public final class CrewTransfer {
         }
         List<TilePilotSeat> seats = seatsOfShipAt(dstWorld, anchor, vsShipUuid);
         boolean allSeated = true;
+        boolean seatLookupBlocked = false;
+        List<String> deckBlocks = new ArrayList<>();
         for (Crew rider : crew) {
             if (rider.posture == ShipAboardTag.Posture.STANDING) {
                 // A crew member on his feet has no seat to look for: he is put back at his own deck
-                // point and held there. Same retry contract as the seated branch — false means the
-                // ship is not up yet, and the caller comes back next tick.
-                allSeated &= placeOnDeck(dstWorld, anchor, rider, expectedShipId, vsShipUuid);
+                // point and held there. Same retry contract as the seated branch — a reason means
+                // the ship is not up yet, and the caller comes back next tick.
+                String deckBlock = placeOnDeck(dstWorld, anchor, rider, expectedShipId, vsShipUuid);
+                if (deckBlock != null) {
+                    allSeated = false;
+                    deckBlocks.add(deckBlock);
+                }
                 continue;
             }
             TilePilotSeat seat = matchSeat(seats, rider, expectedShipId, DURABLE_SHIP_ID);
@@ -305,6 +319,7 @@ public final class CrewTransfer {
                     ? null : VSIntegration.getRegisteredSeatWorldPosition(dstWorld, seat.getPos());
             if (seat == null || seatWorld == null) {
                 allSeated = false; // seat tile or ship transform not up yet — retry
+                seatLookupBlocked = true;
                 continue;
             }
             EntityPlayerMP player = liveEntityOf(rider.player);
@@ -372,9 +387,31 @@ public final class CrewTransfer {
                     + " p=" + player.getEntityId() + " dummy=" + dummy.getEntityId()
                     + " y=" + ArrivalTrace.fmt(seatWorld[1]));
         }
-        lastReseatBlock = allSeated ? "" : describeReseatBlock(dstWorld, anchor, seats, crew,
-                expectedShipId, vsShipUuid);
+        lastReseatBlock = allSeated ? "" : joinBlocks(
+                seatLookupBlocked
+                        ? describeReseatBlock(dstWorld, anchor, seats, crew, expectedShipId,
+                                vsShipUuid)
+                        : null,
+                deckBlocks);
         return allSeated;
+    }
+
+    /** The blocks of one failed re-seat as one line: the seat lookup's, when a SEATED rider was the
+     *  one held up, then one per standing rider who could not be put down. A posture nobody was in
+     *  contributes nothing — describing a seat search that never ran is how a standing-only crew's
+     *  failure came out as {@code seatsReached=1 wantLink=0,0,0}. */
+    private static String joinBlocks(String seatBlock, List<String> deckBlocks) {
+        StringBuilder sb = new StringBuilder(400);
+        if (seatBlock != null) {
+            sb.append(seatBlock);
+        }
+        for (String deckBlock : deckBlocks) {
+            if (sb.length() > 0) {
+                sb.append(" || ");
+            }
+            sb.append(deckBlock);
+        }
+        return sb.toString();
     }
 
     /**
@@ -400,35 +437,41 @@ public final class CrewTransfer {
      * point relative to its flight computer, at rest, and HELD there until his own client has taken
      * the deck capture over.
      *
-     * <p>Returns {@code false} while the arrived ship cannot yet say where that point is in the
-     * world — the caller retries next tick, exactly as it does for a seat that has not come up. The
-     * body stays where it is meanwhile, pinned by the hold the capture installed: nothing is moved
-     * half-way and then abandoned, which is what {@code D207-9}'s "hold the body, do not race the
-     * client" costs and buys.</p>
+     * <p>Returns {@code null} once he is down, and otherwise the REASON the arrived ship cannot yet
+     * say where that point is in the world — the caller retries next tick, exactly as it does for a
+     * seat that has not come up. A bare {@code false} was the whole report for four different
+     * stopping points (no ship of this identity registered here, no computer tile reachable, every
+     * computer in reach naming another craft, a computer no registered ship manages), and a retry
+     * budget that runs out on any of them looks identical from the outside. The body stays where it
+     * is meanwhile, pinned by the hold the capture installed: nothing is moved half-way and then
+     * abandoned, which is what {@code D207-9}'s "hold the body, do not race the client" costs and
+     * buys.</p>
      *
      * <p>The two questions this asks are both keyed by IDENTITY: which flight computer belongs to
      * the ship that crossed, and where that ship's transform puts the point. Neither is a lookup by
      * position, because a destination that already holds another craft would answer both of them
      * about the stranger.</p>
      */
-    private static boolean placeOnDeck(WorldServer dstWorld, BlockPos anchor, Crew rider,
+    private static String placeOnDeck(WorldServer dstWorld, BlockPos anchor, Crew rider,
             java.util.UUID expectedShipId, java.util.UUID vsShipUuid) {
         EntityPlayerMP player = liveEntityOf(rider.player);
         if (player == null) {
-            return true; // offline: his durable aboard record puts him back when he returns
+            return null; // offline: his durable aboard record puts him back when he returns
         }
-        BlockPos afcPos = flightComputerOfShipAt(dstWorld, anchor, vsShipUuid, expectedShipId);
+        AfcLookup afc = flightComputerOfShipAt(dstWorld, anchor, vsShipUuid, expectedShipId);
         double[] sub = ShipRelativePoint.subspacePointOf(
-                afcPos, rider.standDx, rider.standDy, rider.standDz);
+                afc.pos, rider.standDx, rider.standDy, rider.standDz);
         // Registry-keyed for the same reason the seat lookup is: an arriving ship has nobody near
         // it — the crew who would load it are the ones this method is carrying — so a question only
         // a LOADED ship can answer would make the placement wait on force-loading the ship against
         // the physics mod's own unload of it.
         double[] deckWorld = sub == null ? null
                 : VSIntegration.getRegisteredSubspacePointWorldPosition(
-                        dstWorld, afcPos, sub[0], sub[1], sub[2]);
+                        dstWorld, afc.pos, sub[0], sub[1], sub[2]);
         if (deckWorld == null) {
-            return false; // the ship has not been rebuilt here yet: retry
+            // The ship has not been rebuilt here yet: retry, and say which step is the one waiting.
+            return describeDeckBlock(dstWorld, anchor, rider, player, expectedShipId, vsShipUuid,
+                    afc, sub);
         }
         if (player.dimension != dstWorld.provider.getDimension()) {
             final double tx = deckWorld[0], ty = deckWorld[1], tz = deckWorld[2];
@@ -450,34 +493,157 @@ public final class CrewTransfer {
         // hold outlives the moment, and the ship it waits for is precisely the one that arrived.
         zmaster587.advancedRocketry.integration.vs.DeckHold.holdOnDeck(player,
                 vsShipUuid == null
-                        ? VSIntegration.shipIdManagingBlock(dstWorld, afcPos) : vsShipUuid.toString(),
+                        ? VSIntegration.shipIdManagingBlock(dstWorld, afc.pos) : vsShipUuid.toString(),
                 sub[0], sub[1], sub[2]);
         ArrivalTrace.server("deck.place t=" + dstWorld.getTotalWorldTime()
                 + " p=" + player.getEntityId() + " y=" + ArrivalTrace.fmt(deckWorld[1]));
-        return true;
+        return null;
     }
 
     /**
-     * The SUBSPACE position of the flight computer of the ship that arrived at {@code anchor}, or
-     * {@code null} while it is not reachable yet. The standing half of what {@link #seatsOfShipAt}
-     * does for seats, over the same shipyard box and with the same chunk force-load, and filtered by
-     * the DURABLE ship id so a neighbouring craft's computer is never taken for this one's.
+     * What the arrival's flight-computer lookup actually saw, not merely what it concluded. The
+     * placement's own report used to be one {@code null} covering every way the scan can come back
+     * empty, so a stalled arrival could not be told apart from a slow one without re-running the
+     * scan by hand against a world that had moved on.
      */
-    private static BlockPos flightComputerOfShipAt(WorldServer world, BlockPos anchor,
+    private static final class AfcLookup {
+        /** The computer of the ship that crossed, or {@code null} when the scan found none. */
+        final BlockPos pos;
+        /** The shipyard box scanned, or {@code null} when this world registers no such ship. */
+        final AxisAlignedBB yard;
+        /** Flight-computer tiles in the destination world's loaded tile list, before any filter. */
+        final int computersLoaded;
+        /** ...of those, inside {@link #yard} or within {@link #RIDER_RANGE} of the arrival point. */
+        final int computersInScope;
+        /** ...of those, refused because they POSITIVELY name a different craft. */
+        final int rejectedByShipId;
+        /** EVERY loaded computer as {@code x,y,z=<durable id>@<ship managing that block>}, in scope
+         *  or not — the ids themselves, because a COUNT of rejections says the filter refused and
+         *  never says what it was comparing. Deliberately not restricted to the ones in scope: the
+         *  question a refused scan raises is whether the id it wanted exists ANYWHERE in this world,
+         *  and a list filtered by the failing filter cannot answer it. */
+        final List<String> computers;
+
+        AfcLookup(BlockPos pos, AxisAlignedBB yard, int computersLoaded, int computersInScope,
+                int rejectedByShipId, List<String> computers) {
+            this.pos = pos;
+            this.yard = yard;
+            this.computersLoaded = computersLoaded;
+            this.computersInScope = computersInScope;
+            this.rejectedByShipId = rejectedByShipId;
+            this.computers = computers;
+        }
+    }
+
+    /**
+     * One line naming the step at which a standing crew member's placement stopped: whether this
+     * world registers the ship that crossed at all, how far the computer scan got and on which
+     * filter it lost every candidate, and — when a computer WAS found — that no registered ship
+     * manages its block yet, which is the one remaining way the deck point can have no world
+     * position. Built only on the failing path, at the same cadence as the seated twin.
+     */
+    private static String describeDeckBlock(WorldServer world, BlockPos anchor, Crew rider,
+            EntityPlayerMP player, java.util.UUID expectedShipId, java.util.UUID vsShipUuid,
+            AfcLookup afc, double[] sub) {
+        StringBuilder sb = new StringBuilder(400);
+        sb.append("deck p=").append(player.getName())
+                .append(" anchor=").append(anchor.getX()).append(',').append(anchor.getY())
+                .append(',').append(anchor.getZ())
+                .append(" scannedShip=")
+                .append(vsShipUuid == null ? "BY-POSITION" : vsShipUuid.toString())
+                .append(" wantShip=").append(expectedShipId)
+                .append(" yard=")
+                .append(afc.yard == null
+                        ? (vsShipUuid == null ? "NONE(no ship is registered in this world)"
+                                : "NONE(the crossed ship is not registered here)")
+                        : "[" + (int) afc.yard.minX + ".." + (int) afc.yard.maxX + "]x["
+                                + (int) afc.yard.minZ + ".." + (int) afc.yard.maxZ + "]")
+                // What a POSITION lookup would have answered, always — the difference between the
+                // two is what says "we were asking about the wrong ship".
+                .append(" nearestToAnchor=").append(VSIntegration.describeShipAt(world,
+                        anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5))
+                // Which ship in THIS world carries the durable id the filter is comparing against —
+                // the translation between the two identities a jump holds. A refusal count says the
+                // filter said no; this says whether the id it wanted names anything here at all, and
+                // the two together separate "the wrong ship landed" from "the right ship landed
+                // under a name this jump does not know".
+                .append(" durableNames=").append(expectedShipId == null ? "n/a"
+                        : String.valueOf(VSIntegration.shipUuidOfDurableId(world,
+                                expectedShipId.toString())))
+                .append(" afcLoaded=").append(afc.computersLoaded)
+                .append(" afcInScope=").append(afc.computersInScope)
+                .append(" afcWrongShip=").append(afc.rejectedByShipId)
+                .append(" afcAll=").append(afc.computers)
+                .append(" afc=").append(afc.pos == null ? "NONE"
+                        : afc.pos.getX() + "," + afc.pos.getY() + "," + afc.pos.getZ())
+                .append(" stand=").append(fmt(rider.standDx)).append(',').append(fmt(rider.standDy))
+                .append(',').append(fmt(rider.standDz))
+                .append(" sub=").append(sub == null ? "UNRESOLVED"
+                        : fmt(sub[0]) + "," + fmt(sub[1]) + "," + fmt(sub[2]))
+                .append(" | ");
+        if (afc.pos != null) {
+            return sb.append("the flight computer is there, but no REGISTERED ship manages its"
+                    + " block, so the deck point has no world position yet").toString();
+        }
+        if (afc.yard == null && afc.computersInScope == 0) {
+            return sb.append("this world does not register the ship that crossed, and no flight"
+                    + " computer is loaded within ").append((int) RIDER_RANGE)
+                    .append(" blocks of the arrival point either").toString();
+        }
+        if (afc.computersLoaded == 0) {
+            return sb.append("no flight-computer tile is loaded anywhere in this world — the"
+                    + " shipyard chunks were force-loaded and still hold none").toString();
+        }
+        if (afc.computersInScope == 0) {
+            return sb.append("every loaded flight computer is outside both the shipyard box and ")
+                    .append((int) RIDER_RANGE).append(" blocks of the arrival point").toString();
+        }
+        return sb.append("every flight computer in scope POSITIVELY names another craft")
+                .toString();
+    }
+
+    /** Two decimals, so a deck offset stays readable in a one-line block report. */
+    private static String fmt(double v) {
+        return String.format(java.util.Locale.ROOT, "%.2f", v);
+    }
+
+    /**
+     * The SUBSPACE position of the flight computer of the ship that arrived at {@code anchor} — and
+     * what the scan saw on the way there, so an empty answer names its own step. The standing half
+     * of what {@link #seatsOfShipAt} does for seats, over the same shipyard box and with the same
+     * chunk force-load, and filtered by the DURABLE ship id so a neighbouring craft's computer is
+     * never taken for this one's.
+     */
+    private static AfcLookup flightComputerOfShipAt(WorldServer world, BlockPos anchor,
             java.util.UUID vsShipUuid, java.util.UUID expectedShipId) {
         AxisAlignedBB yard = yardOfTheShipWeMean(world, anchor, vsShipUuid);
         forceLoadYard(world, yard);
+        // Counted to the END of the list rather than stopped at the first match: a count that stops
+        // where the answer was found describes the scan's luck, not the world, and these numbers are
+        // read to decide whether a stalled arrival was looking in the wrong place. The seat scan
+        // beside this one already walks the whole list, so this costs the path nothing new.
+        int loaded = 0, inScope = 0, wrongShip = 0;
+        BlockPos found = null;
+        List<String> seen = new ArrayList<>(4);
         for (TileEntity te : world.loadedTileEntityList) {
             if (!(te instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
                 continue;
             }
+            loaded++;
             BlockPos p = te.getPos();
+            if (seen.size() < 6) {
+                seen.add(p.getX() + "," + p.getY() + "," + p.getZ() + "="
+                        + ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
+                                .shipIdOrNull()
+                        + "@" + VSIntegration.shipIdManagingBlock(world, p));
+            }
             boolean inYard = yard != null && yard.contains(new net.minecraft.util.math.Vec3d(
                     p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5));
             boolean nearAnchor = p.distanceSq(anchor) <= RIDER_RANGE * RIDER_RANGE;
             if (!inYard && !nearAnchor) {
                 continue;
             }
+            inScope++;
             // Skip a computer that names a DIFFERENT craft — never one that names none. A durable id is
             // minted lazily and read back from NBT, so a computer on a hull pasted moments ago can
             // legitimately answer null, and null means "cannot establish", not "somebody else's". The
@@ -491,11 +657,14 @@ public final class CrewTransfer {
                     ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te).shipIdOrNull();
             if (expectedShipId != null && computersShip != null
                     && !expectedShipId.equals(computersShip)) {
+                wrongShip++;
                 continue; // another craft's computer sharing the neighbourhood
             }
-            return p;
+            if (found == null) {
+                found = p;
+            }
         }
-        return null;
+        return new AfcLookup(found, yard, loaded, inScope, wrongShip, seen);
     }
 
     /**

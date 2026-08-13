@@ -10,8 +10,15 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 /**
- * Production lifecycle for the movable-ship space subsystem: owns the single server-side
- * {@link SpaceManager} instance, registers the slot pool once per JVM, and drives the GC cadence.
+ * Production lifecycle for the movable-ship space subsystem: builds the server's stack, registers the
+ * slot pool once per JVM, and drives the GC cadence.
+ *
+ * <p>It is also the subsystem's STATE OBJECT: the five services are its fields, wired by its one
+ * constructor, and they live and die together. They used to be five separate mutable statics on this
+ * class — a shape that let a test seam replace them with no way back, and let each probe wire a
+ * different subset of what production wires. The Forge subscriptions that drive it live beside it in
+ * {@link SpaceSubsystemEvents}, which is a class of static handlers reaching into this object rather
+ * than an object pretending to be a handler.</p>
  *
  * <p>Registration is an <b>explicit server-start hook</b> and runs wherever the mod runs: it is NOT
  * conditioned on the JVM's test property. Space is the mod's subject, so a session that can fly is
@@ -32,57 +39,198 @@ public final class SpaceSubsystem {
     /** Periodic GC sweep interval, in server ticks (~30 s at 20 tps). Internal cadence, not a config knob. */
     private static final int GC_TICK_INTERVAL = 600;
 
-    private static SpaceManager instance;
-    private static ShipTransitManager transitManager;
-    private static ShipLedger shipLedger;
-    private static ShipEntryController entryController;
-    private static DescentController descentController;
-    private static int gcTickCounter;
-    /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
-    private static boolean pressureGcRequested;
+    /**
+     * The live subsystem, or {@code null} when no server has one. ONE reference, and its only writers
+     * are {@link #attach}/{@link #detach} on the server lifecycle hooks plus {@link #install} for the
+     * test seam. The readers here are tile entities and event subscribers with no injection point, so
+     * on this platform an accessor reachable from anywhere has to exist; what the rule asks for is
+     * bought by the lifecycle and the single writer, not by the absence of the keyword.
+     *
+     * <p>Answers {@code null} on a remote client, which is the correct answer and not a fault — a
+     * client has no server-side subsystem, exactly as {@link #spaceClock()} already reads a synced
+     * value there instead of the server's counter.</p>
+     */
+    private static SpaceSubsystem current;
+
     /** Armed by {@link #armSaveFaultOnce()}; consumed by the next save point that reaches it. */
     private static boolean saveFaultArmed;
 
-    private SpaceSubsystem() { }
+    // ---- this subsystem's own state: five services that live and die together -----------------
 
-    /** The live production controller, or {@code null} before server start / in test mode. */
-    public static SpaceManager get() {
-        return instance;
+    // Final and public: this is a state object, and the code that drives it — the Forge handlers
+    // beside it in this package, and a probe holding a subsystem it built for itself — reads its
+    // fields. They cannot be reassigned, so "public" costs nothing the rule cares about: the defect
+    // was five INDEPENDENTLY WRITABLE statics with no lifecycle, not a readable field on an object
+    // somebody already has in hand.
+    public final SpaceManager manager;
+    public final ShipLedger ledger;
+    public final ShipTransitManager transit;
+    public final ShipEntryController entry;
+    public final DescentController descent;
+    private int gcTickCounter;
+    /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
+    private boolean pressureGcRequested;
+
+    /**
+     * Wire a subsystem. <b>This is the ONE construction site</b>, and every {@code null} argument
+     * means "exactly what production uses" — which is the point of it. A probe needing its own slot
+     * binder and its own clock says only that, and cannot end up without production's arrival standoff
+     * or its offline-progress policy because nobody remembered to attach them.
+     *
+     * <p>Not hypothetical: the transit probe built its stack by hand and diverged from production on
+     * four axes at once, while the entry probe, in the same file, re-attached two of them with a
+     * comment explaining that forgetting them makes a whole suite "quietly measure a different game".
+     *
+     * @param binder {@code null} &rarr; the production pool binder
+     * @param clock  {@code null} &rarr; the production space clock
+     * @param config {@code null} &rarr; the manager config the current AR config asks for
+     */
+    public SpaceSubsystem(SlotBinder binder, java.util.function.LongSupplier clock,
+                          SpaceManager.Config config) {
+        // Read once, and tolerated as absent: a caller that supplies its own config is not asking
+        // this constructor to consult the game's, and a unit test has no config at all. Every use of
+        // cfg below is null-guarded for that reason, not by accident.
+        ARConfiguration cfg = ARConfiguration.getCurrentConfig();
+        SlotBinder useBinder = binder == null ? new PoolSlotBinder() : binder;
+        java.util.function.LongSupplier useClock = clock == null ? SpaceSubsystem::spaceClock : clock;
+        SpaceManager.Config useConfig = config != null ? config
+                : new SpaceManager.Config(parseGcPolicy(cfg == null ? null : cfg.spaceCellGcPolicy),
+                        cfg == null ? 0L : cfg.spaceCellMaxAgeTicks,
+                        cfg == null ? 0 : cfg.spaceMaxStoredCells);
+        this.manager = new SpaceManager(useBinder, useClock, useConfig,
+                SpaceSubsystem::onForcedTier1Eviction);
+        this.ledger = new ShipLedger();
+        // A cell is protected from garbage collection while a ship is parked in it. That fact already
+        // lives in the ledger, so the manager asks it rather than keeping a second flag of its own.
+        this.manager.setClaimedCells(cellKey -> this.ledger.holdsShipIn(cellKey));
+        // The WORLD's lane allocator, never a fresh one: lanes are a property of the single hyperspace
+        // world every subsystem parks in, so a per-subsystem allocator hands out lanes another one is
+        // already using.
+        this.transit = new ShipTransitManager(this.manager, HyperspaceWorld.lanes(),
+                new VSShipCrosser(), this.ledger, useClock);
+        this.transit.setOfflineProgress(new OfflineProgress(
+                OfflineProgress.parseMode(cfg == null ? null : cfg.spaceTransitOfflineProgress),
+                SpaceSubsystem::isPlayerOnline));
+        this.transit.setArrivalPlacement(SpaceSubsystem::arrivalStandoff);
+        this.transit.setFrames(SpaceSubsystem::cellFrameOriginAt);
+        this.entry = new ShipEntryController(this.manager, this.ledger, new VSShipCrossingOps(),
+                SpaceSubsystem::launchBodyAddress, useClock);
+        this.descent = new DescentController(this.manager, this.ledger, new VSShipCrossingOps(),
+                new VSDescentPasteResolver(), useClock);
     }
 
-    /** The live production transit manager, or {@code null} before server start / in test mode. */
-    public static ShipTransitManager transit() {
-        return transitManager;
+    /** The live subsystem, or {@code null} when none is attached (before server start, or on a client). */
+    public static SpaceSubsystem get() {
+        return current;
     }
 
-    /** The live ship ledger, or {@code null} before server start / in test mode. */
-    public static ShipLedger ledger() {
-        return shipLedger;
+    /** Take {@code subsystem} as the live one. The server lifecycle is the only caller. */
+    static void attach(SpaceSubsystem subsystem) {
+        if (current != null && subsystem != null) {
+            // Loud, because it is not survivable-and-quiet: two live subsystems over one slot pool
+            // means somebody's ships are being ticked by a manager that does not know about them.
+            AdvancedRocketry.logger.error("[SPACE] a subsystem is being attached while one is already "
+                    + "live - the previous one is dropped without a detach. This is a lifecycle bug; "
+                    + "treat it as a report.");
+        }
+        current = subsystem;
     }
 
-    /** The live entry controller, or {@code null} before server start / in test mode. */
-    public static ShipEntryController entry() {
-        return entryController;
-    }
-
-    /** The live descent controller, or {@code null} before server start / in test mode. */
-    public static DescentController descent() {
-        return descentController;
+    /** Release the live subsystem. Paired with {@link #attach} on the server-stop hook. */
+    static void detach() {
+        current = null;
     }
 
     /**
-     * TEST/HEADLESS: install a probe-built stack so the production trigger path (flight-computer
-     * tick &rarr; {@link #entry()}) is exercisable under the test harness, where
-     * {@link #onServerStarting()} deliberately stands down. Pass nulls to clear.
+     * Put {@code replacement} in place and hand back the way BACK. Closing the handle restores
+     * whatever was live at install time — the production subsystem, a previous install, or nothing.
+     *
+     * <p>This is the whole test seam, and the shape it replaces is ledger #235: a setter that took
+     * five services, kept no copy of them, and offered a "clear" that assigned five nulls. The
+     * production subsystem was then gone for the rest of the boot, because the hook that builds it
+     * runs once per server start.</p>
      */
-    public static void installProbeStack(SpaceManager manager, ShipLedger ledger,
-                                         ShipEntryController entry, ShipTransitManager transit,
-                                         DescentController descent) {
-        instance = manager;
-        shipLedger = ledger;
-        entryController = entry;
-        transitManager = transit;
-        descentController = descent;
+    public static Handle install(SpaceSubsystem replacement) {
+        SpaceSubsystem previous = current;
+        current = replacement;
+        return new Handle(previous, replacement);
+    }
+
+    /**
+     * The way back from an {@link #install}. Idempotent, and it will not stamp on a THIRD party: if
+     * something else has installed over us since, closing leaves that alone rather than resurrecting
+     * a subsystem two generations old.
+     */
+    public static final class Handle implements AutoCloseable {
+        private final SpaceSubsystem previous;
+        private final SpaceSubsystem installed;
+        private boolean closed;
+
+        Handle(SpaceSubsystem previous, SpaceSubsystem installed) {
+            this.previous = previous;
+            this.installed = installed;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (current == installed) {
+                current = previous;
+            }
+        }
+    }
+
+    // ---- null-safe conveniences over get() -----------------------------------------------------
+    // Readers are tiles and event subscribers that want "the live X, or nothing". These are READS of
+    // ONE instance, which is a different animal from the five independently-writable fields this
+    // class used to hold: there is one writer, one lifecycle, and no way for two of them to describe
+    // different subsystems. Anything that needs more than a read takes the instance from get().
+
+    /** The live cell manager, or {@code null} when no subsystem is attached. */
+    public static SpaceManager space() {
+        return current == null ? null : current.manager;
+    }
+
+    /** The live ship ledger, or {@code null} when no subsystem is attached. */
+    public static ShipLedger ledger() {
+        return current == null ? null : current.ledger;
+    }
+
+    /** The live transit state machine, or {@code null} when no subsystem is attached. */
+    public static ShipTransitManager transit() {
+        return current == null ? null : current.transit;
+    }
+
+    /** The live entry controller, or {@code null} when no subsystem is attached. */
+    public static ShipEntryController entry() {
+        return current == null ? null : current.entry;
+    }
+
+    /** The live descent controller, or {@code null} when no subsystem is attached. */
+    public static DescentController descent() {
+        return current == null ? null : current.descent;
+    }
+
+    /** One GC tick of this subsystem's cadence; {@code true} when a sweep ran. */
+    boolean tickGc() {
+        boolean run = false;
+        if (pressureGcRequested) {
+            pressureGcRequested = false;
+            run = true;
+        }
+        if (++gcTickCounter >= GC_TICK_INTERVAL) {
+            gcTickCounter = 0;
+            run = true;
+        }
+        return run;
+    }
+
+    /** Ask for an extra GC sweep on the next tick (the pool-pressure trigger). */
+    void requestPressureGc() {
+        pressureGcRequested = true;
     }
 
     /**
@@ -130,10 +278,11 @@ public final class SpaceSubsystem {
     public static void onServerStarting() {
         ARConfiguration cfg = ARConfiguration.getCurrentConfig();
         boolean vsAvailable = VSIntegration.isAvailable();
-        if (!shouldRegister(cfg.enableSpaceSubsystem, vsAvailable, instance != null)) {
+        boolean alreadyBuilt = current != null;
+        if (!shouldRegister(cfg.enableSpaceSubsystem, vsAvailable, alreadyBuilt)) {
             // Log the operator-facing reason (already-built is an internal, expected no-op that
             // must stay quiet).
-            if (instance == null) {
+            if (!alreadyBuilt) {
                 if (!cfg.enableSpaceSubsystem) {
                     AdvancedRocketry.logger.info("[SPACE] subsystem disabled (enableSpaceSubsystem=false) - "
                             + "no space dimensions registered");
@@ -164,24 +313,13 @@ public final class SpaceSubsystem {
                 parseGcPolicy(cfg.spaceCellGcPolicy),
                 cfg.spaceCellMaxAgeTicks,
                 cfg.spaceMaxStoredCells);
-        instance = new SpaceManager(new PoolSlotBinder(), SpaceSubsystem::spaceClock, mgrConfig,
-                SpaceSubsystem::onForcedTier1Eviction);
-        shipLedger = new ShipLedger();
-        // A cell is protected from garbage collection while a ship is parked in it. That fact already
-        // lives in the ledger, so the manager asks it rather than keeping a second flag of its own.
-        instance.setClaimedCells(cellKey -> shipLedger != null && shipLedger.holdsShipIn(cellKey));
-        transitManager = new ShipTransitManager(instance, new HyperspaceTiles(), new VSShipCrosser(),
-                shipLedger, SpaceSubsystem::spaceClock);
-        transitManager.setOfflineProgress(new OfflineProgress(
-                OfflineProgress.parseMode(cfg.spaceTransitOfflineProgress), SpaceSubsystem::isPlayerOnline));
-        transitManager.setArrivalPlacement(SpaceSubsystem::arrivalStandoff);
-        transitManager.setFrames(SpaceSubsystem::cellFrameOriginAt);
-        entryController = new ShipEntryController(instance, shipLedger, new VSShipCrossingOps(),
-                SpaceSubsystem::launchBodyAddress, SpaceSubsystem::spaceClock);
-        descentController = new DescentController(instance, shipLedger, new VSShipCrossingOps(),
-                new VSDescentPasteResolver(), SpaceSubsystem::spaceClock);
-        gcTickCounter = 0;
-        pressureGcRequested = false;
+        // Through the same factory every other caller uses, with no knob overridden: production IS
+        // the default, so "the probe wired something production does not" and "production wired
+        // something the probe does not" are both off the table by construction.
+        // Through the same constructor every other caller uses, with no knob overridden: production
+        // IS the default, so "the probe wired something production does not" and its mirror are both
+        // off the table by construction.
+        attach(new SpaceSubsystem(null, null, mgrConfig));
         AdvancedRocketry.logger.info("[SPACE] subsystem online: pool={} gcPolicy={} maxStored={} maxAgeTicks={}",
                 SpaceSlotPool.slotDims().size(), mgrConfig.gcPolicy, mgrConfig.maxStoredCells, mgrConfig.maxAgeTicks);
     }
@@ -209,38 +347,35 @@ public final class SpaceSubsystem {
         if (data != null) {
             spaceTick = data.clock();
         }
-        if (shipLedger == null) {
+        SpaceSubsystem live = current;
+        if (live == null) {
             return;
         }
         if (data != null) {
-            data.loadInto(shipLedger);
-            AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", shipLedger.size());
+            data.loadInto(live.ledger);
+            AdvancedRocketry.logger.info("[SPACE] restored {} settled ship(s) from disk", live.ledger.size());
             // Restore when each cell was last visited, or every stored cell looks freshly visited on
             // this boot and age-based collection can never reach an earlier session's leftovers.
-            if (instance != null) {
-                instance.importVisits(data.loadVisits());
-            }
+            live.manager.importVisits(data.loadVisits());
             // Recreate any in-flight jump so a transit survives a restart: each record advances logically
             // and, on arrival, pastes its persisted block snapshot into the target cell (the hyperspace
             // world it was parked in is ephemeral). The ledger is re-marked IN_TRANSIT inside importTransit.
-            if (transitManager != null) {
-                java.util.List<TransitRecord> records = data.loadTransits();
-                for (TransitRecord r : records) {
-                    transitManager.importTransit(r);
-                }
-                if (!records.isEmpty()) {
-                    AdvancedRocketry.logger.info("[SPACE] restored {} in-flight transit(s) from disk",
-                            records.size());
-                }
-                // JUMP-10, and it belongs HERE — after the last record has been imported. Hyperspace
-                // outlives the server, so a hull can outlive the record that put it there; every ship
-                // found in it is matched against the transits that claim a lane and the rest are
-                // disposed of. Run one record too early and a perfectly good ship looks unclaimed.
-                int disposed = transitManager.reconcileParkedShips();
-                if (disposed > 0) {
-                    AdvancedRocketry.logger.warn("[SPACE] disposed of {} ship(s) parked in hyperspace "
-                            + "that no transit record claims", disposed);
-                }
+            java.util.List<TransitRecord> records = data.loadTransits();
+            for (TransitRecord r : records) {
+                live.transit.importTransit(r);
+            }
+            if (!records.isEmpty()) {
+                AdvancedRocketry.logger.info("[SPACE] restored {} in-flight transit(s) from disk",
+                        records.size());
+            }
+            // JUMP-10, and it belongs HERE — after the last record has been imported. Hyperspace
+            // outlives the server, so a hull can outlive the record that put it there; every ship
+            // found in it is matched against the transits that claim a lane and the rest are
+            // disposed of. Run one record too early and a perfectly good ship looks unclaimed.
+            int disposed = live.transit.reconcileParkedShips();
+            if (disposed > 0) {
+                AdvancedRocketry.logger.warn("[SPACE] disposed of {} ship(s) parked in hyperspace "
+                        + "that no transit record claims", disposed);
             }
         }
     }
@@ -344,11 +479,12 @@ public final class SpaceSubsystem {
      * is down, and it never propagates: a stop must not be turned into a crash by a snapshot.
      */
     public static void onServerStopping() {
-        if (transitManager == null) {
+        ShipTransitManager transit = transit();
+        if (transit == null) {
             return;
         }
         try {
-            int refreshed = transitManager.refreshSnapshots();
+            int refreshed = transit.refreshSnapshots();
             if (refreshed > 0) {
                 AdvancedRocketry.logger.info("[SPACE] re-cut {} in-flight ship(s) before the shutdown save",
                         refreshed);
@@ -383,7 +519,7 @@ public final class SpaceSubsystem {
      * The armed fault, thrown from the middle of a save point's gather — where a mistake in that gather
      * would land, which is the one failure the handler undertakes to survive.
      */
-    private static void failSavePointIfArmed() {
+    static void failSavePointIfArmed() {
         if (saveFaultArmed) {
             saveFaultArmed = false;
             throw new IllegalStateException("armed ship-ledger save fault");
@@ -392,21 +528,20 @@ public final class SpaceSubsystem {
 
     /** Server-stop teardown. The slot dimensions stay registered (JVM-global); only the controller resets. */
     public static void onServerStopped() {
-        instance = null;
-        transitManager = null;
-        shipLedger = null;
-        entryController = null;
-        descentController = null;
+        // Released, not nulled field-by-field: the subsystem is one object with one lifetime, and
+        // the server that is stopping is the one it belonged to.
+        detach();
         // The clock belongs to the save that was just closed. A single-player client keeps this JVM
         // alive between worlds, so carrying the number over would date the next world's first jump
         // against the previous world's history; the next server-started hook reads its own.
         spaceTick = 0L;
-        gcTickCounter = 0;
-        pressureGcRequested = false;
         saveFaultArmed = false;
         SystemBodiesProducer.reset();
         zmaster587.advancedRocketry.universe.SystemContent.reset();
         HyperspaceWorld.reset();
+        // The diagnostics describe the stack that has just gone; carrying them into the next server
+        // is how "the last re-seat was blocked at X" ends up describing a jump from another session.
+        SpaceDiagnostics.reset();
     }
 
     /** Parse the {@code spaceCellGcPolicy} config string, defaulting to {@code BOTH} on an unknown value. */
@@ -453,6 +588,15 @@ public final class SpaceSubsystem {
      * There is now no world clock anywhere in this answer, so that class of mistake has nothing left
      * to be made out of.</p>
      */
+    /**
+     * Advance the subsystem's clock by one tick. THE ONLY writer besides the restore, and it is
+     * called from exactly one place ({@link SpaceSubsystemEvents}'s server tick) — two writers on the
+     * same event would run the clock at twice the tick rate and nothing would report it.
+     */
+    static void advanceClock() {
+        spaceTick++;
+    }
+
     public static long spaceClock() {
         return FMLCommonHandler.instance().getEffectiveSide().isClient()
                 ? SpaceClockSync.now()
@@ -483,213 +627,13 @@ public final class SpaceSubsystem {
         AdvancedRocketry.logger.warn("[SPACE] pool pressure - force-evicted live cell {} ({}); "
                         + "raise spaceCellPoolSize if this recurs",
                 cellKey, wasDirty ? "flushed to store" : "discarded");
-        pressureGcRequested = true;
-    }
-
-    /** Registered once per JVM; runs the periodic + pressure-triggered GC while a controller is live. */
-    public static final class Ticker {
-
-        /**
-         * Slot-dim client sync at login: a joining player's client learns the slot {@code DimensionType}
-         * + dim ids BEFORE anything (login restore, entry, docking) can relocate him into a slot world —
-         * the sequencing contract of the slot-dim registration sync. Independent of the production
-         * controller so a probe-registered pool (test harness) syncs too; a no-op while no pool exists.
-         */
-        @SubscribeEvent
-        public void onPlayerLoggedIn(net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedInEvent event) {
-            if (!(event.player instanceof net.minecraft.entity.player.EntityPlayerMP)
-                    || SpaceSlotPool.slotDims().isEmpty()) {
-                return;
-            }
-            zmaster587.advancedRocketry.network.PacketSlotDimSync sync =
-                    zmaster587.advancedRocketry.network.PacketSlotDimSync.current();
-            if (!sync.isEmpty()) {
-                zmaster587.libVulpes.network.PacketHandler.sendToPlayer(
-                        sync, (net.minecraft.entity.player.EntityPlayerMP) event.player);
-            }
-            // After the slot dims are registered client-side, seed the joining player's render bodies
-            // (the BoundarySky feed) so a login restore into a settled cell draws them immediately.
-            SystemBodiesProducer.sendToPlayer((net.minecraft.entity.player.EntityPlayerMP) event.player);
-        }
-
-        @SubscribeEvent
-        public void onServerTick(TickEvent.ServerTickEvent event) {
-            if (event.phase != TickEvent.Phase.END) {
-                return;
-            }
-            // THE SUBSYSTEM'S ONLY ADVANCE SITE. One increment per server tick, before anything else
-            // here can return: the clock is not the controller's, it is the subsystem's, and a
-            // session with the controller down (config off, no Valkyrien Skies, a harness that
-            // installs its own stack) must still get a number that MOVES when it asks the time —
-            // a clock frozen at zero is the defect this counter replaced, not an acceptable
-            // stand-down. Nothing else in the mod may increment it; the other server-tick handler in
-            // this subsystem (SpaceEventHandler) deliberately only READS it, because two writers on
-            // the same event would run the clock at twice the tick rate and nothing would report it.
-            spaceTick++;
-            SpaceManager mgr = instance;
-            if (mgr == null) {
-                return;
-            }
-            // Advance in-flight ships every tick (parked ships step their coordinate logically; arrivals
-            // perform the second crossing). Cheap when nothing is in transit.
-            if (transitManager != null) {
-                transitManager.tick();
-            }
-            // Advance in-flight ENTRIES (crossed, waiting on async re-assembly to re-seat + settle).
-            if (entryController != null) {
-                entryController.tick();
-            }
-            // Advance in-flight DESCENTS (the inverse crossing, same async re-seat + settle).
-            if (descentController != null) {
-                descentController.tick();
-            }
-            // Rebroadcast the per-slot render bodies (throttled) so the slot-world sky (BoundarySky)
-            // tracks each settled ship's direction to the bodies of its cell.
-            SystemBodiesProducer.onBroadcastTick(FMLCommonHandler.instance().getMinecraftServerInstance());
-            boolean run = false;
-            if (pressureGcRequested) {
-                pressureGcRequested = false;
-                run = true;
-            }
-            if (++gcTickCounter >= GC_TICK_INTERVAL) {
-                gcTickCounter = 0;
-                run = true;
-            }
-            if (run) {
-                mgr.gc();
-            }
-        }
-
-        /**
-         * Persist the space clock and the ship ledger on the overworld save cadence (autosave +
-         * shutdown both fire this on dim 0). Three steps, in this order and for this reason: stage the
-         * CLOCK (always — it is read by code that does not know or care whether space registered, see
-         * {@link SpaceSubsystem#onServerStarted()}), stage the FLEET (only while the subsystem is up,
-         * and all-or-nothing), then write out whatever was staged in a {@code finally} — so a fleet
-         * step that refuses or fails still cannot take the clock down with it.
-         *
-         * <p>The snapshot is written out EXPLICITLY at the end rather than merely marked dirty. This
-         * looks redundant and is not: the world's save routine writes its map storage and only then
-         * posts the save event, so anything dirtied from inside this handler has already missed that
-         * pass. On an autosave that would just make the stored ledger one cycle stale — but the
-         * shutdown save is the last one there is, and nothing writes map storage after it, so the
-         * final state of every ship would be silently dropped on a clean server stop. For a subsystem
-         * whose entire purpose is surviving a restart, that is the one save that must not be lost.</p>
-         *
-         * <p><b>Nothing here may destroy, and nothing recoverable may escape.</b> This handler once ran
-         * as a sequence of destructive steps — empty the stored ships, refill them, then go and fetch
-         * the in-flight ones — and a failure between two of those steps left the store holding an empty
-         * fleet, which the next flush made permanent. It also took the server down with it, because a
-         * throw out of a dim-0 save event aborts the loop over the remaining worlds (that loop catches
-         * only its own world exceptions) and then the tick loop itself. So the whole body is gathered
-         * first and applied in one step that cannot half-run, and a failure it can carry on past is
-         * logged rather than propagated: a save point that fails must cost one stale cycle, never a
-         * fleet and never the server.</p>
-         */
-        @SubscribeEvent
-        public void onWorldSave(net.minecraftforge.event.world.WorldEvent.Save event) {
-            if (event.getWorld().provider.getDimension() != 0) {
-                return;
-            }
-            try {
-                stageClock(event.getWorld());
-                if (shipLedger != null) {
-                    stageFleet(event.getWorld());
-                }
-            } finally {
-                flush(event.getWorld());
-            }
-        }
-
-        /**
-         * Stage the space clock. UNCONDITIONAL - it runs before the fleet, on every dim-0 save,
-         * whether or not the subsystem is up, and it is not part of the fleet's all-or-nothing write.
-         *
-         * <p><b>Why it is not bundled with the fleet, which is where it started.</b> Bundling looks
-         * right: the clock dates what the fleet stores, so a pass that keeps an older fleet should
-         * keep the older clock. But the fleet is not the only thing this clock dates. A jump
-         * capacitor's {@code since} lives in TILE NBT and a memory crystal's {@code observedTick}
-         * lives in ITEM NBT, and Minecraft commits both BEFORE this handler is ever called - the
-         * chunks are written, then the save event is posted. A clock left behind on a refused or
-         * failed pass therefore comes back EARLIER than stamps already on disk, and the elapsed time
-         * they are measured against goes negative: every capacitor in the world reads frozen at its
-         * last level, with the pilot unable to jump and nothing in the log tying it to a save.
-         *
-         * <p>Written forward instead, the worst case is a clock at most one save cycle AHEAD of a
-         * stale fleet: a cell looks a cycle older and a jump lands a cycle sooner. A clock that runs
-         * backwards breaks arithmetic; a clock that runs a little ahead of one stale snapshot does
-         * not. So the clock is monotonic and the fleet is atomic, and they are written separately
-         * because they are different KINDS of state.</p>
-         */
-        private void stageClock(net.minecraft.world.World overworld) {
-            try {
-                ShipLedgerData data = ShipLedgerData.get(overworld);
-                if (data != null) {
-                    data.setClock(spaceTick);
-                }
-            } catch (Exception failed) {
-                AdvancedRocketry.logger.error("[SPACE] the space clock could not be staged this save "
-                        + "pass; it will resume from the last value that reached disk", failed);
-            }
-        }
-
-        /** Stage the whole fleet in one all-or-nothing write. Never propagates - see the class body. */
-        private void stageFleet(net.minecraft.world.World overworld) {
-            try {
-                ShipLedgerData data = ShipLedgerData.get(overworld);
-                if (data == null) {
-                    AdvancedRocketry.logger.error("[SPACE] the durable ship ledger could not be resolved "
-                            + "on this save - every ship's position is going unwritten this pass");
-                    return;
-                }
-                // Gather EVERYTHING before touching the store. Whatever fails in here - a physics-mod
-                // hiccup, a class that will not load - leaves the previously persisted snapshot exactly
-                // as it was, which is a stale answer rather than a lost fleet.
-                java.util.Map<java.util.UUID, ShipLedger.Entry> live = shipLedger.snapshot();
-                java.util.List<TransitRecord> inFlight = transitManager == null
-                        ? java.util.Collections.<TransitRecord>emptyList()
-                        : transitManager.exportTransits();
-                java.util.Map<String, Long> visits = instance == null
-                        ? java.util.Collections.<String, Long>emptyMap() : instance.exportVisits();
-                failSavePointIfArmed();
-                java.util.List<java.util.UUID> dropped = data.replaceAll(live, inFlight, visits);
-                if (!dropped.isEmpty()) {
-                    AdvancedRocketry.logger.error("[SPACE] refusing to persist a ship ledger that would "
-                            + "lose {} ship(s) - {} is/are recorded as flying but no in-flight jump "
-                            + "carries them, so this save would store them nowhere. The previously saved "
-                            + "state is kept instead. This state should be unreachable - treat it as a "
-                            + "bug report.", dropped.size(), dropped);
-                }
-            } catch (Exception failed) {
-                // Exceptions, and deliberately nothing wider. What this can meaningfully carry on past
-                // is a mistake in the gathering above - a null nobody expected, a collection changed
-                // under an iterator - and there one stale cycle is a far better price than the whole
-                // save pass. An Error is a different animal: the JVM or the class loader is already
-                // broken, this handler cannot mend it, and swallowing one would trade a crash report -
-                // which is exactly how the bug behind this rewrite was found - for an ERROR line every
-                // autosave forever. The fleet does not depend on this catch either way: the gather
-                // above touches the store only once it holds every value, so a throw of ANY kind
-                // leaves the previously persisted snapshot intact.
-                AdvancedRocketry.logger.error("[SPACE] the ship-ledger save step failed; the previously "
-                        + "persisted snapshot is left untouched and the server keeps running", failed);
-            }
-        }
-
-        /**
-         * Write whatever was staged. In a {@code finally}, so a fleet step that failed or refused
-         * still lets the CLOCK reach disk - which is the whole point of staging it first.
-         */
-        private void flush(net.minecraft.world.World overworld) {
-            try {
-                net.minecraft.world.storage.MapStorage storage = overworld.getMapStorage();
-                if (storage != null) {
-                    storage.saveAllData();
-                }
-            } catch (Exception failed) {
-                AdvancedRocketry.logger.error("[SPACE] the space save could not be written out this "
-                        + "pass; the previously persisted snapshot is left untouched and the server "
-                        + "keeps running", failed);
-            }
+        // The listener is a static callback handed to the manager at construction, so it reaches the
+        // subsystem the way everyone else does. A pressure signal arriving with nothing attached is
+        // simply nobody's.
+        SpaceSubsystem live = current;
+        if (live != null) {
+            live.requestPressureGc();
         }
     }
+
 }

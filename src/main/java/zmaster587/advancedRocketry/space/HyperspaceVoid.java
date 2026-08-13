@@ -89,6 +89,12 @@ public final class HyperspaceVoid {
      *  from "somebody was adrift and the budget did not expire". A count alone cannot. */
     public static volatile int longestAdriftRun = 0;
 
+    /** Owned by {@link SpaceDiagnostics#reset()} — see there for why a diagnostic needs an owner. */
+    static void resetDiagnostics() {
+        killed = 0;
+        longestAdriftRun = 0;
+    }
+
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {

@@ -742,6 +742,17 @@ public final class ShipTransitManager {
         return transits.size();
     }
 
+    /**
+     * How many crew members {@code shipId}'s jump picked up, or {@code -1} when no such jump exists.
+     * A departure that carries NOBODY is indistinguishable from a healthy one at every other seam —
+     * the crossing succeeded, the ship is in hyperspace, and the first thing that looks wrong is a
+     * client sitting in the world it should have left.
+     */
+    public int crewCountOf(String shipId) {
+        Transit t = transits.get(shipId);
+        return t == null ? -1 : t.crew.size();
+    }
+
     /** Number of arrived ships whose crew reseat is still retrying (0 once every jump's crew is re-seated). */
     public int reseatingCount() {
         return reseating.size();

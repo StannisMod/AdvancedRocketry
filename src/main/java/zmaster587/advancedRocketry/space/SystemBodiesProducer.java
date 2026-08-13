@@ -180,7 +180,7 @@ public final class SystemBodiesProducer {
     public static Map<Integer, List<RenderBody>> currentByDim(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
-        SpaceManager space = SpaceSubsystem.get();
+        SpaceManager space = SpaceSubsystem.space();
         if (reg == null || space == null) {
             return new LinkedHashMap<>();
         }

@@ -39,7 +39,25 @@ public final class HyperspaceWorld {
      */
     private static int serverToldClientDimId = Integer.MIN_VALUE;
 
+    /**
+     * The parking-lane allocator for THIS world, and there is exactly one because there is exactly
+     * one hyperspace world.
+     *
+     * <p>It used to belong to the {@link ShipTransitManager}, which is one level too narrow: a lane
+     * allocator's whole promise is "no two ships in one lane", and it can only keep that promise
+     * against every ship in the world it parks them in. A second manager over the same world starts
+     * its own allocator at lane 0 and hands out a lane that is already occupied — measured on
+     * 2026-08-13 as two registered ships at the identical position, after which every position-keyed
+     * lookup at that anchor is ambiguous and the arrival cuts whichever hull it happens to reach.</p>
+     */
+    private static HyperspaceTiles lanes = new HyperspaceTiles();
+
     private HyperspaceWorld() { }
+
+    /** This world's one lane allocator. */
+    public static HyperspaceTiles lanes() {
+        return lanes;
+    }
 
     /**
      * Register the hyperspace {@link DimensionType} and dimension id (no world loaded — one Forge map
@@ -151,5 +169,8 @@ public final class HyperspaceWorld {
         if (dimId != Integer.MIN_VALUE) {
             DimensionManager.keepDimensionLoaded(dimId, false);
         }
+        // The lanes go with the world's contents. A server stop discards every parked hull, so
+        // carrying the allocator's used set into the next session would retire lanes nothing is in.
+        lanes = new HyperspaceTiles();
     }
 }

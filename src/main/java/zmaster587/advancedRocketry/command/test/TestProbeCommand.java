@@ -1342,6 +1342,15 @@ public class TestProbeCommand extends CommandBase {
                     // boarding leg logs on exhaustion), so without this a failed arrival re-seat leaves
                     // nothing behind at all.
                     + ",\"reseatBlock\":\"" + zmaster587.advancedRocketry.space.CrewTransfer.lastReseatBlock() + "\""
+                    // What the last arrival CUT was about to take. The re-seat block says where the
+                    // placement stopped; this says whether the hull it is placing people on is even
+                    // the one that jumped. The cut runs once, long before a stalled arrival speaks,
+                    // so it has no other witness.
+                    + ",\"arrivalCut\":\"" + zmaster587.advancedRocketry.space.VSShipCrosser.lastArrivalCut() + "\""
+                    // ...and what was already parked in the lane the last DEPARTURE took. A lane
+                    // holding two ships is visible at the arrival; which of them got there first is
+                    // only visible here.
+                    + ",\"departLane\":\"" + zmaster587.advancedRocketry.space.VSShipCrosser.lastDepartLane() + "\""
                     + "}");
             return;
         }
@@ -2269,6 +2278,8 @@ public class TestProbeCommand extends CommandBase {
     //     transit e2e drives its OWN manager here, exactly as the space-manager probe drives its own pool.
     private static zmaster587.advancedRocketry.space.SpaceManager transitMgr;
     private static zmaster587.advancedRocketry.space.ShipTransitManager transitTm;
+    /** The transit fixture's whole stack, built by the production factory. */
+    private static zmaster587.advancedRocketry.space.SpaceSubsystem transitStack;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitOrigin;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitTarget;
 
@@ -2298,6 +2309,8 @@ public class TestProbeCommand extends CommandBase {
     private static zmaster587.advancedRocketry.space.SpaceManager entryMgr;
     private static zmaster587.advancedRocketry.space.ShipLedger entryLedger;
     private static int[] entrySlotDims;
+    /** The way BACK from the entry stack's install; closed by {@code entry-clear}. */
+    private static zmaster587.advancedRocketry.space.SpaceSubsystem.Handle entryInstall;
 
     /**
      * A {@link zmaster587.advancedRocketry.space.SlotBinder} that carries every world operation out
@@ -3157,7 +3170,7 @@ public class TestProbeCommand extends CommandBase {
                     out.append(',');
                 }
                 zmaster587.advancedRocketry.space.SpaceManager bodiesMgr =
-                        zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                        zmaster587.advancedRocketry.space.SpaceSubsystem.space();
                 int shipSlot = bodiesMgr == null
                         ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
                         : bodiesMgr.slotDimOf(e.coord);
@@ -3310,7 +3323,7 @@ public class TestProbeCommand extends CommandBase {
                 }
             }
             send(sender, "{\"registered\":"
-                    + (zmaster587.advancedRocketry.space.SpaceSubsystem.get() != null)
+                    + (zmaster587.advancedRocketry.space.SpaceSubsystem.space() != null)
                     + ",\"pool\":" + zmaster587.advancedRocketry.space.SpaceSlotPool.slotDims().size()
                     + ",\"slotDims\":[" + slots + "]"
                     + ",\"slotDimsAlsoBodies\":[" + collisions + "]"
@@ -3328,7 +3341,7 @@ public class TestProbeCommand extends CommandBase {
         // observe a REFUSED entry against real pool pressure without flying N extra ships.
         if (args.length >= 4 && "occupy".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceManager mgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             if (mgr == null) {
                 send(sender, "{\"error\":\"space subsystem not registered\"}");
                 return;
@@ -3368,7 +3381,7 @@ public class TestProbeCommand extends CommandBase {
         // unless the same sequence is shown to remove an unheld one.
         if (args.length >= 4 && "release".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceManager mgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             if (mgr == null) {
                 send(sender, "{\"error\":\"space subsystem not registered\"}");
                 return;
@@ -3404,7 +3417,7 @@ public class TestProbeCommand extends CommandBase {
         // for that slot actually exists. A test polls this to watch them come apart.
         if (args.length >= 4 && "cell-slot".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceManager mgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             if (mgr == null) {
                 send(sender, "{\"error\":\"space subsystem not registered\"}");
                 return;
@@ -3480,7 +3493,7 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.ShipLedger led =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
             zmaster587.advancedRocketry.space.SpaceManager settleMgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             if (led == null || settleMgr == null) {
                 send(sender, "{\"error\":\"production ledger not live\"}");
                 return;
@@ -3531,7 +3544,7 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             zmaster587.advancedRocketry.space.SpaceManager getMgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             int attributed = getMgr == null
                     ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
                     : getMgr.slotDimOf(e.coord);
@@ -3634,16 +3647,18 @@ public class TestProbeCommand extends CommandBase {
             // Register hyperspace upfront too, mirroring the production start order. Idempotent, so it
             // costs nothing when the server-start hook has already registered it.
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
-            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
-                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+            // Through the PRODUCTION factory, overriding only the two knobs this fixture needs: its
+            // own clock and a manager that never collects. Everything else — the ledger, the arrival
+            // standoff, the offline-progress policy and the world's shared lane allocator — arrives
+            // by construction. Built by hand, this stack diverged from production on four axes at
+            // once, and the fresh lane allocator among them is what parked two ships in one lane.
+            transitStack = new zmaster587.advancedRocketry.space.SpaceSubsystem(
+                    null,
                     () -> (long) server.getTickCounter(),
                     new zmaster587.advancedRocketry.space.SpaceManager.Config(
                             zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
-            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
-                    transitMgr,
-                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
-                    new zmaster587.advancedRocketry.space.VSShipCrosser());
-            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
+            transitMgr = transitStack.manager;
+            transitTm = transitStack.transit;
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             int originDim = transitMgr.materialize(transitOrigin);
@@ -3682,16 +3697,18 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 1 && "transit-setup-empty".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
-            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
-                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+            // Through the PRODUCTION factory, overriding only the two knobs this fixture needs: its
+            // own clock and a manager that never collects. Everything else — the ledger, the arrival
+            // standoff, the offline-progress policy and the world's shared lane allocator — arrives
+            // by construction. Built by hand, this stack diverged from production on four axes at
+            // once, and the fresh lane allocator among them is what parked two ships in one lane.
+            transitStack = new zmaster587.advancedRocketry.space.SpaceSubsystem(
+                    null,
                     () -> (long) server.getTickCounter(),
                     new zmaster587.advancedRocketry.space.SpaceManager.Config(
                             zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
-            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
-                    transitMgr,
-                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
-                    new zmaster587.advancedRocketry.space.VSShipCrosser());
-            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
+            transitMgr = transitStack.manager;
+            transitTm = transitStack.transit;
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             // Nothing is assembled here, so there is no ship to name — and the field is a static, so
@@ -3712,16 +3729,18 @@ public class TestProbeCommand extends CommandBase {
         if (args.length >= 1 && "transit-setup-piloted".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(2);
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
-            transitMgr = new zmaster587.advancedRocketry.space.SpaceManager(
-                    new zmaster587.advancedRocketry.space.PoolSlotBinder(),
+            // Through the PRODUCTION factory, overriding only the two knobs this fixture needs: its
+            // own clock and a manager that never collects. Everything else — the ledger, the arrival
+            // standoff, the offline-progress policy and the world's shared lane allocator — arrives
+            // by construction. Built by hand, this stack diverged from production on four axes at
+            // once, and the fresh lane allocator among them is what parked two ships in one lane.
+            transitStack = new zmaster587.advancedRocketry.space.SpaceSubsystem(
+                    null,
                     () -> (long) server.getTickCounter(),
                     new zmaster587.advancedRocketry.space.SpaceManager.Config(
                             zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
-            transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
-                    transitMgr,
-                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
-                    new zmaster587.advancedRocketry.space.VSShipCrosser());
-            transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
+            transitMgr = transitStack.manager;
+            transitTm = transitStack.transit;
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
             int originDim = transitMgr.materialize(transitOrigin);
@@ -3805,8 +3824,13 @@ public class TestProbeCommand extends CommandBase {
             String departingShip = transitDurableId == null ? "t" : transitDurableId.toString();
             boolean began = transitTm.beginTransit(departingShip, transitOrigin, originDim, anchor,
                     transitTarget, speed);
+            // HOW MANY the departure actually picked up. `began` says the crossing happened; it says
+            // nothing about whether anyone came, and a jump that carries nobody looks identical from
+            // here — no chat, no crew moved, and the first failing assertion is three steps later
+            // about a client in the wrong dimension.
             send(sender, "{\"ok\":true,\"began\":" + began + ",\"shipId\":\"" + departingShip
-                    + "\",\"inTransit\":" + transitTm.inTransitCount() + "}");
+                    + "\",\"crew\":" + transitTm.crewCountOf(departingShip)
+                    + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
         // transit-tick: advance the transit one tick; report in-transit count and (once arrived) the
@@ -3972,9 +3996,13 @@ public class TestProbeCommand extends CommandBase {
                 send(sender, "{\"error\":\"nothing exported to restore\"}");
                 return;
             }
+            // A restart rebuilds the transit manager, NOT the lanes: hyperspace is the world, and its
+            // lane bookkeeping is what a restored transit re-reserves its own lane out of. A fresh
+            // allocator here would hand lane 0 to the next departure while the restored jump still
+            // claims it.
             transitTm = new zmaster587.advancedRocketry.space.ShipTransitManager(
                     transitMgr,
-                    new zmaster587.advancedRocketry.space.HyperspaceTiles(),
+                    zmaster587.advancedRocketry.space.HyperspaceWorld.lanes(),
                     new zmaster587.advancedRocketry.space.VSShipCrosser());
             transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             for (zmaster587.advancedRocketry.space.TransitRecord r : transitExport) {
@@ -3983,10 +4011,11 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
-        // entry-setup [poolN]: build the entry-on-ramp stack — a probe-local SpaceManager over a fresh
-        // pool + the PRODUCTION ops/resolver — and INSTALL it into SpaceSubsystem, so the production
-        // trigger path (flight-computer tick -> SpaceSubsystem.entry()) runs under the harness. The
-        // subsystem's own onServerStarting stands down in test mode, so nothing is double-installed.
+        // entry-setup [poolN]: build the entry-on-ramp stack — the PRODUCTION stack, built by the
+        // production factory, differing only in the two knobs this probe genuinely needs (its own
+        // narrowed slot binder and its own clock) — and INSTALL it over whatever is live, keeping the
+        // way BACK. `entry-clear` closes that handle, which RESTORES the previous occupant; it used
+        // to assign five nulls, which left the production subsystem dead for the rest of the boot.
         if (args.length >= 1 && "entry-setup".equalsIgnoreCase(args[0])) {
             int n = args.length >= 2 ? parseIntOr(args[1], 2) : 2;
             entrySlotDims = zmaster587.advancedRocketry.space.SpaceSlotPool.registerAdditionalSlots(n);
@@ -3994,49 +4023,26 @@ public class TestProbeCommand extends CommandBase {
             // PoolSlotBinder lets this stack bind any slot in the whole pool, including every earlier
             // consumer's, so the slot a scenario's cell lands in would depend on how many scenarios ran
             // before it in this JVM while the report below still names only its own two.
-            entryMgr = new zmaster587.advancedRocketry.space.SpaceManager(
-                    ownSlotsOnly(entrySlotDims),
-                    () -> (long) server.getTickCounter(),
-                    new zmaster587.advancedRocketry.space.SpaceManager.Config(
-                            zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
-            entryLedger = new zmaster587.advancedRocketry.space.ShipLedger();
-            zmaster587.advancedRocketry.space.ShipEntryController ctl =
-                    new zmaster587.advancedRocketry.space.ShipEntryController(
-                            entryMgr, entryLedger,
-                            new zmaster587.advancedRocketry.space.VSShipCrossingOps(),
-                            zmaster587.advancedRocketry.space.SpaceSubsystem::launchBodyAddress,
-                            () -> (long) server.getTickCounter());
-            // A descent controller on the SAME manager + ledger, so a descent e2e can enter a ship
-            // through this stack and then descend it back onto a planet dim.
-            zmaster587.advancedRocketry.space.DescentController dctl =
-                    new zmaster587.advancedRocketry.space.DescentController(
-                            entryMgr, entryLedger,
-                            new zmaster587.advancedRocketry.space.VSShipCrossingOps(),
-                            new zmaster587.advancedRocketry.space.VSDescentPasteResolver(),
-                            () -> (long) server.getTickCounter());
-            // A transit manager on the SAME manager + ledger, for the same reason the descent controller
-            // is here: so one e2e can enter a ship through this stack, JUMP it to another cell, and descend
-            // it again — the whole planet -> space -> jump -> space -> planet chain on one stack. The
-            // `transit-setup` probe deliberately builds a SEPARATE stack with its own hard-coded cells and
-            // manual ticking; that one cannot touch a ship this stack put into space. Registering hyperspace
-            // upfront mirrors what the production start does (idempotent; no world loads until a first jump).
+            zmaster587.advancedRocketry.space.SpaceSubsystem probeStack =
+                    new zmaster587.advancedRocketry.space.SpaceSubsystem(
+                            ownSlotsOnly(entrySlotDims),
+                            () -> (long) server.getTickCounter(),
+                            new zmaster587.advancedRocketry.space.SpaceManager.Config(
+                                    zmaster587.advancedRocketry.space.SpaceManager.GcPolicy.NEVER, 0L, 0));
+            entryMgr = probeStack.manager;
+            entryLedger = probeStack.ledger;
+            // The entry, descent and transit controllers all come from the factory above, on the SAME
+            // manager and ledger — so one e2e can enter a ship through this stack, JUMP it to another
+            // cell and descend it again. Nothing is wired by hand here any more: the arrival standoff
+            // and the offline-progress policy used to be re-attached at this point with a comment
+            // explaining that forgetting them makes the whole suite "quietly measure a different
+            // game", and forgetting them is now impossible rather than merely discouraged. (The
+            // `transit-setup` probe still builds a SEPARATE stack with its own cells and manual
+            // ticking; that one cannot touch a ship this stack put into space.) Registering
+            // hyperspace upfront mirrors the production start — idempotent, no world loads until a
+            // first jump.
             zmaster587.advancedRocketry.space.HyperspaceWorld.register();
-            zmaster587.advancedRocketry.space.ShipTransitManager tctl =
-                    new zmaster587.advancedRocketry.space.ShipTransitManager(
-                            entryMgr,
-                            new zmaster587.advancedRocketry.space.HyperspaceTiles(),
-                            new zmaster587.advancedRocketry.space.VSShipCrosser(),
-                            entryLedger,
-                            () -> (long) server.getTickCounter());
-            // This stack REPLACES the production one, so anything production installs on the transit
-            // manager has to be installed here too or the whole entry/descent suite quietly measures a
-            // different game. The arrival placement is the one that matters: without it a jump on this
-            // stack lands exactly on its destination, which is the pre-ring behaviour, and a test
-            // written to check the standoff would report that as current.
-            tctl.setArrivalPlacement(zmaster587.advancedRocketry.space.SpaceSubsystem::arrivalStandoff);
-            tctl.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
-            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(
-                    entryMgr, entryLedger, ctl, tctl, dctl);
+            entryInstall = zmaster587.advancedRocketry.space.SpaceSubsystem.install(probeStack);
             StringBuilder sb = new StringBuilder("{\"ok\":true,\"dims\":[");
             for (int i = 0; i < entrySlotDims.length; i++) {
                 if (i > 0) sb.append(',');
@@ -4100,7 +4106,7 @@ public class TestProbeCommand extends CommandBase {
                 sb.append(",\"ly\":").append(e.coord.localY());
                 sb.append(",\"lz\":").append(e.coord.localZ());
                 zmaster587.advancedRocketry.space.SpaceManager entryMgrRead =
-                        zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                        zmaster587.advancedRocketry.space.SpaceSubsystem.space();
                 int entrySlot = entryMgrRead == null
                         ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT
                         : entryMgrRead.slotDimOf(e.coord);
@@ -4129,7 +4135,14 @@ public class TestProbeCommand extends CommandBase {
         // entry-clear: uninstall the probe entry stack and unload its slots (shared-harness
         // state-leak contract).
         if (args.length >= 1 && "entry-clear".equalsIgnoreCase(args[0])) {
-            zmaster587.advancedRocketry.space.SpaceSubsystem.installProbeStack(null, null, null, null, null);
+            // RESTORE, not null. Closing the handle puts back whatever was live when this stack was
+            // installed — production's, in an ordinary boot. The five-nulls form this replaced left
+            // `SpaceSubsystem.space()/.ledger()/.entry()/.transit()/.descent()` answering null for
+            // the rest of the server's life, because the hook that builds them runs once at start.
+            if (entryInstall != null) {
+                entryInstall.close();
+                entryInstall = null;
+            }
             if (entrySlotDims != null) {
                 for (int dim : entrySlotDims) {
                     zmaster587.advancedRocketry.space.SpaceSlotPool.unload(dim);
@@ -4253,7 +4266,7 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.ShipLedger led =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
             zmaster587.advancedRocketry.space.SpaceManager injectMgr =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             if (led == null || injectMgr == null) {
                 send(sender, "{\"error\":\"ledger not set up\"}");
                 return;
@@ -5029,7 +5042,7 @@ public class TestProbeCommand extends CommandBase {
             // required for the ring to appear — but a dim that is keyed while not being a cell is a
             // defect of its own, and it is worth seeing beside the rest.
             zmaster587.advancedRocketry.space.SpaceManager spaceHere =
-                    zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.space();
             here.put("feedKeysThisDim", spaceHere != null
                     && spaceHere.loadedCells().containsValue(dim));
             send(sender, jsonMap(here));
@@ -13834,7 +13847,7 @@ public class TestProbeCommand extends CommandBase {
     /** The slot world a cell is bound to right now, from the one place that decides it. */
     private static int slotDimOfCell(zmaster587.advancedRocketry.space.GalacticCoord cell) {
         zmaster587.advancedRocketry.space.SpaceManager mgr =
-                zmaster587.advancedRocketry.space.SpaceSubsystem.get();
+                zmaster587.advancedRocketry.space.SpaceSubsystem.space();
         return mgr == null
                 ? zmaster587.advancedRocketry.space.SpaceManager.UNBOUND_SLOT : mgr.slotDimOf(cell);
     }

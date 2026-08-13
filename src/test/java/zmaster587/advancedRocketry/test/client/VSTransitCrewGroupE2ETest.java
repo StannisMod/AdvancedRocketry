@@ -766,6 +766,31 @@ private String chat() throws Exception {
     /** Forward, on the real client — the key a player walks with. */
     private static final int FORWARD_KEY = org.lwjgl.input.Keyboard.KEY_W;
 
+    private static final Pattern RESEAT_BLOCK = Pattern.compile("\"reseatBlock\":\"([^\"]*)\"");
+
+    /**
+     * The crossing's own account of why it has not finished putting this crew back aboard, in the
+     * placement's words: which step of the seat lookup or of the deck placement it is waiting on.
+     *
+     * <p>Read out of {@code arrival-trace} but reduced to that one field. The full envelope carries
+     * the whole position-writer ring, which is hundreds of events long by the time an arrival has
+     * stalled, and a verdict nobody scrolls to the end of is a verdict nobody reads. Empty means the
+     * last re-seat put everyone aboard — a real answer, not a missing one.</p>
+     */
+    private String reseatBlock() throws Exception {
+        String trace = exec("artest vs arrival-trace");
+        Matcher m = RESEAT_BLOCK.matcher(trace);
+        Matcher cut = ARRIVAL_CUT.matcher(trace);
+        Matcher lane = DEPART_LANE.matcher(trace);
+        return (m.find() ? m.group(1) : "(no arrival-trace envelope)")
+                + (cut.find() ? " ;; cut: " + cut.group(1) : "")
+                + (lane.find() ? " ;; depart: " + lane.group(1) : "");
+    }
+
+    private static final Pattern ARRIVAL_CUT = Pattern.compile("\"arrivalCut\":\"([^\"]*)\"");
+
+    private static final Pattern DEPART_LANE = Pattern.compile("\"departLane\":\"([^\"]*)\"");
+
     /**
      * How long the void gives a crew member who is aboard nothing before it takes him, in server
      * ticks — read from production so the waits below cannot drift away from the budget they are
@@ -1015,7 +1040,12 @@ private String chat() throws Exception {
             }
             bot().waitTicks(2);
         }
-        assertTrue("the jump never completed (still in transit); last tick=" + lastTick, targetDim >= 0);
+        // An arrival that never completes is now a statement about the crew: the settle waits for
+        // everyone to be back aboard, so "still in transit" IS the placement not converging, and the
+        // placement's own account of the step it is stuck on belongs in the verdict rather than in a
+        // server log somebody has to go and find.
+        assertTrue("the jump never completed (still in transit); last tick=" + lastTick
+                + "; the crossing says it is blocked at: " + reseatBlock(), targetDim >= 0);
 
         // Drive the placement's retries and watch the CLIENT, exactly as the seated siblings do.
         boolean carriedOn = false;
@@ -1027,10 +1057,12 @@ private String chat() throws Exception {
         }
         String captureOnArrival = exec("artest vs deck-capture");
         assertEquals("the arrival crossing must carry the crew member on his feet too — his own"
-                + " client must be in the TARGET cell: " + captureOnArrival,
+                + " client must be in the TARGET cell: " + captureOnArrival
+                + "; placement blocked at: " + reseatBlock(),
                 targetDim, bot().reportWeather().get("dim").getAsInt());
         assertTrue("...and he must be back ON THE DECK there, not merely in the right world: "
-                + captureOnArrival, readBool(captureOnArrival, "alreadyTracked"));
+                + captureOnArrival + "; placement blocked at: " + reseatBlock(),
+                readBool(captureOnArrival, "alreadyTracked"));
         assertTrue("...and still on his feet, never seated late by the arrival: "
                 + bot().reportRidingEntity(),
                 !bot().reportRidingEntity().get("riding").getAsBoolean());

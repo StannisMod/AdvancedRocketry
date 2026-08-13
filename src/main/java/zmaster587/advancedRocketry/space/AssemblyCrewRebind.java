@@ -57,6 +57,15 @@ public final class AssemblyCrewRebind {
     /** The last entry's outcome, for post-mortems. */
     public static volatile String lastOutcome = "";
 
+    /** Owned by {@link SpaceDiagnostics#reset()} — see there for why a diagnostic needs an owner. */
+    static void resetDiagnostics() {
+        enqueuedCount = 0;
+        reboundCount = 0;
+        expiredCount = 0;
+        cancelledCount = 0;
+        lastOutcome = "";
+    }
+
     /** One seated pilot owed a rebind: who, off which stale mount, onto which ship's seat. */
     private static final class Pending {
         final int dimension;

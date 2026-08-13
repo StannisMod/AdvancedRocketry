@@ -61,6 +61,59 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
      */
     private final Map<Integer, String> arrivalGuardWarned = new HashMap<>();
 
+    /**
+     * What the last arrival cut was about to take, in the two vocabularies a jump holds at once: the
+     * craft its hyperspace anchor resolves by POSITION, the craft its durable id names, and what the
+     * computer standing at that anchor calls itself. The cut happens once, hundreds of ticks before
+     * an arrival that stalls reports anything, so nothing downstream can reconstruct it — and the
+     * question "did this jump deliver the hull it meant" has no other witness. Deliberately not
+     * test-gated: a harness child JVM has no test mode.
+     */
+    private static volatile String lastArrivalCut = "";
+
+    /** @see #lastArrivalCut */
+    public static String lastArrivalCut() {
+        return lastArrivalCut;
+    }
+
+    /**
+     * What was already parked in the lane the last departure took. The arrival end can only observe
+     * that a lane holds two ships; it cannot say which of them arrived first, and therefore cannot
+     * say whether a lane was handed out occupied or became occupied later.
+     */
+    private static volatile String lastDepartLane = "";
+
+    /** @see #lastDepartLane */
+    public static String lastDepartLane() {
+        return lastDepartLane;
+    }
+
+    /** Owned by {@link SpaceDiagnostics#reset()} — see there for why a diagnostic needs an owner. */
+    static void resetDiagnostics() {
+        lastArrivalCut = "";
+        lastDepartLane = "";
+    }
+
+    /**
+     * Every registered ship whose transform sits within half a lane of {@code tile} — the same
+     * margin {@link HyperspaceTiles#laneIndexAt} calls unambiguous — as {@code uuid@x,y,z}.
+     */
+    private static String describeShipsNearLane(WorldServer hyper, HyperspaceTiles.Tile tile) {
+        double margin = HyperspaceTiles.SPACING_BLOCKS / 2.0;
+        StringBuilder sb = new StringBuilder(120);
+        for (java.util.Map.Entry<UUID, double[]> e
+                : VSIntegration.registeredShipPoses(hyper).entrySet()) {
+            double[] p = e.getValue();
+            double dx = p[0] - tile.pos.getX(), dz = p[2] - tile.pos.getZ();
+            if (dx * dx + dz * dz > margin * margin) {
+                continue;
+            }
+            sb.append(sb.length() == 0 ? "" : " ").append(e.getKey()).append('@')
+                    .append((int) p[0]).append(',').append((int) p[1]).append(',').append((int) p[2]);
+        }
+        return sb.toString();
+    }
+
     /** Report an arrival that stopped at its own guard - once per target slot, per distinct cause. */
     private void warnArrivalGuardOnce(int targetSlotDim, String cause) {
         if (cause.equals(arrivalGuardWarned.put(targetSlotDim, cause))) {
@@ -173,6 +226,15 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         if (REFUSED.equals(departing)) {
             return null; // a different ship is at this anchor; identifyShipAtAnchor said so
         }
+        // WHO IS ALREADY IN THE LANE THIS DEPARTURE IS ABOUT TO PARK IN. The paste below writes to
+        // tile.pos with no check that the lane is physically empty; the allocator only promises that
+        // no OTHER LIVE TRANSIT holds the index, which is a statement about bookkeeping, not about
+        // the world. Two ships sharing a lane makes every later position lookup at that anchor
+        // ambiguous - including the one the arrival cuts by - so the moment a lane stops being empty
+        // is the moment worth recording, and it is invisible from the arrival end.
+        lastDepartLane = "jump=" + shipId + " lane=" + tile.index + " at=" + tile.pos
+                + " alreadyThere=[" + describeShipsNearLane(hyper, tile) + "]";
+        LOGGER.info("[SPACE] depart lane census: {}", lastDepartLane);
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 src, srcAnchor.getX() + 0.5, srcAnchor.getY() + 0.5, srcAnchor.getZ() + 0.5,
                 departing, hyper, tile.pos.getX(), tile.pos.getY(), tile.pos.getZ());
@@ -236,6 +298,49 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // here and an unload would discard it mid-flight. Stating the hold locally costs nothing and does
         // not rely on the caller having materialized the cell through the pool.
         DimensionManager.keepDimensionLoaded(targetSlotDim, true);
+        // Which craft this cut is ABOUT to take, against the one this jump is about. The cut below
+        // resolves its source by POSITION, and hyperspace is the one world that provably holds many
+        // parked hulls plus the blockless remnant of every ship that has ever left it - so the two
+        // can differ, and when they do the arrival lands a stranger in the target cell under this
+        // jump's name. Said here rather than inferred later: afterwards the ship this jump meant is
+        // still parked in hyperspace and nothing at the destination records that it was never cut.
+        // Said UNCONDITIONALLY, and that is the point: a line that only speaks on a mismatch cannot
+        // report "they agree", and cannot report "neither could be established" either - so its
+        // silence covers the answer, its opposite and its absence alike. Each field is stated so the
+        // reading is falsifiable: which craft the position picks, which craft the durable id names,
+        // and what the computer standing at that anchor calls itself.
+        java.util.UUID meantToCut = VSIntegration.shipUuidOfDurableId(hyper, shipId);
+        java.util.UUID aboutToCut = VSIntegration.shipUuidAt(hyper, hyperAnchor.getX() + 0.5,
+                hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5);
+        net.minecraft.tileentity.TileEntity hyperAfcTe =
+                hyperAfc == null ? null : hyper.getTileEntity(hyperAfc);
+        // ...and WHO ELSE is parked in this world, by lane. A lane is freed only when an arrival
+        // finishes, and a crossing deliberately leaves the source ship registered (blockless) rather
+        // than deregistering it before the cut - so a lane can hold more than one registered craft,
+        // and "the ship at this anchor" stops being a question with one answer. Which craft sits in
+        // WHICH lane is the thing no downstream reading can reconstruct.
+        StringBuilder parked = new StringBuilder(200);
+        int shown = 0;
+        for (java.util.Map.Entry<UUID, double[]> e
+                : VSIntegration.registeredShipPoses(hyper).entrySet()) {
+            if (shown++ == 12) {
+                parked.append(" ...more");
+                break;
+            }
+            double[] p = e.getValue();
+            parked.append(' ').append(e.getKey()).append('@')
+                    .append((int) p[0]).append(',').append((int) p[1]).append(',').append((int) p[2])
+                    .append("/lane").append(HyperspaceTiles.laneIndexAt(p[0], p[2], 64));
+        }
+        lastArrivalCut = "jump=" + shipId + " anchor=" + hyperAnchor + " ourLane=" + tile.index
+                + " byPosition=" + aboutToCut + " byDurableId=" + meantToCut
+                + " afcAtAnchor=" + hyperAfc + " afcNames="
+                + (hyperAfcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                        ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) hyperAfcTe)
+                                .shipIdOrNull()
+                        : "no-computer-tile")
+                + " parked=[" + parked.toString().trim() + "]";
+        LOGGER.info("[SPACE] arrival cut census: {}", lastArrivalCut);
         int dstX = tile.index * ARRIVAL_LANE_STRIDE;
         VSIntegration.CrossResult res = VSIntegration.crossShip(
                 hyper, hyperAnchor.getX() + 0.5, hyperAnchor.getY() + 0.5, hyperAnchor.getZ() + 0.5,
