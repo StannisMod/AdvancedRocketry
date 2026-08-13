@@ -4117,6 +4117,87 @@ public class TestProbeCommand extends CommandBase {
             send(sender, sb.append('}').toString());
             return;
         }
+        // entry-gate <dim> <shipUuid>: every input the ceiling check reads for THAT ship, plus what the
+        // entry controller last decided. A ship that is still under the line has two unrelated
+        // explanations - the trigger never fired, or it fired and the entry was declined - and from
+        // outside they look identical: no crossing, nothing ledgered, no line in the log. This says
+        // which. Read-only: it recomputes nothing the trigger owns (the ceiling comes from the
+        // computer's own single owner) and it drives nothing.
+        if (args.length >= 3 && "entry-gate".equalsIgnoreCase(args[0])) {
+            net.minecraft.world.WorldServer gateWorld =
+                    vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+            if (gateWorld == null) {
+                send(sender, "{\"error\":\"world not loaded\"}");
+                return;
+            }
+            java.util.UUID gateShip;
+            try {
+                gateShip = java.util.UUID.fromString(args[2]);
+            } catch (IllegalArgumentException notAUuid) {
+                send(sender, "{\"ok\":false,\"afcResolved\":false,\"error\":\"shipId is not a uuid\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.space.ShipEntryController gateCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
+            StringBuilder gate = new StringBuilder("{\"ok\":true");
+            // The controller half first: it is answerable whether or not the ship resolves, and
+            // "never asked" (decision null) is the reading that separates the two explanations.
+            gate.append(",\"controller\":").append(gateCtl != null);
+            gate.append(",\"pending\":").append(gateCtl == null ? -1 : gateCtl.enteringCount());
+            gate.append(",\"lastDecision\":\"").append(gateCtl == null || gateCtl.lastDecision() == null
+                    ? "NEVER-ASKED" : gateCtl.lastDecision().name()).append('"');
+            gate.append(",\"lastDecisionShip\":\"")
+                    .append(gateCtl == null ? null : gateCtl.lastDecisionShip()).append('"');
+            gate.append(",\"lastDecisionTick\":")
+                    .append(gateCtl == null ? Long.MIN_VALUE : gateCtl.lastDecisionTick());
+            gate.append(",\"lastDecisionCrew\":")
+                    .append(gateCtl == null ? -1 : gateCtl.lastDecisionCrew());
+            // ...and the trigger's own inputs, off the ship the caller NAMED.
+            BlockPos gateAfcPos = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .flightComputerOf(gateWorld, gateShip);
+            TileEntity gateTe = gateAfcPos == null ? null : gateWorld.getTileEntity(gateAfcPos);
+            if (!(gateTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer)) {
+                send(sender, gate.append(",\"afcResolved\":false}").toString());
+                return;
+            }
+            zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer gateAfc =
+                    (zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) gateTe;
+            boolean gatePlanetSide = !(gateWorld.provider
+                    instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
+            int gateCeiling = gateAfc.entryCeiling();
+            double[] gatePose = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .getShipWorldPosition(gateWorld, gateAfcPos);
+            gate.append(",\"afcResolved\":true");
+            gate.append(",\"afcX\":").append(gateAfcPos.getX()).append(",\"afcY\":")
+                    .append(gateAfcPos.getY()).append(",\"afcZ\":").append(gateAfcPos.getZ());
+            gate.append(",\"planetSide\":").append(gatePlanetSide);
+            gate.append(",\"latched\":").append(gateAfc.isEntryLatched());
+            gate.append(",\"ceiling\":").append(gateCeiling);
+            // The two numbers the ceiling is derived FROM, beside it: a ceiling that will not be
+            // crossed says nothing about which of the two put it there.
+            zmaster587.advancedRocketry.dimension.DimensionProperties gateProps =
+                    zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
+                            .getDimensionProperties(gateWorld.provider.getDimension());
+            gate.append(",\"orbitHeight\":").append(gateProps != null ? gateProps.getOrbitHeight()
+                    : zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().orbit);
+            gate.append(",\"physicsCeiling\":").append(
+                    zmaster587.advancedRocketry.integration.vs.VSIntegration.shipYPositionMaximum());
+            if (gatePose == null) {
+                // The pose is what the trigger reads; without it the check cannot fire at all, and
+                // that is a different answer from "it fired and said no".
+                send(sender, gate.append(",\"posed\":false,\"wouldTrigger\":false}").toString());
+                return;
+            }
+            gate.append(",\"posed\":true");
+            gate.append(",\"shipX\":").append(gatePose[0]).append(",\"shipY\":").append(gatePose[1])
+                    .append(",\"shipZ\":").append(gatePose[2]);
+            gate.append(",\"wouldTrigger\":").append(gateCtl != null && gatePlanetSide
+                    && !gateAfc.isEntryLatched()
+                    && zmaster587.advancedRocketry.space.ShipEntryController
+                            .shouldTriggerEntry(!gatePlanetSide, gatePose[1], gateCeiling));
+            send(sender, gate.append('}').toString());
+            return;
+        }
         // launch-cell <dim>: the production launch-coord resolution for a dimension (the C-1 chain +
         // zone-body refinement), so a test asserts the entry landed in the SAME cell the resolver
         // answers — gen-agnostic, no pinned coordinates.

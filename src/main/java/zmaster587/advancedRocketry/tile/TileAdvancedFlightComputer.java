@@ -995,9 +995,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     /**
      * The altitude this dimension's entry on-ramp fires above: the dimension's own orbit line (or the
      * global config value when it declares none), capped below the physics mod's pose clamp. ONE
-     * owner, so the trigger and the latch's re-arm can never read a different line.
+     * owner, so the trigger, the latch's re-arm and anything reporting the gate read the same line —
+     * a readout that recomputes it is a second owner and will eventually disagree with the trigger.
      */
-    private int entryCeiling() {
+    public int entryCeiling() {
         zmaster587.advancedRocketry.dimension.DimensionProperties props =
                 zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
                         .getDimensionProperties(world.provider.getDimension());
