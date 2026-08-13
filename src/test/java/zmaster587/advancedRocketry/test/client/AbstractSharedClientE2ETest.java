@@ -323,9 +323,28 @@ public abstract class AbstractSharedClientE2ETest {
                 + " searches the last N lines can pass on a previous scenario's identical message;"
                 + " reset reported " + cleared, 0, chatLines);
         if (!plot.contains(px, pz)) {
-            org.junit.Assert.fail("a scenario must start inside its own plot " + plot
-                    + "; the client reports the player at " + px + "," + pz
-                    + diagnoseMissedPlot(plot) + " resetCleared=" + cleared);
+            // READ ONCE, then WAIT — never wait first. The teleport is a server write and this is a
+            // client read, so a miss has two causes and only one of them is a fault: the body is
+            // still on its way (a round trip this read got in front of), or something else owns it.
+            // Waiting is therefore the RECOVERY, not the routine: a scenario whose first read lands
+            // inside its plot spends exactly the ticks it always did, and only a scenario that has
+            // already missed pays anything. An earlier cut polled unconditionally and cost a
+            // neighbouring class five reds — a settle every scenario pays is not an observation of
+            // the arrangement, it IS the arrangement.
+            //
+            // Measured 2026-08-12, four scenarios of one class in one run: THREE reached their plot
+            // while being watched (they were early reads and nothing more) and one never arrived at
+            // all, with its body below Y=-800 and falling. One message had been reporting both.
+            String settle = diagnoseMissedPlot(plot);
+            state = bot().reportState();
+            px = state.has("playerX") ? state.get("playerX").getAsDouble() : px;
+            pz = state.has("playerZ") ? state.get("playerZ").getAsDouble() : pz;
+            if (!plot.contains(px, pz)) {
+                org.junit.Assert.fail("a scenario must start inside its own plot " + plot
+                        + "; the client reports the player at " + px + "," + pz
+                        + settle + " resetCleared=" + cleared);
+            }
+            scenario.record("plotSettle", settle.replace('\n', ' '));
         }
 
         // Health is asserted on the CLIENT's own view, and polled rather than read once: the
@@ -382,28 +401,42 @@ public abstract class AbstractSharedClientE2ETest {
     private String diagnoseMissedPlot(Plot plot) throws Exception {
         StringBuilder trail = new StringBuilder();
         boolean arrived = false;
+        JsonObject last = null;
         for (int sample = 0; sample < 6 && !arrived; sample++) {
-            JsonObject seen = bot().reportState();
-            trail.append(' ').append(describePlayerPoint(seen));
-            arrived = isInsidePlot(seen, plot);
+            last = bot().reportState();
+            trail.append(' ').append(describePlayerPoint(last));
+            arrived = isInsidePlot(last, plot);
             if (!arrived) {
                 bot().waitTicks(5);
             }
         }
-        // WHAT IS STANDING ON THE PLOT, asked of the server. The lane is placed off the fixture
-        // diagonal so a plot never contains a ship AT ITS BASE — but a scenario that FLIES its ship
-        // can leave one anywhere, and a body teleported into ship geometry is ejected by the physics
-        // mod at a speed nothing else here produces. The first witnessed trail climbed ~300 blocks
-        // per sample with the body riding nothing, which is that signature and not gravity's.
-        // A server command is issued only here, on a scenario that has already lost its verdict, so
-        // the chat marker it echoes can no longer disturb anything.
-        String shipOnPlot;
-        try {
-            shipOnPlot = String.valueOf(serverClient().execute("artest vs ship-info " + plot.dim
-                    + " " + plot.centerX() + " " + Plot.DEFAULT_Y + " " + plot.centerZ() + " 64"));
-        } catch (Exception unavailable) {
-            shipOnPlot = "(unavailable: " + unavailable + ")";
-        }
+        // WHO OWNS THIS BODY, asked of the server on a scenario that has already lost its verdict —
+        // so the chat markers these commands echo can no longer disturb anything.
+        //
+        // Three questions, and the first two ask about different PLACES on purpose. A ship at the
+        // PLOT would mean the teleport dropped the body into geometry and the physics mod ejected it.
+        // A ship where the BODY actually is means the opposite and is far worse: the body is being
+        // carried, so a capture outlived the scenario that made it and the teleport is being undone
+        // every tick by whatever re-projects him onto his deck point. The deck capture answers which.
+        String shipOnPlot = askServer("artest vs ship-info " + plot.dim
+                + " " + plot.centerX() + " " + Plot.DEFAULT_Y + " " + plot.centerZ() + " 64");
+        String shipOnBody = last != null && last.has("playerX")
+                ? askServer("artest vs ship-info " + plot.dim
+                        + " " + (int) Math.round(last.get("playerX").getAsDouble())
+                        + " " + (int) Math.round(last.get("playerY").getAsDouble())
+                        + " " + (int) Math.round(last.get("playerZ").getAsDouble()) + " 256")
+                : "(no player point to ask about)";
+        String capture = askServer("artest vs deck-capture");
+        // AND THE CLIENT'S OWN RESOLVER, because the server's answer is only half the question. A body
+        // travelling at a CONSTANT delta per tick with its own motion at zero is not being moved by its
+        // physics — it is being carried by a rigid transform. When the server then reports no capture
+        // and no ship within 256 blocks, the only remaining carrier is the client's own ship-frame
+        // resolution continuing in a frame the server has already let go of. These counters say whether
+        // it is resolving at all, which is the difference between that and a fourth explanation.
+        String clientResolver = readClientCounters(
+                "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                "resolvedTicks", "declinedTicks", "externalMoveDrops",
+                "lastBodyLocalX", "lastBodyLocalY", "lastBodyLocalZ");
         return "\n  readings taken AFTER the verdict, oldest first:" + trail
                 + "\n  reached its plot while being watched: " + arrived
                 + (arrived
@@ -411,9 +444,36 @@ public abstract class AbstractSharedClientE2ETest {
                           + " this is a round-trip budget, not a stray writer."
                         : " — the body never arrived at all; a second writer owns it, or the"
                           + " teleport never reached this client.")
-                + "\n  a ship within 64 blocks of the plot centre: " + shipOnPlot
+                + "\n  a ship within 64 blocks of the PLOT centre: " + shipOnPlot
+                + "\n  a ship within 256 blocks of where the BODY ended up: " + shipOnBody
+                + "\n  its deck capture, as the SERVER sees it: " + capture
+                + "\n  the CLIENT's own ship-frame resolver: " + clientResolver
                 + "\n  client world=" + bot().reportWeather()
                 + " riding=" + bot().reportRidingEntity();
+    }
+
+    /** Client statics read from a diagnostic: a field that is absent says so and costs nothing else. */
+    private String readClientCounters(String className, String... fields) {
+        StringBuilder out = new StringBuilder();
+        for (String field : fields) {
+            out.append(out.length() == 0 ? "" : " ").append(field).append('=');
+            try {
+                JsonObject read = bot().readStaticField(className, field);
+                out.append(read != null && read.has("value") ? read.get("value").getAsString() : read);
+            } catch (Exception unreadable) {
+                out.append("(unreadable)");
+            }
+        }
+        return out.toString();
+    }
+
+    /** A server probe asked from a diagnostic: its own failure must never replace the one being told. */
+    private String askServer(String command) {
+        try {
+            return String.valueOf(serverClient().execute(command));
+        } catch (Exception unavailable) {
+            return "(unavailable: " + unavailable + ")";
+        }
     }
 
     /**
