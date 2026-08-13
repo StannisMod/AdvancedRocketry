@@ -20,10 +20,11 @@ import com.github.stannismod.forge.testing.TestTimeouts;
  * by the same {@code forge.test.timeout.factor} the rest of the framework uses, and an EARLY EXIT
  * the moment the predicate holds — so an idle machine exits at the same iteration it always did, a
  * loaded one gets the iterations it actually needs. It advances real CLIENT ticks through the caller's
- * stepper (a {@code ClientBot::waitTicks} reference), honouring the honest-client-e2e rule that a
- * client stimulus is driven by the real client; and it reads whatever the caller observes — a client
+ * stepper (a {@code ClientBot::waitTicks} reference), honouring the rule that a client stimulus is
+ * driven by the real client; and it reads whatever the caller observes — a client
  * static / {@code reportState} for a client-observed threshold (the continuous-threshold member), or
- * a server probe for a SETUP convergence gate (which honest-client-e2e permits for arrange).</p>
+ * a server probe for a SETUP convergence gate, which is permitted to ARRANGE a state but never as a
+ * stand-in for the client behaviour under test.</p>
  *
  * <p>Stateless static util, mirroring {@link ClientGuiTestSupport}; nothing here belongs in
  * production — a stage is never faked into the mod to make a test converge.</p>

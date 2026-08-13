@@ -199,8 +199,8 @@ public class VSRemoteBodyModelGateE2ETest extends AbstractSharedVsClientE2ETest 
         long samples = after[1] - before[1];
         long rotated = after[2] - before[2];
         // Instrument-fires check FIRST, and split by cause: a zero here would otherwise make the
-        // rotated==0 assertion below true for the wrong reason (spike-experiment-design: prove the
-        // instrument fires before believing its zero).
+        // rotated==0 assertion below true for the wrong reason — prove the instrument fires before
+        // believing the zero it reports.
         assertInstrumentFired(before, after);
         assertTrue("a body on world terrain beside a rolled ship must NOT be drawn ship-aligned: "
                         + rotated + "/" + samples + " decisions pushed a rotation; trace="
