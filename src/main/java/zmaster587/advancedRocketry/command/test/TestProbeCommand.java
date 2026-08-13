@@ -2271,6 +2271,25 @@ public class TestProbeCommand extends CommandBase {
     private static zmaster587.advancedRocketry.space.ShipTransitManager transitTm;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitOrigin;
     private static zmaster587.advancedRocketry.space.GalacticCoord transitTarget;
+
+    /**
+     * The DURABLE ship id of the craft the current transit fixture built, or {@code null} when this
+     * fixture has none (the empty setup builds no ship).
+     *
+     * <p>This is what a departure has to be able to name. Under the old synthetic {@code "t"} the
+     * crossing could not translate the id into a ship and fell back to resolving BY POSITION at the
+     * anchor — and every transit scenario in a server boot shares one slot dim and one anchor, so that
+     * lookup answers with the first craft ever assembled there, whose shipyard the first jump emptied.
+     * Measured as {@code the subspace shipyard [...] holds no blocks}, the same box across independent
+     * boots under different slot dims.</p>
+     *
+     * <p>The DURABLE id and not the physics mod's uuid, deliberately: the durable one is what
+     * production carries (the transit record, the ledger, every aboard tag) and what the crossing knows
+     * how to translate. Assigned unconditionally by every setup, {@code null} included — it is a static
+     * outliving the scenario that set it, and a setup that left the previous value in place would hand
+     * its jump a stranger's name.</p>
+     */
+    private static java.util.UUID transitDurableId;
     /** The last exported transit records (the persist e2e simulates a restart by rebuilding from these). */
     private static java.util.List<zmaster587.advancedRocketry.space.TransitRecord> transitExport;
 
@@ -3642,6 +3661,10 @@ public class TestProbeCommand extends CommandBase {
                     }
                 }
             }
+            // This fixture is a bare cube with no flight computer, so it has no durable id to depart
+            // under. CLEARED rather than left: the field is a static that outlives the scenario before
+            // it, and an inherited value would name that scenario's ship.
+            transitDurableId = null;
             // Reported, like the piloted setup's, so a caller can ask about THIS ship by name instead
             // of by the anchor every transit fixture shares.
             java.util.UUID cubeShip =
@@ -3671,6 +3694,9 @@ public class TestProbeCommand extends CommandBase {
             transitTm.setFrames(zmaster587.advancedRocketry.space.SpaceSubsystem::cellFrameOriginAt);
             transitOrigin = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7000, 0, 0, 0, 0, 0);
             transitTarget = zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(7001, 0, 0, 0, 0, 0);
+            // Nothing is assembled here, so there is no ship to name — and the field is a static, so
+            // leaving the previous scenario's value would hand this cell's jump that scenario's ship.
+            transitDurableId = null;
             int originDim = transitMgr.materialize(transitOrigin);
             if (net.minecraftforge.common.DimensionManager.getWorld(originDim) == null) {
                 send(sender, "{\"error\":\"origin cell world not loaded\"}");
@@ -3731,6 +3757,12 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             ((zmaster587.advancedRocketry.tile.TilePilotSeat) seatTe).linkToFlightComputer(afcBuild);
+            // Mint the ship's DURABLE id here, on the pad, before the assembler moves the computer into
+            // a shipyard - so the jump below has a name for this craft instead of a position.
+            net.minecraft.tileentity.TileEntity afcTe = w.getTileEntity(afcBuild);
+            transitDurableId = afcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer
+                    ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) afcTe).getOrCreateShipId()
+                    : null;
             net.minecraft.util.math.BlockPos anchor = new net.minecraft.util.math.BlockPos(1, 64, 1);
             // The assembler RETURNS this ship's identity, and the reply carries it. Every scenario of a
             // class shares one origin slot dim and one anchor, so an arrangement that asks about "the ship
@@ -3744,7 +3776,8 @@ public class TestProbeCommand extends CommandBase {
             // post-assembly pilot-seat subspace pos + ship world pos via `vs find-seat <dim> id <shipId>`.
             send(sender, "{\"ok\":true,\"originDim\":" + originDim
                     + ",\"anchorX\":1,\"anchorY\":64,\"anchorZ\":1"
-                    + ",\"shipId\":\"" + (pilotedShip == null ? "" : pilotedShip) + "\"}");
+                    + ",\"shipId\":\"" + (pilotedShip == null ? "" : pilotedShip) + "\""
+                    + ",\"durableId\":\"" + (transitDurableId == null ? "" : transitDurableId) + "\"}");
             return;
         }
         // transit-begin <originDim> <ax> <ay> <az> [speedBlocksPerTick]: start the jump (arrival
@@ -3762,17 +3795,18 @@ public class TestProbeCommand extends CommandBase {
                     parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
             long speed = args.length >= 6
                     ? Math.max(1L, Long.parseLong(args[5])) : 5_000_000L;
-            // The synthetic id, DELIBERATELY, and it is not an oversight to fix in passing. A departure
-            // under a well-formed uuid takes different production paths — the re-seat's wrong-ship
-            // filter arms (VSShipCrosser.toUuid returns null for this key on purpose) and the durable
-            // ledger gets a real subject — and these fixtures are not tuned for them. Tried
-            // 2026-08-12: every scenario of the crew-transit class then began its jump and SETTLED on
-            // the first tick, 0 in-flight samples, crewDim -1, two ships at the destination. Reverted.
-            // Departing by identity is worth doing and is its own piece of work, with the fixtures
-            // re-aimed as part of it.
-            boolean began = transitTm.beginTransit("t", transitOrigin, originDim, anchor,
+            // Depart under the fixture's own DURABLE id, so the crossing resolves the ship it was told
+            // about instead of whatever craft is nearest an anchor every scenario here reuses. The
+            // synthetic "t" remains for fixtures that assembled nothing to name.
+            //
+            // The durable id, NOT the physics mod's uuid: passing the latter was tried and broke every
+            // scenario of this class (each jump began and settled on the first tick), because that value
+            // is not what the transit, the re-seat and the ledger are keyed by. The durable id is.
+            String departingShip = transitDurableId == null ? "t" : transitDurableId.toString();
+            boolean began = transitTm.beginTransit(departingShip, transitOrigin, originDim, anchor,
                     transitTarget, speed);
-            send(sender, "{\"ok\":true,\"began\":" + began + ",\"inTransit\":" + transitTm.inTransitCount() + "}");
+            send(sender, "{\"ok\":true,\"began\":" + began + ",\"shipId\":\"" + departingShip
+                    + "\",\"inTransit\":" + transitTm.inTransitCount() + "}");
             return;
         }
         // transit-tick: advance the transit one tick; report in-transit count and (once arrived) the
@@ -3828,7 +3862,12 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"poseX\":" + (long) pose[0] + ",\"poseY\":" + (long) pose[1]
                     + ",\"poseZ\":" + (long) pose[2]
                     + ",\"shipY\":" + shipY + ",\"poseDist\":" + poseDist
-                    + ",\"crewDim\":" + transitTm.crewDimensionOf("t")
+                    // Asked under the SAME name the departure used. This read was hard-coded to the
+                    // synthetic "t" and answered -1 for every jump the moment departures started
+                    // naming their ship, which reads as "the crew belongs nowhere" rather than as a
+                    // probe asking about a transit that does not exist under that key.
+                    + ",\"crewDim\":" + transitTm.crewDimensionOf(
+                            transitDurableId == null ? "t" : transitDurableId.toString())
                     + ",\"hyperDim\":" + zmaster587.advancedRocketry.space.HyperspaceWorld.dimId()
                     // How many arrived ships are still retrying their crew re-seat. This tells a
                     // never-seated crew apart from a re-seat that RAN OUT of retries: >0 means the

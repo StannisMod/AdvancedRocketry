@@ -316,6 +316,8 @@ public final class ShipTransitManager {
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
         boolean lastResortReported; // the "not even the snapshot landed" line is said once, not per retry
         boolean snapshotFailureReported; // likewise for a re-cut that keeps failing
+        int placementAttempts;      // ticks spent putting the crew back aboard after the hull landed
+        boolean placementStalled;   // the "this is taking too long" line is said once, not per retry
 
         Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
                 long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
@@ -595,6 +597,20 @@ public final class ShipTransitManager {
                 arrivedAt = crosser.settleArrivedPose(
                         t.targetSlotDim, t.pasteAnchor, t.vsShipUuid, pose[0], pose[1], pose[2]);
             }
+            if (arrivedAt != null && !crewIsAboard(entry.getKey(), t, arrivedAt)) {
+                // THE HULL HAS LANDED AND ITS PEOPLE HAVE NOT. The jump is NOT over: it stays in the
+                // map, the ledger keeps saying IN_TRANSIT, the lane stays held and nobody is told they
+                // arrived. A crossing that carries crew may not report success while a crew member is
+                // still standing in the world it left - that is a technical failure of the transition,
+                // and a transition must not be able to end in one.
+                //
+                // This used to be the other way round: the transit was removed, the ledger settled and
+                // "you have arrived" was said, and the crew was handed to a best-effort retry that gave
+                // up after a budget AND DROPPED THEM WITHOUT A LOG LINE. The observable result was a
+                // player left in the departure world, aboard nothing, while his ship sat in the
+                // destination and the system considered the jump a success.
+                continue;
+            }
             if (arrivedAt != null) {
                 freeLane(t);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
@@ -605,14 +621,8 @@ public final class ShipTransitManager {
                 // trigger measuring from the cell centre and firing anyway.
                 ledgerSettle(entry.getKey(), t.arrivalCoord);
                 space.markDirty(t.target);
-                // Hand whatever was aboard - crew and stowed bodies alike - to the best-effort
-                // placement retry. The transit is already settled and removed, so a save in that
-                // window exports nothing for it: the placement can lag a few ticks (async
-                // re-assembly) without ever risking a duplicate ship on restart.
-                if (!t.crew.isEmpty() || crosser.hasStowedBodies(entry.getKey())) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false,
-                            t.vsShipUuid));
-                }
+                // The crew is already aboard by the time this line runs - the gate above does not let a
+                // transit reach it otherwise - so nothing is queued for them here any more.
                 // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
                 // the crew has no control in flight and no number to watch, so arriving is the one
                 // moment the flight has to announce itself. Said on the NORMAL path only - the two
@@ -742,6 +752,37 @@ public final class ShipTransitManager {
      * crew re-seated (or nothing to seat), or after {@link #MAX_ARRIVAL_ATTEMPTS} retries of a re-assembly
      * whose seat tiles never came up (the ship is already settled - the crew is simply not re-seated).
      */
+    /**
+     * Put this jump's people and cargo back on the hull that has just landed, and say whether they are
+     * ALL aboard. {@code false} means the arrival is not finished and must be tried again next tick.
+     *
+     * <p>There is deliberately no give-up branch. An arrival is a block paste followed by a placement
+     * onto blocks that are certainly there, so failing is a defect and not an outcome; the honest
+     * response to one is to keep the jump open — the ship is not lost, the ledger keeps saying
+     * IN_TRANSIT, and a restart resumes exactly as the persistence design already specifies — rather
+     * than to declare success and leave a player behind. The budget below therefore only decides when
+     * to START COMPLAINING, never when to stop trying.</p>
+     */
+    private boolean crewIsAboard(String shipId, Transit t, BlockPos arrivedAt) {
+        if (t.crew.isEmpty() && !crosser.hasStowedBodies(shipId)) {
+            return true; // nobody was aboard: nothing to put back
+        }
+        if (crosser.reseatCrew(t.targetSlotDim, arrivedAt, shipId, t.vsShipUuid)) {
+            return true;
+        }
+        if (++t.placementAttempts >= MAX_ARRIVAL_ATTEMPTS && !t.placementStalled) {
+            t.placementStalled = true;
+            LOGGER.error("[SPACE] transit arrival for ship {} has landed in cell {} (slot {}) but its "
+                            + "crew of {} could not be put back aboard after {} ticks. The jump stays "
+                            + "OPEN and keeps trying - nobody is told they arrived and the ledger still "
+                            + "reads IN_TRANSIT - because finishing here would leave a player in the "
+                            + "world this ship left. This state should be unreachable: treat it as a "
+                            + "bug report.",
+                    shipId, t.target.cellKey(), t.targetSlotDim, t.crew.size(), MAX_ARRIVAL_ATTEMPTS);
+        }
+        return false;
+    }
+
     private void tickReseating() {
         if (reseating.isEmpty()) {
             return;
@@ -752,19 +793,36 @@ public final class ShipTransitManager {
             boolean done = r.boarding
                     ? crosser.boardCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid)
                     : crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid);
-            if (done || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
-                if (!done && r.boarding) {
-                    // The crew is NOT lost - the capture is still held and the arrival will seat them
-                    // at the far end - but they spend the flight where the departure left them instead
-                    // of aboard, which is the whole point of the leg. Say so once, with the anchor,
-                    // because the only other symptom is a pilot who quietly did not travel.
-                    LOGGER.error("[SPACE] crew of ship {} could not be seated on its parked hull in dim "
-                            + "{} at {} after {} ticks - they stay where the departure left them for the "
-                            + "flight and are seated at arrival. Treat this as a bug report.",
-                            r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
-                }
+            if (done) {
                 it.remove();
+                continue;
             }
+            if (++r.attempts < MAX_ARRIVAL_ATTEMPTS) {
+                continue; // still early: keep trying quietly
+            }
+            r.attempts = 0; // complain on a cadence, never stop
+            if (r.boarding) {
+                // DEPARTURE side, and this one may legitimately be abandoned: the crew is not lost —
+                // the capture is still held and the arrival seats them at the far end — they simply
+                // spend the flight where the departure left them, which is a degraded leg rather than
+                // a broken transition. Said once, with the anchor, because the only other symptom is a
+                // pilot who quietly did not travel.
+                LOGGER.error("[SPACE] crew of ship {} could not be seated on its parked hull in dim "
+                        + "{} at {} after {} ticks - they stay where the departure left them for the "
+                        + "flight and are seated at arrival. Treat this as a bug report.",
+                        r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
+                it.remove();
+                continue;
+            }
+            // ARRIVAL side, and this one is NEVER abandoned. It used to be dropped here with no log at
+            // all, which is how a crew member could be left in the world his ship departed from while
+            // everything else reported a completed jump. The entry stays and the placement keeps
+            // retrying; the normal path no longer reaches this code at all, because the transit itself
+            // now refuses to finish until its people are aboard.
+            LOGGER.error("[SPACE] crew of ship {} is STILL not aboard in dim {} at {} after {} ticks. "
+                    + "Retrying - this placement is never abandoned, because giving up here strands a "
+                    + "player in the world his ship left. Treat this as a bug report.",
+                    r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
         }
     }
 

@@ -478,9 +478,19 @@ public final class CrewTransfer {
             if (!inYard && !nearAnchor) {
                 continue;
             }
-            if (expectedShipId != null && !expectedShipId.equals(
-                    ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te)
-                            .shipIdOrNull())) {
+            // Skip a computer that names a DIFFERENT craft — never one that names none. A durable id is
+            // minted lazily and read back from NBT, so a computer on a hull pasted moments ago can
+            // legitimately answer null, and null means "cannot establish", not "somebody else's". The
+            // old form compared straight against it, so `!expected.equals(null)` was true and the
+            // ARRIVING SHIP'S OWN computer was discarded; the placement then retried against a yard it
+            // had excluded itself from until the caller's budget ran out. Measured 2026-08-12, 2 of 3
+            // runs once departures began naming their ship: a crew member on his feet stayed on the
+            // parked hyperspace hull — aboard, resolved and in the wrong world — while his ship sat in
+            // the target cell. Only a positively established mismatch may refuse.
+            java.util.UUID computersShip =
+                    ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) te).shipIdOrNull();
+            if (expectedShipId != null && computersShip != null
+                    && !expectedShipId.equals(computersShip)) {
                 continue; // another craft's computer sharing the neighbourhood
             }
             return p;
