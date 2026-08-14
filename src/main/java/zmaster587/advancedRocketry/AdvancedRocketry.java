@@ -804,7 +804,10 @@ public class AdvancedRocketry {
         AdvancedRocketryFluids.fluidOxygen = new Fluid("oxygen", notFlowing, flowing).setUnlocalizedName("oxygen").setGaseous(true).setDensity(-1000).setViscosity(1000).setColor(0xFF6CE2FF);
         AdvancedRocketryFluids.fluidHydrogen = new Fluid("hydrogen", notFlowing, flowing).setUnlocalizedName("hydrogen").setGaseous(true).setDensity(-1000).setViscosity(1000).setColor(0xFFDBC1C1);
         AdvancedRocketryFluids.fluidNitrogen = new Fluid("nitrogen", notFlowing, flowing).setUnlocalizedName("nitrogen").setGaseous(true).setDensity(-1000).setViscosity(1000).setColor(0xFFDFE5FE);
-        AdvancedRocketryFluids.fluidCarbonDioxide = new Fluid("carbonDioxide", notFlowing, flowing).setUnlocalizedName("carbonDioxide").setGaseous(true).setDensity(-1000).setViscosity(1000).setColor(0xFFA8A8A8);
+        // Name matches GregTechCEu's CarbonDioxide material fluid so the two unify by registry name,
+        // the same way oxygen already does -- whichever mod registers first wins and the other falls
+        // back to it below. snake_case here is GT's convention, not AR's; it is load-bearing.
+        AdvancedRocketryFluids.fluidCarbonDioxide = new Fluid("carbon_dioxide", notFlowing, flowing).setUnlocalizedName("carbon_dioxide").setGaseous(true).setDensity(-1000).setViscosity(1000).setColor(0xFFA8A8A8);
         AdvancedRocketryFluids.fluidRocketFuel = new Fluid("rocketFuel", notFlowing, flowing).setUnlocalizedName("rocketFuel").setGaseous(false).setLuminosity(2).setDensity(800).setViscosity(1500).setColor(0xFFE5D884);
         AdvancedRocketryFluids.fluidEnrichedLava = new Fluid("enrichedLava", new ResourceLocation("advancedrocketry:blocks/fluid/lava_still"), new ResourceLocation("advancedrocketry:blocks/fluid/lava_flow")).setUnlocalizedName("enrichedLava").setLuminosity(15).setDensity(3000).setViscosity(6000).setTemperature(1300).setColor(0xFFFFFFFF);
 
@@ -816,7 +819,7 @@ public class AdvancedRocketry {
         if (!FluidRegistry.registerFluid(AdvancedRocketryFluids.fluidNitrogen))
             AdvancedRocketryFluids.fluidNitrogen = FluidRegistry.getFluid("nitrogen");
         if (!FluidRegistry.registerFluid(AdvancedRocketryFluids.fluidCarbonDioxide))
-            AdvancedRocketryFluids.fluidCarbonDioxide = FluidRegistry.getFluid("carbonDioxide");
+            AdvancedRocketryFluids.fluidCarbonDioxide = FluidRegistry.getFluid("carbon_dioxide");
         if (!FluidRegistry.registerFluid(AdvancedRocketryFluids.fluidRocketFuel))
             AdvancedRocketryFluids.fluidRocketFuel = FluidRegistry.getFluid("rocketFuel");
         if (!FluidRegistry.registerFluid(AdvancedRocketryFluids.fluidEnrichedLava))

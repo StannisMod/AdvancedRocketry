@@ -198,7 +198,7 @@ data.mass.name=Масса
 fluid.oxygen=Кислород
 fluid.hydrogen=Водород
 fluid.nitrogen=Азот
-fluid.carbonDioxide=Углекислый газ
+fluid.carbon_dioxide=Углекислый газ
 fluid.rocketFuel=Ракетное топливо
 
 mission.asteroidmining.name=Добыча на астероиде

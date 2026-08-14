@@ -236,7 +236,7 @@ data.label.data=Data
 fluid.oxygen=Oxygen
 fluid.hydrogen=Hydrogen
 fluid.nitrogen=Nitrogen
-fluid.carbonDioxide=Carbon Dioxide
+fluid.carbon_dioxide=Carbon Dioxide
 fluid.rocketFuel=Rocket Fuel
 fluid.enrichedLava=Enriched Lava
 
