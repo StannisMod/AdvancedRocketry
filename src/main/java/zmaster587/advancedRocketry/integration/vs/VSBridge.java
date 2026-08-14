@@ -83,10 +83,32 @@ final class VSBridge {
      * arrived. See {@link #adoptOwnRemnant}.</p>
      */
     static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid) {
+        return assembleTier2Ship(world, anchorPos, logger, keepUuid, null);
+    }
+
+    /**
+     * The same assembly, also carrying Advanced Rocketry's DURABLE name for the craft onto the record
+     * it creates.
+     *
+     * <p>Without this the name is lost at every crossing and can only be re-established by the ship's
+     * own flight computer on a tick - which a craft nobody is standing near does not get: a hull
+     * parked in the shared hyperspace world sits in the world's ticking set and is never ticked
+     * (measured: zero ticks over a whole jump). Everything that resolves a ship BY its durable name
+     * then falls back to "whichever craft is nearest", in the one world built to hold many at once.
+     * The name belongs to the ship, so it travels with the ship.</p>
+     */
+    static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid,
+                                  UUID keepDurableId) {
         UUID identity = adoptOwnRemnant(world, keepUuid, logger);
         ShipData ship = identity == null
                 ? ValkyrienUtils.createNewShip(world, anchorPos)
                 : ValkyrienUtils.createNewShip(world, anchorPos, identity);
+        if (keepDurableId != null) {
+            // Set WITHOUT touching the index: this record is not in the collection yet, and the
+            // indexing setter would put it there - registering a ship whose blocks have not been
+            // moved in. It is indexed with everything else when the spawn is drained.
+            ship.setArDurableIdBeforeRegistration(keepDurableId);
+        }
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
         manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
         logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}{}).", anchorPos, ship.getName(),
@@ -187,6 +209,18 @@ final class VSBridge {
         ShipData ship = ValkyrienUtils.getQueryableData(world)
                 .getShipFromArDurableId(durableId).orElse(null);
         return ship == null ? null : ship.getUuid();
+    }
+
+    /**
+     * The durable id written on the RECORD of the ship {@code vsShipUuid}, read straight off the
+     * field, or {@code null}. The twin of {@link #shipUuidOfDurableId}, which asks the INDEX the same
+     * question from the other side - so a disagreement between the two separates "nothing was ever
+     * bound here" from "something was bound and the lookup cannot find it", which is otherwise one
+     * null covering both.
+     */
+    static UUID durableIdOf(World world, UUID vsShipUuid) {
+        ShipData ship = shipByUuid(world, vsShipUuid);
+        return ship == null ? null : ship.getArDurableId();
     }
 
     /**
@@ -1141,6 +1175,30 @@ final class VSBridge {
             Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
             return managing.isPresent()
                     ? managing.get().getShipData().getUuid().toString() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * The same claim lookup, answered off the ship's REGISTRY RECORD instead of its loaded physics
+     * object: the uuid of the ship whose subspace claim owns {@code pos}, whether or not that ship is
+     * currently simulated.
+     *
+     * <p>The two are not interchangeable and the difference is not a detail. A ship is given a
+     * physics object only while a player stands within the physics mod's load distance of it (or on
+     * the tick it is first assembled); everywhere else its chunks may be loaded and ticking with no
+     * physics object at all. Asking the physics object therefore answers "is anybody near this
+     * ship", which is the right question for anything that touches its MOTION and the wrong one for
+     * anything that touches its IDENTITY - identity lives on the record.</p>
+     *
+     * <p>Deliberately a separate method: {@link #shipIdManagingBlock}'s callers use its null as
+     * "this ship is not live", and widening that under them would change what they gate on.</p>
+     */
+    static String registeredShipIdManagingBlock(World world, BlockPos pos) {
+        try {
+            Optional<ShipData> managing = ValkyrienUtils.getShipManagingBlock(world, pos);
+            return managing.isPresent() ? managing.get().getUuid().toString() : null;
         } catch (Throwable t) {
             return null;
         }

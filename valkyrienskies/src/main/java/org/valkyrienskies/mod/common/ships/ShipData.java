@@ -158,6 +158,20 @@ public class ShipData {
         return this;
     }
 
+    /**
+     * The same binding for a record that is NOT IN THE COLLECTION YET — a ship built or re-assembled
+     * but not yet spawned. The index is not touched, because there is nothing to update: the record
+     * is indexed on every attribute when it is added, so the name set here is carried in with it.
+     *
+     * <p>The distinction is not cosmetic. {@link #setArDurableId}'s index update inserts the object
+     * into the store as a side effect, so using it here would register the ship BEFORE its blocks
+     * exist — briefly answering position and identity lookups for a craft that is not there yet.</p>
+     */
+    public ShipData setArDurableIdBeforeRegistration(@Nullable UUID arDurableId) {
+        this.arDurableId = arDurableId;
+        return this;
+    }
+
     // endregion
     // region Attributes
     public static final Attribute<ShipData, String> NAME = nullableAttribute(ShipData::getName);

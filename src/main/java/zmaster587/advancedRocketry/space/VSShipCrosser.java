@@ -356,8 +356,23 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         // at once, so "the ship at this anchor" is a question with more than one answer by design.
         java.util.UUID arriving = identifyShipToCut("arrival", hyperAnchor, shipId,
                 hyper.provider.getDimension(), meantToCut, aboutToCut, hyperAfcNames);
+        // The same question from the other end: what the craft at the anchor carries on its own
+        // RECORD, read off the field rather than through the index. One null means "nobody ever
+        // named this hull"; a name here with nothing in the index above would mean the naming
+        // happened and the lookup cannot see it. They are different defects and they look identical
+        // from a single reading.
+        java.util.UUID anchorRecordName = VSIntegration.durableIdOfShip(hyper, aboutToCut);
         lastArrivalCut = "jump=" + shipId + " anchor=" + hyperAnchor + " ourLane=" + tile.index
                 + " byPosition=" + aboutToCut + " byDurableId=" + meantToCut
+                + " recordName=" + anchorRecordName
+                // Ticks this computer has been GIVEN, and naming attempts inside them. A parked hull's
+                // computer sits in its world's ticking set and is never ticked (0/0 through a whole
+                // jump), so nothing here may be explained by "its tick will sort it out" - the reason
+                // the name is carried onto the record by the crossing instead.
+                + " afcTicksNamed=" + (hyperAfcIsComputer
+                        ? ((zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer) hyperAfcTe)
+                                .tickCensus()
+                        : "no-computer-tile")
                 + " afcAtAnchor=" + hyperAfc + " afcNames="
                 + (hyperAfcIsComputer ? hyperAfcNames : "no-computer-tile")
                 + " cutting=" + (REFUSED.equals(arriving) ? "REFUSED" : arriving)

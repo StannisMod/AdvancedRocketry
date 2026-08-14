@@ -438,6 +438,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (world == null || world.isRemote) {
             return;
         }
+        serverTicks++;
         // The jump wind-up runs before anything else, and before the physics checks below can bail
         // out: a spool that quietly stopped counting because the ship's attitude was momentarily
         // unresolvable would leave a pilot waiting for a window that is never going to open.
@@ -456,11 +457,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                         world.provider.getDimension(),
                         getPos().getX(), getPos().getY(), getPos().getZ()),
                 pilotInput != null, magnitude(commandedVelocity), magnitude(velocitySetpoint));
+        // BEFORE the physics gate below, and that is the whole point of its position here: this ship's
+        // NAME is a property of its registry record, not of whether anybody is standing near enough
+        // for the physics mod to simulate it. Left after the gate, a craft that is parked, unattended
+        // or merely far from a player could never bind its durable id - and a jump, a login restore
+        // and every aboard tag resolve a ship BY that id, falling back to "whichever craft is nearest"
+        // exactly where the world holds more than one. Costs one claim test per tick until it takes.
+        bindDurableIdToThisShip();
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
         }
-        bindDurableIdToThisShip();
         // Telemetry first, and unconditionally: the pilot's HUD must keep reading the ship's real
         // velocity while he holds no key at all, which is exactly when the input channel is idle.
         publishHudTelemetry(attitude);
@@ -1049,6 +1056,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      */
     private boolean durableIdBound;
 
+    /** Server ticks this computer has actually been given, and naming attempts made inside them.
+     *  Two counters rather than one because "this tile is never ticked" and "it is ticked and the
+     *  naming does not run" are opposite findings that a single zero cannot separate. */
+    private long serverTicks;
+    private long bindAttempts;
+
+    /** @see #serverTicks */
+    public String tickCensus() {
+        return serverTicks + "/" + bindAttempts;
+    }
+
     /**
      * Tell the physics mod which of its ships our durable id names, once per tile lifetime.
      *
@@ -1062,12 +1080,18 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      * <p>Runs on the update path, so it costs a boolean test on every tick after the first successful
      * one, and retries until it takes: the ship is not queryable for the first few ticks after an
      * asynchronous assembly, which is precisely when this cannot succeed yet.</p>
+     *
+     * <p>Asked of the ship's RECORD, not of a loaded physics object. The record is where the name
+     * belongs and is always there; a physics object exists only while a player is near enough for the
+     * craft to be simulated, so binding through one meant that a ship parked with nobody aboard - the
+     * ordinary state of a hull mid-jump - could never be named at all.</p>
      */
     private void bindDurableIdToThisShip() {
+        bindAttempts++;
         if (durableIdBound) {
             return;
         }
-        String vsShipId = VSIntegration.shipIdManagingBlock(world, getPos());
+        String vsShipId = VSIntegration.registeredShipIdManagingBlock(world, getPos());
         if (vsShipId == null) {
             return; // not queryable yet; try again next tick
         }

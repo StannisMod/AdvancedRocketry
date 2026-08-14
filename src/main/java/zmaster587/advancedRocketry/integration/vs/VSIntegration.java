@@ -95,10 +95,21 @@ public final class VSIntegration {
      */
     public static java.util.UUID assembleTier2Ship(World world, BlockPos anchorPos,
                                                    java.util.UUID keepUuid) {
+        return assembleTier2Ship(world, anchorPos, keepUuid, null);
+    }
+
+    /**
+     * The same, also carrying the craft's DURABLE name onto the record it creates. See
+     * {@link #shipUuidOfDurableId} for what that name is for; {@code null} leaves the ship unnamed,
+     * which is what a genuinely new build wants until its flight computer names it.
+     */
+    public static java.util.UUID assembleTier2Ship(World world, BlockPos anchorPos,
+                                                   java.util.UUID keepUuid,
+                                                   java.util.UUID keepDurableId) {
         if (!isAvailable()) {
             return null;
         }
-        return VSBridge.assembleTier2Ship(world, anchorPos, LOGGER, keepUuid);
+        return VSBridge.assembleTier2Ship(world, anchorPos, LOGGER, keepUuid, keepDurableId);
     }
 
     /**
@@ -361,6 +372,14 @@ public final class VSIntegration {
         // still both be about the wrong ship — that is what the identity-keyed form removes).
         java.util.UUID srcShipId = srcShipUuid != null
                 ? srcShipUuid : VSBridge.queryableShipUuidAt(srcWorld, sx, sy, sz);
+        // The ship's DURABLE name, read off the source record while it still exists, so it can be put
+        // on the record that replaces it. Nothing else carries it across: the re-assembly below mints
+        // a record whose name is empty, and the only other writer is the craft's own flight computer
+        // on a tick - which a hull that arrives with nobody near it does not get. The name is then
+        // gone for good, and every lookup keyed by it silently degrades to "whichever craft is
+        // nearest" in a world that may hold several. Null propagates as null: a craft that was never
+        // named crosses exactly as it did before.
+        java.util.UUID srcDurableName = VSBridge.durableIdOf(srcWorld, srcShipId);
         // Cut a TIGHT box (not the 256-tall column) and paste into clear sky at dstY (above the
         // destination terrain), so FIND_ALL_BLOCKS grabs only the ship.
         AxisAlignedBB tight = new AxisAlignedBB(yMinX, minShipY, yMinZ, yMaxX, maxShipY + 1, yMaxZ);
@@ -422,7 +441,7 @@ public final class VSIntegration {
             // Re-assemble under the identity the ship crossed with. Same world as the source on a
             // same-world reposition, where this ship's own blockless remnant is what holds the
             // identity - it is adopted rather than collided with.
-            shipUuid = assembleTier2Ship(dstWorld, anchor, srcShipId);
+            shipUuid = assembleTier2Ship(dstWorld, anchor, srcShipId, srcDurableName);
         } else {
             // The only DESTRUCTIVE failure of the four: the source has already been cut by this point,
             // so the ship exists as loose blocks at the paste site and nowhere else. Logged at ERROR
@@ -756,6 +775,15 @@ public final class VSIntegration {
                 ? null : VSBridge.shipIdManagingBlock(world, pos);
     }
 
+    /** UUID string of the ship whose subspace claim manages {@code pos} as the REGISTRY knows it —
+     *  answered whether or not that ship is currently simulated. Use this for questions about a
+     *  ship's IDENTITY; {@link #shipIdManagingBlock} answers about its live physics and is null for
+     *  every ship nobody is standing near. */
+    public static String registeredShipIdManagingBlock(World world, BlockPos pos) {
+        return (!isAvailable() || world == null || pos == null)
+                ? null : VSBridge.registeredShipIdManagingBlock(world, pos);
+    }
+
     /** UUID strings of every loaded ship whose grown world AABB contains {@code (x,y,z)} — the
      *  first-contact candidate list (possibly empty; never null). */
     public static java.util.List<String> shipIdsAt(World world, double x, double y, double z) {
@@ -1038,6 +1066,16 @@ public final class VSIntegration {
         } catch (IllegalArgumentException notAnIdentity) {
             return null; // a synthetic id names no ship; the caller falls back as before
         }
+    }
+
+    /**
+     * The durable id carried on the RECORD of the craft {@code vsShipUuid}, or {@code null}. The same
+     * question {@link #shipUuidOfDurableId} answers from the other end, and reading both separates a
+     * craft that was never bound from a binding the lookup cannot find.
+     */
+    public static java.util.UUID durableIdOfShip(World world, java.util.UUID vsShipUuid) {
+        return (!isAvailable() || world == null || vsShipUuid == null)
+                ? null : VSBridge.durableIdOf(world, vsShipUuid);
     }
 
     /**

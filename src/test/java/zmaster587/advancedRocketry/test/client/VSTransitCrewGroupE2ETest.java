@@ -254,6 +254,15 @@ private static final long PARK_SPEED = 100_000L;
         // With no durable id resolvable it degenerates into "the cut took the anchor's craft", which
         // is what production did before there was a rule at all - a green that says nothing.
         System.out.println("[JUMP CENSUS] " + cut);
+        // The jump must be able to NAME its own hull, not merely fail to mistake somebody else's for
+        // it. A crossing carries the craft's durable name onto the record it creates; without that
+        // the name is lost at every crossing and can only come back from the ship's own tick, which
+        // a parked hull never gets - so this field going back to "null" means the carry is gone and
+        // the arrival is resolving by position again, which is exactly what it looks like when it
+        // delivers a stranger.
+        assertTrue("the jump must resolve its own hull BY NAME in hyperspace - a null here means the "
+                + "arrival is back to picking whatever craft its anchor reaches. census: " + cut,
+                !"null".equals(byDurableId) && !"(absent)".equals(byDurableId));
         // Unconditional in BOTH arms: where the jump's durable id resolves a hull, that hull is the
         // one cut; where nothing could be established, the anchor's craft is - and saying which arm
         // applied is the difference between a check with three answers and one with none.
