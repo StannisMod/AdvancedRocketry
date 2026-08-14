@@ -84,6 +84,21 @@ public class AirState {
     }
 
     /**
+     * The reverse of {@link #respire}: carbon dioxide becomes oxygen again, the carbon leaving the
+     * air as a solid. One molecule of CO2 yields one of O2, so total pressure is unchanged here
+     * too — the carbon that departs was never contributing pressure on its own.
+     *
+     * @param amount partial pressure to regenerate; clamped to the CO2 actually present
+     * @return the amount actually converted, which is the carbon the caller must now deal with
+     */
+    public int regenerate(int amount) {
+        int converted = Math.min(Math.max(0, amount), carbonDioxide);
+        carbonDioxide -= converted;
+        oxygen += converted;
+        return converted;
+    }
+
+    /**
      * Which registered atmosphere this zone presents to everything downstream — tick damage, the
      * suit immunity check, the sync packet, the detector. The gas state is the model; the
      * {@link AtmosphereType} singletons stay the interface, so nothing outside life support has

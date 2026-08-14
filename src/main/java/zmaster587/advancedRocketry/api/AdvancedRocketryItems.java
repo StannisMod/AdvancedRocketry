@@ -37,6 +37,7 @@ public class AdvancedRocketryItems {
     public static Item itemSpaceSuit_Boots;
     public static Item itemSmallAirlockDoor;
     public static Item itemCarbonScrubberCartridge;
+    public static Item itemCarbonDust;
     public static Item itemSealDetector;
     public static Item itemJackhammer;
     public static Item itemAsteroidChip;

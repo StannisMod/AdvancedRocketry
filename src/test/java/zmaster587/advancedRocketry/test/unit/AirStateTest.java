@@ -78,6 +78,43 @@ public class AirStateTest {
     }
 
     @Test
+    public void regenerationIsBreathingRunBackwards() {
+        AirState air = AirState.earthLike();
+        air.respire(30_000);
+        int pressureWithCrewAboard = air.getTotalPressure();
+
+        int carbon = air.regenerate(30_000);
+
+        assertEquals("all of it must come back as oxygen", 210_000, air.getOxygen());
+        assertEquals(0, air.getCarbonDioxide());
+        assertEquals("the carbon that left the air is what the machine must now handle", 30_000, carbon);
+        assertEquals("pressure is unchanged: the solid carbon never held any", pressureWithCrewAboard, air.getTotalPressure());
+    }
+
+    @Test
+    public void regenerationCannotInventCarbonDioxide() {
+        AirState air = new AirState(790_000, 200_000, 10_000);
+
+        int carbon = air.regenerate(50_000);
+
+        assertEquals("only the CO2 present may be processed", 10_000, carbon);
+        assertEquals(0, air.getCarbonDioxide());
+        assertEquals(210_000, air.getOxygen());
+    }
+
+    @Test
+    public void aRecirculatorCanBringAStaleRoomBackIntoTheBand() {
+        AirState air = AirState.earthLike();
+        air.respire(60_000);
+        assertSame("premise: the room has gone stale", AtmosphereType.LOWOXYGEN, air.deriveAtmosphere());
+
+        air.regenerate(60_000);
+
+        assertTrue("and regeneration must be able to undo that, not merely stop it",
+                air.deriveAtmosphere().isBreathable());
+    }
+
+    @Test
     public void airInsideTheSafeBandIsBreathable() {
         assertTrue(AirState.earthLike().deriveAtmosphere().isBreathable());
     }

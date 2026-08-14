@@ -313,12 +313,56 @@ public class AtmosphereHandler {
      */
     @Nullable
     private AtmosphereBlob getBlobContaining(@Nonnull Entity entity) {
-        HashedBlockPosition pos = new HashedBlockPosition((int) Math.floor(entity.posX), (int) Math.ceil(entity.posY), (int) Math.floor(entity.posZ));
+        return getBlobContaining(new HashedBlockPosition((int) Math.floor(entity.posX), (int) Math.ceil(entity.posY), (int) Math.floor(entity.posZ)));
+    }
+
+    @Nullable
+    private AtmosphereBlob getBlobContaining(@Nonnull HashedBlockPosition pos) {
         for (AreaBlob blob : blobs.values()) {
             if (blob instanceof AtmosphereBlob && blob.contains(pos))
                 return (AtmosphereBlob) blob;
         }
         return null;
+    }
+
+    /**
+     * The gas contents of the zone this position sits in, or null if it is in none. A machine that
+     * treats the air of the room it stands in works through this.
+     */
+    @Nullable
+    public AirState getAirStateAt(@Nonnull BlockPos pos) {
+        if (!ARConfiguration.getCurrentConfig().enableOxygen)
+            return null;
+        AtmosphereBlob blob = getBlobContaining(new HashedBlockPosition(pos));
+        return blob == null ? null : blob.getAirState();
+    }
+
+    /**
+     * Re-derive and publish the atmosphere of the zone this position sits in, after something
+     * changed its gases. A no-op where there is no zone, or where the vent has not declared one
+     * breathable — the vent stays the authority on whether a zone is maintained at all.
+     */
+    public void refreshDerivedAtmosphereAt(@Nonnull BlockPos pos) {
+        AtmosphereBlob blob = getBlobContaining(new HashedBlockPosition(pos));
+        if (blob != null && isLifeSupportManaged(blob))
+            blob.setData(blob.getAirState().deriveAtmosphere());
+    }
+
+    /**
+     * Whether life support may act on this zone's gases at all.
+     * <p>
+     * True in exactly two cases: the vent has declared the zone breathable, or the zone already
+     * shows the state its own gases derive to — meaning we put it there and may keep moving it.
+     * The second clause is what lets a room go on degrading past the safe band and be recovered
+     * again; without it the first derived hazard froze the zone permanently. It is deliberately an
+     * identity check against THIS zone's own gases rather than a list of hazard types: a planet
+     * whose default atmosphere happens to be one of those types must not read as maintained.
+     */
+    private boolean isLifeSupportManaged(@Nonnull AtmosphereBlob blob) {
+        Object data = blob.getData();
+        if (!(data instanceof IAtmosphere))
+            return false;
+        return ((IAtmosphere) data).isBreathable() || data == blob.getAirState().deriveAtmosphere();
     }
 
     /**
@@ -340,7 +384,7 @@ public class AtmosphereHandler {
             return;
 
         AtmosphereBlob blob = getBlobContaining(entity);
-        if (blob == null || !(blob.getData() instanceof IAtmosphere) || !((IAtmosphere) blob.getData()).isBreathable())
+        if (blob == null || !isLifeSupportManaged(blob))
             return;
 
         int volume = Math.max(1, blob.getBlobSize());

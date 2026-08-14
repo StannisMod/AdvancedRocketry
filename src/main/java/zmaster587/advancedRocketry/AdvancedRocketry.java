@@ -419,6 +419,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileOxygenVent.class, "AROxygenVent");
         GameRegistry.registerTileEntity(TileGasChargePad.class, "AROxygenCharger");
         GameRegistry.registerTileEntity(TileCO2Scrubber.class, "ARCO2Scrubber");
+        GameRegistry.registerTileEntity(TileAirRecirculator.class, "ARairRecirculator");
         GameRegistry.registerTileEntity(TileWarpController.class, "ARStationMonitor");
         GameRegistry.registerTileEntity(TileAtmosphereDetector.class, "AROxygenDetector");
         GameRegistry.registerTileEntity(TileStationOrientationController.class, "AROrientationControl");
@@ -530,6 +531,7 @@ public class AdvancedRocketry {
         AdvancedRocketryItems.itemSmallAirlockDoor = new ItemDoor(AdvancedRocketryBlocks.blockAirLock).setUnlocalizedName("smallAirlock").setCreativeTab(tabAdvRocketry);
         //Short.MAX_VALUE is forge's wildcard, don't use it
         AdvancedRocketryItems.itemCarbonScrubberCartridge = new Item().setMaxDamage(Short.MAX_VALUE - 1).setUnlocalizedName("carbonScrubberCartridge").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryItems.itemCarbonDust = new Item().setUnlocalizedName("carbonDust").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemLens = new ItemIngredient(1).setUnlocalizedName("advancedrocketry:lens").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemSatellitePowerSource = new ItemIngredient(2).setUnlocalizedName("advancedrocketry:satellitePowerSource").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemSatellitePrimaryFunction = new ItemIngredient(7).setUnlocalizedName("advancedrocketry:satellitePrimaryFunction").setCreativeTab(tabAdvRocketry);
@@ -626,6 +628,11 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemLens.setRegistryName("lens"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemThermite.setRegistryName("thermite"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemCarbonScrubberCartridge.setRegistryName("carbonScrubberCartridge"));
+        LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemCarbonDust.setRegistryName("carbonDust"));
+        // dustCarbon is the ore-dictionary name every 1.12 tech mod uses for powdered carbon, so
+        // our recirculator output feeds their recipes and theirs feeds ours. The dictionary is a
+        // registry we do not namespace: joining it is the whole point, not a side effect.
+        net.minecraftforge.oredict.OreDictionary.registerOre("dustCarbon", AdvancedRocketryItems.itemCarbonDust);
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSmallAirlockDoor.setRegistryName("smallAirlockDoor"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemHovercraft.setRegistryName("hoverCraft"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSpaceStation.setRegistryName("spaceStation"));
@@ -770,6 +777,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockPlanetHoloSelector = new BlockHalfTile(TileHolographicPlanetSelector.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("planetHoloSelector").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Oxygen machines
         AdvancedRocketryBlocks.blockCO2Scrubber = new BlockTileComparatorOverride(TileCO2Scrubber.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("scrubber").setHardness(3f);
+        AdvancedRocketryBlocks.blockAirRecirculator = new BlockTile(TileAirRecirculator.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("airRecirculator").setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenVent = new BlockTile(TileOxygenVent.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenVent").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenCharger = new BlockHalfTile(TileGasChargePad.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenCharger").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenDetection = new BlockRedstoneEmitter(Material.IRON, "advancedrocketry:atmosphereDetector_active").setUnlocalizedName("atmosphereDetector").setHardness(3f).setCreativeTab(tabAdvRocketry);
@@ -961,6 +969,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPlanetHoloSelector.setRegistryName("planetHoloSelector"));
         //Oxygen machines
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockCO2Scrubber.setRegistryName("oxygenScrubber"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockAirRecirculator.setRegistryName("airRecirculator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenVent.setRegistryName("oxygenVent"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenCharger.setRegistryName("oxygenCharger"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenDetection.setRegistryName("oxygenDetection"));

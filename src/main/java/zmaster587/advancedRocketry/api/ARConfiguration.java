@@ -268,6 +268,12 @@ public class ARConfiguration {
     @ConfigProperty
     public int lifeSupportRespirationRate;
     @ConfigProperty
+    public int lifeSupportRecirculatorRate;
+    @ConfigProperty
+    public int lifeSupportRecirculatorPower;
+    @ConfigProperty
+    public int lifeSupportCarbonPerDust;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -510,6 +516,9 @@ public class ARConfiguration {
         arConfig.lifeSupportMinPartialO2 = config.get(OXYGEN, "lifeSupportMinPartialO2", 160000, "Oxygen partial pressure below which a zone stops being breathable, in millionths of an atmosphere (210000 is sea-level air).", 0, AirState.ONE_ATM).getInt();
         arConfig.lifeSupportMaxPartialO2 = config.get(OXYGEN, "lifeSupportMaxPartialO2", 300000, "Oxygen partial pressure above which a zone becomes toxic and fire-prone, in millionths of an atmosphere.", 0, AirState.ONE_ATM).getInt();
         arConfig.lifeSupportRespirationRate = config.get(OXYGEN, "lifeSupportRespirationRate", 2000, "Oxygen a single crew member turns into CO2 each second, in millionths of an atmosphere times the zone volume in blocks. Larger rooms therefore last proportionally longer.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportRecirculatorRate = config.get(OXYGEN, "lifeSupportRecirculatorRate", 6000, "CO2 a single recirculator turns back into oxygen each second, in millionths of an atmosphere. At the default it keeps up with three crew in a room of any size.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportRecirculatorPower = config.get(OXYGEN, "lifeSupportRecirculatorPower", 400, "Power a recirculator draws per operation. Reversing combustion is endothermic: the energy cost is the point, not a tax.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportCarbonPerDust = config.get(OXYGEN, "lifeSupportCarbonPerDust", 60000, "CO2 that must be regenerated before one carbon dust is produced, in millionths of an atmosphere. At the defaults a recirculator running flat out yields a dust every ten seconds.", 1, Integer.MAX_VALUE).getInt();
         arConfig.dropExTorches = config.get(OXYGEN, "dropExtinguishedTorches", false, "Drop an extinguished torch instead of a vanilla torch, when breaking an extinguished torch.").getBoolean();
         sealableBlockWhiteList = config.getStringList("sealableBlockWhiteList", OXYGEN, new String[]{}, "Blocks that should count as sealable. Format: modid:block  for example \"minecraft:chest\"");
         sealableBlockBlackList = config.getStringList("sealableBlockBlackList", OXYGEN, new String[]{}, "Blocks that should not count as sealable.  Format: modid:block  for example \"minecraft:chest\"");
