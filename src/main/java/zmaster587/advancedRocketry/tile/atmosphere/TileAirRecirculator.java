@@ -3,6 +3,7 @@ package zmaster587.advancedRocketry.tile.atmosphere;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.BlockPos;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
@@ -28,6 +29,13 @@ public class TileAirRecirculator extends TileInventoriedRFConsumer implements IM
 
     /** Carbon regenerated but not yet worth a whole item, in the same unit as partial pressure. */
     private int carbonBuffer;
+    /**
+     * Ticks since this machine last acted. Its OWN counter, deliberately not
+     * {@code world.getTotalWorldTime() % 20}: a shared clock wakes every recirculator in the world
+     * on the same tick, and it also makes the machine unreachable from a harness, because
+     * force-ticking a tile does not advance world time.
+     */
+    private int ticksSinceOperation;
 
     public TileAirRecirculator() {
         super(10000, 1);
@@ -76,11 +84,19 @@ public class TileAirRecirculator extends TileInventoriedRFConsumer implements IM
 
     @Override
     public boolean canPerformFunction() {
-        return !world.isRemote
-                && ARConfiguration.getCurrentConfig().lifeSupportZones
-                && world.getTotalWorldTime() % 20 == 0
-                && hasCarbonDioxideToProcess()
-                && hasRoomForDust();
+        if (world.isRemote || !ARConfiguration.getCurrentConfig().lifeSupportZones)
+            return false;
+        if (++ticksSinceOperation < 20)
+            return false;
+        if (!hasCarbonDioxideToProcess() || !hasRoomForDust()) {
+            // Hold the counter at the threshold rather than resetting: a machine that was ready
+            // and merely had nowhere to put its dust should resume the moment the slot clears,
+            // not wait out another full second.
+            ticksSinceOperation = 20;
+            return false;
+        }
+        ticksSinceOperation = 0;
+        return true;
     }
 
     @Override
@@ -97,8 +113,9 @@ public class TileAirRecirculator extends TileInventoriedRFConsumer implements IM
         emitDust();
 
         AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
-        if (handler != null)
-            handler.refreshDerivedAtmosphereAt(pos);
+        BlockPos cell = findServedCell();
+        if (handler != null && cell != null)
+            handler.refreshDerivedAtmosphereAt(cell);
         markDirty();
     }
 
@@ -134,22 +151,47 @@ public class TileAirRecirculator extends TileInventoriedRFConsumer implements IM
         return air != null && air.getCarbonDioxide() > 0;
     }
 
+    /**
+     * The air cell this machine serves: the first neighbouring position that belongs to a zone.
+     * <p>
+     * NOT this machine's own position. A zone is made of AIR cells, and the block occupying a
+     * solid position is by definition not one of them — a recirculator set into a floor or a wall
+     * would otherwise resolve no zone at all and sit idle forever, which is exactly how it first
+     * failed. Serving whichever zone it touches also gives the natural behaviour for a machine
+     * built into the partition between two rooms: it works on one of them, not on neither.
+     */
+    @Nullable
+    private BlockPos findServedCell() {
+        AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        if (handler == null)
+            return null;
+        for (EnumFacing dir : EnumFacing.values()) {
+            BlockPos side = pos.offset(dir);
+            if (handler.getAirStateAt(side) != null)
+                return side;
+        }
+        return null;
+    }
+
     @Nullable
     private AirState getZoneAir() {
         AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
-        return handler == null ? null : handler.getAirStateAt(pos);
+        BlockPos cell = findServedCell();
+        return (handler == null || cell == null) ? null : handler.getAirStateAt(cell);
     }
 
     @Override
     public void readFromNBT(NBTTagCompound nbt) {
         super.readFromNBT(nbt);
         carbonBuffer = nbt.getInteger("carbonBuffer");
+        ticksSinceOperation = nbt.getInteger("opTicks");
     }
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         super.writeToNBT(nbt);
         nbt.setInteger("carbonBuffer", carbonBuffer);
+        nbt.setInteger("opTicks", ticksSinceOperation);
         return nbt;
     }
 }

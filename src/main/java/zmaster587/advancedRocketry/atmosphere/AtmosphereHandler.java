@@ -378,9 +378,11 @@ public class AtmosphereHandler {
         ARConfiguration config = ARConfiguration.getCurrentConfig();
         if (entity == null || !config.enableOxygen || !config.lifeSupportZones)
             return;
-        // Once a second, not once a tick: the rate is expressed per second and an entity that
-        // cannot be harmed by the air is not drawing on it either.
-        if (entity.world.getTotalWorldTime() % 20 != 0)
+        // Once a second, not once a tick, because the rate is expressed per second. Phased on the
+        // ENTITY's own age rather than world time: a shared `% 20` clock would make every living
+        // thing in the world respire on the same tick, and world time does not advance under a
+        // force-ticking harness at all.
+        if (entity.ticksExisted % 20 != 0)
             return;
 
         AtmosphereBlob blob = getBlobContaining(entity);

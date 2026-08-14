@@ -16390,6 +16390,10 @@ public class TestProbeCommand extends CommandBase {
      *   "isSealed": true|false,        // private TileOxygenVent.isSealed
      *   "blobSize": &lt;int&gt;,             // AtmosphereHandler.getBlobSize(vent)
      *   "blobAtmosphere": "...",       // current AreaBlob atmosphere unlocalized name
+     *   "airN2": &lt;int&gt;,               // zone gas partial pressures, millionths of an atm;
+     *   "airO2": &lt;int&gt;,               //   -1 means the position is in no zone at all
+     *   "airCO2": &lt;int&gt;,
+     *   "airPressure": &lt;int&gt;,          // their sum in hundredths of an atm (100 = 1.00 atm)
      *   "hasFluid": true|false,        // private TileOxygenVent.hasFluid
      *   "fluidAmount": &lt;int&gt;,          // tank contents
      *   "energyStored": &lt;int&gt;
@@ -16397,6 +16401,43 @@ public class TestProbeCommand extends CommandBase {
      * </pre>
      */
     private void handleVent(MinecraftServer server, ICommandSender sender, String[] args) {
+        // /artest vent setair <dim> <x> <y> <z> <n2> <o2> <co2> — overwrite the gas contents of
+        // the zone containing this position. Nothing in production can put a chosen amount of CO2
+        // into a room short of parking crew in it for minutes, so a test that wants to drive the
+        // regeneration path needs this the same way it needs `energy inject`.
+        if (args.length >= 8 && "setair".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            int n2 = parseIntOr(args[5], 0);
+            int o2 = parseIntOr(args[6], 0);
+            int co2 = parseIntOr(args[7], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent)) {
+                send(sender, "{\"error\":\"not a TileOxygenVent\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.atmosphere.AtmosphereHandler handler =
+                    zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.getOxygenHandler(dim);
+            if (handler == null) {
+                send(sender, "{\"error\":\"no atmosphere handler for dim\"}");
+                return;
+            }
+            boolean ok = handler.setAirState(
+                    (zmaster587.advancedRocketry.api.util.IBlobHandler) tile,
+                    new zmaster587.advancedRocketry.atmosphere.AirState(n2, o2, co2));
+            if (ok)
+                handler.refreshDerivedAtmosphereAt(new BlockPos(x, y + 1, z));
+            send(sender, "{\"ok\":" + ok + "}");
+            return;
+        }
+
         // /artest vent reseal <dim> <x> <y> <z> — force a one-shot
         // addBlock(handler, pos) on a vent's blob. Production runs the same
         // call inside performFunction every 100 world-time ticks, but
@@ -16559,6 +16600,20 @@ public class TestProbeCommand extends CommandBase {
             blobAtm = atm == null ? "null" : atm.getUnlocalizedName();
         }
 
+        // Gas contents of the zone this vent anchors. Reported as -1 where the position is in no
+        // zone at all, so a caller can tell "no zone" from "a zone holding nothing".
+        int airN2 = -1, airO2 = -1, airCo2 = -1, airPressure = -1;
+        if (handler != null) {
+            zmaster587.advancedRocketry.atmosphere.AirState air =
+                    handler.getAirStateAt(new BlockPos(x, y + 1, z));
+            if (air != null) {
+                airN2 = air.getNitrogen();
+                airO2 = air.getOxygen();
+                airCo2 = air.getCarbonDioxide();
+                airPressure = air.getPressureCentiAtm();
+            }
+        }
+
         // Tank contents.
         net.minecraftforge.fluids.capability.IFluidHandler fluidH = findFluidHandler(tile);
         int fluidAmount = 0;
@@ -16587,6 +16642,10 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"isSealed\":").append(isSealed);
         out.append(",\"blobSize\":").append(blobSize);
         out.append(",\"blobAtmosphere\":\"").append(escapeJson(blobAtm)).append('"');
+        out.append(",\"airN2\":").append(airN2);
+        out.append(",\"airO2\":").append(airO2);
+        out.append(",\"airCO2\":").append(airCo2);
+        out.append(",\"airPressure\":").append(airPressure);
         out.append(",\"hasFluid\":").append(hasFluid);
         out.append(",\"fluidAmount\":").append(fluidAmount);
         out.append(",\"energyStored\":").append(energyStored);
