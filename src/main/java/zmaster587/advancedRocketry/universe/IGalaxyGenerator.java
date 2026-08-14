@@ -66,4 +66,25 @@ public interface IGalaxyGenerator {
     default int minSpacingCells() {
         return GalaxyGenConfig.DEFAULT_MIN_SPACING;
     }
+
+    /**
+     * The cell an authored anchor declared against {@code key} is measured FROM, or empty when this
+     * generator has no galaxies.
+     *
+     * <p>What an authored {@link GalacticAnchor} is resolved against. The default is empty, and that
+     * is the right answer rather than a stub: a generator with no galaxy tier has nothing for a
+     * declaration to be LOCAL to, so a declared position is already absolute — which is exactly the
+     * behaviour an authored-only universe had before galaxies existed.</p>
+     */
+    default Optional<GalacticCoord> declarationOriginOf(long seed, GalaxyKey key) {
+        return Optional.empty();
+    }
+
+    /**
+     * How far from its DECLARATION ORIGIN authored content is guaranteed to stay inside its galaxy,
+     * in light years, or {@code 0} when this generator has no galaxies (and therefore no wall).
+     */
+    default double guaranteedAuthoredReachLy() {
+        return 0d;
+    }
 }

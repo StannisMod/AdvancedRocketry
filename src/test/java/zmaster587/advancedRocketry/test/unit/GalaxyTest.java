@@ -3,8 +3,10 @@ package zmaster587.advancedRocketry.test.unit;
 import org.junit.Test;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
+import zmaster587.advancedRocketry.universe.Cosmology;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.LightYearVector;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -43,7 +45,13 @@ public class GalaxyTest {
     /** A galaxy with its plane on the world's XZ plane, so a test can reason in plain coordinates. */
     private static Galaxy flat(GalaxyGenConfig.GalaxyType type) {
         return new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, type, RADIUS, 0d, 0d,
-                Math.toRadians(20d), 0d);
+                Math.toRadians(20d), 0d, LightYearVector.ZERO);
+    }
+
+    /** The same galaxy, seated away from the origin and moving — the subject of the R3 laws. */
+    private static Galaxy adrift(GalacticCoord seat, LightYearVector velocity) {
+        return new Galaxy(1L, 0L, 0L, seat, smoothDisc(), RADIUS, 0d, 0d, Math.toRadians(20d), 0d,
+                velocity);
     }
 
     @Test
@@ -123,9 +131,9 @@ public class GalaxyTest {
         // Two galaxies alike but for their orientation must be the same object seen from elsewhere:
         // the density a point sees depends on where it is IN THE GALAXY, never on the world axes.
         Galaxy flat = new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, smoothDisc(), RADIUS, 0d, 0d,
-                Math.toRadians(20d), 0d);
+                Math.toRadians(20d), 0d, LightYearVector.ZERO);
         Galaxy tilted = new Galaxy(0L, 0L, 0L, GalacticCoord.ORIGIN, smoothDisc(), RADIUS,
-                Math.toRadians(90d), 0d, Math.toRadians(20d), 0d);
+                Math.toRadians(90d), 0d, Math.toRadians(20d), 0d, LightYearVector.ZERO);
         // The tilted galaxy's pole is +X, so ITS plane is the world's YZ plane.
         double r = RADIUS * 0.3d;
         assertEquals("the same point of the galaxy must read the same however it is oriented",
@@ -185,6 +193,74 @@ public class GalaxyTest {
         assertTrue("a galactic turn must dwarf any play session (" + turnTicks + " ticks)",
                 turnTicks > 1e11d);
         assertFalse("but it must be a finite number of ticks", Double.isInfinite(turnTicks));
+    }
+
+    // ─── Expansion and peculiar motion (R3) ────────────────────────────────────
+
+    @Test
+    public void expansionIsMonotoneAndStartsAtOne() {
+        // t = 0 is world creation, so the universe's age IS the save's age. And a(t) only ever grows:
+        // shear separates reversibly (theta wraps), expansion does not. A galaxy that recedes past a
+        // drive's reach has receded permanently, which is a stronger claim than "the sky moves".
+        assertEquals("a(0) must be exactly 1", 1d, Cosmology.scaleFactorAt(0L), 0d);
+        double previous = 1d;
+        for (long t = 1_000_000L; t <= 1_000_000_000_000L; t *= 10L) {
+            double a = Cosmology.scaleFactorAt(t);
+            assertTrue("a(" + t + ") = " + a + " did not grow past " + previous, a > previous);
+            previous = a;
+        }
+    }
+
+    @Test
+    public void expansionCarriesTheCentreAndNothingInsideTheGalaxy() {
+        // The whole reason expansion is applied to the CENTRE only: a bound system does not expand,
+        // and scaling intra-galactic coordinates would grow every r and corrupt omega(r) from within.
+        // Measured as the separation between two bound points, which must not change with the scale
+        // factor even while their galaxy is being carried away.
+        Galaxy g = adrift(GalacticCoord.ofSectorLocal(4_000_000_000L, 0L, 0L, 0L, 0L, 0L),
+                LightYearVector.of(1e-9d, 0d, 0d));
+        double r = RADIUS * 0.4d;
+        long far = 500_000_000L;
+
+        // Two points at the same radius, so rotation carries them equally and only expansion could
+        // separate them.
+        double now = g.boundPositionAt(0L, r, 0d, 0d).distanceTo(g.boundPositionAt(0L, r, 1d, 0d));
+        double later = g.boundPositionAt(far, r, 0d, 0d).distanceTo(g.boundPositionAt(far, r, 1d, 0d));
+        assertEquals("two bound points must keep their separation while their galaxy is carried away",
+                now, later, now * 1e-9d);
+        assertTrue("and the galaxy itself must have moved",
+                g.centreAt(far).distanceTo(g.centreAt(0L)) > 0d);
+    }
+
+    @Test
+    public void aGalaxyMovesUnderBothExpansionAndItsOwnVelocity() {
+        // Expansion alone lets a galaxy only RECEDE, so an approaching neighbour would be
+        // unrepresentable — and at short range peculiar motion dominates expansion in a real group.
+        GalacticCoord seat = GalacticCoord.ofSectorLocal(4_000_000_000L, 0L, 0L, 0L, 0L, 0L);
+        Galaxy still = adrift(seat, LightYearVector.ZERO);
+        Galaxy inbound = adrift(seat, LightYearVector.of(-1e-9d, 0d, 0d));
+        long t = 100_000_000L;
+
+        double seatLy = still.centreAt(0L).x();
+        assertTrue("expansion alone can only push a galaxy outwards",
+                still.centreAt(t).x() > seatLy);
+        assertTrue("but its own velocity must be able to bring it closer",
+                inbound.centreAt(t).x() < seatLy);
+    }
+
+    @Test
+    public void theCentreLawIsEvaluatedNeverIntegrated() {
+        // Analytic in t, like everything else in this layer: asking for tick N is one evaluation, so
+        // there is no step size and nothing to accumulate.
+        Galaxy g = adrift(GalacticCoord.ofSectorLocal(2_000_000_000L, 0L, 0L, 0L, 0L, 0L),
+                LightYearVector.of(3e-10d, -1e-10d, 2e-10d));
+        long t = 12_345_678L;
+        double a = Cosmology.scaleFactorAt(t);
+        LightYearVector expected = LightYearVector.ofCell(g.centre())
+                .plus(g.peculiarVelocity().scale((double) t)).scale(a);
+        assertEquals(expected.x(), g.centreAt(t).x(), Math.abs(expected.x()) * 1e-12d);
+        assertEquals(expected.y(), g.centreAt(t).y(), 1e-9d);
+        assertEquals(expected.z(), g.centreAt(t).z(), 1e-9d);
     }
 
     @Test

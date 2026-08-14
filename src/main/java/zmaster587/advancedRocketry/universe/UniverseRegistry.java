@@ -102,21 +102,24 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
 
     // ─── JVM-global seams / staging ───────────────────────────────────────────
     private static volatile IGalaxyGenerator generator = new EmptyGalaxyGenerator();
-
-    /**
-     * The installed generator. The counterpart of {@link #setGenerator}: a caller that needs the
-     * partition the universe is laid out on — the super-cell edge, above all — has to be able to ask
-     * for it rather than assume a number that the configuration owns.
-     */
-    public static IGalaxyGenerator generator() {
-        return generator;
-    }
     // How a stored star-id resolves to its content object. Defaults to the legacy catalogue; overridable so
     // the forward coord->system path is unit-testable without booting DimensionManager, and so an addon can
     // supply fabricated systems.
     private static volatile IntFunction<StellarBody> starLookup = UniverseRegistry::lookupCatalogueStar;
-    private static Map<Integer, GalacticCoord> pendingAnchors = new HashMap<>();
+    private static Map<Integer, GalacticAnchor> pendingAnchors = new HashMap<>();
     private static boolean pendingReset = false;
+
+    /**
+     * What each authored star was DECLARED as, keyed by star id — the galaxy-local form, kept so the
+     * catalogue can be written back in the language it was written in. Never persisted: it is re-read
+     * from XML on every load.
+     */
+    private final Map<Integer, GalacticAnchor> declaredAnchors = new HashMap<>();
+
+    /** How this star was declared, if it was declared at all rather than given a fallback cell. */
+    public GalacticAnchor declaredAnchorFor(int starId) {
+        return declaredAnchors.get(starId);
+    }
 
     private static StellarBody lookupCatalogueStar(int starId) {
         return DimensionManager.getInstance().getStar(starId);
@@ -889,7 +892,14 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * are what makes a written-down coordinate keep denoting its body; clearing them here would mean
      * exactly the guarantee the store exists to give fails in the one case it is needed most.</p>
      */
-    public void applyAnchors(Map<Integer, GalacticCoord> anchors, boolean reset) {
+    public void applyAnchors(Map<Integer, GalacticAnchor> anchors, boolean reset) {
+        // Remembered BEFORE the seeded early-return: the declaration is what the catalogue gets
+        // written back as, and on a restart the anchors are already placed while the XML still has to
+        // round-trip. It is re-read from XML on every load, which is exactly its lifetime.
+        declaredAnchors.clear();
+        if (anchors != null) {
+            declaredAnchors.putAll(anchors);
+        }
         if (anchorsSeeded && !reset) {
             return;
         }
@@ -897,14 +907,36 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
             List<Integer> ids = new ArrayList<>(anchors.keySet());
             Collections.sort(ids);
             for (Integer id : ids) {
-                GalacticCoord c = anchors.get(id);
-                if (c != null) {
-                    place(c, id);
+                GalacticAnchor anchor = anchors.get(id);
+                if (anchor == null) {
+                    continue;
                 }
+                place(resolveAnchor(anchor, id), id);
             }
         }
         anchorsSeeded = true;
         markDirty();
+    }
+
+    /**
+     * Turn a galaxy-local declaration into the absolute cell name everything downstream uses. Done
+     * ONCE, here, at the reference angle — afterwards the authored system is named by a cell exactly
+     * like a procedural one and rotates with its galaxy exactly like one.
+     *
+     * <p>An anchor reaching past the radius its galaxy is GUARANTEED is a loud error and never a
+     * silent clamp: beyond that wall the position is valid on some seeds and intergalactic on others,
+     * and a pack author has to learn that from a log line rather than from a player's bug report.</p>
+     */
+    private GalacticCoord resolveAnchor(GalacticAnchor anchor, int starId) {
+        double guaranteed = generator.guaranteedAuthoredReachLy();
+        if (guaranteed > 0d && anchor.reachLy() > guaranteed) {
+            LOGGER.error("star " + starId + " is authored at " + anchor
+                    + ", which is " + (long) anchor.reachLy() + " light years from its galaxy's centre"
+                    + " against a guaranteed radius of " + (long) guaranteed + ". On a seed whose"
+                    + " galaxy comes out smaller than that, this system will sit in intergalactic"
+                    + " space. Move it inside the guaranteed radius.");
+        }
+        return anchor.resolve(generator.declarationOriginOf(worldSeed, anchor.galaxy()));
     }
 
     /**
@@ -955,8 +987,8 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
      * Buffer XML-authored anchor coords parsed during {@code createAndLoadDimensions} (before worlds load, so
      * the registry is not yet reachable). Drained by {@link #populate} once worlds are up.
      */
-    public static void stageAnchors(Map<Integer, GalacticCoord> anchors, boolean reset) {
-        pendingAnchors = (anchors == null) ? new HashMap<Integer, GalacticCoord>() : new HashMap<>(anchors);
+    public static void stageAnchors(Map<Integer, GalacticAnchor> anchors, boolean reset) {
+        pendingAnchors = (anchors == null) ? new HashMap<Integer, GalacticAnchor>() : new HashMap<>(anchors);
         pendingReset = reset;
     }
 

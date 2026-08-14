@@ -45,11 +45,20 @@ public final class Galaxy {
     private static final double ARM_CONTRAST = 0.6d;
     /** The centre is a singular point of the arm winding; inside this fraction the bulge speaks. */
     private static final double ARM_INNER_FRACTION = 1e-3d;
+    /**
+     * What the profile is divided by, so that a point ON AN ARM at the sun-like galactic radius scores
+     * 1. It is the disc term there, and it is scale-free — the exponentials are all in units of the
+     * radius, so this one number normalises a galaxy of any size.
+     */
+    private static final double REFERENCE_LEVEL =
+            Math.exp(-UniverseScale.HOME_GALAXY_ORIGIN_FRACTION / DISC_SCALE_FRACTION);
 
     private final long cellX;
     private final long cellY;
     private final long cellZ;
     private final GalacticCoord centre;
+    private final LightYearVector seat;
+    private final LightYearVector peculiarVelocity;
     private final GalaxyGenConfig.GalaxyType type;
     private final double radiusLy;
     private final double armPitch;
@@ -76,33 +85,61 @@ public final class Galaxy {
      * @param node       the direction that pole leans in, in radians about +Y
      * @param armPitch   the arms' pitch angle in radians (ignored when the type has no arms)
      * @param armPhase   where arm zero starts, in radians
+     * @param peculiarVelocity its comoving velocity in light years per tick — its own motion through
+     *                   the expanding universe, on top of the expansion
      */
     public Galaxy(long cellX, long cellY, long cellZ, GalacticCoord centre,
                   GalaxyGenConfig.GalaxyType type, double radiusLy, double tilt, double node,
-                  double armPitch, double armPhase) {
+                  double armPitch, double armPhase, LightYearVector peculiarVelocity) {
         this.cellX = cellX;
         this.cellY = cellY;
         this.cellZ = cellZ;
         this.centre = centre;
+        this.seat = LightYearVector.ofCell(centre);
+        this.peculiarVelocity = (peculiarVelocity == null) ? LightYearVector.ZERO : peculiarVelocity;
         this.type = type;
         this.radiusLy = Math.max(1d, radiusLy);
         this.armPitch = armPitch;
         this.armPhase = armPhase;
 
+        double[] basis = basisOf(tilt, node);
+        this.ux = basis[0];
+        this.uy = basis[1];
+        this.uz = basis[2];
+        this.vx = basis[3];
+        this.vy = basis[4];
+        this.vz = basis[5];
+        this.wx = basis[6];
+        this.wy = basis[7];
+        this.wz = basis[8];
+    }
+
+    /**
+     * The orthonormal frame of a galaxy with this orientation: {@code u} and {@code v} span its plane,
+     * {@code w} is its pole. Laid out as {@code [ux,uy,uz, vx,vy,vz, wx,wy,wz]}.
+     */
+    private static double[] basisOf(double tilt, double node) {
         double st = Math.sin(tilt);
         double ct = Math.cos(tilt);
         double sn = Math.sin(node);
         double cn = Math.cos(node);
-        // w = the pole; u, v = an orthonormal pair spanning the plane it is normal to.
-        this.wx = st * cn;
-        this.wy = ct;
-        this.wz = st * sn;
-        this.ux = ct * cn;
-        this.uy = -st;
-        this.uz = ct * sn;
-        this.vx = -sn;
-        this.vy = 0d;
-        this.vz = cn;
+        return new double[] {
+            ct * cn, -st, ct * sn,
+            -sn, 0d, cn,
+            st * cn, ct, st * sn,
+        };
+    }
+
+    /**
+     * A unit vector lying IN the plane of a galaxy with this orientation, at in-plane angle
+     * {@code angle}. What a caller uses to put something at a stated galactic radius in the DISC,
+     * rather than somewhere in the halo above it.
+     */
+    public static LightYearVector planeDirection(double tilt, double node, double angle) {
+        double[] b = basisOf(tilt, node);
+        double c = Math.cos(angle);
+        double s = Math.sin(angle);
+        return LightYearVector.of(c * b[0] + s * b[3], c * b[1] + s * b[4], c * b[2] + s * b[5]);
     }
 
     public long cellX() {
@@ -117,9 +154,17 @@ public final class Galaxy {
         return cellZ;
     }
 
-    /** Where this galaxy's centre stands, as a cell name. */
+    /**
+     * Where this galaxy's centre stands, as a cell NAME — the seat it was drawn at, at {@code t = 0}.
+     * A name is not a place: for where the centre actually is at a tick, see {@link #centreAt}.
+     */
     public GalacticCoord centre() {
         return centre;
+    }
+
+    /** Its comoving velocity, in light years per tick — its own motion, on top of the expansion. */
+    public LightYearVector peculiarVelocity() {
+        return peculiarVelocity;
     }
 
     public GalaxyGenConfig.GalaxyType type() {
@@ -162,8 +207,17 @@ public final class Galaxy {
     }
 
     /**
-     * How dense this galaxy is at a point {@code (dx, dy, dz)} light years from its centre, as a
-     * fraction of its densest point: {@code 0} outside the radius, {@code 1} at the nucleus.
+     * How dense this galaxy is at a point {@code (dx, dy, dz)} light years from its centre, relative to
+     * a SUN-LIKE spot in its disc: {@code 0} outside the radius, about {@code 1} out where the home
+     * galaxy puts the origin, and several times that in the nucleus.
+     *
+     * <p><b>Normalised at the sun-like radius, not at the nucleus, and that choice is load-bearing.</b>
+     * The mean star separation is the primary quantity of this whole layer and it is REAL — it is the
+     * separation in the solar neighbourhood. So the configured density has to mean "how full a sky
+     * like ours is"; normalising at the nucleus instead would have made every configured density a
+     * statement about the galactic core, and left the sky a player actually stands under five times
+     * too empty. The centre goes above 1 and is clamped where the probability is used, which is the
+     * honest place for a saturation.</p>
      *
      * <p>This is the ONE function that decides both where stars are placed and what shape a galaxy
      * reads as. A disc is an exponential disc times an exponential in height, modulated by arms and
@@ -184,7 +238,7 @@ public final class Galaxy {
             // Round, with the type's flattening squashing the pole. No plane, so no arms and no bulge
             // term — the whole thing IS the bulge.
             double scaled = Math.hypot(r, z / Math.max(1e-6d, type.scaleHeightRatio));
-            return clamp01(Math.exp(-scaled / (radiusLy * DISC_SCALE_FRACTION)));
+            return atLeastZero(Math.exp(-scaled / (radiusLy * DISC_SCALE_FRACTION)) / REFERENCE_LEVEL);
         }
 
         double scaleHeight = Math.max(1e-6d, radiusLy * type.scaleHeightRatio);
@@ -192,7 +246,7 @@ public final class Galaxy {
                 * Math.exp(-Math.abs(z) / scaleHeight);
         disc *= armFactor(r, Math.atan2(localY, localX));
         double bulge = Math.exp(-Math.hypot(r, z) / (radiusLy * BULGE_SCALE_FRACTION));
-        return clamp01(disc + bulge);
+        return atLeastZero((disc + bulge) / REFERENCE_LEVEL);
     }
 
     /** The profile read at a cell name — the form the generator asks in. */
@@ -251,6 +305,72 @@ public final class Galaxy {
         return omega > 0d ? 2d * Math.PI / omega : Double.POSITIVE_INFINITY;
     }
 
+    // ─── Where the galaxy itself is ────────────────────────────────────────────
+
+    /**
+     * Where this galaxy's centre stands at tick {@code t}: {@code C(t) = a(t) · (C₀ + v·t)}.
+     *
+     * <p>Expansion carries the centre and <b>nothing inside the galaxy</b>. A gravitationally bound
+     * system does not expand, and scaling intra-galactic coordinates would grow every {@code r} and
+     * corrupt {@code ω(r)} from within — so the split is structural rather than a rule someone has to
+     * remember: everything below is written as an offset from this point.</p>
+     *
+     * <p>Expansion alone would let a galaxy only ever RECEDE, which makes an approaching neighbour
+     * unrepresentable — and in a real group at short range peculiar motion dominates expansion. Hence
+     * the velocity term, one hash draw, still analytic, still nothing integrated.</p>
+     */
+    public LightYearVector centreAt(long tick) {
+        return seat.plus(peculiarVelocity.scale((double) tick))
+                .scale(Cosmology.scaleFactorAt(tick));
+    }
+
+    /**
+     * Where a point BOUND to this galaxy stands at tick {@code t}, absolutely.
+     *
+     * <p>It rides the galaxy: it turns with the disc at {@code ω(r)} and it does not expand. The
+     * arguments are its galaxy-local cylindrical elements at {@code t = 0}, which are what a bound
+     * thing actually has — a radius, an angle and a height, exactly as a planet has an orbit.</p>
+     */
+    public LightYearVector boundPositionAt(long tick, double rLy, double theta0, double heightLy) {
+        double theta = thetaAt(theta0, rLy, tick);
+        double localX = rLy * Math.cos(theta);
+        double localY = rLy * Math.sin(theta);
+        // Back out of the galaxy frame: the basis is orthonormal, so the inverse is its transpose.
+        return centreAt(tick).plus(LightYearVector.of(
+                localX * ux + localY * vx + heightLy * wx,
+                localX * uy + localY * vy + heightLy * wy,
+                localX * uz + localY * vz + heightLy * wz));
+    }
+
+    /** The galaxy-local radius of a static-frame offset from the centre, in light years. */
+    public double localRadius(double dxLy, double dyLy, double dzLy) {
+        return Math.hypot(dxLy * ux + dyLy * uy + dzLy * uz, dxLy * vx + dyLy * vy + dzLy * vz);
+    }
+
+    /** The galaxy-local angle of a static-frame offset from the centre, in radians. */
+    public double localTheta(double dxLy, double dyLy, double dzLy) {
+        return Math.atan2(dxLy * vx + dyLy * vy + dzLy * vz, dxLy * ux + dyLy * uy + dzLy * uz);
+    }
+
+    /** The height of a static-frame offset above this galaxy's plane, in light years. */
+    public double localHeight(double dxLy, double dyLy, double dzLy) {
+        return dxLy * wx + dyLy * wy + dzLy * wz;
+    }
+
+    /**
+     * Where the cell named {@code cell} stands at tick {@code t}, IF it is bound to this galaxy.
+     *
+     * <p>Its elements are read once, off its offset from the seat at {@code t = 0} — that is what a
+     * cell NAME means here, and it is why a name stays put while the place it names moves.</p>
+     */
+    public LightYearVector boundPositionOfCellAt(GalacticCoord cell, long tick) {
+        double dx = offsetLy(cell.sectorX(), centre.sectorX());
+        double dy = offsetLy(cell.sectorY(), centre.sectorY());
+        double dz = offsetLy(cell.sectorZ(), centre.sectorZ());
+        return boundPositionAt(tick, localRadius(dx, dy, dz), localTheta(dx, dy, dz),
+                localHeight(dx, dy, dz));
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
     /** A sector delta as a length in light years. Exact: the delta is bounded by one galaxy cell. */
@@ -258,11 +378,8 @@ public final class Galaxy {
         return UniverseScale.lightYearsForCells((double) (sector - centreSector));
     }
 
-    private static double clamp01(double v) {
-        if (!(v > 0d)) {
-            return 0d;
-        }
-        return v > 1d ? 1d : v;
+    private static double atLeastZero(double v) {
+        return v > 0d ? v : 0d;
     }
 
     @Override

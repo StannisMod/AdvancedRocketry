@@ -26,7 +26,9 @@ import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.GalaxyKey;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.PlanetTypePreset;
 import zmaster587.advancedRocketry.universe.PlanetTypes;
@@ -64,6 +66,14 @@ public class XMLPlanetLoader {
     // between authored anchors; absent -> authored anchors only. All attrs are balance knobs with defaults.
     private static final String ELEMENT_GALAXYGEN = "galaxyGen";
     private static final String ELEMENT_STARTYPE = "starType";
+    private static final String ELEMENT_GALAXYTYPE = "galaxyType";
+    private static final String ATTR_PROFILE = "profile";
+    private static final String ATTR_MINRADIUS = "minRadius";
+    private static final String ATTR_MAXRADIUS = "maxRadius";
+    private static final String ATTR_THICKNESS = "thickness";
+    private static final String ATTR_ARMS = "arms";
+    private static final String ATTR_ROTATIONSPEED = "rotationSpeed";
+    private static final String ATTR_COREFRACTION = "coreFraction";
     // A planet TYPE preset: the named region of parameter space a world can land in, plus everything
     // that follows from being that kind of world. Present -> replaces the whole stock table.
     private static final String ELEMENT_PLANETTYPE = "planetType";
@@ -97,6 +107,7 @@ public class XMLPlanetLoader {
     // Explicit galactic address of an authored anchor system: "sectorX,sectorY,sectorZ" (cell indices).
     // Absent -> the system falls back to a deterministic cell (Sol -> origin). See UniverseRegistry.
     private static final String ATTR_GALACTIC_COORD = "galacticCoord";
+    private static final String ATTR_GALAXY = "galaxy";
     private static final String ATTR_SIZE = "size";
     private static final String ATTR_NUMPLANETS = "numPlanets";
     private static final String ATTR_NUMGASPLANETS = "numGasGiants";
@@ -183,7 +194,16 @@ public class XMLPlanetLoader {
      * Resolve a system's authored galactic coordinate from the live universe registry, or {@code null} when
      * no server/registry is reachable (so a no-server unit-test export simply omits the attribute).
      */
-    private static GalacticCoord anchorCoordForWrite(int starId) {
+    /**
+     * How this star's address is written back.
+     *
+     * <p>In the language it was DECLARED in, when it was declared: a galaxy-local anchor writes its
+     * galaxy and its offset, and would otherwise be written as the absolute cell it resolved to and
+     * then read back on the next load as an offset from that same galaxy — shifted twice, and further
+     * every save. A star that was never declared writes the absolute cell it was given, which is what
+     * it has.</p>
+     */
+    private static GalacticAnchor anchorForWrite(int starId) {
         MinecraftServer server;
         try {
             server = FMLCommonHandler.instance().getMinecraftServerInstance();
@@ -199,7 +219,12 @@ public class XMLPlanetLoader {
         if (registry == null) {
             return null;
         }
-        return registry.coordForSystem(starId).orElse(null);
+        GalacticAnchor declared = registry.declaredAnchorFor(starId);
+        if (declared != null) {
+            return declared;
+        }
+        GalacticCoord placed = registry.coordForSystem(starId).orElse(null);
+        return placed == null ? null : GalacticAnchor.inHome(placed);
     }
 
     private static String attr(Node node, String name) {
@@ -249,6 +274,25 @@ public class XMLPlanetLoader {
         }
     }
 
+    /**
+     * The galaxy an authored anchor is declared against — {@code home} when unstated, which is what a
+     * pack that never thinks about galaxies gets and is always the right answer for it.
+     */
+    private static GalaxyKey readGalaxyKey(Node node, String starName) {
+        String raw = attr(node, ATTR_GALAXY);
+        if (raw == null || raw.trim().isEmpty()) {
+            return GalaxyKey.HOME;
+        }
+        GalaxyKey key = GalaxyKey.parse(raw);
+        if (key == null) {
+            AdvancedRocketry.logger.warn("star '" + starName + "' names galaxy \"" + raw
+                    + "\", which is neither \"" + GalaxyKey.HOME_NAME + "\" nor a \"gx,gy,gz\" lattice"
+                    + " index. Placing it in the home galaxy.");
+            return GalaxyKey.HOME;
+        }
+        return key;
+    }
+
     /** Parse a {@code <galaxyGen>} element (attrs + {@code <starType>} children) into a config. */
     private GalaxyGenConfig readGalaxyGen(Node node) {
         GalaxyGenConfig defaults = GalaxyGenConfig.defaults();
@@ -269,10 +313,51 @@ public class XMLPlanetLoader {
                         attrInt(child, ATTR_WEIGHT, 1)));
             }
         }
-        // An empty <starType> list falls back to the default archetypes (handled by the config ctor).
-        // The GALAXY archetype table is not authorable yet: it ships as a stock table in code, and a
-        // <galaxyType> element is the natural place to override it when a pack needs to.
-        return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, types, null);
+        List<GalaxyGenConfig.GalaxyType> galaxyTypes = new ArrayList<>();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (ELEMENT_GALAXYTYPE.equalsIgnoreCase(child.getNodeName())) {
+                galaxyTypes.add(readGalaxyType(child));
+            }
+        }
+        // Empty <starType> / <galaxyType> lists fall back to the stock archetypes (config ctor).
+        return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, types,
+                galaxyTypes);
+    }
+
+    /**
+     * Parse one {@code <galaxyType>} element into a galaxy archetype.
+     *
+     * <pre>{@code
+     * <galaxyType name="Spiral" profile="DISC" minRadius="900" maxRadius="2200"
+     *             thickness="0.02" arms="2" rotationSpeed="220" coreFraction="0.08" weight="7"/>
+     * }</pre>
+     *
+     * <p>Every attribute defaults to the stock spiral's value, so a pack that wants to change only
+     * how flat a disc is writes only {@code thickness}.</p>
+     */
+    private static GalaxyGenConfig.GalaxyType readGalaxyType(Node node) {
+        String profileName = attr(node, ATTR_PROFILE);
+        GalaxyGenConfig.GalaxyProfile profile = GalaxyGenConfig.GalaxyProfile.DISC;
+        if (profileName != null && !profileName.trim().isEmpty()) {
+            try {
+                profile = GalaxyGenConfig.GalaxyProfile.valueOf(profileName.trim().toUpperCase());
+            } catch (IllegalArgumentException bad) {
+                AdvancedRocketry.logger.warn("Unknown galaxy profile \"" + profileName
+                        + "\" in <galaxyType>; using DISC");
+            }
+        }
+        String name = attr(node, ATTR_NAME);
+        return new GalaxyGenConfig.GalaxyType(
+                (name == null || name.trim().isEmpty()) ? "Galaxy" : name.trim(),
+                profile,
+                attrDouble(node, ATTR_MINRADIUS, 900d),
+                attrDouble(node, ATTR_MAXRADIUS, 2200d),
+                attrDouble(node, ATTR_THICKNESS, 0.02d),
+                attrInt(node, ATTR_ARMS, 2),
+                attrDouble(node, ATTR_ROTATIONSPEED, 220d),
+                attrDouble(node, ATTR_COREFRACTION, 0.08d),
+                attrInt(node, ATTR_WEIGHT, 1));
     }
 
     /**
@@ -491,8 +576,59 @@ public class XMLPlanetLoader {
             st.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
             e.appendChild(st);
         }
+        // The galaxy table is written back for the same reason the star table is: this file is
+        // REWRITTEN on every world save, so anything the reader did not turn into model state is lost.
+        // A pack that flattened its discs would silently get the stock ones back on the first save.
+        for (GalaxyGenConfig.GalaxyType t : cfg.galaxyTypes) {
+            Element gt = doc.createElement(ELEMENT_GALAXYTYPE);
+            gt.setAttribute(ATTR_NAME, t.name);
+            gt.setAttribute(ATTR_PROFILE, t.profile.name());
+            gt.setAttribute(ATTR_MINRADIUS, Double.toString(t.minRadiusLy));
+            gt.setAttribute(ATTR_MAXRADIUS, Double.toString(t.maxRadiusLy));
+            gt.setAttribute(ATTR_THICKNESS, Double.toString(t.scaleHeightRatio));
+            gt.setAttribute(ATTR_ARMS, Integer.toString(t.armCount));
+            gt.setAttribute(ATTR_ROTATIONSPEED, Double.toString(t.rotationSpeedKmS));
+            gt.setAttribute(ATTR_COREFRACTION, Double.toString(t.coreRadiusFraction));
+            gt.setAttribute(ATTR_WEIGHT, Integer.toString(t.weight));
+            e.appendChild(gt);
+        }
         return e;
     }
+
+    /**
+     * The two things a pack author has to know BEFORE the first save, written into the file itself.
+     *
+     * <p>Both are discoverable only from source otherwise, and by the time either is discovered the
+     * damage is done: the author has already placed a system in intergalactic space, or has already
+     * rerolled a universe that had a save attached to it. This file is rewritten on every world save,
+     * so the notice is emitted by the WRITER rather than shipped in a template that the first save
+     * would replace.</p>
+     */
+    private static final String AUTHORING_NOTICE = "\n"
+            + "  READ BEFORE EDITING\n"
+            + "\n"
+            + "  1. A star's galacticCoord is GALAXY-LOCAL, not absolute. It is an offset in cells\n"
+            + "     from the centre of the galaxy named by the star's `galaxy` attribute, which\n"
+            + "     defaults to \"home\". The home galaxy is centred on the origin and always exists,\n"
+            + "     whatever the world seed, and it is always at least 800 light years in radius, so\n"
+            + "     anything you place inside that radius is valid on every seed. Beyond it your\n"
+            + "     system may land in intergalactic space on some seeds; you get a loud error in the\n"
+            + "     log if it does. Naming another galaxy (`galaxy=\"4,-1,2\"`) forces that lattice\n"
+            + "     cell to hold one.\n"
+            + "\n"
+            + "     Why: a galaxy fills about three thousandths of a percent of its own lattice cell,\n"
+            + "     so a hand-picked absolute coordinate is in the void with probability 99.997%.\n"
+            + "\n"
+            + "  2. CHANGING ANY <galaxyGen> PARAMETER MID-SAVE IS UNDEFINED BEHAVIOUR. Nothing about\n"
+            + "     a procedural system is stored: every star, planet and generated name is derived\n"
+            + "     from (seed, coordinate) on every query. Change density, minSpacing, galaxySpacing,\n"
+            + "     galaxyDensity or the archetype tables and you get a DIFFERENT UNIVERSE, in which\n"
+            + "     every coordinate a player wrote down, every memory crystal and every route points\n"
+            + "     at nothing. There is no migration and there cannot be one, because there is no old\n"
+            + "     universe on disk to migrate. If you change these, start a new world.\n"
+            + "\n"
+            + "  Comments you add to this file do not survive a world save; this one is regenerated.\n"
+            + "  Full reference: docs/README_PLANETDEFS.md\n";
 
     public static String writeXML(IGalaxy galaxy) {
 
@@ -506,6 +642,7 @@ public class XMLPlanetLoader {
         doc = docBuilder.newDocument();
         Element galaxyElement = doc.createElement(ELEMENT_GALAXY);
         doc.appendChild(galaxyElement);
+        galaxyElement.appendChild(doc.createComment(AUTHORING_NOTICE));
 
         Collection<StellarBody> stars = galaxy.getStars();
 
@@ -517,9 +654,13 @@ public class XMLPlanetLoader {
             nodeStar.setAttribute(ATTR_TEMP, Integer.toString(star.getTemperature()));
             nodeStar.setAttribute(ATTR_X, Integer.toString(star.getPosX()));
             nodeStar.setAttribute(ATTR_Y, Integer.toString(star.getPosZ()));
-            GalacticCoord starCoord = anchorCoordForWrite(star.getId());
-            if (starCoord != null) {
-                nodeStar.setAttribute(ATTR_GALACTIC_COORD, UniverseRegistry.formatAnchor(starCoord));
+            GalacticAnchor starAnchor = anchorForWrite(star.getId());
+            if (starAnchor != null) {
+                nodeStar.setAttribute(ATTR_GALACTIC_COORD,
+                        UniverseRegistry.formatAnchor(starAnchor.local()));
+                if (!starAnchor.galaxy().isHome()) {
+                    nodeStar.setAttribute(ATTR_GALAXY, starAnchor.galaxy().toString());
+                }
             }
             nodeStar.setAttribute(ATTR_SIZE, Float.toString(star.getSize()));
             nodeStar.setAttribute(ATTR_NUMPLANETS, "0");
@@ -1603,12 +1744,22 @@ public class XMLPlanetLoader {
             StellarBody star = readStar(masterNode);
             coupling.stars.add(star);
 
-            // Explicit galactic address for this authored anchor (optional). Staged into the universe
-            // registry after the catalogue is built; absent -> a deterministic fallback cell downstream.
+            // Explicit galactic address for this authored anchor (optional). It is GALAXY-LOCAL: an
+            // offset from the centre of the galaxy named by `galaxy` (default `home`), not an absolute
+            // cell. A galaxy fills about three thousandths of a percent of its own lattice cell, so an
+            // absolute declaration would land in intergalactic space on virtually every seed.
+            //
+            // Resolved into an absolute cell once, at population, when the world seed is known — the
+            // galaxy's centre is a hash draw and cannot be known here.
             if (masterNode.hasAttributes()) {
                 Node coordNode = masterNode.getAttributes().getNamedItem(ATTR_GALACTIC_COORD);
                 if (coordNode != null && !coordNode.getNodeValue().isEmpty()) {
-                    coupling.anchorCoords.put(star.getId(), UniverseRegistry.parseAnchor(coordNode.getNodeValue()));
+                    GalaxyKey key = readGalaxyKey(masterNode, star.getName());
+                    coupling.anchorCoords.put(star.getId(), GalacticAnchor.of(key,
+                            UniverseRegistry.parseAnchor(coordNode.getNodeValue())));
+                    if (!key.isHome() && !coupling.declaredGalaxies.contains(key)) {
+                        coupling.declaredGalaxies.add(key);
+                    }
                 }
             }
 
@@ -1636,6 +1787,13 @@ public class XMLPlanetLoader {
             }
 
             masterNode = masterNode.getNextSibling();
+        }
+        // Every galaxy an anchor named is RESERVED. The keys are only known once the catalogue has
+        // been walked, which is after <galaxyGen> was read — so they are folded in here rather than
+        // making the document's element ORDER load-bearing.
+        if (coupling.galaxyGenConfig != null && !coupling.declaredGalaxies.isEmpty()) {
+            coupling.galaxyGenConfig =
+                    coupling.galaxyGenConfig.withReservedGalaxies(coupling.declaredGalaxies);
         }
         return coupling;
     }
@@ -1668,7 +1826,11 @@ public class XMLPlanetLoader {
         public List<DimensionProperties> dims = new LinkedList<>();
         // Authored galactic addresses, keyed by star id (parse order). Only anchors that declared an
         // explicit <star galacticCoord> appear here; the rest get a deterministic fallback at population.
-        public Map<Integer, GalacticCoord> anchorCoords = new HashMap<>();
+        // GALAXY-LOCAL: resolved into absolute cells at population, once the world seed is known.
+        public Map<Integer, GalacticAnchor> anchorCoords = new HashMap<>();
+        // Every non-home galaxy an anchor named. Each one is RESERVED — its cell holds a galaxy
+        // whatever the hash says — because authored content must exist under every seed.
+        public List<GalaxyKey> declaredGalaxies = new ArrayList<>();
         // Procedural-galaxy generation config from an optional <galaxyGen> element; null = authored-only.
         public GalaxyGenConfig galaxyGenConfig = null;
         // Authored <planetType> presets. Empty -> the stock table stands.

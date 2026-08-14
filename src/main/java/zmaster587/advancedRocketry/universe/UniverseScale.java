@@ -121,13 +121,47 @@ public final class UniverseScale {
             cellsForLightYears(MEAN_GALAXY_SEPARATION_LY);
 
     /**
-     * The radius the HOME galaxy is guaranteed to have at least, in light years. A galaxy's size is
-     * hash-drawn, so without a floor a pack that places authored content a few hundred light years
-     * out would work on one seed and put that content outside its own galaxy on the next. The floor
-     * is expressed as a constraint on which TYPES the home galaxy may be drawn from, never as a
+     * The radius a galaxy holding AUTHORED content is guaranteed to have at least, in light years. A
+     * galaxy's size is hash-drawn, so without a floor a pack that places content a few hundred light
+     * years out would work on one seed and put that content outside its own galaxy on the next. The
+     * floor is expressed as a constraint on which TYPES such a galaxy may be drawn from, never as a
      * clamp applied afterwards.
      */
-    public static final double MIN_HOME_GALAXY_RADIUS_LY = 800d;
+    public static final double MIN_AUTHORED_GALAXY_RADIUS_LY = 900d;
+
+    /**
+     * Where the universe ORIGIN sits inside the home galaxy, as a fraction of its radius — and it is
+     * emphatically not the centre.
+     *
+     * <p>The home galaxy is seated AROUND the origin rather than ON it, because the origin is where
+     * authored content lives and the centre of a galaxy is its nucleus: the densest, most violent
+     * place in it, and the last address a shipped solar system should have. Sol sits at about half
+     * the Milky Way's disc radius; this puts the origin in the same neighbourhood, out in the disc.</p>
+     *
+     * <p>The offset lies IN the galaxy's plane, so the origin is disc material and not halo.</p>
+     */
+    public static final double HOME_GALAXY_ORIGIN_FRACTION = 0.55d;
+
+    /**
+     * How far from the DECLARATION ORIGIN authored content is guaranteed to stay inside its galaxy,
+     * in light years. Derived, not chosen: it is what is left of the smallest galaxy that may hold
+     * authored content once the origin has been moved off its centre.
+     *
+     * <p>Beyond it a position is valid on some seeds and intergalactic on others, which is a thing an
+     * author must be TOLD rather than left to discover — hence a loud error and never a clamp.</p>
+     */
+    public static final double GUARANTEED_AUTHORED_REACH_LY =
+            (1d - HOME_GALAXY_ORIGIN_FRACTION) * MIN_AUTHORED_GALAXY_RADIUS_LY;
+
+    /**
+     * The smallest lattice cell a system can be more than a lone star in, in cells.
+     *
+     * <p>Derived from the rest: a cell must leave room for a body at one orbit unit after the seat
+     * margin and the neighbourhood margin are taken out. It bounds how finely a star cluster may
+     * refine the lattice — a cluster cannot conjure room that its coarse cell never had, and a
+     * spacing too tight to be refined is a degenerate galaxy rather than an error.</p>
+     */
+    public static final long MIN_LATTICE_EDGE_CELLS = 9L;
 
     private UniverseScale() {
     }
@@ -136,6 +170,12 @@ public final class UniverseScale {
     public static long cellsForLightYears(double lightYears) {
         double blocks = Math.max(0d, lightYears) * AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR;
         return (long) Math.ceil(blocks / (double) GalacticCoord.CELL);
+    }
+
+    /** A SIGNED length in light years as a whole number of cells, rounded to the nearest. */
+    public static long cellsAt(double lightYears) {
+        return Math.round(lightYears * AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR
+                / (double) GalacticCoord.CELL);
     }
 
     /** The length in light years that {@code cells} cells span. */

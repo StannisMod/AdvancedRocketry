@@ -163,13 +163,25 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     /** Thin-disk half-thickness as a fraction of the orbit radius (bodies keep honest 3D Y). */
     private static final double PROC_DISK_FRACTION = 0.1d;
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("AdvancedRocketry|Universe");
+
+    /**
+     * Hard ceiling on what one region query returns. Not a balance number: a nucleus divides each
+     * coarse cell fifteen thousand ways, so a box that looks small in super-cells can hold millions of
+     * systems and an unbounded enumeration would hang the caller.
+     */
+    private static final int MAX_SYSTEMS_PER_REGION_QUERY = 20_000;
+
     private final GalaxyGenConfig config;
     private final GalaxyField galaxies;
+    private final ClusterField clusters;
     private final long totalStarWeight;
 
     public ClusteredGalaxyGenerator(GalaxyGenConfig config) {
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
         this.galaxies = new GalaxyField(this.config);
+        this.clusters = new ClusterField(this.config);
         long w = 0L; // accumulate in long so a few near-Integer.MAX weights cannot overflow the sum
         for (GalaxyGenConfig.StarType t : this.config.starTypes) {
             w += t.weight;
@@ -186,14 +198,15 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return galaxies;
     }
 
+    /** The star clusters that refine the lattice — the tier below it. */
+    public ClusterField clusters() {
+        return clusters;
+    }
+
     @Override
     public Optional<StarSystem> systemAt(long seed, GalacticCoord coord) {
-        long sx = coord.sectorX();
-        long sy = coord.sectorY();
-        long sz = coord.sectorZ();
-        long s = config.minSpacing;
-        Optional<Generated> g = systemForSuperCell(seed,
-                Math.floorDiv(sx, s), Math.floorDiv(sy, s), Math.floorDiv(sz, s));
+        Optional<Generated> g = systemForLattice(seed,
+                latticeAt(seed, coord.sectorX(), coord.sectorY(), coord.sectorZ()));
         if (g.isPresent() && g.get().cell.sameCell(coord)) {
             return Optional.of(g.get().system);
         }
@@ -203,8 +216,14 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     /**
      * {@inheritDoc}
      *
-     * <p>Cost is O(super-cell volume of the box). Callers MUST pass a bounded region — a telescope scan is
-     * range-limited by config — not a galactic-scale box.</p>
+     * <p>Cost is O(super-cell volume of the box), times {@code k³} for any part of it inside a star
+     * cluster. Callers MUST pass a bounded region — a telescope scan is range-limited by config — not a
+     * galactic-scale box.</p>
+     *
+     * <p><b>The result is capped</b>, and a cap that fires is LOGGED. A nucleus subdivides each coarse
+     * cell fifteen thousand ways, so a box that looks small in super-cells can hold millions of
+     * systems; silently returning the first few would read as "that is all there is", which is the one
+     * outcome worse than a slow scan.</p>
      */
     @Override
     public Map<GalacticCoord, StarSystem> systemsInRegion(long seed, GalacticCoord min, GalacticCoord max) {
@@ -217,21 +236,36 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         long hiZ = Math.max(min.sectorZ(), max.sectorZ());
 
         Map<GalacticCoord, StarSystem> out = new HashMap<>();
-        for (long supX = Math.floorDiv(loX, s); supX <= Math.floorDiv(hiX, s); supX++) {
-            for (long supY = Math.floorDiv(loY, s); supY <= Math.floorDiv(hiY, s); supY++) {
-                for (long supZ = Math.floorDiv(loZ, s); supZ <= Math.floorDiv(hiZ, s); supZ++) {
-                    Optional<Generated> g = systemForSuperCell(seed, supX, supY, supZ);
-                    if (!g.isPresent()) {
-                        continue;
-                    }
-                    GalacticCoord c = g.get().cell;
-                    if (c.sectorX() >= loX && c.sectorX() <= hiX
-                            && c.sectorY() >= loY && c.sectorY() <= hiY
-                            && c.sectorZ() >= loZ && c.sectorZ() <= hiZ) {
-                        out.put(c, g.get().system);
+        boolean capped = false;
+        for (long supX = Math.floorDiv(loX, s); supX <= Math.floorDiv(hiX, s) && !capped; supX++) {
+            for (long supY = Math.floorDiv(loY, s); supY <= Math.floorDiv(hiY, s) && !capped; supY++) {
+                for (long supZ = Math.floorDiv(loZ, s); supZ <= Math.floorDiv(hiZ, s) && !capped; supZ++) {
+                    int k = subdivisionAt(seed, supX, supY, supZ);
+                    for (long i = 0; i < k && !capped; i++) {
+                        for (long j = 0; j < k && !capped; j++) {
+                            for (long m = 0; m < k && !capped; m++) {
+                                Optional<Generated> g = systemForLattice(seed,
+                                        Lattice.of(supX, supY, supZ, i, j, m, k, s));
+                                if (!g.isPresent()) {
+                                    continue;
+                                }
+                                GalacticCoord c = g.get().cell;
+                                if (c.sectorX() >= loX && c.sectorX() <= hiX
+                                        && c.sectorY() >= loY && c.sectorY() <= hiY
+                                        && c.sectorZ() >= loZ && c.sectorZ() <= hiZ) {
+                                    out.put(c, g.get().system);
+                                    capped = out.size() >= MAX_SYSTEMS_PER_REGION_QUERY;
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+        if (capped) {
+            LOGGER.warn("systemsInRegion stopped at " + MAX_SYSTEMS_PER_REGION_QUERY + " systems for the"
+                    + " box " + min.cellKey() + " .. " + max.cellKey() + "; there are more. This region"
+                    + " crosses a dense star cluster - narrow the query.");
         }
         return out;
     }
@@ -259,7 +293,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // uses. What the neighbourhood decides is not how far a body goes but how many bodies there is
         // room for: orbits are drawn inside a bracket that already fits, and a system that would run
         // past its own clear space loses BODIES rather than being squashed to fit.
-        long s = config.minSpacing;
+        //
+        // The room is the LOCAL lattice cell's, not the coarse one's. A system inside a star cluster
+        // sits on a finer lattice, so it has less of it and keeps fewer named bodies — which is the
+        // same rule as everywhere else, applied to the level it is defined on.
+        Lattice lattice = latticeAt(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ());
+        long s = lattice.minEdge();
         double outerBound = maxNamedOrbitUnits(s);
 
         // AT MOST ONE REAL BODY PER CELL, moons excepted. The draw picks each body's angle and radius
@@ -281,7 +320,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
                     * AstronomicalBodyHelper.getOrbitalPeriod(companion.getOrbitalDistance(),
                             star.getMass());
-            Seat seat = claimSeat(cell, s, taken, companion.getOrbitalDistance(),
+            Seat seat = claimSeat(cell, lattice, taken, companion.getOrbitalDistance(),
                     companion.getBaseTheta(), 0d, periodTicks);
             if (seat == null) {
                 continue;
@@ -312,7 +351,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             if (!orbitIsStableAmong(star.getSubStars(), orbit)) {
                 continue; // too near one of this system's other stars for any orbit to survive
             }
-            Seat seat = seatBody(seed, cell, i, orbit, star, s, taken);
+            Seat seat = seatBody(seed, cell, i, orbit, star, lattice, taken);
             if (seat == null) {
                 continue; // this system's neighbourhood is full — a bound of the layout, not a failure
             }
@@ -341,7 +380,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // An inner belt is DERIVED from a giant and never rolled: it is material a giant's resonances
         // stopped from accreting, so it belongs in the gap inside one and a system with no giant has none.
         if (innermostGiantOrbit > 0) {
-            addBelt(bodies, seed, cell, (int) (innermostGiantOrbit / INNER_BELT_RESONANCE), star, s,
+            addBelt(bodies, seed, cell, (int) (innermostGiantOrbit / INNER_BELT_RESONANCE), star, lattice,
                     starId, taken, count + 1);
         }
         // The outer belt is MANDATORY on every system — the Kuiper analogue, and the reason every system
@@ -353,7 +392,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // it is bounded like everything else rather than being quietly dropped.
         double outerBelt = Math.max(outermostOrbit * OUTER_BELT_FACTOR,
                 PlanetDerivation.innerOrbit(star) * 2d);
-        addBelt(bodies, seed, cell, (int) Math.min(outerBelt, outerBound), star, s, starId, taken,
+        addBelt(bodies, seed, cell, (int) Math.min(outerBelt, outerBound), star, lattice, starId, taken,
                 count + 2);
         return bodies;
     }
@@ -396,7 +435,7 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * one outcome that is worse than a smaller system.</p>
      */
     private static Seat seatBody(long seed, GalacticCoord anchor, int index, int orbit,
-                                 StellarBody star, long s, Set<String> taken) {
+                                 StellarBody star, Lattice lattice, Set<String> taken) {
         double baseAngle = CellHash.norm(CellHash.ofBody(seed, anchor, index, SALT_BODYANG)) * 2d * Math.PI;
         // Out-of-plane displacement lives in the LAW as an inclination, so a body's height above the
         // disk is part of where it IS at every tick rather than a one-off nudge applied to its name.
@@ -405,11 +444,11 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         double phiDegrees = Math.toDegrees(Math.asin(sinPhi));
         double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
                 * AstronomicalBodyHelper.getOrbitalPeriod(orbit, star.getMass());
-        return claimSeat(anchor, s, taken, orbit, baseAngle, phiDegrees, periodTicks);
+        return claimSeat(anchor, lattice, taken, orbit, baseAngle, phiDegrees, periodTicks);
     }
 
     /** Walk the ring from {@code baseAngle} until a free cell turns up, or give up. */
-    private static Seat claimSeat(GalacticCoord anchor, long s, Set<String> taken, int orbit,
+    private static Seat claimSeat(GalacticCoord anchor, Lattice lattice, Set<String> taken, int orbit,
                                   double baseAngle, double phiDegrees, double periodTicks) {
         for (int attempt = 0; attempt < NUDGE_ATTEMPTS; attempt++) {
             BodyEphemeris law = BodyEphemeris.orbit(orbit, baseAngle + attempt * NUDGE_ANGLE,
@@ -418,8 +457,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // The body's address is its OWN cell's centre (zone content sits near the cell centre),
             // box-clamped into the anchor's super-cell so member attribution stays exact at ANY
             // spacing — at tiny spacings a whole orbit can otherwise reach across the super-cell face.
-            GalacticCoord addr = clampIntoSuperCell(
-                    anchor.plusLocal(at0.dx(), at0.dy(), at0.dz()).cellCentre(), anchor, s);
+            GalacticCoord addr = clampIntoLattice(
+                    anchor.plusLocal(at0.dx(), at0.dy(), at0.dz()).cellCentre(), lattice);
             if (taken.add(addr.cellKey())) {
                 return new Seat(addr, law);
             }
@@ -440,9 +479,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     /** Append an asteroid belt at {@code orbit}, if the neighbourhood still has a cell for one. */
     private static void addBelt(List<SystemBody> bodies, long seed, GalacticCoord anchor, int orbit,
-                                StellarBody star, long s, int starId, Set<String> taken, int index) {
+                                StellarBody star, Lattice lattice, int starId, Set<String> taken,
+                                int index) {
         int clamped = Math.max(1, orbit);
-        Seat seat = seatBody(seed, anchor, index, clamped, star, s, taken);
+        Seat seat = seatBody(seed, anchor, index, clamped, star, lattice, taken);
         if (seat != null) {
             // A belt is centred on the star it rings, so as a whole it does not travel round it. Its
             // cell is a marker on the ring; the ring itself does not go anywhere.
@@ -508,10 +548,8 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     @Override
     public Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
-        long s = config.minSpacing;
-        Optional<Generated> g = systemForSuperCell(seed,
-                Math.floorDiv(cell.sectorX(), s), Math.floorDiv(cell.sectorY(), s),
-                Math.floorDiv(cell.sectorZ(), s));
+        Optional<Generated> g = systemForLattice(seed,
+                latticeAt(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ()));
         return g.isPresent() ? Optional.of(g.get().cell) : Optional.<GalacticCoord>empty();
     }
 
@@ -520,64 +558,201 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return config.minSpacing;
     }
 
-    /** Per-axis clamp of a body's cell into its anchor's super-cell box (margin when the box allows it). */
-    private static GalacticCoord clampIntoSuperCell(GalacticCoord bodyCell, GalacticCoord anchor, long s) {
-        long margin = (s > 2L * NEIGHBOURHOOD_MARGIN_CELLS) ? NEIGHBOURHOOD_MARGIN_CELLS : 0L;
-        long cx = clampAxis(bodyCell.sectorX(), anchor.sectorX(), s, margin);
-        long cy = clampAxis(bodyCell.sectorY(), anchor.sectorY(), s, margin);
-        long cz = clampAxis(bodyCell.sectorZ(), anchor.sectorZ(), s, margin);
+    @Override
+    public Optional<GalacticCoord> declarationOriginOf(long seed, GalaxyKey key) {
+        return galaxies.declarationOriginOf(seed, key);
+    }
+
+    @Override
+    public double guaranteedAuthoredReachLy() {
+        return UniverseScale.GUARANTEED_AUTHORED_REACH_LY;
+    }
+
+    /**
+     * Per-axis clamp of a body's cell into its anchor's own LATTICE cell (margin when the box allows
+     * it), so a system's neighbourhood cannot reach into a neighbour's however far an orbit runs.
+     *
+     * <p>Against the lattice cell rather than a spacing, because inside a star cluster the cell is a
+     * sub-cell whose bounds are not a multiple of its own edge — dividing to find the box would put
+     * the box somewhere else entirely.</p>
+     */
+    private static GalacticCoord clampIntoLattice(GalacticCoord bodyCell, Lattice lattice) {
+        long cx = clampAxis(bodyCell.sectorX(), lattice.lowX, lattice.edgeX);
+        long cy = clampAxis(bodyCell.sectorY(), lattice.lowY, lattice.edgeY);
+        long cz = clampAxis(bodyCell.sectorZ(), lattice.lowZ, lattice.edgeZ);
         if (cx == bodyCell.sectorX() && cy == bodyCell.sectorY() && cz == bodyCell.sectorZ()) {
             return bodyCell;
         }
         return GalacticCoord.ofSectorLocal(cx, cy, cz, 0L, 0L, 0L);
     }
 
-    private static long clampAxis(long sector, long anchorSector, long s, long margin) {
-        long sup = Math.floorDiv(anchorSector, s);
-        long lo = sup * s + margin;
-        long hi = sup * s + s - 1L - margin;
+    private static long clampAxis(long sector, long low, long edge) {
+        long margin = (edge > 2L * NEIGHBOURHOOD_MARGIN_CELLS) ? NEIGHBOURHOOD_MARGIN_CELLS : 0L;
+        long lo = low + margin;
+        long hi = low + edge - 1L - margin;
         if (sector < lo) {
             return lo;
         }
         return sector > hi ? hi : sector;
     }
 
-    /** The single system a super-cell hosts (its cell coordinate + fabricated system), or empty. */
-    private Optional<Generated> systemForSuperCell(long seed, long supX, long supY, long supZ) {
-        long s = config.minSpacing;
+    /** The single system a lattice cell hosts (its cell coordinate + fabricated system), or empty. */
+    private Optional<Generated> systemForLattice(long seed, Lattice lattice) {
         // OCCUPANCY IS DECIDED IN THE GALAXY'S OWN FRAME, so the profile does the drawing: the disc,
         // the bulge and the arms place the stars. An independent per-cell draw could only ever produce
         // a uniform fog, which is what made "which galaxy is this?" a question with no answer.
         //
-        // Evaluated at the super-cell's CENTRE — a point fixed by the partition, not by any draw, so
+        // Evaluated at the lattice cell's CENTRE — a point fixed by the partition, not by any draw, so
         // the probability a cube is occupied cannot depend on where its seat would have landed. And
         // evaluated at t = 0 and never again: a time-dependent occupancy would pop systems in and out
         // of existence. Systems drift afterwards at their galaxy's own omega(r), which is the shear.
-        double profile = galaxyProfileAt(seed, supX * s + s / 2L, supY * s + s / 2L, supZ * s + s / 2L);
+        double profile = galaxyProfileAt(seed, lattice.lowX + lattice.edgeX / 2L,
+                lattice.lowY + lattice.edgeY / 2L, lattice.lowZ + lattice.edgeZ / 2L);
         if (!(profile > 0d)) {
             return Optional.empty(); // intergalactic void, or past this galaxy's edge
         }
-        if (CellHash.norm(CellHash.of(seed, supX, supY, supZ, SALT_OCC)) >= config.density * profile) {
+        // Keyed by the cell's LOW CORNER, which is globally unique whatever lattice it belongs to —
+        // a coarse index would collide with a fine one wherever a cluster refines the field.
+        if (CellHash.norm(lattice.hash(seed, SALT_OCC)) >= Math.min(1d, config.density * profile)) {
             return Optional.empty();
         }
         // Seat the anchor anywhere in its cube except a declared margin at the faces. That margin is
         // the system's own CLEAR SPACE, not a fraction of the cube: it is what guarantees two stars
         // never stand closer than the separation floor, and what keeps one system's named bodies from
-        // reaching into the next cube (so member-cell attribution by floorDiv stays exact).
+        // reaching into the next cube (so member-cell attribution stays exact).
         //
         // It used to be the middle quarter per axis, which confined the seat to 1.6 % of the cube's
         // volume — a lattice of tight clumps with guaranteed-empty walls between them, visible in any
         // rendered star field. The margin now costs a couple of percent per face instead, because it
         // is sized by what a system actually needs rather than by the distance to the next star.
-        long margin = UniverseScale.seatMarginCells(s);
-        long band = Math.max(1L, s - 2L * margin);
-        long base = margin;
-        long ox = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OX), band);
-        long oy = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OY), band);
-        long oz = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OZ), band);
-        GalacticCoord cell = GalacticCoord.ofSectorLocal(supX * s + ox, supY * s + oy, supZ * s + oz,
-                0L, 0L, 0L);
-        return Optional.of(new Generated(cell, fabricate(seed, supX, supY, supZ)));
+        //
+        // It is read off the LOCAL edge, so inside a cluster the floor shrinks with the lattice: stars
+        // in a globular core really do stand closer than a wide binary, and a system there loses outer
+        // bodies by the same rule that has always applied.
+        GalacticCoord cell = GalacticCoord.ofSectorLocal(
+                lattice.lowX + seatOffset(seed, lattice, SALT_OX, lattice.edgeX),
+                lattice.lowY + seatOffset(seed, lattice, SALT_OY, lattice.edgeY),
+                lattice.lowZ + seatOffset(seed, lattice, SALT_OZ, lattice.edgeZ), 0L, 0L, 0L);
+        return Optional.of(new Generated(cell, fabricate(seed, lattice)));
+    }
+
+    /** Where the seat sits on one axis of its lattice cell, clear of the faces by the local margin. */
+    private static long seatOffset(long seed, Lattice lattice, long salt, long edge) {
+        long margin = UniverseScale.seatMarginCells(edge);
+        long band = Math.max(1L, edge - 2L * margin);
+        return margin + Math.floorMod(lattice.hash(seed, salt), band);
+    }
+
+    /**
+     * One cell of the star lattice: a coarse super-cell, or one of the {@code k³} sub-cells a star
+     * cluster divides it into.
+     *
+     * <p>Its bounds are PROPORTIONED rather than divided, so the fine lattice tiles a coarse cell of
+     * any edge exactly — a plain {@code s / k} would leave a remainder at the top of every coarse
+     * cell, and a remainder is a seam.</p>
+     */
+    private static final class Lattice {
+        final long lowX;
+        final long lowY;
+        final long lowZ;
+        final long edgeX;
+        final long edgeY;
+        final long edgeZ;
+
+        private Lattice(long lowX, long lowY, long lowZ, long edgeX, long edgeY, long edgeZ) {
+            this.lowX = lowX;
+            this.lowY = lowY;
+            this.lowZ = lowZ;
+            this.edgeX = edgeX;
+            this.edgeY = edgeY;
+            this.edgeZ = edgeZ;
+        }
+
+        /** Sub-cell {@code (i, j, m)} of coarse super-cell {@code (supX, supY, supZ)}, at {@code k}. */
+        static Lattice of(long supX, long supY, long supZ, long i, long j, long m, int k, long s) {
+            long baseX = supX * s;
+            long baseY = supY * s;
+            long baseZ = supZ * s;
+            long loI = Math.floorDiv(i * s, (long) k);
+            long loJ = Math.floorDiv(j * s, (long) k);
+            long loM = Math.floorDiv(m * s, (long) k);
+            return new Lattice(baseX + loI, baseY + loJ, baseZ + loM,
+                    Math.max(1L, Math.floorDiv((i + 1L) * s, (long) k) - loI),
+                    Math.max(1L, Math.floorDiv((j + 1L) * s, (long) k) - loJ),
+                    Math.max(1L, Math.floorDiv((m + 1L) * s, (long) k) - loM));
+        }
+
+        /** Its draw for one field, keyed by the low corner — globally unique at any subdivision. */
+        long hash(long seed, long salt) {
+            return CellHash.of(seed, lowX, lowY, lowZ, salt);
+        }
+
+        /** Whether {@code sector} lies inside this cell on the axis whose low/edge are given. */
+        static boolean within(long sector, long low, long edge) {
+            return sector >= low && sector < low + edge;
+        }
+
+        boolean contains(long sectorX, long sectorY, long sectorZ) {
+            return within(sectorX, lowX, edgeX) && within(sectorY, lowY, edgeY)
+                    && within(sectorZ, lowZ, edgeZ);
+        }
+
+        /**
+         * The smallest of its three edges — what a system's room is measured against. The edges differ
+         * by at most one cell, and taking the smallest is what keeps a neighbourhood inside its cell on
+         * every axis rather than on the average of them.
+         */
+        long minEdge() {
+            return Math.min(edgeX, Math.min(edgeY, edgeZ));
+        }
+    }
+
+    /**
+     * How finely the lattice is divided at this coarse super-cell: {@code 1} in the ordinary field,
+     * and the cluster's {@code k} where one covers it.
+     *
+     * <p>Membership is a property of the COARSE cell, which is what keeps this an O(1) question with
+     * one answer — and what makes the fine lattice tile the coarse cells it replaces exactly.</p>
+     */
+    private int subdivisionAt(long seed, long supX, long supY, long supZ) {
+        long s = config.minSpacing;
+        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, supX * s + s / 2L,
+                supY * s + s / 2L, supZ * s + s / 2L);
+        if (!galaxy.isPresent()) {
+            return 1;
+        }
+        Optional<StarCluster> cluster = clusters.clusterAt(seed, galaxy.get(), supX, supY, supZ);
+        if (!cluster.isPresent()) {
+            return 1;
+        }
+        // A cluster cannot conjure room its coarse cell never had. Refining below the smallest cell a
+        // system can be more than a lone star in would not make a dense cluster — it would make a
+        // field of bare stars, which is the opposite of the thing. A spacing too tight to refine is a
+        // degenerate galaxy rather than an error, exactly as too tight a spacing already is.
+        long ceiling = Math.max(1L, s / UniverseScale.MIN_LATTICE_EDGE_CELLS);
+        return (int) Math.max(1L, Math.min(cluster.get().subdivision(), ceiling));
+    }
+
+    /** The lattice cell a sector triple falls in. */
+    private Lattice latticeAt(long seed, long sectorX, long sectorY, long sectorZ) {
+        long s = config.minSpacing;
+        long supX = Math.floorDiv(sectorX, s);
+        long supY = Math.floorDiv(sectorY, s);
+        long supZ = Math.floorDiv(sectorZ, s);
+        int k = subdivisionAt(seed, supX, supY, supZ);
+        if (k <= 1) {
+            return Lattice.of(supX, supY, supZ, 0L, 0L, 0L, 1, s);
+        }
+        return Lattice.of(supX, supY, supZ,
+                subIndex(Math.floorMod(sectorX, s), s, k),
+                subIndex(Math.floorMod(sectorY, s), s, k),
+                subIndex(Math.floorMod(sectorZ, s), s, k), k, s);
+    }
+
+    /** Which sub-cell an offset inside a coarse cell falls in, on one axis. */
+    private static long subIndex(long offsetInCoarse, long coarseEdge, int k) {
+        long index = Math.floorDiv(offsetInCoarse * (long) k, Math.max(1L, coarseEdge));
+        return Math.min((long) k - 1L, Math.max(0L, index));
     }
 
     /**
@@ -595,7 +770,10 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return galaxy.get().densityAtSector(sectorX, sectorY, sectorZ);
     }
 
-    private StarSystem fabricate(long seed, long supX, long supY, long supZ) {
+    private StarSystem fabricate(long seed, Lattice lattice) {
+        long supX = lattice.lowX;
+        long supY = lattice.lowY;
+        long supZ = lattice.lowZ;
         GalaxyGenConfig.StarType type = pickType(CellHash.of(seed, supX, supY, supZ, SALT_TYPE));
         double sizeFrac = CellHash.norm(CellHash.of(seed, supX, supY, supZ, SALT_SIZE));
 

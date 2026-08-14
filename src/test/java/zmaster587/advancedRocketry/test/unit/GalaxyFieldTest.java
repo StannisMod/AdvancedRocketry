@@ -2,15 +2,21 @@ package zmaster587.advancedRocketry.test.unit;
 
 import org.junit.Test;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.Cosmology;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
+import zmaster587.advancedRocketry.universe.GalacticFrame;
+import zmaster587.advancedRocketry.universe.GalaxyKey;
 import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyField;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.LightYearVector;
 import zmaster587.advancedRocketry.universe.UniverseScale;
 
 import static org.junit.Assert.assertEquals;
@@ -47,11 +53,20 @@ public class GalaxyFieldTest {
         for (long seed = 1L; seed <= 200L; seed++) {
             Galaxy home = f.home(seed);
             assertNotNull("seed " + seed + " has no home galaxy", home);
-            assertEquals("the home galaxy is centred on the origin", GalacticCoord.ORIGIN.cellKey(),
-                    home.centre().cellKey());
             assertTrue("seed " + seed + "'s home galaxy is only " + home.radiusLy()
                             + " ly across, under the guaranteed minimum",
-                    home.radiusLy() >= UniverseScale.MIN_HOME_GALAXY_RADIUS_LY);
+                    home.radiusLy() >= UniverseScale.MIN_AUTHORED_GALAXY_RADIUS_LY);
+            assertTrue("the ORIGIN must be inside the home galaxy under seed " + seed,
+                    home.containsSector(0L, 0L, 0L));
+            // And out in the disc, not at the centre: the centre of a galaxy is its nucleus, which is
+            // the last address a shipped solar system should have.
+            double originRadius = home.localRadius(
+                    -UniverseScale.lightYearsForCells(home.centre().sectorX()),
+                    -UniverseScale.lightYearsForCells(home.centre().sectorY()),
+                    -UniverseScale.lightYearsForCells(home.centre().sectorZ()));
+            assertEquals("the origin must sit at a sun-like galactic radius",
+                    UniverseScale.HOME_GALAXY_ORIGIN_FRACTION * home.radiusLy(), originRadius,
+                    home.radiusLy() * 1e-3d);
         }
     }
 
@@ -312,6 +327,199 @@ public class GalaxyFieldTest {
                 systems > 1e4d);
         assertTrue("a galaxy holding " + (long) systems + " systems is past the scale this "
                 + "lattice was sized for", systems < 1e7d);
+    }
+
+    // ─── The intergalactic regime (R3 + R8) ────────────────────────────────────
+
+    @Test
+    public void theHomeGalaxyHasNoMotionOfItsOwn() {
+        // It is the rest frame everything else is measured against: every other galaxy moves relative
+        // to it, which is also what an observer actually sees. What must NOT happen is authored
+        // content being left behind by its own galaxy — so the check is that the origin keeps its
+        // place INSIDE the galaxy, not that the galaxy sits still on a static grid it does not live on.
+        GalaxyField f = field(GalaxyGenConfig.DEFAULT_GALAXY_DENSITY);
+        for (long seed = 1L; seed <= 30L; seed++) {
+            Galaxy home = f.home(seed);
+            assertEquals("the home galaxy must have no peculiar velocity", 0d,
+                    home.peculiarVelocity().length(), 0d);
+            double at0 = home.boundPositionOfCellAt(GalacticCoord.ORIGIN, 0L)
+                    .distanceTo(home.centreAt(0L));
+            for (long t : new long[] {1_000_000L, 1_000_000_000_000L}) {
+                assertEquals("authored content must ride its galaxy, not be left behind by it", at0,
+                        home.boundPositionOfCellAt(GalacticCoord.ORIGIN, t).distanceTo(home.centreAt(t)),
+                        at0 * 1e-9d);
+            }
+        }
+    }
+
+    @Test
+    public void aGalaxyCannotDriftOutOfItsOwnCell() {
+        // The invariant peculiar velocity threatens: a galaxy that wandered into a neighbouring cell
+        // would break at-most-one-per-cell, non-overlap, AND the O(1) ownership answer at once. The
+        // bound is real code, and it is measured here rather than asserted — at realistic speeds it is
+        // orders away from binding, which is the finding.
+        GalaxyGenConfig config = cfg(1.0d);
+        GalaxyField f = new GalaxyField(config);
+        double halfCellLy = UniverseScale.lightYearsForCells(config.galaxySpacing / 2d);
+        double worstFraction = 0d;
+        int checked = 0;
+        for (long gx = -4L; gx <= 4L; gx++) {
+            for (long gy = -2L; gy <= 2L; gy++) {
+                Optional<Galaxy> g = f.galaxyAtIndex(2024L, gx, gy, 0L);
+                if (!g.isPresent() || GalaxyField.isHomeCell(gx, gy, 0L)) {
+                    continue;
+                }
+                double drift = g.get().peculiarVelocity().length()
+                        * (double) Cosmology.DRIFT_HORIZON_TICKS;
+                double room = halfCellLy - g.get().radiusLy();
+                assertTrue(g.get() + " drifts " + drift + " ly against " + room + " ly of room",
+                        drift <= room);
+                worstFraction = Math.max(worstFraction, drift / room);
+                checked++;
+            }
+        }
+        assertTrue(checked > 5);
+        System.out.println("worst galaxy drift over the horizon: "
+                + String.format("%.3e", worstFraction) + " of its available room");
+    }
+
+    @Test
+    public void aGalaxyDrawsARealisticPeculiarVelocity() {
+        GalaxyField f = field(1.0d);
+        int checked = 0;
+        for (long gx = -5L; gx <= 5L; gx++) {
+            Optional<Galaxy> g = f.galaxyAtIndex(555L, gx, 3L, 0L);
+            if (!g.isPresent() || GalaxyField.isHomeCell(gx, 3L, 0L)) {
+                continue;
+            }
+            // 50..600 km/s, expressed in this layer's unit.
+            double speed = g.get().peculiarVelocity().length();
+            assertTrue("a galaxy must actually move", speed > 0d);
+            assertTrue("and not faster than the band allows",
+                    speed <= UniverseScale.lightYearsPerTick(600d) * 1.000001d);
+            checked++;
+        }
+        assertTrue(checked > 3);
+    }
+
+    @Test
+    public void aPointIsEitherBoundToItsGalaxyOrComovingInTheVoid() {
+        // Two states and no third: there is no "nowhere". Every point belongs to exactly one galaxy
+        // CELL, and inside that cell it is either in the galaxy or in the void of it.
+        GalaxyField f = field(1.0d);
+        Galaxy home = f.home(11L);
+        GalacticCoord inside = GalacticCoord.ofSectorLocal(
+                UniverseScale.cellsForLightYears(home.radiusLy() * 0.5d), 0L, 0L, 0L, 0L, 0L);
+        GalacticCoord outside = GalacticCoord.ofSectorLocal(
+                UniverseScale.cellsForLightYears(home.radiusLy() * 4d), 0L, 0L, 0L, 0L, 0L);
+
+        assertEquals(GalacticFrame.GALACTIC, f.frameAt(11L, inside));
+        assertEquals(GalacticFrame.COMOVING, f.frameAt(11L, outside));
+    }
+
+    @Test
+    public void aBoundPointRotatesAndAVoidPointDoesNot() {
+        // The two laws, told apart by what they DO. A bound point turns with the disc and keeps its
+        // distance from the centre; a void point is carried by the Hubble flow and never rotates.
+        GalaxyField f = field(1.0d);
+        Galaxy home = f.home(11L);
+        long boundCells = UniverseScale.cellsForLightYears(home.radiusLy() * 0.5d);
+        GalacticCoord bound = GalacticCoord.ofSectorLocal(boundCells, 0L, 0L, 0L, 0L, 0L);
+        long t = 200_000_000_000L; // long enough that the slow rotation is measurable
+
+        LightYearVector at0 = f.positionAt(11L, bound, 0L);
+        LightYearVector later = f.positionAt(11L, bound, t);
+        assertTrue("a bound point must move with the disc", later.distanceTo(at0) > 0d);
+        assertEquals("and keep its radius from the centre, because a galaxy does not expand",
+                at0.distanceTo(home.centreAt(0L)), later.distanceTo(home.centreAt(t)),
+                home.radiusLy() * 1e-9d);
+
+        GalacticCoord voidCell = GalacticCoord.ofSectorLocal(
+                UniverseScale.cellsForLightYears(home.radiusLy() * 4d), 0L, 0L, 0L, 0L, 0L);
+        LightYearVector voidAt0 = f.positionAt(11L, voidCell, 0L);
+        LightYearVector voidLater = f.positionAt(11L, voidCell, t);
+        assertEquals("a void point is carried straight outwards, never sideways", 0d,
+                voidLater.y(), 1e-9d);
+        assertEquals("a void point is carried straight outwards, never sideways", 0d,
+                voidLater.z(), 1e-9d);
+        assertTrue("and it is carried by the Hubble flow", voidLater.x() > voidAt0.x());
+        assertEquals("by exactly the scale factor", voidAt0.x() * Cosmology.scaleFactorAt(t),
+                voidLater.x(), voidAt0.x() * 1e-12d);
+    }
+
+    // ─── Authored content is declared against a galaxy (R11) ───────────────────
+
+    @Test
+    public void aDeclaredGalaxyIsSeatedWhateverTheHashSays() {
+        // A galaxy is a hash draw and may simply not be there under another seed, while authored
+        // content must exist under EVERY seed. So naming a galaxy in the catalogue reserves its cell.
+        long seed = 424242L;
+        GalaxyField plain = field(0.2d);
+        GalaxyKey empty = null;
+        for (long gx = 1L; gx <= 40L && empty == null; gx++) {
+            if (!plain.galaxyAtIndex(seed, gx, 0L, 0L).isPresent()) {
+                empty = GalaxyKey.of(gx, 0L, 0L);
+            }
+        }
+        assertNotNull("the sweep must find a void galaxy cell to reserve", empty);
+
+        GalaxyGenConfig reserved = cfg(0.2d).withReservedGalaxies(Collections.singletonList(empty));
+        GalaxyField withKey = new GalaxyField(reserved);
+        assertTrue("a declared key must force its cell to hold a galaxy",
+                withKey.galaxyAtIndex(seed, empty.gx(), empty.gy(), empty.gz()).isPresent());
+        assertTrue(withKey.isReserved(empty.gx(), empty.gy(), empty.gz()));
+        assertTrue("and it must be reachable by key", withKey.declarationOriginOf(seed, empty).isPresent());
+    }
+
+    @Test
+    public void aGalaxyHoldingAuthoredContentIsDrawnBigEnoughForIt() {
+        // The guarantee is a constraint on the type DRAW, never a clamp applied afterwards: a pack
+        // that places a system 700 light years out must work on every seed.
+        long seed = 909L;
+        GalaxyKey key = GalaxyKey.of(6L, -2L, 3L);
+        GalaxyField f = new GalaxyField(
+                cfg(0.2d).withReservedGalaxies(Collections.singletonList(key)));
+        Galaxy declared = f.galaxyAtIndex(seed, key.gx(), key.gy(), key.gz()).get();
+        assertTrue("a reserved galaxy is only " + declared.radiusLy() + " ly across",
+                declared.radiusLy() >= UniverseScale.MIN_AUTHORED_GALAXY_RADIUS_LY);
+    }
+
+    @Test
+    public void aHomeDeclarationResolvesToItself() {
+        // This is what centring the home galaxy on the ORIGIN buys, and it is the whole migration
+        // story: a coordinate authored before galaxies existed means exactly what it used to.
+        GalaxyField f = field(GalaxyGenConfig.DEFAULT_GALAXY_DENSITY);
+        GalacticCoord local = GalacticCoord.ofSectorLocal(1_500_000L, -20_000L, 7L, 0L, 0L, 0L);
+        GalacticAnchor anchor = GalacticAnchor.inHome(local);
+        assertEquals(local.cellKey(),
+                anchor.resolve(f.declarationOriginOf(3L, GalaxyKey.HOME)).cellKey());
+    }
+
+    @Test
+    public void aDeclarationInAnotherGalaxyResolvesAgainstThatGalaxysCentre() {
+        long seed = 77L;
+        GalaxyKey key = GalaxyKey.of(2L, 0L, 0L);
+        GalaxyField f = new GalaxyField(
+                cfg(1.0d).withReservedGalaxies(Collections.singletonList(key)));
+        GalacticCoord centre = f.centreOf(seed, key).get();
+        GalacticCoord local = GalacticCoord.ofSectorLocal(500_000L, 0L, 0L, 0L, 0L, 0L);
+
+        GalacticCoord resolved =
+                GalacticAnchor.of(key, local).resolve(f.declarationOriginOf(seed, key));
+        assertEquals(centre.sectorX() + 500_000L, resolved.sectorX());
+        assertTrue("and it must land inside the galaxy it named",
+                f.galaxyAtIndex(seed, key.gx(), key.gy(), key.gz()).get()
+                        .containsSector(resolved.sectorX(), resolved.sectorY(), resolved.sectorZ()));
+    }
+
+    @Test
+    public void withNoGalaxyTierADeclarationIsAlreadyAbsolute() {
+        // An authored-only universe has nothing for a declaration to be local TO, so local and
+        // absolute coincide — which is both the only reading that can be right and the behaviour that
+        // existed before galaxies did.
+        GalacticCoord local = GalacticCoord.ofSectorLocal(42L, -7L, 3L, 0L, 0L, 0L);
+        assertEquals(local.cellKey(),
+                GalacticAnchor.inHome(local).resolve(Optional.<GalacticCoord>empty()).cellKey());
     }
 
     private static int countGalaxies(GalaxyField f, long seed) {

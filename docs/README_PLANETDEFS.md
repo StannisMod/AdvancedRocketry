@@ -70,7 +70,7 @@ So: edit the **template**, not the live copy, and keep the template under versio
 | **planet temperature** | KELVIN | Computed, not authored — see `avgTemperature` in §7. |
 | **rotational period** | ticks | `24000` = one Minecraft day. Must be `> 0`. |
 | **star map position** | arbitrary map units | `x` / `y` on `<star>`; affects the star-selector GUI only. |
-| **galactic anchor** | cell indices | `"sectorX,sectorY,sectorZ"`. One cell is 4 000 000 blocks. |
+| **galactic anchor** | cell indices | `"sectorX,sectorY,sectorZ"`, GALAXY-LOCAL (see §5). One cell is 4 000 000 blocks. |
 
 **The chart scale.** One orbital-distance unit is **5 983 914 blocks**, i.e. one AU is
 149 597 870 700 m at 250 m per block. This is the one law that turns an orbit into a place, and it is
@@ -85,7 +85,8 @@ distance and where a ship actually finds it are the same statement.
 ```xml
 <galaxy>
   <galaxyGen …>            <!-- 0..1 — procedural galaxy; omit for an authored-only universe -->
-    <starType …/>          <!-- 0..n -->
+    <starType …/>          <!-- 0..n — replaces the built-in star archetypes when present -->
+    <galaxyType …/>        <!-- 0..n — replaces the built-in galaxy archetypes when present -->
   </galaxyGen>
 
   <planetType …>…</planetType>   <!-- 0..n — replaces the built-in type table when present -->
@@ -110,7 +111,7 @@ this file names.
 
 | attribute | unit | default | meaning |
 |---|---|---|---|
-| `density` | 0..1 | `0.35` | Chance that a given cube of space holds a system **at a galaxy's densest point**. Everywhere else the galaxy's own profile scales it down, and outside every galaxy it is zero. Clamped; `NaN` reads as `0`. |
+| `density` | 0..1 | `0.35` | Chance that a given cube of space holds a system **in a sun-like part of a galaxy's disc** — the profile is normalised there, so this number describes the sky you actually stand under. Nearer the centre it rises (and saturates); further out and off the plane it falls; outside every galaxy it is zero. Clamped; `NaN` reads as `0`. |
 | `minSpacing` | cells | `40018890` | Edge of the cube that holds **at most one** system, i.e. how far apart stars stand. The default is 4.23 light years. Floors at 1. |
 | `galaxySpacing` | cells | `709554785444` | Edge of the cube that holds **at most one galaxy**. The default is 75 000 light years — twenty-five galaxy diameters. Floors at 1. |
 | `galaxyDensity` | 0..1 | `0.5` | Fraction of those cubes that actually hold a galaxy. The rest is intergalactic void. Clamped; `NaN` reads as `0`. |
@@ -126,14 +127,58 @@ galaxy's edge.
 
 A galaxy's **type decides its size**, never the other way round: dwarf spheroidals and dwarf
 irregulars outnumber spirals and ellipticals by roughly two orders, so finding a spiral is an event.
-The archetype table is built in and is not authorable yet.
+The archetype table is `<galaxyType>` below.
 
-**The galaxy at the origin always exists.** Authored `<star galacticCoord="…">` anchors are absolute
-coordinates, and a galaxy fills a ten-thousandth of its own cube — so without a reserved home the
-system you write in this file would land in intergalactic space on virtually every seed. The home
-galaxy is centred on the origin and is always drawn large enough (at least 800 light years) to hold
-authored content; only its *existence* and its centre are fixed, so its type, size, orientation and
-arms still differ from seed to seed.
+**Clusters, one level down.** Inside a star cluster the lattice is finer by an integer factor, so a
+cluster really is denser than the field around it rather than merely looking that way. Every galaxy
+also has a nucleus at its own centre — the richest cluster of all, and not a special case. A
+consequence worth knowing: **the 10 000 AU separation floor is a property of the lattice level, not a
+global constant.** Inside a cluster stars stand closer than a wide binary, and a system there keeps
+fewer outer bodies, by the same rule that applies everywhere else.
+
+### Where authored content goes — `galaxy` and `galacticCoord`
+
+A `<star>`'s `galacticCoord` is **galaxy-local**: an offset in cells from the DECLARATION ORIGIN of the
+galaxy named by its `galaxy` attribute.
+
+| attribute | default | meaning |
+|---|---|---|
+| `galaxy` | `home` | `home`, or a lattice index `"gx,gy,gz"`. **Naming a galaxy forces that cell to hold one**, on every seed. |
+| `galacticCoord` | *(absent → a deterministic fallback cell)* | `"sx,sy,sz"` — the offset from that galaxy's declaration origin. |
+
+For `home` the declaration origin is the **universe origin**, so a coordinate written before galaxies
+existed means exactly what it always did. For any other galaxy it is that galaxy's centre.
+
+**The home galaxy always exists, and the origin sits out in its disc.** A galaxy fills about three
+thousandths of a percent of its own lattice cell, so an absolute declaration would land in
+intergalactic space with probability 99.997 %. The home galaxy is therefore seated *around* the origin
+— not *on* it, because a galaxy's centre is its nucleus and that is the last address a shipped solar
+system should have. The origin lands at a sun-like galactic radius, in the plane.
+
+**Anything within about 400 light years of the origin is valid on every seed.** That is what the
+guaranteed minimum radius leaves once the origin has been moved off centre. Beyond it your system is
+inside its galaxy on some seeds and in the void on others; you get a loud error in the log naming the
+star, never a silent clamp.
+
+### `<galaxyType>` — the galaxy archetype table
+
+Zero `<galaxyType>` children → the built-in table stands. One or more → they **replace** it entirely.
+Every attribute defaults to the stock spiral's value, so changing only how flat a disc is takes one
+attribute.
+
+| attribute | unit | default | meaning |
+|---|---|---|---|
+| `name` | text | `Galaxy` | Shown in a galaxy's designation. |
+| `profile` | `DISC` / `SPHEROID` | `DISC` | The shape stars are distributed in. A `SPHEROID` has no plane, so no arms. |
+| `minRadius` / `maxRadius` | light years | `900` / `2200` | Radius band. A galaxy's radius is drawn INSIDE ITS TYPE'S band — size and type are one fact, not two. |
+| `thickness` | fraction of the radius | `0.02` | Scale height: how flat it is. `0.02` is a real thin disc (a 30-light-year scale height at the stock radius); raise it to make leaving the disc a manoeuvre rather than a step. On a `SPHEROID` it is the flattening of the pole. |
+| `arms` | count | `2` | Spiral arms, or `0` for a type that has none. |
+| `rotationSpeed` | km/s | `220` | The rotation curve's asymptotic speed. |
+| `coreFraction` | fraction of the radius | `0.08` | Where the rotation curve turns over. Near `1` the galaxy turns almost as a solid body; near `0` its curve is flat almost everywhere and it shears strongly. |
+| `weight` | relative | `1` | Draw weight. |
+
+The stock table is roughly the real abundance ordering — dwarf spheroidals and dwarf irregulars
+outnumber spirals and ellipticals by about two orders — so a spiral is something you find.
 
 ### `<starType>` — the archetype table
 
@@ -247,7 +292,8 @@ redistributed among the remaining options. A type all of whose options are unava
 | `temp` | `100` = Sol | no (default `100`) | Temperature; drives colour and luminosity. A malformed value warns and falls back to `100`. |
 | `size` | solar radii | no (default `1.0`) | Radius. |
 | `x`, `y` | map units | no | Position on the star-selector map. `y` is the map's Z. |
-| `galacticCoord` | `"sx,sy,sz"` | no | Explicit anchor cell. Malformed → warns and uses the origin. Absent → a deterministic fallback cell is assigned. |
+| `galacticCoord` | `"sx,sy,sz"` | no | Explicit anchor, GALAXY-LOCAL — an offset from the declaration origin of the galaxy in `galaxy` (see §5). Malformed → warns and uses the origin. Absent → a deterministic fallback cell is assigned. |
+| `galaxy` | `home` or `"gx,gy,gz"` | no | Which galaxy `galacticCoord` is measured from. Default `home`, whose declaration origin IS the universe origin. Naming any other forces that lattice cell to hold a galaxy. |
 | `numPlanets` | count | **yes** | How many random planets to generate for this star at FIRST load. Missing → warning and none. |
 | `numGasGiants` | count | **yes** | The same for gas giants. |
 | `blackHole` | boolean | no | This star is a black hole: a quarter of the light its size and temperature would otherwise give. |

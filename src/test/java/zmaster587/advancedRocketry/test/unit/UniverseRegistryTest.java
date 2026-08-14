@@ -16,6 +16,7 @@ import zmaster587.advancedRocketry.space.AbsolutePos;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
@@ -395,17 +396,17 @@ public class UniverseRegistryTest {
     @Test
     public void anchorsDrainOnceThenPersistedStoreWins() {
         UniverseRegistry reg = new UniverseRegistry();
-        Map<Integer, GalacticCoord> anchors = new HashMap<>();
-        anchors.put(1, GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0));
-        anchors.put(2, GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> anchors = new HashMap<>();
+        anchors.put(1, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)));
+        anchors.put(2, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0)));
 
         reg.applyAnchors(anchors, false);
         assertEquals(Optional.of(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)), reg.coordForSystem(1));
         assertEquals(Optional.of(GalacticCoord.ofSectorLocal(2, 0, 0, 0, 0, 0)), reg.coordForSystem(2));
 
         // Second drain with DIFFERENT anchors is a no-op (already seeded) unless a reset is forced.
-        Map<Integer, GalacticCoord> moved = new HashMap<>();
-        moved.put(1, GalacticCoord.ofSectorLocal(50, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> moved = new HashMap<>();
+        moved.put(1, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(50, 0, 0, 0, 0, 0)));
         reg.applyAnchors(moved, false);
         assertEquals("re-draining without reset must not move the anchor",
                 Optional.of(GalacticCoord.ofSectorLocal(1, 0, 0, 0, 0, 0)), reg.coordForSystem(1));
@@ -426,8 +427,8 @@ public class UniverseRegistryTest {
         round.readFromNBT(tag);
 
         // The latch survived, so a fresh anchor drain is ignored (persisted store wins across restarts).
-        Map<Integer, GalacticCoord> anchors = new HashMap<>();
-        anchors.put(3, GalacticCoord.ofSectorLocal(3, 0, 0, 0, 0, 0));
+        Map<Integer, GalacticAnchor> anchors = new HashMap<>();
+        anchors.put(3, GalacticAnchor.inHome(GalacticCoord.ofSectorLocal(3, 0, 0, 0, 0, 0)));
         round.applyAnchors(anchors, false);
         assertFalse("a restart must not re-seed anchors over the persisted store",
                 round.coordForSystem(3).isPresent());

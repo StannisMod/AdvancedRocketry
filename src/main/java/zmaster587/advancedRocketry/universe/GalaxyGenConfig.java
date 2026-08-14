@@ -123,6 +123,38 @@ public final class GalaxyGenConfig {
     }
 
     /**
+     * A weighted STAR-CLUSTER archetype — the same seat one level DOWN, and the third table of the
+     * same shape.
+     *
+     * <p>The stratified lattice reads correctly as randomness but produces no GROUPS, and groups are
+     * what a real sky has: the lattice caps density at roughly three times the mean, while an open
+     * cluster runs tens of times the field. A cluster is therefore a seated object like a galaxy and
+     * like a system, and inside it the star lattice is finer.</p>
+     *
+     * <p><b>{@code subdivision} is what makes this cheap rather than a graded spacing.</b> The fine
+     * lattice divides each coarse super-cell into {@code k³} parts, so it tiles the coarse cells it
+     * replaces exactly — there is no boundary pathology and nothing has to be re-proved per ring.
+     * Density inside a cluster is {@code k³} times the field.</p>
+     */
+    public static final class ClusterType {
+        public final String name;
+        /** {@code k}: how many parts each coarse super-cell is divided into, per axis. */
+        public final int subdivision;
+        public final double minRadiusLy;
+        public final double maxRadiusLy;
+        public final int weight;
+
+        public ClusterType(String name, int subdivision, double minRadiusLy, double maxRadiusLy,
+                           int weight) {
+            this.name = (name == null || name.isEmpty()) ? "CLUSTER" : name;
+            this.subdivision = Math.max(1, subdivision);
+            this.minRadiusLy = Math.max(0.01d, minRadiusLy);
+            this.maxRadiusLy = Math.max(this.minRadiusLy, maxRadiusLy);
+            this.weight = Math.max(1, weight);
+        }
+    }
+
+    /**
      * Per-super-cell occupancy probability, before the owning galaxy's profile scales it. It is the
      * density AT A GALAXY'S DENSEST POINT, not an average over space: outside a galaxy the profile is
      * zero and no value here places a system.
@@ -141,6 +173,13 @@ public final class GalaxyGenConfig {
     public final List<StarType> starTypes;
     /** Galaxy archetypes sampled by weight when a galaxy is seated (never empty). */
     public final List<GalaxyType> galaxyTypes;
+    /** Star-cluster archetypes sampled by weight when a cluster is seated (never empty). */
+    public final List<ClusterType> clusterTypes;
+    /**
+     * Galaxy cells that hold a galaxy WHATEVER the hash says — every key authored content is declared
+     * against. Always contains {@link GalaxyKey#HOME}: a pack that names no galaxy still has one.
+     */
+    public final List<GalaxyKey> reservedGalaxies;
 
     /**
      * Each lattice states its EDGE and then its OCCUPANCY, stars first and galaxies second, so the two
@@ -148,6 +187,12 @@ public final class GalaxyGenConfig {
      */
     public GalaxyGenConfig(int minSpacing, double density, long galaxySpacing, double galaxyDensity,
                            List<StarType> starTypes, List<GalaxyType> galaxyTypes) {
+        this(minSpacing, density, galaxySpacing, galaxyDensity, starTypes, galaxyTypes, null);
+    }
+
+    public GalaxyGenConfig(int minSpacing, double density, long galaxySpacing, double galaxyDensity,
+                           List<StarType> starTypes, List<GalaxyType> galaxyTypes,
+                           List<GalaxyKey> reservedGalaxies) {
         this.density = clamp01(density);
         this.minSpacing = Math.max(1, minSpacing);
         this.galaxySpacing = Math.max(1L, galaxySpacing);
@@ -158,6 +203,27 @@ public final class GalaxyGenConfig {
         this.galaxyTypes = (galaxyTypes == null || galaxyTypes.isEmpty())
                 ? defaultGalaxyTypes()
                 : Collections.unmodifiableList(new ArrayList<>(galaxyTypes));
+        this.clusterTypes = defaultClusterTypes();
+        List<GalaxyKey> reserved = new ArrayList<>();
+        reserved.add(GalaxyKey.HOME);
+        if (reservedGalaxies != null) {
+            for (GalaxyKey key : reservedGalaxies) {
+                if (key != null && !reserved.contains(key)) {
+                    reserved.add(key);
+                }
+            }
+        }
+        this.reservedGalaxies = Collections.unmodifiableList(reserved);
+    }
+
+    /**
+     * The same configuration, reserving these galaxy cells as well. Authored anchors are discovered
+     * while the catalogue is walked, which is after {@code <galaxyGen>} has been read — so the keys
+     * they name are folded in here rather than parsed twice.
+     */
+    public GalaxyGenConfig withReservedGalaxies(List<GalaxyKey> keys) {
+        return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, starTypes,
+                galaxyTypes, keys);
     }
 
     /** A sparse, strongly-clustered default galaxy. */
@@ -190,6 +256,38 @@ public final class GalaxyGenConfig {
         l.add(new GalaxyType("Elliptical", GalaxyProfile.SPHEROID, 1500d, 3500d, 0.60d, 0, 40d, 0.50d, 1));
         return Collections.unmodifiableList(l);
     }
+
+    /**
+     * The stock cluster table.
+     *
+     * <p><b>The subdivisions are NOT the real-galaxy ones, and the reason is the scale choice one
+     * level up.</b> A real nucleus runs about 10⁷ times the field density, i.e. {@code k = 215}. That
+     * number belongs to a galaxy of 10¹¹ stars; ours is compressed in RADIUS while the star separation
+     * stays real, so it holds of the order of a million — and a 5-light-year nucleus at {@code k = 215}
+     * would hold ninety times its own galaxy's entire population. {@code k = 25} puts a nucleus at
+     * about a tenth of its galaxy, which is what a real nuclear bulge is. Star separation is the
+     * primary quantity here and the galaxy accommodates it; the contrast has to follow that choice
+     * rather than be imported from the uncompressed world.</p>
+     */
+    private static List<ClusterType> defaultClusterTypes() {
+        List<ClusterType> l = new ArrayList<>();
+        //                        name          k    radius band (ly)   weight
+        l.add(new ClusterType("Open Cluster", 4, 5d, 15d, 80));
+        l.add(new ClusterType("Globular Cluster", 14, 20d, 40d, 20));
+        return Collections.unmodifiableList(l);
+    }
+
+    /**
+     * The cluster every galaxy has at its own centre — the richest one, and no special case: it is a
+     * cluster like the others, drawn at the galaxy's centre instead of on the cluster lattice.
+     */
+    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 25, 4d, 8d, 1);
+
+    /** Edge of the cube that holds at most one cluster, in light years. */
+    public static final double CLUSTER_SPACING_LY = 300d;
+
+    /** Fraction of those cubes that hold a cluster, before the galaxy's own profile scales it. */
+    public static final double CLUSTER_DENSITY = 0.35d;
 
     private static double clamp01(double v) {
         if (Double.isNaN(v) || v < 0d) {

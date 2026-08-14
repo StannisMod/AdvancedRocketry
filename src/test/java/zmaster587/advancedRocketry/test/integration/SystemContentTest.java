@@ -154,8 +154,14 @@ public class SystemContentTest {
                         GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
                         null, null));
         long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
-        Optional<GalacticCoord> seat = gen.anchorAt(0xBEEFL,
-                GalacticCoord.ofSectorLocal(spacing, spacing, spacing, 0L, 0L, 0L));
+        // SWEEP for an occupied super-cell rather than demanding one particular cube. Occupancy is a
+        // draw scaled by the galaxy's profile, so any single cube is a coin toss and a fixture that
+        // insists on one is testing the coin.
+        Optional<GalacticCoord> seat = Optional.empty();
+        for (long i = 1; i <= 8 && !seat.isPresent(); i++) {
+            seat = gen.anchorAt(0xBEEFL,
+                    GalacticCoord.ofSectorLocal(i * spacing, spacing, spacing, 0L, 0L, 0L));
+        }
         assertTrue("the fixture needs an occupied super-cell", seat.isPresent());
         int compared = 0;
         for (SystemBody b : gen.bodiesFor(0xBEEFL, seat.get())) {

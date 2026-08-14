@@ -4791,7 +4791,7 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             long r = parseIntOr(args[1], 8);
-            long s = Math.max(1L, zmaster587.advancedRocketry.universe.UniverseRegistry.generator()
+            long s = Math.max(1L, zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
                     .minSpacingCells());
             for (long x = -r; x <= r; x++) {
                 for (long y = -r; y <= r; y++) {

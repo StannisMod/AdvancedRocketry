@@ -16,7 +16,9 @@ import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.dimension.TerrainSource;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalacticAnchor;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
+import zmaster587.advancedRocketry.universe.GalaxyKey;
 import zmaster587.advancedRocketry.universe.IGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.advancedRocketry.util.XMLPlanetLoader;
@@ -529,6 +531,108 @@ public class XMLPlanetLoaderTest {
         assertEquals(2, c.galaxyGenConfig.starTypes.size());
         assertEquals(55, c.galaxyGenConfig.starTypes.get(0).temperature);
         assertEquals(3, c.galaxyGenConfig.starTypes.get(0).weight);
+    }
+
+    @Test
+    public void galaxyTypeChildrenReplaceTheStockTable() throws Exception {
+        // The one table a pack is most likely to want to touch, and the reason it is authorable at
+        // all: how flat a disc is has no derivation — it is a free parameter of the shape.
+        DimensionPropertyCoupling c = parse(galaxy(
+                "<galaxyGen density=\"0.4\" minSpacing=\"7\">\n"
+                        + "  <galaxyType name=\"Fat Disc\" profile=\"DISC\" minRadius=\"1000\""
+                        + " maxRadius=\"1800\" thickness=\"0.25\" arms=\"3\" rotationSpeed=\"180\""
+                        + " coreFraction=\"0.2\" weight=\"5\"/>\n"
+                        + "</galaxyGen>\n"));
+        assertNotNull(c.galaxyGenConfig);
+        assertEquals("one <galaxyType> must REPLACE the stock table, not extend it", 1,
+                c.galaxyGenConfig.galaxyTypes.size());
+        GalaxyGenConfig.GalaxyType t = c.galaxyGenConfig.galaxyTypes.get(0);
+        assertEquals("Fat Disc", t.name);
+        assertEquals(GalaxyGenConfig.GalaxyProfile.DISC, t.profile);
+        assertEquals(1000d, t.minRadiusLy, 1e-9);
+        assertEquals(1800d, t.maxRadiusLy, 1e-9);
+        assertEquals("disc thickness must be what the pack asked for", 0.25d, t.scaleHeightRatio, 1e-9);
+        assertEquals(3, t.armCount);
+        assertEquals(180d, t.rotationSpeedKmS, 1e-9);
+        assertEquals(0.2d, t.coreRadiusFraction, 1e-9);
+        assertEquals(5, t.weight);
+    }
+
+    @Test
+    public void galaxyTypesRoundTripThroughWriteXml() throws IOException {
+        // This file is REWRITTEN on every world save, so a table the writer does not emit is a table a
+        // pack silently loses the first time anybody saves.
+        GalaxyGenConfig parsed = parse(galaxy(
+                "<galaxyGen density=\"0.3\" minSpacing=\"9\">\n"
+                        + "  <galaxyType name=\"Thin\" profile=\"DISC\" thickness=\"0.005\" arms=\"4\""
+                        + " weight=\"2\"/>\n"
+                        + "  <galaxyType name=\"Blob\" profile=\"SPHEROID\" thickness=\"0.9\" arms=\"0\""
+                        + " weight=\"11\"/>\n"
+                        + "</galaxyGen>\n")).galaxyGenConfig;
+        try {
+            UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(parsed));
+            String written = XMLPlanetLoader.writeXML(DimensionManager.getInstance());
+            File f = tempFolder.newFile();
+            Files.write(f.toPath(), written.getBytes(StandardCharsets.UTF_8));
+            XMLPlanetLoader loader = new XMLPlanetLoader();
+            assertTrue(loader.loadFile(f));
+            GalaxyGenConfig round = loader.readAllPlanets().galaxyGenConfig;
+
+            assertNotNull(round);
+            assertEquals(2, round.galaxyTypes.size());
+            assertEquals("Thin", round.galaxyTypes.get(0).name);
+            assertEquals(0.005d, round.galaxyTypes.get(0).scaleHeightRatio, 1e-9);
+            assertEquals(GalaxyGenConfig.GalaxyProfile.SPHEROID, round.galaxyTypes.get(1).profile);
+            assertEquals(11, round.galaxyTypes.get(1).weight);
+        } finally {
+            UniverseRegistry.setGenerator(null);
+        }
+    }
+
+    @Test
+    public void anAuthoredAnchorIsDeclaredAgainstAGalaxy() throws Exception {
+        // A galaxy fills about three thousandths of a percent of its own lattice cell, so an absolute
+        // declaration would land in intergalactic space on virtually every seed. An unqualified
+        // declaration means `home`, which is what a pack that never thinks about galaxies gets.
+        DimensionPropertyCoupling c = parse(galaxy(
+                "<galaxyGen density=\"0.4\" minSpacing=\"7\"/>\n"
+                        + "<star name=\"Sol\" temp=\"100\" x=\"0\" y=\"0\" size=\"1.0\""
+                        + " galacticCoord=\"0,0,0\"/>\n"
+                        + "<star name=\"Far\" temp=\"100\" x=\"0\" y=\"0\" size=\"1.0\""
+                        + " galaxy=\"4,-1,2\" galacticCoord=\"500,0,0\"/>\n"));
+        assertEquals(2, c.anchorCoords.size());
+        GalacticAnchor sol = c.anchorCoords.get(c.stars.get(0).getId());
+        GalacticAnchor far = c.anchorCoords.get(c.stars.get(1).getId());
+        assertTrue("an unqualified anchor lives in the home galaxy", sol.galaxy().isHome());
+        assertEquals(GalaxyKey.of(4L, -1L, 2L), far.galaxy());
+        assertEquals(500L, far.local().sectorX());
+
+        assertEquals("every non-home galaxy an anchor named must be reserved", 1,
+                c.declaredGalaxies.size());
+        assertTrue("and the config must carry it, so its cell is seated on every seed",
+                c.galaxyGenConfig.reservedGalaxies.contains(GalaxyKey.of(4L, -1L, 2L)));
+    }
+
+    @Test
+    public void theWrittenCatalogueTellsAnAuthorWhatItCostsToEditIt() throws Exception {
+        // Both facts are otherwise discoverable only from source, and by then the damage is done: the
+        // system is already in the void, or the universe is already rerolled under a live save. The
+        // WRITER emits it, because this file is rewritten on every save and a shipped template would
+        // be replaced by the first one.
+        String written = XMLPlanetLoader.writeXML(DimensionManager.getInstance());
+        assertTrue("the written catalogue must say an anchor is galaxy-local: " + written,
+                written.contains("GALAXY-LOCAL"));
+        assertTrue("and that the home galaxy always exists",
+                written.contains("home") && written.contains("800 light years"));
+        assertTrue("and that changing a generator parameter mid-save is undefined",
+                written.contains("UNDEFINED BEHAVIOUR"));
+
+        // And it must still be a document that parses, or the notice would cost the catalogue.
+        File f = tempFolder.newFile();
+        Files.write(f.toPath(), written.getBytes(StandardCharsets.UTF_8));
+        XMLPlanetLoader loader = new XMLPlanetLoader();
+        assertTrue("a catalogue carrying the notice must still load", loader.loadFile(f));
+        assertNotNull(loader.readAllPlanets());
     }
 
     @Test
