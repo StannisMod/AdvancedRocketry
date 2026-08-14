@@ -25,6 +25,7 @@ public class AtmosphereType implements IAtmosphere {
     public static final AtmosphereType AIR = new AtmosphereType(false, true, "air");
     public static final AtmosphereType PRESSURIZEDAIR = new AtmosphereType(false, true, true, "PressurizedAir");
     public static final AtmosphereType LOWOXYGEN = new AtmosphereLowOxygen(true, false, true, "lowO2");
+    public static final AtmosphereType HIGHOXYGEN = new AtmosphereHighOxygen(true, false, true, "highO2");
     public static final AtmosphereType VACUUM = new AtmosphereVacuum();
     public static final AtmosphereType HIGHPRESSURE = new AtmosphereHighPressure(true, false, true, "HighPressure");
     public static final AtmosphereType SUPERHIGHPRESSURE = new AtmosphereSuperHighPressure(true, false, true, "SuperHighPressure");
@@ -41,6 +42,7 @@ public class AtmosphereType implements IAtmosphere {
         AtmosphereRegister.getInstance().registerAtmosphere(PRESSURIZEDAIR);
         AtmosphereRegister.getInstance().registerAtmosphere(VACUUM);
         AtmosphereRegister.getInstance().registerAtmosphere(LOWOXYGEN);
+        AtmosphereRegister.getInstance().registerAtmosphere(HIGHOXYGEN);
         AtmosphereRegister.getInstance().registerAtmosphere(HIGHPRESSURE);
         AtmosphereRegister.getInstance().registerAtmosphere(SUPERHIGHPRESSURE);
         AtmosphereRegister.getInstance().registerAtmosphere(VERYHOT);

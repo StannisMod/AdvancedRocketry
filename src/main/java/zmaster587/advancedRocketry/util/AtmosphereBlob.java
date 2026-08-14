@@ -12,6 +12,7 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AreaBlob;
 import zmaster587.advancedRocketry.api.util.IBlobHandler;
+import zmaster587.advancedRocketry.atmosphere.AirState;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.network.PacketAirParticle;
 import zmaster587.libVulpes.network.PacketHandler;
@@ -32,14 +33,26 @@ public class AtmosphereBlob extends AreaBlob implements Runnable {
     private boolean executing;
     private HashedBlockPosition blockPos;
     private List<AreaBlob> nearbyBlobs;
+    /** The gases filling this zone. Starts sea-level breathable, which is the pressure this
+     *  method reported as a constant before zones had contents. */
+    private AirState airState = AirState.earthLike();
 
     public AtmosphereBlob(@Nonnull IBlobHandler blobHandler) {
         super(blobHandler);
         executing = false;
     }
 
+    @Nonnull
+    public AirState getAirState() {
+        return airState;
+    }
+
+    public void setAirState(@Nonnull AirState airState) {
+        this.airState = airState;
+    }
+
     public int getPressure() {
-        return 100;
+        return airState.getPressureCentiAtm();
     }
 
     /**

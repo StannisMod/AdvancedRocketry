@@ -18,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 import zmaster587.advancedRocketry.api.atmosphere.AtmosphereRegister;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry;
 import zmaster587.advancedRocketry.api.fuel.FuelRegistry.FuelType;
+import zmaster587.advancedRocketry.atmosphere.AirState;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereVacuum;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.integration.MatterOvedriveIntegration;
@@ -259,6 +260,14 @@ public class ARConfiguration {
     @ConfigProperty
     public int oxygenVentSize;
     @ConfigProperty
+    public boolean lifeSupportZones;
+    @ConfigProperty
+    public int lifeSupportMinPartialO2;
+    @ConfigProperty
+    public int lifeSupportMaxPartialO2;
+    @ConfigProperty
+    public int lifeSupportRespirationRate;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -497,6 +506,10 @@ public class ARConfiguration {
         arConfig.spaceSuitOxygenTime = config.get(OXYGEN, "spaceSuitO2Buffer", 30, "Maximum suit O2 buffer time in minutes.").getInt();
         arConfig.suitTankCapacity = (float) config.get(OXYGEN, "suitTankCapacity", 1.0f, "Multiplier for suit extra tank capacity.", 0, Float.MAX_VALUE).getDouble();
         arConfig.scrubberRequiresCartrige = config.get(OXYGEN, "scrubberRequiresCartrige", true, "Require cartridges for oxygen scrubbers.").getBoolean();
+        arConfig.lifeSupportZones = config.get(OXYGEN, "lifeSupportZones", true, "Track nitrogen/oxygen/CO2 separately inside a sealed zone: crew consume O2 and exhale CO2, and the breathability of the room follows its oxygen partial pressure. When false a sealed zone behaves exactly as it did before, with a fixed breathable atmosphere.").getBoolean();
+        arConfig.lifeSupportMinPartialO2 = config.get(OXYGEN, "lifeSupportMinPartialO2", 160000, "Oxygen partial pressure below which a zone stops being breathable, in millionths of an atmosphere (210000 is sea-level air).", 0, AirState.ONE_ATM).getInt();
+        arConfig.lifeSupportMaxPartialO2 = config.get(OXYGEN, "lifeSupportMaxPartialO2", 300000, "Oxygen partial pressure above which a zone becomes toxic and fire-prone, in millionths of an atmosphere.", 0, AirState.ONE_ATM).getInt();
+        arConfig.lifeSupportRespirationRate = config.get(OXYGEN, "lifeSupportRespirationRate", 2000, "Oxygen a single crew member turns into CO2 each second, in millionths of an atmosphere times the zone volume in blocks. Larger rooms therefore last proportionally longer.", 0, Integer.MAX_VALUE).getInt();
         arConfig.dropExTorches = config.get(OXYGEN, "dropExtinguishedTorches", false, "Drop an extinguished torch instead of a vanilla torch, when breaking an extinguished torch.").getBoolean();
         sealableBlockWhiteList = config.getStringList("sealableBlockWhiteList", OXYGEN, new String[]{}, "Blocks that should count as sealable. Format: modid:block  for example \"minecraft:chest\"");
         sealableBlockBlackList = config.getStringList("sealableBlockBlackList", OXYGEN, new String[]{}, "Blocks that should not count as sealable.  Format: modid:block  for example \"minecraft:chest\"");
