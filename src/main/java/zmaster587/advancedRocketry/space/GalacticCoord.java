@@ -88,10 +88,11 @@ public final class GalacticCoord {
     public int localY() { return localY; }
     public int localZ() { return localZ; }
 
-    /** Absolute X in blocks. May overflow {@code long} at extreme sector magnitudes (see class doc). */
-    public long absoluteX() { return sectorX * CELL + localX; }
-    public long absoluteY() { return sectorY * CELL + localY; }
-    public long absoluteZ() { return sectorZ * CELL + localZ; }
+    // absoluteX/Y/Z — sector * CELL + local — are gone. A sector index reaches 9.2e18 while the
+    // product overflows at 2.9e11, so they could NAME a position they could not express, silently,
+    // over seven orders of magnitude. Nothing materialises a single global block absolute any more:
+    // a distance comes from the sector delta plus the offset delta (staticFrameDistanceTo below, or
+    // AbsolutePos for a position at a tick), which is exact nearby and cannot overflow far away.
 
     /** {@code true} iff {@code other} is in the same cell (equal sector triple) as this coordinate. */
     public boolean sameCell(GalacticCoord other) {

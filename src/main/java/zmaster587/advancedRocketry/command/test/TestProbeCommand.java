@@ -3253,10 +3253,22 @@ public class TestProbeCommand extends CommandBase {
                                 // "bearing", not "dir": the feed below already emits a "dir" per
                                 // body, measured from the CELL's observer for the sky, and a reader
                                 // matching on the substring could not tell the two apart.
+                                // Taken as a sector delta plus an offset delta, never as the
+                                // difference of two whole-block absolutes: those cannot express the
+                                // coordinates the sector grid can name.
                                 .append(",\"bearing\":[")
-                                .append(bodyAt.absoluteX() - e.coord.absoluteX()).append(',')
-                                .append(bodyAt.absoluteY() - e.coord.absoluteY()).append(',')
-                                .append(bodyAt.absoluteZ() - e.coord.absoluteZ()).append(']')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dx()).append(',')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dy()).append(',')
+                                .append(zmaster587.advancedRocketry.space.AbsolutePos
+                                        .ofCellName(bodyAt).minus(
+                                                zmaster587.advancedRocketry.space.AbsolutePos
+                                                        .ofCellName(e.coord)).dz()).append(']')
                                 .append(",\"distance\":")
                                 .append((long) Math.sqrt(e.coord.staticFrameDistanceSqTo(bodyAt)))
                                 // "distance" is to the body's CENTRE — what the descent trigger
@@ -4543,8 +4555,9 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.AbsolutePos origin =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.cellFrameOriginAt(name, clock);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + name.cellKey() + "\",\"clock\":" + clock
-                    + ",\"originX\":" + origin.x() + ",\"originY\":" + origin.y()
-                    + ",\"originZ\":" + origin.z() + "}");
+                    + ",\"originSector\":[" + origin.sectorX() + "," + origin.sectorY() + ","
+                    + origin.sectorZ() + "],\"originOffset\":[" + origin.localX() + ","
+                    + origin.localY() + "," + origin.localZ() + "]}");
             return;
         }
         // forget-name <dimId>: drop the RECORDED cell name of a dimension, so the next query has to
