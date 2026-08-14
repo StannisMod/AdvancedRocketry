@@ -28,6 +28,7 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     private static final int CX_FRESH = 2000;
     private static final int CX_UNPOWERED = 2200;
     private static final int CX_RECIRC = 2400;
+    private static final int CX_SEPARATOR = 2600;
 
     /** A maintained zone starts as sea-level air, and reports the pressure the mod has always
      *  reported for a pressurised room. This is the probe's own grounding: if it lied, the two
@@ -106,6 +107,37 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
                 slot.contains("advancedrocketry:carbondust"));
     }
 
+    /** MECH-ATM-21 split: a separator standing in a stale room draws its CO2 into its own tank.
+     *  The unit tests prove the arithmetic; this proves the machine finds the room at all, which
+     *  is precisely what the recirculator got wrong twice. */
+    @Test
+    public void aSeparatorDrawsItsRoomsCarbonDioxideIntoItsTank() throws Exception {
+        buildSealableRoom(CX_SEPARATOR);
+        placeVent(CX_SEPARATOR);
+        injectEnergy(CX_SEPARATOR, 1_000_000);
+        injectOxygen(CX_SEPARATOR, 16000);
+        forceTickAndReseal(CX_SEPARATOR);
+
+        String set = exec("artest vent setair 0 " + CX_SEPARATOR + " " + CY_BASE + " " + CZ_BASE
+                + " 790000 60000 150000");
+        assertTrue("setair failed: " + set, set.contains("\"ok\":true"));
+
+        placeSeparator(CX_SEPARATOR);
+        injectEnergyAt(CX_SEPARATOR + 1, 1_000_000);
+        exec("artest tile force-tick 0 " + (CX_SEPARATOR + 1) + " " + CY_BASE + " " + CZ_BASE + " 200");
+
+        String after = ventInfo(CX_SEPARATOR);
+        int co2After = extract(after, AIR_CO2);
+        assertTrue("the separator must pull CO2 out of the room (before=150000 after="
+                + co2After + "): " + after, co2After < 150_000);
+        assertEquals("and must not touch the oxygen the crew are breathing: " + after,
+                60_000, extract(after, AIR_O2));
+
+        String tank = exec("artest fluid stored 0 " + (CX_SEPARATOR + 1) + " " + CY_BASE + " " + CZ_BASE);
+        assertTrue("the gas it removed must be in its tank as carbon dioxide: " + tank,
+                tank.contains("carbon_dioxide"));
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────
 
     private void buildSealableRoom(int cx) throws Exception {
@@ -142,9 +174,19 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     }
 
     private void injectEnergy2(int cx, int amount) throws Exception {
-        String resp = exec("artest energy inject 0 " + (cx + 1) + " " + CY_BASE + " " + CZ_BASE
+        injectEnergyAt(cx + 1, amount);
+    }
+
+    private void injectEnergyAt(int x, int amount) throws Exception {
+        String resp = exec("artest energy inject 0 " + x + " " + CY_BASE + " " + CZ_BASE
                 + " " + amount);
-        assertTrue("recirculator energy inject failed: " + resp, resp.contains("\"ok\":true"));
+        assertTrue("energy inject failed at " + x + ": " + resp, resp.contains("\"ok\":true"));
+    }
+
+    private void placeSeparator(int cx) throws Exception {
+        String resp = exec("artest place 0 " + (cx + 1) + " " + CY_BASE + " " + CZ_BASE
+                + " advancedrocketry:gasSeparator");
+        assertTrue("separator place failed: " + resp, resp.contains("\"placed\":true"));
     }
 
     private void injectOxygen(int cx, int amount) throws Exception {
