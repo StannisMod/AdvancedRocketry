@@ -104,9 +104,11 @@ It is not released, and while it is in development:
 The mod adds its own dimensions, worldgen and ore-processing chain, so it takes up room in a pack. Each major
 system has a config switch, including worldgen, planet weather and the whole 3.0.0 space subsystem.
 
-Planets, stars and ores are configured in XML, with references and templates in [`docs/`](docs/):
+Planets, stars, the procedural galaxy and ores are configured in XML, with references and templates
+in [`docs/`](docs/):
 
 - planetDefs — [reference](docs/README_PLANETDEFS.md) · [template](docs/TEMPLATE_planetdefs.xml)
+  — every element and attribute, its unit, and what wins when two of them disagree
 - oreConfig — [reference](docs/README_ORECONFIG.md) · [template](docs/TEMPLATE_oreconfig.xml)
 
 Coming from an older 2.x build: commands moved into subcommands, so **command scripts and quest-book command
