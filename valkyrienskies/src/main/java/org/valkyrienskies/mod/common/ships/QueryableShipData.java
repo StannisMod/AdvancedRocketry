@@ -63,6 +63,10 @@ public class QueryableShipData implements Iterable<ShipData> {
         });
         this.allShips.addIndex(UpdatableHashIndex.onAttribute(ShipData.NAME));
         this.allShips.addIndex(UpdatableUniqueIndex.onAttribute(ShipData.UUID));
+        // HASH, not UNIQUE: null is the ordinary value here (every craft Advanced Rocketry does not
+        // own), and this index exists so translating its durable id into a ship is a probe rather than
+        // a walk over every registered ship.
+        this.allShips.addIndex(UpdatableHashIndex.onAttribute(ShipData.AR_DURABLE_ID));
         this.allShips.addIndex(UpdatableUniqueIndex.onAttribute(ShipData.CHUNKS));
     }
 
@@ -118,6 +122,37 @@ public class QueryableShipData implements Iterable<ShipData> {
             } else {
                 return Optional.of(resultSet.uniqueResult());
             }
+        }
+    }
+
+    /**
+     * The ship carrying Advanced Rocketry's DURABLE id {@code arDurableId}, or empty.
+     *
+     * <p>Indexed like {@link #getShip(UUID)} rather than searched: AR keys its transits, its ledger
+     * and its aboard tags by an id its flight computer persists, this mod keys everything by
+     * {@link ShipData#getUuid()}, and a caller holding the first one used to have to fall back to
+     * asking which ship is NEAREST a point. That is exact until the world holds a second craft and
+     * silently wrong afterwards, so the translation has to be cheap enough that nobody is tempted.</p>
+     *
+     * <p>Not unique-indexed on purpose: {@code null} is the ordinary value for every craft AR does not
+     * own, and a unique index over a mostly-null attribute is a trap. Two ships genuinely sharing a
+     * durable id would be a bug in whoever bound them, and is reported rather than thrown.</p>
+     */
+    public Optional<ShipData> getShipFromArDurableId(UUID arDurableId) {
+        if (arDurableId == null) {
+            return Optional.empty();
+        }
+        Query<ShipData> query = equal(ShipData.AR_DURABLE_ID, arDurableId);
+        try (ResultSet<ShipData> resultSet = allShips.retrieve(query)) {
+            if (resultSet.isEmpty()) {
+                return Optional.empty();
+            }
+            if (resultSet.size() > 1) {
+                log.error("Two or more ships claim the same Advanced Rocketry durable id {} - refusing "
+                    + "to guess which one a caller meant. Whoever bound the second one has a bug.", arDurableId);
+                return Optional.empty();
+            }
+            return Optional.of(resultSet.uniqueResult());
         }
     }
 

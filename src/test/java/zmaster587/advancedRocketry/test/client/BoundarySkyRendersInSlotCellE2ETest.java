@@ -85,17 +85,17 @@ import static org.junit.Assert.assertTrue;
  *       would be an empty frame blamed on production. This is what separates "the renderer draws
  *       nothing" from "the renderer is never called", and it has already earned its place twice — once
  *       catching a capture that held only the HUD, once catching an altitude-dependent sky.</li>
- *   <li><b>Boundary ring</b> — at the horizon, pixels differing from the background in a thin band
- *       across the middle of the frame, against the SAME measurement in a strip near the top. The ring
- *       is a band at the camera's horizon, so a uniformly tinted frame scores equally in both strips and
- *       fails the difference.</li>
  *   <li><b>Each aimed body, by exact cancellation</b> — two captures from the IDENTICAL camera
  *       direction, one before any body exists and one after all six do. The sky here is camera-centred,
- *       so every other pixel (stars, ring) is bit-identical between them and the differing pixels are
+ *       so every other pixel (the starfield) is bit-identical between them and the differing pixels are
  *       the billboards and nothing else.</li>
  *   <li><b>The same aim vs an empty bearing</b> — a direction more than 100 degrees from every body in
  *       the cell (chosen by geometry, not by hope) must NOT gain a billboard when the bodies are
  *       registered, and must not look like the aimed frames do.</li>
+ *   <li><b>The atmosphere boundary, by exact count</b> — one per DESCEND TARGET and none for anything
+ *       else, read off the renderer's own per-frame counter. The fixture is what makes it a real
+ *       measurement: six bodies of which five are descend targets, so "one per body" reads 6 and
+ *       "none drawn" reads 0, and only the correct renderer reads 5.</li>
  *   <li><b>Starfield</b> — pixels differing from the background in the upper part of the empty-bearing
  *       frame, which holds no ring and no body, i.e. the cell is not an empty void.</li>
  * </ol>
@@ -126,7 +126,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      *
      * <p>Distances and count are the live set (2 961 / 28 275 / 34 985 / 39 050 / 54 713 / 59 255 blocks);
      * the bearings are spread so that the closest pair is 45 degrees apart and every body sits at least
-     * 20 degrees off the horizon, i.e. clear of the boundary ring band. A gas giant with no dimension of
+     * 20 degrees off the horizon, so no two billboards can overlap in one aimed frame. A gas giant with no dimension of
      * its own is included because it is NOT a descend target and takes the other billboard size — the
      * feed carries both kinds and so must the subject.</p>
      */
@@ -158,7 +158,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
 
     /**
      * A bearing with nothing in it: more than 100 degrees from every body above, and 22 degrees off the
-     * horizon so the boundary ring cannot reach the middle of the frame. This is the "aimed away"
+     * horizon, so the middle of the frame is bare sky. This is the "aimed away"
      * control, and it has to be derived from the same geometry as the bodies — with six of them in the
      * sky, the antipode of one body can easily be another.
      */
@@ -201,7 +201,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     }
 
     @Test
-    public void aPilotInASlotCellSeesTheRingTheBodiesAndStars() throws Exception {
+    public void aPilotInASlotCellSeesTheBodiesAndStars() throws Exception {
         outDir = Paths.get(System.getProperty("forge.test.client.screenshotDir", "build/test-screenshots"))
                 .toAbsolutePath();
         Files.createDirectories(outDir);
@@ -232,7 +232,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         boolean previousHud = bot().setHudHidden(true).get("previous").getAsBoolean();
 
         BufferedImage overworldZenith;
-        BufferedImage horizon;
+        BufferedImage slotFirstFrame;
         BufferedImage[] before = new BufferedImage[SYSTEM.length];
         BufferedImage[] after = new BufferedImage[SYSTEM.length];
         BufferedImage emptyBefore;
@@ -240,6 +240,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
         int slotDim;
         int labelsWithNoBodies = -1;
         int labelsWithBodies = -1;
+        int boundariesWithNoBodies = -1;
+        int boundariesWithBodies = -1;
         try {
             // --- Control FIRST: is the sky pass running at all? Above the clouds so nothing but sky is
             // in frame.
@@ -286,11 +288,16 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             assertTrue("no body may be synced for the slot yet, got: " + clientBodies(),
                     !clientBodies().contains(slotDim + "=[RenderBody{"));
 
-            horizon = capture(slotDim, CELL_CAPTURE_Y, 90f, 0f, "horizon_ring");
+            // Load-bearing even though nothing asserts on its pixels: it forces ONE rendered frame in
+            // the slot dim with no body registered yet, which is what makes the label counter read
+            // below a reading about THIS cell rather than about the overworld frame before it. It also
+            // supplies the frame dimensions the size sanity check uses.
+            slotFirstFrame = capture(slotDim, CELL_CAPTURE_Y, 90f, 0f, "slot_first_frame");
             // How many body labels the client's LAST FRAME wrote, with no body in the cell yet. The
             // control for the label leg: a counter that is non-zero here is counting something other
             // than this cell's bodies.
             labelsWithNoBodies = labelsDrawn();
+            boundariesWithNoBodies = boundariesDrawn();
             // A before-frame on each body's bearing, plus one on the empty bearing. Only the two aimed
             // bodies are measured, but capturing all of them costs one frame each and makes a later
             // "which body failed" question answerable from the artefacts.
@@ -338,32 +345,16 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             }
             emptyAfter = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "after_empty");
             labelsWithBodies = labelsDrawn();
+            boundariesWithBodies = boundariesDrawn();
         } finally {
             bot().setHudHidden(previousHud);
             bot().setFramebuffer(previousFbo);
             bot().setRenderDistance(previousRenderDistance);
         }
 
-        int w = horizon.getWidth();
-        int h = horizon.getHeight();
+        int w = slotFirstFrame.getWidth();
+        int h = slotFirstFrame.getHeight();
         assertTrue("captures must be a real frame, got " + w + "x" + h, w >= 320 && h >= 240);
-
-        // ---------------------------------------------------------------- Leg 1: the boundary ring.
-        // The ring is a band at the camera's horizon: BOUNDARY_HEIGHT/BOUNDARY_RADIUS subtends about
-        // +-3.4 degrees, which on a 70-degree vertical FOV is about +-4.9% of the frame height. Sample
-        // well inside that (+-3.5%), and control against a strip near the top the band cannot reach.
-        int aboveTop = (int) (0.10 * h);
-        int aboveBottom = (int) (0.17 * h);
-        int background = modalColour(horizon, 0, w, aboveTop, aboveBottom);
-        double ringBand = differsFrom(horizon, 0, w, (int) (0.465 * h), (int) (0.535 * h), background);
-        double ringAbove = differsFrom(horizon, 0, w, aboveTop, aboveBottom, background);
-        String ringWitness = "band=" + pct(ringBand) + " above=" + pct(ringAbove)
-                + " background=" + rgb(background) + " " + describe(horizon)
-                + " (" + outDir.resolve("horizon_ring.png") + ")";
-        assertTrue("the descent boundary ring must mark the horizon band; " + ringWitness,
-                ringBand >= 0.30);
-        assertTrue("the ring must be a BAND, not a uniformly tinted frame; " + ringWitness,
-                ringBand - ringAbove >= 0.20);
 
         // ------------------------------------------- Leg 2: each aimed body, by exact cancellation.
         // Same camera, same starfield, same ring - only the body data changed, so any pixel that differs
@@ -419,8 +410,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 + outDir.resolve("after_empty.png") + ")", emptyCentre <= 0.05);
 
         // ------------------------------------------------------------------------ Leg 4: the starfield.
-        // The empty-bearing frame holds no body, and at 22 degrees of pitch the ring band is well below
-        // the upper part of it - so anything that is not the background up here is the sky itself.
+        // The empty-bearing frame holds no body and nothing else is drawn in a cell sky, so anything
+        // that is not the background up here is the starfield itself.
         int starTop = (int) (0.40 * h);
         int starBackground = modalColour(emptyAfter, 0, w, 0, starTop);
         long stars = differsCount(emptyAfter, 0, w, 0, starTop, starBackground);
@@ -439,12 +430,41 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 0, labelsWithNoBodies);
         assertEquals("the sky must label every body it draws, by default and with no configuration",
                 SYSTEM.length, labelsWithBodies);
+
+        // ----------------------------------------- Leg 6: the atmosphere boundary, by exact count.
+        // An atmosphere is drawn around a body a ship can descend to, and around nothing else. The
+        // count states that exactly, and the fixture is what makes it discriminating: this system
+        // holds SIX bodies of which FIVE are descend targets, so a renderer drawing one per body
+        // reads 6 and a renderer drawing none reads 0. An assertion of "> 0" would accept both of
+        // the ways this can be wrong.
+        int descendTargets = 0;
+        for (String[] body : SYSTEM) {
+            if (!"GAS_GIANT".equals(body[3])) {
+                descendTargets++;
+            }
+        }
+        assertEquals("the fixture must hold a non-descend body, or this leg cannot discriminate "
+                        + "'one per descend target' from 'one per body'",
+                SYSTEM.length - 1, descendTargets);
+        assertEquals("no body is registered yet, so no atmosphere can have been drawn",
+                0, boundariesWithNoBodies);
+        assertEquals("one atmosphere boundary per descend target, and none for the gas giant",
+                descendTargets, boundariesWithBodies);
     }
 
     /** How many body labels the client's last rendered frame wrote. */
     private int labelsDrawn() throws Exception {
-        JsonObject sf = bot().readStaticField(SKY_CLASS, "labelsDrawnLastFrame");
-        assertTrue("the sky renderer must expose its per-frame label count: " + sf,
+        return skyCounter("labelsDrawnLastFrame");
+    }
+
+    /** How many atmosphere boundaries the client's last rendered frame drew. */
+    private int boundariesDrawn() throws Exception {
+        return skyCounter("boundariesDrawnLastFrame");
+    }
+
+    private int skyCounter(String field) throws Exception {
+        JsonObject sf = bot().readStaticField(SKY_CLASS, field);
+        assertTrue("the sky renderer must expose its per-frame counter " + field + ": " + sf,
                 !sf.get("isNull").getAsBoolean());
         return Integer.parseInt(sf.get("value").getAsString().trim());
     }

@@ -71,6 +71,11 @@ public class VSShipFrameShieldE2ETest extends AbstractClientE2ETest {
         }
         assertTrue("the ship must LOAD with the client present", loaded);
 
+        // Take its identity now, while nothing else is at the build spot. Every later question and
+        // every push below names THIS ship: the hull ends up 20+ blocks up, and a nearest-ship lookup
+        // at the build spot would quietly start answering for a neighbour on a shared client.
+        final String shipId = captureShipId();
+
         // Discover the ship's emitter through the registry (we do not know its subspace coords).
         String emitters = "";
         for (int i = 0; i < 40; i++) {
@@ -135,15 +140,17 @@ public class VSShipFrameShieldE2ETest extends AbstractClientE2ETest {
         // displacement — a direction- and rotation-agnostic "rides the hull" test (a raw +axis delta is
         // unreliable because a free hull also rotates, swinging an off-centre emitter, and push-ship
         // does not reliably impose a chosen direction here).
-        double[] ship1 = shipPos();
+        double[] ship1 = shipPos(shipId);
         double[] shell1 = shellCenter();
         assertTrue("precondition: the shell must sit on the hull before it moves (shell=" + str(shell1)
                 + " ship=" + str(ship1) + ")", dist(shell1, ship1) < 32.0);
         for (int i = 0; i < 25; i++) {
-            exec("artest vs push-ship 0 " + BX + " " + BY + " " + BZ + " 0 14 0");
+            String push = exec("artest vs push-ship-by-id 0 " + shipId + " 0 14 0");
+            assertTrue("ARRANGEMENT: the push must reach THIS ship: " + push,
+                    push.contains("\"pushed\":true"));
             bot().waitTicks(2);
         }
-        double[] ship2 = shipPos();
+        double[] ship2 = shipPos(shipId);
         String moved = exec("artest shield emitters 0");
         double[] shell2 = new double[]{f(moved, "worldX"), f(moved, "worldY"), f(moved, "worldZ")};
         double speed = Math.sqrt(sq(f(moved, "velX")) + sq(f(moved, "velY")) + sq(f(moved, "velZ")));
@@ -180,8 +187,18 @@ public class VSShipFrameShieldE2ETest extends AbstractClientE2ETest {
         return Integer.parseInt(m.group(1));
     }
 
-    private double[] shipPos() throws Exception {
+    /** The ship's identity, captured once while it is provably the only one at the build spot. */
+    private String captureShipId() throws Exception {
         String si = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
+        Matcher m = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(si);
+        assertTrue("ship-info must name WHICH ship answered: " + si, m.find());
+        return m.group(1);
+    }
+
+    /** Where THIS ship is — asked by identity, so it keeps answering about the same hull once the
+     *  push has carried it away from the spot it was built on. */
+    private double[] shipPos(String shipId) throws Exception {
+        String si = exec("artest vs ship-info 0 id " + shipId);
         return new double[]{f(si, "posX"), f(si, "posY"), f(si, "posZ")};
     }
 

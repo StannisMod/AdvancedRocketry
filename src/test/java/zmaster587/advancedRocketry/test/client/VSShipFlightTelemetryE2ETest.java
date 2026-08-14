@@ -71,6 +71,9 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
     private static final Pattern SHIP_UP_Y = Pattern.compile("\"lastShipUpY\":(-?[0-9.E\\-]+)");
     private static final Pattern DROPS = Pattern.compile("\"externalMoveDrops\":(-?\\d+)");
 
+    /** THIS scenario's ship, by identity — the address every question below is keyed on. */
+    private String scenarioShipId;
+
     private static final String VARIANT = "with-pilot-seat";
     private static final String KEY_BINDINGS = "zmaster587.advancedRocketry.client.KeyBindings";
     private static final String SHIP_CAMERA = "zmaster587.advancedRocketry.client.ShipFrameCamera";
@@ -100,7 +103,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
             // ceiling + early exit. A fixed 100-iteration budget under-lifts a frame-starved client
             // under concurrent-fork load and reds a healthy climb.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - ship[1] > 2.0, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
@@ -133,7 +136,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         // Event-gated: poll omega until the deflected cursor has actually spun the ship up (load-scaled
         // ceiling + early exit; a fixed 60-iteration budget can under-observe under concurrent-fork load).
         ClientPoll.Result<Double> spin = ClientPoll.until(bot()::waitTicks,
-                () -> readDouble(shipInfo(bx, by, bz), OMEGA),
+                () -> readDouble(shipInfo(), OMEGA),
                 o -> o >= 0.05, 2, 60);
         double spinning = spin.value;
         assertTrue("a deflected flight cursor must actually spin the ship (omega=" + spinning + ")",
@@ -147,7 +150,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         double settled = spinning;
         for (int i = 0; i < 150 && settled > 0.05; i++) {
             bot().waitTicks(2);
-            settled = readDouble(shipInfo(bx, by, bz), OMEGA);
+            settled = readDouble(shipInfo(), OMEGA);
         }
         String controller = exec("artest vs afc-debug");
         System.out.println("[tier2] omega spinning=" + spinning + " settled=" + settled
@@ -263,7 +266,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         // Roll the deck steeply. Past 45 degrees the world-frame drag anisotropy dominates: the pull
         // toward the deck acquires a world X/Z component damped four times harder than its world Y one.
         double half = Math.toRadians(75.0) / 2.0;
-        String point = exec("artest vs point 0 " + bx + " " + by + " " + bz
+        String point = exec("artest vs point-by-id 0 " + scenarioShipId
                 + " " + Math.cos(half) + " 0.0 0.0 " + Math.sin(half));
         assertTrue("attitude hold must accept the roll: " + point, point.contains("\"commanded\":true"));
         bot().waitTicks(200);
@@ -329,9 +332,9 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         // This isolates the fall-through's real driver: ship ANGULAR VELOCITY, not the inversion angle (a
         // STATICALLY inverted deck rides fine - the 75deg test). Reproduces the maintainer's ~174deg case,
         // which was a ship oscillating/hunting near the unstable inverted attitude (nonzero omega).
-        exec("artest vs spin-ship 0 " + bx + " " + by + " " + bz + " 2.0 0.0 0.0");
+        exec("artest vs spin-ship-by-id 0 " + scenarioShipId + " 2.0 0.0 0.0");
         bot().waitTicks(30);
-        exec("artest vs spin-ship 0 " + bx + " " + by + " " + bz + " 0.0 0.0 0.0");
+        exec("artest vs spin-ship-by-id 0 " + scenarioShipId + " 0.0 0.0 0.0");
 
         String spun = exec("artest vs shipframe-stats");
         int dropsAfter = readInt(spun, DROPS);
@@ -424,7 +427,7 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
             // Event-gated hover-lift (load-scaled ceiling + early exit): a fixed 100-iteration budget
             // under-lifts a frame-starved client under concurrent-fork load and reds a healthy climb.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - ship[1] > 2.0, 2, 100);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
@@ -447,16 +450,16 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         exec("artest player dismount");
         bot().waitTicks(60); // let the controller brake the climb out and settle onto the hold
 
-        double yStart = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double yStart = readDouble(shipInfo(), POS_Y);
         double worstVelY = 0.0;
         for (int i = 0; i < 40; i++) {
             bot().waitTicks(3);
-            double velY = readDouble(shipInfo(bx, by, bz), VEL_Y);
+            double velY = readDouble(shipInfo(), VEL_Y);
             if (Math.abs(velY) > Math.abs(worstVelY)) {
                 worstVelY = velY;
             }
         }
-        double yEnd = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double yEnd = readDouble(shipInfo(), POS_Y);
         System.out.println("[tier2][STATIONKEEP] yStart=" + yStart + " yEnd=" + yEnd
                 + " drift=" + (yEnd - yStart) + " worstVelY=" + worstVelY);
 
@@ -476,9 +479,9 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
      * Build a ship at this test's own base and wait for it to load with the client present; returns its
      * world position.
      *
-     * <p>The probes answer for the ship NEAREST a point, and the harness server is shared by every test
-     * method - a ship another method left drifting is a real ship and will be found. So the wait is for
-     * the ship COUNT to rise, and the position is checked against the base before it is trusted.</p>
+     * <p>The harness server is shared by every test method, so "the ship near my base" is a question
+     * a neighbour can answer. The wait is for the ship COUNT to rise; then the ship's IDENTITY is
+     * captured once, and {@link #shipInfo()} carries it for the rest of the scenario.</p>
      */
     private double[] buildShip(int bx, int by, int bz) throws Exception {
         exec("tp @a " + (bx + 600) + " 120 " + (bz + 600) + " 0 0");
@@ -501,24 +504,14 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
-        String info = "";
-        double[] where = null;
-        for (int i = 0; i < 40 && where == null; i++) {
-            bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
-            if (!info.contains("\"managed\":true")) {
-                continue;
-            }
-            double[] candidate = new double[]{
-                    readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            // Only OUR ship counts: another method's craft, drifting a hundred blocks away, is still
-            // the nearest thing the probe can find once ours has failed to appear.
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
-                where = candidate;
-            }
-        }
-        assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
-                where != null);
+        // The scenario's ONE positional lookup, at the only moment it is defensible: this ship has
+        // just been assembled at this base and has not moved. What it yields is an IDENTITY, and
+        // every question below is asked by that id — which has no distance term to be wrong about,
+        // however far the scenario then flies, spins or drops the ship.
+        scenarioShipId = captureShipIdAt(bx, by, bz);
+        String info = shipInfo();
+        double[] where = new double[]{
+                readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
         System.out.println("[tier2] ship at base (" + bx + "," + by + "," + bz + ") -> "
                 + java.util.Arrays.toString(where));
         return where;
@@ -619,9 +612,10 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         return Double.parseDouble(clientString(className, field));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity — captured once by {@link #buildShip}. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return exec("artest vs ship-info 0 id " + scenarioShipId);
     }
 
     private double[] localOf(int entityId) throws Exception {

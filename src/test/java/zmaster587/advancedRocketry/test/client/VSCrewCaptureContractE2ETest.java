@@ -57,6 +57,14 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
 
     private static final String VARIANT = "with-pilot-deck";
 
+    /**
+     * THIS scenario's ship, by identity — captured by {@code buildShip} at the one moment its base
+     * provably holds no other, and the address every later question and command uses. A radius bound
+     * is a mitigation, not an identity: these scenarios roll, hover and drop the ship on purpose, and
+     * a shared client always has a neighbour in candidacy.
+     */
+    private String scenarioShipId;
+
     // ---- Staying aboard: a jump from the top deck must not release the capture ------------------
 
     @Test
@@ -147,10 +155,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // side of the axis; an upright ship rarely aliases.
         double h = Math.toRadians(45.0) / 2.0;
         assertTrue("attitude hold must accept the tilt",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " 0.0 0.0 " + Math.sin(h)).contains("\"commanded\":true"));
         bot().waitTicks(120);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double sx = readDouble(info, POS_X), sz = readDouble(info, POS_Z);
 
         // Put the REAL client player on the GROUND beside the hull, inside the grown world box, and
@@ -226,14 +234,14 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         bot().waitTicks(30);
 
         assertTrue("attitude hold must accept the past-vertical roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " 0.17365 0.0 0.0 0.98481")
+                exec("artest vs point-by-id 0 " + scenarioShipId + " 0.17365 0.0 0.0 0.98481")
                         .contains("\"commanded\":true"));
         bot().waitTicks(200); // slew and settle - stationary, steeply rolled
 
         // The subject must be in the regime the symptom lives in, and the instrument must fire:
         // the ship really steeply rolled, and the CLIENT really resolving this body (all-zero
         // discriminator statics with a non-resolving client would be a vacuous pass).
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
         double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
         double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
@@ -305,7 +313,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
 
-        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double startY = readDouble(shipInfo(), POS_Y);
         bot().holdKey(Keyboard.KEY_R);
         ClientPoll.Result<Double> lift;
         try {
@@ -313,7 +321,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
             // 3 blocks, with a load-scaled ceiling + early exit. A fixed 200-iteration budget
             // under-lifts a frame-starved client under concurrent load and reds a healthy hover.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
@@ -376,7 +384,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // real W walking and real SPACE jumps through the window.
         buildAndBoardShip(bx, by, bz);
         bot().waitTicks(20);
-        double startY = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double startY = readDouble(shipInfo(), POS_Y);
         bot().holdKey(Keyboard.KEY_R);
         ClientPoll.Result<Double> lift;
         try {
@@ -384,7 +392,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
             // 3 blocks, with a load-scaled ceiling + early exit. A fixed 200-iteration budget
             // under-lifts a frame-starved client under concurrent load and reds a healthy hover.
             lift = ClientPoll.until(bot()::waitTicks,
-                    () -> readDouble(shipInfo(bx, by, bz), POS_Y),
+                    () -> readDouble(shipInfo(), POS_Y),
                     y -> y - startY >= 3.0, 2, 200);
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
@@ -512,7 +520,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // per-tick rate actually reached the guard's static epsilon, or the run is void.
         long resolvedBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
         dropsBefore = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops");
-        double shipY0 = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double shipY0 = readDouble(shipInfo(), POS_Y);
         double maxFrameStep = 0.0, maxCarry = -1.0, maxRate = 0.0, travelled = 0.0;
         double yPrev = shipY0;
         StringBuilder samples = new StringBuilder();
@@ -536,7 +544,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
                     drive.contains("\"afcResolved\":true"));
             bot().waitTicks(1);
             if (i % 5 == 4) {
-                double yNow = readDouble(shipInfo(bx, by, bz), POS_Y);
+                double yNow = readDouble(shipInfo(), POS_Y);
                 double rate = Math.abs(yNow - yPrev) / 5.0;
                 maxRate = Math.max(maxRate, rate);
                 travelled = Math.max(travelled, Math.abs(yNow - shipY0));
@@ -560,7 +568,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
             }
         }
         exec("artest vs seat-input 0 0 0 0 0 0 0");
-        double shipY1 = readDouble(shipInfo(bx, by, bz), POS_Y);
+        double shipY1 = readDouble(shipInfo(), POS_Y);
         long churn = (long) clientDouble(SHIP_FRAME_TRAVEL, "externalMoveDrops") - dropsBefore;
         long resolvedAfter = (long) clientDouble(SHIP_FRAME_TRAVEL, "resolvedTicks");
         String dropShape = String.format(java.util.Locale.ROOT,
@@ -692,10 +700,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         double[] ship = buildShip(bx, by, bz);
         double h = Math.toRadians(160.0) / 2.0;
         assertTrue("attitude hold must accept the past-vertical roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(200);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
         double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
         double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
@@ -771,10 +779,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         double[] ship = buildShip(bx, by, bz);
         double h = Math.toRadians(160.0) / 2.0;
         assertTrue("attitude hold must accept the past-vertical roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(200);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
         double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
         double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
@@ -866,10 +874,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // = 1.62*sin50 = 1.24 > 0.6).
         double h = Math.toRadians(50.0) / 2.0;
         assertTrue("attitude hold must accept the roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(150);
-        String info = shipInfo(bx, by, bz);
+        String info = shipInfo();
         double qx = readDouble(info, Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
         double qz = readDouble(info, Pattern.compile("\"qz\":(-?[0-9.E\\-]+)"));
         double upY = 1.0 - 2.0 * (qx * qx + qz * qz);
@@ -947,10 +955,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // Roll the ship to ~60 degrees about X and hold it there.
         double h = Math.toRadians(60.0) / 2.0;
         assertTrue("attitude hold must accept the roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(150);
-        double[] up = shipUpFromInfo(shipInfo(bx, by, bz));
+        double[] up = shipUpFromInfo(shipInfo());
         assertTrue("the ship must be steeply rolled for the frames to diverge (upY=" + up[1] + ")",
                 up[1] < 0.7 && up[1] > 0.1);
         assertTrue("the crew member must still be captured after the roll: "
@@ -1002,10 +1010,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         double coneBefore = dot(up, lookBefore);
         double h2 = Math.toRadians(85.0) / 2.0;
         assertTrue("attitude hold must accept the second roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h2) + " " + Math.sin(h2) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(150);
-        double[] up2 = shipUpFromInfo(shipInfo(bx, by, bz));
+        double[] up2 = shipUpFromInfo(shipInfo());
         double rolledBy = Math.toDegrees(Math.acos(clampUnit(dot(up, up2))));
         assertTrue("the ship must actually roll further for this leg to prove anything (rolled "
                 + rolledBy + " deg more, upY " + up[1] + " -> " + up2[1] + ")", rolledBy > 15.0);
@@ -1050,7 +1058,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         // leg's heading with the REAL mouse (re-exercising the deck-relative turn after the tp's
         // re-seed), walk briefly, and count a leg only if the capture held through it and the
         // displacement is walking-sized. Judge the heading contract on the best VALID leg.
-        double[] q85 = shipQuatFromInfo(shipInfo(bx, by, bz));
+        double[] q85 = shipQuatFromInfo(shipInfo());
         double[] anchor = clientPos();
         double bestMag = -1.0, bestWalkedYaw = 0.0, bestHeldYaw = 0.0;
         StringBuilder legs = new StringBuilder();
@@ -1062,7 +1070,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
                 bot().waitTicks(2);
             }
             double heldDeckYaw = clientDouble(DECK_LOOK, "deckYawDeg");
-            String infoW0 = shipInfo(bx, by, bz);
+            String infoW0 = shipInfo();
             double[] p0 = clientPos();
             double[] s0 = {readDouble(infoW0, POS_X), readDouble(infoW0, POS_Y),
                     readDouble(infoW0, POS_Z)};
@@ -1076,7 +1084,7 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
             }
             bot().waitTicks(4);
             double[] p1 = clientPos();
-            String infoW1 = shipInfo(bx, by, bz);
+            String infoW1 = shipInfo();
             double[] s1 = {readDouble(infoW1, POS_X), readDouble(infoW1, POS_Y),
                     readDouble(infoW1, POS_Z)};
             boolean stillAboard = Boolean.parseBoolean(clientString(DECK_LOOK, "active"));
@@ -1269,20 +1277,12 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
-        // Await the ship LOADING near this base (managed + within range) — same event-gated barrier.
-        ClientPoll.Result<double[]> loaded = ClientPoll.until(bot()::waitTicks,
-                () -> {
-                    String si = shipInfo(bx, by, bz);
-                    if (!si.contains("\"managed\":true")) {
-                        return null;
-                    }
-                    double[] c = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
-                    return distance(c, new double[]{bx, by, bz}) < 24.0 ? c : null;
-                },
-                w -> w != null, 5, 40);
-        double[] where = loaded.value;
-        assertTrue("the ship built at this base must LOAD with the client present (base " + bx + ","
-                + by + "," + bz + ")", where != null);
+        // Await the ship LOADING near this base and take its IDENTITY in the same step. This is the
+        // scenario's ONE positional lookup and the only one it can defend: the ship was just built
+        // here and has not moved. Everything after this asks by id.
+        scenarioShipId = captureShipIdAt(bx, by, bz);
+        String si = shipInfo();
+        double[] where = {readDouble(si, POS_X), readDouble(si, POS_Y), readDouble(si, POS_Z)};
         System.out.println("[crewcap] ship at (" + bx + "," + by + "," + bz + ") -> "
                 + java.util.Arrays.toString(where));
         return where;
@@ -1305,9 +1305,10 @@ public class VSCrewCaptureContractE2ETest extends AbstractSharedVsClientE2ETest 
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity — no distance term to be wrong about. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return shipInfoById(scenarioShipId);
     }
 
     private int count(String sub) throws Exception {

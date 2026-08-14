@@ -183,7 +183,7 @@ public final class JumpTrigger {
         // stored one names a different cell after a restart. A cell bound to no slot at all means the
         // ship is not in a world the departure could reach — refused HERE, above the commit line, so
         // it stays free. Nothing that can refuse belongs below it.
-        SpaceManager space = SpaceSubsystem.get();
+        SpaceManager space = SpaceSubsystem.space();
         int originSlotDim = space == null
                 ? SpaceManager.UNBOUND_SLOT : space.slotDimOf(entry.coord);
         if (originSlotDim == SpaceManager.UNBOUND_SLOT) {

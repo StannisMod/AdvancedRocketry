@@ -253,7 +253,7 @@ public final class SpaceEventHandler {
 
     private void releaseHeldCell(UUID playerId) {
         UUID shipId = heldCells.remove(playerId);
-        SpaceManager manager = SpaceSubsystem.get();
+        SpaceManager manager = SpaceSubsystem.space();
         ShipLedger ledger = SpaceSubsystem.ledger();
         if (shipId == null || manager == null || ledger == null) {
             return;
@@ -398,7 +398,7 @@ public final class SpaceEventHandler {
         if (world == null || world.isRemote || !(world.provider instanceof WorldProviderSpaceSlot)) {
             return;
         }
-        SpaceManager manager = SpaceSubsystem.get();
+        SpaceManager manager = SpaceSubsystem.space();
         if (manager == null) {
             return;
         }
@@ -465,7 +465,7 @@ public final class SpaceEventHandler {
 
         @Override
         public int materialize(GalacticCoord coord) {
-            SpaceManager manager = SpaceSubsystem.get();
+            SpaceManager manager = SpaceSubsystem.space();
             if (manager == null) {
                 return -1;
             }

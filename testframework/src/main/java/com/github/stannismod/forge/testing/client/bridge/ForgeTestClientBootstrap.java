@@ -519,6 +519,16 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("playerZ", mc.player.posZ);
                         response.addProperty("playerYaw", mc.player.rotationYaw);
                         response.addProperty("playerPitch", mc.player.rotationPitch);
+                        // The client owns a player's movement, so his VELOCITY is what decides
+                        // whether a server-side teleport survives the next few ticks: a body
+                        // carrying a large one is moved back off wherever it was put, and a test
+                        // reading only the position cannot tell that from a teleport that never
+                        // arrived. Reported here so the answer is one read rather than an inference
+                        // from two positions taken at unknown times.
+                        response.addProperty("motionX", mc.player.motionX);
+                        response.addProperty("motionY", mc.player.motionY);
+                        response.addProperty("motionZ", mc.player.motionZ);
+                        response.addProperty("onGround", mc.player.onGround);
                         response.addProperty("health", mc.player.getHealth());
                         response.addProperty("heldItem", mc.player.getHeldItemMainhand().isEmpty()
                                 ? ""

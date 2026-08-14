@@ -79,6 +79,69 @@ public final class ShipEntryController {
     private final Map<UUID, Long> retryAfter = new HashMap<>();
     private int laneCounter;
 
+    /**
+     * Why the last {@link #requestEntry} ended where it did. Six of the seven outcomes used to share
+     * a single bare {@code false}, and four of those are silent by design — so from outside, a ship
+     * that asked to enter and was declined was indistinguishable from one whose ceiling check never
+     * fired at all. That is not a diagnostic nicety: those are the two halves of "the ship is still
+     * under the line", and they have opposite causes.
+     */
+    public enum Decision {
+        /** The caller had no ship identity to enter with. */
+        NO_SHIP_ID,
+        /** This ship's own entry crossing is already in flight. */
+        ALREADY_ENTERING,
+        /** The ledger already holds this ship: it is in space, not below a ceiling. */
+        ALREADY_IN_SPACE,
+        /** A previous refusal or failure armed the retry cooldown, and it has not run out. */
+        COOLDOWN,
+        /** No physics ship at the flight computer — it was never on one, or it unloaded mid-check. */
+        NO_SHIP_POSITION,
+        /** The cell pool is full: entry refused, the crew told, the cooldown armed. */
+        REFUSED_POOL_FULL,
+        /** The cut produced no paste: the ship stayed put, the crew was re-seated, cooldown armed. */
+        CROSSING_FAILED,
+        /** The crossing started — the ship has left the launch world. */
+        STARTED
+    }
+
+    private Decision lastDecision;
+    private UUID lastDecisionShip;
+    private long lastDecisionTick = Long.MIN_VALUE;
+    private int lastDecisionCrew = -1;
+
+    /** The last decision {@link #requestEntry} reached, or {@code null} if it has never been asked —
+     *  and "never asked" is exactly the answer a silent ship needs, so it is a value, not a gap. */
+    public Decision lastDecision() {
+        return lastDecision;
+    }
+
+    /** The ship {@link #lastDecision()} was reached for. */
+    public UUID lastDecisionShip() {
+        return lastDecisionShip;
+    }
+
+    /** The tick {@link #lastDecision()} was reached on, or {@link Long#MIN_VALUE} if never. */
+    public long lastDecisionTick() {
+        return lastDecisionTick;
+    }
+
+    /** How many people the last REFUSAL had to tell ({@code -1} if the last decision was not one). */
+    public int lastDecisionCrew() {
+        return lastDecisionCrew;
+    }
+
+    /** Record where this request stopped, and answer the caller. */
+    private boolean decided(Decision decision, UUID shipId, long now) {
+        lastDecision = decision;
+        lastDecisionShip = shipId;
+        lastDecisionTick = now;
+        if (decision != Decision.REFUSED_POOL_FULL) {
+            lastDecisionCrew = -1;
+        }
+        return decision == Decision.STARTED;
+    }
+
     public ShipEntryController(SpaceManager space, ShipLedger ledger, ShipCrossingService.Ops ops,
                                LaunchCoordResolver coordResolver, LongSupplier clock) {
         this.space = space;
@@ -89,13 +152,21 @@ public final class ShipEntryController {
     }
 
     /**
-     * Pure trigger predicate for the flight computer's ceiling check: entry fires only from a
-     * planet-side dimension (never a slot/hyperspace world), only with a pilot actually flying,
-     * and only once the ship's pose has climbed past the dimension's orbit line.
+     * Pure trigger predicate for the flight computer's ceiling check: entry fires from a
+     * planet-side dimension (never a slot/hyperspace world) once the ship's pose has climbed past
+     * the dimension's orbit line.
+     *
+     * <p><b>It does not ask who is at the controls</b> — see the same note on
+     * {@code DescentController.shouldTriggerDescent}. Leaving an atmosphere is as physical as
+     * entering one, and the {@code pilotPresent} conjunct this carried until 2026-08-11 was passed
+     * as a literal {@code true} by every production call site. The case its call-site gate was
+     * documented to protect — an unmanned hulk drifting up and launching itself — is not a state
+     * the flight computer produces: with no input a ship falls or is commanded to hold, and the
+     * only way it rises is a retained cruise setpoint, which is a ship under way.</p>
      */
-    public static boolean shouldTriggerEntry(boolean isSpaceSubsystemWorld, boolean pilotPresent,
+    public static boolean shouldTriggerEntry(boolean isSpaceSubsystemWorld,
                                              double shipWorldY, int orbitHeight) {
-        return !isSpaceSubsystemWorld && pilotPresent && shipWorldY > orbitHeight;
+        return !isSpaceSubsystemWorld && shipWorldY > orbitHeight;
     }
 
     /**
@@ -130,18 +201,24 @@ public final class ShipEntryController {
      * a retry cooldown — the ship stays below the ceiling and the check may fire again later.
      */
     public boolean requestEntry(int launchDimId, BlockPos afcPos, UUID shipId) {
-        if (shipId == null || crossing.isCrossing(shipId) || ledger.get(shipId) != null) {
-            return false; // already entering / already in space
-        }
         long now = clock.getAsLong();
+        if (shipId == null) {
+            return decided(Decision.NO_SHIP_ID, null, now);
+        }
+        if (crossing.isCrossing(shipId)) {
+            return decided(Decision.ALREADY_ENTERING, shipId, now);
+        }
+        if (ledger.get(shipId) != null) {
+            return decided(Decision.ALREADY_IN_SPACE, shipId, now);
+        }
         Long cooldown = retryAfter.get(shipId);
         if (cooldown != null && now < cooldown) {
-            return false;
+            return decided(Decision.COOLDOWN, shipId, now);
         }
 
         double[] shipPos = crossing.ops().shipWorldPosition(launchDimId, afcPos);
         if (shipPos == null) {
-            return false; // not on a physics ship (or it unloaded mid-check)
+            return decided(Decision.NO_SHIP_POSITION, shipId, now);
         }
         final GalacticCoord entryCoord = resolveEntryCoord(launchDimId, shipId);
 
@@ -152,11 +229,16 @@ public final class ShipEntryController {
             // Refuse entry: a normal, surfaced outcome — the ship stays below the ceiling and the
             // pilot KEEPS HIS SEAT. The crew is only READ here (a capture would dismount it), so a
             // refusal costs the crew nothing but the message.
-            LOGGER.warn("[SPACE] entry refused for ship {}: {}", shipId, full.getMessage());
-            crossing.ops().messageCrew(crossing.ops().peekCrew(launchDimId, afcPos, shipPos),
-                    "msg.shipentry.refused");
+            // WHO was told, counted where the telling happens. "The pilot never saw the refusal" has
+            // two causes — nobody was found to tell, or the message was sent and did not arrive — and
+            // they are one silence from outside this method.
+            List<CrewTransfer.Crew> told = crossing.ops().peekCrew(launchDimId, afcPos, shipPos);
+            lastDecisionCrew = told == null ? 0 : told.size();
+            LOGGER.warn("[SPACE] entry refused for ship {}: {} (told {} aboard)",
+                    shipId, full.getMessage(), lastDecisionCrew);
+            crossing.ops().messageCrew(told, "msg.shipentry.refused");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
-            return false;
+            return decided(Decision.REFUSED_POOL_FULL, shipId, now);
         }
 
         // Capture only now, with the cell GRANTED — the last refusal is behind — and still before
@@ -199,13 +281,13 @@ public final class ShipEntryController {
                     new BlockPos(shipPos[0], shipPos[1], shipPos[2]), crew, shipId, null);
             crossing.ops().messageCrew(crew, "msg.shipentry.failed");
             retryAfter.put(shipId, now + RETRY_COOLDOWN_TICKS);
-            return false;
+            return decided(Decision.CROSSING_FAILED, shipId, now);
         }
         // The paste diverged the cell from its procedural seed — eviction must flush, not discard.
         space.markDirty(entryCoord);
         LOGGER.info("[SPACE] entry crossing started: ship {} -> cell {} (slot {})",
                 shipId, entryCoord.cellKey(), slotDim);
-        return true;
+        return decided(Decision.STARTED, shipId, now);
     }
 
     /** The launch body's address + spawn ring, or the config home anchor when unplaced. The ring

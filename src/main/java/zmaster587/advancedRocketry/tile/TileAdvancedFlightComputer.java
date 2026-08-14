@@ -39,6 +39,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private static final String NBT_STATION_KEEPING = "stationKeeping";
     private static final String NBT_SHIP_ID = "shipId";
     private static final String NBT_ENTRY_LATCHED = "entryLatched";
+    private static final String NBT_CRUISE = "cruiseSetpoint";
 
     /**
      * The CRAFT's durable identity: a UUID minted once (at tier-2 assembly, or lazily on first
@@ -108,67 +109,83 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     private transient boolean cellEdgeReported = false;
 
     /**
-     * Bring-up command for the force-mode flight controller: the desired world-frame
-     * velocity {@code {x,y,z}} (blocks/s), or {@code null} when nothing is commanded.
-     * Written from the GAME thread (a test probe today; the seated pilot's input later);
-     * read on the Valkyrien Skies PHYSICS thread by the flight-controller mixin, which turns
-     * it into force. {@code volatile} for cross-thread visibility. AR-core only — carries no
-     * physics-mod type, so this class still loads fine without the physics mod installed.
-     * TODO: replace this static bring-up channel with per-tile pilot state once the pilot
-     * seat + input retarget land.
+     * Bring-up override for the force-mode flight controller, on THIS computer only: while
+     * {@link #probeCommandActive} is set the controller reads the whole command triple below
+     * instead of the pilot channels, so a caller can drive the control law directly (raw force,
+     * raw torque, absolute attitude hold) without a pilot and without the Free Flight layer in
+     * between. Desired world-frame velocity {@code {x,y,z}} (blocks/s), or {@code null} for
+     * "nothing commanded on this channel".
+     *
+     * <p><b>Per tile, and that is the whole point.</b> These began as {@code static volatile}
+     * fields, which every flight computer in the JVM read as its fallback: a command meant for one
+     * ship kept flying every other ship in the world until something cleared it, and the call that
+     * issued it reported success either way. Keyed to one computer, a command names one craft, and
+     * a caller that cannot resolve that craft gets a miss instead of somebody else's flight.</p>
+     *
+     * <p>Written from the GAME thread, read on the Valkyrien Skies PHYSICS thread by the
+     * flight-controller mixin; {@code volatile} for cross-thread visibility. AR-core only — carries
+     * no physics-mod type, so this class still loads fine without the physics mod installed.</p>
      */
-    public static volatile double[] debugCommandedVelocity = null;
+    public volatile double[] probeVelocity = null;
+
+    /** Bring-up override for the controller's ANGULAR channel: desired world-frame angular velocity
+     *  {@code {x,y,z}} (rad/s), or {@code null}. Read only while {@link #probeCommandActive}. */
+    public volatile double[] probeAngVel = null;
 
     /**
-     * Bring-up command for the force controller's ANGULAR channel: the desired world-frame
-     * angular velocity {@code {x,y,z}} (rad/s), or {@code null} when none. Same game&rarr;physics
-     * thread hand-off + AR-core-only contract as {@link #debugCommandedVelocity}; the mixin
-     * turns it into torque. TODO: fold into per-tile pilot state with the linear channel.
-     */
-    public static volatile double[] debugCommandedAngVel = null;
-
-    /**
-     * Bring-up command for ATTITUDE HOLD: the target body&rarr;world orientation as a quaternion
+     * Bring-up override for ATTITUDE HOLD: the target body&rarr;world orientation as a quaternion
      * {@code {w,x,y,z}}, or {@code null} when not holding an attitude. When set it supersedes
-     * {@link #debugCommandedAngVel} — the controller reads the ship's current orientation on
-     * the physics thread and turns the error into the angular velocity it drives toward. This
-     * is the interface Free Flight feeds: its per-tick target quaternion (from
-     * {@code integrateBodyRates} over the held pilot rates) is published here. Same game&rarr;physics
-     * hand-off + AR-core-only contract as the other channels.
+     * {@link #probeAngVel} — the controller reads the ship's current orientation on the physics
+     * thread and turns the error into the angular velocity it drives toward. This is the interface
+     * Free Flight feeds. Read only while {@link #probeCommandActive}.
      */
-    public static volatile double[] debugTargetAttitude = null;
+    public volatile double[] probeAttitude = null;
 
     /**
-     * Bring-up channel for the pilot's held {@link FreeFlightInput}. When set, this tile's
-     * server tick runs the Free Flight decision layer over the ship's current attitude and
-     * publishes the resulting desired velocity + target attitude to the controller channels
-     * above. AR-core only. TODO: replace this static bring-up input with per-seat pilot state.
+     * Whether the three {@code probe*} channels above own this computer's command this tick.
+     *
+     * <p>All-or-nothing on purpose. Per-channel fallback would mix a fresh probe attitude with a
+     * stale probe rate left by an earlier call, and the mixture is a command nobody wrote. It also
+     * outranks the pilot channels rather than yielding to them: a probe that silently lost to a
+     * ship's own autopilot would report the command it never delivered.</p>
      */
-    public static volatile FreeFlightInput debugFlightInput = null;
+    public volatile boolean probeCommandActive = false;
+
+    /**
+     * How many times the Valkyrien Skies physics thread has invoked THIS computer's force controller.
+     *
+     * <p>Diagnostic, and it answers a question nothing else in the tree can: "is this ship's
+     * controller running at all". A ship that ignores every command has two readings — the controller
+     * runs and its force is being overwritten, or the controller never runs — and they need opposite
+     * fixes. Counted before the mixin's own early-out, so it means INVOKED, not "commanded
+     * something". Not persisted; a fresh tile starts at zero, which is the honest baseline.</p>
+     */
+    public volatile long controllerTicks = 0L;
 
     /**
      * The seated pilot's live {@link FreeFlightInput} for THIS computer, or {@code null} when
      * nobody is piloting. Written from the server game thread when a pilot-seat packet arrives
-     * (see {@code TilePilotSeat}); read by {@link #update()}. Takes precedence over the static
-     * {@link #debugFlightInput} bring-up channel — that static one stays only as a test-probe
-     * fallback. {@code volatile} for visibility across the seat-packet and tick call sites.
+     * (see {@code TilePilotSeat}); read by {@link #update()}. The ONLY input channel: a JVM-wide
+     * static used to sit behind it as a test-probe fallback, which meant a probe throttle flew every
+     * computer that had no pilot of its own. {@code volatile} for visibility across the seat-packet
+     * and tick call sites.
      */
     public volatile FreeFlightInput pilotInput = null;
 
     /**
-     * Per-tile commanded world-frame velocity (blocks/s) that the force controller realizes,
+     * The pilot's commanded world-frame velocity (blocks/s) that the force controller realizes,
      * or {@code null} when this computer commands nothing. Written by {@link #update()} from the
-     * pilot's input; read on the physics thread by the flight-controller mixin, which prefers it
-     * over the static {@link #debugCommandedVelocity} probe channel. {@code volatile} for the
+     * pilot's input; read on the physics thread by the flight-controller mixin, which reads the
+     * {@code probe*} channels above instead while one is in force. {@code volatile} for the
      * game&rarr;physics thread hand-off; carries no physics-mod type (AR-core safe).
      */
     public volatile double[] commandedVelocity = null;
 
-    /** Per-tile angular-velocity command (rad/s), mixin-preferred over {@link #debugCommandedAngVel}. */
+    /** The pilot's angular-velocity command (rad/s), same hand-off as {@link #commandedVelocity}. */
     public volatile double[] commandedAngVel = null;
 
-    /** Per-tile attitude-hold target quaternion {@code {w,x,y,z}}, mixin-preferred over
-     *  {@link #debugTargetAttitude}. Supersedes {@link #commandedAngVel} when set. */
+    /** The pilot's attitude-hold target quaternion {@code {w,x,y,z}}. Supersedes
+     *  {@link #commandedAngVel} when set. */
     public volatile double[] targetAttitude = null;
 
     /**
@@ -204,10 +221,127 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
      *  from the ship's live velocity instead of jerking the ship to the stale setpoint. */
     private boolean captureSetpointOnNextTick = false;
 
+    /**
+     * Command this ship's CRUISE directly: the body-frame velocity setpoint
+     * ({@code forward, right, up}, blocks/s) that Flight Assist holds.
+     *
+     * <p>The cruise is the thing that outlives a pilot — holding a throttle ramps it, releasing leaves
+     * it, and an unmanned ship with Assist on goes on flying it. Until this existed the ONLY way to
+     * establish one was to ramp it from a live pilot's held input, so anything wanting to fly a ship
+     * without hands on the stick could not say what it wanted: an autopilot, an auto-takeoff, or an
+     * arrangement that needs a deck already in motion.</p>
+     *
+     * <p>Two things it must do besides assigning, or it would be a setter that changes nothing:</p>
+     * <ul>
+     *   <li><b>Mark the ship as having been flown.</b> {@link #stationKeeping} is the persisted witness
+     *       the unmanned branch of {@link #update()} gates on — a never-flown ship stays deliberately
+     *       inert — so a cruise commanded without it would be silently ignored.</li>
+     *   <li><b>Cancel a pending Assist re-capture.</b> {@link #captureSetpointOnNextTick} would
+     *       otherwise overwrite this on the very next tick from the ship's live velocity.</li>
+     * </ul>
+     *
+     * <p>Server-side. A zero cruise means hover, exactly as it does when a pilot brakes to zero.</p>
+     *
+     * <p><b>UNVERIFIED: that this makes a ship FLY.</b> What is verified is only what it assigns. Four
+     * measurements, 2026-08-11, of a commanded cruise of 4 blocks/s body-up over 60 ticks on an
+     * unmanned ship: <b>+0.036</b> blocks with the hull at rest on terrain, <b>-0.0015</b> with it
+     * lifted into clear air, and an apparent <b>+11.27</b> in the one arrangement whose baseline was
+     * taken while the hull was still moving from its own assembly — i.e. that reading was the assembly,
+     * admitted by a control bound loose enough to let a 3.50-block drift pass. So this seam is written
+     * against the fields the unmanned branch of {@link #update()} reads, and nothing yet shows the ship
+     * responding. Either an arrangement is still missing (a genuinely flown ship; a ticking computer in
+     * a far subspace) or an unmanned autopilot cruise does not fly, which would be a defect in its own
+     * right. Do not cite this method as working propulsion until one of those is measured.</p>
+     */
+    public void commandCruise(double forward, double right, double up) {
+        this.velocitySetpoint = new double[]{forward, right, up};
+        this.captureSetpointOnNextTick = false;
+        this.stationKeeping = true;
+        markDirty();
+    }
+
+    /** Persist the cruise the pilot is ramping, so a tile reconstruction does not silently zero it. */
+    private void markCruiseDirty() {
+        markDirty();
+    }
+
+    /** This ship's commanded cruise ({@code forward, right, up}, blocks/s) — the twin of
+     *  {@link #commandCruise}, for a caller that wants to read back what it set. */
+    public double[] commandedCruise() {
+        return new double[]{velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2]};
+    }
+
+    /**
+     * Bring-up: drive THIS computer's controller at a raw world-frame linear and angular velocity,
+     * bypassing the Free Flight layer that would normally compute them. Either half may be
+     * {@code null} for "nothing commanded on that channel"; any attitude hold is dropped, since a
+     * rate command and a pose command are different intentions and the pose would outrank the rate.
+     *
+     * <p>Re-issued per tick by its callers, the way a real pilot's client re-sends his input.</p>
+     */
+    public void commandProbeVelocity(double[] worldVelocity, double[] worldAngVel) {
+        this.probeVelocity = worldVelocity;
+        this.probeAngVel = worldAngVel;
+        this.probeAttitude = null;
+        this.probeCommandActive = true;
+    }
+
+    /**
+     * Bring-up: hold a target body&rarr;world attitude (quaternion {@code w,x,y,z}) on THIS
+     * computer's controller while hovering — linear is commanded to zero, so the ship turns in
+     * place rather than drifting off while it slews.
+     */
+    public void commandProbeAttitude(double qw, double qx, double qy, double qz) {
+        this.probeVelocity = new double[]{0.0, 0.0, 0.0};
+        this.probeAngVel = null;
+        this.probeAttitude = new double[]{qw, qx, qy, qz};
+        this.probeCommandActive = true;
+    }
+
+    /** Hand this computer back to its own pilot channels. Returns whether a probe command was in
+     *  force, so a caller asserts the release rather than trusting it. */
+    public boolean clearProbeCommand() {
+        boolean was = probeCommandActive;
+        this.probeCommandActive = false;
+        this.probeVelocity = null;
+        this.probeAngVel = null;
+        this.probeAttitude = null;
+        return was;
+    }
+
     /** Diagnostic only ({@code -Dadvancedrocketry.tests=true}): last-logged presence of a live
      *  {@link #pilotInput}, so a playtest trace prints one line each time the seated pilot's input
      *  appears or is cleared. Not gameplay state. */
     private transient Boolean arLastPilotPresent = null;
+
+    /**
+     * How often the descend-target list is rebuilt while the ship stays in one cell. A safety net
+     * only: the list is rebuilt IMMEDIATELY whenever the ship's cell changes, and this bounds how
+     * long a universe edit made under a parked ship (a POI registered in its cell) can go unseen.
+     */
+    private static final int DESCEND_TARGET_RESOLVE_TICKS = 20;
+
+    /** Cell key the cached {@link #descendTargets} were resolved for; {@code null} = never resolved. */
+    private transient String descendTargetsCell = null;
+
+    /**
+     * The descend targets of the ship's own cell, held between ticks.
+     *
+     * <p><b>Why this is cached and the proximity check is not.</b> Which bodies are IN a cell is a
+     * constant: a body's cell is its durable NAME, derived once at a fixed reference tick and
+     * thereafter recorded, and the membership test is on that name. Where each body sits INSIDE the
+     * cell is what moves. So the expensive half — {@code bodiesAt} re-deriving a whole system per
+     * call, with no cache anywhere beneath it — recomputes an answer that does not change, while
+     * the cheap half (one orbital evaluation and a distance compare per target) is the only part
+     * that has to run per tick.</p>
+     *
+     * <p>Holding the body objects across ticks is safe BY THEIR DESIGN, not by luck: a
+     * {@code SystemBody} carries its orbital LAW rather than a position, and the moment is chosen
+     * by whoever asks — so {@code addressAt(now)} on a body resolved a second ago is still live.
+     * A frozen list of frozen positions would be the bug; this is a frozen list of laws.</p>
+     */
+    private transient java.util.List<zmaster587.advancedRocketry.universe.SystemBody> descendTargets =
+            java.util.Collections.emptyList();
 
     /**
      * The attitude the ship is being held at - a PERSISTENT reference the pilot's rates steer, not a
@@ -304,6 +438,7 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         if (world == null || world.isRemote) {
             return;
         }
+        serverTicks++;
         // The jump wind-up runs before anything else, and before the physics checks below can bail
         // out: a spool that quietly stopped counting because the ship's attitude was momentarily
         // unresolvable would leave a pilot waiting for a window that is never going to open.
@@ -322,6 +457,13 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                         world.provider.getDimension(),
                         getPos().getX(), getPos().getY(), getPos().getZ()),
                 pilotInput != null, magnitude(commandedVelocity), magnitude(velocitySetpoint));
+        // BEFORE the physics gate below, and that is the whole point of its position here: this ship's
+        // NAME is a property of its registry record, not of whether anybody is standing near enough
+        // for the physics mod to simulate it. Left after the gate, a craft that is parked, unattended
+        // or merely far from a player could never bind its durable id - and a jump, a login restore
+        // and every aboard tag resolve a ship BY that id, falling back to "whichever craft is nearest"
+        // exactly where the world holds more than one. Costs one claim test per tick until it takes.
+        bindDurableIdToThisShip();
         FreeFlightPhysics.Quat attitude = VSIntegration.getShipAttitude(world, getPos());
         if (attitude == null) {
             return; // not on a physics ship (or physics mod absent)
@@ -384,23 +526,27 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             }
         }
 
-        // The seated pilot's per-tile input wins; the static channel is only a test-probe fallback.
-        FreeFlightInput in = pilotInput != null ? pilotInput : debugFlightInput;
-        // "Flying" for the entry ceiling check = a held input OR the auto-takeoff autopilot driving.
-        boolean flying = in != null || autoTakeoffEngaged;
+        // This computer's own pilot, and nobody else's. There is no fallback: an input that reaches
+        // no seat reaches no ship.
+        FreeFlightInput in = pilotInput;
 
-        // Entry on-ramp: a ship climbing past the launch dimension's orbit ceiling enters space.
-        // Never from a space-subsystem world (slot cells and hyperspace share the void provider),
-        // and only while a pilot is flying (manual throttle or the autopilot) — a station-keeping
-        // hulk drifting high stays put.
+        // NEITHER CROSSING ASKS WHETHER ANYONE IS AT THE CONTROLS. Both used to be gated on a
+        // "flying" flag that meant "an input is held right now", which is not a property of the
+        // world: an atmosphere does not check whose hands are on the stick, going in or coming out.
+        // The gate's stated case — an unmanned hulk drifting up and launching itself — is a state
+        // this same method does not produce: with no input a ship either falls (never flown, no
+        // station-keeping) or is commanded to HOLD. The only way an unmanned ship rises is a
+        // retained non-zero cruise setpoint, i.e. the autopilot, i.e. exactly the ship that SHOULD
+        // cross. What the flag actually excluded was that autopilot: it would fly to a boundary and
+        // then refuse to cross it, which is the one flight mode nobody is watching.
         boolean onPlanetSide =
                 !(world.provider instanceof zmaster587.advancedRocketry.space.WorldProviderSpaceSlot);
 
-        // Descent trigger (the inverse of the entry ceiling check): a SETTLED slot-world ship whose
-        // pilot is flying, closed within the descent radius of a descend-target body, drops into that
-        // body's planet dim. Proximity reads the ledger coord (self-reported above) + the body POIs of
+        // Descent trigger (the inverse of the entry ceiling check): a SETTLED slot-world ship that
+        // has closed within the descent radius of a descend-target body drops into that body's
+        // planet dim. Proximity reads the ledger coord (self-reported above) + the body POIs of
         // the ship's own cell — no VS enumeration. Only planets/moons with a real dim are targets.
-        if (flying && !onPlanetSide && shipId != null) {
+        if (!onPlanetSide && shipId != null) {
             zmaster587.advancedRocketry.space.DescentController descentCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.descent();
             zmaster587.advancedRocketry.space.ShipLedger descentLedger =
@@ -415,19 +561,17 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                     if (reg != null) {
                         zmaster587.advancedRocketry.space.GalacticCoord shipCoord = settled.coord;
                         long radius = zmaster587.advancedRocketry.space.ShipEntryController.DESCENT_RADIUS_BLOCKS;
-                        for (zmaster587.advancedRocketry.universe.SystemBody body : reg.bodiesAt(shipCoord)) {
-                            if (!body.isDescendTarget()) {
-                                continue;
-                            }
-                            // Ship and body are in the SAME cell here (bodiesAt filters by name), so
-                            // both sit in one frame and its motion cancels: the in-cell delta is the
-                            // true distance without a frame lookup. A moon's offset is live, hence
-                            // the tick.
+                        for (zmaster587.advancedRocketry.universe.SystemBody body
+                                : descendTargetsIn(reg, shipCoord)) {
+                            // Ship and body are in the SAME cell here (the list is filtered by name),
+                            // so both sit in one frame and its motion cancels: the in-cell delta is
+                            // the true distance without a frame lookup. A moon's offset is live,
+                            // hence the tick.
                             double distance = Math.sqrt(shipCoord.staticFrameDistanceSqTo(
                                     body.addressAt(zmaster587.advancedRocketry.space.SpaceSubsystem
                                             .spaceClock())));
                             if (zmaster587.advancedRocketry.space.DescentController
-                                        .shouldTriggerDescent(true, true, distance, radius)
+                                        .shouldTriggerDescent(true, distance, radius)
                                     && descentCtl.requestDescent(world.provider.getDimension(),
                                             getPos(), shipId, body.dimId())) {
                                 // The crossing started: this tile was cut out of the slot world - stop
@@ -453,14 +597,14 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             }
         }
 
-        if (flying && onPlanetSide) {
+        if (onPlanetSide) {
             zmaster587.advancedRocketry.space.ShipEntryController entryCtl =
                     zmaster587.advancedRocketry.space.SpaceSubsystem.entry();
             double[] shipPos = VSIntegration.getShipWorldPosition(world, getPos());
             int ceiling = entryCeiling();
             if (entryCtl != null && shipPos != null && !entryLatched
                     && zmaster587.advancedRocketry.space.ShipEntryController
-                            .shouldTriggerEntry(false, true, shipPos[1], ceiling)
+                            .shouldTriggerEntry(false, shipPos[1], ceiling)
                     && entryCtl.requestEntry(world.provider.getDimension(), getPos(),
                             getOrCreateShipId())) {
                 // The crossing started: this tile has just been cut out of the world - do not
@@ -573,9 +717,16 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                 captureSetpointOnNextTick = false;
             }
             // Cruise control: held throttles ramp the setpoint, releasing keeps it, cut/brake zero it.
-            velocitySetpoint = FreeFlightPhysics.shipRampSetpoint(
+            double[] rampedSetpoint = FreeFlightPhysics.shipRampSetpoint(
                     velocitySetpoint[0], velocitySetpoint[1], velocitySetpoint[2],
                     in, SHIP_MAX_SPEED, SHIP_SETPOINT_RAMP);
+            // Only when it actually CHANGED: this runs every tick a pilot is aboard, and marking a
+            // tile dirty on every one of them would write the chunk twenty times a second.
+            if (rampedSetpoint[0] != velocitySetpoint[0] || rampedSetpoint[1] != velocitySetpoint[1]
+                    || rampedSetpoint[2] != velocitySetpoint[2]) {
+                velocitySetpoint = rampedSetpoint;
+                markCruiseDirty();
+            }
         }
 
         // Publish to the PER-TILE channels the controller mixin prefers (falls back to the
@@ -589,6 +740,37 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // error of rate/gain, so without it the ship visibly lags the pilot's hand.
         targetAttitude = new double[]{target.w, target.x, target.y, target.z};
         commandedAngVel = FreeFlightPhysics.bodyRatesToWorldOmega(target, pitchRate, yawRate, rollRate);
+    }
+
+    /**
+     * The descend-target bodies of {@code shipCoord}'s cell, rebuilt only when it can have changed.
+     *
+     * <p>Rebuilt at once on a CELL CHANGE — the only thing that alters which bodies are in range —
+     * and otherwise once per {@link #DESCEND_TARGET_RESOLVE_TICKS} as a bound on staleness. The
+     * slow rebuild is phased by this tile's own position rather than run on a shared {@code % N}
+     * boundary, so a cell holding several ships does not stack every one of their rebuilds onto the
+     * same tick.</p>
+     */
+    private java.util.List<zmaster587.advancedRocketry.universe.SystemBody> descendTargetsIn(
+            zmaster587.advancedRocketry.universe.UniverseRegistry reg,
+            zmaster587.advancedRocketry.space.GalacticCoord shipCoord) {
+        String key = shipCoord.cellKey();
+        boolean cellChanged = !key.equals(descendTargetsCell);
+        boolean dueForRefresh = Math.floorMod(world.getTotalWorldTime(), DESCEND_TARGET_RESOLVE_TICKS)
+                == Math.floorMod(getPos().hashCode(), DESCEND_TARGET_RESOLVE_TICKS);
+        if (!cellChanged && !dueForRefresh) {
+            return descendTargets;
+        }
+        java.util.List<zmaster587.advancedRocketry.universe.SystemBody> found =
+                new java.util.ArrayList<>();
+        for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(shipCoord)) {
+            if (b.isDescendTarget()) {
+                found.add(b);
+            }
+        }
+        descendTargets = found;
+        descendTargetsCell = key;
+        return found;
     }
 
     /** Length of a 3-vector channel, treating "no command" (null) as zero. */
@@ -817,9 +999,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     /**
      * The altitude this dimension's entry on-ramp fires above: the dimension's own orbit line (or the
      * global config value when it declares none), capped below the physics mod's pose clamp. ONE
-     * owner, so the trigger and the latch's re-arm can never read a different line.
+     * owner, so the trigger, the latch's re-arm and anything reporting the gate read the same line —
+     * a readout that recomputes it is a second owner and will eventually disagree with the trigger.
      */
-    private int entryCeiling() {
+    public int entryCeiling() {
         zmaster587.advancedRocketry.dimension.DimensionProperties props =
                 zmaster587.advancedRocketry.dimension.DimensionManager.getInstance()
                         .getDimensionProperties(world.provider.getDimension());
@@ -861,6 +1044,60 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
     /** The ship's durable id, or {@code null} if none has been minted yet. */
     public java.util.UUID shipIdOrNull() {
         return shipId;
+    }
+
+    /**
+     * Whether this craft's ship record already carries our durable id. Not persisted on purpose: a
+     * tile is re-created whenever its ship is re-assembled, and that is exactly when the binding has
+     * to be made again, against a possibly NEW ship record.
+     */
+    private boolean durableIdBound;
+
+    /** Server ticks this computer has actually been given, and naming attempts made inside them.
+     *  Two counters rather than one because "this tile is never ticked" and "it is ticked and the
+     *  naming does not run" are opposite findings that a single zero cannot separate. */
+    private long serverTicks;
+    private long bindAttempts;
+
+    /** @see #serverTicks */
+    public String tickCensus() {
+        return serverTicks + "/" + bindAttempts;
+    }
+
+    /**
+     * Tell the physics mod which of its ships our durable id names, once per tile lifetime.
+     *
+     * <p>Two identities describe one craft: the id this computer mints and persists, which survives a
+     * re-assembly and is what the transits, the durable ledger and every aboard tag are keyed by, and
+     * the physics mod's own ship uuid, which does not survive one. A caller holding the first and
+     * needing the second had no translation, so it fell back to asking which ship is NEAREST a point —
+     * exact while the world holds one craft, and silently a stranger's craft once it holds two.
+     * Binding here puts the answer on the ship's own record, where it is indexed.</p>
+     *
+     * <p>Runs on the update path, so it costs a boolean test on every tick after the first successful
+     * one, and retries until it takes: the ship is not queryable for the first few ticks after an
+     * asynchronous assembly, which is precisely when this cannot succeed yet.</p>
+     *
+     * <p>Asked of the ship's RECORD, not of a loaded physics object. The record is where the name
+     * belongs and is always there; a physics object exists only while a player is near enough for the
+     * craft to be simulated, so binding through one meant that a ship parked with nobody aboard - the
+     * ordinary state of a hull mid-jump - could never be named at all.</p>
+     */
+    private void bindDurableIdToThisShip() {
+        bindAttempts++;
+        if (durableIdBound) {
+            return;
+        }
+        String vsShipId = VSIntegration.registeredShipIdManagingBlock(world, getPos());
+        if (vsShipId == null) {
+            return; // not queryable yet; try again next tick
+        }
+        try {
+            durableIdBound = VSIntegration.bindDurableShipId(
+                    world, java.util.UUID.fromString(vsShipId), getOrCreateShipId());
+        } catch (IllegalArgumentException notAUuid) {
+            durableIdBound = true; // nothing here will ever parse; stop asking
+        }
     }
 
     /** Flight Assist on/off — the one piece of flight state the ship remembers.
@@ -972,6 +1209,15 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         nbt.setBoolean(NBT_FLIGHT_ASSIST, flightAssistEnabled);
         nbt.setBoolean(NBT_STATION_KEEPING, stationKeeping);
         nbt.setBoolean(NBT_ENTRY_LATCHED, entryLatched);
+        // The cruise the pilot left the ship holding. Persisted for the same reason
+        // stationKeeping is: they are one piece of state read together by the unmanned branch of
+        // update(), and half of it surviving a reload is worse than neither half doing so — the ship
+        // comes back marked "has been flown" with a zeroed cruise, i.e. it silently stops flying.
+        // A computer's tile is reconstructed more often than a world reload: any chunk cycle under
+        // the ship does it, which is routine for a craft parked in a space cell.
+        nbt.setDouble(NBT_CRUISE + "F", velocitySetpoint[0]);
+        nbt.setDouble(NBT_CRUISE + "R", velocitySetpoint[1]);
+        nbt.setDouble(NBT_CRUISE + "U", velocitySetpoint[2]);
         if (shipId != null) {
             nbt.setString(NBT_SHIP_ID, shipId.toString());
         }
@@ -991,6 +1237,9 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
         // Absent key -> entry ARMED. Only a descent arrival latches it; a fresh or unmanned ship
         // must never load latched, or it could never leave the planet it was built on.
         entryLatched = nbt.getBoolean(NBT_ENTRY_LATCHED);
+        // Absent keys -> a zero cruise, which is a hover: the same thing a never-flown ship has.
+        velocitySetpoint = new double[]{nbt.getDouble(NBT_CRUISE + "F"),
+                nbt.getDouble(NBT_CRUISE + "R"), nbt.getDouble(NBT_CRUISE + "U")};
         // Absent/malformed key -> no id yet (minted on first use); never re-mint over a valid one.
         hullExtent = null;
         if (nbt.hasKey(NBT_HULL)) {

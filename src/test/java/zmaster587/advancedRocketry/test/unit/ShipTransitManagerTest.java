@@ -124,6 +124,7 @@ public class ShipTransitManagerTest {
 
         @Override
         public ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+                                                              String shipId,
                                                               HyperspaceTiles.Tile tile) {
             departs.add(srcSlotDim + "@" + tile.index);
             order.add("depart");
@@ -893,19 +894,56 @@ public class ShipTransitManagerTest {
         int originDim = space.materialize(cell(1));
         mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
 
-        mgr.tick(); // arrives this tick: the transit settles + is removed, but the crew reseat is pending
+        mgr.tick(); // the hull lands this tick; its crew is not aboard yet
 
-        assertFalse("the ship has physically arrived (no longer in transit)", mgr.isInTransit("s"));
-        assertEquals("the transit is off the in-flight map at arrival", 0, mgr.inTransitCount());
-        assertEquals("an arrived ship with crew is awaiting a reseat", 1, mgr.reseatingCount());
-        assertEquals("first reseat attempt ran on the arrival tick", 1, crosser.reseatCalls.size());
+        // THE JUMP IS NOT OVER WHILE ITS PEOPLE ARE NOT ABOARD. The hull has physically landed, and
+        // that is deliberately NOT what finishes a transit: a crossing that carries crew and reports
+        // success with a crew member still in the world it left has ended in a technical failure, and
+        // a transition must not be able to do that. So the transit stays in flight, its lane stays
+        // held, and nothing tells the crew they have arrived.
+        assertTrue("a landed hull whose crew is not aboard is STILL in transit", mgr.isInTransit("s"));
+        assertEquals("...and still counted in flight", 1, mgr.inTransitCount());
+        assertEquals("the placement was attempted on the landing tick", 1, crosser.reseatCalls.size());
 
-        mgr.tick(); // reseat attempt 2 fails
-        assertEquals("still awaiting reseat after the second failed attempt", 1, mgr.reseatingCount());
-        mgr.tick(); // reseat attempt 3 succeeds -> drops out of the reseat list
+        mgr.tick(); // attempt 2 fails
+        assertTrue("still in transit while the second attempt fails", mgr.isInTransit("s"));
+        mgr.tick(); // attempt 3 succeeds
 
-        assertEquals("the crew reseat succeeded on the third attempt", 0, mgr.reseatingCount());
-        assertEquals("the reseat was retried each tick until it took", 3, crosser.reseatCalls.size());
+        assertFalse("the jump completes on the tick its crew is aboard, and not before",
+                mgr.isInTransit("s"));
+        assertEquals("...and leaves the in-flight map then", 0, mgr.inTransitCount());
+        assertEquals("the placement was retried each tick until it took", 3, crosser.reseatCalls.size());
+        assertEquals("nothing is left queued behind a completed jump", 0, mgr.reseatingCount());
+    }
+
+    /**
+     * The half that has no budget: a placement that keeps failing keeps the jump OPEN rather than
+     * completing it without its crew.
+     *
+     * <p>This is the clause the old design could not state. The transit settled on the landing tick and
+     * handed the crew to a best-effort list which, on running out of attempts, dropped them — silently,
+     * with no log line on that branch — leaving a player in the departure world while the ledger, the
+     * chat message and the in-flight map all said the jump had succeeded.</p>
+     */
+    @Test
+    public void aJumpWhoseCrewCannotBeSeatedNeverReportsSuccess() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID());
+        crosser.reseatFailCount = Integer.MAX_VALUE; // the placement never takes
+        ShipTransitManager mgr = new ShipTransitManager(space, new HyperspaceTiles(), crosser);
+
+        int originDim = space.materialize(cell(1));
+        mgr.beginTransit("s", cell(1), originDim, new BlockPos(0, 64, 0), cell(2), ARRIVE_IN_ONE_TICK);
+
+        for (int tick = 0; tick < 400; tick++) {
+            mgr.tick();
+        }
+
+        assertTrue("a jump whose crew cannot be put aboard stays in transit indefinitely - the ship is "
+                + "not lost, the ledger keeps saying so, and a restart resumes it", mgr.isInTransit("s"));
+        assertTrue("...and it keeps TRYING rather than settling into a dead state",
+                crosser.reseatCalls.size() > 300);
     }
 
     @Test

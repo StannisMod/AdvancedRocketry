@@ -59,6 +59,8 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
     private static final Pattern LEDGER = Pattern.compile("\"ledger\":(-?\\d+)");
+    private static final Pattern SHIP_ID = Pattern.compile("\"id\":\"([0-9a-fA-F-]+)\"");
+    private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 3000, BY = 64, BZ = 3000;
@@ -168,14 +170,22 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
 
         int budget = (int) (40 * TestTimeouts.factor());
         double yRest = Double.NaN;
+        String shipInfo = "";
         for (int attempt = 0; attempt < budget && Double.isNaN(yRest); attempt++) {
             bot().waitTicks(5);
-            Matcher m = POS_Y.matcher(shipInfoAtBase());
+            shipInfo = shipInfoAtBase();
+            Matcher m = POS_Y.matcher(shipInfo);
             if (m.find()) {
                 yRest = Double.parseDouble(m.group(1));
             }
         }
         assertTrue("ARRANGEMENT: the ship must LOAD with the client present", !Double.isNaN(yRest));
+
+        // The ship's own identity, so the gate readout below is about THIS craft rather than
+        // whichever one a position lookup reaches.
+        Matcher sid = SHIP_ID.matcher(shipInfo);
+        assertTrue("ARRANGEMENT: ship-info must name the ship: " + shipInfo, sid.find());
+        String shipUuid = sid.group(1);
 
         // Board post-assembly (the proven path - boarding variants have their own test).
         String mountInfo = exec("artest vs seat-mount 0");
@@ -189,6 +199,8 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
         // ---- CONTROL LEG: plain flight works far below the line, or the refusal leg is void. ----
         double yControl = yRest;
         String refusalLine = null;
+        double maxShipY = yRest;
+        StringBuilder climb = new StringBuilder(64);
         bot().holdKey(Keyboard.KEY_R);
         try {
             for (int attempt = 0; attempt < budget && (yControl - yRest) < MIN_CONTROL_CLIMB; attempt++) {
@@ -205,17 +217,54 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
             // ---- REFUSAL LEG: keep climbing until the refusal message lands in the CLIENT chat.
             // The exhausted pool refuses the entry the moment the ship crosses the line; the
             // pilot's own chat is where the player reads it (i18n already resolved).
+            //
+            // The gate is sampled along the way, sparsely (every ~100 ticks - the readout scans the
+            // ship's subspace yard, so a per-poll read would be a load source in the very climb it
+            // is watching). Without it a missing message has four indistinguishable explanations:
+            // the ship never reached the line, the trigger declined, the entry was declined, or the
+            // message was sent to nobody. The last sample and the highest altitude seen are what
+            // the assertion below reports.
             int climbBudget = (int) (800 * TestTimeouts.factor());
             for (int attempt = 0; attempt < climbBudget && refusalLine == null; attempt++) {
                 bot().waitTicks(5);
                 refusalLine = chatLineContaining(REFUSAL_NEEDLE);
+                if (attempt % 10 == 0) {
+                    // The ship's own state, asked BY IDENTITY and off the registry - it neither
+                    // force-loads the ship's subspace yard nor touches a chunk, so the climb it is
+                    // watching gets exactly the resources it would have got unwatched.
+                    String s = exec("artest vs ship-info 0 id " + shipUuid);
+                    Matcher py = POS_Y.matcher(s);
+                    Matcher vy = VEL_Y.matcher(s);
+                    if (py.find()) {
+                        double y = Double.parseDouble(py.group(1));
+                        maxShipY = Math.max(maxShipY, y);
+                        // A bounded timeline, not a last-value snapshot: a climb that stops is a
+                        // shape, and the tick it changed shape at is the whole question. The
+                        // VERTICAL VELOCITY rides along because an altitude that stops rising
+                        // cannot say whether the ship is being held, braked or simply not pushed.
+                        if (climb.length() < 900) {
+                            climb.append(' ').append(attempt).append(':')
+                                    .append(String.format(Locale.ROOT, "%.1f", y))
+                                    .append('/')
+                                    .append(vy.find() ? vy.group(1) : "?");
+                        }
+                    }
+                }
             }
         } finally {
             bot().releaseKey(Keyboard.KEY_R);
         }
+        // The gate is read HERE, on the failing path only, for the same reason the climb is sampled
+        // passively above: it resolves the ship through its subspace yard, which force-loads chunks.
+        // A missing refusal has four explanations - the ship never reached the line, the trigger
+        // declined, the entry declined, or nobody was there to tell - and these two readings
+        // separate all four. `lastDecision` NEVER-ASKED with a maxShipY under the ceiling is the
+        // first of them, and it exonerates every part of the entry path.
         assertTrue("a pilot whose entry is refused (pool exhausted) must be TOLD so in his own "
                         + "chat - a silent refusal reads as a dead ship. chat="
-                        + bot().reportChat(8) + " subsystem=" + exec("artest space subsystem-status"),
+                        + bot().reportChat(8) + " subsystem=" + exec("artest space subsystem-status")
+                        + " maxShipY=" + maxShipY + " climb(attempt:y/velY)=[" + climb.toString().trim()
+                        + "] gate=" + exec("artest space entry-gate 0 " + shipUuid),
                 refusalLine != null);
 
         // Still seated: two consecutive positive samples (a lost seat can read riding=true for a

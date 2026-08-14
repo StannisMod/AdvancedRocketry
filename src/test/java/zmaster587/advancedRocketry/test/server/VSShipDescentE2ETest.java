@@ -58,7 +58,10 @@ public class VSShipDescentE2ETest extends AbstractSharedServerTest {
         double sx = extractDouble(srcInfo, "posX"), sy = extractDouble(srcInfo, "posY"),
                 sz = extractDouble(srcInfo, "posZ");
 
-        exec("artest vs ff-input 0 1 0 0 0 0");          // a held-throttle input => a pilot is flying
+        // A held throttle on THIS ship's own flight computer => a pilot is flying.
+        String held = exec("artest vs ff-input-by-id 0 " + extractString(srcInfo, "id") + " 0 1 0 0 0 0");
+        assertTrue("the held input must reach this ship's flight computer: " + held,
+                held.contains("\"afcResolved\":true"));
         String tp = exec("artest vs teleport-ship 0 " + (int) sx + " " + (int) sy + " " + (int) sz
                 + " " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz);
         assertTrue("climb teleport failed: " + tp, tp.contains("\"ok\":true"));
@@ -85,8 +88,9 @@ public class VSShipDescentE2ETest extends AbstractSharedServerTest {
         assertEquals("witness sensitivity control — overworld must hold no VS ship before the descent",
                 0, extractInt(exec("artest vs ship-count-all " + TARGET_DIM), "count"));
 
-        // Stop feeding a pilot input into the SOURCE dim (0) — it is irrelevant now; drive descent by probe.
-        exec("artest vs ff-input 0 0 0 0 0 0");
+        // Nothing to stop feeding: the pilot input lives on the SHIP's own flight computer, and that
+        // tile was cut out of dim 0 by the entry above. This used to clear a world-wide static that
+        // would otherwise have followed the ship into space and every later scenario with it.
 
         // Ensure the settled ship is loaded in its slot, then locate its flight computer. The ship's
         // blocks (incl. the AFC tile entity) live in the slot world's far subspace shipyard; they enter
@@ -95,7 +99,9 @@ public class VSShipDescentE2ETest extends AbstractSharedServerTest {
         String afc = null;
         for (int i = 0; i < 40 && afc == null; i++) {
             exec("artest vs load-ships " + slotDim);
-            String r = exec("artest space find-afc " + slotDim);
+            // By id: this scenario already knows which ship it flew up, and "the first settled ship
+            // in the slot" is a different question that happens to have the same answer today.
+            String r = exec("artest space find-afc " + slotDim + " " + shipId);
             if (r.contains("\"found\":true")) {
                 afc = r;
             } else {

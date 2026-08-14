@@ -64,6 +64,32 @@ public class VSTransitCrewGroupE2ETest extends AbstractSharedVsClientE2ETest {
 
     private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
 
+    private static final Pattern SETUP_SHIP_ID = Pattern.compile("\"shipId\":\"([^\"]+)\"");
+
+    /**
+     * The identity of the ship this scenario's setup just assembled.
+     *
+     * <p>Every scenario in this class runs its jump out of the SAME pool slot dimension and builds at
+     * the SAME anchor — the setup allocates a fresh cell controller each time, and a fresh controller's
+     * binding map is empty, so it always takes the first slot in the pool. Asking "the ship at
+     * (1,64,1)" in that dimension is therefore a question with several right answers, and the one the
+     * nearest-ship lookup returns is the FIRST ship ever assembled there: departed, and holding an
+     * empty shipyard. Measured twice in independent boots as {@code seatFound:false} on a ship that
+     * had just been built, with the same yard box printed under two different slot dims.</p>
+     */
+    private static String setupShipId(String setup) {
+        Matcher m = SETUP_SHIP_ID.matcher(setup);
+        assertTrue("the piloted transit setup must name the ship it assembled — without it every"
+                + " later question about that ship is a nearest-ship guess in a dimension this class"
+                + " deliberately reuses: " + setup, m.find());
+        return m.group(1);
+    }
+
+    /** {@code find-seat} keyed by identity — see {@link #setupShipId} for why never by the anchor. */
+    private String findSeat(int originDim, String shipId) throws Exception {
+        return exec("artest vs find-seat " + originDim + " id " + shipId);
+    }
+
     /** Poll for a loaded VS ship in {@code dim} (assembly is async; a headless server forces the load). */
 private int waitForLoadedShip(int dim) throws Exception {
         for (int i = 0; i < 40; i++) {
@@ -139,8 +165,9 @@ private static final long PARK_SPEED = 100_000L;
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        // Now the ship is up: locate the pilot seat's subspace pos + the ship's world pos.
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        // Now the ship is up: locate the pilot seat's subspace pos + the ship's world pos, keyed by the
+        // identity the setup handed back rather than by the anchor every scenario here shares.
+        String seat = findSeat(originDim, setupShipId(setup));
         // CONTROL (witness sensitivity): the seat must actually have been built and located, or the whole
         // "still riding after the jump" observation is vacuous.
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
@@ -227,6 +254,54 @@ private static final long PARK_SPEED = 100_000L;
                 riding.get("entityClass").getAsString().endsWith("EntityDummy"));
         assertEquals("the client must have followed the crew into the target cell",
                 targetDim, bot().reportWeather().get("dim").getAsInt());
+
+        // ACCEPTANCE, on the crossing's own census: this jump moved the hull it NAMES, and it parked
+        // in a lane that was its alone. Both are invisible from everything asserted above - a jump
+        // that delivered a stranger's hull with this crew re-seated on it looks exactly like a
+        // successful one from the client's side, which is how the positional cut survived so long.
+        String census = exec("artest vs arrival-trace");
+        Matcher cutM = ARRIVAL_CUT.matcher(census);
+        assertTrue("the arrival must leave a cut census behind: " + census, cutM.find());
+        String cut = cutM.group(1);
+        String cutting = censusField(cut, "cutting");
+        String byDurableId = censusField(cut, "byDurableId");
+        String byPosition = censusField(cut, "byPosition");
+        // Printed, not merely asserted: which ARM the assertion below took is the whole value of it.
+        // With no durable id resolvable it degenerates into "the cut took the anchor's craft", which
+        // is what production did before there was a rule at all - a green that says nothing.
+        System.out.println("[JUMP CENSUS] " + cut);
+        // The jump must be able to NAME its own hull, not merely fail to mistake somebody else's for
+        // it. A crossing carries the craft's durable name onto the record it creates; without that
+        // the name is lost at every crossing and can only come back from the ship's own tick, which
+        // a parked hull never gets - so this field going back to "null" means the carry is gone and
+        // the arrival is resolving by position again, which is exactly what it looks like when it
+        // delivers a stranger.
+        assertTrue("the jump must resolve its own hull BY NAME in hyperspace - a null here means the "
+                + "arrival is back to picking whatever craft its anchor reaches. census: " + cut,
+                !"null".equals(byDurableId) && !"(absent)".equals(byDurableId));
+        // Unconditional in BOTH arms: where the jump's durable id resolves a hull, that hull is the
+        // one cut; where nothing could be established, the anchor's craft is - and saying which arm
+        // applied is the difference between a check with three answers and one with none.
+        assertEquals("the arrival cut the hull the jump names (byDurableId), or - where no identity "
+                        + "could be established - the one at its anchor. census: " + cut,
+                "null".equals(byDurableId) ? byPosition : byDurableId, cutting);
+        assertTrue("a healthy jump is never REFUSED its own hull - a refusal here means the identity "
+                + "check fires on a case it cannot judge. census: " + cut, !"REFUSED".equals(cutting));
+
+        Matcher laneM = DEPART_LANE.matcher(census);
+        assertTrue("the departure must leave a lane census behind: " + census, laneM.find());
+        String lane = laneM.group(1);
+        assertTrue("the lane this jump departed into must have been EMPTY when it was handed out - a "
+                        + "lane holding a second hull makes every later position lookup at that "
+                        + "anchor ambiguous. census: " + lane,
+                lane.contains("alreadyThere=[]"));
+    }
+
+    /** One {@code key=value} field out of a census line, or {@code "(absent)"}. Values are plain
+     *  tokens (uuids, "null", "REFUSED"); the bracketed and BlockPos fields are read whole. */
+    private static String censusField(String census, String key) {
+        Matcher m = Pattern.compile("(?:^| )" + key + "=(\\S+)").matcher(census);
+        return m.find() ? m.group(1) : "(absent)";
     }
 
 
@@ -245,7 +320,7 @@ private static final long PARK_SPEED = 100_000L;
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+        String seat = findSeat(originDim, setupShipId(setup));
         // CONTROL (witness sensitivity): without a located seat there is nothing to sit on and every
         // later "he is aboard" reading is vacuous.
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
@@ -410,7 +485,7 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
         // actually loaded it for the nearby bot, a tick or two after the dimension transfer.
         String seat = "";
         for (int i = 0; i < 40 && !hasKey(seat, "shipWorldX"); i++) {
-            seat = execEnvelope("artest vs find-seat " + originDim + " 1 64 1");
+            seat = execEnvelope("artest vs find-seat " + originDim + " id " + setupShipId(setup));
             if (!hasKey(seat, "shipWorldX")) {
                 bot().waitTicks(5);
             }
@@ -492,8 +567,8 @@ private boolean waitForRegisteredShip(int dim) throws Exception {
 private static final int SKY_RENDER_DISTANCE = 8;
 
     /** Put the bot in the origin cell and on the ship's pilot seat. */
-private void seatTheBot(int originDim) throws Exception {
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
+private void seatTheBot(int originDim, String shipId) throws Exception {
+        String seat = findSeat(originDim, shipId);
         assertTrue("the pilot seat must be found in the assembled ship (else the test is vacuous): " + seat,
                 readBool(seat, "seatFound"));
         int seatX = readInt(seat, "seatX"), seatY = readInt(seat, "seatY"), seatZ = readInt(seat, "seatZ");
@@ -535,10 +610,6 @@ private void seatTheBot(int originDim) throws Exception {
 private String hud() throws Exception {
         return bot().readStaticField("zmaster587.advancedRocketry.event.RocketEventHandler",
                 "lastFreeFlightHud").get("value").getAsString();
-    }
-
-    private long ringFrames() throws Exception {
-        return readCounter(SKY, "ringFramesDrawn");
     }
 
     /** Frames on which this sky renderer ran at all, whatever it decided to draw. */
@@ -585,24 +656,18 @@ private String chat() throws Exception {
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
 
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
 
         // ── CONTROL, in an ordinary cell ────────────────────────────────────────────────────────
-        // The ring is what a cell draws. Establishing that its counter MOVES here is what makes it
-        // standing still in flight evidence of suppression rather than of a dead renderer.
         long skyBefore = skyFrames();
-        long ringBefore = ringFrames();
         long tunnelBefore = tunnelFrames();
         bot().waitTicks(20);
-        // First that the sky renderer runs here at all. Without this the ring assertion below answers
-        // two questions with one zero, and "suppressed" is indistinguishable from "never reached".
+        // The sky renderer must run here at all. Without it "the corridor is drawn in hyperspace"
+        // answers two questions with one number, and "the corridor came up" is indistinguishable
+        // from "the sky pass never ran".
         assertTrue("this sky renderer must run in an ordinary cell (sky frames " + skyBefore + " -> "
                         + skyFrames() + "); nothing else in this test means anything if it does not",
                 skyFrames() > skyBefore);
-        assertTrue("the descent-boundary ring must be drawn in an ordinary cell, or its standing still "
-                        + "in flight is not evidence of anything (ring frames "
-                        + ringBefore + " -> " + ringFrames() + ")",
-                ringFrames() > ringBefore);
         assertEquals("the hyperspace corridor must NOT be drawn in an ordinary cell",
                 tunnelBefore, tunnelFrames());
         assertTrue("the HUD must not name a jump phase before the jump: " + hud(),
@@ -621,13 +686,11 @@ private String chat() throws Exception {
         //
         // The sky window opens on the first sample where the CLIENT is observably in hyperspace, not
         // on the tick the server was told to depart. Between those two the client is still standing
-        // in the cell it left and its sky is still that cell's; counting those frames against "the
-        // ring is suppressed in hyperspace" would measure the crossing rather than the corridor.
-        long ringAtStart = -1L;
+        // in the cell it left and drawing that cell's sky, so a baseline taken there would count the
+        // crossing rather than the corridor.
         long tunnelAtStart = -1L;
         int samples = 0;
         String hudInFlight = "";
-        long ringInFlight = -1L;
         long tunnelInFlight = -1L;
         String lastTick = "";
         for (int i = 0; i < 120; i++) {
@@ -637,64 +700,29 @@ private String chat() throws Exception {
             }
             bot().waitTicks(2);
             String hudNow = hud();
-            if (ringAtStart < 0) {
+            if (tunnelAtStart < 0) {
                 if (!hudNow.contains("HYPERSPACE")) {
                     continue; // not across yet: nothing sampled here is about hyperspace
                 }
-                // Baseline the frame counters once the CLIENT'S OWN dimension is the corridor —
-                // not a fixed number of ticks after the HUD flips. They are CUMULATIVE client-side
-                // counters and this is an equality pin, so every frame the client draws while it
-                // still believes it is in the cell reads as "the ring was drawn in hyperspace".
-                // The HUD is server-driven state; the ring is drawn by the client's own renderer
-                // off the client's own dimension, so that dimension is the condition to wait on.
-                // A tick count is only a guess at how long the handover takes, and the guess
-                // scales with load: measured 2026-08-07 the leak was exactly one frame and a
-                // 4-tick pause covered it, then on 2026-08-08 the same pause let TWO through under
-                // full-gate load (expected:<122> but was:<124>). Waiting on the state cannot be
-                // out-run by a slower handover.
+                // Baseline once the CLIENT'S OWN dimension is the corridor, not a fixed number of
+                // ticks after the HUD flips. The HUD is server-driven state; the sky is drawn by the
+                // client's own renderer off the client's own dimension, so that dimension is the
+                // condition to wait on. A tick count is only a guess at how long the handover takes,
+                // and the guess scales with load.
                 int hyperDimNow = readInt(lastTick, "hyperDim");
                 for (int settle = 0; settle < 40
                         && bot().reportWeather().get("dim").getAsInt() != hyperDimNow; settle++) {
                     bot().waitTicks(1);
                 }
                 assertEquals("ARRANGEMENT: the client never reached the corridor's own dimension, so "
-                                + "the ring baseline below would be taken in the cell it left",
+                                + "the baseline below would be taken in the cell it left",
                         hyperDimNow, bot().reportWeather().get("dim").getAsInt());
-                // The client's dimension is necessary but not sufficient: measured 2026-08-08, one
-                // ring frame still lands AFTER it flips (the leak went 2 -> 1 when the wait moved
-                // from 4 ticks to this state). So wait for the renderer ITSELF to say it is in the
-                // corridor — its own frame counter advancing — and baseline only then. The window
-                // given up is exactly the handover frame, which the claim was never about; a ring
-                // frame drawn while the corridor is provably being drawn is a real one.
-                long tunnelAtFlip = tunnelFrames();
-                for (int settle = 0; settle < 40 && tunnelFrames() <= tunnelAtFlip; settle++) {
-                    bot().waitTicks(1);
-                }
-                assertTrue("ARRANGEMENT: the corridor renderer never drew a frame after the client "
-                                + "entered hyperspace (corridor frames stuck at " + tunnelAtFlip
-                                + "), so there is no corridor to baseline the ring against",
-                        tunnelFrames() > tunnelAtFlip);
-                // And STILL the ring can leak one more frame past that point — measured 2026-08-08
-                // at one frame and then at two, each time re-tuned by waiting on one more upstream
-                // signal, and it leaked again the moment another scenario was added ahead of this
-                // one on the shared client. The signal that cannot be out-run is the ring counter's
-                // OWN: baseline it once it has stopped moving. That gives up exactly the handover
-                // frames, which the claim was never about, and it does NOT weaken the claim — a
-                // ring genuinely drawn throughout hyperspace never stops moving, so the settle
-                // budget runs out on a value still climbing and the equality below fails on it.
-                ringAtStart = ringFrames();
                 tunnelAtStart = tunnelFrames();
-                scenario().record("ringAtStart", ringAtStart)
-                        .record("tunnelAtStart", tunnelAtStart);
+                scenario().record("tunnelAtStart", tunnelAtStart);
             }
             samples++;
             hudInFlight = hudNow;
-            ringInFlight = ringFrames();
             tunnelInFlight = tunnelFrames();
-            // Per-sample, so a future red says WHERE the ring moved instead of only that it did.
-            if (ringInFlight != ringAtStart) {
-                scenario().record("ringMovedAtSample" + samples, ringInFlight);
-            }
         }
 
         // The instrument must have fired: a jump that arrived instantly proves nothing about the
@@ -713,12 +741,6 @@ private String chat() throws Exception {
         assertTrue("the corridor must be drawn in hyperspace (corridor frames " + tunnelAtStart
                         + " -> " + tunnelInFlight + " over " + samples + " samples)",
                 tunnelInFlight > tunnelAtStart);
-
-        assertEquals("the descent-boundary ring must NOT be drawn in hyperspace - there is nothing to "
-                        + "descend to there, and the same renderer draws it unconditionally for a cell "
-                        + "(ring frames over the flight, with the corridor advancing " + tunnelAtStart
-                        + " -> " + tunnelInFlight + ")",
-                ringAtStart, ringInFlight);
 
         // ── ARRIVAL ─────────────────────────────────────────────────────────────────────────────
         for (int i = 0; i < 60 && readInt(lastTick, "inTransit") != 0; i++) {
@@ -784,8 +806,54 @@ private String chat() throws Exception {
         return capture;
     }
 
+    /**
+     * The dimension the CLIENT is in, or a readable failure when it is in none.
+     *
+     * <p>{@code reportWeather().get("dim")} is absent whenever the client has no world — it was
+     * disconnected, it died into a respawn screen, or it never joined — and reading it blind turns
+     * every one of those into an {@code NullPointerException} on a line about dimensions. That is a
+     * verdict nobody can act on: it names neither which of the three happened nor that the subject
+     * left the game at all. This says which, and it says it where the reading is taken.
+     */
+    private int clientDim(String where) throws Exception {
+        JsonObject weather = bot().reportWeather();
+        if (weather.get("dim") == null) {
+            JsonObject state = bot().reportState();
+            org.junit.Assert.fail("the CLIENT has no world at " + where + ", so it is out of the game"
+                    + " rather than in the wrong dimension — a death into a respawn screen and a"
+                    + " disconnect both look like this, and neither is a statement about the subject."
+                    + " weather=" + weather + " state=" + state);
+        }
+        return weather.get("dim").getAsInt();
+    }
+
     /** Forward, on the real client — the key a player walks with. */
     private static final int FORWARD_KEY = org.lwjgl.input.Keyboard.KEY_W;
+
+    private static final Pattern RESEAT_BLOCK = Pattern.compile("\"reseatBlock\":\"([^\"]*)\"");
+
+    /**
+     * The crossing's own account of why it has not finished putting this crew back aboard, in the
+     * placement's words: which step of the seat lookup or of the deck placement it is waiting on.
+     *
+     * <p>Read out of {@code arrival-trace} but reduced to that one field. The full envelope carries
+     * the whole position-writer ring, which is hundreds of events long by the time an arrival has
+     * stalled, and a verdict nobody scrolls to the end of is a verdict nobody reads. Empty means the
+     * last re-seat put everyone aboard — a real answer, not a missing one.</p>
+     */
+    private String reseatBlock() throws Exception {
+        String trace = exec("artest vs arrival-trace");
+        Matcher m = RESEAT_BLOCK.matcher(trace);
+        Matcher cut = ARRIVAL_CUT.matcher(trace);
+        Matcher lane = DEPART_LANE.matcher(trace);
+        return (m.find() ? m.group(1) : "(no arrival-trace envelope)")
+                + (cut.find() ? " ;; cut: " + cut.group(1) : "")
+                + (lane.find() ? " ;; depart: " + lane.group(1) : "");
+    }
+
+    private static final Pattern ARRIVAL_CUT = Pattern.compile("\"arrivalCut\":\"([^\"]*)\"");
+
+    private static final Pattern DEPART_LANE = Pattern.compile("\"departLane\":\"([^\"]*)\"");
 
     /**
      * How long the void gives a crew member who is aboard nothing before it takes him, in server
@@ -833,7 +901,7 @@ private String chat() throws Exception {
         int originDim = readInt(setup, "originDim");
         assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
                 waitForLoadedShip(originDim) >= 1);
-        seatTheBot(originDim);
+        seatTheBot(originDim, setupShipId(setup));
 
         // ── CONTROL, in the origin cell ─────────────────────────────────────────────────────────
         // Two readings the hyperspace ones are read against. Without the first, "the corridor did not
@@ -1060,8 +1128,8 @@ private String chat() throws Exception {
 
         // Board the way every other scenario here boards (seat + its own control), then stand up.
         // The ship's world position is read for the stand-up arrangement's re-drop, not asserted on.
-        String seat = exec("artest vs find-seat " + originDim + " 1 64 1");
-        seatTheBot(originDim);
+        String seat = findSeat(originDim, setupShipId(setup));
+        seatTheBot(originDim, setupShipId(setup));
         String capture = standTheBotOnTheDeck(readDouble(seat, "shipWorldX"),
                 readDouble(seat, "shipWorldY"), readDouble(seat, "shipWorldZ"));
 
@@ -1143,7 +1211,12 @@ private String chat() throws Exception {
             }
             bot().waitTicks(2);
         }
-        assertTrue("the jump never completed (still in transit); last tick=" + lastTick, targetDim >= 0);
+        // An arrival that never completes is now a statement about the crew: the settle waits for
+        // everyone to be back aboard, so "still in transit" IS the placement not converging, and the
+        // placement's own account of the step it is stuck on belongs in the verdict rather than in a
+        // server log somebody has to go and find.
+        assertTrue("the jump never completed (still in transit); last tick=" + lastTick
+                + "; the crossing says it is blocked at: " + reseatBlock(), targetDim >= 0);
 
         // Drive the placement's retries and watch the CLIENT, exactly as the seated siblings do.
         boolean carriedOn = false;
@@ -1155,13 +1228,246 @@ private String chat() throws Exception {
         }
         String captureOnArrival = exec("artest vs deck-capture");
         assertEquals("the arrival crossing must carry the crew member on his feet too — his own"
-                + " client must be in the TARGET cell: " + captureOnArrival,
+                + " client must be in the TARGET cell: " + captureOnArrival
+                + "; placement blocked at: " + reseatBlock(),
                 targetDim, bot().reportWeather().get("dim").getAsInt());
         assertTrue("...and he must be back ON THE DECK there, not merely in the right world: "
-                + captureOnArrival, readBool(captureOnArrival, "alreadyTracked"));
+                + captureOnArrival + "; placement blocked at: " + reseatBlock(),
+                readBool(captureOnArrival, "alreadyTracked"));
         assertTrue("...and still on his feet, never seated late by the arrival: "
                 + bot().reportRidingEntity(),
                 !bot().reportRidingEntity().get("riding").getAsBoolean());
+    }
+
+    /**
+     * The corridor is the backdrop of a WORLD, so it is drawn for everyone in that world — not only
+     * for whoever happens to be sitting down.
+     *
+     * <p>The defect: the sky's gate was the jump phase published on the SEAT entity, and that answers
+     * 0 for anybody riding nothing. A crew member who stood up mid-flight lost the corridor, and
+     * hyperspace has nothing else in its sky (no cell is loaded, so no body is ever synced), so it
+     * went empty and motionless — which the reporter read as the jump itself having stopped.
+     *
+     * <p><b>Three readings, and the first two are what make the third mean anything.</b> No corridor
+     * in an ordinary cell; a corridor while SEATED in hyperspace; a corridor still coming while he is
+     * on his FEET. Without the middle reading "drawn while standing" cannot be told from "the sky pass
+     * never ran", and the sky counter is read in the same window as the tunnel counter for the same
+     * reason — it advances on the renderer's first line, before any branch, so a still sky and a still
+     * corridor are distinguishable.
+     */
+    @Test
+    public void aStandingCrewMemberStillSeesTheHyperspaceCorridor() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        // Vanilla runs the sky pass only at renderDistanceChunks >= 4 and the harness pins the client
+        // at 2, so without this every sky reading below would be honestly zero for the wrong reason.
+        // Read back off the client's own field rather than assumed.
+        JsonObject rd = bot().setRenderDistance(SKY_RENDER_DISTANCE);
+        previousRenderDistance = rd.get("previous").getAsInt();
+        assertTrue("the sky pass gate must be open, read back off the client's own field: " + rd,
+                rd.get("skyPassEnabled").getAsBoolean());
+
+        exec("artest vs permaload true");
+        exec("gamemode survival @a");
+
+        String setup = exec("artest space transit-setup-piloted");
+        assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
+        int originDim = readInt(setup, "originDim");
+        assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
+                waitForLoadedShip(originDim) >= 1);
+        seatTheBot(originDim, setupShipId(setup));
+
+        // ── READING 1, in an ordinary cell: no corridor ──────────────────────────────────────────
+        long skyInCell = skyFrames();
+        long tunnelInCell = tunnelFrames();
+        bot().waitTicks(20);
+        assertTrue("this sky renderer must run in an ordinary cell (sky frames " + skyInCell + " -> "
+                        + skyFrames() + "); nothing below means anything if it does not",
+                skyFrames() > skyInCell);
+        assertEquals("the corridor must NOT be drawn in an ordinary cell — it says 'you are in a jump'",
+                tunnelInCell, tunnelFrames());
+
+        // ── INTO HYPERSPACE, then stop driving the jump ──────────────────────────────────────────
+        // An un-ticked transit parks its ship in its lane indefinitely, which is the interval this
+        // scenario is about: it needs the flight to still be happening while it reads the sky.
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
+        assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
+        int hyperDim = -1;
+        String lastTick = "";
+        for (int i = 0; i < 120; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                break;
+            }
+            hyperDim = readInt(lastTick, "hyperDim");
+            if (bot().reportWeather().get("dim").getAsInt() == hyperDim) {
+                break;
+            }
+            bot().waitTicks(2);
+        }
+        assertEquals("ARRANGEMENT: the client must actually be in hyperspace before any reading here"
+                + " is about hyperspace; last tick=" + lastTick,
+                hyperDim, bot().reportWeather().get("dim").getAsInt());
+
+        // ── READING 2, SEATED in hyperspace: the corridor comes up ───────────────────────────────
+        JsonObject mount = bot().reportRidingEntity();
+        assertTrue("ARRANGEMENT: he must still be in his seat for the seated reading: " + mount,
+                mount.get("riding").getAsBoolean());
+        long tunnelSeated = tunnelFrames();
+        bot().waitTicks(20);
+        long drawnSeated = tunnelFrames() - tunnelSeated;
+        assertTrue("the corridor must be drawn for a SEATED pilot in hyperspace — this is the leg that"
+                        + " proves the instrument can see a corridor at all (frames drawn in 20 ticks="
+                        + drawnSeated + ")",
+                drawnSeated > 0);
+
+        // ── THE STIMULUS: he stands up, IN FLIGHT ────────────────────────────────────────────────
+        double deckX = mount.get("posX").getAsDouble();
+        double deckY = mount.get("posY").getAsDouble();
+        double deckZ = mount.get("posZ").getAsDouble();
+        String capture = standTheBotOnTheDeck(deckX, deckY, deckZ);
+        assertTrue("ARRANGEMENT: he must be resolved on his deck in hyperspace, i.e. aboard on his"
+                + " feet rather than adrift in a void world: " + capture,
+                readBool(capture, "alreadyTracked"));
+        assertTrue("ARRANGEMENT: and off his seat — riding anything at all would make the reading below"
+                        + " the seated case again: " + bot().reportRidingEntity(),
+                !bot().reportRidingEntity().get("riding").getAsBoolean());
+
+        // ── READING 3, THE CONTRACT: on his feet, the corridor is still coming ───────────────────
+        long skyStanding = skyFrames();
+        long tunnelStanding = tunnelFrames();
+        bot().waitTicks(20);
+        long skyDrawnStanding = skyFrames() - skyStanding;
+        long drawnStanding = tunnelFrames() - tunnelStanding;
+        assertTrue("INSTRUMENT: the sky renderer must still be running in this window, or a still"
+                        + " corridor below would be a still SKY and say nothing about the gate"
+                        + " (sky frames in 20 ticks=" + skyDrawnStanding + ")",
+                skyDrawnStanding > 0);
+        assertTrue("a crew member who stood up mid-flight must still see the corridor: hyperspace has"
+                        + " nothing else in its sky, so losing it leaves him looking at a dead"
+                        + " starfield and reading his own jump as having stopped. Frames drawn in 20"
+                        + " ticks while standing=" + drawnStanding + ", against " + drawnSeated
+                        + " while seated in the same flight; sky frames standing=" + skyDrawnStanding,
+                drawnStanding > 0);
+    }
+
+    /**
+     * JUMP-4, the posture half: what the arrival returns is the posture the crew member is IN, not the
+     * one he had when the jump fired.
+     *
+     * <p>The defect (ledger #212): the crew is captured ONCE, at the departure cut, and both re-seats
+     * replay that frozen record. Hyperspace is livable by JUMP-2 — stand up, walk, use the ship — so a
+     * crew member who stood up in the corridor was force-mounted back into the seat on arrival, undoing
+     * an entire flight's worth of what the interval invited him to do.
+     *
+     * <p><b>Why its sibling could not catch this.</b>
+     * {@link #aWalkingCrewMemberTravelsWithHisShipThroughHyperspace} stands the crew member up BEFORE
+     * the jump, so the departure record already says STANDING and replaying it lands him on the deck —
+     * correct behaviour reached by accident. The defect lives in the posture CHANGE, so this scenario
+     * boards him seated, commits the jump from the chair, and only then puts him on his feet. That
+     * sibling stays the control: it is green on either side of the fix, and this one is not.
+     */
+    @Test
+    public void aCrewMemberWhoStoodUpMidFlightArrivesOnHisFeet() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies (run with -PwithVS)", serverHasVs());
+
+        exec("artest vs permaload true");
+        exec("gamemode survival @a");
+
+        String setup = exec("artest space transit-setup-piloted");
+        assertTrue("piloted transit setup must succeed: " + setup, readBool(setup, "ok"));
+        int originDim = readInt(setup, "originDim");
+        assertTrue("the piloted origin ship never assembled/loaded in the pool cell (dim " + originDim + ")",
+                waitForLoadedShip(originDim) >= 1);
+
+        // Boards SEATED and jumps from the chair: that is what writes a SEATED departure record, and
+        // the record is the subject here.
+        seatTheBot(originDim, setupShipId(setup));
+        String begin = exec("artest space transit-begin " + originDim + " 1 64 1 " + PARK_SPEED);
+        assertTrue("the transit must begin (departure crossing): " + begin, readBool(begin, "began"));
+
+        // Fly as far as hyperspace and stop driving: the stand-up has to happen mid-flight, between the
+        // two cuts, which is the whole point.
+        int hyperDim = -1;
+        String lastTick = "";
+        for (int i = 0; i < 120; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                break;
+            }
+            hyperDim = readInt(lastTick, "hyperDim");
+            if (bot().reportWeather().get("dim").getAsInt() == hyperDim) {
+                break;
+            }
+            bot().waitTicks(2);
+        }
+        assertEquals("ARRANGEMENT: the client must be in hyperspace before he can stand up in it;"
+                + " last tick=" + lastTick, hyperDim, bot().reportWeather().get("dim").getAsInt());
+
+        JsonObject mount = bot().reportRidingEntity();
+        assertTrue("ARRANGEMENT: he must have crossed SEATED — a departure record that already said"
+                + " STANDING is the sibling scenario, and it passes on the broken build: " + mount,
+                mount.get("riding").getAsBoolean());
+
+        // ── THE STIMULUS: off the seat, mid-flight ───────────────────────────────────────────────
+        String capture = standTheBotOnTheDeck(mount.get("posX").getAsDouble(),
+                mount.get("posY").getAsDouble(), mount.get("posZ").getAsDouble());
+        assertTrue("ARRANGEMENT: he must be resolved on his deck in hyperspace — aboard on his feet is"
+                + " what the arrival is supposed to give back: " + capture,
+                readBool(capture, "alreadyTracked"));
+        assertTrue("ARRANGEMENT: and genuinely out of the chair before the arrival: "
+                        + bot().reportRidingEntity(),
+                !bot().reportRidingEntity().get("riding").getAsBoolean());
+
+        // ── FINISH THE JUMP ─────────────────────────────────────────────────────────────────────
+        int targetDim = -1;
+        for (int i = 0; i < 120 && targetDim < 0; i++) {
+            lastTick = exec("artest space transit-tick");
+            if (readInt(lastTick, "inTransit") == 0) {
+                targetDim = readInt(lastTick, "targetDim");
+                break;
+            }
+            bot().waitTicks(2);
+        }
+        assertTrue("the jump never completed (still in transit); last tick=" + lastTick, targetDim >= 0);
+
+        // Drive the placement's retries and watch the CLIENT, as the siblings do — and watch whether he
+        // is still THERE, which is a separate question from his posture and has to be asked first.
+        //
+        // The second cut removes the hull he is standing on. A body left adrift on it has only the
+        // void's budget before hyperspace takes him, and that budget is SHORTER than this arrival
+        // window, so "adrift" and "put back aboard" are separated here by whether he is alive at all.
+        // Without this the loss surfaces as an NPE on a later line about dimensions, which names
+        // neither the loss nor the window it happened in.
+        boolean carriedOn = false;
+        for (int i = 0; i < RESEAT_POLLS && !carriedOn; i++) {
+            exec("artest space transit-tick");
+            bot().waitTicks(2);
+            JsonObject state = bot().reportState();
+            com.google.gson.JsonElement health = state.get("health");
+            assertTrue("the crew member was LOST during the arrival window rather than re-established"
+                            + " on the ship: a body adrift on a hull that has just been cut has only"
+                            + " the void's " + VOID_GRACE_TICKS + " ticks, and this window is longer"
+                            + " than that. Iteration " + i + " of " + RESEAT_POLLS + ", state=" + state,
+                    health != null && health.getAsFloat() > 0f);
+            carriedOn = clientDim("the arrival poll") == targetDim
+                    && readBool(exec("artest vs deck-capture"), "alreadyTracked");
+        }
+        String captureOnArrival = exec("artest vs deck-capture");
+        assertEquals("ARRANGEMENT: the arrival must have carried him at all — his own client must be in"
+                + " the TARGET cell before his posture there means anything: " + captureOnArrival,
+                targetDim, clientDim("the arrival verdict"));
+        // ── THE CONTRACT, before the arrangement-shaped reading below ───────────────────────────
+        // Posture first, deliberately: being off the deck is a CONSEQUENCE of having been seated, so a
+        // red that leads with the missing deck capture describes the symptom's shadow. Riding at all is
+        // the defect, and the probe says so in one field.
+        assertTrue("a crew member who was on his FEET when the ship arrived must arrive on his feet:"
+                        + " the arrival may not replay where he was sitting when the jump fired, an"
+                        + " entire flight earlier. Riding state on arrival="
+                        + bot().reportRidingEntity() + " capture=" + captureOnArrival,
+                !bot().reportRidingEntity().get("riding").getAsBoolean());
+        assertTrue("...and he must be back ON THE DECK, not merely in the right world: "
+                + captureOnArrival, readBool(captureOnArrival, "alreadyTracked"));
     }
 
 }

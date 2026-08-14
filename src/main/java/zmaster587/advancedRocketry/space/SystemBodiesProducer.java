@@ -119,8 +119,12 @@ public final class SystemBodiesProducer {
             if (found != null) {
                 for (SystemBody b : found) {
                     BlockDelta dir = b.absoluteAt(worldTick).minus(observer);
+                    // The shell is sent per body, from the ONE place that sizes it. A body that
+                    // cannot be descended to has none, and zero is what says so: the client must
+                    // not have to know which kinds have a shell to render a range correctly.
+                    long shell = b.isDescendTarget() ? DescentShell.radiusAround(b) : 0L;
                     bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
-                            renderDimIdOf(b), b.isDescendTarget()));
+                            renderDimIdOf(b), b.isDescendTarget(), shell));
                 }
             }
             byDim.put(slotDim, bodies);
@@ -176,7 +180,7 @@ public final class SystemBodiesProducer {
     public static Map<Integer, List<RenderBody>> currentByDim(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
-        SpaceManager space = SpaceSubsystem.get();
+        SpaceManager space = SpaceSubsystem.space();
         if (reg == null || space == null) {
             return new LinkedHashMap<>();
         }

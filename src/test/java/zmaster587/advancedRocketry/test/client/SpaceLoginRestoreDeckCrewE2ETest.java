@@ -128,24 +128,37 @@ public class SpaceLoginRestoreDeckCrewE2ETest extends AbstractSpaceLoginRestoreC
                         + exec("artest vs deck-capture"),
                 exec("artest vs deck-capture").contains("\"alreadyTracked\":true"));
 
-        // Roll the ship to (near-)inverted UNDER him, through the ROLL CHANNEL of the flight input.
-        // The attitude-target verb was tried first and does not survive here: this arrangement leaves a
-        // held all-zero flight input behind after the climb, and the flight computer re-commands "hold
-        // the current attitude" from it every tick, so a commanded target is cancelled before it turns
-        // anything (measured: three runs, upY stayed exactly 1.0 while the verb answered
-        // commanded=true). The planet-side leg never publishes a flight input at all, which is why the
-        // same verb works there. Rolling through the input is also the way a pilot actually rolls.
+        // Roll the ship to (near-)inverted UNDER him, by commanding the attitude his ship's computer
+        // is to hold. Two things had to change before this verb could be used here at all, and both
+        // are the same defect seen from different sides:
+        //
+        //  - The verb used to be POSITION-keyed, so on a shared world it rolled whatever craft was
+        //    nearest. It names this ship now.
+        //  - It used to lose to the pilot channel. The climb above left a held all-zero flight input
+        //    in a JVM-wide static, and an all-zero input is still an input: the computer stayed in
+        //    its PILOTED branch and re-commanded "hold the current attitude" every tick, cancelling
+        //    the target before it turned anything (measured then: three runs, upY stayed exactly 1.0
+        //    while the verb answered commanded=true). The climb publishes no such input any more, and
+        //    a probe command now outranks the pilot channel besides.
+        //
+        // The old workaround - rolling through the input's ROLL channel - is what could not be kept:
+        // it needed that same server-wide static, because a riderless seat clears a real per-ship
+        // input every tick.
         double[] pose = awaitShipPose(slotDim);
         assertNotNull("the ship must be live to be rolled", pose);
-        exec("artest vs ff-input 0 0 0 0 0 1");
+        // 170 degrees about the ship's own forward axis: past vertical, so the deck is overhead.
+        double half = Math.toRadians(170.0) / 2.0;
+        // Addressed at the computer's own block. The ledger's durable ship id and the VS ship uuid the
+        // `*-by-id` verbs resolve are DIFFERENT identities, and this scenario holds the first.
+        String rolled = exec("artest vs point-at " + slotDim + " " + arrangedAfcPos
+                + " " + Math.cos(half) + " " + Math.sin(half) + " 0.0 0.0");
+        assertTrue("ARRANGEMENT: the roll must reach THIS ship's own flight computer: " + rolled,
+                rolled.contains("\"commanded\":true"));
         double upY = 1.0;
         for (int attempt = 0; attempt < 40 && upY > -0.9; attempt++) {
             bot().waitTicks(10);
-            // upY from the quat: for a roll about X (qy=qz=0), upY = 1 - 2*qx^2.
-            double qx = readDouble(jsonOf(exec("artest vs ship-info " + slotDim + " 0 0 0")), "qx");
-            upY = 1.0 - 2.0 * qx * qx;
+            upY = shipUpY(jsonOf(exec("artest vs ship-info " + slotDim + " 0 0 0")));
         }
-        exec("artest vs ff-input " + HANDS_OFF);
         bot().waitTicks(20);
         String info = jsonOf(exec("artest vs ship-info " + slotDim + " 0 0 0"));
         assertTrue("ARRANGEMENT: the ship must be (near-)inverted before the relog, or this leg is "
@@ -181,4 +194,15 @@ public class SpaceLoginRestoreDeckCrewE2ETest extends AbstractSpaceLoginRestoreC
         requireHeIsNotDraggedAlongHisDeck(dim);
     }
 
+    /**
+     * How far the ship's own UP points along world up, from a {@code ship-info} reply: {@code +1}
+     * upright, {@code -1} fully inverted. The full expression, {@code 1 - 2(qx^2 + qz^2)} - the
+     * single-axis shortcut this leg used to carry read {@code qx} alone and answered a confident
+     * {@code 1.0} for a ship that had rolled about a different axis.
+     */
+    private double shipUpY(String shipInfoJson) {
+        double qx = readDouble(shipInfoJson, "qx");
+        double qz = readDouble(shipInfoJson, "qz");
+        return 1.0 - 2.0 * (qx * qx + qz * qz);
+    }
 }

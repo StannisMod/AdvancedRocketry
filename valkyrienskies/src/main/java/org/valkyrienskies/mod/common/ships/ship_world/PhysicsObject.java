@@ -174,8 +174,28 @@ public class PhysicsObject implements IPhysicsEntity {
     }
 
     // ===== Keep track of all Node Processors in a concurrent Set =====
+
+    /**
+     * Register the controller at {@code pos}, REPLACING any controller already registered for that
+     * position.
+     *
+     * <p>The replace is the whole point. A block position hosts at most one controller, but this set
+     * is keyed by object identity — {@code TileEntity} does not override {@code equals}/{@code
+     * hashCode} — so a tile that is reconstructed (a chunk unload/reload, a cache reload) enters as a
+     * SECOND element while the dead instance stays. Nothing removes it: {@link #onRemoveTileEntity}
+     * is hooked on a tile being REMOVED, i.e. its block broken, and a chunk cycle removes nothing.
+     * Meanwhile {@code ClaimedChunkCacheController.loadChunksIntoCache} re-registers every tile it
+     * holds on every load, so the set grows by one per cycle and the physics thread invokes every
+     * stale instance forever.</p>
+     *
+     * <p>Measured on a ship settled in an AR space cell, which is the arrangement that makes a ship's
+     * chunks actually cycle under it: 1 controller on the ground, 2 then 3 in the cell, on a craft
+     * carrying ONE flight computer — and commands written to the live tile were not what the physics
+     * thread was executing.</p>
+     */
     public void onSetTileEntity(BlockPos pos, TileEntity tileentity) {
         if (tileentity instanceof IPhysicsBlockController) {
+            physicsControllers.removeIf(next -> pos.equals(next.getNodePos()));
             physicsControllers.add((IPhysicsBlockController) tileentity);
         }
     }

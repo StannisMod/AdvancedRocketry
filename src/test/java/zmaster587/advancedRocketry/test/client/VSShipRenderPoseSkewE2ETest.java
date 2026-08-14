@@ -42,7 +42,12 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
     private static final Pattern WORLD_Y = Pattern.compile("\"worldY\":(-?[0-9.E\\-]+)");
     private static final Pattern WORLD_Z = Pattern.compile("\"worldZ\":(-?[0-9.E\\-]+)");
 
+    private static final Pattern SHIP_ID = Pattern.compile("\"id\":\"([^\"]+)\"");
+
     private static final String VARIANT = "with-pilot-deck";
+
+    /** THIS scenario's ship, by identity — captured once by {@link #buildShip}. */
+    private String shipId;
     private static final String SHIP_FRAME_TRAVEL =
             "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel";
 
@@ -92,13 +97,13 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
         // never elapsed ticks.
         double h = Math.toRadians(160.0) / 2.0;
         assertTrue("attitude hold must accept the past-vertical roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + shipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         double upY = 1.0;
         String info = "";
         for (int i = 0; i < 60 && upY >= -0.3; i++) {
             bot().waitTicks(10);
-            info = shipInfo(bx, by, bz);
+            info = shipInfo();
             double qx = readDouble(info, Q_X), qz = readDouble(info, Q_Z);
             upY = 1.0 - 2.0 * (qx * qx + qz * qz);
         }
@@ -158,7 +163,7 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
             }
         }
         long hullSamples = (long) clientDouble(SHIP_FRAME_TRAVEL, "renderSkewSamples") - hullSamples0;
-        String omega = shipInfo(bx, by, bz);
+        String omega = shipInfo();
         System.out.println("[poseskew] hull samples=" + hullSamples + " hullModeSeen=" + hullModeSeen
                 + " max=" + hullMax + " crossMax=" + hullCrossMax + " restMax=" + restMax
                 + " :: " + hullTrace);
@@ -171,11 +176,8 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
         // subspace point. A delta that scales with the commanded speed names the client pose LAG
         // as the driver; a speed-independent delta names a constant cross-side pose offset.
         for (double climb : new double[]{0.6, 1.2}) {
-            String vinfo = shipInfo(bx, by, bz);
-            double vx = readDouble(vinfo, POS_X), vy = readDouble(vinfo, POS_Y),
-                    vz = readDouble(vinfo, POS_Z);
             assertTrue("velocity command must engage for the moving leg",
-                    exec("artest vs force-vel 0 " + vx + " " + vy + " " + vz + " 0 " + climb + " 0")
+                    exec("artest vs force-vel-by-id 0 " + shipId + " 0 " + climb + " 0")
                             .contains("\"commanded\":true"));
             double moveSkewMax = 0.0, moveCrossMax = 0.0, moveCrossSum = 0.0;
             int moveCrossN = 0;
@@ -186,7 +188,7 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
                 String mode = clientString(SHIP_FRAME_TRAVEL, "lastRenderSkewMode");
                 moveSkewMax = Math.max(moveSkewMax, skew);
                 if (i % 3 == 0) {
-                    String minfo = shipInfo(bx, by, bz);
+                    String minfo = shipInfo();
                     double cross = crossSideDelta(readDouble(minfo, POS_X),
                             readDouble(minfo, POS_Y), readDouble(minfo, POS_Z));
                     if (!Double.isNaN(cross)) {
@@ -198,14 +200,14 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
                             i * 3, skew, cross, mode));
                 }
             }
-            String after = shipInfo(bx, by, bz);
+            String after = shipInfo();
             System.out.println(String.format(Locale.ROOT,
                     "[poseskew] moving climb=%.1f skewMax=%.4f crossMax=%.4f crossMean=%.4f (n=%d)"
                             + " :: %s", climb, moveSkewMax, moveCrossMax,
                     moveCrossN == 0 ? -1.0 : moveCrossSum / moveCrossN, moveCrossN, moveTrace));
             System.out.println("[poseskew] moving ship-info=" + after);
         }
-        exec("artest vs force-vel 0 " + sx + " " + sy + " " + sz + " 0 0 0");
+        exec("artest vs force-clear-by-id 0 " + shipId);
 
         assertTrue("the skew instrument must fire in HULL mode (samples=" + hullSamples
                 + " hullModeSeen=" + hullModeSeen + "): " + hullTrace, hullModeSeen > 0);
@@ -283,17 +285,23 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
         exec("tp @a " + (bx + 0.5) + " " + (by + 6) + " " + (bz + 0.5) + " 0 0");
         bot().waitTicks(20);
 
+        // The ONE positional lookup of this scenario, and the only one it can defend: the ship has
+        // just been assembled here and has not moved. It yields an IDENTITY, and every question
+        // afterwards is keyed on that — this test rolls the ship past vertical and then flies it
+        // upward on purpose, so a lookup anchored to the build spot would drift off its subject.
         String info = "";
         double[] where = null;
         for (int i = 0; i < 40 && where == null; i++) {
             bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
+            info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz + " 48");
             if (!info.contains("\"managed\":true")) {
                 continue;
             }
             double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
+            Matcher idM = SHIP_ID.matcher(info);
+            if (distance(candidate, new double[]{bx, by, bz}) < 24.0 && idM.find()) {
                 where = candidate;
+                shipId = idM.group(1);
             }
         }
         assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
@@ -320,8 +328,10 @@ public class VSShipRenderPoseSkewE2ETest extends AbstractClientE2ETest {
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz);
+    /** This scenario's ship, asked by identity — no distance term to be wrong about. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", shipId != null);
+        return exec("artest vs ship-info 0 id " + shipId);
     }
 
     private String exec(String cmd) throws Exception {

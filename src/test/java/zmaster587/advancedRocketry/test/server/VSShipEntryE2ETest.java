@@ -94,7 +94,12 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         double sx = extractDouble(srcInfo, "posX"), sy = extractDouble(srcInfo, "posY"),
                 sz = extractDouble(srcInfo, "posZ");
 
-        exec("artest vs ff-input 0 1 0 0 0 0");          // a held-throttle input => a pilot is flying
+        // A held throttle on THIS ship's own flight computer => a pilot is flying. Addressed by ship,
+        // and the resolution is asserted: an input that reached nothing would leave the climb below
+        // reading as unpiloted while claiming to be the piloted leg.
+        String heldInput = exec("artest vs ff-input-by-id 0 " + extractString(srcInfo, "id") + " 0 1 0 0 0 0");
+        assertTrue("the held input must reach this ship's flight computer: " + heldInput,
+                heldInput.contains("\"afcResolved\":true"));
         String tp = exec("artest vs teleport-ship 0 " + (int) sx + " " + (int) sy + " " + (int) sz
                 + " " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz);
         assertTrue("climb teleport failed: " + tp, tp.contains("\"ok\":true"));
@@ -167,7 +172,9 @@ public class VSShipEntryE2ETest extends AbstractSharedServerTest {
         assertTrue("source ship not managed by VS: " + srcInfo, srcInfo.contains("\"managed\":true"));
         double sx = extractDouble(srcInfo, "posX"), sy = extractDouble(srcInfo, "posY"),
                 sz = extractDouble(srcInfo, "posZ");
-        exec("artest vs ff-input 0 1 0 0 0 0");
+        String heldInput = exec("artest vs ff-input-by-id 0 " + extractString(srcInfo, "id") + " 0 1 0 0 0 0");
+        assertTrue("the held input must reach this ship's flight computer: " + heldInput,
+                heldInput.contains("\"afcResolved\":true"));
         assertTrue("climb teleport failed", exec("artest vs teleport-ship 0 " + (int) sx + " " + (int) sy
                 + " " + (int) sz + " " + (int) sx + " " + ABOVE_CEILING_Y + " " + (int) sz)
                 .contains("\"ok\":true"));

@@ -29,7 +29,6 @@ import org.valkyrienskies.mod.common.util.ValkyrienUtils;
 import valkyrienwarfare.api.TransformType;
 
 import zmaster587.advancedRocketry.api.FreeFlightPhysics;
-import zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
 
 /**
  * The Valkyrien Skies-facing side of the integration. Every reference to an
@@ -84,10 +83,32 @@ final class VSBridge {
      * arrived. See {@link #adoptOwnRemnant}.</p>
      */
     static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid) {
+        return assembleTier2Ship(world, anchorPos, logger, keepUuid, null);
+    }
+
+    /**
+     * The same assembly, also carrying Advanced Rocketry's DURABLE name for the craft onto the record
+     * it creates.
+     *
+     * <p>Without this the name is lost at every crossing and can only be re-established by the ship's
+     * own flight computer on a tick - which a craft nobody is standing near does not get: a hull
+     * parked in the shared hyperspace world sits in the world's ticking set and is never ticked
+     * (measured: zero ticks over a whole jump). Everything that resolves a ship BY its durable name
+     * then falls back to "whichever craft is nearest", in the one world built to hold many at once.
+     * The name belongs to the ship, so it travels with the ship.</p>
+     */
+    static UUID assembleTier2Ship(World world, BlockPos anchorPos, Logger logger, UUID keepUuid,
+                                  UUID keepDurableId) {
         UUID identity = adoptOwnRemnant(world, keepUuid, logger);
         ShipData ship = identity == null
                 ? ValkyrienUtils.createNewShip(world, anchorPos)
                 : ValkyrienUtils.createNewShip(world, anchorPos, identity);
+        if (keepDurableId != null) {
+            // Set WITHOUT touching the index: this record is not in the collection yet, and the
+            // indexing setter would put it there - registering a ship whose blocks have not been
+            // moved in. It is indexed with everything else when the spawn is drained.
+            ship.setArDurableIdBeforeRegistration(keepDurableId);
+        }
         WorldServerShipManager manager = ValkyrienUtils.getServerShipManager(world);
         manager.queueShipSpawn(ship, anchorPos, BlockFinder.BlockFinderType.FIND_ALL_BLOCKS);
         logger.info("Queued tier-2 ship assembly at {} (ship '{}', {}{}).", anchorPos, ship.getName(),
@@ -166,6 +187,56 @@ final class VSBridge {
      */
     static AxisAlignedBB shipyardBoundsOf(World world, UUID uuid) {
         return claimBounds(shipByUuid(world, uuid));
+    }
+
+    /**
+     * The physics mod's uuid for the ship carrying our DURABLE id {@code durableId}, or {@code null}
+     * when this world holds no such ship.
+     *
+     * <p>The translation between the two identities this mod pair keeps: ours is minted by a flight
+     * computer and persisted so it survives a re-assembly (the transit, the ledger and every aboard
+     * tag are keyed by it), theirs is the ship record's own uuid. A caller holding ours and needing
+     * theirs had no way across and fell back to "which ship is nearest this point", which is exact
+     * with one craft in the world and silently wrong with two.</p>
+     *
+     * <p>Indexed on their side, so this is a hash probe rather than a walk. See
+     * {@code QueryableShipData#getShipFromArDurableId}.</p>
+     */
+    static UUID shipUuidOfDurableId(World world, UUID durableId) {
+        if (world == null || durableId == null) {
+            return null;
+        }
+        ShipData ship = ValkyrienUtils.getQueryableData(world)
+                .getShipFromArDurableId(durableId).orElse(null);
+        return ship == null ? null : ship.getUuid();
+    }
+
+    /**
+     * The durable id written on the RECORD of the ship {@code vsShipUuid}, read straight off the
+     * field, or {@code null}. The twin of {@link #shipUuidOfDurableId}, which asks the INDEX the same
+     * question from the other side - so a disagreement between the two separates "nothing was ever
+     * bound here" from "something was bound and the lookup cannot find it", which is otherwise one
+     * null covering both.
+     */
+    static UUID durableIdOf(World world, UUID vsShipUuid) {
+        ShipData ship = shipByUuid(world, vsShipUuid);
+        return ship == null ? null : ship.getArDurableId();
+    }
+
+    /**
+     * Record that the ship {@code vsShipUuid} is the craft our durable id {@code durableId} names, so
+     * later lookups can go straight from one to the other. Idempotent; a {@code null} durable id
+     * clears the binding.
+     *
+     * @return {@code true} when a ship was found and bound
+     */
+    static boolean bindDurableId(World world, UUID vsShipUuid, UUID durableId) {
+        ShipData ship = shipByUuid(world, vsShipUuid);
+        if (ship == null) {
+            return false;
+        }
+        ship.setArDurableId(durableId);
+        return true;
     }
 
     /** Human-readable identity of the ship a POSITION lookup resolves to, for diagnostics only. */
@@ -372,6 +443,30 @@ final class VSBridge {
     }
 
     /** Number of Valkyrien Skies ships currently loaded in {@code world}. */
+    /**
+     * The three gates Valkyrien Skies applies before it ticks a ship's physics at all, plus the size
+     * of that ship's force-controller set, as
+     * {@code [physicsReady, physicsEnabled, hasChunkCache, controllerCount]} (booleans as 0/1), or
+     * {@code null} when the id names no ship loaded here.
+     *
+     * <p>Diagnostic. A ship that ignores every command has several readings that need opposite
+     * fixes — its physics never ticks, it ticks but carries no controller, or it ticks with a
+     * controller whose force is overwritten — and the gate values tell them apart directly instead of
+     * by inference. The gates are read from {@code VSWorldPhysicsLoop}'s own selection test, so this
+     * reports what that loop decides, not a restatement of it.</p>
+     */
+    static int[] shipPhysicsGatesById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
+        if (physo == null) {
+            return null;
+        }
+        return new int[]{
+                physo.isPhysicsReady() ? 1 : 0,
+                physo.isPhysicsEnabled() ? 1 : 0,
+                physo.getCachedSurroundingChunks() != null ? 1 : 0,
+                physo.getPhysicsControllersInShip().size()};
+    }
+
     static int loadedShipCount(World world) {
         return ValkyrienUtils.getServerShipManager(world).getAllLoadedThreadSafe().size();
     }
@@ -783,13 +878,16 @@ final class VSBridge {
     }
 
     /**
-     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship
-     * nearest to {@code (x,y,z)}; returns false if no ship is loaded. Used by the test
-     * probe to prove VS physics moves a bare AR-assembled ship (flight-control model A).
+     * Set the linear-velocity setpoint (blocks/second, world frame) of the loaded ship named by
+     * {@code shipId}; returns false when that id names no ship loaded here. Used by the test probe
+     * to prove VS physics moves a bare AR-assembled ship (flight-control model A).
+     *
+     * <p>Keyed by identity rather than by proximity: a nearest-ship twin of this call answers for
+     * whatever craft happens to be closest, so on a world holding more than one it pushes a
+     * stranger's ship and reports success.</p>
      */
-    static boolean pushNearestShip(World world, double x, double y, double z,
-                                   double vx, double vy, double vz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean pushShipById(World world, String shipId, double vx, double vy, double vz) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
@@ -802,15 +900,14 @@ final class VSBridge {
     }
 
     /**
-     * TEST-ONLY: set the world-frame angular velocity (rad/s) of the loaded ship nearest to
-     * {@code (x,y,z)} directly, bypassing the flight controller. Lets a test spin a ship to a truly
-     * inverted attitude via free VS physics (a fresh, never-piloted ship has no controller torque, so it
-     * coasts) rather than via the attitude-hold, which stalls short of a full flip. Returns false if no
-     * ship is loaded.
+     * TEST-ONLY: set the world-frame angular velocity (rad/s) of the ship named by {@code shipId}
+     * directly, bypassing the flight controller. Lets a test spin a ship to a truly inverted
+     * attitude via free VS physics (a fresh, never-piloted ship has no controller torque, so it
+     * coasts) rather than via the attitude-hold, which stalls short of a full flip. Returns false
+     * when that id names no ship loaded here.
      */
-    static boolean spinNearestShip(World world, double x, double y, double z,
-                                   double wx, double wy, double wz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean spinShipById(World world, String shipId, double wx, double wy, double wz) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
@@ -820,46 +917,19 @@ final class VSBridge {
     }
 
     /**
-     * Command the loaded ship nearest to {@code (x,y,z)} toward a world-frame velocity. The
-     * force that realizes it is applied on the PHYSICS thread by the flight-controller mixin
-     * on the Advanced Flight Computer tile ({@code MixinTileAdvancedFlightComputer}) — VS
-     * ignores a velocity setpoint AND a game-thread force, so the only working path is a
-     * per-physics-tick force from a ship-tile controller. Here we just enable physics and
-     * publish the command that controller reads. Angular args are accepted for signature
-     * stability but not yet used. Returns false if no ship is loaded.
+     * Enable physics on the ship named by {@code shipId}; false when that id names no ship loaded
+     * here. A flag, not a load — it does not trip the spawn/proximity double-load.
+     *
+     * <p>What the force probes need before they command anything: a bare assembled ship is loaded
+     * with physics OFF, so its flight computer's controller is never stepped and a command to it
+     * would be inert.</p>
      */
-    static boolean commandNearestShipVelocity(World world, double x, double y, double z,
-                                              double vx, double vy, double vz,
-                                              double wx, double wy, double wz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
+    static boolean enableShipPhysicsById(World world, String shipId) {
+        PhysicsObject physo = shipById(world, shipId);
         if (physo == null) {
             return false;
         }
         physo.getShipData().setPhysicsEnabled(true);
-        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{vx, vy, vz};
-        TileAdvancedFlightComputer.debugCommandedAngVel = new double[]{wx, wy, wz};
-        // These static channels persist for the life of the JVM. An attitude target left behind by an
-        // earlier probe outranks a raw rate command, so a velocity probe would silently run
-        // attitude-hold against a stale orientation. Clear it: this probe commands rates, not a pose.
-        TileAdvancedFlightComputer.debugTargetAttitude = null;
-        return true;
-    }
-
-    /**
-     * Command the loaded ship nearest to {@code (x,y,z)} to HOLD a target body&rarr;world attitude
-     * (quaternion {@code w,x,y,z}) — the controller turns the orientation error into torque —
-     * while hovering (linear velocity commanded to zero). Returns false if no ship is loaded.
-     */
-    static boolean commandNearestShipAttitude(World world, double x, double y, double z,
-                                              double qw, double qx, double qy, double qz) {
-        PhysicsObject physo = nearestShip(world, x, y, z);
-        if (physo == null) {
-            return false;
-        }
-        physo.getShipData().setPhysicsEnabled(true);
-        TileAdvancedFlightComputer.debugCommandedVelocity = new double[]{0.0, 0.0, 0.0};
-        TileAdvancedFlightComputer.debugCommandedAngVel = null;
-        TileAdvancedFlightComputer.debugTargetAttitude = new double[]{qw, qx, qy, qz};
         return true;
     }
 
@@ -1123,6 +1193,30 @@ final class VSBridge {
             Optional<PhysicsObject> managing = ValkyrienUtils.getPhysoManagingBlock(world, pos);
             return managing.isPresent()
                     ? managing.get().getShipData().getUuid().toString() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * The same claim lookup, answered off the ship's REGISTRY RECORD instead of its loaded physics
+     * object: the uuid of the ship whose subspace claim owns {@code pos}, whether or not that ship is
+     * currently simulated.
+     *
+     * <p>The two are not interchangeable and the difference is not a detail. A ship is given a
+     * physics object only while a player stands within the physics mod's load distance of it (or on
+     * the tick it is first assembled); everywhere else its chunks may be loaded and ticking with no
+     * physics object at all. Asking the physics object therefore answers "is anybody near this
+     * ship", which is the right question for anything that touches its MOTION and the wrong one for
+     * anything that touches its IDENTITY - identity lives on the record.</p>
+     *
+     * <p>Deliberately a separate method: {@link #shipIdManagingBlock}'s callers use its null as
+     * "this ship is not live", and widening that under them would change what they gate on.</p>
+     */
+    static String registeredShipIdManagingBlock(World world, BlockPos pos) {
+        try {
+            Optional<ShipData> managing = ValkyrienUtils.getShipManagingBlock(world, pos);
+            return managing.isPresent() ? managing.get().getUuid().toString() : null;
         } catch (Throwable t) {
             return null;
         }

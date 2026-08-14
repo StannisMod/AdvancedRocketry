@@ -1214,7 +1214,7 @@ public class AdvancedRocketry {
         // aside the moment no loaded world is locked, so the default-everything case pays nothing.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.TimeCommandGuard());
         // Movable-ship space subsystem GC ticker (idle unless a server-start builds the controller).
-        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystem.Ticker());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystemEvents());
         // Login restore (a returning player goes back to his ship, not to a stale pool slot) and the
         // cell-divergence hook. Independent of the controller so it stays quiet while it is down.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceEventHandler());
