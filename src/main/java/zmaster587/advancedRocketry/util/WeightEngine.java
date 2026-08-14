@@ -69,6 +69,20 @@ public enum WeightEngine {
     private double fallback = 0.1;
     private double fluidFallback = 0.001;
 
+    // Toughness — a second column over the same keys, resolved by the same chain (individual ->
+    // byRegex -> material -> fallback) and living in the same file. It answers "how much does it cost
+    // to damage this block", where weight answers "how much does it mass"; the two are correlated but
+    // are not the same question, which is why anvils are not simply heavy glass.
+    //
+    // CALIBRATION, and a bet worth stating out loud: these numbers are spent against a budget
+    // denominated in the SAME unit as shield impact energy. The muzzle-side damage->energy factor
+    // therefore scales BOTH what a shot costs a shield and what it costs a hull — anyone retuning it
+    // is retuning hull lethality at the same time, in the same direction.
+    private Map<String, Double> toughnessIndividual = new HashMap<>();
+    private Map<String, Double> toughnessByRegex = new LinkedHashMap<>();
+    private Map<String, Double> toughnessMaterials = new HashMap<>();
+    private double toughnessFallback = 2.0;
+
     // Transient runtime caches (not persisted; cleared on load()).
     private final Map<String, Float> resolvedItemCache = new HashMap<>();
     private final Map<String, Pattern> compiledRegex = new HashMap<>();
@@ -143,7 +157,13 @@ public enum WeightEngine {
     }
 
     private Double matchRegex(String key) {
-        for (Map.Entry<String, Double> e : byRegex.entrySet()) {
+        return matchRegex(byRegex, key);
+    }
+
+    /** First matching regex rule of {@code table}, or null. The compiled-pattern cache is shared:
+     *  the same pattern string means the same pattern whichever column it rules. */
+    private Double matchRegex(Map<String, Double> table, String key) {
+        for (Map.Entry<String, Double> e : table.entrySet()) {
             Pattern p = compiledRegex.get(e.getKey());
             if (p == null) {
                 try {
@@ -158,6 +178,40 @@ public enum WeightEngine {
             }
         }
         return null;
+    }
+
+    /**
+     * How hard the block at {@code pos} is to damage. Same resolution chain as weight, over the same
+     * registry names, so a pack that has already tuned one has half the work done for the other.
+     * Air and anything unrecognised resolve to the fallback rather than to zero: a block that costs
+     * nothing to break would let one shot walk an entire hull.
+     */
+    public float getToughness(World world, BlockPos pos) {
+        return world == null || pos == null ? (float) toughnessFallback
+                : getToughness(world.getBlockState(pos).getBlock());
+    }
+
+    public float getToughness(Block block) {
+        if (block == null || block.getRegistryName() == null) {
+            return (float) toughnessFallback;
+        }
+        String key = block.getRegistryName().toString();
+
+        Double override = toughnessIndividual.get(key);
+        if (override != null) {
+            return override.floatValue();
+        }
+        Double regex = matchRegex(toughnessByRegex, key);
+        if (regex != null) {
+            return regex.floatValue();
+        }
+        Double byMaterial = toughnessMaterials.get(materialName(block.getDefaultState().getMaterial()));
+        return byMaterial != null ? byMaterial.floatValue() : (float) toughnessFallback;
+    }
+
+    /** Register an explicit per-registry-name toughness (highest precedence). */
+    public void setIndividualToughness(String registryName, double toughness) {
+        toughnessIndividual.put(registryName, toughness);
     }
 
     public float getWeight(Collection<ItemStack> stacks) {
@@ -247,6 +301,16 @@ public enum WeightEngine {
             if (root.has("fluidFallback")) {
                 fluidFallback = root.get("fluidFallback").getAsDouble();
             }
+
+            toughnessIndividual = readMap(gson, root, "toughnessIndividual", mapType);
+            toughnessByRegex = readMap(gson, root, "toughnessByRegex", linkedType);
+            toughnessMaterials = readMap(gson, root, "toughnessMaterials", mapType);
+            if (toughnessMaterials.isEmpty()) {
+                toughnessMaterials = defaultToughnessMaterials();
+            }
+            if (root.has("toughnessFallback")) {
+                toughnessFallback = root.get("toughnessFallback").getAsDouble();
+            }
         } catch (Exception e) {
             e.printStackTrace();
             seedDefaults();
@@ -271,6 +335,10 @@ public enum WeightEngine {
         materials = defaultMaterials();
         fallback = 0.1;
         fluidFallback = 0.001;
+        toughnessIndividual = new HashMap<>();
+        toughnessByRegex = new LinkedHashMap<>();
+        toughnessMaterials = defaultToughnessMaterials();
+        toughnessFallback = 2.0;
     }
 
     // ---- Runtime / test mutation hooks --------------------------------------
@@ -324,6 +392,10 @@ public enum WeightEngine {
             json.add("materials", gson.toJsonTree(materials));
             json.addProperty("fallback", fallback);
             json.addProperty("fluidFallback", fluidFallback);
+            json.add("toughnessIndividual", gson.toJsonTree(toughnessIndividual));
+            json.add("toughnessByRegex", gson.toJsonTree(toughnessByRegex));
+            json.add("toughnessMaterials", gson.toJsonTree(toughnessMaterials));
+            json.addProperty("toughnessFallback", toughnessFallback);
             w.write(gson.toJson(json));
         } catch (Exception e) {
             e.printStackTrace();
@@ -361,6 +433,45 @@ public enum WeightEngine {
         m.put("ROCK", 0.4);
         m.put("IRON", 1.0);
         m.put("ANVIL", 1.5);
+        return m;
+    }
+
+    /**
+     * Toughness by material — how much a block of this stuff resists being damaged. Ordered so the
+     * ratios read at a glance: glass is not armour, rock is a wall, iron is a hull, an anvil is a
+     * deliberate outlier. Every one of these is tunable and none is pinned by a test; what IS meant to
+     * survive retuning is the ordering, because that is what a player perceives when a shot goes
+     * through a window and stops in the plating.
+     */
+    private static Map<String, Double> defaultToughnessMaterials() {
+        Map<String, Double> m = new LinkedHashMap<>();
+        m.put("AIR", 0.0);
+        m.put("CLOTH", 0.2);
+        m.put("CARPET", 0.2);
+        m.put("WEB", 0.1);
+        m.put("PLANTS", 0.1);
+        m.put("VINE", 0.1);
+        m.put("LEAVES", 0.1);
+        m.put("CACTUS", 0.2);
+        m.put("GOURD", 0.3);
+        m.put("SNOW", 0.2);
+        m.put("CRAFTED_SNOW", 0.4);
+        m.put("SAND", 0.8);
+        m.put("GROUND", 0.8);
+        m.put("GRASS", 0.8);
+        m.put("CLAY", 1.0);
+        m.put("WOOD", 1.2);
+        m.put("GLASS", 0.5);
+        m.put("ICE", 0.6);
+        m.put("PACKED_ICE", 0.9);
+        m.put("CORAL", 0.6);
+        m.put("CAKE", 0.1);
+        m.put("CIRCUITS", 1.0);
+        m.put("REDSTONE_LIGHT", 1.0);
+        m.put("TNT", 0.5);
+        m.put("ROCK", 3.0);
+        m.put("IRON", 6.0);
+        m.put("ANVIL", 9.0);
         return m;
     }
 

@@ -238,6 +238,9 @@ public class TestProbeCommand extends CommandBase {
                 case "shield":
                     handleShield(server, sender, tail(args));
                     break;
+                case "damage":
+                    handleDamage(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -670,6 +673,112 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> [bvx] [bvy] [bvz] | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
+    }
+
+    /**
+     * Structural damage probes. Declares a real impact through the production service and reports the
+     * report it hands back, so a test drives the same seam a weapon will.
+     */
+    private void handleDamage(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"missing damage subcommand\"}");
+            return;
+        }
+        if ("clear-impacts".equalsIgnoreCase(args[0])) {
+            // The dedup memory outlives a scenario on a shared server; this is its reset.
+            int before = zmaster587.advancedRocketry.damage.ShipDamageService.rememberedImpactCount();
+            zmaster587.advancedRocketry.damage.ShipDamageService.clearRecentImpacts();
+            send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
+            return;
+        }
+        if (args.length >= 5 && "stage".equalsIgnoreCase(args[0])) {
+            // stage <dim> <x> <y> <z> — the unified stage reader, whichever home owns it.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("ok", true);
+            info.put("stage", zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos));
+            info.put("maxStage", zmaster587.advancedRocketry.damage.DamageState.getMaxStage(world, pos));
+            info.put("stageCost", zmaster587.advancedRocketry.damage.StructureDamageEngine.stageCost(world, pos));
+            info.put("block", String.valueOf(world.getBlockState(pos).getBlock().getRegistryName()));
+            String destroyed = zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world)
+                    .getDestroyedBlockName(pos);
+            info.put("wasDestroyed", destroyed != null);
+            info.put("destroyedBlock", destroyed == null ? "" : destroyed);
+            send(sender, jsonMap(info));
+            return;
+        }
+        if (args.length >= 10 && "impact".equalsIgnoreCase(args[0])) {
+            // impact <dim> <x> <y> <z> <dx> <dy> <dz> <budget> [kind] [impactId] — declare one impact
+            // against whatever structure occupies the point and report what the engine did with it.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.util.math.Vec3d point = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d dir = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            int budget = parseIntOr(args[8], 0);
+            zmaster587.advancedRocketry.api.damage.ImpactKind kind =
+                    zmaster587.advancedRocketry.api.damage.ImpactKind.KINETIC;
+            if (args.length >= 10) {
+                try {
+                    kind = zmaster587.advancedRocketry.api.damage.ImpactKind.valueOf(args[9].toUpperCase());
+                } catch (IllegalArgumentException ignored) {
+                    // keep KINETIC; the reply echoes what was used so a typo is visible
+                }
+            }
+            long impactId = args.length >= 11 ? (long) parseDoubleOr(args[10], 0) : world.getTotalWorldTime();
+
+            zmaster587.advancedRocketry.api.damage.DamageReport report =
+                    zmaster587.advancedRocketry.damage.ShipDamageService.apply(world,
+                            zmaster587.advancedRocketry.api.damage.ImpactRequest.penetrating(
+                                    impactId, point, dir, budget, kind));
+
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("ok", true);
+            info.put("kind", kind.name());
+            info.put("impactId", impactId);
+            // Which target the service resolved, and how many ships even offered themselves. Without
+            // these a miss cannot be told apart from a hit on the wrong thing: the report names no
+            // ship on purpose, so the instrument has to.
+            info.put("candidateShips", zmaster587.advancedRocketry.integration.vs.VSIntegration
+                    .shipIdsAt(world, point.x, point.y, point.z).size());
+            String resolved = zmaster587.advancedRocketry.damage.ShipDamageService
+                    .resolveTargetShip(world, point, dir);
+            info.put("onShip", resolved != null);
+            info.put("shipId", resolved == null ? "" : resolved);
+            info.put("outcome", report.getOutcome().name());
+            info.put("stopReason", report.getStopReason().name());
+            info.put("spent", report.getBudgetSpent());
+            info.put("left", report.getBudgetLeft());
+            info.put("staged", report.getBlocksStaged());
+            info.put("destroyed", report.getBlocksDestroyed());
+            info.put("depth", report.getPenetrationDepth());
+            // Points are emitted in every state, with a flag saying whether they mean anything, so a
+            // consumer never meets a dropped key on the uninteresting answer.
+            net.minecraft.util.math.Vec3d entry = report.getEntryPoint();
+            net.minecraft.util.math.Vec3d exit = report.getExitPoint();
+            info.put("hasEntry", entry != null);
+            info.put("entryX", entry != null ? entry.x : 0.0D);
+            info.put("entryY", entry != null ? entry.y : 0.0D);
+            info.put("entryZ", entry != null ? entry.z : 0.0D);
+            info.put("hasExit", exit != null);
+            info.put("exitX", exit != null ? exit.x : 0.0D);
+            info.put("exitY", exit != null ? exit.y : 0.0D);
+            info.put("exitZ", exit != null ? exit.z : 0.0D);
+            send(sender, jsonMap(info));
+            return;
+        }
+        send(sender, "{\"error\":\"unknown damage subcommand — try impact <dim> <x> <y> <z> <dx> <dy> <dz> <budget> [kind] [impactId] | stage <dim> <x> <y> <z> | clear-impacts\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------
