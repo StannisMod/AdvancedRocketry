@@ -176,12 +176,14 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private final GalaxyGenConfig config;
     private final GalaxyField galaxies;
     private final ClusterField clusters;
+    private final NebulaField nebulae;
     private final long totalStarWeight;
 
     public ClusteredGalaxyGenerator(GalaxyGenConfig config) {
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
         this.galaxies = new GalaxyField(this.config);
         this.clusters = new ClusterField(this.config);
+        this.nebulae = new NebulaField(this.config, this.clusters);
         long w = 0L; // accumulate in long so a few near-Integer.MAX weights cannot overflow the sum
         for (GalaxyGenConfig.StarType t : this.config.starTypes) {
             w += t.weight;
@@ -201,6 +203,15 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     /** The star clusters that refine the lattice — the tier below it. */
     public ClusterField clusters() {
         return clusters;
+    }
+
+    /**
+     * The clouds those clusters are wrapped in. Diffuse matter, so it names nothing and places
+     * nothing — it is what makes a cluster visible from outside, and the seam any later consequence
+     * of flying into one would be written against.
+     */
+    public NebulaField nebulae() {
+        return nebulae;
     }
 
     @Override

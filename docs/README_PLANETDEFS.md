@@ -136,6 +136,17 @@ consequence worth knowing: **the 10 000 AU separation floor is a property of the
 global constant.** Inside a cluster stars stand closer than a wide binary, and a system there keeps
 fewer outer bodies, by the same rule that applies everywhere else.
 
+**Nebulae come with the clusters, not separately.** A molecular cloud, the young cluster condensing
+out of it and the ancient cluster that has blown it away are one object at three ages — so a cloud is
+derived from its cluster and how much gas that cluster's age has left, and its look (dark, emitting,
+reflecting) is that same sequence rather than three separate options. A cloud with no stars in it yet
+is a cluster type that refines nothing. Ancient globulars correctly have no cloud at all.
+
+A nebula is **diffuse matter, not a body**: it has no cell name, it is not a destination, and it may
+freely overlap whatever it lies across — the same rule as a system's comet cloud, where attribution
+reads names rather than matter. **It has no effect on anything yet**: what a cloud does to a ship that
+flies into it is a separate decision and none of its numbers has been settled.
+
 ### Where authored content goes — `galaxy` and `galacticCoord`
 
 A `<star>`'s `galacticCoord` is **galaxy-local**: an offset in cells from the DECLARATION ORIGIN of the

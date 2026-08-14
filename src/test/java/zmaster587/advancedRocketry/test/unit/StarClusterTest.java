@@ -34,7 +34,7 @@ public class StarClusterTest {
     }
 
     private static GalaxyGenConfig.ClusterType type(int k) {
-        return new GalaxyGenConfig.ClusterType("Test", k, 5d, 15d, 1);
+        return new GalaxyGenConfig.ClusterType("Test", k, 5d, 15d, 0.5d, 1);
     }
 
     // ─── The commensurate construction ─────────────────────────────────────────

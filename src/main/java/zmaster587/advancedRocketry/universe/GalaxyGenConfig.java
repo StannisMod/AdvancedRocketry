@@ -142,14 +142,24 @@ public final class GalaxyGenConfig {
         public final int subdivision;
         public final double minRadiusLy;
         public final double maxRadiusLy;
+        /**
+         * How much of its natal cloud a cluster of this type still has, {@code 0}..{@code 1} — which
+         * is the same thing as how OLD it is. An open cluster is young and still wrapped in gas; a
+         * globular is ancient and has none at all, which is why real globulars are gas-free.
+         *
+         * <p>It is the only input a nebula needs, and it is why a nebula is not seated separately: a
+         * cluster and its cloud are one object at two ages.</p>
+         */
+        public final double nebulaFraction;
         public final int weight;
 
         public ClusterType(String name, int subdivision, double minRadiusLy, double maxRadiusLy,
-                           int weight) {
+                           double nebulaFraction, int weight) {
             this.name = (name == null || name.isEmpty()) ? "CLUSTER" : name;
             this.subdivision = Math.max(1, subdivision);
             this.minRadiusLy = Math.max(0.01d, minRadiusLy);
             this.maxRadiusLy = Math.max(this.minRadiusLy, maxRadiusLy);
+            this.nebulaFraction = Math.min(1d, Math.max(0d, nebulaFraction));
             this.weight = Math.max(1, weight);
         }
     }
@@ -271,9 +281,13 @@ public final class GalaxyGenConfig {
      */
     private static List<ClusterType> defaultClusterTypes() {
         List<ClusterType> l = new ArrayList<>();
-        //                        name          k    radius band (ly)   weight
-        l.add(new ClusterType("Open Cluster", 4, 5d, 15d, 80));
-        l.add(new ClusterType("Globular Cluster", 14, 20d, 40d, 20));
+        //                    name                  k   radius band (ly)  gas   weight
+        // A molecular cloud is a cluster whose stars have not formed: it refines nothing (k = 1) and
+        // is all gas. That it drops out of the SAME table as the others is the point — a cloud, a
+        // young cluster and an ancient one are one sequence, not three features.
+        l.add(new ClusterType("Molecular Cloud", 1, 10d, 30d, 1.0d, 60));
+        l.add(new ClusterType("Open Cluster", 4, 5d, 15d, 0.55d, 80));
+        l.add(new ClusterType("Globular Cluster", 14, 20d, 40d, 0d, 20));
         return Collections.unmodifiableList(l);
     }
 
@@ -281,7 +295,7 @@ public final class GalaxyGenConfig {
      * The cluster every galaxy has at its own centre — the richest one, and no special case: it is a
      * cluster like the others, drawn at the galaxy's centre instead of on the cluster lattice.
      */
-    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 25, 4d, 8d, 1);
+    public static final ClusterType NUCLEUS = new ClusterType("Nucleus", 25, 4d, 8d, 0.4d, 1);
 
     /** Edge of the cube that holds at most one cluster, in light years. */
     public static final double CLUSTER_SPACING_LY = 300d;
