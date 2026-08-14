@@ -67,6 +67,10 @@ public class ShipTransitManagerTest {
         int reseatFailCount;                                // fail reseatCrew this many times, then succeed
         final List<String> captureCalls = new ArrayList<>();
         final List<String> reseatCalls = new ArrayList<>();
+        // WHERE each reseat was aimed. The dim alone cannot tell an abort's "put him back where he
+        // was" from an arrival's "seat him at the far end": the abort happens before the ship has
+        // gone anywhere, so both name a real world and only the anchor separates them.
+        final List<BlockPos> reseatAnchors = new ArrayList<>();
         // Identity seam: which ship each crossing produced, and which one every later step was told to
         // act on. A jump keeps ONE identity, so departedAs is what the settle and the re-seat must be
         // handed - unless a crossing reports it could not keep it (arrivesAs / restoredAs), which is
@@ -85,8 +89,14 @@ public class ShipTransitManagerTest {
         // which lanes hold one at all. Empty by default — the interface's own default answers "no
         // ship, no lanes", which is the ephemeral world every existing test was written against.
         final java.util.Set<BlockPos> parkedAnchors = new java.util.HashSet<>();
-        final List<Integer> lanesWithAShip = new ArrayList<>();
+        // WHERE the hulls are standing, not which lanes they are in. The difference is the arrangement's
+        // whole honesty here: a canned list of lane numbers answers the "which lane is this ship in"
+        // question in production's place, and that question is where the defect lived. This resolves a
+        // position the same way production does, so the arrangement can be wrong about a lane exactly
+        // when production is.
+        final java.util.Set<BlockPos> shipsParkedAt = new java.util.HashSet<>();
         final List<Integer> disposedLanes = new ArrayList<>();
+        boolean disposeSucceeds = true;
         final List<String> order = new ArrayList<>();       // shared call order: pins capture-before-depart
 
         @Override
@@ -95,14 +105,21 @@ public class ShipTransitManagerTest {
         }
 
         @Override
-        public List<Integer> parkedShipLanes(int laneSearchLimit) {
-            return new ArrayList<>(lanesWithAShip);
+        public List<Integer> parkedShipLanes() {
+            List<Integer> lanes = new ArrayList<>();
+            for (BlockPos at : shipsParkedAt) {
+                int lane = HyperspaceTiles.laneIndexAt(at.getX(), at.getZ());
+                if (lane >= 0) {
+                    lanes.add(lane);
+                }
+            }
+            return lanes;
         }
 
         @Override
         public boolean disposeParkedLane(int laneIndex) {
             disposedLanes.add(laneIndex);
-            return true;
+            return disposeSucceeds;
         }
 
         @Override
@@ -175,6 +192,7 @@ public class ShipTransitManagerTest {
         public boolean reseatCrew(int targetSlotDim, BlockPos arrivalAnchor, String shipId,
                                   UUID vsShipUuid) {
             reseatCalls.add(targetSlotDim + "@" + shipId);
+            reseatAnchors.add(arrivalAnchor);
             reseatedAs.add(vsShipUuid);
             if (reseatFailCount > 0) {
                 reseatFailCount--;
@@ -817,6 +835,54 @@ public class ShipTransitManagerTest {
     }
 
     @Test
+    public void anAbortedDepartureIsANoOpForTheCrew() {
+        // A jump that never leaves must leave nobody worse off. The capture runs FIRST — it has to,
+        // the crossing is about to cut the blocks the crew is standing on — so by the time the cut
+        // refuses, everyone aboard is already dismounted and standing in a cell whose ship is still
+        // right there. Doing nothing at that point ejects the whole crew for a jump that did not
+        // happen; the only honest end is to put them back exactly where they were.
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.crewToCapture.add(UUID.randomUUID());
+        crosser.crewToCapture.add(UUID.randomUUID()); // a pilot and a passenger, not just a pilot
+        crosser.failDepart = true;                    // the cut refuses
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser);
+
+        int originDim = space.materialize(cell(1));
+        BlockPos originAnchor = new BlockPos(0, 64, 0);
+        boolean began = mgr.beginTransit("s", cell(1), originDim, originAnchor, cell(2),
+                ARRIVE_IN_ONE_TICK);
+
+        assertFalse("a departure whose cut refused has not begun", began);
+        // The crew WAS taken off the ship, which is what makes the put-back obligatory rather than
+        // optional. Without this the test would pass on a manager that never captured at all.
+        assertEquals("the capture ran before the cut refused", 1, crosser.captureCalls.size());
+        assertEquals("the aborted departure put its crew back, once", 1, crosser.reseatCalls.size());
+        assertEquals("back into the cell they never left", originDim + "@s", crosser.reseatCalls.get(0));
+        assertEquals("and onto the ship still sitting at its own anchor - not at the far end",
+                originAnchor, crosser.reseatAnchors.get(0));
+
+        // Nothing else moved: no flight exists, and the lane the attempt reserved went back to the
+        // allocator rather than being held by a jump that is not happening.
+        assertFalse("no flight was created", mgr.isInTransit("s"));
+        assertEquals("nothing is in transit", 0, mgr.inTransitCount());
+        assertEquals("and nobody is left waiting to be re-seated later", 0, mgr.reseatingCount());
+        assertTrue("the origin cell is still loaded under them - the refcount handoff belongs to a"
+                + " departure that happened", space.isLoaded(cell(1)));
+        assertEquals("and it is the same world they were standing in", originDim,
+                space.slotDimOf(cell(1)));
+
+        // The lane came back: the next departure gets the same index, which it cannot do if the
+        // aborted attempt is still holding it.
+        crosser.failDepart = false;
+        assertTrue(mgr.beginTransit("s", cell(1), originDim, originAnchor, cell(2),
+                ARRIVE_IN_ONE_TICK));
+        assertEquals("the aborted attempt freed its lane for the next jump",
+                crosser.departs.get(0), crosser.departs.get(1));
+    }
+
+    @Test
     public void arrivedShipRetriesReseatUntilDone() {
         SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
         HyperspaceTiles tiles = new HyperspaceTiles();
@@ -982,9 +1048,9 @@ public class ShipTransitManagerTest {
         FakeCrosser crosser = new FakeCrosser();
         BlockPos claimedLane = HyperspaceTiles.tilePos(1);
         crosser.parkedAnchors.add(claimedLane);
-        crosser.lanesWithAShip.add(0);   // a hull whose record did not survive
-        crosser.lanesWithAShip.add(1);   // ...and one that did
-        crosser.lanesWithAShip.add(4);   // another orphan
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(0));   // a hull whose record did not survive
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(1));   // ...and one that did
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(4));   // another orphan
         ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
 
         mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
@@ -997,6 +1063,61 @@ public class ShipTransitManagerTest {
                 crosser.disposedLanes.contains(0) && crosser.disposedLanes.contains(4));
         assertFalse("the ship a record DOES claim is left alone - this is a check, not a demolition",
                 crosser.disposedLanes.contains(1));
+    }
+
+    /**
+     * The reconciliation must find a hull WHEREVER it is standing, and the lanes it has to reach are
+     * precisely the ones no surviving record points at. Anything that derives the reach from what the
+     * records reclaimed asks the orphans to announce themselves.
+     */
+    @Test
+    public void anOrphanIsFoundInALaneNoSurvivingRecordCameNear() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        BlockPos claimedLane = HyperspaceTiles.tilePos(1);
+        crosser.parkedAnchors.add(claimedLane);
+        crosser.shipsParkedAt.add(claimedLane);
+        // A ring further out than anything the surviving record touches, and well past the reach the
+        // allocator would have had: it reclaimed lane 1, so a bound derived from it stopped at 3.
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(12));
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        mgr.importTransit(new TransitRecord(UUID.randomUUID().toString(), cell(1), cell(2), 4_000_000L,
+                0L, 10_000L, 0L, 7L, new ArrayList<UUID>(), new NBTTagCompound(), 1, claimedLane));
+
+        int disposed = mgr.reconcileParkedShips();
+
+        assertEquals("the far orphan is the one this exists for: it is the hull whose record is gone,"
+                + " so nothing points at its lane - disposed of: " + crosser.disposedLanes, 1, disposed);
+        assertTrue("by lane: " + crosser.disposedLanes, crosser.disposedLanes.contains(12));
+    }
+
+    /**
+     * The other half of the same promise, and the one that used to be silent: a lane is spoken for
+     * because a hull is STANDING in it, not because we managed to get rid of that hull.
+     */
+    @Test
+    public void aLaneWhoseHullCouldNotBeDisposedOfIsStillNeverHandedOut() {
+        SpaceManager space = new SpaceManager(new FakeBinder(10, 11), () -> 0L, never());
+        HyperspaceTiles tiles = new HyperspaceTiles();
+        FakeCrosser crosser = new FakeCrosser();
+        crosser.shipsParkedAt.add(HyperspaceTiles.tilePos(0));
+        crosser.disposeSucceeds = false; // e.g. the hull's chunks are still streaming in
+        ShipTransitManager mgr = new ShipTransitManager(space, tiles, crosser, new ShipLedger(), () -> 0L);
+
+        int disposed = mgr.reconcileParkedShips();
+
+        assertEquals("nothing was disposed of - that is the premise, not the claim", 0, disposed);
+        assertTrue("CONTROL: the reconciliation must have tried, or the lane is untouched for the"
+                + " wrong reason", crosser.disposedLanes.contains(0));
+
+        int originDim = space.materialize(cell(3));
+        mgr.beginTransit("fresh", cell(3), originDim, new BlockPos(0, 64, 0), cell(4), 7L);
+
+        assertFalse("a departure must not be parked on top of a hull that is provably still there:"
+                + " departures so far " + crosser.departs,
+                crosser.departs.contains(originDim + "@0"));
     }
 
     @Test

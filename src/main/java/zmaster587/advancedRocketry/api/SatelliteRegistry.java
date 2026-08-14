@@ -81,6 +81,20 @@ public class SatelliteRegistry {
     public static SatelliteBase createFromNBT(NBTTagCompound nbt) {
         SatelliteBase satellite = getNewSatellite(nbt.getString("dataType"));
 
+        if (satellite == null) {
+            // Unknown / unresolvable dataType (e.g. loading a save or receiving a
+            // satellite-sync packet from a modpack that once had a companion
+            // satellite mod). Return null and let callers drop it — DO NOT
+            // substitute a placeholder: an unregistered stand-in would re-save
+            // with dataType="poo" (getKey fallback), permanently destroying the
+            // original type so it could never be restored even with the mod back.
+            // Callers must null-guard (DimensionProperties.readFromNBT,
+            // PacketSatellite.readClient, PacketSatellitesUpdate.readClient). See C002/C155.
+            Logger.getLogger(Constants.modId).warning(
+                    "Dropping satellite with unknown dataType '" + nbt.getString("dataType") + "'");
+            return null;
+        }
+
         satellite.readFromNBT(nbt);
 
         return satellite;
@@ -88,7 +102,11 @@ public class SatelliteRegistry {
 
     /**
      * @param name String identifier for a satellite
-     * @return new satellite registered to the String identifier, SatelliteDefunct otherwise
+     * @return a new satellite instance for the registered type, or {@code null}
+     *         if {@code name} is not registered (or instantiation fails). Save /
+     *         wire callers load through {@link #createFromNBT}, which returns
+     *         null for an unresolvable type; those callers must null-guard and
+     *         drop the satellite rather than crash.
      */
     public static SatelliteBase getNewSatellite(String name) {
         Class<? extends SatelliteBase> clazz = registry.get(name);

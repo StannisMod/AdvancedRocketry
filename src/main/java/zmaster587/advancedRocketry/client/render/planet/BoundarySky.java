@@ -128,16 +128,16 @@ public class BoundarySky extends IRenderHandler {
         GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
         GL11.glCallList(this.glStarList);
 
-        // In hyperspace this same provider serves the transit lanes, and nothing below belongs
-        // there: no cell is loaded, so no body is ever synced. The corridor replaces them, and it
-        // is the only thing that tells a pilot with no controls and no readout that he is moving.
+        // In hyperspace this same provider serves the transit lanes, and the two things below are
+        // both wrong there: the ring marks a descent boundary in a world nothing descends to, and
+        // no cell is loaded so no body is ever synced. The corridor replaces them, and it is the
+        // only thing that tells a pilot with no controls and no readout that he is moving.
         //
-        // Gated on the WORLD, which is the primary fact and true of everyone in it. The gate used to
-        // be the jump phase published on the seat entity, so it answered 0 for anybody riding
-        // nothing: a crew member who stood up mid-flight lost the corridor, and hyperspace has
-        // nothing else in its sky, so the sky went empty and still. Being aboard is not the same as
-        // sitting down, and the backdrop of a world is not a property of the chair.
-        if (HyperspaceWorld.isHyperspaceOnClient(world.provider.getDimension())) {
+        // The gate is the WORLD this frame is drawn in — the same primary fact the server derives
+        // the jump phase from — and not the seat the viewer happens to be on. Keyed on the seat, a
+        // crew member who stood up mid-flight got a cell's descent ring in the transit corridor and
+        // no corridor at all, which reads as the flight having stopped.
+        if (zmaster587.advancedRocketry.space.HyperspaceWorld.isHyperspace(world)) {
             HyperspaceTunnel.render(partialTicks, world);
             GlStateManager.enableTexture2D();
             restoreState();

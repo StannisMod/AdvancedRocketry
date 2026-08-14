@@ -97,7 +97,11 @@ public class TileSpaceElevator extends TileMultiPowerConsumer implements IModula
     public void deconstructMultiBlock(World world, BlockPos destroyedPos, boolean blockBroken, IBlockState state) {
         super.deconstructMultiBlock(world, destroyedPos, blockBroken, state);
 
-
+        // No tether link to tear down — dimBlockPos is null for an elevator
+        // that was never linked (constructor default) or that lost its link.
+        if (dimBlockPos == null) {
+            return;
+        }
 
         World otherPlanet;
         if ((otherPlanet = DimensionManager.getWorld(dimBlockPos.dimid)) == null) {

@@ -37,7 +37,6 @@ import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.Event.Result;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientConnectedToServerEvent;
 import net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientDisconnectionFromServerEvent;
 import net.minecraftforge.fml.common.network.FMLNetworkEvent.ServerConnectionFromClientEvent;
 import net.minecraftforge.fml.relauncher.Side;
@@ -296,7 +295,18 @@ public class PlanetEventHandler {
     public void disconnected(ClientDisconnectionFromServerEvent event) {
         // Reload configs from disk
         ARConfiguration.useClientDiskConfig();
-        //zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().unregisterAllDimensions();
+        // C031: clear stale client-side AR dimension data when leaving a REMOTE
+        // server so it doesn't bleed into the next server joined in the same
+        // client session. dimensionList/starList are a JVM-global singleton and
+        // PacketDimInfo only merges per-id — it never removes a dim that existed
+        // only on the previous server, so those linger as ghost planets/stars.
+        // Guarded to remote-only: in single-player the client and the integrated
+        // server share this DimensionManager, and the integrated server's own
+        // onServerStopped already clears it — clearing here mid-shutdown could
+        // race its save.
+        if (net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance() == null) {
+            DimensionManager.getInstance().unregisterAllDimensions();
+        }
     }
 
     //Tick dimensions, needed for satellites, and GUIs
@@ -373,10 +383,6 @@ public class PlanetEventHandler {
         }
 
         PacketHandler.sendToDispatcher(new PacketDimInfo(0, DimensionManager.getInstance().getDimensionProperties(0)), event.getManager());
-    }
-
-    public void connectToServer(ClientConnectedToServerEvent event) {
-        zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().unregisterAllDimensions();
     }
 
     @SubscribeEvent

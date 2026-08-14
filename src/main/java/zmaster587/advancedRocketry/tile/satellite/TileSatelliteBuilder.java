@@ -88,6 +88,12 @@ public class TileSatelliteBuilder extends TileMultiPowerConsumer implements IMod
         String satType = SatelliteRegistry.getSatelliteProperty(getStackInSlot(primaryFunctionSlot)).getSatelliteType();
         SatelliteBase sat = SatelliteRegistry.getNewSatellite(satType);
 
+        // Core part's type has an item property but no registered satellite class
+        // (add-on / registration-order gap): reject the build rather than dereference
+        // the null. Mirrors the null guards in createFromNBT / ItemSatellite.
+        if (sat == null)
+            return false;
+
         return sat.isAcceptableControllerItemStack(getStackInSlot(chipSlot));
     }
 
@@ -103,6 +109,12 @@ public class TileSatelliteBuilder extends TileMultiPowerConsumer implements IMod
         //Get the primary function from slot 0
         String satType = SatelliteRegistry.getSatelliteProperty(getStackInSlot(primaryFunctionSlot)).getSatelliteType();
         SatelliteBase sat = SatelliteRegistry.getNewSatellite(satType);
+
+        // Defense-in-depth: production only reaches assembleSatellite through the
+        // canAssembleSatellite gate (which rejects a null type), but guard the direct
+        // call too so a future caller can't NPE on sat.getControllerItemStack below.
+        if (sat == null)
+            return;
 
         if (!world.isRemote) {
             //Grab properties from the items in slots 1-6

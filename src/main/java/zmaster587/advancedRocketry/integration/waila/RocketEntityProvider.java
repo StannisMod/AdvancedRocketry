@@ -130,7 +130,7 @@ public class RocketEntityProvider implements IWailaEntityProvider {
         if (mainFuel == FuelType.NUCLEAR_WORKING_FLUID) {
             return I18n.format("msg.top.advancedrocketry.rocket.nuclear");
         }
-        return I18n.format("entity.advancedrocketry.rocket.name");
+        return I18n.format("entity.advancedRocketry.rocket.name");
     }
 
 }

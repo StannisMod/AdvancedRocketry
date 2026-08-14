@@ -70,33 +70,47 @@ public final class HyperspaceTiles {
     }
 
     /**
-     * The lane whose parking position {@code (x,z)} sits in, searching indices below
-     * {@code searchLimit}, or {@code -1} when the point is not in any of them.
+     * The lane the point {@code (x,z)} sits in, or {@code -1} when it is in none of them.
      *
-     * <p>Lanes are {@link #SPACING_BLOCKS} apart and a parked ship never moves, so "which lane is
-     * this ship in" is answered by proximity with an unambiguous margin: half a lane's spacing can
-     * only ever contain one lane's parking spot. Used at boot to attribute the ships found in
-     * hyperspace to the transits that claim them.</p>
+     * <p>Lanes are {@link #SPACING_BLOCKS} apart on a fixed grid and a parked ship never moves, so
+     * "which lane is this ship in" is answered by the point alone: half a lane's spacing can only
+     * ever contain one lane's parking spot, so the nearest grid point either IS the lane or there is
+     * no lane. Used at boot to attribute the ships found in hyperspace to the transits that claim
+     * them.</p>
+     *
+     * <p><b>The caller may not bound this, and that is the whole point.</b> It used to take a search
+     * limit, which every caller could only source from how far the ALLOCATOR had extended — and at
+     * boot the allocator knows nothing but what the surviving records reclaimed. A hull whose record
+     * did not survive is exactly the hull the reconciliation exists to find, and it is exactly the
+     * one that sits beyond such a bound: with no surviving records at all the bound was one lane,
+     * and the search reported "in no lane" for everything but lane 0. The ship's own position is the
+     * one source that cannot be wrong about which lane it is standing in.</p>
      */
-    public static int laneIndexAt(double x, double z, int searchLimit) {
-        double bestDistSq = (SPACING_BLOCKS / 2.0) * (SPACING_BLOCKS / 2.0);
-        int best = -1;
-        for (int index = 0; index < searchLimit; index++) {
-            BlockPos pos = tilePos(index);
-            double dx = pos.getX() - x;
-            double dz = pos.getZ() - z;
-            double distSq = dx * dx + dz * dz;
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                best = index;
+    public static int laneIndexAt(double x, double z) {
+        int gx = (int) Math.round(x / SPACING_BLOCKS);
+        int gz = (int) Math.round(z / SPACING_BLOCKS);
+        double dx = (double) gx * SPACING_BLOCKS - x;
+        double dz = (double) gz * SPACING_BLOCKS - z;
+        // Negated rather than written as `>=`, so a NaN coordinate lands here instead of falling
+        // through: NaN fails every comparison, and `Math.round(NaN)` is 0, so a `>=` test would send
+        // a ship with a broken transform to lane 0 and have the reconciliation retire a lane nothing
+        // is standing in.
+        if (!(dx * dx + dz * dz < (SPACING_BLOCKS / 2.0) * (SPACING_BLOCKS / 2.0))) {
+            return -1; // between lanes (or nowhere at all): nothing parks there
+        }
+        // Which ring that grid cell belongs to is fixed by the cell, and a ring is a contiguous run
+        // of indices, so only that run has to be walked - a few dozen steps for any lane a save can
+        // realistically have reached, and no dependence on allocator state.
+        int ring = Math.max(Math.abs(gx), Math.abs(gz));
+        int from = ring == 0 ? 0 : (2 * ring - 1) * (2 * ring - 1);
+        int to = (2 * ring + 1) * (2 * ring + 1);
+        for (int index = from; index < to; index++) {
+            int[] cell = ringXZ(index);
+            if (cell[0] == gx && cell[1] == gz) {
+                return index;
             }
         }
-        return best;
-    }
-
-    /** How far the lane allocator has extended — the bound a lane search has to cover. */
-    public int allocatedLaneCount() {
-        return next;
+        return -1;
     }
 
     /** Release {@code tile}'s lane back to the free set so a later transit can reuse it. */
@@ -108,11 +122,18 @@ public final class HyperspaceTiles {
 
     /**
      * Give up {@code tile} WITHOUT returning it to the free set, so no later transit is ever parked
-     * there. For a lane whose ship could not be cut back out: the blocks may still be lying in it, and
-     * {@link #allocate()} hands out the lowest free index first, so releasing such a lane would paste the
-     * next departing ship straight into an abandoned hull. Retiring costs an index out of a supply the
-     * class doc calls effectively unbounded, and the hyperspace world is wiped on restart anyway — which
-     * is the cheapest sound answer available, and cheaper than clearing blocks VS no longer claims.
+     * there. For a lane whose ship could not be cut back out: it is still a registered ship standing
+     * at that lane's position, and {@link #allocate()} hands out the lowest free index first, so
+     * releasing the lane would drop the next departing ship on top of it. Retiring costs an index out
+     * of a supply the class doc calls effectively unbounded.
+     *
+     * <p><b>It does not have to survive a restart, and that is a fact about what a lane IS.</b> A lane
+     * is a world position a ship's transform is placed at, not a region its blocks are written into -
+     * a crossing re-assembles into a fresh subspace shipyard and only the transform lands here. So a
+     * hull still registered here is found again next boot from its own position, whatever this
+     * allocator remembers, and a hull that was successfully deregistered no longer stands anywhere:
+     * its blocks are in a shipyard nothing addresses by lane. Neither case needs the retirement
+     * itself to be durable.</p>
      */
     public void retire(Tile tile) {
         // Deliberately nothing: not adding the index back to `free` IS the retirement. Written as a

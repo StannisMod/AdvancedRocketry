@@ -45,7 +45,7 @@ public class ARConfiguration {
     private final static String WORLDGEN = "World and Ore Generation";
     private final static String ROCKET = "Rockets";
     private final static String STATION = "Station Configuration";
-    private final static String PLANET = "Planet";
+    private final static String PLANET = Constants.CONFIG_CATEGORY_PLANET;
     private final static String OXYGEN = "Oxygen System";
     private final static String ENERGY = "Energy Production";
     private final static String MISSION = "Resource Collection Missions";
@@ -401,22 +401,27 @@ public class ARConfiguration {
         fieldList.sort(Comparator.comparing(Field::getName));
 
 
-        // do a Shallow copy
+        // Structural (container-level) copy of every @ConfigProperty field.
+        // Collection/Map fields get a fresh container so the copy never aliases
+        // the source config's Map/List/Set — the old `field.getClass()` test was
+        // always false (getClass() is java.lang.reflect.Field), so every
+        // collection used to be shallow-copied by reference. Element references
+        // are shared, which is fine because config data is treated as immutable.
         for (Field field : fieldList) {
             try {
-                field.getClass().isAssignableFrom(List.class);
-                if (field.getClass().isAssignableFrom(Map.class)) {
-                    Map otherMap = (Map) field.get(config);
-                    Map map = otherMap.getClass().newInstance();
-
-                    for (Object key : otherMap.keySet()) {
-                        Object value = otherMap.get(key);
-                        map.put(key, value);
-                    }
-
-                    field.set(this, map);
-                } else
-                    field.set(this, field.get(config));
+                Class<?> type = field.getType();
+                Object value = field.get(config);
+                if (value != null && Map.class.isAssignableFrom(type)) {
+                    Map copy = (Map) value.getClass().newInstance();
+                    copy.putAll((Map) value);
+                    field.set(this, copy);
+                } else if (value != null && Collection.class.isAssignableFrom(type)) {
+                    Collection copy = (Collection) value.getClass().newInstance();
+                    copy.addAll((Collection) value);
+                    field.set(this, copy);
+                } else {
+                    field.set(this, value);
+                }
             } catch (IllegalArgumentException | InstantiationException | IllegalAccessException e) {
                 e.printStackTrace();
             }
@@ -541,7 +546,7 @@ public class ARConfiguration {
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
         arConfig.forcePlayerRespawnInSpace = config.get(PLANET, "forcePlanetRespawn", false, "Allow bed respawn on planets even without breathable air. Requires 'allowPlanetRespawn=true'.").getBoolean();
-        arConfig.perDimWorldInfo = config.get(PLANET, "perDimWorldInfo", true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
+        arConfig.perDimWorldInfo = config.get(PLANET, Constants.CONFIG_KEY_PER_DIM_WORLD_INFO, true, "Master switch for AR's per-dimension WorldInfo overrides on planets: per-planet weather AND per-planet time-of-day / working beds. When false, planets use the vanilla shared-overworld WorldInfo and NONE of the weather/time mixins are woven — fully classic behaviour. The sub-toggles below (enableCustomPlanetWeather) only take effect when this is true.").getBoolean();
         arConfig.enableCustomPlanetWeather = config.get(PLANET, "enableCustomPlanetWeather", true, "Sub-toggle of perDimWorldInfo (no effect when that is false): if true, each AR planet has its own weather state (rain, thunder, /weather, isRaining); if false, weather delegates to the overworld while per-dimension time-of-day still applies.").getBoolean();
         arConfig.allowTimeSkipOnPlanets = config.get(PLANET, "allowTimeSkipOnPlanets", false, "Whether a bed or /time may SKIP a planet's time of day forward. Off by default: a planet's day is the turning of a body in an orbit, so its night is lived through rather than slept away. This does NOT stop the day cycle - a planet still turns at its own rotational period - and a bed still sets your spawn point. Turn it on to keep the classic Minecraft conveniences everywhere. Space stations and asteroid fields are governed by neither this nor allowTimeSkipOnOverworld.").getBoolean();
         arConfig.allowTimeSkipOnOverworld = config.get(PLANET, "allowTimeSkipOnOverworld", true, "The same, for the overworld, where it is ON by default: a player who has not left home yet is still playing Minecraft, and beds and /time work the way he expects. Turn it off to hold the overworld to the same rule as the planets.").getBoolean();

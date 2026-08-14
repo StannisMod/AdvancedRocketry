@@ -118,11 +118,23 @@ public class SpaceObjectManager implements ISpaceObjectManager {
      */
     public ISpaceObject getSpaceStationFromBlockCoords(@Nonnull BlockPos pos) {
 
-        int x = pos.getX();
-        int z = pos.getZ();
-        x = Math.round((x) / (2f * ARConfiguration.getCurrentConfig().stationSize));
-        z = Math.round((z) / (2f * ARConfiguration.getCurrentConfig().stationSize));
+        int stationSize = ARConfiguration.getCurrentConfig().stationSize;
+        // Stations spawn at 2*stationSize*grid + stationSize/2 (see registerSpaceObject),
+        // i.e. the grid point plus a half-cell offset. Subtract that same offset before
+        // reverse-mapping so every position on a station's habitable footprint — including
+        // the +X/+Z block-reach sliver just past the confinement wall — maps back to the
+        // owning grid cell instead of the empty neighbour (which returned null -> off-station
+        // NPE/zero-power on tiles a player legitimately built at the perimeter).
+        int x = Math.round((pos.getX() - stationSize / 2) / (2f * stationSize));
+        int z = Math.round((pos.getZ() - stationSize / 2) / (2f * stationSize));
         int radius = Math.max(Math.abs(x), Math.abs(z));
+
+        // Centre grid cell (0,0) is spiral index 0. The general formula below uses
+        // (2*radius-1)^2, which at radius 0 evaluates to (-1)^2 = 1 — colliding with
+        // grid (-1,-1) on index 1 — so special-case the centre. (Station id 0 is never
+        // allocated: getNextStationId starts at 1, so this resolves to no station.)
+        if (radius == 0)
+            return getSpaceStation(0);
 
         int index = (int) Math.pow((2 * radius - 1), 2) + x + radius;
 
@@ -302,7 +314,10 @@ public class SpaceObjectManager implements ISpaceObjectManager {
         //If no dim undergoing transition then nextTransitionTick = -1
         if ((nextStationTransitionTick != -1 && worldTime >= nextStationTransitionTick && spaceStationOrbitMap.get(WARPDIMID) != null) || (nextStationTransitionTick == -1 && spaceStationOrbitMap.get(WARPDIMID) != null && !spaceStationOrbitMap.get(WARPDIMID).isEmpty())) {
             long newNextTransitionTick = -1;
-            for (ISpaceObject spaceObject : spaceStationOrbitMap.get(WARPDIMID)) {
+            // Iterate a snapshot: moveStationToBody mutates the WARPDIMID orbit list
+            // (removes the arriving station), so a live for-each over it throws
+            // ConcurrentModificationException when two stations arrive on the same tick.
+            for (ISpaceObject spaceObject : new ArrayList<>(spaceStationOrbitMap.get(WARPDIMID))) {
                 if (spaceObject.getTransitionTime() <= AdvancedRocketry.proxy.getWorldTimeUniversal(0)) {
                     moveStationToBody(spaceObject, spaceObject.getDestOrbitingBody());
                     spaceStationOrbitMap.get(WARPDIMID).remove(spaceObject);

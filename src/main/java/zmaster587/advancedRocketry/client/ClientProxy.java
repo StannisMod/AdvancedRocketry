@@ -339,14 +339,16 @@ public class ClientProxy extends CommonProxy {
     }
 
     /**
-     * Forget the space-clock baseline on disconnect — the next server's counter has nothing to do
-     * with this one, and a stale baseline would let the client answer confidently with a number
-     * from a world it has left.
+     * Forget what this client learned from the server it is leaving — the space-clock baseline and
+     * which dimension hyperspace was. The next server's counter and the next server's dim ids have
+     * nothing to do with this one, and either value kept across the gap would let the client answer
+     * confidently about a world it has left.
      */
     @SubscribeEvent
-    public static void forgetSpaceClock(
+    public static void forgetServerState(
             net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
         zmaster587.advancedRocketry.space.SpaceClockSync.reset();
+        zmaster587.advancedRocketry.space.HyperspaceWorld.forgetServerId();
     }
 
     /**

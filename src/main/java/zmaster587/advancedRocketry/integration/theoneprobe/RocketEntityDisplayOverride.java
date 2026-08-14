@@ -43,6 +43,6 @@ public class RocketEntityDisplayOverride implements IEntityDisplayOverride {
         if (mainFuel == FuelType.NUCLEAR_WORKING_FLUID) {
             return tr("msg.top.advancedrocketry.rocket.nuclear");
         }
-        return tr("entity.advancedrocketry.rocket.name");
+        return tr("entity.advancedRocketry.rocket.name");
     }
 }

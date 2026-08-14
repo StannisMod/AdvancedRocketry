@@ -57,7 +57,16 @@ public class TileSolarPanel extends TileInventoriedForgePowerMachine {
     @Override
     public int getPowerPerOperation() {
         DimensionProperties properties = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension());
-        double insolationMultiplier = (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) ? SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(this.pos).getInsolationMultiplier() : properties.getPeakInsolationMultiplier();
+        // getSpaceStationFromBlockCoords is null off-station; an unguarded deref
+        // here NPEs the tick and hard-crashes the server. Off-station → 0
+        // insolation. (A station with an unresolved orbiting planet — the other
+        // null path — is handled at the source in
+        // SpaceStationObject.getInsolationMultiplier.) See C045.
+        zmaster587.advancedRocketry.api.stations.ISpaceObject spaceStation =
+                (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId)
+                        ? SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(this.pos)
+                        : null;
+        double insolationMultiplier = (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) ? (spaceStation != null ? spaceStation.getInsolationMultiplier() : 0d) : properties.getPeakInsolationMultiplier();
         //Slight adjustment to make Earth 0.9995 into a 1.0
         //Then multiplied by two for 520W = 1 RF/t becoming 2 RF/t @ 100% efficiency
         //Makes solar panels not return 0 everywhere

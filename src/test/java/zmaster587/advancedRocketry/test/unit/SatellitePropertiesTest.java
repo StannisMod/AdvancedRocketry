@@ -138,23 +138,9 @@ public class SatellitePropertiesTest {
         assertNull("unknown satellite type id must return null, not throw",
                 instance);
 
-        // Also verify createFromNBT handles unknown dataType safely. Production
-        // calls this on world load; an NPE here would crash world load.
-        NBTTagCompound nbt = new NBTTagCompound();
-        nbt.setString("dataType", "ar.test.also_never_registered");
-        try {
-            SatelliteBase loaded = SatelliteRegistry.createFromNBT(nbt);
-            // Current behaviour: when type is unknown, getNewSatellite returns
-            // null and createFromNBT NPEs on satellite.readFromNBT. We document
-            // this latent gap so that a future hardening (return null + log)
-            // flips it to PASSED — for now we assert the existing behaviour
-            // doesn't silently corrupt state.
-            assertNull("if a SatelliteBase is somehow returned, it must be null on unknown type",
-                    loaded);
-        } catch (NullPointerException expected) {
-            // Documented behaviour: production crashes on unknown satellite
-            // type during NBT load. Out-of-scope to fix here.
-        }
+        // createFromNBT's unknown-type handling (returns null → caller drops it,
+        // the C002/C155 fix) is verified in SatelliteRegistryFallbackTest and the
+        // server/client e2e; kept out of this pure-unit class.
     }
 
     /**

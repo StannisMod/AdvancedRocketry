@@ -352,18 +352,22 @@ public final class SpaceSlotPool {
     }
 
     /**
-     * Delete an UNBOUND slot dimension's on-disk chunk folder ({@link #unboundSlotSubfolder}). Makes the
-     * hyperspace world ephemeral: called before each (re)init so a ship left parked by a mid-transit quit
-     * is never reloaded as an untracked ghost — the world regenerates as clean void. No-op if the server
-     * or folder is absent. Server thread only.
+     * Does this save already hold a hyperspace world? Answers from the FOLDER, so it can be asked at
+     * boot without loading the dimension — which is the point: a boot must decide whether it is worth
+     * loading hyperspace before anything has looked inside it, and loading it to find out would pin an
+     * empty world on every save that has never seen a jump.
+     *
+     * <p>{@code false} is a proof that nothing is parked: hyperspace only ever gets a folder by being
+     * loaded, and it only ever gets loaded by a crossing.</p>
      */
-    public static void deleteHyperspaceStore() {
+    public static boolean hyperspaceStoreExists() {
         net.minecraft.server.MinecraftServer server =
                 net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
-        if (server != null) {
-            java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
-            deleteDir(new java.io.File(worldDir, hyperspaceSubfolder()));
+        if (server == null) {
+            return false;
         }
+        java.io.File worldDir = server.getEntityWorld().getSaveHandler().getWorldDirectory();
+        return new java.io.File(worldDir, hyperspaceSubfolder()).isDirectory();
     }
 
     public static void deleteUnboundSlotStore(int dimId) {

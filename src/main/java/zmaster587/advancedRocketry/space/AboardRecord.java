@@ -119,6 +119,11 @@ public final class AboardRecord {
     private static ShipAboardTag.Aboard derive(EntityPlayer player) {
         World world = player.world;
         GalacticCoord presence = presenceOf(world);
+        // Mid-jump is a THIRD case, and it is neither of the two the seated branch below weighs up.
+        // Hyperspace is in no cell, so `presence` is null for everyone aboard a jumping ship - and
+        // the dimension id, the only other evidence a saved player carries, is re-minted by a
+        // free-id scan on the next boot. So the record has to say it itself.
+        boolean inTransit = world.provider.getDimension() == HyperspaceWorld.dimId();
         Entity riding = player.getRidingEntity();
         if (riding instanceof EntityDummy) {
             // A crew member SEATED on a ship that is in no cell needs no record: vanilla brings a
@@ -126,10 +131,21 @@ public final class AboardRecord {
             // a ship parked on a planet. The record answers exactly two questions - which world he
             // belongs in (which needs a cell) and where on a deck to put a BODY back (which needs
             // him to be on his feet) - and a planet-side seat asks neither.
-            return presence == null
-                    ? null : seatedRecord(world, ((EntityDummy) riding).getSeatPos(), presence);
+            //
+            // A jump asks the FIRST one, loudly: the world he must come back to is a hyperspace
+            // whose id he cannot name, and his mount is a seat dummy on a hull the crossing retires.
+            if (presence == null && !inTransit) {
+                return null;
+            }
+            return withTransit(
+                    seatedRecord(world, ((EntityDummy) riding).getSeatPos(), presence), inTransit);
         }
-        return standingRecord(world, player, presence);
+        return withTransit(standingRecord(world, player, presence), inTransit);
+    }
+
+    /** Mark a just-derived record as mid-jump, tolerating the {@code null} its deriver may return. */
+    private static ShipAboardTag.Aboard withTransit(ShipAboardTag.Aboard record, boolean inTransit) {
+        return record == null || !inTransit ? record : record.inTransit();
     }
 
     /**

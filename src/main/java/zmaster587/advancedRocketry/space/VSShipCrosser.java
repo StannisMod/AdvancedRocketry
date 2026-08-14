@@ -341,7 +341,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
             double[] p = e.getValue();
             parked.append(' ').append(e.getKey()).append('@')
                     .append((int) p[0]).append(',').append((int) p[1]).append(',').append((int) p[2])
-                    .append("/lane").append(HyperspaceTiles.laneIndexAt(p[0], p[2], 64));
+                    .append("/lane").append(HyperspaceTiles.laneIndexAt(p[0], p[2]));
         }
         boolean hyperAfcIsComputer =
                 hyperAfcTe instanceof zmaster587.advancedRocketry.tile.TileAdvancedFlightComputer;
@@ -599,7 +599,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
     }
 
     @Override
-    public List<Integer> parkedShipLanes(int laneSearchLimit) {
+    public List<Integer> parkedShipLanes() {
         List<Integer> lanes = new ArrayList<>();
         WorldServer hyper = HyperspaceWorld.getIfLoaded();
         if (hyper == null) {
@@ -607,7 +607,7 @@ public final class VSShipCrosser implements ShipTransitManager.Crosser {
         }
         for (Map.Entry<UUID, double[]> ship : VSIntegration.registeredShipPoses(hyper).entrySet()) {
             double[] pos = ship.getValue();
-            int lane = HyperspaceTiles.laneIndexAt(pos[0], pos[2], laneSearchLimit);
+            int lane = HyperspaceTiles.laneIndexAt(pos[0], pos[2]);
             if (lane >= 0) {
                 lanes.add(lane);
             } else {

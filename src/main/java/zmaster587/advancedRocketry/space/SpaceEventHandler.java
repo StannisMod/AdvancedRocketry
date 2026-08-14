@@ -144,12 +144,17 @@ public final class SpaceEventHandler {
         // its galactic coordinate, neither of which is transient. So the record opens the restore, and
         // the dimension id is only a fallback for someone who was in a subsystem world without one.
         //
-        // A record with NO cell in it opens nothing: it is ship-relative only - a crew member aboard
-        // a ship parked on a planet - and says which SHIP he is on, not which world he belongs in.
-        // The dimension he was saved in is already right for him, and the deck hold is what puts him
-        // back on his ship once it loads.
+        // A record with NO cell AND no jump in it opens nothing: it is ship-relative only - a crew
+        // member aboard a ship parked on a planet - and says which SHIP he is on, not which world he
+        // belongs in. The dimension he was saved in is already right for him, and the deck hold is
+        // what puts him back on his ship once it loads.
+        //
+        // A jumping ship is the case that has neither piece of the usual evidence: it is in no cell,
+        // so the record carries no coordinate, and hyperspace's dimension id is re-minted by a
+        // free-id scan every boot, so the fallback below stops recognising it across exactly the
+        // event it is needed for. The record says "mid-jump" itself for that reason.
         ShipAboardTag.Aboard aboard = ShipAboardTag.of(player);
-        boolean spaceborne = (aboard != null && aboard.hasPresence())
+        boolean spaceborne = (aboard != null && aboard.saysSpaceborne())
                 || isSubsystemWorld(player.dimension);
         if (!spaceborne) {
             return; // saved in an ordinary world: vanilla's own restore is correct, leave it alone

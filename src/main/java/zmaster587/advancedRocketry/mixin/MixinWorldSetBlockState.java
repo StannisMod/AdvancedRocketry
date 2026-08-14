@@ -20,13 +20,21 @@ import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
  *
  * <p>Replaces the equivalent {@code IClassTransformer} hook formerly in
  * {@code asm/ClassTransformer.java}.</p>
+ *
+ * <p><b>{@code require = 1} is deliberate.</b> This is the sole caller of
+ * {@link AtmosphereHandler#onBlockChange} and there is no fallback path: if the
+ * injector silently matched nothing, sealed rooms would simply stop recomputing
+ * and players would suffocate in a base that looks intact. The config's
+ * {@code defaultRequire} is 0, so without this a missed selector is a no-op
+ * rather than an error — failing loudly at load is far better than that.</p>
  */
 @Mixin(World.class)
 public abstract class MixinWorldSetBlockState {
 
     @Inject(method = "setBlockState(Lnet/minecraft/util/math/BlockPos;"
             + "Lnet/minecraft/block/state/IBlockState;I)Z",
-            at = @At("RETURN"))
+            at = @At("RETURN"),
+            require = 1)
     private void ar$notifyAtmosphere(BlockPos pos, IBlockState newState, int flags,
                                      CallbackInfoReturnable<Boolean> cir) {
         AtmosphereHandler.onBlockChange((World) (Object) this, pos);

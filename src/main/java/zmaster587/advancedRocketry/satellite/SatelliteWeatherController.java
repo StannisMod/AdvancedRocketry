@@ -110,6 +110,12 @@ public class SatelliteWeatherController extends SatelliteBase {
         //    this.timer--;
         int listsize = viable_positions.size();
         World world = net.minecraftforge.common.DimensionManager.getWorld(getDimensionId());
+        // The satellite tick loop (DimensionManager.tickDimensions) iterates every
+        // REGISTERED dim, loaded or not, so tickEntity fires for a controller whose
+        // planet world is unloaded. getWorld returns null then; bail before the
+        // block-mutation work (which is meaningless without a world). The queued
+        // positions are in-memory only and resume draining when the world reloads.
+        if (world == null) return;
         if (listsize > 0) {
             if (mode_id == 0) {
                 BlockPos new_block = viable_positions.remove(nextInt(0, listsize));

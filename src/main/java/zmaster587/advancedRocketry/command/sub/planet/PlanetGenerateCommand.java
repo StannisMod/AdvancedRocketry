@@ -56,6 +56,14 @@ public class PlanetGenerateCommand extends ARCommand {
             int planetId = starId;
             if (moon) {
                 starId = DimensionManager.getInstance().getDimensionProperties(planetId).getStarId();
+                // The moon branch skips the non-moon star-existence guard (see the
+                // else-if above), then feeds this re-derived starId to generateRandom
+                // (which dereferences getStar) and to getStar(...).removePlanet below
+                // — both NPE if the parent planet's star id resolves to no star.
+                // Fail with a clean command error instead, mirroring the non-moon guard.
+                if (DimensionManager.getInstance().getStar(starId) == null) {
+                    throw invalidValue("Star with id", starId);
+                }
             }
             DimensionProperties props;
             int argsOffset = modOffset;

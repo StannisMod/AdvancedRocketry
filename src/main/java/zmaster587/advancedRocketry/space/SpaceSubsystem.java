@@ -357,9 +357,22 @@ public final class SpaceSubsystem {
             // Restore when each cell was last visited, or every stored cell looks freshly visited on
             // this boot and age-based collection can never reach an earlier session's leftovers.
             live.manager.importVisits(data.loadVisits());
-            // Recreate any in-flight jump so a transit survives a restart: each record advances logically
-            // and, on arrival, pastes its persisted block snapshot into the target cell (the hyperspace
-            // world it was parked in is ephemeral). The ledger is re-marked IN_TRANSIT inside importTransit.
+            // Recreate any in-flight jump so a transit survives a restart: a record whose hull is still
+            // standing in its lane resumes as that same ship, and one whose lane came back empty falls
+            // back to the block snapshot it carries. The ledger is re-marked IN_TRANSIT inside
+            // importTransit.
+            //
+            // LOAD hyperspace first, and this is load-bearing rather than tidy. Both readers below
+            // ask what is standing in a lane, and both ask it of the world only IF IT IS LOADED -
+            // an honest refusal to create a world as a side effect of inspecting one. Hyperspace is
+            // otherwise loaded lazily by the first crossing, which happens long after this runs, so
+            // without this every record would see an empty lane and take the snapshot path, and the
+            // reconciliation below would find nothing to collect however many hulls were there.
+            // Skipped entirely when the save has no hyperspace folder: then there is provably
+            // nothing parked, and loading would pin an empty world on every boot of every save.
+            if (SpaceSlotPool.hyperspaceStoreExists()) {
+                HyperspaceWorld.getOrCreate();
+            }
             java.util.List<TransitRecord> records = data.loadTransits();
             for (TransitRecord r : records) {
                 live.transit.importTransit(r);
@@ -368,7 +381,7 @@ public final class SpaceSubsystem {
                 AdvancedRocketry.logger.info("[SPACE] restored {} in-flight transit(s) from disk",
                         records.size());
             }
-            // JUMP-10, and it belongs HERE — after the last record has been imported. Hyperspace
+            // JUMP-10, and it belongs HERE - after the last record has been imported. Hyperspace
             // outlives the server, so a hull can outlive the record that put it there; every ship
             // found in it is matched against the transits that claim a lane and the rest are
             // disposed of. Run one record too early and a perfectly good ship looks unclaimed.

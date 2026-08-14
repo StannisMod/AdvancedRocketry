@@ -35,8 +35,11 @@ public abstract class MixinAcidRainRender {
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GlStateManager;color(FFFF)V"),
             // OptiFine and other render mods rewrite renderRainSnow; if the target
-            // call isn't present we silently skip rather than aborting the whole
-            // (required) mixin config.
+            // call isn't present we silently skip. NB this is the config's own
+            // default (no "injectors" block => defaultRequire = 0), so the
+            // annotation is documentation, not protection — and "required": true
+            // does NOT change it: that flag governs mixin APPLICATION failure,
+            // not injector misses, and it crashes rather than silently disabling.
             require = 0)
     private void ar$tintAcidRain(float red, float green, float blue, float alpha) {
         if (ar$isAcidicRainHere()) {
