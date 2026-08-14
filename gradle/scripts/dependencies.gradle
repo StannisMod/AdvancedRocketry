@@ -99,6 +99,11 @@ dependencies {
     compileOnly rfg.deobf('curse.maven:galacticraft-legacy-564236:4671122')
     compileOnly rfg.deobf('curse.maven:matter-overdrive-557428:6439254')
 
+    // GregTech CE Unofficial 2.8.10-beta (2024-07-10) — the last build of the 1.12.2 line and
+    // the integration target for gas/chemistry supply. compileOnly on purpose: GT is a SOFT
+    // dependency, so nothing here may be required at runtime.
+    compileOnly rfg.deobf('curse.maven:gregtech-ce-unofficial-557242:5519022')
+
     // Valkyrien Skies physics engine — its source is vendored as a subtree under
     // valkyrienskies/ and compiled into AR's main source set (VS is now a mandatory
     // part of AR — the 3.0.0 "own the physics stack" call). The libraries below were
