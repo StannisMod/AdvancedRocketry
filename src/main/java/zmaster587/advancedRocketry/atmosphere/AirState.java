@@ -99,6 +99,53 @@ public class AirState {
     }
 
     /**
+     * Take nitrogen out of the air, as a separator does when it pulls the diluent into a tank.
+     *
+     * @return the amount actually removed, clamped to what is present
+     */
+    public int drawNitrogen(int amount) {
+        int taken = Math.min(Math.max(0, amount), nitrogen);
+        nitrogen -= taken;
+        return taken;
+    }
+
+    /** Take carbon dioxide out of the air — the separator's main job, feeding regeneration. */
+    public int drawCarbonDioxide(int amount) {
+        int taken = Math.min(Math.max(0, amount), carbonDioxide);
+        carbonDioxide -= taken;
+        return taken;
+    }
+
+    /** Take oxygen out of the air, e.g. to fill a tank with the pure gas. */
+    public int drawOxygen(int amount) {
+        int taken = Math.min(Math.max(0, amount), oxygen);
+        oxygen -= taken;
+        return taken;
+    }
+
+    public void addNitrogen(int amount) {
+        nitrogen += Math.max(0, amount);
+    }
+
+    public void addOxygen(int amount) {
+        oxygen += Math.max(0, amount);
+    }
+
+    /**
+     * How much oxygen this zone still has room for before it crosses the toxicity threshold.
+     * <p>
+     * This is the governor's whole job in one number: a combiner may push oxygen in only up to
+     * here, so a mis-set pipe cannot enrich a cabin into a fire hazard. Returns 0 when the zone is
+     * already at or above the ceiling, and treats an unconfigured band as no ceiling.
+     */
+    public int oxygenHeadroom() {
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        if (config.lifeSupportMaxPartialO2 <= config.lifeSupportMinPartialO2)
+            return Integer.MAX_VALUE;
+        return Math.max(0, config.lifeSupportMaxPartialO2 - oxygen);
+    }
+
+    /**
      * Which registered atmosphere this zone presents to everything downstream — tick damage, the
      * suit immunity check, the sync packet, the detector. The gas state is the model; the
      * {@link AtmosphereType} singletons stay the interface, so nothing outside life support has

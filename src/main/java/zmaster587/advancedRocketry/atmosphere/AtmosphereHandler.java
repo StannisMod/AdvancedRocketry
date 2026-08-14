@@ -338,6 +338,16 @@ public class AtmosphereHandler {
     }
 
     /**
+     * How many cells the zone containing this position has, or 0 if it is in none. A machine that
+     * converts between a room's partial pressures and a tank's millibuckets needs the volume it is
+     * dividing by.
+     */
+    public int getBlobSizeAt(@Nonnull BlockPos pos) {
+        AtmosphereBlob blob = getBlobContaining(new HashedBlockPosition(pos));
+        return blob == null ? 0 : blob.getBlobSize();
+    }
+
+    /**
      * Re-derive and publish the atmosphere of the zone this position sits in, after something
      * changed its gases. A no-op where there is no zone, or where the vent has not declared one
      * breathable — the vent stays the authority on whether a zone is maintained at all.

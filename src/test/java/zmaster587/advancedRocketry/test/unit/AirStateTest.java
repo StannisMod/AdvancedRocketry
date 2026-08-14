@@ -157,6 +157,45 @@ public class AirStateTest {
     }
 
     @Test
+    public void theGovernorLeavesRoomOnlyUpToTheToxicityCeiling() {
+        AirState air = AirState.earthLike();
+
+        assertEquals("headroom is the distance to the ceiling, not to infinity",
+                SAFE_MAX - 210_000, air.oxygenHeadroom());
+    }
+
+    @Test
+    public void anAlreadyEnrichedRoomGetsNoMoreOxygen() {
+        AirState air = new AirState(400_000, SAFE_MAX + 50_000, 0);
+
+        assertEquals("a combiner must be unable to make a fire hazard worse", 0, air.oxygenHeadroom());
+    }
+
+    @Test
+    public void anUnconfiguredBandImposesNoCeilingEither() {
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        config.lifeSupportMinPartialO2 = 0;
+        config.lifeSupportMaxPartialO2 = 0;
+
+        assertEquals("with no band there is no governor, in both directions",
+                Integer.MAX_VALUE, AirState.earthLike().oxygenHeadroom());
+    }
+
+    @Test
+    public void aSeparatorTakesTheStaleGasAndLeavesTheBreathableOne() {
+        AirState air = new AirState(790_000, 210_000, 90_000);
+
+        int co2 = air.drawCarbonDioxide(50_000);
+        int n2 = air.drawNitrogen(40_000);
+
+        assertEquals(50_000, co2);
+        assertEquals(40_000, n2);
+        assertEquals("splitting must not touch the oxygen the crew are breathing", 210_000, air.getOxygen());
+        assertEquals(40_000, air.getCarbonDioxide());
+        assertEquals(750_000, air.getNitrogen());
+    }
+
+    @Test
     public void gasesSurviveASaveAndReload() {
         AirState air = new AirState(700_000, 180_000, 40_000);
         NBTTagCompound nbt = new NBTTagCompound();

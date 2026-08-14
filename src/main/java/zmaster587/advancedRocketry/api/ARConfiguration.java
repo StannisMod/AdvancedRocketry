@@ -274,6 +274,12 @@ public class ARConfiguration {
     @ConfigProperty
     public int lifeSupportCarbonPerDust;
     @ConfigProperty
+    public int lifeSupportFluidPerAtmBlock;
+    @ConfigProperty
+    public int lifeSupportSeparatorRate;
+    @ConfigProperty
+    public int lifeSupportSeparatorPower;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -519,6 +525,9 @@ public class ARConfiguration {
         arConfig.lifeSupportRecirculatorRate = config.get(OXYGEN, "lifeSupportRecirculatorRate", 6000, "CO2 a single recirculator turns back into oxygen each second, in millionths of an atmosphere. At the default it keeps up with three crew in a room of any size.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportRecirculatorPower = config.get(OXYGEN, "lifeSupportRecirculatorPower", 400, "Power a recirculator draws per operation. Reversing combustion is endothermic: the energy cost is the point, not a tax.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportCarbonPerDust = config.get(OXYGEN, "lifeSupportCarbonPerDust", 60000, "CO2 that must be regenerated before one carbon dust is produced, in millionths of an atmosphere. At the defaults a recirculator running flat out yields a dust every ten seconds.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportFluidPerAtmBlock = config.get(OXYGEN, "lifeSupportFluidPerAtmBlock", 1000, "How many millibuckets of gas one whole atmosphere of partial pressure amounts to in ONE block of room. This is the exchange rate between air in a room and gas in a pipe: at the default, emptying a 20-block cabin of its 0.21 atm of oxygen yields 4200 mB.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportSeparatorRate = config.get(OXYGEN, "lifeSupportSeparatorRate", 20000, "Partial pressure a separator moves between room and tank each second, in millionths of an atmosphere. At the default it clears a badly stale room in under ten seconds.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportSeparatorPower = config.get(OXYGEN, "lifeSupportSeparatorPower", 300, "Power a separator draws per operation.", 0, Integer.MAX_VALUE).getInt();
         arConfig.dropExTorches = config.get(OXYGEN, "dropExtinguishedTorches", false, "Drop an extinguished torch instead of a vanilla torch, when breaking an extinguished torch.").getBoolean();
         sealableBlockWhiteList = config.getStringList("sealableBlockWhiteList", OXYGEN, new String[]{}, "Blocks that should count as sealable. Format: modid:block  for example \"minecraft:chest\"");
         sealableBlockBlackList = config.getStringList("sealableBlockBlackList", OXYGEN, new String[]{}, "Blocks that should not count as sealable.  Format: modid:block  for example \"minecraft:chest\"");
