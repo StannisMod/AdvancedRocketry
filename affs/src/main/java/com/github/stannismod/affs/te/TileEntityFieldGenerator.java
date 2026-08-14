@@ -208,6 +208,31 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         return shellVelocityAt(getWorldCenter());
     }
 
+    /**
+     * Mirror a DECLARED travelling body's velocity off this shell at a world point, with the same law
+     * {@link #pushEntityBack} uses for a travelling entity: take the velocity relative to the shell,
+     * reflect it about the outward normal, then add the shell's own motion back so the deflected body
+     * still rides a moving ship. The two populations share one reflection law rather than two
+     * implementations free to disagree.
+     *
+     * <p>Two deliberate differences from the entity path. The bounce is scaled by the restitution
+     * tunable (default 1.0 — a perfect mirror, i.e. identical to the entity path); and there is no
+     * minimum-kick fallback for a degenerate mirror. An entity must end up somewhere, so it is nudged
+     * outward; a shot has the better option of ceasing to exist, and the caller ends it at the crossing
+     * point rather than leaving a near-motionless record alive.</p>
+     */
+    public Vec3d reflectBodyVelocity(Vec3d worldPoint, Vec3d velocity) {
+        if (worldPoint == null || velocity == null) {
+            return null;
+        }
+        Vec3d shellVelocity = shellVelocityAt(worldPoint);
+        Vec3d relative = FieldSurfaceMath.subtract(velocity, shellVelocity);
+        Vec3d normal = FieldSurfaceMath.sphereOutwardNormal(getWorldCenter(), worldPoint, relative);
+        Vec3d reflected = FieldSurfaceMath.reflect(relative, normal);
+        double restitution = Math.max(0.0D, Math.min(1.0D, ModConfig.shieldStrikeReflectionRestitution));
+        return FieldSurfaceMath.scale(reflected, restitution).add(shellVelocity);
+    }
+
     /** TEST ONLY: set the coil's stored shield energy directly and refresh the powered state. Lets an
      *  e2e power a shield on an assembled VS ship without wiring a generator/FE feed into the subspace
      *  structure — the ship-frame geometry, not the energy economy, is what that test exercises. */

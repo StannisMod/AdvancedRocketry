@@ -65,10 +65,17 @@ public final class ModConfig {
     //    impact energy. spent = min(stored, impactEnergy x rate x kindMult / tierEff).
     //  - shieldStrikeDamageToEnergyFactor: converts a cooperating source's *damage* value to declared
     //    impact energy when it reports damage rather than energy.
+    //  - shieldStrikeReflectionRestitution: how much of a declared travelling body's relative speed
+    //    survives the mirror. 1.0 is a perfect mirror — exactly what the per-tick entity scan does — so
+    //    at the default the two populations behave identically; the knob exists so they can be split
+    //    later without touching the entity compatibility path. It scales SPEED ONLY: the absorption
+    //    cost stays impactEnergy x rate x kindMult / tierEff, because one impact must have exactly one
+    //    pricing path. Clamped to [0, 1] — above 1 the shell would hand out energy it never absorbed.
     // The tier-2 residual hitscan-ray hook (a blanket World.rayTraceBlocks mixin) is deferred to its own
     // task; its config lands with it, not here.
     public static double shieldStrikeAbsorptionRate = 1.0D;
     public static double shieldStrikeDamageToEnergyFactor = 500.0D;
+    public static double shieldStrikeReflectionRestitution = 1.0D;
 
     private ModConfig() {
     }
@@ -291,6 +298,18 @@ public final class ModConfig {
                 Float.MAX_VALUE,
                 "Converts a cooperating weapon's damage value into declared shield impact energy when the "
                         + "source reports damage rather than energy."
+        );
+
+        shieldStrikeReflectionRestitution = configuration.getFloat(
+                "shieldStrikeReflectionRestitution",
+                CATEGORY_WEAPONS,
+                1.0F,
+                0.0F,
+                1.0F,
+                "Fraction of a declared travelling body's relative speed that survives reflection off the "
+                        + "shell. 1.0 is a perfect mirror (what the per-tick entity scan does). Scales speed "
+                        + "only — the absorption cost is unaffected. Applies to declared strikes that carry a "
+                        + "body; the entity scan is never affected."
         );
 
         if (configuration.hasChanged()) {

@@ -16,6 +16,10 @@ import java.util.List;
  * shield spends {@code min(stored, impactEnergy x rate x kindMult / tierEff)}; a full pay stops the
  * strike at the shell, a short pay lets the remainder through and drops the shield toward zero.
  *
+ * <p>A fully paid KINETIC strike that declares a travelling body is <em>reflected</em> rather than
+ * stopped: the shield owns that computation because the surface normal is field geometry the caller has
+ * no access to, and because the moving-shell correction already lives here.</p>
+ *
  * <p>Server-authoritative: energy is spent on the logical server only. This is the tier the mod builds
  * against; non-cooperating fire is covered separately (explosions and travelling projectiles already,
  * a residual hitscan-ray hook as best-effort future work).</p>
@@ -69,9 +73,17 @@ public final class ShieldStrikeService {
 
         generator.onFieldTouched(hitPoint, null); // flash at the crossing
         if (spent >= cost) {
+            // Full pay + a declared travelling body => the shell mirrors it, with the law the entity
+            // scan already uses (shell velocity out, reflect, shell velocity back in). RADIANT never
+            // reflects however it arrives — a beam has no velocity to mirror.
+            if (strike.getKind() == ShieldStrikeKind.KINETIC && strike.hasBody()) {
+                Vec3d newVelocity = generator.reflectBodyVelocity(hitPoint, strike.getBodyVelocity());
+                return ShieldStrikeResult.reflected(hitPoint, spent, newVelocity);
+            }
             return ShieldStrikeResult.intercepted(hitPoint, spent, 0);
         }
-        // Short pay: the shield covered only a fraction, the remainder passes downstream.
+        // Short pay: the shield covered only a fraction, the remainder passes downstream. It never
+        // reflects, body or not — graceful penetration means exactly what it always meant.
         double fractionStopped = (double) spent / (double) cost;
         int residual = (int) Math.round(strike.getImpactEnergy() * (1.0D - fractionStopped));
         return ShieldStrikeResult.intercepted(hitPoint, spent, Math.max(1, residual));

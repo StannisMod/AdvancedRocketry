@@ -8,9 +8,17 @@ package com.github.stannismod.affs.world.shield;
 public enum ShieldStrikeKind {
 
     /**
-     * A moving mass / kinetic projectile. The per-tick entity scan physically <em>reflects</em> a
-     * travelling one; a declared kinetic strike with no travelling entity is absorbed at the physical-
-     * resistance multiplier.
+     * A moving mass / kinetic projectile. What the field does with it is decided by whether a travelling
+     * <em>body</em> exists — not by whether that body happens to be a Forge {@code Entity}:
+     *
+     * <ul>
+     *   <li>a travelling entity — reflected by the per-tick AABB scan, as it always has been (a
+     *       permanent compatibility path for other mods' projectiles and thrown bodies);</li>
+     *   <li>a declared strike that carries a body ({@link ShieldStrike#hasBody()}) — a shot living as a
+     *       record rather than an entity — reflected by {@link ShieldStrikeService#resolve};</li>
+     *   <li>a declared strike with no body at all — an abstract kinetic source — absorbed at the
+     *       physical-resistance multiplier.</li>
+     * </ul>
      */
     KINETIC,
 

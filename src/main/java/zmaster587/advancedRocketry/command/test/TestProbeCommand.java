@@ -611,11 +611,14 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         if (args.length >= 11 && "strike".equalsIgnoreCase(args[0])) {
-            // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> — fire a
-            // cooperative D134-2 tier-1 strike (a declared-energy beam) at the field along a ray and
-            // report what the ShieldStrikeService absorbed: intercepted / fullyAbsorbed / spent shield
-            // energy / residual impact energy that passed / the shell hit point. This is the honest
-            // server-tier verification of the strike seam AR turrets will implement.
+            // strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> [bvx bvy bvz]
+            // — fire a cooperative D134-2 tier-1 strike at the field along a ray and report what the
+            // ShieldStrikeService absorbed: intercepted / fullyAbsorbed / spent shield energy / residual
+            // impact energy that passed / the shell hit point. This is the honest server-tier
+            // verification of the strike seam AR turrets will implement.
+            // The optional trailing triple DECLARES A TRAVELLING BODY at that world velocity — a shot
+            // that exists as a record rather than as an entity. A fully absorbed KINETIC strike carrying
+            // one is mirrored off the shell instead of stopped, and the reply reports the new velocity.
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             net.minecraft.world.WorldServer world = server.getWorld(dim);
             if (world == null) {
@@ -632,12 +635,19 @@ public class TestProbeCommand extends CommandBase {
                     "KINETIC".equalsIgnoreCase(args[10])
                             ? com.github.stannismod.affs.world.shield.ShieldStrikeKind.KINETIC
                             : com.github.stannismod.affs.world.shield.ShieldStrikeKind.RADIANT;
+            net.minecraft.util.math.Vec3d bodyVelocity = null;
+            if (args.length >= 14) {
+                bodyVelocity = new net.minecraft.util.math.Vec3d(
+                        parseDoubleOr(args[11], 0), parseDoubleOr(args[12], 0), parseDoubleOr(args[13], 0));
+            }
             com.github.stannismod.affs.world.shield.ShieldStrike strike =
-                    com.github.stannismod.affs.world.shield.ShieldStrike.beam(origin, dir, maxDist, impactEnergy, kind);
+                    new com.github.stannismod.affs.world.shield.ShieldStrike(
+                            origin, dir, maxDist, impactEnergy, kind, false, bodyVelocity);
             com.github.stannismod.affs.world.shield.ShieldStrikeResult result =
                     com.github.stannismod.affs.world.shield.ShieldStrikeService.resolve(world, strike);
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("dim", dim);
+            info.put("declaredBody", strike.hasBody());
             info.put("intercepted", result.isIntercepted());
             info.put("fullyAbsorbed", result.isFullyAbsorbed());
             info.put("absorbed", result.getAbsorbedShieldEnergy());
@@ -649,10 +659,17 @@ public class TestProbeCommand extends CommandBase {
                 info.put("hitY", hit.y);
                 info.put("hitZ", hit.z);
             }
+            // Emitted in EVERY state (zeros when nothing was reflected) so a consumer parsing them never
+            // meets a dropped key; "reflected" is what says whether the numbers mean anything.
+            net.minecraft.util.math.Vec3d newVel = result.getReflectedVelocity();
+            info.put("reflected", result.isReflected());
+            info.put("newVx", newVel != null ? newVel.x : 0.0D);
+            info.put("newVy", newVel != null ? newVel.y : 0.0D);
+            info.put("newVz", newVel != null ? newVel.z : 0.0D);
             send(sender, jsonMap(info));
             return;
         }
-        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
+        send(sender, "{\"error\":\"unknown shield subcommand — try tick <dim> | read <dim> <x> <y> <z> | explode <dim> <x> <y> <z> [strength] | zone <dim> <x> <y> <z> | emitters <dim> | charge <dim> <x> <y> <z> <amount> | priority <dim> <x> <y> <z> [value] | strike <dim> <ox> <oy> <oz> <dx> <dy> <dz> <maxDist> <impactEnergy> <kind> [bvx] [bvy] [bvz] | group <dim> <x> <y> <z> <op> [...] | rotate-code <dim> <x> <y> <z>\"}");
     }
 
     // Valkyrien Skies integration probes ----------------------------------

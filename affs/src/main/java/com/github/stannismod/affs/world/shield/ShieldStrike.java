@@ -13,6 +13,15 @@ import net.minecraft.util.math.Vec3d;
  * is the strike's own declared energy in shield-energy-equivalent units, before the shield applies its
  * kind and tier multipliers. A source that reports weapon <em>damage</em> rather than energy can convert
  * via {@link #fromDamage} using the tunable {@code shieldStrikeDamageToEnergyFactor} (D134-2, axis G).</p>
+ *
+ * <p>A strike may additionally declare the <em>travelling body</em> it carries, as a velocity vector: its
+ * presence IS the statement "there is a body here", and its absence the statement that there is not.
+ * That distinction is what a shot which exists as a registry record rather than as a Forge {@code Entity}
+ * needs — the body is real, it simply is not something the field's per-tick entity scan can see. A
+ * declared kinetic strike <em>with</em> a body is mirrored off the shell by
+ * {@link ShieldStrikeService#resolve}; one <em>without</em> is absorbed, as it always was. The energy stays
+ * declared either way: a velocity being available is not a reason to start inferring what the caller can
+ * state.</p>
  */
 public final class ShieldStrike {
 
@@ -22,21 +31,38 @@ public final class ShieldStrike {
     private final int impactEnergy;
     private final ShieldStrikeKind kind;
     private final boolean unblockable;
+    private final Vec3d bodyVelocity;
 
     public ShieldStrike(Vec3d origin, Vec3d direction, double maxDistance, int impactEnergy,
                         ShieldStrikeKind kind, boolean unblockable) {
+        this(origin, direction, maxDistance, impactEnergy, kind, unblockable, null);
+    }
+
+    public ShieldStrike(Vec3d origin, Vec3d direction, double maxDistance, int impactEnergy,
+                        ShieldStrikeKind kind, boolean unblockable, Vec3d bodyVelocity) {
         this.origin = origin;
         this.direction = normalize(direction);
         this.maxDistance = Math.max(0.0D, maxDistance);
         this.impactEnergy = Math.max(0, impactEnergy);
         this.kind = kind == null ? ShieldStrikeKind.RADIANT : kind;
         this.unblockable = unblockable;
+        this.bodyVelocity = bodyVelocity;
     }
 
     /** A blockable beam of the given declared energy. */
     public static ShieldStrike beam(Vec3d origin, Vec3d direction, double maxDistance, int impactEnergy,
                                     ShieldStrikeKind kind) {
         return new ShieldStrike(origin, direction, maxDistance, impactEnergy, kind, false);
+    }
+
+    /**
+     * A kinetic strike that declares the travelling body behind it — a shot that exists as a record
+     * rather than as an entity. Full absorption reflects it; see {@link ShieldStrikeResult#reflected}.
+     */
+    public static ShieldStrike kineticBody(Vec3d origin, Vec3d direction, double maxDistance,
+                                           int impactEnergy, Vec3d bodyVelocity) {
+        return new ShieldStrike(origin, direction, maxDistance, impactEnergy, ShieldStrikeKind.KINETIC,
+                false, bodyVelocity);
     }
 
     /** A beam whose declared energy is derived from a weapon's damage value (axis G tunable factor). */
@@ -70,6 +96,16 @@ public final class ShieldStrike {
     /** Bypasses the shield entirely (matches vanilla unblockable damage, D134-2 axis G). */
     public boolean isUnblockable() {
         return unblockable;
+    }
+
+    /** The declared travelling body's world velocity, or null when the strike carries no body. */
+    public Vec3d getBodyVelocity() {
+        return bodyVelocity;
+    }
+
+    /** True when this strike declares a travelling body (the thing the entity scan cannot see). */
+    public boolean hasBody() {
+        return bodyVelocity != null;
     }
 
     private static Vec3d normalize(Vec3d v) {
