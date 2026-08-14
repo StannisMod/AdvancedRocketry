@@ -305,12 +305,27 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         boolean inAABB = flyInCap.contains("\"aboardByContainment\":true");
         boolean onShipBlock = flyInCap.contains("\"supportedByShip\":true");
         boolean tracked = flyInCap.contains("\"alreadyTracked\":true");
+        // Being TRACKED is not by itself a broken arrangement here, and demanding otherwise is what
+        // made this scenario intermittent. A body that touches the outer hull is taken into HULL-STAND
+        // mode - which is tracked, and is precisely the mode that keeps world gravity, world movement
+        // and the WORLD camera - and the fly-in point sits a few blocks over a deck rolled 45deg, so
+        // whether that contact happens inside the single tick this samples is a race with the server's
+        // own capture pass. Measured 2026-08-14, one red in a four-run sweep:
+        // alreadyTracked:true hullStand:true supportedByShip:false shipSupportObstacles:0 - a
+        // hull-stand body, asserted against as though it were a deck capture.
+        // What must NOT be true is the thing this leg is about: he must not be ABOARD on a deck, since
+        // only that engages the deck camera. That is tracked-and-not-hull-standing.
+        boolean hullStand = flyInCap.contains("\"hullStand\":true");
+        boolean aboardOnADeck = tracked && !hullStand;
         boolean flyInCam = Boolean.parseBoolean(clientString(SHIP_CAMERA, "shipCamActive"));
         double flyInRoll = clientDouble(SHIP_CAMERA, "shipCamRoll");
         System.out.println("[deckcap] cam fly-in active=" + flyInCam + " roll=" + flyInRoll + " inAABB="
-                + inAABB + " onShipBlock=" + onShipBlock + " tracked=" + tracked + " cap=" + flyInCap);
-        assertTrue("setup: the fly-in point must be inside the ship's AABB, off any deck block, with the "
-                + "player not already resolved on it: " + flyInCap, inAABB && !onShipBlock && !tracked);
+                + inAABB + " onShipBlock=" + onShipBlock + " tracked=" + tracked + " hullStand="
+                + hullStand + " cap=" + flyInCap);
+        assertTrue("setup: the fly-in point must be inside the ship's AABB, off any deck block, and the "
+                + "player must not be ABOARD on one (hull-stand is allowed - it keeps world-frame "
+                + "semantics, which is what this leg asserts): " + flyInCap,
+                inAABB && !onShipBlock && !aboardOnADeck);
         assertTrue("a player flying through a ship's airspace, not standing on its deck, must keep his "
                 + "own view; the deck camera must not hijack it (active=" + flyInCam + " roll="
                 + flyInRoll + ")", !flyInCam);

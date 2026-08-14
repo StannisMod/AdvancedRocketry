@@ -77,6 +77,22 @@ public abstract class AbstractClientE2ETest {
         return false;
     }
 
+    /**
+     * Write files into the server's game directory BEFORE the server JVM boots.
+     *
+     * <p>The seam exists for one reason: a mod reads its config ONCE at startup, so a scenario whose
+     * subject depends on a config value cannot set it from inside the test — by the time the first
+     * command can be issued, the value has already been consumed. The alternative a test reaches for
+     * otherwise is to abandon this base class and drive {@link RealDedicatedServerHarness#startWith}
+     * plus {@link RealClientHarness} by hand, which duplicates the whole two-JVM lifecycle (including
+     * the close-both-on-startup-failure ordering) for the sake of one file.</p>
+     *
+     * <p>{@code gameDir} is a fresh empty temp directory, deleted on close. The default does
+     * nothing, which is exactly the previous behaviour.</p>
+     */
+    protected void seedGameDir(java.nio.file.Path gameDir) throws Exception {
+    }
+
     @Before
     public final void startBoth() throws Exception {
         Assume.assumeTrue(
@@ -86,7 +102,9 @@ public abstract class AbstractClientE2ETest {
                 "Client harness disabled — set -D" + PROP_CLIENT_ENABLED + "=true to enable",
                 Boolean.parseBoolean(System.getProperty(PROP_CLIENT_ENABLED, "false")));
 
-        serverHarness = RealDedicatedServerHarness.start();
+        java.nio.file.Path gameDir = java.nio.file.Files.createTempDirectory("forge-client-e2e-");
+        seedGameDir(gameDir);
+        serverHarness = RealDedicatedServerHarness.startWith(gameDir, /*cleanupOnClose=*/true);
         try {
             clientHarness = requiresFramebufferAtLaunch()
                     ? RealClientHarness.startWithFramebuffer(serverHarness)

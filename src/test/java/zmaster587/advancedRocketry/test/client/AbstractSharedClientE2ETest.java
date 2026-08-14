@@ -359,9 +359,36 @@ public abstract class AbstractSharedClientE2ETest {
             health = polled != null && polled.has("health")
                     ? polled.get("health").getAsDouble() : -1.0;
         }
-        assertTrue("a scenario must start at full health as the CLIENT renders it, or a"
-                + " damage-observing scenario measures the previous one's leftovers; client"
-                + " reports " + health, health >= 19.5);
+        // The restore above is a NO-OP ON THE WIRE whenever the server is already at full health.
+        // The server sends a health packet only when the value CHANGES, so a client that is somehow
+        // below it is never told otherwise and the poll above can never succeed — it asserts on a
+        // channel the reset's own write does not necessarily touch. Force the packet by moving the
+        // server's health and putting it straight back: a RISING value is one the client applies
+        // directly, while a falling one goes through its damage path, which a creative player's own
+        // invulnerability swallows. Only a scenario that has already failed the poll pays for this,
+        // and it is recorded rather than silent — a correction nobody can see is indistinguishable
+        // from a subject that was never dirty.
+        if (health < 19.5) {
+            serverClient().execute("artest player set-health 19");
+            bot().waitTicks(2);
+            serverClient().execute("artest player set-health 20");
+            for (int waited = 0; waited < 40 && health < 19.5; waited += 5) {
+                bot().waitTicks(5);
+                JsonObject polled = bot().reportState();
+                health = polled != null && polled.has("health")
+                        ? polled.get("health").getAsDouble() : -1.0;
+            }
+            scenario.record("healthResync", health);
+        }
+        // The SERVER's own view, sampled only once BOTH the restore and the forced resync have
+        // failed: "the client is stale" and "the player really is hurt" need opposite fixes and are
+        // indistinguishable from one number.
+        if (health < 19.5) {
+            org.junit.Assert.fail("a scenario must start at full health as the CLIENT renders it,"
+                    + " or a damage-observing scenario measures the previous one's leftovers; client"
+                    + " reports " + health + "; server reports "
+                    + String.join("\n", serverClient().execute("artest player health")));
+        }
 
         // The world the CLIENT actually renders, asserted rather than inferred from the teleport
         // having been issued: the plot check above reads X and Z only, so without this a scenario

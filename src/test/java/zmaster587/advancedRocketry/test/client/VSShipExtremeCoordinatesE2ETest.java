@@ -42,10 +42,45 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
     private static final Pattern POS_Y = Pattern.compile("\"posY\":(-?[0-9.E\\-]+)");
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern DUMMY_ID = Pattern.compile("\"dummyId\":(-?\\d+)");
+    private static final Pattern SHIP_ID = Pattern.compile("\"id\":\"([^\"]*)\"");
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 3400, BY = 64, BZ = 3400;
     private static final double EXTREME_Y = 3_999_000d;
+
+    /**
+     * This scenario boots with the space subsystem OFF, and that is what keeps its subject alive.
+     *
+     * <p>With it on, the scenario measured the wrong thing — and did, red on every run for weeks: a
+     * piloted ship above a planetary dimension's orbit line is CORRECTLY taken by the entry on-ramp,
+     * so the rigid teleport to {@link #EXTREME_Y} handed the ship to a space cell and the "client
+     * rider did not arrive at extreme Y" failure was the pilot faithfully following his own ship to
+     * the cell's realized pose. Measured 2026-08-14: at the failure the client's own world was a
+     * SLOT dimension and the entry ledger held one ship, and the rider's ~2 000 266 is half a
+     * galactic cell plus the pose band — the cell's local origin, not a rider that stopped climbing.
+     * (The earlier reading, that "whatever carries the rider follows the ship only to ~2M", was
+     * resemblance: the number matches the cell origin, not the scenario's older target.)</p>
+     *
+     * <p>Off, dim 0 has no entry on-ramp at all, so an extreme world Y is a state that dimension can
+     * actually hold — which is the only arrangement in which the spike's question can be asked: is a
+     * ship CONTROLLABLE, and does the real client keep tracking its rider, at a world Y near the top
+     * of the pose band the cells realize? The flag is a documented server setting whose whole
+     * purpose is "no tier-2 space on this server", and turning it off changes nothing about VS, the
+     * pilot path or the client — it only removes the crossing, which is a different subsystem's
+     * subject and has its own e2es. The neighbouring knob is NOT usable for this: {@code orbitHeight}
+     * also prices rocket fuel, and raising it above {@link #EXTREME_Y} makes the fixture refuse to
+     * assemble ({@code status:NOFUEL}) before this test reaches its first measurement.</p>
+     */
+    @Override
+    protected void seedGameDir(java.nio.file.Path gameDir) throws Exception {
+        java.nio.file.Path arConfigDir = gameDir.resolve("config").resolve("advRocketry");
+        java.nio.file.Files.createDirectories(arConfigDir);
+        java.nio.file.Files.write(arConfigDir.resolve("advancedRocketry.cfg"),
+                ("# seeded by VSShipExtremeCoordinatesE2ETest\n"
+                        + "Performance {\n"
+                        + "    B:enableSpaceSubsystem=false\n"
+                        + "}\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));
@@ -72,16 +107,21 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
         exec("tp @a " + (BX + 0.5) + " " + (BY + 6) + " " + (BZ + 0.5) + " 0 0");
         bot().waitTicks(20);
         double y0 = Double.NaN;
+        String shipId = null;
         for (int i = 0; i < 40 && Double.isNaN(y0); i++) {
             bot().waitTicks(5);
             if (count("ship-count") >= 1) {
                 String info = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
                 if (info.contains("\"managed\":true")) {
                     y0 = readDouble(info, POS_Y);
+                    Matcher idm = SHIP_ID.matcher(info);
+                    shipId = idm.find() ? idm.group(1) : null;
                 }
             }
         }
         assertTrue("the ship must LOAD with the client present", !Double.isNaN(y0));
+        assertTrue("the ship must report an identity, or the entry-gate arrangement check below "
+                + "cannot name the craft it is asking about", shipId != null);
 
         String mountInfo = exec("artest vs seat-mount 0");
         assertTrue("seat-mount must find the pilot seat: " + mountInfo,
@@ -109,10 +149,21 @@ public class VSShipExtremeCoordinatesE2ETest extends AbstractClientE2ETest {
         bot().waitTicks(30); // transform adoption + rider sync settle
         exec("artest vs unpark 0 " + BX + " " + EXTREME_Y + " " + BZ);
         bot().waitTicks(10);
+        // ARRANGEMENT, asserted rather than assumed: the ship must now sit at extreme Y and STILL be
+        // below this world's entry line, or the on-ramp takes it into a space cell and everything
+        // below measures the crossing instead of the coordinate regime. That is exactly what this
+        // scenario did before it was booted with the on-ramp off, and it read as a rider that
+        // "stopped at ~2M" - the cell's realized pose - rather than as an arrangement that had lost
+        // its own subject.
+        String gate = exec("artest space entry-gate 0 " + shipId);
+        assertTrue("the extreme-Y pose must stay BELOW the entry line, or the ship leaves this world "
+                + "and the spike measures a crossing: " + gate, gate.contains("\"wouldTrigger\":false"));
         String serverInfoAfterTp = exec("artest vs ship-info 0 " + BX + " " + EXTREME_Y + " " + BZ);
         double riderY = bot().reportRidingEntity().get("posY").getAsDouble();
         assertTrue("the CLIENT-rendered rider must arrive at extreme Y (got " + riderY
-                        + "); server ship after teleport: " + serverInfoAfterTp,
+                        + "); server ship after teleport: " + serverInfoAfterTp
+                        + "; clientWorld=" + bot().reportWeather()
+                        + "; space=" + exec("artest space subsystem-status"),
                 riderY > EXTREME_Y - 200 && riderY < EXTREME_Y + 200);
         climbLeg("extreme Y", BX, EXTREME_Y, BZ);
 

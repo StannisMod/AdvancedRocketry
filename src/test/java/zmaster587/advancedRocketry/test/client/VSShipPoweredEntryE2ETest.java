@@ -243,9 +243,17 @@ public class VSShipPoweredEntryE2ETest {
                 }
             }
         }
+        // The two reads that separate this red's causes, in the MESSAGE rather than only on stdout:
+        // the settle can report a finished entry (ledger >= 1) with the pilot still in the launch
+        // world in two unrelated ways - the crew capture found nobody to carry, or it found him and
+        // the re-seat is still blocked on a seat/transform that has not come up. `seat-delivery`
+        // carries the re-seat's own block reason; the arrival trace says whether a dimension
+        // transfer was ever attempted for him. Without them a red here says only "he is in dim 0".
         assertTrue("after a granted entry the CLIENT itself must be in a space-cell dimension - "
                         + "the pilot follows his ship through the seam. clientDim=" + clientDim
-                        + " slotDims=[" + sd.group(1) + "] status=" + statusAfter,
+                        + " slotDims=[" + sd.group(1) + "] status=" + statusAfter
+                        + " delivery=" + exec("artest vs seat-delivery")
+                        + " trace=" + exec("artest vs arrival-trace"),
                 slotDims.contains("," + clientDim + ","));
 
         // (2) Still seated: two consecutive positive samples (a lost seat reads riding=true for a
