@@ -21,6 +21,7 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryFluids;
 import zmaster587.advancedRocketry.api.AreaBlob;
 import zmaster587.advancedRocketry.api.util.IBlobHandler;
+import zmaster587.advancedRocketry.atmosphere.AirState;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereType;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
@@ -62,6 +63,8 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     private RedstoneState state;
     private ModuleRedstoneOutputButton redstoneControl;
     private ModuleToggleSwitch traceToggle;
+    /** Gas contents read back from the save, waiting for the blob this vent will register. */
+    private AirState pendingAirState;
 
 
     public TileOxygenVent() {
@@ -220,6 +223,13 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
 
             if (firstRun) {
                 atmhandler.registerBlob(this, pos);
+
+                // The blob exists only now, so this is the earliest the saved gases can go back
+                // in. Cleared either way: a failed restore must not be retried every tick.
+                if (pendingAirState != null) {
+                    atmhandler.setAirState(this, pendingAirState);
+                    pendingAirState = null;
+                }
 
                 onAdjacentBlockUpdated();
                 //isSealed starts as true so we can accurately check for scrubbers, we now set it to false to force the tile to check for a seal on first run
@@ -489,6 +499,27 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         redstoneControl.setRedstoneState(state);
         allowTrace = nbt.getBoolean("allowtrace");
 
+        // The zone itself is rebuilt from the world on load, but what was IN it is not derivable
+        // from blocks — a cabin the crew had half-used would come back full of fresh air. Held
+        // here until the blob exists (registerBlob happens on the first tick, not on load).
+        if (nbt.hasKey("airState"))
+            pendingAirState = AirState.readFromNBT(nbt.getCompoundTag("airState"));
+    }
+
+    /**
+     * The gases in the zone this vent anchors: the live blob's if it has one, otherwise whatever
+     * is still waiting to be restored into it. Null when this vent has never had a zone.
+     */
+    private AirState getZoneAirState() {
+        if (world != null && !world.isRemote) {
+            AtmosphereHandler atmhandler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+            if (atmhandler != null) {
+                AirState live = atmhandler.getAirState(this);
+                if (live != null)
+                    return live;
+            }
+        }
+        return pendingAirState;
     }
 
     @Override
@@ -496,6 +527,13 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         super.writeToNBT(nbt);
         nbt.setByte("redstoneState", (byte) state.ordinal());
         nbt.setBoolean("allowtrace", allowTrace);
+
+        AirState air = getZoneAirState();
+        if (air != null) {
+            NBTTagCompound airTag = new NBTTagCompound();
+            air.writeToNBT(airTag);
+            nbt.setTag("airState", airTag);
+        }
         return nbt;
     }
 

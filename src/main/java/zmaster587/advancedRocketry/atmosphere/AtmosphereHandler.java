@@ -274,6 +274,7 @@ public class AtmosphereHandler {
     public void onTick(LivingUpdateEvent event) {
         Entity entity = event.getEntity();
         if (!entity.world.isRemote && entity.world.provider.getDimension() == this.dimId) {
+            respire(event.getEntityLiving());
             IAtmosphere atmosType = getAtmosphereType(entity);
 
             if (entity instanceof EntityPlayer && atmosType != prevAtmosphere.get(entity)) {
@@ -299,6 +300,52 @@ public class AtmosphereHandler {
                     atmosType.onTick(event.getEntityLiving());
             }
         }
+    }
+
+    /**
+     * The zone containing this entity, or null if it is in none.
+     * <p>
+     * This is the ONE place the new life-support code turns an entity into a zone. The three
+     * public queries below still build the key inline, and all four share the same known defect:
+     * the key is world-frame while a blob aboard an assembled ship is subspace-frame (see the
+     * atmosphere subsystem doc). Deliberately not worked around here — a fourth, differently-wrong
+     * lookup would make the real fix harder, not easier.
+     */
+    @Nullable
+    private AtmosphereBlob getBlobContaining(@Nonnull Entity entity) {
+        HashedBlockPosition pos = new HashedBlockPosition((int) Math.floor(entity.posX), (int) Math.ceil(entity.posY), (int) Math.floor(entity.posZ));
+        for (AreaBlob blob : blobs.values()) {
+            if (blob instanceof AtmosphereBlob && blob.contains(pos))
+                return (AtmosphereBlob) blob;
+        }
+        return null;
+    }
+
+    /**
+     * A breathing entity turns some of its zone's oxygen into carbon dioxide, and the zone's
+     * breathability follows.
+     * <p>
+     * The vent stays the authority on whether a zone is MAINTAINED at all: this only refines a
+     * zone the vent has already declared breathable, so an unpowered or unsealed room keeps
+     * reverting to the dimension default exactly as before. Consumption is divided by the zone
+     * volume, so a bigger cabin buys proportionally more time on the same lungs.
+     */
+    private void respire(@Nullable net.minecraft.entity.EntityLivingBase entity) {
+        ARConfiguration config = ARConfiguration.getCurrentConfig();
+        if (entity == null || !config.enableOxygen || !config.lifeSupportZones)
+            return;
+        // Once a second, not once a tick: the rate is expressed per second and an entity that
+        // cannot be harmed by the air is not drawing on it either.
+        if (entity.world.getTotalWorldTime() % 20 != 0)
+            return;
+
+        AtmosphereBlob blob = getBlobContaining(entity);
+        if (blob == null || !(blob.getData() instanceof IAtmosphere) || !((IAtmosphere) blob.getData()).isBreathable())
+            return;
+
+        int volume = Math.max(1, blob.getBlobSize());
+        blob.getAirState().respire(config.lifeSupportRespirationRate / volume);
+        blob.setData(blob.getAirState().deriveAtmosphere());
     }
 
     @SubscribeEvent
@@ -548,6 +595,31 @@ public class AtmosphereHandler {
      */
     public void setAtmosphereType(@Nonnull IBlobHandler handler, @Nonnull IAtmosphere data) {
         blobs.get(handler).setData(data);
+    }
+
+    /**
+     * The gas contents of this handler's zone, or null if it has no zone (or none that carries
+     * gases). Callers that persist a zone across a save go through here rather than holding the
+     * blob, which the handler owns and rebuilds.
+     */
+    @Nullable
+    public AirState getAirState(@Nonnull IBlobHandler handler) {
+        AreaBlob blob = blobs.get(handler);
+        return blob instanceof AtmosphereBlob ? ((AtmosphereBlob) blob).getAirState() : null;
+    }
+
+    /**
+     * Restore gas contents into this handler's zone. No-op when the zone does not exist yet, so a
+     * caller loading from NBT before its blob is registered must retry rather than assume.
+     *
+     * @return true if the zone existed and took the state
+     */
+    public boolean setAirState(@Nonnull IBlobHandler handler, @Nonnull AirState airState) {
+        AreaBlob blob = blobs.get(handler);
+        if (!(blob instanceof AtmosphereBlob))
+            return false;
+        ((AtmosphereBlob) blob).setAirState(airState);
+        return true;
     }
 
     /**
