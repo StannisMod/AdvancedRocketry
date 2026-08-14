@@ -31,7 +31,8 @@ import java.util.Map;
  * <p>Wire contract (same-version, client-bound): {@code writeInt(dimCount)} then, per dim,
  * {@code writeInt(slotDimId)}, {@code writeInt(bodyCount)} and, per body,
  * {@code writeInt(kindOrdinal)}, {@code writeLong(localX)}, {@code writeLong(localY)},
- * {@code writeLong(localZ)}, {@code writeInt(dimId)}, {@code writeBoolean(descendTarget)}.
+ * {@code writeLong(localZ)}, {@code writeInt(dimId)}, {@code writeBoolean(descendTarget)},
+ * {@code writeLong(boundaryRadius)}.
  * {@code executeClient} stashes the decoded payload into a client-side static map (idempotent overwrite)
  * that {@link #bodiesForDim(int)} reads; {@code read} and {@code executeServer} are never used.</p>
  */
@@ -45,20 +46,33 @@ public final class PacketSystemBodiesSync extends BasePacket {
         public final long localZ;
         public final int dimId;
         public final boolean descendTarget;
+        /**
+         * Blocks from this body's address at which its atmosphere begins — the surface a ship
+         * crosses to enter it, and what the range shown beside the body counts down to.
+         *
+         * <p>Sent per body rather than assumed by the client, and that is the point: it is one
+         * number for every body only while bodies are dimensionless points. The moment a body has a
+         * real radius this differs per body, and a client that had derived it from a shared
+         * constant would draw and label every approach wrong with nothing to indicate it. Zero for
+         * a body that is not a descend target — a star has no shell to cross.</p>
+         */
+        public final long boundaryRadius;
 
-        public RenderBody(int kindOrdinal, long localX, long localY, long localZ, int dimId, boolean descendTarget) {
+        public RenderBody(int kindOrdinal, long localX, long localY, long localZ, int dimId,
+                          boolean descendTarget, long boundaryRadius) {
             this.kindOrdinal = kindOrdinal;
             this.localX = localX;
             this.localY = localY;
             this.localZ = localZ;
             this.dimId = dimId;
             this.descendTarget = descendTarget;
+            this.boundaryRadius = boundaryRadius;
         }
 
         @Override
         public String toString() {
             return "RenderBody{kind=" + kindOrdinal + ",dir=" + localX + "," + localY + "," + localZ
-                    + ",dim=" + dimId + ",descend=" + descendTarget + "}";
+                    + ",dim=" + dimId + ",descend=" + descendTarget + ",shell=" + boundaryRadius + "}";
         }
     }
 
@@ -110,6 +124,7 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 buffer.writeLong(b.localZ);
                 buffer.writeInt(b.dimId);
                 buffer.writeBoolean(b.descendTarget);
+                buffer.writeLong(b.boundaryRadius);
             }
         }
     }
@@ -130,7 +145,9 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 long localZ = buffer.readLong();
                 int dimId = buffer.readInt();
                 boolean descendTarget = buffer.readBoolean();
-                bodies.add(new RenderBody(kindOrdinal, localX, localY, localZ, dimId, descendTarget));
+                long boundaryRadius = buffer.readLong();
+                bodies.add(new RenderBody(kindOrdinal, localX, localY, localZ, dimId, descendTarget,
+                        boundaryRadius));
             }
             decoded.put(slotDimId, bodies);
         }

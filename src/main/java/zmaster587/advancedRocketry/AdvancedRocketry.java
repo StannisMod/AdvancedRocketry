@@ -442,7 +442,13 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileSeal.class, "ARBlockSeal");
         GameRegistry.registerTileEntity(TileSpaceElevator.class, "ARSpaceElevator");
         GameRegistry.registerTileEntity(TileBeacon.class, "ARBeacon");
-        GameRegistry.registerTileEntity(TileWirelessTransceiver.class, "ARTransceiver");
+        //FROZEN save id — the misspelling is deliberate, do not "fix" it. This exact string is
+        //written as the tile's NBT "id" into every saved chunk and into packed rockets and
+        //stations (StorageChunk); a mismatch drops the tile silently on load — the block
+        //survives, its network id, mode and priority do not.
+        //TODO(3.0.0): rename to ARTransceiver only behind a compat alias that keeps the old id
+        //readable — MissingMappings covers Forge registries, not TileEntity.REGISTRY.
+        GameRegistry.registerTileEntity(TileWirelessTransceiver.class, "ARTransciever");
         GameRegistry.registerTileEntity(TileBlackHoleGenerator.class, "ARblackholegenerator");
         GameRegistry.registerTileEntity(TilePump.class, new ResourceLocation(Constants.modId, "ARpump"));
         GameRegistry.registerTileEntity(TileCentrifuge.class, new ResourceLocation(Constants.modId, "ARCentrifuge"));
@@ -661,7 +667,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockSuitWorkStation = new BlockSuitWorkstation(TileSuitWorkStation.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("suitWorkStation").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockPressureTank = new BlockPressurizedFluidTank(Material.IRON).setUnlocalizedName("pressurizedTank").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockSolarGenerator = new BlockSolarGenerator(TileSolarPanel.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setHardness(3f).setUnlocalizedName("solarGenerator");
-        AdvancedRocketryBlocks.blockTransceiver = new BlockTransceiver(TileWirelessTransceiver.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransceiver").setCreativeTab(tabAdvRocketry).setHardness(3f);
+        AdvancedRocketryBlocks.blockTransciever = new BlockTransceiver(TileWirelessTransceiver.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("wirelessTransceiver").setCreativeTab(tabAdvRocketry).setHardness(3f);
         //Multiblock machines
         //T1 processing
         AdvancedRocketryBlocks.blockArcFurnace = new BlockMultiblockMachine(TileElectricArcFurnace.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("electricArcFurnace").setCreativeTab(tabAdvRocketry).setHardness(3f);
@@ -849,7 +855,14 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSuitWorkStation.setRegistryName("suitWorkStation"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockPressureTank.setRegistryName("liquidTank"), ItemBlockFluidTank.class, true);
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockSolarGenerator.setRegistryName("solarGenerator"));
-        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransceiver.setRegistryName("wirelessTransceiver"));
+        //FROZEN save id — the misspelling is deliberate, do not "fix" it. Shipped since 2018
+        //(48610953), so existing worlds hold advancedrocketry:wirelesstransciever in their
+        //level.dat registry snapshot; respelling it drops every placed transceiver and every
+        //ItemBlock in storage. Blockstate, block/item models and the recipe result are keyed
+        //off this string as well and must move with it.
+        //TODO(3.0.0): rename to wirelessTransceiver, but only together with a
+        //RegistryEvent.MissingMappings remap of the old name. See CHANGELOG.
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTransciever.setRegistryName("wirelessTransciever"));
         //Multiblock machines
         //T1 processing
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockArcFurnace.setRegistryName("arcfurnace"));
@@ -1015,10 +1028,15 @@ public class AdvancedRocketry {
         MaterialRegistry.registerMixedMaterial(new MixedMaterial(TileElectricArcFurnace.class, "oreRutile", new ItemStack[]{MaterialRegistry.getMaterialFromName("Titanium").getProduct(AllowedProducts.getProductByName("INGOT"))}));
 
 
-        NetworkRegistry.INSTANCE.registerGuiHandler(this, new GuiHandler());
-
-        // The vendored AFFS shield system is folded into AR's container, so its GUIs are routed
-        // through AR's handler (offset ids >= AffsGuiRouter.AFFS_GUI_BASE go to the AFFS handler).
+        // EXACTLY ONE GUI handler may be registered on this container: Forge keeps one per mod in
+        // NetworkRegistry, so a second call silently OVERWRITES the first - it does not chain. That
+        // overwrite is what once broke the station-chip button re-open, when a libVulpes handler
+        // registered here was replaced by AR's and the MODULAR* ids resolved to null.
+        //
+        // So the chain is built explicitly instead: the router sends offset ids
+        // (>= AffsGuiRouter.AFFS_GUI_BASE) to the vendored shield system's handler and everything
+        // else to AR's, which in turn delegates every non-AR id on to libVulpes. Add a handler by
+        // extending this chain, never by calling registerGuiHandler again.
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new zmaster587.advancedRocketry.integration.affs.AffsGuiRouter(
                 new com.github.stannismod.affs.gui.GuiHandler(), new zmaster587.advancedRocketry.inventory.GuiHandler()));
         planetWorldType = new WorldTypePlanetGen("PlanetCold");
@@ -1196,7 +1214,7 @@ public class AdvancedRocketry {
         // aside the moment no loaded world is locked, so the default-everything case pays nothing.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.world.TimeCommandGuard());
         // Movable-ship space subsystem GC ticker (idle unless a server-start builds the controller).
-        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystem.Ticker());
+        MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceSubsystemEvents());
         // Login restore (a returning player goes back to his ship, not to a stale pool slot) and the
         // cell-divergence hook. Independent of the controller so it stays quiet while it is down.
         MinecraftForge.EVENT_BUS.register(new zmaster587.advancedRocketry.space.SpaceEventHandler());

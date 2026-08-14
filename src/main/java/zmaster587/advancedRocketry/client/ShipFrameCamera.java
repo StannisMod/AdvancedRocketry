@@ -35,10 +35,12 @@ public final class ShipFrameCamera {
     /** Whether the ship-frame camera was engaged on the last rendered frame. */
     public static volatile boolean shipCamActive = false;
     /** The block position the client's crosshair raytrace resolved this frame, as "x,y,z" (ship
-     *  blocks come back in SUBSPACE coordinates), or "" when it hit no block. Test-mode only -
-     *  lets a client e2e assert WHAT the crosshair actually picks - the block outlined under the
-     *  crosshair must be the block interacted with, at any ship attitude - through
-     *  {@code readStaticField}, with no live objectMouseOver access. */
+     *  blocks come back in SUBSPACE coordinates), or "" when it hit no block. Written
+     *  UNCONDITIONALLY - deliberately NOT gated on test mode, because the harness child JVMs run
+     *  without it and this static is their only window onto what the crosshair resolves. Lets a
+     *  client e2e assert WHAT the crosshair actually picks - the block outlined under the crosshair
+     *  must be the block interacted with, at any ship attitude - through {@code readStaticField},
+     *  with no live objectMouseOver access. */
     public static volatile String lastMouseOverBlock = "";
     /** Where the crosshair RAY actually originates ({@code getPositionEyes}) this frame — compared
      *  by the crosshair-picking e2e against {@code shipCamEye*} (what the RENDERER recorded): the
@@ -407,6 +409,126 @@ public final class ShipFrameCamera {
             shipUpX = shipUp[0];
             shipUpY = shipUp[1];
             shipUpZ = shipUp[2];
+        }
+    }
+
+    // ---- Render-dispatch stage probe ----------------------------------------------------------
+    //
+    // Vanilla does NOT walk the loaded-entity list to draw entities: RenderGlobal.renderEntities
+    // iterates the VISIBLE render-chunk set built by setupTerrain and pulls each section's entities
+    // out of that chunk's own per-section list. So "the entity exists on the client but its model was
+    // never drawn" has three distinct causes - the section is not in the visible set, the entity is
+    // not in its chunk's list, or the frustum/range test rejected it - and a counter of models drawn
+    // cannot tell them apart. This reports which one applies, for ONE entity, on demand.
+    //
+    // Costs nothing when nobody asks: it is not a per-frame hook, it runs only when called (the test
+    // harness invokes it on the client thread). Both lookups find their field BY TYPE rather than by
+    // name, so no mapping name is hard-coded.
+
+    private static java.lang.reflect.Field renderInfosField;
+    private static java.lang.reflect.Field renderChunkField;
+
+    /**
+     * Which stage of the vanilla entity-render dispatch the given entity currently passes on this
+     * client: whether the client holds it at all, whether its chunk section is in the visible render
+     * set, and whether the chunk's own entity list contains it.
+     *
+     * <p>Diagnostic only - nothing in production reads it. Returns a flat {@code key=value} string so
+     * a caller gets the whole picture in one round trip.</p>
+     */
+    public static String renderStageReport(int entityId) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.world == null) {
+            return "clientWorld=none";
+        }
+        Entity subject = mc.world.getEntityByID(entityId);
+        if (subject == null) {
+            return "entityId=" + entityId + " present=false loadedEntities=" + mc.world.loadedEntityList.size();
+        }
+        int chunkX = MathHelper.floor(subject.posX / 16.0);
+        int chunkZ = MathHelper.floor(subject.posZ / 16.0);
+        int section = MathHelper.clamp(MathHelper.floor(subject.posY / 16.0), 0, 15);
+        net.minecraft.world.chunk.Chunk chunk = mc.world.getChunkFromChunkCoords(chunkX, chunkZ);
+        boolean inChunkList = chunk.getEntityLists()[section].contains(subject);
+        boolean blockLoaded = mc.world.isBlockLoaded(new net.minecraft.util.math.BlockPos(subject));
+
+        int visibleSections = -1;
+        String sectionVisible = "unavailable";
+        java.util.List<?> infos = visibleRenderSections(mc.renderGlobal);
+        if (infos != null) {
+            visibleSections = infos.size();
+            sectionVisible = "false";
+            for (Object info : infos) {
+                net.minecraft.util.math.BlockPos at = renderChunkPosition(info);
+                if (at != null && at.getX() >> 4 == chunkX && at.getZ() >> 4 == chunkZ
+                        && at.getY() >> 4 == section) {
+                    sectionVisible = "true";
+                    break;
+                }
+            }
+        }
+        return String.format(java.util.Locale.ROOT,
+                "entityId=%d present=true pos=%.2f,%.2f,%.2f chunk=%d,%d section=%d "
+                        + "sectionVisible=%s visibleSections=%d inChunkEntityList=%s addedToChunk=%s "
+                        + "chunkCoord=%d,%d,%d blockLoaded=%s chunkLoaded=%s",
+                entityId, subject.posX, subject.posY, subject.posZ, chunkX, chunkZ, section,
+                sectionVisible, visibleSections, inChunkList, subject.addedToChunk,
+                subject.chunkCoordX, subject.chunkCoordY, subject.chunkCoordZ, blockLoaded,
+                chunk.isLoaded());
+    }
+
+    /** The renderer's visible render-chunk list, or {@code null} when it cannot be reached. */
+    private static java.util.List<?> visibleRenderSections(net.minecraft.client.renderer.RenderGlobal global) {
+        if (global == null) {
+            return null;
+        }
+        try {
+            if (renderInfosField == null) {
+                for (java.lang.reflect.Field field
+                        : net.minecraft.client.renderer.RenderGlobal.class.getDeclaredFields()) {
+                    if (!java.util.List.class.isAssignableFrom(field.getType())) {
+                        continue;
+                    }
+                    field.setAccessible(true);
+                    Object value = field.get(global);
+                    if (value instanceof java.util.List && !((java.util.List<?>) value).isEmpty()
+                            && renderChunkPosition(((java.util.List<?>) value).get(0)) != null) {
+                        renderInfosField = field;
+                        break;
+                    }
+                }
+            }
+            return renderInfosField == null ? null : (java.util.List<?>) renderInfosField.get(global);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** The section position of a visible-render-chunk entry, or {@code null} if it is not one. */
+    private static net.minecraft.util.math.BlockPos renderChunkPosition(Object info) {
+        if (info == null) {
+            return null;
+        }
+        try {
+            if (renderChunkField == null || renderChunkField.getDeclaringClass() != info.getClass()) {
+                renderChunkField = null;
+                for (java.lang.reflect.Field field : info.getClass().getDeclaredFields()) {
+                    if (net.minecraft.client.renderer.chunk.RenderChunk.class
+                            .isAssignableFrom(field.getType())) {
+                        field.setAccessible(true);
+                        renderChunkField = field;
+                        break;
+                    }
+                }
+            }
+            if (renderChunkField == null) {
+                return null;
+            }
+            net.minecraft.client.renderer.chunk.RenderChunk renderChunk =
+                    (net.minecraft.client.renderer.chunk.RenderChunk) renderChunkField.get(info);
+            return renderChunk == null ? null : renderChunk.getPosition();
+        } catch (Exception e) {
+            return null;
         }
     }
 }

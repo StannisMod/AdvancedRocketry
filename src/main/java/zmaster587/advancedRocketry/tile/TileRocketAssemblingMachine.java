@@ -205,7 +205,17 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     }
 
     public void setStatus(int value) {
-        status = ErrorCodes.values()[value];
+        status = errorCodeFromOrdinal(value);
+    }
+
+    /** Decode a persisted/synced {@link ErrorCodes} ordinal defensively: an
+     *  out-of-range value (corrupt NBT, or a save written by a build with more
+     *  enum constants and then downgraded) maps to the neutral idle verdict
+     *  instead of throwing ArrayIndexOutOfBoundsException. The persisted format
+     *  stays an ordinal int, so this is fully save/wire read-compatible. */
+    private static ErrorCodes errorCodeFromOrdinal(int value) {
+        ErrorCodes[] all = ErrorCodes.values();
+        return (value >= 0 && value < all.length) ? all[value] : ErrorCodes.UNSCANNED;
     }
 
     public StatsRocket getRocketStats() {
@@ -1030,7 +1040,12 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
 
         prevProgress = progress = nbt.getInteger("scanTime");
         totalProgress = nbt.getInteger("scanTotalBlocks");
-        status = ErrorCodes.values()[nbt.getInteger("status")];
+        // A save predating status persistence has no "status" key; getInteger
+        // would default to 0 = SUCCESS, so fall back to the neutral idle verdict
+        // instead of loading a spurious success.
+        status = nbt.hasKey("status")
+                ? errorCodeFromOrdinal(nbt.getInteger("status"))
+                : ErrorCodes.UNSCANNED;
 
         building = nbt.getBoolean("building");
         if (nbt.hasKey("bb")) {

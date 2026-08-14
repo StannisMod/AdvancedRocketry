@@ -48,6 +48,14 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
     private static final Pattern SEAT_Z = Pattern.compile("\"seatZ\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-deck";
+
+    /**
+     * THIS scenario's ship, by identity — captured by {@code buildShip} at the one moment its base
+     * provably holds no other, and the address every later question and command uses. A radius bound
+     * is a mitigation, not an identity: these scenarios roll, hover and drop the ship on purpose, and
+     * a shared client always has a neighbour in candidacy.
+     */
+    private String scenarioShipId;
     private static final String SHIP_CAMERA = "zmaster587.advancedRocketry.client.ShipFrameCamera";
     private static final String SHIP_FRAME_TRAVEL =
             "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel";
@@ -64,7 +72,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
         bot().waitTicks(20);
         double h = Math.toRadians(170.0) / 2.0;
         assertTrue("attitude hold must accept the inversion",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(200);
         exec("artest player dismount");
@@ -200,7 +208,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
         bot().waitTicks(20);
         double h = Math.toRadians(170.0) / 2.0;
         assertTrue("attitude hold must accept the inversion",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(200);
         exec("artest player dismount");
@@ -257,7 +265,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
                 + subAfter + " region=" + regionStr + ")", subInRegion(subAfter, regionStr));
         assertTrue("the displaced body must be OFF the deck, mid-cavity (sub=" + subAfter
                 + " vs stand " + sub0[1] + "; is the attitude hold converged? ship-info="
-                + shipInfo(bx, by, bz) + ")", parseSub(subAfter)[1] > sub0[1] + 0.5);
+                + shipInfo() + ")", parseSub(subAfter)[1] > sub0[1] + 0.5);
 
         // Sample the settle: which mode claims the unsupported interior body?
         int aboardSeen = 0, hullSeen = 0, samples = 0;
@@ -329,7 +337,7 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
         bot().waitTicks(20);
         double h = Math.toRadians(60.0) / 2.0;
         assertTrue("attitude hold must accept the roll",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(150);
         exec("artest player dismount");
@@ -539,13 +547,19 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
         double[] where = null;
         for (int i = 0; i < 40 && where == null; i++) {
             bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
+            // The scenario's ONE positional lookup, at the only moment it is defensible: the ship
+            // was just assembled here and has not moved. It yields an IDENTITY, and everything
+            // afterwards is keyed on that.
+            info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                    + " " + SHIP_QUERY_RADIUS);
             if (!info.contains("\"managed\":true")) {
                 continue;
             }
             double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
+            String foundId = readShipId(info);
+            if (distance(candidate, new double[]{bx, by, bz}) < 24.0 && foundId != null) {
                 where = candidate;
+                scenarioShipId = foundId;
             }
         }
         assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
@@ -609,9 +623,10 @@ public class VSCrewInteriorBoardingE2ETest extends AbstractSharedVsClientE2ETest
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity — no distance term to be wrong about. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return shipInfoById(scenarioShipId);
     }
 
 

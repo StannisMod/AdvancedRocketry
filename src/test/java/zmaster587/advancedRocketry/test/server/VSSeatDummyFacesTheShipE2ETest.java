@@ -63,26 +63,29 @@ public class VSSeatDummyFacesTheShipE2ETest extends AbstractSharedServerTest {
         assertTrue("the seat's mount dummy must spawn: " + mountAt, mountAt.contains("\"ok\":true"));
 
         // Where the ship points BEFORE the turn, and where its mount thinks it points.
+        // The one positional lookup this scenario can defend — the ship is freshly assembled here and
+        // has not moved. It yields the ship's IDENTITY, and the turn command plus every yaw sample
+        // below name THAT ship: the craft is about to slew, and the harness server is shared.
         String infoBefore = exec("artest vs ship-info 0 " + SRC_X + " " + SRC_Y + " " + SRC_Z);
         assertTrue("the ship must be managed for its attitude to be readable: " + infoBefore,
                 infoBefore.contains("\"managed\":true"));
+        String shipId = extractString(infoBefore, "id");
+        assertTrue("ship-info must name WHICH ship answered: " + infoBefore,
+                shipId != null && !shipId.isEmpty());
         double shipYawBefore = shipYawOf(infoBefore);
         double mountYawBefore = mountYaw(seatX, seatY, seatZ);
 
         // ── TURN THE SHIP ───────────────────────────────────────────────────────────────────────
         // Commanded on an UNMANNED ship: a seated pilot's own input would overwrite the attitude
         // target every tick. The ship hovers while the controller slews it round.
-        double px = extractDouble(infoBefore, "posX");
-        double py = extractDouble(infoBefore, "posY");
-        double pz = extractDouble(infoBefore, "posZ");
         assertTrue("the attitude hold must accept the yaw command",
-                exec("artest vs point 0 " + (int) px + " " + (int) py + " " + (int) pz
+                exec("artest vs point-by-id 0 " + shipId
                         + " " + TURN_QW + " 0.0 " + TURN_QY + " 0.0").contains("\"commanded\":true"));
 
         double shipYawAfter = shipYawBefore;
         for (int i = 0; i < 40; i++) {
             Thread.sleep(250);
-            shipYawAfter = shipYawOf(exec("artest vs ship-info 0 " + SRC_X + " " + SRC_Y + " " + SRC_Z));
+            shipYawAfter = shipYawOf(exec("artest vs ship-info 0 id " + shipId));
             if (Math.abs(wrapDegrees(shipYawAfter - shipYawBefore)) > 45.0) {
                 break;
             }
@@ -183,6 +186,11 @@ public class VSSeatDummyFacesTheShipE2ETest extends AbstractSharedServerTest {
         Matcher bp = BUILDER_POS.matcher(fixture);
         assertTrue("fixture (" + variant + ") missing builderPos: " + fixture, bp.find());
         return bp.group(1) + " " + bp.group(2) + " " + bp.group(3);
+    }
+
+    private static String extractString(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\":\"([^\"]*)\"").matcher(json);
+        return m.find() ? m.group(1) : null;
     }
 
     private static int extractInt(String json, String key) {

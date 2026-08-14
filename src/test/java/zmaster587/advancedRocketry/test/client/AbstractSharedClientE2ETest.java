@@ -297,14 +297,20 @@ public abstract class AbstractSharedClientE2ETest {
         String screen = state.has("screen") ? state.get("screen").getAsString() : "";
         int overlayTicks = chat.has("overlayTicks") ? chat.get("overlayTicks").getAsInt() : -1;
         int chatLines = chat.has("count") ? chat.get("count").getAsInt() : -1;
-        // `report_state` omits the player block entirely when the client has no player — mid
-        // dimension change, or after the connection died. Dereferencing it raises a bare NPE from
-        // this line, which names the RESET as the failure and hides the previous scenario that
-        // actually wedged the client; measured 2026-08-10, that cost an investigation aimed at an
-        // unrelated production change for want of one sentence.
-        assertTrue("the client has no player, so this scenario cannot be arranged at all — the"
-                + " PREVIOUS scenario left the connection or the dimension change unfinished."
-                + " client state=" + state, state.has("playerX") && state.has("playerZ"));
+        // IS THERE A CLIENT AT ALL — asked before anything is asserted ABOUT one, and it is a
+        // different question from all three below. Every other read in this method is guarded; these
+        // two were not, so a reportState() carrying no player — exactly what a crashed or
+        // disconnected client answers — died here on a bare NullPointerException with no message.
+        // That is the worst place in the file to lose the diagnosis: the assertions immediately
+        // below exist to name what the previous scenario left behind, and none of them was ever
+        // reached, so ONE failing scenario presented as N indistinguishable NPEs and reading it
+        // cost a full control matrix to discover that all but the first were cascade.
+        assertTrue("the client reports NO PLAYER, so it is GONE rather than dirty — a previous"
+                + " scenario took it down, and this scenario plus every one after it is downstream"
+                + " of that rather than failing on its own subject. Look at the FIRST red in this"
+                + " class, not at this one. reportState()=" + state
+                + ", resetClientState()=" + cleared,
+                state != null && state.has("playerX") && state.has("playerZ"));
         double px = state.get("playerX").getAsDouble();
         double pz = state.get("playerZ").getAsDouble();
 
@@ -316,15 +322,42 @@ public abstract class AbstractSharedClientE2ETest {
         assertEquals("a scenario must start with an empty chat backlog, or an assertion that"
                 + " searches the last N lines can pass on a previous scenario's identical message;"
                 + " reset reported " + cleared, 0, chatLines);
-        assertTrue("a scenario must start inside its own plot " + plot + "; the client reports the"
-                + " player at " + px + "," + pz, plot.contains(px, pz));
+        if (!plot.contains(px, pz)) {
+            // READ ONCE, then WAIT — never wait first. The teleport is a server write and this is a
+            // client read, so a miss has two causes and only one of them is a fault: the body is
+            // still on its way (a round trip this read got in front of), or something else owns it.
+            // Waiting is therefore the RECOVERY, not the routine: a scenario whose first read lands
+            // inside its plot spends exactly the ticks it always did, and only a scenario that has
+            // already missed pays anything. An earlier cut polled unconditionally and cost a
+            // neighbouring class five reds — a settle every scenario pays is not an observation of
+            // the arrangement, it IS the arrangement.
+            //
+            // Measured 2026-08-12, four scenarios of one class in one run: THREE reached their plot
+            // while being watched (they were early reads and nothing more) and one never arrived at
+            // all, with its body below Y=-800 and falling. One message had been reporting both.
+            String settle = diagnoseMissedPlot(plot);
+            state = bot().reportState();
+            px = state.has("playerX") ? state.get("playerX").getAsDouble() : px;
+            pz = state.has("playerZ") ? state.get("playerZ").getAsDouble() : pz;
+            if (!plot.contains(px, pz)) {
+                org.junit.Assert.fail("a scenario must start inside its own plot " + plot
+                        + "; the client reports the player at " + px + "," + pz
+                        + settle + " resetCleared=" + cleared);
+            }
+            scenario.record("plotSettle", settle.replace('\n', ' '));
+        }
 
         // Health is asserted on the CLIENT's own view, and polled rather than read once: the
         // set-health above is a server write and the client learns it on the next update packet.
         double health = state.has("health") ? state.get("health").getAsDouble() : -1.0;
         for (int waited = 0; waited < 40 && health < 19.5; waited += 5) {
             bot().waitTicks(5);
-            health = bot().reportState().get("health").getAsDouble();
+            // Guarded like every other read here: a client that dies DURING the poll would
+            // otherwise reproduce the same bare NPE this method was just taught not to throw, one
+            // loop iteration later and with the guard above already passed.
+            JsonObject polled = bot().reportState();
+            health = polled != null && polled.has("health")
+                    ? polled.get("health").getAsDouble() : -1.0;
         }
         assertTrue("a scenario must start at full health as the CLIENT renders it, or a"
                 + " damage-observing scenario measures the previous one's leftovers; client"
@@ -345,6 +378,130 @@ public abstract class AbstractSharedClientE2ETest {
         scenario.record("plot", plot)
                 .record("resetCleared", cleared)
                 .record("heldAtStart", state.has("heldItem") ? state.get("heldItem").getAsString() : "?");
+    }
+
+    /**
+     * Why the between-scenario teleport did not land, sampled ONLY once the check has failed.
+     *
+     * <p>One {@code x,z} pair cannot tell the two causes apart, and they need opposite fixes: a
+     * client that never received the teleport is a round-trip that was read too early, while one
+     * that received it and ended up elsewhere has a SECOND WRITER owning the body. Measured
+     * 2026-08-12 — four scenarios of {@code VSShipFlightTelemetryE2ETest} red in two of three
+     * identical tier runs, each printing one coordinate pair outside every plot in the lane, with
+     * {@code harnessAlive=true}; nothing in the message distinguished the two, and the mode stayed
+     * unattributable for a session.</p>
+     *
+     * <p><b>It runs after the verdict is already decided, and that is deliberate.</b> The first cut
+     * of this made the plot check itself poll — which changes how many ticks every GREEN scenario
+     * spends before it starts, and the class this was written for went from 8/8 to 5 reds in the
+     * tier and 7/8 alone. An instrument that moves the arrangement is not an instrument. Everything
+     * here is a client-side read (no server command, so no chat marker) on a path that is already
+     * failing, so a passing scenario pays exactly nothing.</p>
+     */
+    private String diagnoseMissedPlot(Plot plot) throws Exception {
+        StringBuilder trail = new StringBuilder();
+        boolean arrived = false;
+        JsonObject last = null;
+        for (int sample = 0; sample < 6 && !arrived; sample++) {
+            last = bot().reportState();
+            trail.append(' ').append(describePlayerPoint(last));
+            arrived = isInsidePlot(last, plot);
+            if (!arrived) {
+                bot().waitTicks(5);
+            }
+        }
+        // WHO OWNS THIS BODY, asked of the server on a scenario that has already lost its verdict —
+        // so the chat markers these commands echo can no longer disturb anything.
+        //
+        // Three questions, and the first two ask about different PLACES on purpose. A ship at the
+        // PLOT would mean the teleport dropped the body into geometry and the physics mod ejected it.
+        // A ship where the BODY actually is means the opposite and is far worse: the body is being
+        // carried, so a capture outlived the scenario that made it and the teleport is being undone
+        // every tick by whatever re-projects him onto his deck point. The deck capture answers which.
+        String shipOnPlot = askServer("artest vs ship-info " + plot.dim
+                + " " + plot.centerX() + " " + Plot.DEFAULT_Y + " " + plot.centerZ() + " 64");
+        String shipOnBody = last != null && last.has("playerX")
+                ? askServer("artest vs ship-info " + plot.dim
+                        + " " + (int) Math.round(last.get("playerX").getAsDouble())
+                        + " " + (int) Math.round(last.get("playerY").getAsDouble())
+                        + " " + (int) Math.round(last.get("playerZ").getAsDouble()) + " 256")
+                : "(no player point to ask about)";
+        String capture = askServer("artest vs deck-capture");
+        // AND THE CLIENT'S OWN RESOLVER, because the server's answer is only half the question. A body
+        // travelling at a CONSTANT delta per tick with its own motion at zero is not being moved by its
+        // physics — it is being carried by a rigid transform. When the server then reports no capture
+        // and no ship within 256 blocks, the only remaining carrier is the client's own ship-frame
+        // resolution continuing in a frame the server has already let go of. These counters say whether
+        // it is resolving at all, which is the difference between that and a fourth explanation.
+        String clientResolver = readClientCounters(
+                "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel",
+                "resolvedTicks", "declinedTicks", "externalMoveDrops",
+                "lastBodyLocalX", "lastBodyLocalY", "lastBodyLocalZ");
+        return "\n  readings taken AFTER the verdict, oldest first:" + trail
+                + "\n  reached its plot while being watched: " + arrived
+                + (arrived
+                        ? " — the teleport DID land and the check above read it too early;"
+                          + " this is a round-trip budget, not a stray writer."
+                        : " — the body never arrived at all; a second writer owns it, or the"
+                          + " teleport never reached this client.")
+                + "\n  a ship within 64 blocks of the PLOT centre: " + shipOnPlot
+                + "\n  a ship within 256 blocks of where the BODY ended up: " + shipOnBody
+                + "\n  its deck capture, as the SERVER sees it: " + capture
+                + "\n  the CLIENT's own ship-frame resolver: " + clientResolver
+                + "\n  client world=" + bot().reportWeather()
+                + " riding=" + bot().reportRidingEntity();
+    }
+
+    /** Client statics read from a diagnostic: a field that is absent says so and costs nothing else. */
+    private String readClientCounters(String className, String... fields) {
+        StringBuilder out = new StringBuilder();
+        for (String field : fields) {
+            out.append(out.length() == 0 ? "" : " ").append(field).append('=');
+            try {
+                JsonObject read = bot().readStaticField(className, field);
+                out.append(read != null && read.has("value") ? read.get("value").getAsString() : read);
+            } catch (Exception unreadable) {
+                out.append("(unreadable)");
+            }
+        }
+        return out.toString();
+    }
+
+    /** A server probe asked from a diagnostic: its own failure must never replace the one being told. */
+    private String askServer(String command) {
+        try {
+            return String.valueOf(serverClient().execute(command));
+        } catch (Exception unavailable) {
+            return "(unavailable: " + unavailable + ")";
+        }
+    }
+
+    /**
+     * Is the client's own player point inside {@code plot}? Absent coordinates answer {@code false}
+     * rather than throwing: a client with no player is a different failure, named by its own guard.
+     */
+    private static boolean isInsidePlot(JsonObject state, Plot plot) {
+        return state != null && state.has("playerX") && state.has("playerZ")
+                && plot.contains(state.get("playerX").getAsDouble(),
+                        state.get("playerZ").getAsDouble());
+    }
+
+    /** One observation, short enough that a whole trail stays readable on one line. */
+    private static String describePlayerPoint(JsonObject state) {
+        if (state == null || !state.has("playerX") || !state.has("playerZ")) {
+            return "(no-player)";
+        }
+        String motion = state.has("motionY")
+                ? "/v=" + round2(state.get("motionX")) + "," + round2(state.get("motionY"))
+                        + "," + round2(state.get("motionZ"))
+                : "";
+        return "(" + Math.round(state.get("playerX").getAsDouble()) + ","
+                + (state.has("playerY") ? Math.round(state.get("playerY").getAsDouble()) : '?')
+                + "," + Math.round(state.get("playerZ").getAsDouble()) + motion + ")";
+    }
+
+    private static double round2(com.google.gson.JsonElement value) {
+        return Math.round(value.getAsDouble() * 100.0) / 100.0;
     }
 
     /**

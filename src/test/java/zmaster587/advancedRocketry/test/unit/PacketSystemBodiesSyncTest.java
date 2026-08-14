@@ -34,11 +34,14 @@ public class PacketSystemBodiesSyncTest {
         Map<Integer, List<RenderBody>> sent = new LinkedHashMap<>();
 
         List<RenderBody> dimA = new ArrayList<>();
-        dimA.add(new RenderBody(2, 100L, -200L, 300L, 41, true));
-        dimA.add(new RenderBody(0, -7L, 8L, -9L, 55, false));
+        // A descend target carries a shell; the body beside it carries none. The two must survive
+        // the wire as DIFFERENT numbers — a codec that dropped the field, or wrote one body's value
+        // for every body, would still round-trip a payload where they all agreed.
+        dimA.add(new RenderBody(2, 100L, -200L, 300L, 41, true, 512L));
+        dimA.add(new RenderBody(0, -7L, 8L, -9L, 55, false, 0L));
 
         List<RenderBody> dimB = new ArrayList<>();
-        dimB.add(new RenderBody(5, 1_000_000_000_000L, 0L, -1_000_000_000_000L, 7, false));
+        dimB.add(new RenderBody(5, 1_000_000_000_000L, 0L, -1_000_000_000_000L, 7, false, 7_777L));
 
         sent.put(11, dimA);
         sent.put(-4, dimB);
@@ -114,5 +117,6 @@ public class PacketSystemBodiesSyncTest {
         assertEquals("localZ", expected.localZ, actual.localZ);
         assertEquals("dimId", expected.dimId, actual.dimId);
         assertEquals("descendTarget", expected.descendTarget, actual.descendTarget);
+        assertEquals("boundaryRadius", expected.boundaryRadius, actual.boundaryRadius);
     }
 }

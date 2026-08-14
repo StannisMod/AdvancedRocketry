@@ -5,6 +5,7 @@ import zmaster587.advancedRocketry.api.ARConfiguration;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -89,6 +90,55 @@ public class ARConfigurationTest {
 
     /**
      * Performance section default-stability check.
+     * MED batch pack 4 — C017 regression guard.
+     *
+     * <p>Contract: the copy constructor must yield collection fields that are
+     * independent containers, not references aliasing the source config's
+     * Map/List/Set. The old {@code field.getClass().isAssignableFrom(Map.class)}
+     * test was always false ({@code getClass()} is {@code java.lang.reflect.Field}),
+     * so the deep-copy branch was dead and every {@code @ConfigProperty} collection
+     * was shallow-copied by reference — a correctness landmine for the
+     * server→client {@code PacketConfigSync} copy. This pins container
+     * independence across all three collection kinds (List, Set, Map).</p>
+     */
+    @Test
+    public void cloneConstructorGivesIndependentCollections() {
+        ARConfiguration src = new ARConfiguration();
+        src.laserBlackListDims.add(42);       // List
+        src.initiallyKnownPlanets.add(7);     // Set
+        src.asteroidTypes.put("c017-key", null); // Map
+
+        ARConfiguration copy = new ARConfiguration(src);
+
+        assertNotSame("copy must own an independent list (C017)",
+                src.laserBlackListDims, copy.laserBlackListDims);
+        assertNotSame("copy must own an independent set (C017)",
+                src.initiallyKnownPlanets, copy.initiallyKnownPlanets);
+        assertNotSame("copy must own an independent map (C017)",
+                src.asteroidTypes, copy.asteroidTypes);
+
+        // Mutating the copy must not leak into the source.
+        copy.laserBlackListDims.add(99);
+        copy.initiallyKnownPlanets.add(99);
+        copy.asteroidTypes.put("c017-extra", null);
+        assertEquals("mutating the copy's list must not touch the source",
+                1, src.laserBlackListDims.size());
+        assertEquals("mutating the copy's set must not touch the source",
+                1, src.initiallyKnownPlanets.size());
+        assertEquals("mutating the copy's map must not touch the source",
+                1, src.asteroidTypes.size());
+
+        // Contents must still be carried over by the copy.
+        assertTrue("copy must contain the source's list element",
+                copy.laserBlackListDims.contains(42));
+        assertTrue("copy must contain the source's set element",
+                copy.initiallyKnownPlanets.contains(7));
+        assertTrue("copy must contain the source's map entry",
+                copy.asteroidTypes.containsKey("c017-key"));
+    }
+
+    /**
+     * §6.3 — performance section default-stability check.
      *
      * The PERFORMANCE config section in {@link ARConfiguration#loadPreInit} sets
      * {@code atmosphereHandleBitMask} and {@code oxygenVentSize}. They don't have

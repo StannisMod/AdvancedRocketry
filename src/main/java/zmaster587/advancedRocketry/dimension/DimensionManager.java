@@ -541,6 +541,13 @@ public class DimensionManager implements IGalaxy {
         knownPlanets.clear();
         overworldProperties.resetProperties();
         hasBeenInitialized = false;
+        // C126: progression flags are process-global statics read from a world's
+        // "stat" NBT on load. Reset them on teardown so a freshly-created world
+        // (whose loadDimensions early-returns before the stat read) cannot inherit
+        // the previous world's moon/warp progression in the same JVM (single-player,
+        // where the client and integrated server share one process).
+        hasReachedMoon = false;
+        hasReachedWarp = false;
     }
 
     /**
@@ -1080,7 +1087,12 @@ public class DimensionManager implements IGalaxy {
 
             //Don't load random planets twice on initial load
             //TODO: rework the logic, low priority because low time cost and one time run per world
-            if (!loadedFromXML) {
+            // C130: loadedFromXML is only set on the fresh-world (loadedPlanets
+            // empty) branch, so on a reload where a numPlanets>0 XML is present
+            // (resetFromXml, or a re-copied config) this loop re-ran and accreted
+            // duplicate random planets every load. Gate on the true first-run
+            // discriminator: only generate randoms when no persisted dims exist.
+            if (!loadedFromXML && loadedPlanets.isEmpty()) {
                 //Add planets
                 for (StellarBody star : dimCouplingList.stars) {
                     int numRandomGeneratedPlanets = loader.getMaxNumPlanets(star);
@@ -1102,6 +1114,21 @@ public class DimensionManager implements IGalaxy {
         zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(galaxyGenConfig == null
                 ? null
                 : new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(galaxyGenConfig));
+        // C129: registration authority on load was planetDefs.xml only (the loop
+        // above), while per-dim persisted state lives in temp.dat (loadedPlanets).
+        // A dim present in temp.dat but absent from a hand-edited / restored /
+        // reset XML was therefore never registered and became unreachable (its
+        // DIM<n> save data orphaned). Reconcile: register any persisted dim the
+        // XML pass did not. Idempotent via isDimensionCreated, so normal reloads
+        // (XML and temp.dat in sync) and fresh worlds (loadedPlanets empty) are
+        // no-ops; also heals the missing-XML case where the loop above is skipped.
+        for (Map.Entry<Integer, IDimensionProperties> entry : loadedPlanets.entrySet()) {
+            DimensionProperties props = (DimensionProperties) entry.getValue();
+            if (props == null || DimensionManager.getInstance().isDimensionCreated(entry.getKey()))
+                continue;
+            DimensionManager.getInstance().registerDimNoUpdate(props, props.isNativeDimension);
+            props.setStar(props.getStarId());
+        }
 
         // Install the authored planet-type table for the same reason and on the same terms: it is a
         // JVM-global, so an absent (or trimmed) <planetType> section must restore the stock set rather

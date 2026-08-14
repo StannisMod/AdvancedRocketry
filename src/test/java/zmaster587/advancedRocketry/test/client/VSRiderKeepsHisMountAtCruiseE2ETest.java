@@ -255,17 +255,27 @@ public class VSRiderKeepsHisMountAtCruiseE2ETest extends AbstractClientE2ETest {
         // computer fight the commanded velocity and the ship falls to ~0.11 blocks/tick, well under
         // the speed this leg needs. A coasting ship at a commanded constant is both faster and
         // quieter, which is the state the report was flown in.
-        String commanded = exec("artest vs force-vel " + dim + " " + sx + " " + sy + " " + sz
+        // Take the ship's IDENTITY first, while it still rests at the spot the seat reported, and
+        // command it by that id from here on. This leg deliberately flies the ship several hundred
+        // blocks; a lookup keyed on where it STARTED stops describing it almost immediately, and on a
+        // shared client the ship it starts describing instead is a neighbour's.
+        String atSeat = exec("artest vs ship-info " + dim + " " + sx + " " + sy + " " + sz + " 48");
+        Matcher idM = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(atSeat);
+        assertTrue("ARRANGEMENT: the ship must name itself before it is commanded: " + atSeat,
+                idM.find());
+        String shipId = idM.group(1);
+
+        String commanded = exec("artest vs force-vel-by-id " + dim + " " + shipId
                 + " " + COMMANDED_SPEED_BLOCKS_PER_SECOND + " 0 0");
-        assertTrue("ARRANGEMENT: force-vel must find the loaded ship: " + commanded,
-                readBool(commanded, "commanded"));
+        assertTrue("ARRANGEMENT: the cruise command must reach THIS ship's flight computer: "
+                + commanded, readBool(commanded, "commanded"));
 
         double steady = Double.NaN, prev = Double.NaN;
         for (int attempt = 0; attempt < 60 && Double.isNaN(steady); attempt++) {
-            String s0 = exec("artest vs ship-info " + dim + " " + sx + " " + sy + " " + sz);
+            String s0 = exec("artest vs ship-info " + dim + " id " + shipId);
             double ax = readDouble(s0, POS_X), az = readDouble(s0, POS_Z);
             bot().waitTicks(SETTLE_SAMPLE_TICKS);
-            String s1 = exec("artest vs ship-info " + dim + " " + sx + " " + sy + " " + sz);
+            String s1 = exec("artest vs ship-info " + dim + " id " + shipId);
             double speed = Math.hypot(readDouble(s1, POS_X) - ax, readDouble(s1, POS_Z) - az)
                     / SETTLE_SAMPLE_TICKS;
             if (speed > EVICTION_THRESHOLD_BLOCKS_PER_TICK
@@ -280,7 +290,7 @@ public class VSRiderKeepsHisMountAtCruiseE2ETest extends AbstractClientE2ETest {
                 + " so an unsettled ship makes this leg unfalsifiable. Last speed sample: " + prev,
                 !Double.isNaN(steady));
 
-        String before = exec("artest vs ship-info " + dim + " " + sx + " " + sy + " " + sz);
+        String before = exec("artest vs ship-info " + dim + " id " + shipId);
         double x0 = readDouble(before, POS_X), z0 = readDouble(before, POS_Z);
         double px0 = bot().reportState().get("playerX").getAsDouble();
         double pz0 = bot().reportState().get("playerZ").getAsDouble();
@@ -326,7 +336,7 @@ public class VSRiderKeepsHisMountAtCruiseE2ETest extends AbstractClientE2ETest {
         System.out.println("[#163] seated/mount trace ('.' seated+mount present, 'x' unseated,"
                 + " 'M' mount gone, 'X' both): " + trace);
 
-        String after = exec("artest vs ship-info " + dim + " " + sx + " " + sy + " " + sz);
+        String after = exec("artest vs ship-info " + dim + " id " + shipId);
         double shipDX = readDouble(after, POS_X) - x0, shipDZ = readDouble(after, POS_Z) - z0;
         double shipTravel = Math.hypot(shipDX, shipDZ);
         double perTickX = Math.abs(shipDX) / OBSERVE_TICKS;

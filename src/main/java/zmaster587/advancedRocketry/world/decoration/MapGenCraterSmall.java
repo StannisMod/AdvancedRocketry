@@ -62,7 +62,11 @@ public class MapGenCraterSmall extends MapGenBase {
                 .map(itemStack -> new BlockMeta(Block.getBlockFromItem(itemStack.getItem()), itemStack.getItemDamage()).getBlockState())
                 .collect(Collectors.toList());
 
-        if (rand.nextInt(chancePerChunk) == Math.abs(chunkX) % chancePerChunk || rand.nextInt(chancePerChunk) == Math.abs(chunkZ) % chancePerChunk && shouldCraterSpawn(DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()), world.getBiome(new BlockPos(chunkX * 16, 0, chunkZ * 16)))) {
+        // Precedence: && binds tighter than ||, so the original
+        // `A || B && shouldCraterSpawn(...)` parsed as `A || (B && gate)` — the
+        // biome-weight gate was bypassed whenever the chunkX RNG disjunct (A) matched.
+        // Parenthesize so the gate applies to either RNG disjunct: `(A || B) && gate`.
+        if ((rand.nextInt(chancePerChunk) == Math.abs(chunkX) % chancePerChunk || rand.nextInt(chancePerChunk) == Math.abs(chunkZ) % chancePerChunk) && shouldCraterSpawn(DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension()), world.getBiome(new BlockPos(chunkX * 16, 0, chunkZ * 16)))) {
 
             //Random coefficients for the sin functions
             int[] sinCoefficients = {rand.nextInt(15) + 1, rand.nextInt(15) + 1, rand.nextInt(15) + 1, rand.nextInt(15) + 1, rand.nextInt(15) + 1};

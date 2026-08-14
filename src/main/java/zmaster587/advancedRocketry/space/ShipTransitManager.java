@@ -69,8 +69,15 @@ public final class ShipTransitManager {
          * <p>A crossing KEEPS the ship's identity, so the uuid this returns is the same one the ship
          * had in its origin cell and the same one it will have at the far end. That is what lets one
          * jump carry ONE identity instead of re-finding the ship by position at each leg.</p>
+         *
+         * <p>{@code shipId} is the DURABLE id of the ship meant to depart, and it is not decoration:
+         * the anchor alone selects a craft by proximity, so on a cell holding a second ship (or a
+         * blockless remnant of one) the crossing cut the wrong box and the jump silently did not
+         * happen. The implementation resolves the ship at the anchor and then CHECKS that it is the
+         * one named here before anything is cut. The arrival side already took this lesson — see the
+         * {@code vsShipUuid} parameters on the settle and re-seat calls below.</p>
          */
-        ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor,
+        ShipCrossingService.Crossed departToHyperspace(int srcSlotDim, BlockPos srcAnchor, String shipId,
                                                        HyperspaceTiles.Tile tile);
 
         /**
@@ -227,11 +234,16 @@ public final class ShipTransitManager {
         }
 
         /**
-         * The hyperspace lanes that currently hold a registered ship, searching lane indices below
-         * {@code laneSearchLimit}. The raw material of the boot-time reconciliation: everything in
-         * here that no restored transit claims is a ship nothing is flying.
+         * The hyperspace lanes that currently hold a registered ship. The raw material of the
+         * boot-time reconciliation: everything in here that no restored transit claims is a ship
+         * nothing is flying.
+         *
+         * <p>Takes no bound. Each ship's lane is derived from where that ship is standing, so the
+         * answer covers every hull in the world rather than every hull the allocator happens to know
+         * about - which at boot is only what the surviving records reclaimed, i.e. never the hulls
+         * this is being asked for.</p>
          */
-        default List<Integer> parkedShipLanes(int laneSearchLimit) {
+        default List<Integer> parkedShipLanes() {
             return Collections.emptyList();
         }
 
@@ -309,6 +321,8 @@ public final class ShipTransitManager {
         boolean restored;           // recreated from a persisted TransitRecord: no live hyperspace ship / lane
         boolean lastResortReported; // the "not even the snapshot landed" line is said once, not per retry
         boolean snapshotFailureReported; // likewise for a re-cut that keeps failing
+        int placementAttempts;      // ticks spent putting the crew back aboard after the hull landed
+        boolean placementStalled;   // the "this is taking too long" line is said once, not per retry
 
         Transit(GalacticCoord origin, GalacticCoord target, HyperspaceTiles.Tile tile, BlockPos hyperAnchor,
                 long speed, long arrivalTick, long nowTick, ShipTransit integrator) {
@@ -417,7 +431,7 @@ public final class ShipTransitManager {
         // snapshot-less record - which on restart would strand + silently delete the ship. Later saves refresh
         // it from hyperspace via snapshotParked.
         NBTTagCompound initialSnapshot = crosser.snapshotSource(originSlotDim, originAnchor);
-        ShipCrossingService.Crossed departed = crosser.departToHyperspace(originSlotDim, originAnchor, tile);
+        ShipCrossingService.Crossed departed = crosser.departToHyperspace(originSlotDim, originAnchor, shipId, tile);
         BlockPos hyperAnchor = departed == null ? null : departed.anchor;
         if (hyperAnchor == null) {
             tiles.free(tile);
@@ -478,6 +492,19 @@ public final class ShipTransitManager {
         if ((!crew.isEmpty() || crosser.hasStowedBodies(shipId)) && parkedDim != Integer.MIN_VALUE) {
             reseating.add(new PendingReseat(shipId, parkedDim, hyperAnchor, true, t.vsShipUuid));
         }
+        // The same fact on the two channels it has to reach, said in one place so they cannot
+        // drift: the crew in chat, and whoever is reading the server's log about somebody else's
+        // ship. Transit used to log ONLY its failures — entry and descent both announce their
+        // crossings — so a log could not answer "did it depart, is it in flight, did it arrive",
+        // and a report had to be diagnosed by re-querying the ledger by hand.
+        //
+        // The log line is deliberately OUTSIDE the crew check below. A crewless jump tells nobody,
+        // which is right for chat and exactly wrong for a log: an unmanned ship crossing on its
+        // autopilot is the case with no witness at all, and therefore the one an operator most
+        // needs a line for.
+        LOGGER.info("[SPACE] transit departed: ship {} {} -> {} ({} blocks, ETA {} ticks, crew {})",
+                shipId, origin.cellKey(), target.cellKey(), distanceBlocks, arrivalTick - now,
+                crew.size());
         // The crew is told it has departed, on the same channel and in the same voice as everything
         // else this subsystem says. Said here rather than at the key press: the press only starts a
         // spool, and a jump that is refused above this line must not have announced itself first.
@@ -575,6 +602,20 @@ public final class ShipTransitManager {
                 arrivedAt = crosser.settleArrivedPose(
                         t.targetSlotDim, t.pasteAnchor, t.vsShipUuid, pose[0], pose[1], pose[2]);
             }
+            if (arrivedAt != null && !crewIsAboard(entry.getKey(), t, arrivedAt)) {
+                // THE HULL HAS LANDED AND ITS PEOPLE HAVE NOT. The jump is NOT over: it stays in the
+                // map, the ledger keeps saying IN_TRANSIT, the lane stays held and nobody is told they
+                // arrived. A crossing that carries crew may not report success while a crew member is
+                // still standing in the world it left - that is a technical failure of the transition,
+                // and a transition must not be able to end in one.
+                //
+                // This used to be the other way round: the transit was removed, the ledger settled and
+                // "you have arrived" was said, and the crew was handed to a best-effort retry that gave
+                // up after a budget AND DROPPED THEM WITHOUT A LOG LINE. The observable result was a
+                // player left in the departure world, aboard nothing, while his ship sat in the
+                // destination and the system considered the jump a success.
+                continue;
+            }
             if (arrivedAt != null) {
                 freeLane(t);
                 it.remove(); // done: the ship now occupies the target cell (its refcount stays held)
@@ -585,20 +626,17 @@ public final class ShipTransitManager {
                 // trigger measuring from the cell centre and firing anyway.
                 ledgerSettle(entry.getKey(), t.arrivalCoord);
                 space.markDirty(t.target);
-                // Hand whatever was aboard - crew and stowed bodies alike - to the best-effort
-                // placement retry. The transit is already settled and removed, so a save in that
-                // window exports nothing for it: the placement can lag a few ticks (async
-                // re-assembly) without ever risking a duplicate ship on restart.
-                if (!t.crew.isEmpty() || crosser.hasStowedBodies(entry.getKey())) {
-                    reseating.add(new PendingReseat(entry.getKey(), t.targetSlotDim, arrivedAt, false,
-                            t.vsShipUuid));
-                }
+                // The crew is already aboard by the time this line runs - the gate above does not let a
+                // transit reach it otherwise - so nothing is queued for them here any more.
                 // Say so. A jump that ends in silence is indistinguishable from a jump that hung:
                 // the crew has no control in flight and no number to watch, so arriving is the one
                 // moment the flight has to announce itself. Said on the NORMAL path only - the two
                 // recovery branches below have their own, louder message, and a crew that got both
                 // would read the failure as routine. A crewless jump tells nobody, which is what an
-                // empty crew list means.
+                // empty crew list means. The LOG line beside it is unconditional for the reason
+                // given at the departure: a crewless arrival is the one nobody witnesses.
+                LOGGER.info("[SPACE] transit settled: ship {} at {} (slot {}, crew {})",
+                        entry.getKey(), t.arrivalCoord.cellKey(), t.targetSlotDim, t.crew.size());
                 crosser.messageCrew(t.crew, "msg.shiptransit.arrived");
             } else if (++t.arrivalAttempts >= MAX_ARRIVAL_ATTEMPTS) {
                 // ── THIS BLOCK MUST NEVER RUN. ──────────────────────────────────────────────────────
@@ -709,6 +747,37 @@ public final class ShipTransitManager {
         return transits.size();
     }
 
+    /**
+     * How many jumps in flight are carrying a real HULL parked in hyperspace, as opposed to a block
+     * snapshot they will paste at the far end.
+     *
+     * <p>The difference is what a restart is survivable BY: a jump restored with its hull resumes as
+     * the same ship, keeping whatever is standing on its deck, while one restored from a snapshot
+     * rebuilds a copy at the destination and nothing that was aboard comes with it. Both count as "in
+     * transit", so {@link #inTransitCount()} cannot tell them apart — and the fallback is exactly what
+     * a jump silently degrades to when hyperspace does not come back.</p>
+     */
+    public int parkedTransitCount() {
+        int parked = 0;
+        for (Transit t : transits.values()) {
+            if (t.tile != null) {
+                parked++;
+            }
+        }
+        return parked;
+    }
+
+    /**
+     * How many crew members {@code shipId}'s jump picked up, or {@code -1} when no such jump exists.
+     * A departure that carries NOBODY is indistinguishable from a healthy one at every other seam —
+     * the crossing succeeded, the ship is in hyperspace, and the first thing that looks wrong is a
+     * client sitting in the world it should have left.
+     */
+    public int crewCountOf(String shipId) {
+        Transit t = transits.get(shipId);
+        return t == null ? -1 : t.crew.size();
+    }
+
     /** Number of arrived ships whose crew reseat is still retrying (0 once every jump's crew is re-seated). */
     public int reseatingCount() {
         return reseating.size();
@@ -719,6 +788,37 @@ public final class ShipTransitManager {
      * crew re-seated (or nothing to seat), or after {@link #MAX_ARRIVAL_ATTEMPTS} retries of a re-assembly
      * whose seat tiles never came up (the ship is already settled - the crew is simply not re-seated).
      */
+    /**
+     * Put this jump's people and cargo back on the hull that has just landed, and say whether they are
+     * ALL aboard. {@code false} means the arrival is not finished and must be tried again next tick.
+     *
+     * <p>There is deliberately no give-up branch. An arrival is a block paste followed by a placement
+     * onto blocks that are certainly there, so failing is a defect and not an outcome; the honest
+     * response to one is to keep the jump open — the ship is not lost, the ledger keeps saying
+     * IN_TRANSIT, and a restart resumes exactly as the persistence design already specifies — rather
+     * than to declare success and leave a player behind. The budget below therefore only decides when
+     * to START COMPLAINING, never when to stop trying.</p>
+     */
+    private boolean crewIsAboard(String shipId, Transit t, BlockPos arrivedAt) {
+        if (t.crew.isEmpty() && !crosser.hasStowedBodies(shipId)) {
+            return true; // nobody was aboard: nothing to put back
+        }
+        if (crosser.reseatCrew(t.targetSlotDim, arrivedAt, shipId, t.vsShipUuid)) {
+            return true;
+        }
+        if (++t.placementAttempts >= MAX_ARRIVAL_ATTEMPTS && !t.placementStalled) {
+            t.placementStalled = true;
+            LOGGER.error("[SPACE] transit arrival for ship {} has landed in cell {} (slot {}) but its "
+                            + "crew of {} could not be put back aboard after {} ticks. The jump stays "
+                            + "OPEN and keeps trying - nobody is told they arrived and the ledger still "
+                            + "reads IN_TRANSIT - because finishing here would leave a player in the "
+                            + "world this ship left. This state should be unreachable: treat it as a "
+                            + "bug report.",
+                    shipId, t.target.cellKey(), t.targetSlotDim, t.crew.size(), MAX_ARRIVAL_ATTEMPTS);
+        }
+        return false;
+    }
+
     private void tickReseating() {
         if (reseating.isEmpty()) {
             return;
@@ -729,19 +829,36 @@ public final class ShipTransitManager {
             boolean done = r.boarding
                     ? crosser.boardCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid)
                     : crosser.reseatCrew(r.targetSlotDim, r.anchor, r.shipId, r.vsShipUuid);
-            if (done || ++r.attempts >= MAX_ARRIVAL_ATTEMPTS) {
-                if (!done && r.boarding) {
-                    // The crew is NOT lost - the capture is still held and the arrival will seat them
-                    // at the far end - but they spend the flight where the departure left them instead
-                    // of aboard, which is the whole point of the leg. Say so once, with the anchor,
-                    // because the only other symptom is a pilot who quietly did not travel.
-                    LOGGER.error("[SPACE] crew of ship {} could not be seated on its parked hull in dim "
-                            + "{} at {} after {} ticks - they stay where the departure left them for the "
-                            + "flight and are seated at arrival. Treat this as a bug report.",
-                            r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
-                }
+            if (done) {
                 it.remove();
+                continue;
             }
+            if (++r.attempts < MAX_ARRIVAL_ATTEMPTS) {
+                continue; // still early: keep trying quietly
+            }
+            r.attempts = 0; // complain on a cadence, never stop
+            if (r.boarding) {
+                // DEPARTURE side, and this one may legitimately be abandoned: the crew is not lost —
+                // the capture is still held and the arrival seats them at the far end — they simply
+                // spend the flight where the departure left them, which is a degraded leg rather than
+                // a broken transition. Said once, with the anchor, because the only other symptom is a
+                // pilot who quietly did not travel.
+                LOGGER.error("[SPACE] crew of ship {} could not be seated on its parked hull in dim "
+                        + "{} at {} after {} ticks - they stay where the departure left them for the "
+                        + "flight and are seated at arrival. Treat this as a bug report.",
+                        r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
+                it.remove();
+                continue;
+            }
+            // ARRIVAL side, and this one is NEVER abandoned. It used to be dropped here with no log at
+            // all, which is how a crew member could be left in the world his ship departed from while
+            // everything else reported a completed jump. The entry stays and the placement keeps
+            // retrying; the normal path no longer reaches this code at all, because the transit itself
+            // now refuses to finish until its people are aboard.
+            LOGGER.error("[SPACE] crew of ship {} is STILL not aboard in dim {} at {} after {} ticks. "
+                    + "Retrying - this placement is never abandoned, because giving up here strands a "
+                    + "player in the world his ship left. Treat this as a bug report.",
+                    r.shipId, r.targetSlotDim, r.anchor, MAX_ARRIVAL_ATTEMPTS);
         }
     }
 
@@ -974,16 +1091,26 @@ public final class ShipTransitManager {
             }
         }
         int disposed = 0;
-        for (Integer lane : crosser.parkedShipLanes(tiles.allocatedLaneCount() + 1)) {
+        for (Integer lane : crosser.parkedShipLanes()) {
             if (lane == null || claimed.contains(lane)) {
                 continue;
             }
+            // Take the lane on OBSERVATION, before trying to get rid of what is in it. Whether the
+            // hull can be deregistered right now is a different question from whether something is
+            // standing there, and only the second one decides what may be parked here. Guarding the
+            // reserve on a successful disposal left the lane allocatable in exactly the case where a
+            // ship is provably still in it - and a disposal can fail for reasons that have nothing to
+            // do with this lane, such as the physics mod still streaming the hull's chunks.
+            tiles.reserve(lane);
             if (crosser.disposeParkedLane(lane)) {
-                tiles.reserve(lane); // never hand this lane out: its blocks are still lying in it
                 disposed++;
                 LOGGER.warn("[SPACE] hyperspace lane {} held a ship no transit record claims - disposed "
                         + "of it. A hull nobody is flying would otherwise sit in a permanently loaded "
                         + "world for the life of the save.", lane);
+            } else {
+                LOGGER.error("[SPACE] hyperspace lane {} holds a ship no transit record claims and it "
+                        + "could not be deregistered; the lane is retired so no departure is parked on "
+                        + "top of it, but the hull stays in a permanently loaded world", lane);
             }
         }
         return disposed;

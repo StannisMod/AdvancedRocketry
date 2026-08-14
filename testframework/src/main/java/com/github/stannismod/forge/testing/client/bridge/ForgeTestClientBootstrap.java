@@ -69,6 +69,18 @@ public final class ForgeTestClientBootstrap {
     private static final java.util.concurrent.atomic.AtomicReference<Runnable>
             PENDING_CONNECTION_ACTION = new java.util.concurrent.atomic.AtomicReference<>();
 
+    /**
+     * Ring buffer of sound locations the client {@code SoundManager} was asked
+     * to play ({@code PlaySoundEvent} fires once per {@code playSound(ISound)}
+     * on the real client). Read via {@code report_sounds}, reset via
+     * {@code clear_sounds}. Capped so a long-running client can't grow it
+     * unbounded; the cap only matters for tests that never clear.
+     */
+    private static final Object SOUND_LOG_LOCK = new Object();
+    private static final java.util.ArrayDeque<String> PLAYED_SOUNDS = new java.util.ArrayDeque<>();
+    private static final int PLAYED_SOUNDS_CAP = 256;
+    private static final AtomicLong SOUNDS_TOTAL = new AtomicLong(0L);
+
     private ForgeTestClientBootstrap() {
     }
 
@@ -79,6 +91,7 @@ public final class ForgeTestClientBootstrap {
 
         installClientLogFile();
         FMLCommonHandler.instance().bus().register(new TickCounter());
+        FMLCommonHandler.instance().bus().register(new SoundRecorder());
         Thread bridgeThread = new Thread(ForgeTestClientBootstrap::runBridge, "forge-test-client-bridge");
         bridgeThread.setDaemon(true);
         bridgeThread.start();
@@ -516,6 +529,16 @@ public final class ForgeTestClientBootstrap {
                         response.addProperty("playerZ", mc.player.posZ);
                         response.addProperty("playerYaw", mc.player.rotationYaw);
                         response.addProperty("playerPitch", mc.player.rotationPitch);
+                        // The client owns a player's movement, so his VELOCITY is what decides
+                        // whether a server-side teleport survives the next few ticks: a body
+                        // carrying a large one is moved back off wherever it was put, and a test
+                        // reading only the position cannot tell that from a teleport that never
+                        // arrived. Reported here so the answer is one read rather than an inference
+                        // from two positions taken at unknown times.
+                        response.addProperty("motionX", mc.player.motionX);
+                        response.addProperty("motionY", mc.player.motionY);
+                        response.addProperty("motionZ", mc.player.motionZ);
+                        response.addProperty("onGround", mc.player.onGround);
                         response.addProperty("health", mc.player.getHealth());
                         response.addProperty("heldItem", mc.player.getHeldItemMainhand().isEmpty()
                                 ? ""
@@ -982,6 +1005,102 @@ public final class ForgeTestClientBootstrap {
                     response.addProperty("thunderStrength", mc.world.getThunderStrength(1.0f));
                     return response;
                 });
+            case "report_spawn":
+                // Client-side view of the spawn point for the dim the client is
+                // currently in — precisely the two fields
+                // NetHandlerPlayClient.handleSpawnPosition writes when
+                // SPacketSpawnPosition arrives:
+                //     mc.player.setSpawnPoint(pos, true)
+                //     mc.world.getWorldInfo().setSpawn(pos)
+                // WorldClient seeds worldInfo's spawn to the placeholder
+                // (8,64,8) in its constructor and is rebuilt from scratch on
+                // every dimension change, so these values are the canonical
+                // observation for "did the spawn-position packet reach the
+                // client for the dim it is in". No server-side query can see
+                // this: the server's own state is identical whether or not the
+                // packet was sent.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    JsonObject response = ok();
+                    if (mc.world == null) {
+                        response.addProperty("worldReady", false);
+                        return response;
+                    }
+                    response.addProperty("worldReady", true);
+                    response.addProperty("dim", mc.world.provider.getDimension());
+                    response.addProperty("worldInfoClass", mc.world.getWorldInfo().getClass().getName());
+                    response.addProperty("spawnX", mc.world.getWorldInfo().getSpawnX());
+                    response.addProperty("spawnY", mc.world.getWorldInfo().getSpawnY());
+                    response.addProperty("spawnZ", mc.world.getWorldInfo().getSpawnZ());
+                    // World.getSpawnPoint() adds the provider indirection and a
+                    // world-border clamp — reporting it too makes a
+                    // provider-level divergence visible instead of silent, and
+                    // it is the exact expression the SERVER packs into the
+                    // packet.
+                    BlockPos worldSpawn = mc.world.getSpawnPoint();
+                    response.addProperty("worldSpawnX", worldSpawn.getX());
+                    response.addProperty("worldSpawnY", worldSpawn.getY());
+                    response.addProperty("worldSpawnZ", worldSpawn.getZ());
+                    if (mc.player == null) {
+                        response.addProperty("playerReady", false);
+                        return response;
+                    }
+                    response.addProperty("playerReady", true);
+                    // getBedLocation() delegates to getBedLocation(this.dimension),
+                    // which reads spawnPos for dim 0 and spawnChunkMap otherwise —
+                    // mirroring the branch setSpawnPoint(pos, forced) takes. So
+                    // this is dimension-correct on AR planets too. null means the
+                    // packet never arrived.
+                    BlockPos bed = mc.player.getBedLocation();
+                    response.addProperty("hasBedLocation", bed != null);
+                    if (bed != null) {
+                        response.addProperty("bedX", bed.getX());
+                        response.addProperty("bedY", bed.getY());
+                        response.addProperty("bedZ", bed.getZ());
+                    }
+                    return response;
+                });
+            case "report_sounds": {
+                // Sound locations the client SoundManager was asked to play
+                // since the last clear_sounds — PlaySoundEvent fires per
+                // playSound(ISound) on the real client. NOTE: the event fires
+                // BEFORE asset resolution, so this observes the play REQUEST
+                // reaching the SoundManager, not asset existence / audibility.
+                // Includes vanilla ambience/music; the caller filters.
+                // managerLoaded=false means the sound system never initialised
+                // (no audio device) and NOTHING will ever be recorded — callers
+                // should Assume on it instead of misdiagnosing.
+                JsonObject response = ok();
+                JsonArray sounds = new JsonArray();
+                synchronized (SOUND_LOG_LOCK) {
+                    for (String sound : PLAYED_SOUNDS) {
+                        sounds.add(sound);
+                    }
+                }
+                response.add("sounds", sounds);
+                response.addProperty("total", SOUNDS_TOTAL.get());
+                boolean managerLoaded = false;
+                try {
+                    Object handler = Minecraft.getMinecraft().getSoundHandler();
+                    java.lang.reflect.Field sndManager = findField(handler.getClass(), "sndManager");
+                    sndManager.setAccessible(true);
+                    Object manager = sndManager.get(handler);
+                    java.lang.reflect.Field loaded = findField(manager.getClass(), "loaded");
+                    loaded.setAccessible(true);
+                    managerLoaded = loaded.getBoolean(manager);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    response.addProperty("managerLoadedError", String.valueOf(e));
+                }
+                response.addProperty("managerLoaded", managerLoaded);
+                return response;
+            }
+            case "clear_sounds":
+                // Reset the played-sound log (see report_sounds) so a test can
+                // scope its assertion to sounds triggered after this point.
+                synchronized (SOUND_LOG_LOCK) {
+                    PLAYED_SOUNDS.clear();
+                }
+                return ok();
             case "block_state":
                 return runOnClientThread(() -> {
                     Minecraft mc = Minecraft.getMinecraft();
@@ -1176,6 +1295,79 @@ public final class ForgeTestClientBootstrap {
                 return runOnClientThread(() -> {
                     Minecraft.getMinecraft().shutdown();
                     return ok();
+                });
+            case "tile_modules_throws":
+                // Invoke a tile's libVulpes getModules(int, EntityPlayer) on the CLIENT
+                // and report whether it threw. Lets a client e2e pin a GUI-build crash
+                // (getModules runs client-side inside the modular-GUI open path) without
+                // needing the full multiblock assembled — the exact production method is
+                // driven on real client world/tile state.
+                return runOnClientThread(() -> {
+                    Minecraft mc = Minecraft.getMinecraft();
+                    if (mc.world == null) {
+                        return error("no client world");
+                    }
+                    BlockPos pos = new BlockPos(requireInt(request, "x"),
+                            requireInt(request, "y"), requireInt(request, "z"));
+                    net.minecraft.tileentity.TileEntity tile = mc.world.getTileEntity(pos);
+                    if (tile == null) {
+                        return error("no tile at pos");
+                    }
+                    JsonObject response = ok();
+                    response.addProperty("tile", tile.getClass().getName());
+                    java.lang.reflect.Method method;
+                    try {
+                        method = tile.getClass().getMethod("getModules",
+                                int.class, net.minecraft.entity.player.EntityPlayer.class);
+                    } catch (NoSuchMethodException noSuchMethod) {
+                        return error("tile has no getModules(int, EntityPlayer): "
+                                + tile.getClass().getName());
+                    }
+                    try {
+                        method.setAccessible(true);
+                        method.invoke(tile, 0, mc.player);
+                        response.addProperty("threw", false);
+                    } catch (java.lang.reflect.InvocationTargetException invocationTarget) {
+                        response.addProperty("threw", true);
+                        response.addProperty("error", String.valueOf(invocationTarget.getTargetException()));
+                    } catch (Throwable other) {
+                        response.addProperty("threw", true);
+                        response.addProperty("error", String.valueOf(other));
+                    }
+                    return response;
+                });
+            case "invoke_static_chain":
+                // Evaluate a no-arg reflective chain on the CLIENT: the first method is
+                // static on {@code class}, each subsequent method is called on the prior
+                // result. Reports the final value's toString and, when it is an
+                // array/Collection/Map, its size. Framework-agnostic client-state probe.
+                return runOnClientThread(() -> {
+                    String className = request.get("class").getAsString();
+                    String[] methods = request.get("methods").getAsString().split(",");
+                    JsonObject response = ok();
+                    try {
+                        Class<?> cls = Class.forName(className);
+                        Object target = null;
+                        for (int i = 0; i < methods.length; i++) {
+                            String name = methods[i].trim();
+                            java.lang.reflect.Method method = (i == 0)
+                                    ? cls.getMethod(name)
+                                    : target.getClass().getMethod(name);
+                            method.setAccessible(true);
+                            target = method.invoke(target);
+                        }
+                        if (target != null && target.getClass().isArray()) {
+                            response.addProperty("size", java.lang.reflect.Array.getLength(target));
+                        } else if (target instanceof java.util.Collection) {
+                            response.addProperty("size", ((java.util.Collection<?>) target).size());
+                        } else if (target instanceof java.util.Map) {
+                            response.addProperty("size", ((java.util.Map<?, ?>) target).size());
+                        }
+                        response.addProperty("result", String.valueOf(target));
+                    } catch (Throwable t) {
+                        return error("invoke_static_chain failed: " + t);
+                    }
+                    return response;
                 });
             default:
                 return error("Unknown command: " + command);
@@ -1507,6 +1699,24 @@ public final class ForgeTestClientBootstrap {
             }
         }
         throw new NoSuchFieldException(fieldName);
+    }
+
+    private static final class SoundRecorder {
+        @SubscribeEvent
+        public void onPlaySound(net.minecraftforge.client.event.sound.PlaySoundEvent event) {
+            net.minecraft.client.audio.ISound sound = event.getSound();
+            if (sound == null || sound.getSoundLocation() == null) {
+                return;
+            }
+            String location = sound.getSoundLocation().toString();
+            synchronized (SOUND_LOG_LOCK) {
+                PLAYED_SOUNDS.addLast(location);
+                while (PLAYED_SOUNDS.size() > PLAYED_SOUNDS_CAP) {
+                    PLAYED_SOUNDS.removeFirst();
+                }
+                SOUNDS_TOTAL.incrementAndGet();
+            }
+        }
     }
 
     private static final class TickCounter {

@@ -94,14 +94,20 @@ public class MissionOreMining extends MissionResourceCollection {
     @Override
     public void onMissionComplete() {
 
+        // The chip-refill step below dereferences the guidance computer
+        // unconditionally; resolve it once up front and bail on null so a rocket
+        // that lost its guidance computer (never had one, or dropped it on reload)
+        // does not NPE the server tick when drillingPower == 0 — that branch used
+        // to hold the only guard, but it is skipped when drillingPower is zero.
+        TileGuidanceComputer computer = rocketStorage.getGuidanceComputer();
+        if (computer == null) {
+            AdvancedRocketry.logger.warn("Cannot find guidance computer in rocket landing at " + x + ", " + z + " in dim " + launchDimension + ".  Unable to respawn the rocket.");
+            return;
+        }
+
         if (rocketStats.getDrillingPower() != 0f) {
             int distanceData, compositionData, massData, maxData;
 
-            TileGuidanceComputer computer = rocketStorage.getGuidanceComputer();
-            if (computer == null) {
-                AdvancedRocketry.logger.warn("Cannot find guidance computer in rocket landing at " + x + ", " + z + " in dim " + launchDimension + ".  Unable to respawn the rocket.");
-                return;
-            }
             ItemStack stack = computer.getStackInSlot(0);
 
             if (!stack.isEmpty() && stack.getItem() instanceof ItemAsteroidChip) {
@@ -169,9 +175,9 @@ public class MissionOreMining extends MissionResourceCollection {
             }
         }
 
-        rocketStorage.getGuidanceComputer().setInventorySlotContents(0, ItemStack.EMPTY);
+        computer.setInventorySlotContents(0, ItemStack.EMPTY);
         //Return asteroid ID chip
-        rocketStorage.getGuidanceComputer().setInventorySlotContents(0, new ItemStack(AdvancedRocketryItems.itemAsteroidChip));
+        computer.setInventorySlotContents(0, new ItemStack(AdvancedRocketryItems.itemAsteroidChip));
         EntityRocket rocket = new EntityRocket(DimensionManager.getWorld(launchDimension), rocketStorage, rocketStats, x, 999, z);
 
         World world = DimensionManager.getWorld(launchDimension);

@@ -43,6 +43,14 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest
 
     private static final String VARIANT = "with-pilot-deck";
 
+    /**
+     * THIS scenario's ship, by identity — captured by {@code buildShip} at the one moment its base
+     * provably holds no other, and the address every later question and command uses. A radius bound
+     * is a mitigation, not an identity: these scenarios roll, hover and drop the ship on purpose, and
+     * a shared client always has a neighbour in candidacy.
+     */
+    private String scenarioShipId;
+
     /** The account every client harness launches under; the server keys his data by it. */
     private static final String BOT = "ForgeTestClient";
 
@@ -111,14 +119,14 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest
         // the attitude change, not after it.
         double h = Math.toRadians(170.0) / 2.0;
         assertTrue("ARRANGEMENT: the attitude hold must accept the roll command",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         long rollMark = lastClientTick();
         long dropsBeforeRoll = clientLong("externalMoveDrops");
         double upY = 1.0;
         for (int attempt = 0; attempt < 25 && upY > -0.9; attempt++) {
             bot().waitTicks(10);
-            double qx = readDouble(shipInfo(bx, by, bz), Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+            double qx = readDouble(shipInfo(), Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
             upY = 1.0 - 2.0 * qx * qx;
         }
         String rollHistory = clientTickHistory();
@@ -451,10 +459,10 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest
 
         double h = Math.toRadians(170.0) / 2.0;
         assertTrue("attitude hold must accept the inversion",
-                exec("artest vs point 0 " + bx + " " + by + " " + bz + " "
+                exec("artest vs point-by-id 0 " + scenarioShipId + " "
                         + Math.cos(h) + " " + Math.sin(h) + " 0.0 0.0").contains("\"commanded\":true"));
         bot().waitTicks(200);
-        double upY = readDouble(shipInfo(bx, by, bz), Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
+        double upY = readDouble(shipInfo(), Pattern.compile("\"qx\":(-?[0-9.E\\-]+)"));
         // upY from the quat: for a roll about X, upY = 1 - 2*qx^2 (qy=qz=0). Read qx directly.
         upY = 1.0 - 2.0 * upY * upY;
         assertTrue("the ship must be (near-)inverted for the relog to be able to drop the player "
@@ -941,13 +949,19 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest
         double[] where = null;
         for (int i = 0; i < 40 && where == null; i++) {
             bot().waitTicks(5);
-            info = shipInfo(bx, by, bz);
+            // The scenario's ONE positional lookup, at the only moment it is defensible: the ship
+            // was just assembled here and has not moved. It yields an IDENTITY, and everything
+            // afterwards is keyed on that.
+            info = exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
+                    + " " + SHIP_QUERY_RADIUS);
             if (!info.contains("\"managed\":true")) {
                 continue;
             }
             double[] candidate = {readDouble(info, POS_X), readDouble(info, POS_Y), readDouble(info, POS_Z)};
-            if (distance(candidate, new double[]{bx, by, bz}) < 24.0) {
+            String foundId = readShipId(info);
+            if (distance(candidate, new double[]{bx, by, bz}) < 24.0 && foundId != null) {
                 where = candidate;
+                scenarioShipId = foundId;
             }
         }
         assertTrue("the ship built at this base must LOAD with the client present; nearest was: " + info,
@@ -972,9 +986,10 @@ public class VSCrewRelogPersistenceE2ETest extends AbstractSharedVsClientE2ETest
         return exec("artest rocket assemble 0 " + bp.group(1) + " " + bp.group(2) + " " + bp.group(3));
     }
 
-    private String shipInfo(int bx, int by, int bz) throws Exception {
-        return exec("artest vs ship-info 0 " + bx + " " + by + " " + bz
-                + " " + SHIP_QUERY_RADIUS);
+    /** This scenario's ship, asked by identity — no distance term to be wrong about. */
+    private String shipInfo() throws Exception {
+        assertTrue("shipInfo() before buildShip() captured an identity", scenarioShipId != null);
+        return shipInfoById(scenarioShipId);
     }
 
 

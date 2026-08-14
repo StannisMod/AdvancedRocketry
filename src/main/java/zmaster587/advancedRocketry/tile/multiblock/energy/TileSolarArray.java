@@ -135,7 +135,17 @@ public class TileSolarArray extends TileMultiPowerProducer implements ITickable 
 
         if (!world.isRemote) {
             DimensionProperties properties = DimensionManager.getInstance().getDimensionProperties(world.provider.getDimension());
-            double insolationPowerMultiplier = (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) ? SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(this.pos).getInsolationMultiplier() : properties.getPeakInsolationMultiplier();
+            // getSpaceStationFromBlockCoords is null off-station (no station over
+            // this grid cell); an unguarded deref here NPEs the server tick loop
+            // and hard-crashes the server. Off-station → 0 insolation. (The other
+            // null path — a station whose orbiting planet is unresolved — is
+            // handled at the source in SpaceStationObject.getInsolationMultiplier.)
+            // See C076.
+            zmaster587.advancedRocketry.api.stations.ISpaceObject spaceStation =
+                    (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId)
+                            ? SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(this.pos)
+                            : null;
+            double insolationPowerMultiplier = (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId) ? (spaceStation != null ? spaceStation.getInsolationMultiplier() : 0d) : properties.getPeakInsolationMultiplier();
             int energyRecieved = 0;
             if (enabled && ((world.isDaytime() && world.canBlockSeeSky(this.pos.up())) || (world.provider.getDimension() == ARConfiguration.getCurrentConfig().spaceDimId && world.canBlockSeeSky(this.pos.down())))) {
                 //Multiplied by two for 520W = 1 RF/t becoming 2 RF/t @ 100% efficiency, and by insolation mult for solar stuff

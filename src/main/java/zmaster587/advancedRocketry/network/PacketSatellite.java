@@ -51,6 +51,13 @@ public class PacketSatellite extends BasePacket {
             nbt = packetBuffer.readCompoundTag();
             SatelliteBase satellite = SatelliteRegistry.createFromNBT(nbt);
 
+            // Unknown satellite type from a mod set this client doesn't have →
+            // createFromNBT returns null; skip it. The IOException catch below does
+            // NOT cover an NPE, so dereferencing null here would disconnect/crash
+            // the client. See C002/C155.
+            if (satellite == null)
+                return;
+
             zmaster587.advancedRocketry.dimension.DimensionManager.getInstance().getDimensionProperties(satellite.getDimensionId()).addSatellite(satellite);
         } catch (IOException e) {
             e.printStackTrace();

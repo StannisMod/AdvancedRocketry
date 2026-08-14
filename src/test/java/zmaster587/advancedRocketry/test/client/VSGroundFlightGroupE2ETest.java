@@ -201,8 +201,9 @@ public class VSGroundFlightGroupE2ETest extends AbstractSharedVsClientE2ETest {
         double yAfter = yBefore;
         double velY = 0.0;
         for (int i = 0; i < 80 && yAfter - yBefore <= 1.5; i++) {
-            String cmd = exec("artest vs force-vel 0 " + BX + " " + BY + " " + BZ + " 0 8 0");
-            assertTrue("force-vel must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
+            String cmd = exec("artest vs force-vel-by-id 0 " + shipId + " 0 8 0");
+            assertTrue("force-vel must reach THIS ship's own flight computer: " + cmd,
+                    cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
             String info = shipInfoById(shipId);
             yAfter = readDouble(info, POS_Y);
@@ -222,8 +223,9 @@ public class VSGroundFlightGroupE2ETest extends AbstractSharedVsClientE2ETest {
         double[] qBefore = readQuat(shipInfoById(shipId));
         double dot = 1.0;
         for (int i = 0; i < 80 && dot >= 0.97; i++) {
-            String cmd = exec("artest vs force-rot 0 " + BX + " " + BY + " " + BZ + " 0 1.0 0");
-            assertTrue("force-rot must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
+            String cmd = exec("artest vs force-rot-by-id 0 " + shipId + " 0 1.0 0");
+            assertTrue("force-rot must reach THIS ship's own flight computer: " + cmd,
+                    cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
             double[] qNow = readQuat(shipInfoById(shipId));
             // |dot| of two unit quaternions is cos(halfAngle); < 0.98 => rotated by more than ~23°.
@@ -240,9 +242,10 @@ public class VSGroundFlightGroupE2ETest extends AbstractSharedVsClientE2ETest {
         final double[] target = {0.70710678, 0.0, 0.70710678, 0.0}; // {w,x,y,z}
         double convDot = 0.0;
         for (int i = 0; i < 120 && convDot < 0.98; i++) {
-            String cmd = exec("artest vs point 0 " + BX + " " + BY + " " + BZ
+            String cmd = exec("artest vs point-by-id 0 " + shipId
                     + " " + target[0] + " " + target[1] + " " + target[2] + " " + target[3]);
-            assertTrue("point must find the loaded ship: " + cmd, cmd.contains("\"commanded\":true"));
+            assertTrue("point must reach THIS ship's own flight computer: " + cmd,
+                    cmd.contains("\"commanded\":true"));
             bot().waitTicks(1);
             double[] q = readQuat(shipInfoById(shipId));
             convDot = Math.abs(q[0] * target[0] + q[1] * target[1] + q[2] * target[2] + q[3] * target[3]);
@@ -257,13 +260,28 @@ public class VSGroundFlightGroupE2ETest extends AbstractSharedVsClientE2ETest {
         // through that path (throttle -> body axis -> world velocity -> controller force). We assert
         // total displacement (not just altitude): the ship is left tilted by the earlier rotate
         // and attitude phases, so "body up" is not world up — moving at all is the contract here.
+        // Hand the ship back to its own flight computer first. The three rungs above drove this
+        // computer's PROBE channel, which deliberately outranks the pilot channel — so leaving it in
+        // force would make the FF rung measure the attitude hold that is still commanded, not the
+        // throttle. Asserted: a release nobody checks is indistinguishable from no release.
+        String released = exec("artest vs force-clear-by-id 0 " + shipId);
+        assertTrue("ARRANGEMENT: the probe command must be released before the FF path is measured: "
+                + released, released.contains("\"cleared\":true"));
+
         double[] pBefore = readVec(shipInfoById(shipId));
+        double[] at = pBefore;
         double disp = 0.0;
         for (int i = 0; i < 80 && disp <= 1.5; i++) {
-            String cmd = exec("artest vs ff-input 0 1 0 0 0 0"); // throttleVertical = full up
-            assertTrue("ff-input must be accepted: " + cmd, cmd.contains("\"ok\":true"));
+            // Addressed by SHIP and re-issued from its freshest pose each iteration. The input used to
+            // go to a server-wide static, which no pilot has; re-sending is also what a real pilot's
+            // client does every tick, and it keeps the address on a ship that is by now moving.
+            String cmd = exec("artest vs ff-input-by-id 0 " + shipId
+                    + " 0 1 0 0 0 0"); // throttleVertical = full up
+            assertTrue("the throttle must reach this ship's own flight computer: " + cmd,
+                    cmd.contains("\"afcResolved\":true"));
             bot().waitTicks(1);
             double[] p = readVec(shipInfoById(shipId));
+            at = p;
             double dx = p[0] - pBefore[0], dy = p[1] - pBefore[1], dz = p[2] - pBefore[2];
             disp = Math.sqrt(dx * dx + dy * dy + dz * dz);
         }

@@ -124,8 +124,16 @@ public final class SystemBodiesProducer {
                     // would hide the descent boundary of every world nobody has visited — which is
                     // precisely the set a pilot is out there looking for. The flag is a render hint;
                     // the logic that needs a real dimension still asks isDescendTarget().
+                    boolean descendable = b.kind().canDescend();
+                    // The shell is sent per body, from the ONE place that sizes it. A body that
+                    // cannot be descended to has none, and zero is what says so: the client must
+                    // not have to know which kinds have a shell to render a range correctly. It is
+                    // gated on the SAME predicate as the flag beside it — a body advertised as
+                    // descendable while carrying a zero shell would draw a boundary of no radius,
+                    // which is the unvisited-planet bug above coming back through the other field.
+                    long shell = descendable ? DescentShell.radiusAround(b) : 0L;
                     bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
-                            renderDimIdOf(b), b.kind().canDescend()));
+                            renderDimIdOf(b), descendable, shell));
                 }
             }
             byDim.put(slotDim, bodies);
@@ -181,7 +189,7 @@ public final class SystemBodiesProducer {
     public static Map<Integer, List<RenderBody>> currentByDim(MinecraftServer server) {
         ShipLedger ledger = SpaceSubsystem.ledger();
         UniverseRegistry reg = UniverseRegistry.get(server);
-        SpaceManager space = SpaceSubsystem.get();
+        SpaceManager space = SpaceSubsystem.space();
         if (reg == null || space == null) {
             return new LinkedHashMap<>();
         }

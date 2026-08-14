@@ -51,6 +51,51 @@ public class HyperspaceTilesTest {
         assertEquals(HyperspaceTiles.BASE_Y, p.getY());
     }
 
+    /**
+     * <b>A parked ship's lane is answered by the ship's own position, at any distance.</b> This is
+     * what the boot reconciliation stands on: the hulls it has to find are the ones no surviving
+     * record points at, so anything that bounds the question by what the allocator knows cannot
+     * reach them. Walks several rings out, because "far" is exactly the case that used to fail.
+     */
+    @Test
+    public void everyLaneIsRecognisedFromWhereItsShipStands() {
+        for (int index = 0; index < 60; index++) {
+            BlockPos at = HyperspaceTiles.tilePos(index);
+            assertEquals("lane " + index + " at " + at,
+                    index, HyperspaceTiles.laneIndexAt(at.getX(), at.getZ()));
+        }
+    }
+
+    /**
+     * The converse, and it is the half that keeps the reconciliation honest: a ship that is NOT in a
+     * lane must not be attributed to the nearest one. Debris from an interrupted crossing, or
+     * something another mod put here, is a hull no record can claim - and disposing of the lane it
+     * was wrongly assigned to would retire a lane a real jump is using.
+     */
+    @Test
+    public void aShipThatIsInNoLaneIsNotAttributedToTheNearestOne() {
+        assertEquals("halfway along the axis between two lanes belongs to neither",
+                -1, HyperspaceTiles.laneIndexAt(HyperspaceTiles.SPACING_BLOCKS / 2.0, 0.0));
+        // Diagonally between four lanes. Note how much room a lane owns: the margin is half the
+        // spacing, so a point 990 blocks out is still inside lane 0 - "far from the middle" and
+        // "outside" are not the same distance here.
+        assertEquals("and neither does a point between four of them",
+                -1, HyperspaceTiles.laneIndexAt(1300.0, 1300.0));
+    }
+
+    /**
+     * A ship whose transform is not a number is not standing in the origin lane - it is standing
+     * nowhere. Rounding NaN yields 0, so the "which lane" question answers 0 for it unless the
+     * out-of-lane test is written to reject rather than to accept; the reconciliation would then
+     * retire a lane with nothing in it and report a hull it could not dispose of.
+     */
+    @Test
+    public void aPoseThatIsNotANumberIsNotTheOriginLane() {
+        assertEquals(-1, HyperspaceTiles.laneIndexAt(Double.NaN, Double.NaN));
+        assertEquals(-1, HyperspaceTiles.laneIndexAt(Double.NaN, 0.0));
+        assertEquals(-1, HyperspaceTiles.laneIndexAt(0.0, Double.NaN));
+    }
+
     @Test
     public void freedLaneIsRecycledLowestFirst() {
         HyperspaceTiles tiles = new HyperspaceTiles();

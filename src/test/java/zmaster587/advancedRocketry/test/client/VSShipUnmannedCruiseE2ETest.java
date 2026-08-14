@@ -35,6 +35,10 @@ public class VSShipUnmannedCruiseE2ETest extends AbstractClientE2ETest {
 
     private static final String VARIANT = "with-pilot-seat";
     private static final int BX = 4800, BY = 64, BZ = 4800;
+    private static final Pattern SHIP_ID = Pattern.compile("\"id\":\"([^\"]+)\"");
+
+    /** THIS scenario's ship, by identity — the address every altitude sample uses. */
+    private String shipId;
 
     @Test
     public void aDismountedPilotsShipKeepsCruisingAndSurvivesRemount() throws Exception {
@@ -56,6 +60,11 @@ public class VSShipUnmannedCruiseE2ETest extends AbstractClientE2ETest {
 
         exec("tp @a " + (BX + 0.5) + " " + (BY + 6) + " " + (BZ + 0.5) + " 0 0");
         bot().waitTicks(20);
+        // The one positional lookup this scenario can defend — the ship has just been assembled here
+        // and has not moved. It hands back the ship's IDENTITY, which every altitude sample below
+        // uses: this test's whole subject is a ship that CLIMBS, tens of blocks over its run, and a
+        // lookup anchored to the build spot compares distances in 3-D. Bounded it would answer "no
+        // ship"; unbounded it answers about whatever else is loaded. Neither is this ship.
         double y0 = Double.NaN;
         for (int i = 0; i < 40 && Double.isNaN(y0); i++) {
             bot().waitTicks(5);
@@ -63,6 +72,9 @@ public class VSShipUnmannedCruiseE2ETest extends AbstractClientE2ETest {
                 String info = exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ);
                 if (info.contains("\"managed\":true")) {
                     y0 = readDouble(info, POS_Y);
+                    Matcher idM = SHIP_ID.matcher(info);
+                    assertTrue("ship-info must name WHICH ship answered: " + info, idM.find());
+                    shipId = idM.group(1);
                 }
             }
         }
@@ -138,7 +150,7 @@ public class VSShipUnmannedCruiseE2ETest extends AbstractClientE2ETest {
     // ---- helpers -------------------------------------------------------------------------------
 
     private double shipY() throws Exception {
-        return readDouble(exec("artest vs ship-info 0 " + BX + " " + BY + " " + BZ), POS_Y);
+        return readDouble(exec("artest vs ship-info 0 id " + shipId), POS_Y);
     }
 
     private int count(String sub) throws Exception {

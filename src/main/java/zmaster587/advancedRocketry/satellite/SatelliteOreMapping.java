@@ -7,7 +7,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.oredict.OreDictionary;
-import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.api.SatelliteRegistry;
 import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
@@ -66,8 +65,11 @@ public class SatelliteOreMapping extends SatelliteBase {
 
     @Override
     public boolean performAction(EntityPlayer player, World world, BlockPos pos) {
-        player.openGui(AdvancedRocketry.instance, 100, world, pos.getX(), pos.getY(), pos.getZ());
-        return true;
+        // Ore mapping is driven by the handheld ItemOreScanner (which opens the real
+        // OreMappingSatellite GUI), not by a terminal action. The former body here
+        // opened GUI id 100 — an id no GuiHandler maps — which either no-opped or, on
+        // the terminal auto-download path (null player), NPE'd. No terminal action.
+        return false;
     }
 
     public boolean canBeginScan() {

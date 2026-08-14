@@ -76,7 +76,10 @@ public class TileBiomeScanner extends TileMultiPowerConsumer {
 
 
             ISpaceObject spaceObject = SpaceObjectManager.getSpaceManager().getSpaceStationFromBlockCoords(pos);
-            if (suitable && SpaceObjectManager.WARPDIMID != spaceObject.getOrbitingPlanetId()) {
+            // C172: getSpaceStationFromBlockCoords is null when the scanner is not on a
+            // registered space station (off-station, or space-dim coords over an empty
+            // grid cell); guard it so opening the GUI there does not NPE the client.
+            if (suitable && spaceObject != null && SpaceObjectManager.WARPDIMID != spaceObject.getOrbitingPlanetId()) {
 
                 DimensionProperties properties = DimensionManager.getInstance().getDimensionProperties(spaceObject.getOrbitingPlanetId());
                 List<ModuleBase> list2 = new LinkedList<>();

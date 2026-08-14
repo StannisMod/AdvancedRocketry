@@ -32,7 +32,7 @@ public class VSCapabilityRegistry {
     public static void attachWorldCapabilities(AttachCapabilitiesEvent<World> event) {
         event.addCapability(
             new ResourceLocation(ValkyrienSkiesMod.MOD_ID, "world_data_capability"),
-            new VSDefaultCapabilityProvider<>(VS_WORLD_DATA));
+            new VSDefaultCapabilityProvider<>(VS_WORLD_DATA, event.getObject()));
     }
 
     @SubscribeEvent
