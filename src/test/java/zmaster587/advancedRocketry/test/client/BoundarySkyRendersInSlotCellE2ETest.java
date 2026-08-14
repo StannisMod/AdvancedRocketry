@@ -58,11 +58,14 @@ import static org.junit.Assert.assertTrue;
  *       at 2, so without this the sky renderer never runs and every frame is honestly empty for the
  *       wrong reason. 8 also puts the sky far plane at 256, clear of the ~100-unit sky geometry.</li>
  *   <li>{@code setFramebuffer(true)} — without the FBO a capture reads a back buffer the driver may
- *       already have discarded. <b>Run this test with {@code -PclientFbo=true}</b>: enabling the FBO at
- *       RUNTIME is not enough, because the recreated framebuffer receives only the HUD pass and not the
- *       world pass, so every capture comes back as the framebuffer's own white clear colour. The
- *       liveness control below is what makes that failure loud instead of a false accusation against the
- *       renderer.</li>
+ *       already have discarded. Enabling it at RUNTIME is not enough: the recreated framebuffer receives
+ *       only the HUD pass and not the world pass, so every capture comes back as the framebuffer's own
+ *       white clear colour. So this class asks for the FBO at CLIENT LAUNCH
+ *       ({@link #requiresFramebufferAtLaunch()}) rather than depending on the invocation passing
+ *       {@code -PclientFbo=true} — a requirement carried in a launch flag is one an ordinary suite run
+ *       does not carry, and this class spent months failing its own liveness control for exactly that
+ *       reason. The runtime call below is kept so the frames are captured under a framebuffer this test
+ *       has positively asserted, and so the state is restored the same way as the others.</li>
  *   <li>{@code setHudHidden(true)} — the HUD is not part of the subject and actively corrupts it. The
  *       chat overlay carries the harness's own per-command completion markers, which sit across the
  *       middle of the frame and CHANGE between two captures. Hiding also drains toasts, which vanilla
@@ -187,6 +190,12 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
 
     private Path outDir;
     private String botName;
+
+    /** This class measures WORLD pixels, so its client is launched with the FBO already bound. */
+    @Override
+    protected boolean requiresFramebufferAtLaunch() {
+        return true;
+    }
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", serverClient().execute(cmd));

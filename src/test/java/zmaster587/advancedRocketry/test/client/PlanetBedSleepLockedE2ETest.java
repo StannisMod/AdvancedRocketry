@@ -166,8 +166,7 @@ public class PlanetBedSleepLockedE2ETest {
 
         serverHarness.client().execute("artest tp " + DIM);
         waitForClientDim(DIM);
-        serverHarness.client().execute("tp " + PLAYER + " 8.5 " + BED_Y + " 7.5");
-        clientHarness.bot().waitTicks(20);
+        awaitPlayerBesideBed();
 
         // Stage planet-night THROUGH the flag, then lock it again before anyone sleeps.
         serverHarness.client().execute("artest config set allowTimeSkipOnPlanets true");
@@ -189,7 +188,9 @@ public class PlanetBedSleepLockedE2ETest {
                         + " coming, and that line is only ever sent from inside the completed-sleep"
                         + " branch — so its absence means either the lock did not engage or the"
                         + " player never actually slept, and this test refuses to tell those two"
-                        + " apart by assuming. chat=" + seen,
+                        + " apart by assuming. The reading that DOES tell them apart follows"
+                        + " (taken on this failing path only): sleep-state=" + sleepState()
+                        + " chat=" + seen,
                 seen.contains(LOCKED_NEEDLE));
 
         long after = dimTime(DIM);
@@ -219,6 +220,49 @@ public class PlanetBedSleepLockedE2ETest {
             }
         }
         return last.toString();
+    }
+
+    /**
+     * Stand the player on the platform beside the bed, and do not proceed until that is MEASURED.
+     *
+     * <p>One {@code /tp} onto the platform is not a guarantee: measured 2026-08-14, the first one
+     * issued after the planet arrival does not hold — the player is found on the planet's natural
+     * terrain sixty-odd blocks below, with the platform still solid under the bed. A player that far
+     * away cannot click the bed, and the resulting silence reads exactly like a bed that refused. So
+     * the staging is re-issued until the server agrees the player is inside vanilla's own bed range,
+     * and a failure carries the reading that says why.</p>
+     */
+    private void awaitPlayerBesideBed() throws Exception {
+        String last = "";
+        for (int attempt = 0; attempt < 12; attempt++) {
+            serverHarness.client().execute("tp " + PLAYER + " 8.5 " + BED_Y + " 7.5");
+            clientHarness.bot().waitTicks(10);
+            last = sleepState();
+            int brace = last.indexOf('{');
+            if (brace < 0) {
+                continue;
+            }
+            JsonObject state = new JsonParser().parse(last.substring(brace)).getAsJsonObject();
+            if (state.get("onGround").getAsBoolean() && state.get("distanceToBed").getAsDouble() <= 3.0) {
+                return;
+            }
+        }
+        throw new AssertionError("ARRANGEMENT: the player could not be stood beside the bed, so"
+                + " nothing below would be a measurement of the bed at all. Last reading: " + last);
+    }
+
+    /**
+     * Every input the bed path consumes, read off the server on the FAILING path only. Asked about
+     * the bed HEAD — the position {@code BlockBed} normalizes a click to, and the one the provider's
+     * own sleep gate is asked about.
+     */
+    private String sleepState() {
+        try {
+            return String.join("\n", serverHarness.client().execute(
+                    "artest player sleep-state " + BED_X + " " + BED_Y + " " + BED_HEAD_Z));
+        } catch (Exception e) {
+            return "<probe failed: " + e + ">";
+        }
     }
 
     private long dimTime(int dim) throws Exception {

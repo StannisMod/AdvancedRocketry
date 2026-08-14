@@ -17674,6 +17674,96 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"gravityMultiplier\":" + gravity + "}");
             return;
         }
+        if ("sleep-state".equals(sub)) {
+            // /artest player sleep-state [<x> <y> <z>]
+            //
+            // READ-ONLY. Every input the bed path consumes, reported unconditionally against
+            // the bed position (default: the player's own). A sleep that produced nothing has
+            // at least four readings - the click never arrived, the provider refused the spot,
+            // vanilla refused the moment, or the sleep completed and the SKIP was declined -
+            // and a probe that reports only one of them cannot tell them apart. So this says
+            // all of them every time and lets the reader do the comparing.
+            net.minecraft.util.math.BlockPos bedPos = args.length >= 4
+                    ? new net.minecraft.util.math.BlockPos(
+                            (int) parseDoubleOr(args[1], player.posX),
+                            (int) parseDoubleOr(args[2], player.posY),
+                            (int) parseDoubleOr(args[3], player.posZ))
+                    : player.getPosition();
+            net.minecraft.world.World sleepWorld = player.world;
+            net.minecraft.block.state.IBlockState bedState = sleepWorld.getBlockState(bedPos);
+            String bedBlock = bedState.getBlock().getRegistryName() == null
+                    ? "?" : bedState.getBlock().getRegistryName().toString();
+            net.minecraft.block.state.IBlockState underState = sleepWorld.getBlockState(
+                    new net.minecraft.util.math.BlockPos(player.posX, player.posY - 0.5D, player.posZ));
+            String underBlock = underState.getBlock().getRegistryName() == null
+                    ? "?" : underState.getBlock().getRegistryName().toString();
+            // What the bed is standing on, and what the player's own column holds at that same
+            // height: a bed hanging in the air over a platform that is not there is a FIXTURE
+            // failure, and it reads exactly like a refused sleep unless the support is said out loud.
+            net.minecraft.block.state.IBlockState bedSupportState =
+                    sleepWorld.getBlockState(bedPos.down());
+            String bedSupport = bedSupportState.getBlock().getRegistryName() == null
+                    ? "?" : bedSupportState.getBlock().getRegistryName().toString();
+            net.minecraft.block.state.IBlockState playerColumnState = sleepWorld.getBlockState(
+                    new net.minecraft.util.math.BlockPos(player.posX, bedPos.getY() - 1, player.posZ));
+            String playerColumnAtBedLevel = playerColumnState.getBlock().getRegistryName() == null
+                    ? "?" : playerColumnState.getBlock().getRegistryName().toString();
+            // The provider gate, which is the one that refuses SILENTLY: BlockBed returns on
+            // DENY without sending the player any message at all.
+            String canSleepAt = sleepWorld.provider.canSleepAt(player, bedPos).name();
+            // Vanilla's own "is it night" gate, asked the way trySleep asks it (Forge replaced
+            // the isDaytime() check with this event).
+            boolean sleepingTimeOk = net.minecraftforge.event.ForgeEventFactory
+                    .fireSleepingTimeCheck(player, bedPos);
+            zmaster587.advancedRocketry.atmosphere.AtmosphereHandler sleepAtm =
+                    zmaster587.advancedRocketry.atmosphere.AtmosphereHandler.getOxygenHandler(
+                            sleepWorld.provider.getDimension());
+            String bedAtmos = sleepAtm == null ? "none"
+                    : sleepAtm.getAtmosphereType(bedPos).getUnlocalizedName();
+            boolean bedBreathable = sleepAtm != null
+                    && sleepAtm.getAtmosphereType(bedPos).isBreathable();
+            // An approximation of trySleep's NOT_SAFE scan: the same box, but without vanilla's
+            // private SleepEnemyPredicate, so a non-zero count here is a candidate rather than a
+            // verdict.
+            int hostilesNearBed = sleepWorld.getEntitiesWithinAABB(
+                    net.minecraft.entity.monster.EntityMob.class,
+                    new net.minecraft.util.math.AxisAlignedBB(
+                            bedPos.getX() - 8.0D, bedPos.getY() - 5.0D, bedPos.getZ() - 8.0D,
+                            bedPos.getX() + 8.0D, bedPos.getY() + 5.0D, bedPos.getZ() + 8.0D)).size();
+            int rotationalPeriod = sleepWorld.provider instanceof zmaster587.advancedRocketry.api.IPlanetaryProvider
+                    ? ((zmaster587.advancedRocketry.api.IPlanetaryProvider) sleepWorld.provider)
+                            .getRotationalPeriod(null) : 24000;
+            send(sender, "{\"ok\":true,\"player\":\"" + escapeJson(player.getName()) + "\""
+                    + ",\"dim\":" + sleepWorld.provider.getDimension()
+                    + ",\"bedPos\":[" + bedPos.getX() + "," + bedPos.getY() + "," + bedPos.getZ() + "]"
+                    + ",\"bedBlock\":\"" + escapeJson(bedBlock) + "\""
+                    // The player's own position, not just the distance: a scalar cannot say WHICH
+                    // axis is wrong, and "too far from the bed" reads identically whether the player
+                    // walked away, fell, or was never put where the fixture thinks it is.
+                    + ",\"playerPos\":[" + player.posX + "," + player.posY + "," + player.posZ + "]"
+                    + ",\"onGround\":" + player.onGround
+                    + ",\"blockUnderPlayer\":\"" + escapeJson(underBlock) + "\""
+                    + ",\"blockUnderBed\":\"" + escapeJson(bedSupport) + "\""
+                    + ",\"playerColumnAtBedLevel\":\"" + escapeJson(playerColumnAtBedLevel) + "\""
+                    + ",\"distanceToBed\":" + Math.sqrt(player.getDistanceSq(bedPos))
+                    + ",\"sleeping\":" + player.isPlayerSleeping()
+                    + ",\"fullyAsleep\":" + player.isPlayerFullyAsleep()
+                    + ",\"sleepTimer\":" + player.sleepTimer
+                    + ",\"allPlayersAsleep\":"
+                    + (sleepWorld instanceof net.minecraft.world.WorldServer
+                            && ((net.minecraft.world.WorldServer) sleepWorld).areAllPlayersAsleep())
+                    + ",\"canSleepAt\":\"" + escapeJson(canSleepAt) + "\""
+                    + ",\"sleepingTimeOk\":" + sleepingTimeOk
+                    + ",\"isDaytime\":" + sleepWorld.isDaytime()
+                    + ",\"bedAtmos\":\"" + escapeJson(bedAtmos) + "\""
+                    + ",\"bedBreathable\":" + bedBreathable
+                    + ",\"hostilesNearBed\":" + hostilesNearBed
+                    + ",\"timeSkipAllowed\":"
+                    + zmaster587.advancedRocketry.world.TimeSkipPolicy.allows(sleepWorld)
+                    + ",\"worldTime\":" + sleepWorld.getWorldTime()
+                    + ",\"rotationalPeriod\":" + rotationalPeriod + "}");
+            return;
+        }
         if ("try-sleep".equals(sub)) {
             // /artest player try-sleep
             //

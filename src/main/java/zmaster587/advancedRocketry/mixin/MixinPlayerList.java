@@ -7,6 +7,7 @@ import net.minecraft.world.WorldServer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
@@ -20,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <pre>
  * if (worldIn.isRaining()) {
- *     // World.isRaining() returns getRainStrength(1.0F) > 0.2D — i.e. the
+ *     // World.isRaining() returns getRainStrength(1.0F) &gt; 0.2D — i.e. the
  *     // current LERPED strength, NOT the WorldInfo flag.
  *     ...
  * }
@@ -33,47 +34,51 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * cross-dim teleport into a freshly-raining planet showed clear weather for
  * the first second.</p>
  *
- * <p>We re-issue the same packets vanilla intended, but check the
- * {@link net.minecraft.world.storage.WorldInfo} flag directly, so the
- * client gets the correct begin/end-raining toggle the moment they enter
- * the dim — independent of the lerp's current value.</p>
+ * <p><b>Why a redirect rather than a HEAD cancel.</b> This mixin used to
+ * cancel the vanilla method and re-issue all of its packets from a copy. A
+ * copy of someone else's method has to reproduce it in full, and this one did
+ * not: it silently dropped vanilla's {@code SPacketSpawnPosition}, so from
+ * 2026-05-31 every player's client kept {@code WorldClient}'s placeholder
+ * spawn {@code (8,64,8)} after login and after every cross-dimension transfer
+ * — a compass pointing at nothing. Redirecting the single call we actually
+ * disagree with leaves every other packet, present and future, owned by
+ * vanilla, which removes that whole class of drift. Pinned by
+ * {@code SpawnPointReachesClientE2ETest}.</p>
+ *
+ * <p>Both injections carry {@code require = 1}: this mixin has one target
+ * class and no fallback path, so a selector that silently matched nothing
+ * would reintroduce the bug invisibly. The config's {@code defaultRequire} is
+ * 0, so without this an injector miss is a no-op, not an error.</p>
  */
 @Mixin(PlayerList.class)
 public abstract class MixinPlayerList {
 
-    @Inject(method = "updateTimeAndWeatherForPlayer", at = @At("HEAD"), cancellable = true)
-    private void ar$fixUpdateTimeAndWeatherForPlayer(EntityPlayerMP playerIn,
-                                                     WorldServer worldIn,
-                                                     CallbackInfo ci) {
-        // World border / time-of-day are uncorrupted by the vanilla impl, so
-        // re-issue the same packets vanilla does. We only need to fix the
-        // begin/end raining code.
-        playerIn.connection.sendPacket(new net.minecraft.network.play.server.SPacketWorldBorder(
-                ((net.minecraft.server.management.PlayerList) (Object) this)
-                        .getServerInstance().getWorld(0).getWorldBorder(),
-                net.minecraft.network.play.server.SPacketWorldBorder.Action.INITIALIZE));
-        playerIn.connection.sendPacket(new net.minecraft.network.play.server.SPacketTimeUpdate(
-                worldIn.getTotalWorldTime(),
-                worldIn.getWorldTime(),
-                worldIn.getGameRules().getBoolean("doDaylightCycle")));
+    /**
+     * Gate the weather-sync block on the {@code WorldInfo} flag instead of the
+     * lerped strength, so a freshly-set raining dim syncs even while the
+     * strength is still 0.
+     */
+    @Redirect(
+            method = "updateTimeAndWeatherForPlayer",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/WorldServer;isRaining()Z"),
+            require = 1)
+    private boolean ar$rainFlagInsteadOfLerpedStrength(WorldServer world) {
+        return world.getWorldInfo().isRaining();
+    }
 
-        // Check the WorldInfo flag directly (not getRainStrength), so a
-        // freshly-set raining dim syncs even when the lerped strength is
-        // still 0. Packet codes match vanilla's NetHandlerPlayClient
-        // dispatch:  code 1 -> setRaining(true);  code 2 -> setRaining(false).
-        net.minecraft.world.storage.WorldInfo info = worldIn.getWorldInfo();
-        if (info.isRaining()) {
-            playerIn.connection.sendPacket(new SPacketChangeGameState(1, 0.0F));
-            playerIn.connection.sendPacket(new SPacketChangeGameState(7, worldIn.getRainStrength(1.0F)));
-            playerIn.connection.sendPacket(new SPacketChangeGameState(8, worldIn.getThunderStrength(1.0F)));
-        } else {
-            // WorldInfo says "not raining". Spell it out: a previous dimension
-            // that WAS raining may have left the client in a partial-rain
-            // state, so explicitly clear the flag + zero the strengths.
+    /**
+     * Vanilla has no "else" branch: when it is not raining it sends nothing,
+     * which leaves a player arriving from a raining dimension in a partial-rain
+     * state. Spell it out — clear the flag and zero both strengths.
+     */
+    @Inject(method = "updateTimeAndWeatherForPlayer", at = @At("TAIL"), require = 1)
+    private void ar$clearStaleWeatherOnArrival(EntityPlayerMP playerIn,
+                                               WorldServer worldIn,
+                                               CallbackInfo ci) {
+        if (!worldIn.getWorldInfo().isRaining()) {
             playerIn.connection.sendPacket(new SPacketChangeGameState(2, 0.0F));
             playerIn.connection.sendPacket(new SPacketChangeGameState(7, 0.0F));
             playerIn.connection.sendPacket(new SPacketChangeGameState(8, 0.0F));
         }
-        ci.cancel();
     }
 }

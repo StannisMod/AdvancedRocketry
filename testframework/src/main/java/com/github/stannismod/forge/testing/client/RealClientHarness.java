@@ -63,6 +63,12 @@ public final class RealClientHarness implements AutoCloseable {
         return start(serverHarness, CLIENT_USERNAME);
     }
 
+    /** The default client, with the framebuffer object on from the first frame — see the overload below. */
+    public static RealClientHarness startWithFramebuffer(RealDedicatedServerHarness serverHarness)
+            throws Exception {
+        return start(serverHarness, CLIENT_USERNAME, true);
+    }
+
     /**
      * Spawn a Minecraft client harness with a caller-supplied username.
      *
@@ -80,9 +86,30 @@ public final class RealClientHarness implements AutoCloseable {
      */
     public static RealClientHarness start(RealDedicatedServerHarness serverHarness,
                                           String clientUsername) throws Exception {
+        return start(serverHarness, clientUsername,
+                "true".equalsIgnoreCase(System.getProperty("forge.test.client.fbo")));
+    }
+
+    /**
+     * Spawn a client whose framebuffer object is enabled from its FIRST frame.
+     *
+     * <p>A test that measures WORLD pixels needs this rather than
+     * {@link ClientBot#setFramebuffer(boolean)}: a runtime enable recreates the framebuffer after the
+     * world pass is already bound to the back buffer, so the capture comes back as the framebuffer's
+     * own clear colour (opaque white) with only the HUD over it — a frame indistinguishable from
+     * "the renderer drew nothing". Asking for it here keeps that requirement with the test that has
+     * it, instead of in a launch flag every invocation has to remember.</p>
+     *
+     * <p>Off for everyone else on purpose: the FBO is one of the GL features this harness keeps
+     * minimal for driver safety, and the render path the rest of the tier runs is not one test's to
+     * change. {@code -Dforge.test.client.fbo=true} still turns it on for every client.</p>
+     */
+    public static RealClientHarness start(RealDedicatedServerHarness serverHarness,
+                                          String clientUsername,
+                                          boolean framebufferAtLaunch) throws Exception {
         Path root = Files.createTempDirectory("forge-client-");
         Files.createDirectories(root.resolve("resourcepacks"));
-        bootstrapClientFiles(root);
+        bootstrapClientFiles(root, framebufferAtLaunch);
 
         Path clientLogFile = root.resolve("client.log");
         Process process = null;
@@ -504,7 +531,7 @@ public final class RealClientHarness implements AutoCloseable {
         return builder.toString();
     }
 
-    private static void bootstrapClientFiles(Path root) throws IOException {
+    private static void bootstrapClientFiles(Path root, boolean framebufferAtLaunch) throws IOException {
         // Conservative GL settings — the test client only needs to reach the
         // in-world handshake, never to render anything pretty. Aggressive GL
         // features (VBOs, fancy graphics) are the usual trigger for
@@ -512,11 +539,12 @@ public final class RealClientHarness implements AutoCloseable {
         // (notably Intel integrated GPUs running legacy MC 1.12 OpenGL).
         List<String> options = new ArrayList<>();
         options.add("pauseOnLostFocus:false");
-        // The framebuffer object stays OFF here, as the other GL features do. A test that needs to SEE
-        // what the client drew turns it on for itself (ClientBot.setFramebuffer) for the few frames it
-        // captures, so the render path every other test runs is unchanged. -Dforge.test.client.fbo=true
-        // turns it on from the start.
-        options.add("fboEnable:" + "true".equalsIgnoreCase(System.getProperty("forge.test.client.fbo")));
+        // The framebuffer object stays OFF here, as the other GL features do, unless the caller asked
+        // for it at launch (start(..., framebufferAtLaunch) — the overload a pixel-measuring test uses)
+        // or -Dforge.test.client.fbo=true turned it on for every client. A runtime
+        // ClientBot.setFramebuffer is NOT equivalent: it recreates the framebuffer after the world pass
+        // is bound, so captures come back as its own white clear colour.
+        options.add("fboEnable:" + framebufferAtLaunch);
         options.add("useVbo:false");
         options.add("renderDistance:2");
         options.add("fancyGraphics:false");

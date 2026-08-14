@@ -153,8 +153,7 @@ public class PlanetBedSleepE2ETest {
         waitForClientDim(DIM);
         // Vanilla console /tp (same-dim) puts the player on the platform, a
         // bed-reach-range step north of the bed head (|Δz| = 2.5 ≤ 3).
-        serverHarness.client().execute("tp " + PLAYER + " 8.5 " + BED_Y + " 7.5");
-        clientHarness.bot().waitTicks(20);
+        awaitPlayerBesideBed();
 
         // Night on every clock: vanilla /time set writes ALL loaded worlds, and
         // on the wrapped planet that lands in the per-dim state. Phase
@@ -193,6 +192,53 @@ public class PlanetBedSleepE2ETest {
                 overworldTime >= 20000 && overworldTime < 24000);
     }
 
+    /**
+     * Stand the player on the platform beside the bed, and do not proceed until that is MEASURED.
+     *
+     * <p>A single {@code /tp} onto the platform is not a guarantee: measured 2026-08-14, the player
+     * arrives on the planet, is teleported to the platform, and is then found on natural terrain
+     * sixty-odd blocks below (once on sand at y=64, once on alien leaves at y=86) with the platform
+     * still solid underneath the bed — i.e. the position the fixture assumes was never the position
+     * the player held. Everything after that measures a player who cannot reach the bed, and reads
+     * as "the bed refused to work". So the staging is re-issued until the SERVER agrees the player
+     * is within vanilla's own bed range, and the failure carries the reading.</p>
+     */
+    private void awaitPlayerBesideBed() throws Exception {
+        String last = "";
+        for (int attempt = 0; attempt < 12; attempt++) {
+            serverHarness.client().execute("tp " + PLAYER + " 8.5 " + BED_Y + " 7.5");
+            clientHarness.bot().waitTicks(10);
+            last = sleepState();
+            int brace = last.indexOf('{');
+            if (brace < 0) {
+                continue;
+            }
+            JsonObject state = new JsonParser().parse(last.substring(brace)).getAsJsonObject();
+            // Vanilla's bedInRange is a per-axis |delta| <= 3; the straight-line distance is the
+            // stricter test of the two, so passing it passes the real one.
+            if (state.get("onGround").getAsBoolean() && state.get("distanceToBed").getAsDouble() <= 3.0) {
+                return;
+            }
+        }
+        throw new AssertionError("ARRANGEMENT: the player could not be stood beside the bed, so"
+                + " nothing below would be a measurement of the bed at all. Last reading: " + last);
+    }
+
+    /**
+     * Every input the bed path consumes, read off the server on the FAILING path only — so a run
+     * that passes costs nothing and a run that fails does not have to be re-run to learn why.
+     * Asked about the bed HEAD, which is the position {@code BlockBed} normalizes a click to and
+     * therefore the one the provider's own sleep gate is asked about.
+     */
+    private String sleepState() {
+        try {
+            return String.join("\n", serverHarness.client().execute(
+                    "artest player sleep-state " + BED_X + " " + BED_Y + " " + BED_HEAD_Z));
+        } catch (Exception e) {
+            return "<probe failed: " + e + ">";
+        }
+    }
+
     private JsonObject dimTime(int dim) throws Exception {
         String raw = String.join("\n",
                 serverHarness.client().execute("artest dim time " + dim));
@@ -211,10 +257,13 @@ public class PlanetBedSleepE2ETest {
             }
             clientHarness.bot().waitTicks(20);
         }
-        throw new AssertionError("planet never reached its dawn — either the player "
-                + "never fell asleep (trySleep rejected?) or the sleep skip landed off "
-                + "planetary dawn (vanilla 24000-rounding instead of rotationalPeriod); "
-                + "last planet worldTime=" + last);
+        throw new AssertionError("planet never reached its dawn — last planet worldTime=" + last
+                + ". Which of the four ways that happens is in the reading below, taken on this"
+                + " failing path only: the bed was never clicked (bedBlock / distanceToBed), the"
+                + " provider refused the spot (canSleepAt=DENY, which BlockBed answers in silence),"
+                + " vanilla refused the moment (sleepingTimeOk / hostilesNearBed), or the sleep"
+                + " completed and the SKIP was declined (fullyAsleep=true with timeSkipAllowed"
+                + " false). sleep-state=" + sleepState());
     }
 
     private void waitForClientDim(int expectedDim) throws Exception {

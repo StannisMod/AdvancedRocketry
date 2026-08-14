@@ -61,6 +61,22 @@ public abstract class AbstractClientE2ETest {
     private RealDedicatedServerHarness serverHarness;
     private RealClientHarness clientHarness;
 
+    /**
+     * Whether this test's client must be launched with the framebuffer object already on.
+     *
+     * <p>Override to {@code true} in a test that measures WORLD pixels. Turning the FBO on at runtime
+     * ({@link ClientBot#setFramebuffer(boolean)}) is not equivalent — the recreated framebuffer never
+     * receives the world pass, so every capture is its own white clear colour and reads exactly like
+     * a renderer that drew nothing. Declaring it here keeps the requirement with the test instead of
+     * in a launch flag the invocation has to remember.</p>
+     *
+     * <p>Default {@code false}: the FBO is one of the GL features the harness keeps minimal for
+     * driver safety, and it is not one test's business to change the render path of the tier.</p>
+     */
+    protected boolean requiresFramebufferAtLaunch() {
+        return false;
+    }
+
     @Before
     public final void startBoth() throws Exception {
         Assume.assumeTrue(
@@ -72,7 +88,9 @@ public abstract class AbstractClientE2ETest {
 
         serverHarness = RealDedicatedServerHarness.start();
         try {
-            clientHarness = RealClientHarness.start(serverHarness);
+            clientHarness = requiresFramebufferAtLaunch()
+                    ? RealClientHarness.startWithFramebuffer(serverHarness)
+                    : RealClientHarness.start(serverHarness);
         } catch (Exception startupException) {
             // Don't leak a running server JVM if client startup fails.
             try {
