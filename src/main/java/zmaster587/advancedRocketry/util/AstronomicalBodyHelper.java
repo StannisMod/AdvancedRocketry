@@ -25,6 +25,44 @@ public class AstronomicalBodyHelper {
     public static final int KELVIN_PER_STAR_TEMPERATURE_UNIT = 58;
     /** Solar radii in one astronomical unit — carries a star's size into the distance frame. */
     public static final int SOLAR_RADII_PER_AU = 215;
+
+    // ─── The CHART metric ──────────────────────────────────────────────────────
+    // How a physical length becomes a number of blocks in the chart — the space bodies are placed,
+    // sized and separated in. It is NOT the metric of a world anyone walks on: a loaded world is
+    // metres per block, and the two are never added. A length that crosses the boundary crosses it
+    // at materialization (a descent shell), nowhere else.
+    //
+    // Everything below is DERIVED from the two physical facts and the scale, so no consumer may
+    // write its own conversion: one edit to the scale moves the whole chart consistently.
+
+    /** Metres in one chart block — the scale the whole universe layer is drawn at. */
+    public static final int METRES_PER_CHART_BLOCK = 250;
+    /** Metres in one astronomical unit (IAU 2012). */
+    public static final double METRES_PER_AU = 1.495_978_707e11d;
+    /** Metres in one Julian light year. */
+    public static final double METRES_PER_LIGHT_YEAR = 9.460_730_472_580_8e15d;
+
+    /** Chart blocks in one astronomical unit. */
+    public static final long BLOCKS_PER_AU =
+            Math.round(METRES_PER_AU / METRES_PER_CHART_BLOCK);
+    /** Chart blocks in one light year. */
+    public static final long BLOCKS_PER_LIGHT_YEAR =
+            Math.round(METRES_PER_LIGHT_YEAR / METRES_PER_CHART_BLOCK);
+    /**
+     * Chart blocks per unit of {@code orbitalDistance} — the ONE law that turns an orbit into a
+     * place, for authored and procedural systems alike.
+     *
+     * <p>It used to be a literal million blocks per unit, six times too small, because a system's
+     * extent was defined as a fraction of the distance to the next star and the orbit scale was
+     * shrunk until systems fit. Extent now follows the outermost orbit, so the scale can be what the
+     * metric says it is and one orbit unit means one distance everywhere.</p>
+     */
+    public static final long BLOCKS_PER_ORBIT_UNIT = BLOCKS_PER_AU / DISTANCE_UNITS_PER_AU;
+
+    /** Earth's equatorial radius in metres — the unit a body's {@code radius} is stated in. */
+    public static final double EARTH_RADIUS_METRES = 6_378_137d;
+    /** Earth's radius in chart blocks: what one unit of a body's radius is worth on the chart. */
+    public static final double EARTH_RADIUS_BLOCKS = EARTH_RADIUS_METRES / METRES_PER_CHART_BLOCK;
     /**
      * Earth's albedo — the reflectivity a world is assumed to have when its type has not stated one.
      * It was hard-coded into the temperature formula with a comment saying it could not easily be
@@ -234,32 +272,30 @@ public class AstronomicalBodyHelper {
             return MIN_BRIGHTNESS;
         }
         float planetaryOrbitalRadius = orbitalDistance / (float) DISTANCE_UNITS_PER_AU;
-        // EVERY star that shines on this world contributes, and what ADDS is the FLUX each one
-        // delivers here — not their luminosities. Radiant power from mutually incoherent sources
-        // superposes linearly, so E = sum of L_i / d_i², with each star's own distance under its own
-        // luminosity. Summing luminosities first and dividing once is the same number only while all
-        // the stars are equidistant from the planet.
+        // EVERY star of the system shines on this world, and what ADDS is the FLUX each one delivers
+        // here — not their luminosities. Radiant power from mutually incoherent sources superposes
+        // linearly, so E = sum of L_i / d_i², with each star's own distance under its own luminosity.
+        // Summing luminosities first and dividing once is the same number only while all the stars
+        // are equidistant from the planet.
         //
-        // Today they are, by construction rather than by physics: a companion's separation is stored
-        // as an ANGLE in the sky (StellarBody.getStarSeparation), so there is no distance to give it,
-        // and every companion is fed the primary's. That is exact for the close binaries the model can
-        // actually describe, and it is why this sums flux terms rather than luminosities — when a
-        // companion gains a real orbital radius, only the argument below changes.
+        // The walk starts at the system's ROOT, not at the star the planet is bound to, so a world of
+        // a companion is lit by the primary as well — an S-type planet is a planet in a binary, not a
+        // planet with one sun that happens to have a bright neighbour. Each star's distance is the
+        // separation between it and the planet's own star, combined with the planet's orbit: the
+        // planet's direction round its star is not known here, so the two lengths compose in
+        // quadrature. That is exact when they are perpendicular, and correct in both limits — a close
+        // companion converges to the planet's own orbital radius, a distant one to the separation.
         //
-        // This replaces a walk over the companions whose only effect was to clear a boolean: any
-        // ordinary companion turned the accretion-disc dimming OFF, after which the brightness came
-        // from the BLACK HOLE's own size and temperature at full strength, and the companion itself
-        // never contributed a photon.
+        // This replaces feeding every companion the PRIMARY's distance, which was exact only for the
+        // close binaries the old angle-valued separation could describe: a companion twenty AU out
+        // warmed a world as though it were sitting one AU away.
         //Returns ratio compared to a planet at 1 AU for Sol, because the other values in AR are normalized,
         //and this works fairly well for hooking into with other mod's solar panels & such
-        double brightness = fluxOf(star, planetaryOrbitalRadius);
-        Iterable<StellarBody> companions = star.getSubStars();
-        if (companions != null) {
-            for (StellarBody companion : companions) {
-                if (companion != null) {
-                    brightness += fluxOf(companion, planetaryOrbitalRadius);
-                }
-            }
+        double brightness = 0d;
+        for (StellarBody member : systemOf(star)) {
+            double separationAu = member == star ? 0d : member.separationAuFrom(star);
+            brightness += fluxOf(member,
+                    (float) Math.hypot(planetaryOrbitalRadius, separationAu));
         }
 
         // Guarantee: never return 0, NaN, or Infinity
@@ -267,6 +303,37 @@ public class AstronomicalBodyHelper {
             return MIN_BRIGHTNESS;
         }
         return brightness;
+    }
+
+    /**
+     * Every star of the system {@code member} belongs to — its root primary and every companion
+     * under it, at any depth. A three-star hierarchy is walked the same way a pair is, so nothing
+     * downstream needs a case for one.
+     */
+    public static java.util.List<StellarBody> systemOf(StellarBody member) {
+        java.util.List<StellarBody> all = new java.util.ArrayList<>();
+        if (member == null) {
+            return all;
+        }
+        StellarBody root = member;
+        while (root.getParentStar() != null) {
+            root = root.getParentStar();
+        }
+        collectStars(root, all);
+        return all;
+    }
+
+    private static void collectStars(StellarBody star, java.util.List<StellarBody> into) {
+        if (star == null || into.contains(star)) {
+            return; // a cycle in an authored hierarchy must not hang the light calculation
+        }
+        into.add(star);
+        Iterable<StellarBody> companions = star.getSubStars();
+        if (companions != null) {
+            for (StellarBody companion : companions) {
+                collectStars(companion, into);
+            }
+        }
     }
 
     /**

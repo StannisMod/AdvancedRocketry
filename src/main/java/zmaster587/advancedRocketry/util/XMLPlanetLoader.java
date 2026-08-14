@@ -100,7 +100,8 @@ public class XMLPlanetLoader {
     private static final String ATTR_SIZE = "size";
     private static final String ATTR_NUMPLANETS = "numPlanets";
     private static final String ATTR_NUMGASPLANETS = "numGasGiants";
-    private static final String ATTR_SEPERATION = "separation";
+    private static final String ATTR_COMPANION_ORBIT = "orbitalDistance";
+    private static final String ATTR_COMPANION_THETA = "orbitalTheta";
     private static final String ATTR_DIMID = "DIMID";
     private static final String ATTR_NATIVEDIM = "dimMapping";
     private static final String ATTR_ICON = "customIcon";
@@ -516,7 +517,9 @@ public class XMLPlanetLoader {
                 nodeSubStar.setAttribute(ATTR_BLACKHOLE_DISK_ANGLE, Float.toString(star2.diskAngle));
                 nodeSubStar.setAttribute(ATTR_TEMP, Integer.toString(star2.getTemperature()));
                 nodeSubStar.setAttribute(ATTR_SIZE, Float.toString(star2.getSize()));
-                nodeSubStar.setAttribute(ATTR_SEPERATION, Float.toString(star2.getStarSeparation()));
+                nodeSubStar.setAttribute(ATTR_COMPANION_ORBIT, Integer.toString(star2.getOrbitalDistance()));
+                nodeSubStar.setAttribute(ATTR_COMPANION_THETA,
+                        Double.toString(Math.toDegrees(star2.getBaseTheta())));
                 nodeStar.appendChild(nodeSubStar);
             }
 
@@ -1151,7 +1154,7 @@ public class XMLPlanetLoader {
                 String nbtString = "";
                 Node weightNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_WEIGHT);
                 Node groupMinNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMIN);
-                Node groupMaxNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMIN);
+                Node groupMaxNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_GROUPMAX);
                 Node nbtNode = planetPropertyNode.getAttributes().getNamedItem(ATTR_NBT);
 
                 //Get spawn properties
@@ -1320,7 +1323,6 @@ public class XMLPlanetLoader {
                 properties.setDecoratoration(Boolean.parseBoolean(planetPropertyNode.getTextContent()));
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RING_ANGLE)) {
                 properties.ringAngle = Integer.parseInt(planetPropertyNode.getTextContent());
-                System.out.println("read rings: "+properties.ringAngle);
             }
             else if (planetPropertyNode.getNodeName().equalsIgnoreCase(ELEMENT_RINGCOLOR)) {
                 String[] colors = planetPropertyNode.getTextContent().split(",");
@@ -1524,10 +1526,27 @@ public class XMLPlanetLoader {
                 }
             }
 
-            nameNode = planetNode.getAttributes().getNamedItem(ATTR_SEPERATION);
+            // A companion's orbit about its primary, in the same distance units a planet's is in.
+            // It used to be an angle called "separation", which could say how far off the primary a
+            // companion LOOKED from one particular world and nothing else — not where it was, not
+            // what it lit, and not that it moved.
+            nameNode = planetNode.getAttributes().getNamedItem(ATTR_COMPANION_ORBIT);
             if (nameNode != null && !nameNode.getNodeValue().isEmpty()) {
                 try {
-                    star.setStarSeparation(Float.parseFloat(nameNode.getNodeValue()));
+                    star.setOrbitalDistance(Integer.parseInt(nameNode.getNodeValue()));
+                } catch (NumberFormatException e) {
+                    AdvancedRocketry.logger.warn("Error Reading star " + star.getName());
+                }
+            }
+
+            nameNode = planetNode.getAttributes().getNamedItem(ATTR_COMPANION_THETA);
+            if (nameNode != null && !nameNode.getNodeValue().isEmpty()) {
+                try {
+                    // DEGREES, exactly as a planet's <orbitalTheta> is. One name, one unit: an
+                    // angle that meant radians here and degrees one element away would be a trap
+                    // no author could see, because both parse and neither complains.
+                    star.setBaseTheta(Math.toRadians(
+                            Double.parseDouble(nameNode.getNodeValue()) % 360d));
                 } catch (NumberFormatException e) {
                     AdvancedRocketry.logger.warn("Error Reading star " + star.getName());
                 }

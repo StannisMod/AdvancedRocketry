@@ -17,13 +17,18 @@ import java.util.List;
 public final class GalaxyGenConfig {
 
     /**
-     * Default super-cell edge in cells. Sized so a system's per-body-cell NEIGHBOURHOOD (planets at their
-     * own cells, ~1M blocks per orbit-unit — universe-model &sect;2 amendment A#1a) fits inside half a
-     * super-cell: neighbourhoods of two neighbouring systems can never interleave. Deliberately a FIXED
-     * constant, never derived from the planet catalog — {@code minSpacing} partitions procedural space, and
-     * deriving it from XML content would silently relocate the whole procedural galaxy on any catalog edit.
+     * Default super-cell edge in cells: the mean distance between neighbouring stars, converted through
+     * the chart metric by {@link UniverseScale#DEFAULT_SPACING_CELLS}.
+     *
+     * <p>It no longer decides how big a system is. A system's extent follows its outermost orbit and is
+     * bounded by the separation floor, so this number moves the STARS apart and nothing else — raising
+     * it does not inflate a single planet's orbit, and lowering it does not squash one.</p>
+     *
+     * <p>Deliberately a FIXED constant, never derived from the planet catalog: it partitions procedural
+     * space, and deriving it from XML content would silently relocate the whole procedural galaxy on any
+     * catalog edit.</p>
      */
-    public static final int DEFAULT_MIN_SPACING = 512;
+    public static final int DEFAULT_MIN_SPACING = UniverseScale.DEFAULT_SPACING_CELLS;
 
     /** A weighted star archetype: a temperature (drives colour) and a size range. */
     public static final class StarType {
@@ -42,7 +47,10 @@ public final class GalaxyGenConfig {
 
     /** Per-super-cell occupancy probability inside a galaxy (before the void mask). */
     public final double density;
-    /** Super-cell edge in cells: at most one system per {@code minSpacing}-cube. Minimum system spacing. */
+    /**
+     * Super-cell edge in cells: at most one system per {@code minSpacing}-cube, i.e. how far apart
+     * stars stand. It bounds no orbit — see {@link #DEFAULT_MIN_SPACING}.
+     */
     public final int minSpacing;
     /** Blob field resolution in super-cells — the size of a galaxy cluster. */
     public final int clusterScale;

@@ -98,11 +98,54 @@ public class AstronomicalBodyHelperTest {
     public void everyStarInASystemContributesItsOwnLight() {
         double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
 
-        StellarBody binary = sunLikeStar();
-        binary.addSubStar(sunLikeStar());
+        StellarBody contactPair = sunLikeStar();
+        StellarBody touching = sunLikeStar();
+        touching.setOrbitalDistance(0); // the degenerate case: both stars at the same place
+        contactPair.addSubStar(touching);
 
-        assertEquals("two identical stars light a world twice as brightly as one does",
-                2 * alone, AstronomicalBodyHelper.getStellarBrightness(binary, 100), 1e-9);
+        assertEquals("two identical stars in the same place light a world twice as brightly",
+                2 * alone, AstronomicalBodyHelper.getStellarBrightness(contactPair, 100), 1e-9);
+    }
+
+    @Test
+    public void aCompanionsContributionFallsOffWithItsOwnDistance() {
+        // The defect: every companion used to be fed the PRIMARY's distance, so a companion twenty AU
+        // away warmed a world exactly as much as one sitting beside its star. A separation that costs
+        // nothing is a separation the model does not really have.
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody close = sunLikeStar();
+        StellarBody nearby = sunLikeStar();
+        nearby.setOrbitalDistance(5); // 0.05 AU
+        close.addSubStar(nearby);
+
+        StellarBody wide = sunLikeStar();
+        StellarBody distant = sunLikeStar();
+        distant.setOrbitalDistance(2_000); // 20 AU, an Alpha-Centauri-like pair
+        wide.addSubStar(distant);
+
+        double closeBrightness = AstronomicalBodyHelper.getStellarBrightness(close, 100);
+        double wideBrightness = AstronomicalBodyHelper.getStellarBrightness(wide, 100);
+
+        assertTrue("a close companion nearly doubles the light", closeBrightness > 1.9 * alone);
+        assertTrue("a distant one adds only a little", wideBrightness < 1.1 * alone);
+        assertTrue("but it is never nothing", wideBrightness > alone);
+    }
+
+    @Test
+    public void aWorldOfTheCompanionIsLitByThePrimaryToo() {
+        // An S-type planet is a planet in a binary, not a planet with one sun that happens to have a
+        // bright neighbour. The walk therefore starts at the system's root, not at the star the
+        // planet is bound to.
+        double alone = AstronomicalBodyHelper.getStellarBrightness(sunLikeStar(), 100);
+
+        StellarBody primary = sunLikeStar();
+        StellarBody companion = sunLikeStar();
+        companion.setOrbitalDistance(0);
+        primary.addSubStar(companion);
+
+        assertEquals("a world of the companion sees both stars", 2 * alone,
+                AstronomicalBodyHelper.getStellarBrightness(companion, 100), 1e-9);
     }
 
     /**
@@ -123,7 +166,9 @@ public class AstronomicalBodyHelperTest {
 
         StellarBody holeWithCompanion = sunLikeStar();
         holeWithCompanion.setBlackHole(true);
-        holeWithCompanion.addSubStar(sunLikeStar());
+        StellarBody companion = sunLikeStar();
+        companion.setOrbitalDistance(0); // separation is not what this test is about
+        holeWithCompanion.addSubStar(companion);
         double together = AstronomicalBodyHelper.getStellarBrightness(holeWithCompanion, 100);
 
         assertEquals("a black hole and its companion each light the world on their own terms",

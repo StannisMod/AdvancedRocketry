@@ -659,7 +659,7 @@ public class RenderAsteroidSky extends IRenderHandler {
                 GL11.glRotatef(phaseInc, 0, 1, 0);
                 GL11.glPushMatrix();
 
-                GL11.glRotatef(subStar.getStarSeparation() * AstronomicalBodyHelper.getBodySizeMultiplier(solarOrbitalDistance), 1, 0, 0);
+                GL11.glRotatef(subStar.apparentSeparationDegrees(solarOrbitalDistance), 1, 0, 0);
                 float[] color = subStar.getColor();
                 drawStar(buffer, subStar, properties, solarOrbitalDistance, subStar.getSize(),
                         new Vec3d(color[0], color[1], color[2]), multiplier);

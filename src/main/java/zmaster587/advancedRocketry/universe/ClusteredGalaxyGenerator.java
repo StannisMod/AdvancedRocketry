@@ -12,6 +12,7 @@ import java.util.Set;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.api.dimension.solar.StellarBody;
 import zmaster587.advancedRocketry.space.AbsolutePos;
+import zmaster587.advancedRocketry.space.BlockDelta;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
@@ -106,9 +107,9 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final double NUDGE_ANGLE = 2.399963229728653d; // the golden angle, in radians
     /** How many relocations a body gets before its system is declared full. */
     private static final int NUDGE_ATTEMPTS = 96;
-    /** Neighbourhood margin (cells) kept clear of the super-cell boundary. */
+    /** Neighbourhood margin (cells) kept clear of the seat's own clear space. */
     private static final int NEIGHBOURHOOD_MARGIN_CELLS = 2;
-    /** Thin-disk half-thickness as a fraction of the orbit radius (bodies keep honest 3D Y — A#1a e1). */
+    /** Thin-disk half-thickness as a fraction of the orbit radius (bodies keep honest 3D Y). */
     private static final double PROC_DISK_FRACTION = 0.1d;
 
     private final GalaxyGenConfig config;
@@ -196,11 +197,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // A star does not move inside its own system: its frame IS the system's anchor.
         bodies.add(SystemBody.fixedAt(cell, SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
 
-        // Bodies orbit at cell-scale radii: min 1 cell out (never the anchor cell), max = the bounded
-        // neighbourhood radius. The anchor sits in the middle band of its super-cell (>= 3s/8 from every
-        // face), so a radius <= 3s/8 - margin keeps every body inside the anchor's super-cell — member-cell
-        // attribution by floorDiv stays exact. (The per-body box clamp below covers the tiny-spacing floor.)
+        // A body sits where its ORBIT puts it — one law, one constant, the same one an authored system
+        // uses. What the neighbourhood decides is not how far a body goes but how many bodies there is
+        // room for: orbits are drawn inside a bracket that already fits, and a system that would run
+        // past its own clear space loses BODIES rather than being squashed to fit.
         long s = config.minSpacing;
+        double outerBound = maxNamedOrbitUnits(s);
 
         // AT MOST ONE REAL BODY PER CELL, moons excepted. The draw picks each body's angle and radius
         // independently, so two of them CAN land on the same cell — and two real bodies in one cell are
@@ -215,39 +217,43 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         int outermostOrbit = 0;
         int innermostGiantOrbit = 0;
         for (int i = 0; i < count; i++) {
-            // The ORBIT is drawn first and the cell radius follows it, rather than the other way round:
-            // a body's physics is derived from its orbit, so letting the placement pick the radius would
-            // make every world's climate a function of the layout arithmetic.
+            // The ORBIT is drawn first and the cell follows from it, rather than the other way round:
+            // a body's physics is derived from its orbit, so letting the placement pick the distance
+            // would make every world's climate a function of the layout arithmetic.
+            //
+            // The orbit is drawn across the STAR'S OWN zone, and a body that lands outside the room
+            // this system has is DROPPED. Narrowing the bracket instead would have kept the body and
+            // moved it inward, which is the one thing this whole seam exists to prevent: a world's
+            // distance is its star's business, and a system squeezed by its neighbours holds fewer
+            // worlds rather than the same worlds at the wrong distances.
             int orbit = PlanetDerivation.orbitalDistanceOf(seed, cell, i, count, star);
-            GalacticCoord addr = placeBody(seed, cell, i, orbit, star, s, taken);
-            if (addr == null) {
+            if (orbit > outerBound) {
+                continue; // outside this system's clear space — a bound of the layout, not a failure
+            }
+            Seat seat = seatBody(seed, cell, i, orbit, star, s, taken);
+            if (seat == null) {
                 continue; // this system's neighbourhood is full — a bound of the layout, not a failure
             }
             // Planet or giant is not a roll of its own: it falls out of the body's derived physics,
             // which is what makes the zoning (rock inside, giants past the snow line) emerge instead
             // of being authored. Kept here rather than at realization because the nav list, the sky
             // and the descent trigger all read the kind long before anyone lands.
-            BodyProfile profile = PlanetDerivation.derive(seed, cell, addr, 0, star, false, orbit);
+            BodyProfile profile = PlanetDerivation.derive(seed, cell, seat.cell, 0, star, false, orbit);
             // THE ORBIT LIVES IN THE FRAME, not in the body's own offset — the same shape an authored
             // system uses (SystemContent: a planet sits at its frame origin and the FRAME goes round
             // the star). Built with the convenience constructor, a procedural planet got
             // CellFrame.staticAt(...) and a FIXED offset, so it stood still relative to its star
             // forever while its own moons orbited it, and the identical system authored in XML moved.
-            double theta = PlanetRealizer.angleOf(cell, addr);
-            double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
-                    * AstronomicalBodyHelper.getOrbitalPeriod(orbit, star.getMass());
-            CellFrame bodyFrame = CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()),
-                    BodyEphemeris.orbit(orbit, theta, 0d, false, periodTicks,
-                            SystemContent.ORBIT_UNIT_BLOCKS));
+            CellFrame bodyFrame = CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()), seat.law);
             // Procedural bodies have no realized dimension yet — a descent (Layer 2) realizes one.
-            bodies.add(new SystemBody(addr, bodyFrame, BodyEphemeris.STATIC, profile.kind(),
+            bodies.add(new SystemBody(seat.cell, bodyFrame, BodyEphemeris.STATIC, profile.kind(),
                     Constants.INVALID_PLANET, starId, orbit));
             outermostOrbit = Math.max(outermostOrbit, orbit);
             if (profile.kind() == SystemBodyKind.GAS_GIANT
                     && (innermostGiantOrbit == 0 || orbit < innermostGiantOrbit)) {
                 innermostGiantOrbit = orbit;
             }
-            addMoons(bodies, seed, cell, addr, bodyFrame, orbit, star, starId, profile);
+            addMoons(bodies, seed, cell, seat.cell, bodyFrame, orbit, star, starId, profile);
         }
 
         // An inner belt is DERIVED from a giant and never rolled: it is material a giant's resonances
@@ -259,9 +265,14 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         // The outer belt is MANDATORY on every system — the Kuiper analogue, and the reason every system
         // is worth arriving in: it is a gravity-well-free mining site that needs no landing, so a ship
         // that drifts into any system at all has something to work.
-        int outerBelt = (int) Math.max(outermostOrbit * OUTER_BELT_FACTOR,
+        //
+        // It is the one body allowed to sit past the drawn bracket, because it is defined as being
+        // beyond the outermost world; what it may NOT pass is the system's own clear space, and there
+        // it is bounded like everything else rather than being quietly dropped.
+        double outerBelt = Math.max(outermostOrbit * OUTER_BELT_FACTOR,
                 PlanetDerivation.innerOrbit(star) * 2d);
-        addBelt(bodies, seed, cell, outerBelt, star, s, starId, taken, count + 2);
+        addBelt(bodies, seed, cell, (int) Math.min(outerBelt, outerBound), star, s, starId, taken,
+                count + 2);
         return bodies;
     }
 
@@ -277,54 +288,79 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     }
 
     /**
+     * How far this system's NAMED bodies may reach from its star, in orbital-distance units: the
+     * declared clear space around a seat, or as much of it as this spacing can actually give.
+     */
+    private static double maxNamedOrbitUnits(long s) {
+        long reachCells = Math.max(1L, UniverseScale.seatMarginCells(s) - NEIGHBOURHOOD_MARGIN_CELLS);
+        return Math.min(UniverseScale.MAX_NAMED_ORBIT_UNITS,
+                UniverseScale.orbitUnitsForCells(reachCells));
+    }
+
+    /**
      * Claim a free cell for a body orbiting at {@code orbit}, or {@code null} when the neighbourhood has
      * no room left.
      *
-     * <p>The first choice puts the body at the cell radius its orbit maps to, at a drawn angle. If that
-     * cell is already spoken for, the body is walked around the ring by the golden angle — which keeps
-     * its radius, and therefore keeps the system's cell layout in the same order as its orbits — and
-     * only then allowed to drift outward. A body that still finds nothing is dropped: a neighbourhood
-     * holds what it holds, and inventing a second occupant for a cell is the one outcome that is worse
-     * than a smaller system.</p>
+     * <p>The cell is READ OFF the body's own orbital law at the naming instant, not computed by a second
+     * arithmetic beside it: the name a body carries and the frame its cell rides are then the same
+     * statement evaluated once, and cannot drift apart when either is retuned. That is exactly how an
+     * authored body is named, which is what makes one orbital distance mean one distance in both
+     * families.</p>
+     *
+     * <p>If the first choice is already spoken for, the body is walked around its ring by the golden
+     * angle — a relocation costs a body its ANGLE and never its distance, so no world's climate is
+     * disturbed by the layout arithmetic and the orbital order survives. A body that still finds nothing
+     * is dropped: a neighbourhood holds what it holds, and inventing a second occupant for a cell is the
+     * one outcome that is worse than a smaller system.</p>
      */
-    private static GalacticCoord placeBody(long seed, GalacticCoord anchor, int index, int orbit,
-                                           StellarBody star, long s, Set<String> taken) {
-        long maxRadiusCells = Math.max(1L, 3L * s / 8L - NEIGHBOURHOOD_MARGIN_CELLS);
-        double maxRadiusBlocks = (double) maxRadiusCells * GalacticCoord.CELL;
-        double minRadiusBlocks = GalacticCoord.CELL;
+    private static Seat seatBody(long seed, GalacticCoord anchor, int index, int orbit,
+                                 StellarBody star, long s, Set<String> taken) {
         double baseAngle = CellHash.norm(CellHash.ofBody(seed, anchor, index, SALT_BODYANG)) * 2d * Math.PI;
-        double baseRadius = minRadiusBlocks + PlanetDerivation.orbitFraction(orbit, star)
-                * Math.max(0d, maxRadiusBlocks - minRadiusBlocks);
-        double heightFraction = CellHash.norm(CellHash.ofBody(seed, anchor, index, SALT_BODYY)) - 0.5d;
+        // Out-of-plane displacement lives in the LAW as an inclination, so a body's height above the
+        // disk is part of where it IS at every tick rather than a one-off nudge applied to its name.
+        double sinPhi = (CellHash.norm(CellHash.ofBody(seed, anchor, index, SALT_BODYY)) - 0.5d)
+                * PROC_DISK_FRACTION;
+        double phiDegrees = Math.toDegrees(Math.asin(sinPhi));
+        double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
+                * AstronomicalBodyHelper.getOrbitalPeriod(orbit, star.getMass());
 
         for (int attempt = 0; attempt < NUDGE_ATTEMPTS; attempt++) {
-            double angle = baseAngle + attempt * NUDGE_ANGLE;
-            // Radius is held for a full turn of the ring before it is allowed to grow, so a relocation
-            // costs the body its angle long before it costs it its place in the orbital order.
-            double radius = Math.min(maxRadiusBlocks, baseRadius * (1d + 0.06d * (attempt / 16)));
-            long lx = (long) (radius * Math.cos(angle));
-            long lz = (long) (radius * Math.sin(angle));
-            long ly = (long) (heightFraction * radius * PROC_DISK_FRACTION);
-            // The body's address is its OWN cell's centre (zone content sits near the cell centre — A#1a),
-            // box-clamped into the anchor's super-cell so member attribution stays exact at ANY minSpacing
-            // (at tiny spacings the floor above can otherwise push a body across the super-cell face).
-            GalacticCoord addr = clampIntoSuperCell(anchor.plusLocal(lx, ly, lz).cellCentre(), anchor, s);
+            BodyEphemeris law = BodyEphemeris.orbit(orbit, baseAngle + attempt * NUDGE_ANGLE,
+                    phiDegrees, false, periodTicks, AstronomicalBodyHelper.BLOCKS_PER_ORBIT_UNIT);
+            BlockDelta at0 = law.offsetAt(SystemContent.NAME_TICK);
+            // The body's address is its OWN cell's centre (zone content sits near the cell centre),
+            // box-clamped into the anchor's super-cell so member attribution stays exact at ANY
+            // spacing — at tiny spacings a whole orbit can otherwise reach across the super-cell face.
+            GalacticCoord addr = clampIntoSuperCell(
+                    anchor.plusLocal(at0.dx(), at0.dy(), at0.dz()).cellCentre(), anchor, s);
             if (taken.add(addr.cellKey())) {
-                return addr;
+                return new Seat(addr, law);
             }
         }
         return null;
+    }
+
+    /** A body's claimed cell together with the orbital law that put it there — one statement, not two. */
+    private static final class Seat {
+        final GalacticCoord cell;
+        final BodyEphemeris law;
+
+        Seat(GalacticCoord cell, BodyEphemeris law) {
+            this.cell = cell;
+            this.law = law;
+        }
     }
 
     /** Append an asteroid belt at {@code orbit}, if the neighbourhood still has a cell for one. */
     private static void addBelt(List<SystemBody> bodies, long seed, GalacticCoord anchor, int orbit,
                                 StellarBody star, long s, int starId, Set<String> taken, int index) {
         int clamped = Math.max(1, orbit);
-        GalacticCoord addr = placeBody(seed, anchor, index, clamped, star, s, taken);
-        if (addr != null) {
-            // A belt is centred on the star it rings, so as a whole it does not travel round it.
-            bodies.add(SystemBody.fixedAt(addr, SystemBodyKind.ASTEROID_BELT, Constants.INVALID_PLANET,
-                    starId, clamped));
+        Seat seat = seatBody(seed, anchor, index, clamped, star, s, taken);
+        if (seat != null) {
+            // A belt is centred on the star it rings, so as a whole it does not travel round it. Its
+            // cell is a marker on the ring; the ring itself does not go anywhere.
+            bodies.add(SystemBody.fixedAt(seat.cell, SystemBodyKind.ASTEROID_BELT,
+                    Constants.INVALID_PLANET, starId, clamped));
         }
     }
 
@@ -432,11 +468,18 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             return Optional.empty();
         }
         long s = config.minSpacing;
-        // Seat the anchor in the middle band of the super-cell ([3s/8, 5s/8)): every face stays >= 3s/8
-        // cells away, so a body neighbourhood of radius <= 3s/8 - margin can never cross into the
-        // neighbouring super-cell (A#1a attribution guarantee).
-        long band = Math.max(1L, s / 4L);
-        long base = 3L * s / 8L;
+        // Seat the anchor anywhere in its cube except a declared margin at the faces. That margin is
+        // the system's own CLEAR SPACE, not a fraction of the cube: it is what guarantees two stars
+        // never stand closer than the separation floor, and what keeps one system's named bodies from
+        // reaching into the next cube (so member-cell attribution by floorDiv stays exact).
+        //
+        // It used to be the middle quarter per axis, which confined the seat to 1.6 % of the cube's
+        // volume — a lattice of tight clumps with guaranteed-empty walls between them, visible in any
+        // rendered star field. The margin now costs a couple of percent per face instead, because it
+        // is sized by what a system actually needs rather than by the distance to the next star.
+        long margin = UniverseScale.seatMarginCells(s);
+        long band = Math.max(1L, s - 2L * margin);
+        long base = margin;
         long ox = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OX), band);
         long oy = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OY), band);
         long oz = base + Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_OZ), band);

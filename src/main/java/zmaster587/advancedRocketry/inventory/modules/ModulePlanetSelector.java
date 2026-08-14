@@ -209,8 +209,10 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                     displaySize = (int) (planetSizeMultiplier * star2.getDisplayRadius());
 
                     int deltaX, deltaY;
-                    deltaX = (int) ((int) (star2.getStarSeparation() * MathHelper.cos(phase) * 0.5*distanceZoomMultiplier));
-                    deltaY = (int) ((int) (star2.getStarSeparation() * MathHelper.sin(phase) * 0.5*distanceZoomMultiplier));
+                    deltaX = (int) (star2.getOrbitalDistance()
+                            * Math.cos(star2.getBaseTheta()) * 0.5 * distanceZoomMultiplier);
+                    deltaY = (int) (star2.getOrbitalDistance()
+                            * Math.sin(star2.getBaseTheta()) * 0.5 * distanceZoomMultiplier);
 
                     planetList.add(button = new ModuleButton(
                             offsetX + deltaX,
@@ -270,8 +272,8 @@ public class ModulePlanetSelector extends ModuleContainerPan implements IButtonI
                 displaySize = (int) (planetSizeMultiplier * star2.getDisplayRadius());
 
                 int deltaX, deltaY;
-                deltaX = (int) (star2.getStarSeparation() * MathHelper.cos(phase) * 0.5);
-                deltaY = (int) (star2.getStarSeparation() * MathHelper.sin(phase) * 0.5);
+                deltaX = (int) (star2.getOrbitalDistance() * Math.cos(star2.getBaseTheta()) * 0.5);
+                deltaY = (int) (star2.getOrbitalDistance() * Math.sin(star2.getBaseTheta()) * 0.5);
 
                 planetList.add(button = new ModuleButton(
                         offsetX + deltaX, offsetY + deltaY,

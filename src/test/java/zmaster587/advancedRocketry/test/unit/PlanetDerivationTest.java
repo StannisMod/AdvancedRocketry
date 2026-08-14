@@ -434,18 +434,24 @@ public class PlanetDerivationTest {
     }
 
     @Test
-    public void theCellPlacementFractionAgreesWithTheOrbitItCameFrom() {
-        // The placement maps an orbit onto a cell radius through this fraction, so a body that is third
-        // from its star is third out from the anchor cell. If the two ever disagreed, the sky would show
-        // a system laid out differently from the one the physics describes.
-        StellarBody s = sol();
-        double previous = -1d;
-        for (int d = 1; d <= 20_000; d += 37) {
-            double f = PlanetDerivation.orbitFraction(d, s);
-            assertTrue("fraction must stay in [0,1]", f >= 0d && f <= 1d);
-            assertTrue("fraction must not decrease as the orbit grows", f >= previous);
-            previous = f;
+    public void aStarsZoneIsItsOwnBusinessAndNotItsNeighbourhoods() {
+        // How much room a system has where it happens to sit is not an input to where its worlds
+        // orbit. A cramped system holds FEWER worlds — the generator drops what does not fit — and
+        // never the same worlds moved closer to their star than their own climate says they are.
+        // The defect this replaces normalised every orbit to the neighbourhood, so one orbital
+        // distance was one distance in a roomy system and another in a cramped one.
+        StellarBody dwarf = star(40, 0.6f);
+        StellarBody giant = star(220, 2.6f);
+        GalacticCoord anchor = cell(4, -2, 7);
+
+        for (int i = 0; i < 6; i++) {
+            int cool = PlanetDerivation.orbitalDistanceOf(SEED, anchor, i, 6, dwarf);
+            int hot = PlanetDerivation.orbitalDistanceOf(SEED, anchor, i, 6, giant);
+            assertTrue("a hot star's zone must be wider than a cool one's at every rank ("
+                    + cool + " vs " + hot + ")", hot > cool);
         }
+        assertTrue("a cool dwarf's system is compact", 
+                PlanetDerivation.outerOrbit(dwarf) < PlanetDerivation.outerOrbit(giant));
     }
 
     // ─── D6: the availability filter runs BEFORE the draw ──────────────────────

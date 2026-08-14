@@ -25,25 +25,29 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  * Derives the addressable {@link SystemBody} content of an AUTHORED system (a catalogued {@link StellarBody})
  * from its planets/moons (universe-model.md &sect;2 amendment A#1a + &sect;4). A system is an anchored
  * NEIGHBOURHOOD of cells: the star sits at the anchor cell's centre; every planet/belt gets its <b>own cell</b>
- * at a sector offset scaled from its orbital position ({@link #ORBIT_UNIT_BLOCKS ~1M blocks per orbit-unit},
- * {@code tunable}), snapped to that cell's centre (zone content sits near the cell centre); moons stay LOCAL
+ * at a sector offset scaled from its orbital position ({@link #ORBIT_UNIT_BLOCKS blocks per orbit-unit}),
+ * snapped to that cell's centre (zone content sits near the cell centre); moons stay LOCAL
  * inside their parent planet's cell. Inter-body space is cells of void.
  *
  * <p>A body's cell is its durable NAME, derived once at {@link #NAME_TICK} and thereafter recorded. Where
  * that cell IS stays a function of time: each body cell carries a {@link CellFrame} whose origin is its
  * primary's position, so the neighbourhood rides the body it belongs to and a moon orbits inside it.</p>
  *
- * <p>The neighbourhood is BOUNDED: every body cell is clamped (with a WARN) into the anchor's
- * {@code minSpacing}-cube super-cell, {@link #BOX_MARGIN_CELLS} cells clear of its faces — the load-time
- * guard that keeps two systems' neighbourhoods from interleaving, whatever an XML author wrote for
- * {@code orbitalDistance} (its cap is {@code Integer.MAX_VALUE}).</p>
+ * <p>The neighbourhood is BOUNDED: every body cell is clamped (with a WARN) into the system's declared
+ * clear space around its anchor — the load-time guard that keeps two systems' neighbourhoods from
+ * interleaving, whatever an XML author wrote for {@code orbitalDistance} (its cap is
+ * {@code Integer.MAX_VALUE}).</p>
  *
  * <p>Pure DATA — a walkable realization is Layer 2. Scale constants are {@code tunable}.</p>
  */
 public final class SystemContent {
 
-    /** Blocks per unit of {@code DimensionProperties} orbital distance (A#1a: ~1M blocks per orbit-unit). */
-    static final long ORBIT_UNIT_BLOCKS = 1_000_000L;
+    /**
+     * Blocks per unit of {@code DimensionProperties} orbital distance — the chart metric's own
+     * conversion, shared with the procedural generator so that one orbital distance means one distance
+     * in both families.
+     */
+    static final long ORBIT_UNIT_BLOCKS = AstronomicalBodyHelper.BLOCKS_PER_ORBIT_UNIT;
     /** Blocks per unit of a moon's (parent-relative) orbital distance — moons cluster near their planet. */
     static final long MOON_UNIT_BLOCKS = 200L;
     /** Cells kept clear of the super-cell faces when clamping a body cell into its system's box. */
@@ -299,15 +303,15 @@ public final class SystemContent {
     private static GalacticCoord clampIntoBox(GalacticCoord bodyCell, GalacticCoord anchor,
                                               int minSpacingCells, int dimId) {
         long s = Math.max(1, minSpacingCells);
-        long margin = (s > 2L * BOX_MARGIN_CELLS) ? BOX_MARGIN_CELLS : 0L;
-        long cx = clampAxis(bodyCell.sectorX(), anchor.sectorX(), s, margin);
-        long cy = clampAxis(bodyCell.sectorY(), anchor.sectorY(), s, margin);
-        long cz = clampAxis(bodyCell.sectorZ(), anchor.sectorZ(), s, margin);
+        long reach = reachCells(s);
+        long cx = clampAxis(bodyCell.sectorX(), anchor.sectorX(), reach);
+        long cy = clampAxis(bodyCell.sectorY(), anchor.sectorY(), reach);
+        long cz = clampAxis(bodyCell.sectorZ(), anchor.sectorZ(), reach);
         if ((cx != bodyCell.sectorX() || cy != bodyCell.sectorY() || cz != bodyCell.sectorZ())
                 && REPORTED.add("clamp:" + dimId + ':' + bodyCell.cellKey())) {
-            LOGGER.warn("orbit of dim {} exceeds the system neighbourhood bound (minSpacing {} cells); "
-                    + "clamping its cell from ({},{},{}) into the anchor's super-cell",
-                    dimId, s, bodyCell.sectorX(), bodyCell.sectorY(), bodyCell.sectorZ());
+            LOGGER.warn("orbit of dim {} reaches past its system's clear space ({} cells at a spacing "
+                    + "of {}); clamping its cell from ({},{},{}) back inside it",
+                    dimId, reach, s, bodyCell.sectorX(), bodyCell.sectorY(), bodyCell.sectorZ());
         }
         return GalacticCoord.ofSectorLocal(cx, cy, cz, 0L, 0L, 0L);
     }
@@ -322,16 +326,30 @@ public final class SystemContent {
         if (cell == null || anchor == null) {
             return false;
         }
-        long s = Math.max(1, minSpacingCells);
-        long margin = (s > 2L * BOX_MARGIN_CELLS) ? BOX_MARGIN_CELLS : 0L;
-        long reach = Math.max(0L, s / 2L - margin);
+        long reach = reachCells(Math.max(1, minSpacingCells));
         return Math.abs(cell.sectorX() - anchor.sectorX()) <= reach
                 && Math.abs(cell.sectorY() - anchor.sectorY()) <= reach
                 && Math.abs(cell.sectorZ() - anchor.sectorZ()) <= reach;
     }
 
     /**
-     * The per-axis bound: {@code half - margin} cells either side OF THE ANCHOR.
+     * How far from its anchor a body of this system may be NAMED, in cells: the system's declared clear
+     * space, or as much of it as this spacing can give.
+     *
+     * <p>It used to be half the spacing outright, which was the same number while a system's extent was
+     * defined as a fraction of the distance to the next star. Once stars stand a real distance apart,
+     * half of that is several thousand times more room than a system has any business occupying, and an
+     * authored orbit could be named right up against the neighbouring star. The bound that matters is
+     * the system's own clear space, and it is the same one the procedural generator seats against.</p>
+     */
+    private static long reachCells(long s) {
+        long margin = (s > 2L * BOX_MARGIN_CELLS) ? BOX_MARGIN_CELLS : 0L;
+        return Math.min(Math.max(0L, s / 2L - margin),
+                Math.max(0L, UniverseScale.SEAT_MARGIN_CELLS - margin));
+    }
+
+    /**
+     * The per-axis bound: {@code reach} cells either side OF THE ANCHOR.
      *
      * <p>This used to snap to the GRID super-cell containing the anchor —
      * {@code [floorDiv(anchor,s)*s + margin, … + s-1-margin]} — which is a different box, and for the
@@ -345,12 +363,7 @@ public final class SystemContent {
      * Centring the box on the anchor is also what this class's javadoc and
      * {@code ClusteredGalaxyGenerator} ("minSpacing/2 - margin") always claimed it did.</p>
      */
-    private static long clampAxis(long sector, long anchorSector, long s, long margin) {
-        long half = s / 2L;
-        long reach = half - margin;
-        if (reach < 0L) {
-            reach = 0L;
-        }
+    private static long clampAxis(long sector, long anchorSector, long reach) {
         long lo = anchorSector - reach;
         long hi = anchorSector + reach;
         if (sector < lo) {

@@ -597,24 +597,68 @@ public class DimensionManager implements IGalaxy {
     }
 
     /**
-     * @return a list of star ids
+     * @return the ids of the SYSTEMS — one per star that is nobody's companion
+     *
+     * <p>Companions are addressable through {@link #getStar(int)} but are not systems: they are drawn,
+     * saved, synced and placed as part of the primary they orbit. A consumer that walked every
+     * registered star instead would draw a binary twice on the map, write it twice to XML and give
+     * its companion a galactic address of its own.</p>
      */
     public Set<Integer> getStarIds() {
-        return starList.keySet();
+        Set<Integer> ids = new HashSet<>();
+        for (Entry<Integer, StellarBody> e : starList.entrySet()) {
+            if (e.getValue() != null && e.getValue().getParentStar() == null) {
+                ids.add(e.getKey());
+            }
+        }
+        return ids;
     }
 
+    /** The SYSTEMS — see {@link #getStarIds()}. */
     public Collection<StellarBody> getStars() {
-
-        return starList.values();
+        List<StellarBody> primaries = new ArrayList<>();
+        for (StellarBody star : starList.values()) {
+            if (star != null && star.getParentStar() == null) {
+                primaries.add(star);
+            }
+        }
+        return primaries;
     }
 
     /**
-     * Adds a star to the handler
+     * Adds a star to the handler, together with every companion under it.
+     *
+     * <p>A companion is a star like any other and gets an id of its own here, because the id space is
+     * this registry's to hand out and a companion that is not in {@code starList} cannot be resolved
+     * by {@link #getStar(int)} — which is how a planet finds the star it orbits. Without that, a
+     * companion could be described but never orbited: the hierarchy existed in storage and nowhere
+     * else.</p>
+     *
+     * <p>An id already in use by a DIFFERENT star is replaced rather than honoured; a companion that
+     * already holds its own id (a reload, a re-registration) keeps it, so ids survive a save.</p>
      *
      * @param star star to add
      */
     public void addStar(StellarBody star) {
+        if (star == null) {
+            return;
+        }
         starList.put(star.getId(), star);
+        addCompanionsOf(star);
+    }
+
+    private void addCompanionsOf(StellarBody primary) {
+        for (StellarBody companion : primary.getSubStars()) {
+            if (companion == null) {
+                continue;
+            }
+            StellarBody holder = starList.get(companion.getId());
+            if (holder != null && holder != companion) {
+                companion.setId(getNextFreeStarId());
+            }
+            starList.put(companion.getId(), companion);
+            addCompanionsOf(companion);
+        }
     }
 
     /**

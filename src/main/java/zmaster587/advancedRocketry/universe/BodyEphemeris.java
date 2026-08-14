@@ -58,8 +58,15 @@ public final class BodyEphemeris {
     }
 
     /**
-     * An orbit about whatever this body is bound to: {@code (d·cos θ, d·sin φ, d·sin θ)} in units of
-     * {@code unitBlocks}, with {@code θ = (2π·(t mod P)/P + baseTheta) · (retrograde ? −1 : +1)}.
+     * An orbit about whatever this body is bound to: {@code (d·cos φ·cos θ, d·sin φ, d·cos φ·sin θ)} in
+     * units of {@code unitBlocks}, with {@code θ = (2π·(t mod P)/P + baseTheta) · (retrograde ? −1 : +1)}.
+     *
+     * <p><b>The inclination tilts the orbit; it does not enlarge it.</b> The law used to read
+     * {@code (d·cos θ, d·sin φ, d·sin θ)}, whose length is {@code d·√(1 + sin²φ)} — so an inclined body
+     * stood further from its primary than its own orbital distance said, by up to 41 % at the steepest
+     * authored angle. Every number derived from that distance (insolation, temperature, period) said
+     * one thing while the flight said another, which is exactly the split this frame exists to close.
+     * With the cosine factor the offset's length is {@code d} at every inclination.</p>
      *
      * <p>The retrograde sign multiplies the SUM, not the time term alone — that is the shipped law and
      * a body's NAME is derived through it, so changing the grouping would move every retrograde body's
@@ -82,6 +89,18 @@ public final class BodyEphemeris {
         return distUnits;
     }
 
+    /**
+     * The base angle this law was built with, in RADIANS — where the body stands at tick zero, before
+     * any time has passed.
+     *
+     * <p>Read it rather than recovering an angle from where the body's cell ended up: a cell is coarse,
+     * so the recovered angle is the drawn one rounded to whatever the cell grid could express, and two
+     * consumers rounding it separately put the same body in two places.</p>
+     */
+    public double baseTheta() {
+        return baseTheta;
+    }
+
     public boolean isStatic() {
         return unitBlocks == 0L || !(periodTicks > 0d) || Double.isInfinite(periodTicks)
                 || distUnits == 0d;
@@ -94,10 +113,11 @@ public final class BodyEphemeris {
         }
         double theta = thetaAt(tick);
         double phi = Math.toRadians(phiDegrees);
+        double inPlane = distUnits * Math.cos(phi);
         return BlockDelta.of(
-                Math.round(distUnits * Math.cos(theta) * unitBlocks),
+                Math.round(inPlane * Math.cos(theta) * unitBlocks),
                 Math.round(distUnits * Math.sin(phi) * unitBlocks),
-                Math.round(distUnits * Math.sin(theta) * unitBlocks));
+                Math.round(inPlane * Math.sin(theta) * unitBlocks));
     }
 
     /** The orbital angle (radians) at {@code tick}. */

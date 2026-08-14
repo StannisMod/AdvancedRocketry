@@ -185,8 +185,13 @@ public final class PlanetDerivation {
      *
      * <p>Each body owns a SLOT of the logarithmic range and is jittered inside it by less than half a
      * slot, so the draw is irregular but the ordering is not: body {@code i} is always inside body
-     * {@code i+1}. That is what lets the placement map an orbit onto a cell radius monotonically, and it
-     * is why two bodies of one system cannot swap places when a tuning constant moves.</p>
+     * {@code i+1}. That is why two bodies of one system cannot swap places when a tuning constant
+     * moves.</p>
+     *
+     * <p><b>The zone is the STAR'S, and nothing else's.</b> How much room the system has where it
+     * sits is not an input here: a body that will not fit is the caller's to drop, because a distance
+     * bent to fit a neighbourhood is a world whose climate, insolation and year all describe a place
+     * it is not standing.</p>
      */
     public static int orbitalDistanceOf(long seed, GalacticCoord anchor, int index, int count,
                                         StellarBody star) {
@@ -210,22 +215,10 @@ public final class PlanetDerivation {
         return Math.max(innerOrbit(star) * 1.5d, referenceDistance(star) * OUTER_ORBIT_FACTOR);
     }
 
-    /**
-     * Where {@code orbitalDistance} sits in this star's zone, as a fraction in {@code [0,1]} on a
-     * LOGARITHMIC scale — the inverse of the orbital draw.
-     *
-     * <p>This is what lets the galactic placement map an orbit onto a cell radius: the two layouts then
-     * agree by construction, so a body that is third from its star is also third out from the anchor
-     * cell, and neither can be re-tuned without the other following.</p>
-     */
-    public static double orbitFraction(int orbitalDistance, StellarBody star) {
-        double lo = innerOrbit(star);
-        double hi = outerOrbit(star);
-        if (!(hi > lo)) {
-            return 0d;
-        }
-        return clamp(Math.log(Math.max(lo, orbitalDistance) / lo) / Math.log(hi / lo), 0d, 1d);
-    }
+    // orbitFraction — where an orbit sat in its star's zone, as a fraction — lived here to map an
+    // orbit onto a cell radius, which is a job the placement no longer has: a body's cell is read off
+    // its own orbital law, so there is nothing left to normalise against. Removed rather than left
+    // callerless, because the next caller would be re-introducing the second scale it existed to serve.
 
     /** The bare (no-atmosphere) equilibrium temperature at a distance — the zoning reading. */
     public static int bareTemperature(StellarBody star, int orbitalDistance) {

@@ -649,7 +649,9 @@ public class RenderSpaceTravelSky extends RenderPlanetarySky {
                     phase += phaseInc;
 
                     //Get substar separation for placement from the orbital distance of the substars
-                    SpacePosition subStarSpacePosition = mainStarPos.getFromSpherical(40 * subStar.getStarSeparation(), theta);
+                    SpacePosition subStarSpacePosition =
+                            mainStarPos.getFromSpherical(40d * subStar.getOrbitalDistance(),
+                                    subStar.getBaseTheta());
 
                     renderStar(subStar, subStarSpacePosition, playerPosition);
                 }

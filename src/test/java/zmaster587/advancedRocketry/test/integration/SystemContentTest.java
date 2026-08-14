@@ -14,6 +14,7 @@ import zmaster587.advancedRocketry.space.BlockDelta;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.test.MinecraftBootstrap;
 import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
+import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
@@ -120,6 +121,53 @@ public class SystemContentTest {
                         b.name().sameCell(first.name()));
             }
         }
+    }
+
+    @Test
+    public void oneOrbitalDistanceMeansOneDistanceInBothFamilies() {
+        // The acceptance the scale rework exists for. An authored planet and a procedural one at the
+        // same orbital distance must stand the same distance from their stars — the field is
+        // documented in one unit, and every derived number (insolation, temperature, period) is
+        // computed from it and never from where the body was placed. They used to be turned into
+        // positions by two different laws: authored linear and absolute, procedural logarithmic and
+        // normalised to whatever neighbourhood the system had been given. Order survived; proportion
+        // did not, and the science and the flight time disagreed.
+        StellarBody star = new StellarBody();
+        star.setId(4244);
+        star.setName("ScaleStar");
+        planet(720, 300, 0.0).setStar(star);
+
+        GalacticCoord anchor = GalacticCoord.ofSectorLocal(11, -4, 6, 0, 0, 0);
+        SystemBody authored = null;
+        for (SystemBody b : SystemContent.bodiesOf(star, anchor)) {
+            if (b.dimId() == 720) {
+                authored = b;
+            }
+        }
+        assertNotNull(authored);
+        double authoredPerUnit = authored.absoluteAt(0L).distanceTo(
+                zmaster587.advancedRocketry.space.AbsolutePos.ofCellName(anchor))
+                / authored.orbitalDistance();
+
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
+                new GalaxyGenConfig(1.0d, GalaxyGenConfig.DEFAULT_MIN_SPACING, 8, 0.0d, null));
+        long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
+        Optional<GalacticCoord> seat = gen.anchorAt(0xBEEFL,
+                GalacticCoord.ofSectorLocal(spacing, spacing, spacing, 0L, 0L, 0L));
+        assertTrue("the fixture needs an occupied super-cell", seat.isPresent());
+        int compared = 0;
+        for (SystemBody b : gen.bodiesFor(0xBEEFL, seat.get())) {
+            if (b.kind() != SystemBodyKind.PLANET && b.kind() != SystemBodyKind.GAS_GIANT) {
+                continue;
+            }
+            double proceduralPerUnit = b.absoluteAt(0L).distanceTo(
+                    zmaster587.advancedRocketry.space.AbsolutePos.ofCellName(seat.get()))
+                    / b.orbitalDistance();
+            assertEquals("one orbit unit must be one distance in both families",
+                    authoredPerUnit, proceduralPerUnit, authoredPerUnit * 1e-6d);
+            compared++;
+        }
+        assertTrue("the procedural system must have bodies to compare against", compared > 0);
     }
 
     @Test

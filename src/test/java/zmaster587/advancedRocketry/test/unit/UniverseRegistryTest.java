@@ -41,6 +41,13 @@ import static org.junit.Assert.assertTrue;
  */
 public class UniverseRegistryTest {
 
+    /**
+     * A sector far enough away to be a DIFFERENT system's territory. An anchor owns every cell of its
+     * super-cell, so "elsewhere" has to be stated in super-cells; a literal few thousand sectors is
+     * the same neighbourhood, and a fixture using one proves nothing about attribution.
+     */
+    private static final long ANOTHER_SUPER_CELL = 2L * GalaxyGenConfig.DEFAULT_MIN_SPACING;
+
     private static StellarBody star(int id) {
         StellarBody s = new StellarBody();
         s.setId(id);
@@ -263,7 +270,7 @@ public class UniverseRegistryTest {
 
         // A cell in a DIFFERENT super-cell falls through to the generator.
         Optional<StarSystem> farAway = reg.systemForCoord(
-                GalacticCoord.ofSectorLocal(4_000, 4_000, 4_000, 0, 0, 0));
+                GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, ANOTHER_SUPER_CELL, 0, 0, 0));
         assertTrue(farAway.isPresent());
         assertEquals(777, farAway.get().starId());
     }
@@ -557,7 +564,7 @@ public class UniverseRegistryTest {
 
         UniverseRegistry reg = new UniverseRegistry();
         reg.place(GalacticCoord.ORIGIN, 6001);
-        reg.place(GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0), 6002);
+        reg.place(GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0), 6002);
 
         DimensionProperties original = bodyOfStar(sol, 6100, 150, 0.3);
         Optional<GalacticCoord> firstName = reg.coordForPlanet(original);
@@ -575,7 +582,7 @@ public class UniverseRegistryTest {
         assertTrue("the new body's name must lie in ITS system's neighbourhood",
                 reg.anchorForCell(secondName.get()).isPresent());
         assertEquals("...which is its own star's anchor",
-                GalacticCoord.ofSectorLocal(4000, 0, 0, 0, 0, 0),
+                GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0),
                 reg.anchorForCell(secondName.get()).get());
     }
 
@@ -615,7 +622,7 @@ public class UniverseRegistryTest {
 
         // The star is re-placed a long way off — an XML edit, a re-authored layout. The recorded name
         // is now nowhere near the system it belongs to.
-        GalacticCoord newAnchor = GalacticCoord.ofSectorLocal(9000, 0, 0, 0, 0, 0);
+        GalacticCoord newAnchor = GalacticCoord.ofSectorLocal(3L * ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0);
         reg.place(newAnchor, 6004);
 
         Optional<GalacticCoord> served = reg.coordForPlanet(body);
@@ -734,7 +741,7 @@ public class UniverseRegistryTest {
     public void interstellarVoidIsFedNothing() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.place(GalacticCoord.ORIGIN, 6008);
-        GalacticCoord farAway = GalacticCoord.ofSectorLocal(500_000, 0, 0, 0, 0, 0);
+        GalacticCoord farAway = GalacticCoord.ofSectorLocal(ANOTHER_SUPER_CELL, 0, 0, 0, 0, 0);
         assertFalse("the fixture's cell must belong to no system",
                 reg.anchorForCell(farAway).isPresent());
         assertTrue("the space between stars is black", reg.skyBodiesAt(farAway).isEmpty());

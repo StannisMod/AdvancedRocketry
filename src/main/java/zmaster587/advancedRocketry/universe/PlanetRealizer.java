@@ -144,7 +144,7 @@ public final class PlanetRealizer {
 
         BodyProfile profile = PlanetDerivation.derive(registry.worldSeed(), anchor, target.name(), variant,
                 star, target.kind() == SystemBodyKind.MOON, target.orbitalDistance());
-        DimensionProperties props = materialize(dimId, profile, star, anchor, target, parentBody);
+        DimensionProperties props = materialize(dimId, profile, star, target, parentBody);
 
         if (!DimensionManager.getInstance().registerDim(props, true)) {
             LOGGER.error("[UNIVERSE] dimension {} was already registered while realizing {}", dimId,
@@ -169,8 +169,7 @@ public final class PlanetRealizer {
      * {@code Random}.
      */
     private static DimensionProperties materialize(int dimId, BodyProfile profile, StellarBody star,
-                                                   GalacticCoord anchor, SystemBody body,
-                                                   SystemBody parentBody) {
+                                                   SystemBody body, SystemBody parentBody) {
         DimensionProperties props = new DimensionProperties(dimId);
         props.setName(star.getName() + " " + dimId);
         props.setStar(star);
@@ -194,9 +193,13 @@ public final class PlanetRealizer {
                         body.name().cellKey(), parentBody.dimId());
             }
         }
-        // The orbital angle is READ OFF the body's cell rather than drawn again, so the planet the sky
-        // shows and the planet the orbital elements describe are in the same place.
-        props.baseOrbitTheta = angleOf(anchor, body.name());
+        // The orbital angle is taken from the body's own law, so the planet the sky shows and the
+        // planet the orbital elements describe are in the same place. A planet's angle lives in the
+        // FRAME its cell rides; a moon's lives in its own offset law, because a moon shares its
+        // parent's frame and going through that would hand it its parent's angle instead of its own.
+        BodyEphemeris ownLaw = body.kind() == SystemBodyKind.MOON
+                ? body.offsetLaw() : body.frame().law();
+        props.baseOrbitTheta = ownLaw.baseTheta();
         props.orbitTheta = props.baseOrbitTheta;
 
         props.setAtmosphereDensityDirect(profile.pressure());
@@ -272,20 +275,7 @@ public final class PlanetRealizer {
         return profile.rotationalPeriodTicks();
     }
 
-    /** The angle of a body's cell about its system's anchor, in radians. */
-    /**
-     * A body's orbital angle, read off its cell rather than drawn again — so the sky, the orbital
-     * elements and the frame a body rides all put it in the same place. Shared with
-     * {@link ClusteredGalaxyGenerator}, which must build the frame from the same angle this writes
-     * into {@code baseOrbitTheta}; a second copy of this arithmetic would let the two drift.
-     */
-    static double angleOf(GalacticCoord anchor, GalacticCoord bodyCell) {
-        long dx = bodyCell.sectorX() - anchor.sectorX();
-        long dz = bodyCell.sectorZ() - anchor.sectorZ();
-        if (dx == 0L && dz == 0L) {
-            return 0d;
-        }
-        double theta = Math.atan2((double) dz, (double) dx);
-        return theta < 0d ? theta + 2d * Math.PI : theta;
-    }
+    // angleOf — recovering a body's orbital angle from where its cell ended up — is gone: the angle is
+    // now carried by the body's own law, which is what the cell was derived FROM. Recovering it was
+    // only ever an approximation of the drawn value, accurate to whatever the cell grid could express.
 }

@@ -41,35 +41,75 @@ public class PlanetRealizationTest {
         UniverseRegistry.setStarLookup(null);
     }
 
-    /**
-     * A dense, void-free galaxy so a small sweep is guaranteed to find systems. The spacing is
-     * deliberately tiny: a system's anchor is seated in the MIDDLE BAND of its super-cell, so at the
-     * production spacing of 512 the nearest anchor is hundreds of cells from the origin and a
-     * unit-test-sized sweep finds an empty universe.
-     */
+    /** The shipped spacing: a system sampled here is a system the game ships. */
+    private static final int SPACING = GalaxyGenConfig.DEFAULT_MIN_SPACING;
+
+    /** A dense, void-free galaxy, so the first super-cell probed holds a system. */
     private static UniverseRegistry registryWithProceduralGalaxy() {
         UniverseRegistry reg = new UniverseRegistry();
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(0.9d, 4, 8, 0.0d, null)));
+                new GalaxyGenConfig(1.0d, SPACING, 8, 0.0d, null)));
         reg.bindWorldSeed(SEED);
         return reg;
     }
 
-    /** The first cell in a small sweep holding a body a ship could land on but that has no world. */
-    private static GalacticCoord findLandableCell(UniverseRegistry reg) {
-        for (long x = -8; x <= 8; x++) {
-            for (long y = -8; y <= 8; y++) {
-                for (long z = -8; z <= 8; z++) {
-                    GalacticCoord cell = GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L);
-                    for (SystemBody b : reg.bodiesAt(cell)) {
-                        if (b.kind().canDescend() && b.dimId() == Constants.INVALID_PLANET) {
-                            return cell;
-                        }
-                    }
-                }
+    /**
+     * The seat of a system near the origin.
+     *
+     * <p>Probed one SUPER-CELL at a time, never cell by cell: a star's seat is one cell in a cube of
+     * tens of millions, so a sweep of adjacent cells finds nothing however full the galaxy is. The
+     * partition is the thing to walk, and it is what the generator itself walks.</p>
+     */
+    private static GalacticCoord systemAnchor(UniverseRegistry reg) {
+        for (long i = 0; i <= 8; i++) {
+            Optional<GalacticCoord> anchor = reg.anchorForCell(
+                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L));
+            if (anchor.isPresent()) {
+                return anchor.get();
             }
         }
         return null;
+    }
+
+    /** The cell of the first body in that system a ship could land on but that has no world yet. */
+    private static GalacticCoord findLandableCell(UniverseRegistry reg) {
+        GalacticCoord anchor = systemAnchor(reg);
+        if (anchor == null) {
+            return null;
+        }
+        for (SystemBody b : reg.systemBodiesAt(anchor)) {
+            if (b.kind().canDescend() && b.dimId() == Constants.INVALID_PLANET) {
+                return b.name();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The first {@code (parent, moon)} pair found in a sweep of nearby systems, or {@code null}s.
+     *
+     * <p>Several systems, because moons are a draw: most bodies have none and a giant has several, so
+     * one system is not guaranteed to hold a pair and a fixture that assumed it would be flaky for a
+     * reason that has nothing to do with what it tests.</p>
+     */
+    private static SystemBody[] findPlanetWithMoon(UniverseRegistry reg) {
+        for (long i = 0; i <= 8; i++) {
+            Optional<GalacticCoord> seat = reg.anchorForCell(
+                    GalacticCoord.ofSectorLocal(i * SPACING, 0L, 0L, 0L, 0L, 0L));
+            if (!seat.isPresent()) {
+                continue;
+            }
+            SystemBody parent = null;
+            for (SystemBody b : reg.systemBodiesAt(seat.get())) {
+                if (b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
+                    parent = b;
+                } else if (b.kind() == SystemBodyKind.MOON && parent != null
+                        && b.name().sameCell(parent.name())) {
+                    return new SystemBody[] {parent, b};
+                }
+            }
+        }
+        return new SystemBody[] {null, null};
     }
 
     @Test
@@ -99,25 +139,9 @@ public class PlanetRealizationTest {
     @Test
     public void aMoonCarriesItsOwnDistanceFromItsParentSeparatelyFromItsParentsFromTheStar() {
         UniverseRegistry reg = registryWithProceduralGalaxy();
-        SystemBody moon = null;
-        SystemBody itsParent = null;
-        outer:
-        for (long x = -8; x <= 8 && moon == null; x++) {
-            for (long y = -8; y <= 8; y++) {
-                for (long z = -8; z <= 8; z++) {
-                    SystemBody parent = null;
-                    for (SystemBody b : reg.bodiesAt(GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L))) {
-                        if (parent == null && b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
-                            parent = b;
-                        } else if (b.kind() == SystemBodyKind.MOON && parent != null) {
-                            moon = b;
-                            itsParent = parent;
-                            break outer;
-                        }
-                    }
-                }
-            }
-        }
+        SystemBody[] pair = findPlanetWithMoon(reg);
+        SystemBody itsParent = pair[0];
+        SystemBody moon = pair[1];
         assertNotNull("the procedural galaxy must produce a moon to test with", moon);
         assertNotNull(itsParent);
 
@@ -146,25 +170,9 @@ public class PlanetRealizationTest {
     @Test
     public void aProceduralPlanetOrbitsItsStarAndItsMoonsTravelWithIt() {
         UniverseRegistry reg = registryWithProceduralGalaxy();
-        SystemBody planet = null;
-        SystemBody moon = null;
-        outer:
-        for (long x = -8; x <= 8; x++) {
-            for (long y = -8; y <= 8; y++) {
-                for (long z = -8; z <= 8; z++) {
-                    SystemBody candidate = null;
-                    for (SystemBody b : reg.bodiesAt(GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L))) {
-                        if (candidate == null && b.kind() != SystemBodyKind.MOON && b.kind().canDescend()) {
-                            candidate = b;
-                        } else if (b.kind() == SystemBodyKind.MOON && candidate != null) {
-                            planet = candidate;
-                            moon = b;
-                            break outer;
-                        }
-                    }
-                }
-            }
-        }
+        SystemBody[] pair = findPlanetWithMoon(reg);
+        SystemBody planet = pair[0];
+        SystemBody moon = pair[1];
         assertNotNull("the procedural galaxy must produce a planet with a moon", planet);
         assertNotNull(moon);
 
@@ -266,7 +274,7 @@ public class PlanetRealizationTest {
 
         // A pack edit: a different spacing, a different density, a whole different galaxy.
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(0.2d, 32, 4, 0.5d, null)));
+                new GalaxyGenConfig(0.2d, SPACING / 2, 4, 0.5d, null)));
 
         Optional<StellarBody> after = reg.starAt(cell);
         assertTrue(after.isPresent());
