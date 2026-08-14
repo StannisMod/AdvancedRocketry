@@ -32,9 +32,11 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  *       at a hash-chosen cell within the super-cell.</li>
  * </ol>
  *
- * <p>A procedural system is a bare star (type/size sampled by weight from the seed) with a <b>synthetic
- * negative id</b> — it is never in the catalogue and never a dimension, so the id cannot collide with a real
- * star-id ({@code 0..N}) or a dim id. Planet CONTENT is a separate concern; this generator places stars only.</p>
+ * <p>A procedural system is one or more stars (type and size sampled by weight from the seed) with
+ * <b>synthetic negative ids</b> — never in the catalogue and never a dimension, so an id cannot collide
+ * with a real star id ({@code 0..N}) or a dim id. About half of systems hold a companion, and a
+ * companion is a star in its own right: it has its own id, its own orbit about the primary, and its own
+ * cell, so a world can be bound to it and every world here is lit by all of them.</p>
  */
 public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
@@ -48,8 +50,49 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final long SALT_TYPE = 0x6L;
     private static final long SALT_SIZE = 0x7L;
     private static final long SALT_ID = 0x8L;
+    private static final long SALT_MULTIPLICITY = 0x9L;
+    private static final long SALT_COMPANION_COUNT = 0xAL;
+    private static final long SALT_COMPANION_TYPE = 0xBL;
+    private static final long SALT_COMPANION_SIZE = 0xCL;
+    private static final long SALT_COMPANION_SEP = 0xDL;
+    private static final long SALT_COMPANION_ANG = 0xEL;
 
     private static final long SYNTHETIC_ID_RANGE = 2_000_000_000L; // ids in [-2_000_000_000, -1]
+
+    // ─── Multiplicity ──────────────────────────────────────────────────────────
+    // Roughly half of real stars are not alone, and a system that can only ever be one star is a
+    // model that cannot express the commonest thing in the sky. Every number here is a balance knob;
+    // what is NOT a knob is that multiplicity belongs inside ONE system — a near-pair of lattice
+    // seats would be two unrelated systems with two names, two frames and no gravitational relation.
+
+    /** Fraction of systems that hold more than one star. */
+    private static final double MULTIPLE_FRACTION = 0.45d;
+    /** How many companions a multiple system holds, by falling probability: 1, then 2, then 3. */
+    private static final double[] COMPANION_COUNT_WEIGHTS = {0.75d, 0.20d, 0.05d};
+    /**
+     * Id slots reserved per system, so a primary and its companions can never collide with each
+     * other however the hash falls. A system's stars take consecutive ids inside its own slot.
+     */
+    private static final int ID_SLOTS_PER_SYSTEM = 1 + COMPANION_COUNT_WEIGHTS.length;
+
+    /**
+     * Separation band for a companion, in orbital-distance units — 0.01 AU to 2 000 AU, drawn
+     * log-uniformly, which is roughly how real separations are distributed over that range.
+     *
+     * <p>The floor is one cell's worth of orbit, so a companion always gets a cell of its own to be
+     * addressed by. The ceiling is a quarter of the guaranteed clear space around a system, which is
+     * what lets that clear space state "no two unrelated stars come this close" without a binary ever
+     * being mistaken for one.</p>
+     */
+    private static final int COMPANION_MIN_SEPARATION = 1;
+    private static final int COMPANION_MAX_SEPARATION = 200_000;
+    /**
+     * A retinue cannot survive inside a companion's orbit, nor a companion inside the retinue's: a
+     * body between roughly a third of the separation and three times it is on an unstable orbit. So a
+     * separation drawn into the planets' band is pushed to whichever side of it is nearer, and the
+     * system comes out either circumbinary or widely separated — never impossible.
+     */
+    private static final double STABILITY_FACTOR = 3d;
 
     // Procedural in-system content (bodiesFor). All tunable. Per amendment A#1a each body gets its OWN cell
     // at a sector offset from the anchor (snapped to that cell's centre); the neighbourhood radius is bounded
@@ -213,6 +256,27 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         Set<String> taken = new HashSet<>();
         taken.add(cell.cellKey());
 
+        // Every star of the system is a body in it. A companion that existed only on the StellarBody
+        // would light the worlds here and appear in no sky, on no chart and at no address — which is
+        // the shape of "expressible in storage, meaningless everywhere else" this whole seam removes.
+        // It is seated from ITS OWN elements, never from a fresh draw: the star object and the body
+        // that stands for it have to be the same statement, or one system holds a companion in two
+        // places at once.
+        for (StellarBody companion : star.getSubStars()) {
+            double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
+                    * AstronomicalBodyHelper.getOrbitalPeriod(companion.getOrbitalDistance(),
+                            star.getMass());
+            Seat seat = claimSeat(cell, s, taken, companion.getOrbitalDistance(),
+                    companion.getBaseTheta(), 0d, periodTicks);
+            if (seat == null) {
+                continue;
+            }
+            bodies.add(new SystemBody(seat.cell,
+                    CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()), seat.law),
+                    BodyEphemeris.STATIC, SystemBodyKind.STAR, Constants.INVALID_PLANET,
+                    companion.getId(), companion.getOrbitalDistance()));
+        }
+
         int count = retinueSize(seed, cell);
         int outermostOrbit = 0;
         int innermostGiantOrbit = 0;
@@ -229,6 +293,9 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             int orbit = PlanetDerivation.orbitalDistanceOf(seed, cell, i, count, star);
             if (orbit > outerBound) {
                 continue; // outside this system's clear space — a bound of the layout, not a failure
+            }
+            if (!orbitIsStableAmong(star.getSubStars(), orbit)) {
+                continue; // too near one of this system's other stars for any orbit to survive
             }
             Seat seat = seatBody(seed, cell, i, orbit, star, s, taken);
             if (seat == null) {
@@ -323,7 +390,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         double phiDegrees = Math.toDegrees(Math.asin(sinPhi));
         double periodTicks = AstronomicalBodyHelper.TICKS_PER_DAY
                 * AstronomicalBodyHelper.getOrbitalPeriod(orbit, star.getMass());
+        return claimSeat(anchor, s, taken, orbit, baseAngle, phiDegrees, periodTicks);
+    }
 
+    /** Walk the ring from {@code baseAngle} until a free cell turns up, or give up. */
+    private static Seat claimSeat(GalacticCoord anchor, long s, Set<String> taken, int orbit,
+                                  double baseAngle, double phiDegrees, double periodTicks) {
         for (int attempt = 0; attempt < NUDGE_ATTEMPTS; attempt++) {
             BodyEphemeris law = BodyEphemeris.orbit(orbit, baseAngle + attempt * NUDGE_ANGLE,
                     phiDegrees, false, periodTicks, AstronomicalBodyHelper.BLOCKS_PER_ORBIT_UNIT);
@@ -495,9 +567,100 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         StellarBody star = new StellarBody();
         star.setTemperature(type.temperature);
         star.setSize((float) (type.minSize + sizeFrac * (type.maxSize - type.minSize)));
-        star.setId(syntheticId(seed, supX, supY, supZ));
+        int primaryId = syntheticId(seed, supX, supY, supZ);
+        star.setId(primaryId);
         star.setName("PGS-" + supX + "." + supY + "." + supZ); // procedurally-generated system
+        addCompanions(seed, supX, supY, supZ, star, primaryId);
         return new StarSystem(star);
+    }
+
+    /**
+     * Give this system the stars it has beyond the first.
+     *
+     * <p>The generator had never produced one: its own javadoc said "a procedural system is a bare
+     * star", so every procedural system in the galaxy was single while about half of real stars are
+     * not. The type layer could always express a hierarchy; what was missing was anything that drew
+     * one, and an id space in which a companion could be addressed at all.</p>
+     *
+     * <p>Ids come from the system's own reserved slot, so a primary and its companions cannot collide
+     * with each other whatever the hash does. A companion is never larger than its primary — the
+     * primary is by definition the star its system is named for.</p>
+     */
+    private void addCompanions(long seed, long supX, long supY, long supZ, StellarBody primary,
+                               int primaryId) {
+        if (CellHash.norm(CellHash.of(seed, supX, supY, supZ, SALT_MULTIPLICITY)) >= MULTIPLE_FRACTION) {
+            return;
+        }
+        int count = drawCompanionCount(CellHash.norm(
+                CellHash.of(seed, supX, supY, supZ, SALT_COMPANION_COUNT)));
+        GalacticCoord key = cellOf(supX, supY, supZ);
+        for (int i = 1; i <= count; i++) {
+            GalaxyGenConfig.StarType type = pickType(
+                    CellHash.ofBody(seed, key, i, SALT_COMPANION_TYPE));
+            double sizeFrac = CellHash.norm(CellHash.ofBody(seed, key, i, SALT_COMPANION_SIZE));
+            float size = (float) (type.minSize + sizeFrac * (type.maxSize - type.minSize));
+
+            StellarBody companion = new StellarBody();
+            companion.setTemperature(type.temperature);
+            companion.setSize(Math.min(size, primary.getSize()));
+            companion.setId(primaryId - i); // the system's own reserved slot; see ID_SLOTS_PER_SYSTEM
+            companion.setName(primary.getName() + "-" + (char) ('B' + i - 1));
+            companion.setOrbitalDistance(drawSeparation(
+                    CellHash.norm(CellHash.ofBody(seed, key, i, SALT_COMPANION_SEP))));
+            companion.setBaseTheta(
+                    CellHash.norm(CellHash.ofBody(seed, key, i, SALT_COMPANION_ANG)) * 2d * Math.PI);
+            primary.addSubStar(companion);
+        }
+    }
+
+    /** How many companions, from a falling distribution over {@link #COMPANION_COUNT_WEIGHTS}. */
+    private static int drawCompanionCount(double u) {
+        double acc = 0d;
+        for (int i = 0; i < COMPANION_COUNT_WEIGHTS.length; i++) {
+            acc += COMPANION_COUNT_WEIGHTS[i];
+            if (u < acc) {
+                return i + 1;
+            }
+        }
+        return COMPANION_COUNT_WEIGHTS.length;
+    }
+
+    /**
+     * A companion's separation: log-uniform across the band, bounded by the room the system has.
+     *
+     * <p>It depends on NOTHING but its own draw. That is deliberate and it is what makes the system
+     * buildable at all: a star's zone is a function of the system's luminosity, and the luminosity is
+     * a function of where its stars stand, so a separation chosen to avoid the zone would be chosen
+     * against a zone that its own choice then moved. Measured 2026-08-14: one such pass left a
+     * companion at 177 AU inside planets running out to 180 AU, because pushing the other two
+     * companions inward had brightened the system fivefold and widened the very band being avoided.
+     * The dependency runs one way instead — stars first, and the retinue accommodates them.</p>
+     */
+    private static int drawSeparation(double u) {
+        double separation = COMPANION_MIN_SEPARATION
+                * Math.pow((double) COMPANION_MAX_SEPARATION / COMPANION_MIN_SEPARATION, u);
+        return (int) Math.max(COMPANION_MIN_SEPARATION,
+                Math.min(UniverseScale.MAX_NAMED_ORBIT_UNITS, Math.round(separation)));
+    }
+
+    /**
+     * Whether a planet at {@code orbit} could survive among these stars: not between roughly a third
+     * of a companion's separation and three times it, where neither a circumbinary nor a satellite
+     * orbit is stable.
+     */
+    private static boolean orbitIsStableAmong(Iterable<StellarBody> companions, int orbit) {
+        for (StellarBody companion : companions) {
+            double separation = companion.getOrbitalDistance();
+            if (orbit > separation / STABILITY_FACTOR && orbit < separation * STABILITY_FACTOR) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The super-cell index triple as a coordinate, for the per-index hash draws. */
+    private static GalacticCoord cellOf(long supX, long supY, long supZ) {
+        return GalacticCoord.ofSectorLocal(supX, supY, supZ, 0L, 0L, 0L);
     }
 
     private GalaxyGenConfig.StarType pickType(long h) {
@@ -513,8 +676,15 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         return last; // config.starTypes is never empty
     }
 
+    /**
+     * The primary's synthetic id: negative, so it can never collide with a catalogued star id
+     * ({@code 0..N}) or a dim id, and spaced {@link #ID_SLOTS_PER_SYSTEM} apart so a system's
+     * companions have ids of their own below it that belong to no other system.
+     */
     private static int syntheticId(long seed, long supX, long supY, long supZ) {
-        return -(1 + (int) Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_ID), SYNTHETIC_ID_RANGE));
+        long slot = Math.floorMod(CellHash.of(seed, supX, supY, supZ, SALT_ID),
+                SYNTHETIC_ID_RANGE / ID_SLOTS_PER_SYSTEM);
+        return -(1 + (int) (slot * ID_SLOTS_PER_SYSTEM));
     }
 
     private static final class Generated {

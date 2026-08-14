@@ -382,9 +382,19 @@ public class ClusteredGalaxyGeneratorTest {
             assertTrue(a.get(0).name().sameCell(anchor));
             assertEquals(0, a.get(0).name().localX());
 
+            // Every body names a star OF THIS SYSTEM — the primary, or one of its companions, which
+            // are stars in their own right with ids of their own.
+            Set<Integer> systemStars = new HashSet<>();
+            systemStars.add(a.get(0).starId());
+            for (zmaster587.advancedRocketry.api.dimension.solar.StellarBody companion
+                    : gen.systemAt(SEED, anchor).get().star().getSubStars()) {
+                systemStars.add(companion.getId());
+            }
+
             boolean sawOwnCell = false;
             for (SystemBody body : a) {
-                assertEquals("every body belongs to the system's star", a.get(0).starId(), body.starId());
+                assertTrue("body names star " + body.starId() + ", which is not one of this system's",
+                        systemStars.contains(body.starId()));
                 assertFalse("procedural bodies are not descend targets yet", body.isDescendTarget());
                 // Snapped to its own cell's centre.
                 assertEquals(0, body.name().localX());
