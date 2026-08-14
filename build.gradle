@@ -451,6 +451,23 @@ def configureHarnessTest = { Test t, boolean enableClient ->
         t.systemProperty 'forge.test.level.seed', project.property('levelSeed').toString()
     }
 
+    // Harness worlds are FLAT by default (surface at y=64 everywhere), so a fixture at a fixed Y
+    // stands on the ground by construction instead of betting on the landscape. -PlevelType=DEFAULT
+    // puts every world back on generated terrain — the one-run answer to "is the flat world the
+    // reason this broke?". A test whose SUBJECT is generated terrain asks for it per-test instead
+    // (AbstractHeadlessServerTest#requiresGeneratedTerrain).
+    if (project.hasProperty('levelType')) {
+        t.systemProperty 'forge.test.level.type', project.property('levelType').toString()
+    }
+
+    // Heap for each harness SERVER child. The framework's 1g default was calibrated on generated
+    // terrain, where most chunk sections above the surface are empty and cost nothing; a flat world
+    // carries solid layers in every column, and a VS ship claims 15x15 chunks around itself.
+    // -PserverXmx=2g is how you ask whether a red is that floor rather than the code.
+    if (project.hasProperty('serverXmx')) {
+        t.systemProperty 'forge.test.server.xmx', project.property('serverXmx').toString()
+    }
+
     t.testLogging {
         events 'failed', 'skipped', 'passed'
         exceptionFormat = 'full'

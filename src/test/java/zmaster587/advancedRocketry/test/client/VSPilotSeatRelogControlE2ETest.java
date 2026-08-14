@@ -41,7 +41,12 @@ public class VSPilotSeatRelogControlE2ETest extends AbstractClientE2ETest {
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
 
     private static final String VARIANT = "with-pilot-seat";
-    private static final int BX = 7200, BY = 64, BZ = 7200;
+    // The surveyed-clean ground of the pinned seed. The old 7200/7200 was inside a mountain whose
+    // surface is y=80..93, so this fixture's ship was assembled in rock and could not climb — which
+    // was ledgered as a control-chain defect (#161) for eleven days.
+    private static final int BX = Plot.CLEAN_GROUND_X;
+    private static final int BY = Plot.CLEAN_GROUND_Y;
+    private static final int BZ = Plot.CLEAN_GROUND_Z;
 
     /** A demonstrable climb: well above settle jitter, cheap to reach. */
     private static final double MIN_CLIMB = 1.0;

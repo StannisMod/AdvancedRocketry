@@ -63,7 +63,13 @@ public class VSShipEntryRefusedKeepsPilotSeatedE2ETest {
     private static final Pattern VEL_Y = Pattern.compile("\"velY\":(-?[0-9.E\\-]+)");
 
     private static final String VARIANT = "with-pilot-seat";
-    private static final int BX = 3000, BY = 64, BZ = 3000;
+    // The surveyed-clean ground of the pinned seed. The old 3000/3000 sat under a forest canopy
+    // (101 leaf columns) on ground at y=71..79, so the ship was assembled underground and stalled
+    // climbing at exactly that surface height — which is what ledger #237's dim-0 half turned out
+    // to be.
+    private static final int BX = Plot.CLEAN_GROUND_X;
+    private static final int BY = Plot.CLEAN_GROUND_Y;
+    private static final int BZ = Plot.CLEAN_GROUND_Z;
 
     /** The seeded atmosphere ceiling: the config key's minimum, so the climb stays short. */
     private static final int ORBIT_LINE = 255;

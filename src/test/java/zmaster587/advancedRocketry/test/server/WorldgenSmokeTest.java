@@ -20,6 +20,11 @@ import static org.junit.Assert.assertTrue;
  */
 public class WorldgenSmokeTest extends AbstractHeadlessServerTest {
 
+    // Generated terrain IS this test's subject, and it is what the harness hands out by default.
+    // Do not give this class requiresFlatTerrain(): a flat world has no decoration pass, so its
+    // iron count is zero and the AR oregen tripwire below would measure the preset, not the
+    // generator.
+
     private static final Pattern COUNT = Pattern.compile("\"count\":(-?\\d+)");
     private static final Pattern CHUNKS = Pattern.compile("\"chunksScanned\":(-?\\d+)");
 

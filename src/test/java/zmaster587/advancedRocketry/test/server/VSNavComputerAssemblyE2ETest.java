@@ -20,6 +20,11 @@ import static org.junit.Assert.assertTrue;
  */
 public class VSNavComputerAssemblyE2ETest extends AbstractSharedServerTest {
 
+    // This fixture is built INSIDE a hill and does not care: surveyed 2026-08-14, the surface at
+    // (7200, 7200) is y=90 while this builds at 80, and the test is green — it only builds, scans
+    // and links, so nothing here flies, stands or falls. Do not "fix" the Y to match the terrain,
+    // and do not read this as a template: a fixture whose mechanic DOES touch the ground belongs on
+    // surveyed ground (see FixtureGroundOnPinnedSeedTest, which deliberately omits this one).
     private static final int BASE_X = 7200, BASE_Y = 80, BASE_Z = 7200;
     private static final Pattern BUILDER_POS =
             Pattern.compile("\"builderPos\":\\[(-?\\d+),(-?\\d+),(-?\\d+)\\]");

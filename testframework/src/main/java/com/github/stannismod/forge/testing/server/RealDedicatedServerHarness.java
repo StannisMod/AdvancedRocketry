@@ -37,7 +37,23 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
      */
     public static RealDedicatedServerHarness start() throws IOException, InterruptedException {
         Path root = Files.createTempDirectory("forge-dedicated-server-");
-        return startInternal(root, /*bootstrap=*/true, /*cleanupOnClose=*/true);
+        return startInternal(root, /*bootstrap=*/true, /*cleanupOnClose=*/true,
+                /*flatTerrain=*/false);
+    }
+
+    /**
+     * The same, on a FLAT world whose surface is exactly y=64 everywhere ({@link #FLAT_PRESET}).
+     *
+     * <p>Opt-in, and it was tried as the default on 2026-08-14 — see the preset's own javadoc for
+     * what that measured. Short version: it removes the landscape variable, and it costs a bigger
+     * server heap, ~15 % more wall clock at that heap, and three reds nobody has explained. Reach
+     * for it when a test genuinely wants a world with no landscape in it, not as a general cure.</p>
+     */
+    public static RealDedicatedServerHarness startWithFlatTerrain()
+            throws IOException, InterruptedException {
+        Path root = Files.createTempDirectory("forge-dedicated-server-");
+        return startInternal(root, /*bootstrap=*/true, /*cleanupOnClose=*/true,
+                /*flatTerrain=*/true);
     }
 
     /**
@@ -59,13 +75,21 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
      */
     public static RealDedicatedServerHarness startWith(Path root, boolean cleanupOnClose)
             throws IOException, InterruptedException {
+        return startWith(root, cleanupOnClose, /*flatTerrain=*/false);
+    }
+
+    /** @see #startWith(Path, boolean) and {@link #startWithFlatTerrain()} */
+    public static RealDedicatedServerHarness startWith(Path root, boolean cleanupOnClose,
+                                                       boolean flatTerrain)
+            throws IOException, InterruptedException {
         Files.createDirectories(root);
         boolean bootstrap = !Files.exists(root.resolve("eula.txt"));
-        return startInternal(root, bootstrap, cleanupOnClose);
+        return startInternal(root, bootstrap, cleanupOnClose, flatTerrain);
     }
 
     private static RealDedicatedServerHarness startInternal(Path root, boolean bootstrap,
-                                                            boolean cleanupOnClose)
+                                                            boolean cleanupOnClose,
+                                                            boolean flatTerrain)
             throws IOException, InterruptedException {
         if (bootstrap) {
             writeEula(root);
@@ -77,7 +101,7 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
             // attempt — needed both for the first iteration and for retries
             // after a child JVM lost the TOCTOU race to bind it.
             Files.write(root.resolve("server.properties"),
-                    buildServerProperties(port).getBytes(StandardCharsets.UTF_8));
+                    buildServerProperties(port, flatTerrain).getBytes(StandardCharsets.UTF_8));
             Process process = launchServer(root, port);
             List<String> transcript = new ArrayList<>();
             Thread readerThread = startReader(process, transcript);
@@ -279,8 +303,14 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         List<String> command = new ArrayList<>();
         command.add(javaBinary.toString());
         // Cap the child heap: without an explicit -Xmx, Java 8 ergonomics grant EACH server child
-        // ~1/4 of physical RAM, which is what makes concurrent forks memory-infeasible. 1g fits a
-        // modded 1.12 dedicated server; override per machine via the property.
+        // ~1/4 of physical RAM, which is what makes concurrent forks memory-infeasible.
+        //
+        // 1g fits a modded 1.12 dedicated server on generated terrain, which is what this harness
+        // hands out. A FLAT world does not fit in it — measured 2026-08-14, one class, terrain and
+        // heap the only variables: flat@1g 12 of 13 failed with OutOfMemoryError, generated@1g 1 of
+        // 12, flat@2g 1 of 12. Why is unexplained (a flat chunk holds FEWER non-empty sections, so
+        // the storage argument is backwards); if you turn the flat world on, raise this with
+        // -PserverXmx=2g and expect the tier to get slower, not faster.
         command.add("-Xmx" + System.getProperty("forge.test.server.xmx", "1g"));
         command.add("-Djava.awt.headless=true");
         command.add("-Dforge.test.server=true");
@@ -396,7 +426,38 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         return "random".equalsIgnoreCase(seed.trim()) ? "" : seed;
     }
 
-    private static String buildServerProperties(int port) {
+    /**
+     * A superflat preset whose surface is exactly {@code y=64}: bedrock + 62 stone + grass is 64
+     * blocks, so the topmost solid block is y=63 and the first air is y=64 — the height fixtures
+     * across this suite build at, because on a generated world that is roughly sea level.
+     *
+     * <p><b>Tried as the harness default on 2026-08-14 and rejected on the numbers.</b> The appeal
+     * is real — it removes the landscape variable that had four client fixtures assembling ships
+     * inside a mountain — but the bill is: a dedicated server that OOMs at the 1g heap this harness
+     * had used for years (12 of 13 methods of one class against 1 of 12 on generated terrain);
+     * ~15 % MORE wall clock once the heap is raised enough to survive (server tier 29m14s against
+     * 25m24s, client 25m46s against 22m19s — the apparent speed-up at 1g was measured on runs that
+     * were dying); and three client reds that generated terrain does not produce and nobody has
+     * explained. WHY a flat world needs more heap is itself unexplained: a flat chunk holds FEWER
+     * non-empty sections than a generated one, so the obvious storage argument is backwards. The
+     * leading unmeasured hypothesis is CONTACT — every hull rests on a continuous solid plane and
+     * the per-tick collision set is allocation churn — and a heap histogram would settle it.</p>
+     *
+     * <p>Format is vanilla's 1.12 superflat preset: {@code version;layers-bottom-up;biomeId}.
+     * Biome 1 is plains.</p>
+     */
+    private static final String FLAT_PRESET = "3;minecraft:bedrock,62*minecraft:stone,minecraft:grass;1";
+
+    /**
+     * Global switch: {@code -PlevelType=FLAT} gives every harness world the flat preset above. It
+     * is the one-run way to ask "is the landscape the reason this test fails?", and it is how the
+     * OOM above was attributed — the answer took one run because the knob existed.
+     */
+    private static boolean flatTerrainForced() {
+        return "FLAT".equalsIgnoreCase(System.getProperty("forge.test.level.type", ""));
+    }
+
+    private static String buildServerProperties(int port, boolean flatTerrain) {
         String newline = System.lineSeparator();
         StringBuilder builder = new StringBuilder();
         builder.append("enable-command-block=true").append(newline);
@@ -407,7 +468,9 @@ public final class RealDedicatedServerHarness implements AutoCloseable {
         builder.append("hardcore=false").append(newline);
         builder.append("level-name=world").append(newline);
         builder.append("level-seed=").append(levelSeed()).append(newline);
-        builder.append("level-type=DEFAULT").append(newline);
+        boolean flat = flatTerrain || flatTerrainForced();
+        builder.append("level-type=").append(flat ? "FLAT" : "DEFAULT").append(newline);
+        builder.append("generator-settings=").append(flat ? FLAT_PRESET : "").append(newline);
         builder.append("max-tick-time=-1").append(newline);
         builder.append("motd=Forge Test").append(newline);
         builder.append("network-compression-threshold=256").append(newline);

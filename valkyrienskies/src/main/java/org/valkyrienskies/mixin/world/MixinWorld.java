@@ -59,6 +59,47 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
     @Shadow
     protected List<IWorldEventListener> eventListeners;
 
+    // No initialisers on purpose: a mixin's static fields are merged into the target, and a field
+    // that needs <clinit> code is a needless risk in a class woven this early. Both default to the
+    // zero value, which is what this wants.
+    private static long vsLastGiantBoxWarnMillis;
+    private static int vsSuppressedGiantBoxWarns;
+    private static boolean vsGiantBoxStackPrinted;
+
+    /**
+     * Report a bounding box that cannot be honoured — ONCE with its stack, then at most one line
+     * per ten seconds carrying how many were swallowed in between.
+     *
+     * <p>It used to be {@code new Exception(...).printStackTrace()} at five call sites, every one of
+     * them on a per-tick path. When a player's box genuinely does go giant, that prints a full stack
+     * to STDERR every tick for as long as the condition lasts, and on 2026-08-14 it took a dedicated
+     * server down with {@code OutOfMemoryError: GC overhead limit exceeded} — the diagnostic
+     * destroyed the run that was about to explain it, and the OOM then read as a memory problem
+     * rather than as the one-line bug it is. A diagnostic may not consume the resources of the thing
+     * it is diagnosing.</p>
+     *
+     * <p>The first stack is kept because it is genuinely the useful part: it names the call path
+     * (a player's {@code travel}, a sneak transform, a collision step) that produced the box.</p>
+     */
+    private static void vsWarnGiantBoundingBox(String context) {
+        vsSuppressedGiantBoxWarns++;
+        if (!vsGiantBoxStackPrinted) {
+            vsGiantBoxStackPrinted = true;
+            vsLastGiantBoxWarnMillis = System.currentTimeMillis();
+            vsSuppressedGiantBoxWarns = 0;
+            new Exception("[VS] " + context).printStackTrace();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - vsLastGiantBoxWarnMillis < 10000L) {
+            return;
+        }
+        System.err.println("[VS] " + context + " (+" + vsSuppressedGiantBoxWarns
+            + " more since the last line; stack printed once above)");
+        vsLastGiantBoxWarnMillis = now;
+        vsSuppressedGiantBoxWarns = 0;
+    }
+
     private static boolean isBoundingBoxTooLarge(AxisAlignedBB alignedBB) {
         if ((alignedBB.maxX - alignedBB.minX) * (alignedBB.maxY - alignedBB.minY) * (alignedBB.maxZ
             - alignedBB.minZ) > BOUNDING_BOX_SIZE_LIMIT) {
@@ -136,8 +177,8 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
         double deltaY = Math.abs(aabb.maxY - aabb.minY);
         double deltaZ = Math.abs(aabb.maxZ - aabb.minZ);
         if (Math.max(deltaX, Math.max(deltaY, deltaZ)) > 99999D) {
-            System.err.println(entityIn + "\ntried going extremely fast during the collision step");
-            new Exception().printStackTrace();
+            vsWarnGiantBoundingBox(entityIn + " tried going extremely fast during the collision step"
+                + " (aabb " + aabb + ")");
             callbackInfo.setReturnValue(Boolean.FALSE);
             callbackInfo.cancel();
         }
@@ -158,9 +199,9 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
 
                 if ((bb.maxX - bb.minX) * (bb.maxZ - bb.minZ) > 9898989) {
                     // This is too big, something went wrong here
-                    System.err.println("Why did transforming a players bounding box result in a giant bounding box?");
-                    System.err.println(bb + "\n" + wrapper.getShipData() + "\n" + entityIn.toString());
-                    new Exception().printStackTrace();
+                    vsWarnGiantBoundingBox("Transforming a player's bounding box into ship space"
+                        + " produced a giant box: " + bb + " ship=" + wrapper.getShipData()
+                        + " entity=" + entityIn);
                     return;
                 }
 
@@ -219,8 +260,7 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
         int l = MathHelper.floor((boundingBox.maxZ + MAX_ENTITY_RADIUS_ALT) / 16.0D);
 
         if (isBoundingBoxTooLarge(boundingBox)) {
-            new Exception("Tried getting entities from giant bounding box of " + boundingBox)
-                .printStackTrace();
+            vsWarnGiantBoundingBox("Tried getting entities from giant bounding box of " + boundingBox);
             return list;
         }
         for (int i1 = i; i1 <= j; ++i1) {
@@ -268,8 +308,7 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
     public List<Entity> getEntitiesInAABBexcluding(@Nullable Entity entityIn,
         AxisAlignedBB boundingBox, @Nullable Predicate<? super Entity> predicate) {
         if (isBoundingBoxTooLarge(boundingBox)) {
-            new Exception("Tried getting entities from giant bounding box of " + boundingBox)
-                .printStackTrace();
+            vsWarnGiantBoundingBox("Tried getting entities from giant bounding box of " + boundingBox);
             return new ArrayList<>();
         }
 
@@ -290,8 +329,8 @@ public abstract class MixinWorld implements IWorldVS, IHasShipManager {
             boundingBox = poly.getEnclosedAABB().shrink(.3D);
 
             if (isBoundingBoxTooLarge(boundingBox)) {
-                new Exception("Tried getting entities from giant bounding box of " + boundingBox)
-                    .printStackTrace();
+                vsWarnGiantBoundingBox("Tried getting entities from giant bounding box of "
+                    + boundingBox);
                 return new ArrayList<>();
             }
 

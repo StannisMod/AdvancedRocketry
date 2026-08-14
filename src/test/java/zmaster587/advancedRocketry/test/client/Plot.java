@@ -28,6 +28,44 @@ public final class Plot {
     public static final int DEFAULT_Y = 150;
 
     /**
+     * The ground a fixture that needs REAL TERRAIN stands on, measured rather than chosen.
+     *
+     * <p>A fixture built at a fixed Y needs the surface to be AT that Y, flat, dry and unobstructed
+     * across its whole footprint, and the pinned seed grants that almost nowhere. Surveyed
+     * 2026-08-14 with {@code artest worldgen survey} over each candidate's real 16x16 footprint:
+     * <b>61 chunk-centre candidates across a 384x384 region, plus a 110-plot grid over the
+     * neighbourhood, yielded exactly TWO clean plots</b> — this one and {@link #CLEAN_GROUND_Z2}.
+     * Both read {@code relief=0, modeTopY=64, modeTopShare=1.0, liquidColumns=0,
+     * solidObstructedColumns=0}, all grass, plains.</p>
+     *
+     * <p>What the same survey said about where these fixtures USED to stand is why this exists:
+     * 7200/7220 sit under a mountain whose surface is y=80..99, so a fixture at y=64 was buried
+     * sixteen to thirty-five blocks inside rock; 7420 had 49 water columns; 3000 sat under a forest
+     * canopy on ground at y=71..79. None were marginal landscapes a luckier seed would have saved.</p>
+     *
+     * <p>A flat harness world would make every coordinate equally good and was tried on 2026-08-14;
+     * it cost more heap, more wall clock and three unexplained reds, so the survey stands.
+     * <b>Do not move these numbers without re-running the survey</b> —
+     * {@code FixtureGroundOnPinnedSeedTest} asserts every ground fixture's own surface.</p>
+     */
+    public static final int CLEAN_GROUND_X = 7096;
+    /** @see #CLEAN_GROUND_X */
+    public static final int CLEAN_GROUND_Y = 64;
+    /** @see #CLEAN_GROUND_X */
+    public static final int CLEAN_GROUND_Z = 7224;
+    /**
+     * The second and last clean plot, for a class whose scenarios share one world. Sixteen blocks
+     * from {@link #CLEAN_GROUND_Z}, which is as far apart as the pinned seed allows two clean plots
+     * to be — the survey found no third within 160 blocks in any direction.
+     */
+    public static final int CLEAN_GROUND_Z2 = 7240;
+
+    /** Edge of the surveyed-clean footprint around a clean-ground base, as an offset. */
+    public static final int CLEAN_GROUND_FOOT_MIN = -4;
+    /** @see #CLEAN_GROUND_FOOT_MIN */
+    public static final int CLEAN_GROUND_FOOT_MAX = 11;
+
+    /**
      * Where a class's plots live and how far apart they sit.
      *
      * <p>This is a per-class choice on purpose, and the reason is terrain. A plot at ground level

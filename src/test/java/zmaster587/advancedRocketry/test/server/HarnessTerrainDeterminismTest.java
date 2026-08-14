@@ -27,6 +27,10 @@ import static org.junit.Assert.assertTrue;
  * perfectly deterministic. One such case cost a full investigation: a player suffocating inside
  * terrain read as a space suit failing to grant vacuum immunity.</p>
  *
+ * <p><b>Never give this class {@code requiresFlatTerrain()}.</b> On a flat world terrain is
+ * identical whatever the seed is, so this test would pass on an unpinned seed too — it would stop
+ * guarding the one thing it exists for.</p>
+ *
  * <p>This pins the property that makes those fixtures reproducible: same coordinates, same
  * ground, every run. It compares the sampled surface of several chunks — including the columns
  * the shared player-fixture and the flight fixtures actually stand on — across two separately
