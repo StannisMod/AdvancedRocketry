@@ -62,7 +62,9 @@ public class SystemRetinueTest {
 
     /** A galaxy dense enough to sample: every cube occupied, so a small sweep finds many systems. */
     private static ClusteredGalaxyGenerator gen(int minSpacing) {
-        return new ClusteredGalaxyGenerator(new GalaxyGenConfig(0.9d, minSpacing, 8, 0.0d, null));
+        return new ClusteredGalaxyGenerator(new GalaxyGenConfig(minSpacing, 0.9d,
+                GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                null, null));
     }
 
     /** Every occupied system anchor in a sweep of super-cells. */

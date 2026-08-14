@@ -150,7 +150,9 @@ public class SystemContentTest {
                 / authored.orbitalDistance();
 
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(1.0d, GalaxyGenConfig.DEFAULT_MIN_SPACING, 8, 0.0d, null));
+                new GalaxyGenConfig(GalaxyGenConfig.DEFAULT_MIN_SPACING, 1.0d,
+                        GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                        null, null));
         long spacing = GalaxyGenConfig.DEFAULT_MIN_SPACING;
         Optional<GalacticCoord> seat = gen.anchorAt(0xBEEFL,
                 GalacticCoord.ofSectorLocal(spacing, spacing, spacing, 0L, 0L, 0L));

@@ -20,6 +20,10 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  *       room a system's bodies have and how close two unrelated systems may ever be seen to stand.</li>
  * </ul>
  *
+ * <p>One level up, the same pair says how big a galaxy is and how far apart galaxies stand — see the
+ * galaxy-lattice section below. It is the same scheme applied twice, which is the point: a system is
+ * seated in a cube, and so is the galaxy that holds it.</p>
+ *
  * <p>These used to be one number: a system's extent was <i>defined</i> as a fraction of the
  * interstellar step, which truncated systems at a few AU, filled half the gap to the next star with
  * one system's neighbourhood, and forced the orbit scale to shrink to compensate. Separating them is
@@ -76,7 +80,80 @@ public final class UniverseScale {
             Math.max(1L, Math.round(MEAN_STAR_SEPARATION_LY
                     * AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR / (double) GalacticCoord.CELL)));
 
+    // ─── The galaxy lattice ────────────────────────────────────────────────────
+    // One level up, and the same scheme: a cube that holds at most one galaxy, and a galaxy seated
+    // inside it. What is stated here is a REFERENCE SIZE and a RATIO; the separation follows from
+    // them, and an individual galaxy's radius is drawn per type around the reference.
+    //
+    // The reference is deliberately about a thirtieth of a real giant galaxy, and the separation is
+    // scaled with it so the RATIO stays real. That is what buys the whole void a single primitive:
+    // an offset inside one galaxy cube has to fit a long, and at real sizes it would not.
+
+    /**
+     * The size a galaxy is quoted against, in light years — a mid-sized spiral, holding of the order
+     * of a million systems at {@link #MEAN_STAR_SEPARATION_LY}. Every type's radius band is drawn
+     * around it.
+     *
+     * <p>It is about a thirtieth of a real giant galaxy, and that is the number the whole layer is
+     * sized by: a position out in the void is an offset from its galaxy cell's origin, so the cell
+     * edge has to fit a {@code long} of blocks. At real sizes it would not, and the void would need a
+     * second, coarser representation of its own.</p>
+     */
+    public static final double REFERENCE_GALAXY_RADIUS_LY = 1_500d;
+
+    /**
+     * How far apart galaxies stand, in galaxy DIAMETERS. This is the real number — galaxies in a
+     * group sit tens of diameters apart — and it is what the separation below is derived from, so
+     * shrinking the reference size shrinks the whole layer coherently instead of leaving galaxies
+     * marooned at a real separation.
+     */
+    public static final double GALAXY_SEPARATION_IN_DIAMETERS = 25d;
+
+    /** Edge of the cube that holds at most one galaxy, in light years. */
+    public static final double MEAN_GALAXY_SEPARATION_LY =
+            GALAXY_SEPARATION_IN_DIAMETERS * 2d * REFERENCE_GALAXY_RADIUS_LY;
+
+    /**
+     * The same edge in cells — the default {@code galaxySpacing}. A {@code long}, not an {@code int}:
+     * the galaxy lattice is five orders coarser than the star lattice and does not fit one.
+     */
+    public static final long DEFAULT_GALAXY_SPACING_CELLS =
+            cellsForLightYears(MEAN_GALAXY_SEPARATION_LY);
+
+    /**
+     * The radius the HOME galaxy is guaranteed to have at least, in light years. A galaxy's size is
+     * hash-drawn, so without a floor a pack that places authored content a few hundred light years
+     * out would work on one seed and put that content outside its own galaxy on the next. The floor
+     * is expressed as a constraint on which TYPES the home galaxy may be drawn from, never as a
+     * clamp applied afterwards.
+     */
+    public static final double MIN_HOME_GALAXY_RADIUS_LY = 800d;
+
     private UniverseScale() {
+    }
+
+    /** How many cells a length in light years spans. Rounded up: a reach must not come out short. */
+    public static long cellsForLightYears(double lightYears) {
+        double blocks = Math.max(0d, lightYears) * AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR;
+        return (long) Math.ceil(blocks / (double) GalacticCoord.CELL);
+    }
+
+    /** The length in light years that {@code cells} cells span. */
+    public static double lightYearsForCells(double cells) {
+        return cells * (double) GalacticCoord.CELL
+                / (double) AstronomicalBodyHelper.BLOCKS_PER_LIGHT_YEAR;
+    }
+
+    /**
+     * A speed quoted in km/s as light years per TICK — the form an angular rate is evaluated in.
+     *
+     * <p>Galactic velocities are stated the way astronomy states them and converted once, here,
+     * rather than being pre-divided into a per-tick literal that no longer says what it measures.</p>
+     */
+    public static double lightYearsPerTick(double kilometresPerSecond) {
+        double metresPerYear = kilometresPerSecond * 1_000d * AstronomicalBodyHelper.SECONDS_PER_YEAR;
+        return metresPerYear / AstronomicalBodyHelper.METRES_PER_LIGHT_YEAR
+                / AstronomicalBodyHelper.TICKS_PER_YEAR;
     }
 
     /** How many cells an orbital distance spans. Rounded up: a reach must not come out short. */

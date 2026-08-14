@@ -24,13 +24,19 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  * <p>Every answer is a pure function of {@code (seed, cell)} — no state, no RNG — so a scan and a later jump
  * agree and a re-materialised cell regenerates identically. The scheme, all O(1) per query:</p>
  * <ol>
+ *   <li>{@link GalaxyField} seats the GALAXIES — one per {@link GalaxyGenConfig#galaxySpacing}-cube, each
+ *       with a centre, a type, a radius, an orientation and a density profile;</li>
  *   <li>partition space into {@link GalaxyGenConfig#minSpacing}-cube <i>super-cells</i> — at most one system
  *       each (the minimum-spacing guarantee);</li>
- *   <li>a coarse <i>blob</i> field grouped {@link GalaxyGenConfig#clusterScale} super-cells wide masks
- *       galaxy from void ({@link GalaxyGenConfig#voidFraction});</li>
- *   <li>inside a galaxy, a super-cell hosts a system with probability {@link GalaxyGenConfig#density}, seated
- *       at a hash-chosen cell within the super-cell.</li>
+ *   <li>a super-cell hosts a system with probability {@link GalaxyGenConfig#density} <i>scaled by the
+ *       owning galaxy's profile at that point</i>, seated at a hash-chosen cell within the super-cell.
+ *       Outside every galaxy the profile is zero, so the intergalactic void is what the profile leaves
+ *       empty rather than a second rule.</li>
  * </ol>
+ *
+ * <p>The galaxy tier replaces an independent per-blob Bernoulli mask. Drawn per cell above the
+ * site-percolation threshold, that mask produced one unbounded sponge rather than galaxies: no centre,
+ * no radius, no orientation, and no answer to which galaxy a point was in.</p>
  *
  * <p>A procedural system is one or more stars (type and size sampled by weight from the seed) with
  * <b>synthetic negative ids</b> — never in the catalogue and never a dimension, so an id cannot collide
@@ -40,9 +46,11 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
  */
 public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
-    // Distinct salts so the independent hash draws (blob mask, occupancy, per-axis offset, star type/size/id)
-    // never correlate with each other.
-    private static final long SALT_BLOB = 0x1L;
+    // Distinct salts so the independent hash draws (occupancy, per-axis offset, star type/size/id) never
+    // correlate with each other.
+    // 0x1 was SALT_BLOB, the galaxy-vs-void blob mask. Retired: which galaxy a super-cell is in, and
+    // how dense that galaxy is there, is now GalaxyField's answer. The number stays burned so a future
+    // draw cannot silently inherit an old galaxy's stream.
     private static final long SALT_OCC = 0x2L;
     private static final long SALT_OX = 0x3L;
     private static final long SALT_OY = 0x4L;
@@ -156,10 +164,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
     private static final double PROC_DISK_FRACTION = 0.1d;
 
     private final GalaxyGenConfig config;
+    private final GalaxyField galaxies;
     private final long totalStarWeight;
 
     public ClusteredGalaxyGenerator(GalaxyGenConfig config) {
         this.config = (config == null) ? GalaxyGenConfig.defaults() : config;
+        this.galaxies = new GalaxyField(this.config);
         long w = 0L; // accumulate in long so a few near-Integer.MAX weights cannot overflow the sum
         for (GalaxyGenConfig.StarType t : this.config.starTypes) {
             w += t.weight;
@@ -169,6 +179,11 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     public GalaxyGenConfig config() {
         return config;
+    }
+
+    /** The galaxies this generator places its systems in — the tier above the star lattice. */
+    public GalaxyField galaxies() {
+        return galaxies;
     }
 
     @Override
@@ -529,17 +544,22 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
 
     /** The single system a super-cell hosts (its cell coordinate + fabricated system), or empty. */
     private Optional<Generated> systemForSuperCell(long seed, long supX, long supY, long supZ) {
-        long cs = config.clusterScale;
-        // Void mask: a super-cell whose blob is below the void fraction hosts nothing.
-        double blob = CellHash.norm(CellHash.of(seed, Math.floorDiv(supX, cs), Math.floorDiv(supY, cs),
-                Math.floorDiv(supZ, cs), SALT_BLOB));
-        if (blob < config.voidFraction) {
-            return Optional.empty();
-        }
-        if (CellHash.norm(CellHash.of(seed, supX, supY, supZ, SALT_OCC)) >= config.density) {
-            return Optional.empty();
-        }
         long s = config.minSpacing;
+        // OCCUPANCY IS DECIDED IN THE GALAXY'S OWN FRAME, so the profile does the drawing: the disc,
+        // the bulge and the arms place the stars. An independent per-cell draw could only ever produce
+        // a uniform fog, which is what made "which galaxy is this?" a question with no answer.
+        //
+        // Evaluated at the super-cell's CENTRE — a point fixed by the partition, not by any draw, so
+        // the probability a cube is occupied cannot depend on where its seat would have landed. And
+        // evaluated at t = 0 and never again: a time-dependent occupancy would pop systems in and out
+        // of existence. Systems drift afterwards at their galaxy's own omega(r), which is the shear.
+        double profile = galaxyProfileAt(seed, supX * s + s / 2L, supY * s + s / 2L, supZ * s + s / 2L);
+        if (!(profile > 0d)) {
+            return Optional.empty(); // intergalactic void, or past this galaxy's edge
+        }
+        if (CellHash.norm(CellHash.of(seed, supX, supY, supZ, SALT_OCC)) >= config.density * profile) {
+            return Optional.empty();
+        }
         // Seat the anchor anywhere in its cube except a declared margin at the faces. That margin is
         // the system's own CLEAR SPACE, not a fraction of the cube: it is what guarantees two stars
         // never stand closer than the separation floor, and what keeps one system's named bodies from
@@ -558,6 +578,21 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
         GalacticCoord cell = GalacticCoord.ofSectorLocal(supX * s + ox, supY * s + oy, supZ * s + oz,
                 0L, 0L, 0L);
         return Optional.of(new Generated(cell, fabricate(seed, supX, supY, supZ)));
+    }
+
+    /**
+     * How dense the owning galaxy is at this sector triple, in {@code [0, 1]} — zero in the void and
+     * zero past a galaxy's declared edge.
+     *
+     * <p>The galaxy cell is a coarse reading of the sector, so this is O(1) and needs no stored index:
+     * every point belongs to exactly one galaxy cell, and that cell either holds a galaxy or is void.</p>
+     */
+    private double galaxyProfileAt(long seed, long sectorX, long sectorY, long sectorZ) {
+        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, sectorX, sectorY, sectorZ);
+        if (!galaxy.isPresent()) {
+            return 0d;
+        }
+        return galaxy.get().densityAtSector(sectorX, sectorY, sectorZ);
     }
 
     private StarSystem fabricate(long seed, long supX, long supY, long supZ) {

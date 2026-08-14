@@ -282,7 +282,8 @@ public class UniverseRegistryTest {
         // system; the zone read returns exactly that cell's body.
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(0xBEEF);
-        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 16, 8, 0.0d, null);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(16, 0.9d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null);
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
 
         // Find an occupied super-cell and a non-star body of its system.
@@ -333,7 +334,8 @@ public class UniverseRegistryTest {
     public void pinOnTouchSnapshotsAProceduralSystemAgainstSeedChange() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(1234L);
-        GalaxyGenConfig cfg = new GalaxyGenConfig(0.9d, 8, 8, 0.0d, null);
+        GalaxyGenConfig cfg = new GalaxyGenConfig(8, 0.9d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null);
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(cfg));
 
         GalacticCoord anchor = null;
@@ -506,7 +508,9 @@ public class UniverseRegistryTest {
     public void bodiesAtMergesProceduralBodiesAndPois() {
         UniverseRegistry reg = new UniverseRegistry();
         reg.bindWorldSeed(0xABCDEFL);
-        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(new GalaxyGenConfig(0.9d, 1, 8, 0.0d, null)));
+        UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(new GalaxyGenConfig(1, 0.9d,
+                GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                null, null)));
 
         GalacticCoord found = null;
         for (long x = 0; x < 300 && found == null; x++) {

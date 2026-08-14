@@ -84,8 +84,8 @@ public class XMLPlanetLoader {
     private static final String ATTR_TIDALLY_LOCKABLE = "tidallyLockable";
     private static final String ATTR_DENSITY = "density";
     private static final String ATTR_MINSPACING = "minSpacing";
-    private static final String ATTR_CLUSTERSCALE = "clusterScale";
-    private static final String ATTR_VOIDFRACTION = "voidFraction";
+    private static final String ATTR_GALAXYSPACING = "galaxySpacing";
+    private static final String ATTR_GALAXYDENSITY = "galaxyDensity";
     private static final String ATTR_MINSIZE = "minSize";
     private static final String ATTR_MAXSIZE = "maxSize";
     private static final String ELEMENT_PLANET = "planet";
@@ -223,6 +223,19 @@ public class XMLPlanetLoader {
         }
     }
 
+    private static long attrLong(Node node, String name, long def) {
+        String v = attr(node, name);
+        if (v == null || v.trim().isEmpty()) {
+            return def;
+        }
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            AdvancedRocketry.logger.warn("Invalid " + name + " in <galaxyGen>: " + v);
+            return def;
+        }
+    }
+
     private static double attrDouble(Node node, String name, double def) {
         String v = attr(node, name);
         if (v == null || v.trim().isEmpty()) {
@@ -241,8 +254,8 @@ public class XMLPlanetLoader {
         GalaxyGenConfig defaults = GalaxyGenConfig.defaults();
         double density = attrDouble(node, ATTR_DENSITY, defaults.density);
         int minSpacing = attrInt(node, ATTR_MINSPACING, defaults.minSpacing);
-        int clusterScale = attrInt(node, ATTR_CLUSTERSCALE, defaults.clusterScale);
-        double voidFraction = attrDouble(node, ATTR_VOIDFRACTION, defaults.voidFraction);
+        long galaxySpacing = attrLong(node, ATTR_GALAXYSPACING, defaults.galaxySpacing);
+        double galaxyDensity = attrDouble(node, ATTR_GALAXYDENSITY, defaults.galaxyDensity);
 
         List<GalaxyGenConfig.StarType> types = new ArrayList<>();
         NodeList children = node.getChildNodes();
@@ -257,7 +270,9 @@ public class XMLPlanetLoader {
             }
         }
         // An empty <starType> list falls back to the default archetypes (handled by the config ctor).
-        return new GalaxyGenConfig(density, minSpacing, clusterScale, voidFraction, types);
+        // The GALAXY archetype table is not authorable yet: it ships as a stock table in code, and a
+        // <galaxyType> element is the natural place to override it when a pack needs to.
+        return new GalaxyGenConfig(minSpacing, density, galaxySpacing, galaxyDensity, types, null);
     }
 
     /**
@@ -466,8 +481,8 @@ public class XMLPlanetLoader {
         Element e = doc.createElement(ELEMENT_GALAXYGEN);
         e.setAttribute(ATTR_DENSITY, Double.toString(cfg.density));
         e.setAttribute(ATTR_MINSPACING, Integer.toString(cfg.minSpacing));
-        e.setAttribute(ATTR_CLUSTERSCALE, Integer.toString(cfg.clusterScale));
-        e.setAttribute(ATTR_VOIDFRACTION, Double.toString(cfg.voidFraction));
+        e.setAttribute(ATTR_GALAXYSPACING, Long.toString(cfg.galaxySpacing));
+        e.setAttribute(ATTR_GALAXYDENSITY, Double.toString(cfg.galaxyDensity));
         for (GalaxyGenConfig.StarType t : cfg.starTypes) {
             Element st = doc.createElement(ELEMENT_STARTYPE);
             st.setAttribute(ATTR_TEMP, Integer.toString(t.temperature));

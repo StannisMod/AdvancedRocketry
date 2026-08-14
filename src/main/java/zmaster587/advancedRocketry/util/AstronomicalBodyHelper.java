@@ -41,6 +41,11 @@ public class AstronomicalBodyHelper {
     public static final double METRES_PER_AU = 1.495_978_707e11d;
     /** Metres in one Julian light year. */
     public static final double METRES_PER_LIGHT_YEAR = 9.460_730_472_580_8e15d;
+    /**
+     * Seconds in one Julian year. What carries a speed stated per SECOND — the unit orbital and
+     * galactic velocities are quoted in — into the per-year frame the calendar below counts in.
+     */
+    public static final double SECONDS_PER_YEAR = 31_557_600d;
 
     /** Chart blocks in one astronomical unit. */
     public static final long BLOCKS_PER_AU =
@@ -92,6 +97,12 @@ public class AstronomicalBodyHelper {
     public static final int DAYS_PER_LUNAR_MONTH = 8;
     /** Ticks in one day — the platform's rate, NOT a planet's rotational period (that is per-dim). */
     public static final int TICKS_PER_DAY = 24000;
+    /**
+     * Ticks in one year — the two above composed, so a rate stated per year has ONE conversion into
+     * the clock the game actually counts. A galactic rotation is quoted per year and evaluated per
+     * tick, and writing that product at the call site is how the two calendars drift apart.
+     */
+    public static final int TICKS_PER_YEAR = DAYS_PER_YEAR * TICKS_PER_DAY;
 
     /**
      * Returns the size multiplier for a body at the input distance, relative to either 1AU or the moon's orbital distance, depending on parent body

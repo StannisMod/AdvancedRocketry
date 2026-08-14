@@ -514,15 +514,18 @@ public class XMLPlanetLoaderTest {
     @Test
     public void galaxyGenElementParsesIntoConfig() throws IOException {
         DimensionPropertyCoupling c = parse(galaxy(
-                "<galaxyGen density=\"0.42\" minSpacing=\"7\" clusterScale=\"9\" voidFraction=\"0.3\">\n"
+                "<galaxyGen density=\"0.42\" minSpacing=\"7\" galaxySpacing=\"900000\""
+                        + " galaxyDensity=\"0.3\">\n"
                         + "  <starType temp=\"55\" minSize=\"0.7\" maxSize=\"1.1\" weight=\"3\"/>\n"
                         + "  <starType temp=\"180\" minSize=\"1.5\" maxSize=\"2.2\" weight=\"1\"/>\n"
                         + "</galaxyGen>\n"));
         assertNotNull("a <galaxyGen> element must parse into a config", c.galaxyGenConfig);
         assertEquals(0.42d, c.galaxyGenConfig.density, 1e-9);
         assertEquals(7, c.galaxyGenConfig.minSpacing);
-        assertEquals(9, c.galaxyGenConfig.clusterScale);
-        assertEquals(0.3d, c.galaxyGenConfig.voidFraction, 1e-9);
+        assertEquals(900000L, c.galaxyGenConfig.galaxySpacing);
+        assertEquals(0.3d, c.galaxyGenConfig.galaxyDensity, 1e-9);
+        assertFalse("the stock galaxy archetypes stand in when XML declares none",
+                c.galaxyGenConfig.galaxyTypes.isEmpty());
         assertEquals(2, c.galaxyGenConfig.starTypes.size());
         assertEquals(55, c.galaxyGenConfig.starTypes.get(0).temperature);
         assertEquals(3, c.galaxyGenConfig.starTypes.get(0).weight);
@@ -537,7 +540,8 @@ public class XMLPlanetLoaderTest {
     @Test
     public void galaxyGenRoundTripsThroughWriteXml() throws IOException {
         GalaxyGenConfig parsed = parse(galaxy(
-                "<galaxyGen density=\"0.25\" minSpacing=\"5\" clusterScale=\"12\" voidFraction=\"0.45\">\n"
+                "<galaxyGen density=\"0.25\" minSpacing=\"5\" galaxySpacing=\"1200000\""
+                        + " galaxyDensity=\"0.45\">\n"
                         + "  <starType temp=\"60\" minSize=\"0.6\" maxSize=\"1.0\" weight=\"9\"/>\n"
                         + "</galaxyGen>\n")).galaxyGenConfig;
 
@@ -554,8 +558,8 @@ public class XMLPlanetLoaderTest {
             assertNotNull("the written galaxy must round-trip its <galaxyGen>", round);
             assertEquals(0.25d, round.density, 1e-9);
             assertEquals(5, round.minSpacing);
-            assertEquals(12, round.clusterScale);
-            assertEquals(0.45d, round.voidFraction, 1e-9);
+            assertEquals(1200000L, round.galaxySpacing);
+            assertEquals(0.45d, round.galaxyDensity, 1e-9);
             assertEquals(60, round.starTypes.get(0).temperature);
             assertEquals(9, round.starTypes.get(0).weight);
         } finally {

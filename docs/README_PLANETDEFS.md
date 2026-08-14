@@ -110,10 +110,30 @@ this file names.
 
 | attribute | unit | default | meaning |
 |---|---|---|---|
-| `density` | 0..1 | `0.35` | Chance that a given cube of space holds a system, before the void mask. Clamped; `NaN` reads as `0`. |
+| `density` | 0..1 | `0.35` | Chance that a given cube of space holds a system **at a galaxy's densest point**. Everywhere else the galaxy's own profile scales it down, and outside every galaxy it is zero. Clamped; `NaN` reads as `0`. |
 | `minSpacing` | cells | `40018890` | Edge of the cube that holds **at most one** system, i.e. how far apart stars stand. The default is 4.23 light years. Floors at 1. |
-| `clusterScale` | super-cells | `16` | Resolution of the coarse field that separates populated space from void. Floors at 1. |
-| `voidFraction` | 0..1 | `0.6` | Fraction of space that is empty. `1.0` yields an empty galaxy. Clamped; `NaN` reads as `0`. |
+| `galaxySpacing` | cells | `709554785444` | Edge of the cube that holds **at most one galaxy**. The default is 75 000 light years — twenty-five galaxy diameters. Floors at 1. |
+| `galaxyDensity` | 0..1 | `0.5` | Fraction of those cubes that actually hold a galaxy. The rest is intergalactic void. Clamped; `NaN` reads as `0`. |
+
+### Where the stars are: galaxies, not a fog
+
+Space is laid out twice over, by the same scheme at two scales. `galaxySpacing`-cubes hold **at most
+one galaxy each**, and a galaxy is a real object: a centre, a type, a radius, an orientation, a
+central bulge and — if its type has them — spiral arms. Inside it, `minSpacing`-cubes hold at most
+one system each, and whether a given cube holds one is `density` **scaled by the galaxy's own profile
+at that point**. So the star field thins outwards, thins away from the disc's plane, and stops at the
+galaxy's edge.
+
+A galaxy's **type decides its size**, never the other way round: dwarf spheroidals and dwarf
+irregulars outnumber spirals and ellipticals by roughly two orders, so finding a spiral is an event.
+The archetype table is built in and is not authorable yet.
+
+**The galaxy at the origin always exists.** Authored `<star galacticCoord="…">` anchors are absolute
+coordinates, and a galaxy fills a ten-thousandth of its own cube — so without a reserved home the
+system you write in this file would land in intergalactic space on virtually every seed. The home
+galaxy is centred on the origin and is always drawn large enough (at least 800 light years) to hold
+authored content; only its *existence* and its centre are fixed, so its type, size, orientation and
+arms still differ from seed to seed.
 
 ### `<starType>` — the archetype table
 
@@ -145,7 +165,7 @@ and below about 8 cells only the star survives.
 
 ### Changing a `<galaxyGen>` parameter mid-save is UNDEFINED
 
-`density`, `minSpacing`, `clusterScale` and `voidFraction` are inputs to a **derived** universe:
+`density`, `minSpacing`, `galaxySpacing` and `galaxyDensity` are inputs to a **derived** universe:
 nothing about a procedural system is stored, so changing any of them relocates every star, every
 planet and every generated name. **You get a different universe, and anything a player recorded about
 the old one — coordinates, memory crystals, a route — points at nothing.**
@@ -648,7 +668,7 @@ A procedural galaxy with two archetypes and one type:
 
 ```xml
 <galaxy>
-  <galaxyGen density="0.4" minSpacing="40018890" clusterScale="16" voidFraction="0.6">
+  <galaxyGen density="0.4" minSpacing="40018890" galaxySpacing="709554785444" galaxyDensity="0.5">
     <starType temp="40"  minSize="0.6" maxSize="1.0" weight="40"/>
     <starType temp="220" minSize="1.4" maxSize="2.6" weight="5"/>
   </galaxyGen>

@@ -48,7 +48,8 @@ public class PlanetRealizationTest {
     private static UniverseRegistry registryWithProceduralGalaxy() {
         UniverseRegistry reg = new UniverseRegistry();
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(1.0d, SPACING, 8, 0.0d, null)));
+                new GalaxyGenConfig(SPACING, 1.0d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                        GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null)));
         reg.bindWorldSeed(SEED);
         return reg;
     }
@@ -274,7 +275,8 @@ public class PlanetRealizationTest {
 
         // A pack edit: a different spacing, a different density, a whole different galaxy.
         UniverseRegistry.setGenerator(new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(0.2d, SPACING / 2, 4, 0.5d, null)));
+                new GalaxyGenConfig(SPACING / 2, 0.2d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                        GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null)));
 
         Optional<StellarBody> after = reg.starAt(cell);
         assertTrue(after.isPresent());

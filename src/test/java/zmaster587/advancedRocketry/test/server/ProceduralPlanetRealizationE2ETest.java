@@ -39,12 +39,17 @@ import static org.junit.Assert.assertTrue;
 public class ProceduralPlanetRealizationE2ETest extends AbstractHeadlessServerTest {
 
     /**
-     * A tiny super-cell spacing. A system's anchor is seated in the middle band of its super-cell, so at
-     * the production spacing of 512 the nearest system is hundreds of cells away and a bounded probe
-     * sweep finds an empty universe. The spacing is a balance knob, and nothing here asserts one.
+     * A compact star spacing, and it has a floor: a system's bodies stand where their own orbits put
+     * them, so a super-cell has to be wide enough to hold one. Below roughly 170 000 cells a system
+     * starts losing its outer worlds and below a few cells only the star survives — which is a correct
+     * outcome of "a system that will not fit loses BODIES, never scale", and a fixture with no landable
+     * body in it. What is compact here is the distance BETWEEN stars, so a bounded sweep finds several.
+     *
+     * <p>The spacing is a balance knob and nothing here asserts one.</p>
      */
-    private static final String GEN_INSTALL = "artest space gen-install 0.9 4 8 0.0 987654321";
-    private static final int SWEEP_RADIUS = 8;
+    private static final String GEN_INSTALL = "artest space gen-install 0.9 2000000 987654321";
+    /** In SUPER-CELLS: the probe sweeps the partition the generator itself walks. */
+    private static final int SWEEP_RADIUS = 4;
 
     private String exec(String cmd) throws Exception {
         return String.join("\n", client().execute(cmd));

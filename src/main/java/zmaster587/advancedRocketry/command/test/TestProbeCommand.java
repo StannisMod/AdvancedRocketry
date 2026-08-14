@@ -4740,12 +4740,16 @@ public class TestProbeCommand extends CommandBase {
             send(sender, out.toString());
             return;
         }
-        // gen-install <density> <minSpacing> <clusterScale> <voidFraction> [seed]: install a procedural
-        // galaxy generator and bind a seed. A world with no <galaxyGen> in its planetDefs runs the
-        // authored-anchors-only default, so without this there are no procedural systems to realize at
-        // all and every test about them would be a test about an empty universe. `gen-reset` puts the
-        // default back; a shared-server class MUST call it, because the generator is a JVM global.
-        if (args.length >= 5 && "gen-install".equalsIgnoreCase(args[0])) {
+        // gen-install <density> <minSpacing> [seed]: install a procedural galaxy generator and bind a
+        // seed. A world with no <galaxyGen> in its planetDefs runs the authored-anchors-only default, so
+        // without this there are no procedural systems to realize at all and every test about them would
+        // be a test about an empty universe. `gen-reset` puts the default back; a shared-server class
+        // MUST call it, because the generator is a JVM global.
+        //
+        // The GALAXY lattice keeps its shipped parameters. A caller near the origin is inside the home
+        // galaxy's core, where the profile is at its densest, so <density> alone says how full the sky
+        // is — which is the one thing a test about procedural systems is actually asking for.
+        if (args.length >= 3 && "gen-install".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.universe.UniverseRegistry reg =
                     zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
             if (reg == null) {
@@ -4754,13 +4758,13 @@ public class TestProbeCommand extends CommandBase {
             }
             double density = parseDoubleOr(args[1], 0.9d);
             int minSpacing = parseIntOr(args[2], 8);
-            int clusterScale = parseIntOr(args[3], 8);
-            double voidFraction = parseDoubleOr(args[4], 0d);
-            long seed = args.length >= 6 ? parseLongOr(args[5], 0L) : reg.worldSeed();
+            long seed = args.length >= 4 ? parseLongOr(args[3], 0L) : reg.worldSeed();
+            zmaster587.advancedRocketry.universe.GalaxyGenConfig genDefaults =
+                    zmaster587.advancedRocketry.universe.GalaxyGenConfig.defaults();
             zmaster587.advancedRocketry.universe.UniverseRegistry.setGenerator(
                     new zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator(
-                            new zmaster587.advancedRocketry.universe.GalaxyGenConfig(density, minSpacing,
-                                    clusterScale, voidFraction, null)));
+                            new zmaster587.advancedRocketry.universe.GalaxyGenConfig(minSpacing, density,
+                                    genDefaults.galaxySpacing, genDefaults.galaxyDensity, null, null)));
             reg.bindWorldSeed(seed);
             send(sender, "{\"ok\":true,\"seed\":" + seed + ",\"minSpacing\":" + minSpacing + "}");
             return;
@@ -4770,9 +4774,15 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true}");
             return;
         }
-        // find-procedural <radius>: the first cell in a box around the origin that holds a body a ship
-        // could land on but that has NO dimension yet — the precondition of every realization test, and
-        // the thing that is impossible to write down as a literal because it depends on the seed.
+        // find-procedural <radiusInSuperCells>: the first body a ship could land on that has NO dimension
+        // yet — the precondition of every realization test, and the thing that is impossible to write
+        // down as a literal because it depends on the seed.
+        //
+        // THE SWEEP IS BY SUPER-CELL, NEVER BY CELL. It used to walk raw cells around the origin, which
+        // worked only while a system's extent was a fraction of the star spacing. A body now stands
+        // where its own orbit puts it — one AU is about 150 cells — so a body is hundreds to thousands
+        // of cells from its star, and a box of a few cells around the origin contains nothing whatever
+        // the galaxy holds. Each probe asks the registry for the WHOLE system its super-cell belongs to.
         if (args.length >= 2 && "find-procedural".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.universe.UniverseRegistry reg =
                     zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
@@ -4781,16 +4791,23 @@ public class TestProbeCommand extends CommandBase {
                 return;
             }
             long r = parseIntOr(args[1], 8);
+            long s = Math.max(1L, zmaster587.advancedRocketry.universe.UniverseRegistry.generator()
+                    .minSpacingCells());
             for (long x = -r; x <= r; x++) {
                 for (long y = -r; y <= r; y++) {
                     for (long z = -r; z <= r; z++) {
-                        zmaster587.advancedRocketry.space.GalacticCoord cell =
-                                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(x, y, z,
-                                        0L, 0L, 0L);
-                        for (zmaster587.advancedRocketry.universe.SystemBody b : reg.bodiesAt(cell)) {
+                        zmaster587.advancedRocketry.space.GalacticCoord probe =
+                                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                                        x * s, y * s, z * s, 0L, 0L, 0L);
+                        for (zmaster587.advancedRocketry.universe.SystemBody b
+                                : reg.systemBodiesAt(probe)) {
                             if (b.kind().canDescend()
                                     && b.dimId() == zmaster587.advancedRocketry.api.Constants.INVALID_PLANET) {
-                                send(sender, "{\"ok\":true,\"sx\":" + x + ",\"sy\":" + y + ",\"sz\":" + z
+                                // The BODY's own cell, not the probe's: that is the address every
+                                // follow-up verb (cell-info, derived, realize) is aimed at.
+                                zmaster587.advancedRocketry.space.GalacticCoord cell = b.name();
+                                send(sender, "{\"ok\":true,\"sx\":" + cell.sectorX() + ",\"sy\":"
+                                        + cell.sectorY() + ",\"sz\":" + cell.sectorZ()
                                         + ",\"cellKey\":\"" + cell.cellKey() + "\",\"kind\":\"" + b.kind()
                                         + "\",\"orbitalDist\":" + b.orbitalDistance()
                                         + ",\"starId\":" + b.starId() + "}");

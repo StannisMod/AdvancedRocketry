@@ -12,6 +12,7 @@ import java.util.Set;
 
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.ClusteredGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.Galaxy;
 import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.StarSystem;
 import zmaster587.advancedRocketry.universe.SystemBody;
@@ -27,10 +28,15 @@ import static org.junit.Assert.assertTrue;
  * Contract tests for the deterministic clustered galaxy generator. Pure-JUnit; no MC bootstrap.
  *
  * <p>Pins the generation CONTRACTS: pure determinism over {@code (seed, cell)}, the minimum-spacing
- * guarantee, the separation floor between two seats, that the distribution actually clusters (void +
- * dense regions), that {@code systemsInRegion} agrees with {@code systemAt}, and that the tunable
- * params drive the outcome. Balance numbers are exercised as inputs, never pinned as expected
- * values.</p>
+ * guarantee, the separation floor between two seats, that the star field is its GALAXY's density
+ * profile (it thins outwards and stops at the declared radius), that {@code systemsInRegion} agrees
+ * with {@code systemAt}, and that the tunable params drive the outcome. Balance numbers are exercised
+ * as inputs, never pinned as expected values.</p>
+ *
+ * <p><b>Every sweep here sits near the ORIGIN</b>, which is the home galaxy's centre — the one place
+ * guaranteed to be inside a galaxy under every seed. A sweep elsewhere would be sampling whatever the
+ * seed happened to put there, which is a different claim. The galaxy lattice itself is
+ * {@code GalaxyFieldTest}'s subject.</p>
  *
  * <p><b>Sampling is by SUPER-CELL, never by cell.</b> A star seat is one cell in a cube of tens of
  * millions, so sweeping cells finds nothing whatever the galaxy holds — and a spacing small enough to
@@ -48,12 +54,18 @@ public class ClusteredGalaxyGeneratorTest {
     /** The shipped spacing: what the sampled galaxy is is what the game ships. */
     private static final int SPACING = GalaxyGenConfig.DEFAULT_MIN_SPACING;
 
-    private static GalaxyGenConfig cfg(double density, int spacing, int clusterScale, double voidFraction) {
-        return new GalaxyGenConfig(density, spacing, clusterScale, voidFraction, null);
+    /**
+     * A config at the shipped galaxy lattice, varying only how full a galaxy's densest point is. Every
+     * sweep in this class sits near the ORIGIN, which is the home galaxy's centre, so {@code density}
+     * is the whole of what decides whether the sampled sky has stars in it.
+     */
+    private static GalaxyGenConfig cfg(double density, int spacing) {
+        return new GalaxyGenConfig(spacing, density, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, null, null);
     }
 
     private static GalaxyGenConfig defaultsCfg() {
-        return cfg(0.35d, SPACING, 16, 0.6d);
+        return cfg(0.35d, SPACING);
     }
 
     /** Iterate an inclusive box of SUPER-CELLS, calling the visitor with each one's probe cell. */
@@ -115,7 +127,7 @@ public class ClusteredGalaxyGeneratorTest {
     @Test
     public void minimumSpacingIsRespected() {
         // At most one system per minSpacing-cube super-cell, anywhere in the sampled volume.
-        GalaxyGenConfig config = cfg(0.9d, SPACING, 8, 0.0d); // dense, no void: stress spacing
+        GalaxyGenConfig config = cfg(0.9d, SPACING); // dense, no void: stress spacing
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         Map<String, Integer> perSuperCell = new HashMap<>();
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 4)) {
@@ -136,7 +148,7 @@ public class ClusteredGalaxyGeneratorTest {
         // The floor is what makes a near-pair of seats impossible, and it is what stops two unrelated
         // systems — two names, two frames, no gravitational relation — from being read as a binary.
         // Multiplicity is something a system states about itself, never something the lattice fakes.
-        GalaxyGenConfig config = cfg(1.0d, SPACING, 8, 0.0d); // every cube occupied: the tightest case
+        GalaxyGenConfig config = cfg(1.0d, SPACING); // every cube occupied: the tightest case
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         List<GalacticCoord> seats = anchors(gen, SEED, SPACING, 2);
         assertTrue("the sweep must find systems", seats.size() > 10);
@@ -156,7 +168,7 @@ public class ClusteredGalaxyGeneratorTest {
         // The seat used to be pinned into the middle quarter per axis — 1.6 % of the cube's volume —
         // which reads as a lattice of tight clumps with guaranteed-empty walls. What replaces it is a
         // margin sized by what a system NEEDS, so most of the cube is reachable.
-        GalaxyGenConfig config = cfg(1.0d, SPACING, 8, 0.0d);
+        GalaxyGenConfig config = cfg(1.0d, SPACING);
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         long s = config.minSpacing;
         double nearestFaceFraction = 1d;
@@ -173,34 +185,23 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void distributionClustersIntoGalaxiesAndVoid() {
-        // A strongly-clustered config: expect BOTH occupied sub-regions and entirely-empty (void) ones.
-        GalaxyGenConfig config = cfg(0.6d, SPACING, 8, 0.6d);
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
+    public void starsStopAtTheirGalaxysDeclaredEdge() {
+        // The star field is the GALAXY's density profile, so where a galaxy ends the stars end. This
+        // is what an independent per-cell mask could not do: drawn above the percolation threshold it
+        // produced one unbounded sponge, with no edge to reach and no answer to "which galaxy is this".
+        //
+        // Sampled against the home galaxy's OWN radius rather than a hard-coded distance: the radius
+        // is drawn per seed, so a fixed number would be testing one draw.
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d, SPACING));
+        Galaxy home = gen.galaxies().home(SEED);
 
-        int emptyBlocks = 0;
-        int nonEmptyBlocks = 0;
-        // Scan 16x16 coarse blocks (each 6x6x1 super-cells) across a wide plane.
-        for (long bx = -8; bx < 8; bx++) {
-            for (long by = -8; by < 8; by++) {
-                boolean any = false;
-                for (long dx = 0; dx < 6 && !any; dx++) {
-                    for (long dy = 0; dy < 6 && !any; dy++) {
-                        if (gen.anchorAt(SEED, cell((bx * 6 + dx) * SPACING, (by * 6 + dy) * SPACING, 0))
-                                .isPresent()) {
-                            any = true;
-                        }
-                    }
-                }
-                if (any) {
-                    nonEmptyBlocks++;
-                } else {
-                    emptyBlocks++;
-                }
-            }
-        }
-        assertTrue("clustering must leave genuinely empty void regions", emptyBlocks > 0);
-        assertTrue("clustering must leave genuinely populated regions", nonEmptyBlocks > 0);
+        int inside = seatsInBlockAround(gen, 0L, 3);
+        long beyondEdge = UniverseScale.cellsForLightYears(home.radiusLy() * 1.5d);
+        int outside = seatsInBlockAround(gen, beyondEdge, 3);
+
+        assertTrue("the galaxy's core must hold stars (found " + inside + ")", inside > 0);
+        assertEquals("past the declared radius of " + (long) home.radiusLy()
+                + " ly there must be nothing", 0, outside);
     }
 
     @Test
@@ -244,20 +245,23 @@ public class ClusteredGalaxyGeneratorTest {
     }
 
     @Test
-    public void voidFractionDrivesOccupancy() {
-        int allVoid = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.8d, SPACING, 8, 1.0d)),
-                SEED, SPACING, 6).size();
-        int noVoid = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.8d, SPACING, 8, 0.0d)),
-                SEED, SPACING, 6).size();
-        assertEquals("voidFraction=1 must yield an empty galaxy", 0, allVoid);
-        assertTrue("voidFraction=0 must populate the galaxy", noVoid > 0);
+    public void aGalaxysProfileThinsTheStarFieldOutwards() {
+        // The profile is not a mask with two states. A galaxy is densest at its nucleus and thins with
+        // radius, so the same density knob has to place more stars near the centre than out at the rim
+        // — that gradient is the whole difference between a galaxy and a uniform fog.
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d, SPACING));
+        Galaxy home = gen.galaxies().home(SEED);
+
+        int core = seatsInBlockAround(gen, 0L, 4);
+        int rim = seatsInBlockAround(gen, UniverseScale.cellsForLightYears(home.radiusLy() * 0.8d), 4);
+        assertTrue("the core must be denser than the rim (" + core + " vs " + rim + ")", core > rim);
     }
 
     @Test
     public void densityDrivesOccupancy() {
-        int sparse = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.1d, SPACING, 8, 0.0d)),
+        int sparse = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.1d, SPACING)),
                 SEED, SPACING, 7).size();
-        int dense = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.9d, SPACING, 8, 0.0d)),
+        int dense = occupiedSeats(new ClusteredGalaxyGenerator(cfg(0.9d, SPACING)),
                 SEED, SPACING, 7).size();
         assertTrue("higher density must place more systems (" + sparse + " vs " + dense + ")",
                 dense > sparse);
@@ -269,7 +273,9 @@ public class ClusteredGalaxyGeneratorTest {
         List<GalaxyGenConfig.StarType> types = new ArrayList<>();
         types.add(new GalaxyGenConfig.StarType(50, 0.5f, 1.0f, 100)); // common
         types.add(new GalaxyGenConfig.StarType(250, 2.0f, 3.0f, 1));  // rare
-        GalaxyGenConfig config = new GalaxyGenConfig(0.9d, SPACING, 8, 0.0d, types);
+        GalaxyGenConfig config = new GalaxyGenConfig(SPACING, 0.9d,
+                GalaxyGenConfig.DEFAULT_GALAXY_SPACING, GalaxyGenConfig.DEFAULT_GALAXY_DENSITY,
+                types, null);
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
 
         int common = 0;
@@ -311,7 +317,7 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void proceduralSystemIdsAreNegative() {
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, SPACING, 8, 0.0d));
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, SPACING));
         boolean sawAny = false;
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 2)) {
             sawAny = true;
@@ -323,20 +329,21 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void configClampsAndDefaults() {
-        GalaxyGenConfig c = new GalaxyGenConfig(5.0d, -3, 0, -1.0d, null);
+        GalaxyGenConfig c = new GalaxyGenConfig(-3, 5.0d, -7L, -1.0d, null, null);
         assertEquals("density clamps to [0,1]", 1.0d, c.density, 0d);
-        assertEquals("voidFraction clamps to [0,1]", 0.0d, c.voidFraction, 0d);
+        assertEquals("galaxyDensity clamps to [0,1]", 0.0d, c.galaxyDensity, 0d);
         assertTrue("minSpacing floors at 1", c.minSpacing >= 1);
-        assertTrue("clusterScale floors at 1", c.clusterScale >= 1);
+        assertTrue("galaxySpacing floors at 1", c.galaxySpacing >= 1L);
         assertFalse("empty star types fall back to defaults", c.starTypes.isEmpty());
+        assertFalse("empty galaxy types fall back to defaults", c.galaxyTypes.isEmpty());
     }
 
     @Test
     public void configClampsNaNToZero() {
-        // A NaN attribute (Double.parseDouble accepts "NaN") must not poison the density/void gates.
-        GalaxyGenConfig c = new GalaxyGenConfig(Double.NaN, 1, 1, Double.NaN, null);
+        // A NaN attribute (Double.parseDouble accepts "NaN") must not poison either occupancy gate.
+        GalaxyGenConfig c = new GalaxyGenConfig(1, Double.NaN, 1L, Double.NaN, null, null);
         assertEquals("NaN density clamps to 0", 0.0d, c.density, 0d);
-        assertEquals("NaN voidFraction clamps to 0", 0.0d, c.voidFraction, 0d);
+        assertEquals("NaN galaxyDensity clamps to 0", 0.0d, c.galaxyDensity, 0d);
     }
 
     @Test
@@ -346,7 +353,8 @@ public class ClusteredGalaxyGeneratorTest {
         types.add(new GalaxyGenConfig.StarType(50, 0.5f, 1.0f, Integer.MAX_VALUE));
         types.add(new GalaxyGenConfig.StarType(250, 2.0f, 3.0f, Integer.MAX_VALUE));
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(
-                new GalaxyGenConfig(0.9d, SPACING, 8, 0.0d, types));
+                new GalaxyGenConfig(SPACING, 0.9d, GalaxyGenConfig.DEFAULT_GALAXY_SPACING,
+                        GalaxyGenConfig.DEFAULT_GALAXY_DENSITY, types, null));
 
         Set<String> seenTemps = new HashSet<>();
         for (long x = -20; x <= 20; x++) {
@@ -366,7 +374,7 @@ public class ClusteredGalaxyGeneratorTest {
     public void proceduralBodiesGetTheirOwnCellsInsideTheSuperCell() {
         // A system is an anchored NEIGHBOURHOOD — the star holds the anchor cell, each planet/belt its
         // own cell (snapped to that cell's centre), all inside the anchor's minSpacing super-cell.
-        GalaxyGenConfig config = cfg(0.9d, SPACING, 8, 0.0d);
+        GalaxyGenConfig config = cfg(0.9d, SPACING);
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         long s = config.minSpacing;
         boolean checkedAny = false;
@@ -419,7 +427,7 @@ public class ClusteredGalaxyGeneratorTest {
         // distance d is d units from its star, in blocks, and its cell NAME is a reading of that same
         // position rather than a second layout arithmetic beside it. When those two came apart, the
         // science said one thing and the flight time said another.
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, SPACING, 8, 0.0d));
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, SPACING));
         int checked = 0;
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 1)) {
             List<SystemBody> bodies = gen.bodiesFor(SEED, anchor);
@@ -450,7 +458,7 @@ public class ClusteredGalaxyGeneratorTest {
     public void aSystemNeverReachesPastItsOwnClearSpace() {
         // The bound that replaces "a system is a fraction of the distance to the next star": named
         // bodies stay inside half the separation floor, whatever a star's own zone would have drawn.
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d, SPACING, 8, 0.0d));
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(1.0d, SPACING));
         int checked = 0;
         for (GalacticCoord anchor : anchors(gen, SEED, SPACING, 1)) {
             for (SystemBody body : gen.bodiesFor(SEED, anchor)) {
@@ -469,7 +477,7 @@ public class ClusteredGalaxyGeneratorTest {
         // would have to share that cell, which at most one real body per cell forbids — so the system
         // degenerates to its star alone. Degenerate but CONSISTENT: attribution stays exact, nothing
         // escapes the box, and no cell ends up with two destinations in it.
-        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, 1, 8, 0.0d));
+        ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(cfg(0.9d, 1));
         boolean checkedAny = false;
         for (long x = -6; x <= 6; x++) {
             GalacticCoord c = cell(x, 0, 0);
@@ -488,7 +496,7 @@ public class ClusteredGalaxyGeneratorTest {
 
     @Test
     public void anchorAtAttributesEveryCellOfAnOccupiedSuperCell() {
-        GalaxyGenConfig config = cfg(0.9d, SPACING, 8, 0.0d);
+        GalaxyGenConfig config = cfg(0.9d, SPACING);
         ClusteredGalaxyGenerator gen = new ClusteredGalaxyGenerator(config);
         long s = config.minSpacing;
         boolean checkedAny = false;
@@ -526,6 +534,28 @@ public class ClusteredGalaxyGeneratorTest {
             }
         });
         return out;
+    }
+
+    /**
+     * How many seats a {@code (2r+1)³} block of super-cells holds, centred {@code offsetCells} out
+     * along +X from the origin — the origin being the home galaxy's centre. Sampling a BLOCK rather
+     * than a single super-cell is what makes the count a reading of the density there instead of one
+     * coin toss.
+     */
+    private static int seatsInBlockAround(ClusteredGalaxyGenerator gen, long offsetCells, long r) {
+        Set<String> seen = new HashSet<>();
+        for (long x = -r; x <= r; x++) {
+            for (long y = -r; y <= r; y++) {
+                for (long z = -r; z <= r; z++) {
+                    Optional<GalacticCoord> a = gen.anchorAt(SEED,
+                            cell(offsetCells + x * SPACING, y * SPACING, z * SPACING));
+                    if (a.isPresent()) {
+                        seen.add(a.get().cellKey());
+                    }
+                }
+            }
+        }
+        return seen.size();
     }
 
     private static Set<String> occupiedSeats(ClusteredGalaxyGenerator gen, long seed, long spacing,

@@ -102,6 +102,15 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
 
     // ─── JVM-global seams / staging ───────────────────────────────────────────
     private static volatile IGalaxyGenerator generator = new EmptyGalaxyGenerator();
+
+    /**
+     * The installed generator. The counterpart of {@link #setGenerator}: a caller that needs the
+     * partition the universe is laid out on — the super-cell edge, above all — has to be able to ask
+     * for it rather than assume a number that the configuration owns.
+     */
+    public static IGalaxyGenerator generator() {
+        return generator;
+    }
     // How a stored star-id resolves to its content object. Defaults to the legacy catalogue; overridable so
     // the forward coord->system path is unit-testable without booting DimensionManager, and so an addon can
     // supply fabricated systems.

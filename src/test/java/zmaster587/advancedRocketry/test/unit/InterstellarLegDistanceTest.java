@@ -83,7 +83,7 @@ public class InterstellarLegDistanceTest {
                 .append(BASELINE_SPEED).append(" blocks/tick ===\n");
         report.append("cell edge ").append(GalacticCoord.CELL).append(" blocks, minSpacing ")
                 .append(cfg.minSpacing).append(" cells, density ").append(cfg.density)
-                .append(", clusterScale ").append(cfg.clusterScale).append('\n');
+                .append(", galaxy spacing ").append(cfg.galaxySpacing).append(" cells\n");
         for (String row : rows) {
             report.append("  ").append(row).append('\n');
         }
