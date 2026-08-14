@@ -146,17 +146,28 @@ public class VSShipFlightTelemetryE2ETest extends AbstractSharedVsClientE2ETest 
         assertTrue("the client's flight cursor must return to centre (got " + cursorCentred + ")",
                 Math.abs(cursorCentred) < CURSOR_DEADZONE);
 
-        // With the cursor centred the controller must brake the ship to rest. Poll with a ceiling.
-        double settled = spinning;
-        for (int i = 0; i < 150 && settled > 0.05; i++) {
-            bot().waitTicks(2);
-            settled = readDouble(shipInfo(), OMEGA);
-        }
+        // With the cursor centred the controller must brake the ship to rest. Event-gated with a
+        // load-scaled ceiling, like the two polls above it and for a sharper reason than either: the
+        // budget here was the last FIXED one in this method, while the SPIN it has to kill is not a
+        // constant. The deflection loop runs in CLIENT ticks, and a frame-starved client under
+        // concurrent-fork load lets the server tick many times per client tick - so the ship the
+        // brake receives is spinning far faster. Measured 2026-08-14 at 6 forks: the brake started
+        // from 2.0 rad/s and reached 0.129 within the old 150 iterations, with the controller
+        // reporting angularEngaged:true at full braking torque (alpha=4.0) - a brake working
+        // correctly, timed out. The same class alone on a quiet machine: 6/6 green in 2m28s, where
+        // the spin-up poll exits an order of magnitude lower. Scaling the window keeps an idle run
+        // at exactly the iterations it always spent; loosening the 0.05 threshold instead would
+        // weaken the contract ("stops turning") to fit the machine.
+        ClientPoll.Result<Double> brake = ClientPoll.until(bot()::waitTicks,
+                () -> readDouble(shipInfo(), OMEGA),
+                o -> o <= 0.05, 2, 150);
+        double settled = brake.value;
         String controller = exec("artest vs afc-debug");
         System.out.println("[tier2] omega spinning=" + spinning + " settled=" + settled
-                + " controller=" + controller);
+                + " brake=" + brake + " controller=" + controller);
         assertTrue("with the flight cursor centred the ship must STOP turning, not coast: it was "
                 + "spinning at " + spinning + " rad/s and is still at " + settled
+                + " after " + brake.iterations + "/" + brake.ceiling + " polls"
                 + "; controller=" + controller, settled <= 0.05);
 
         exec("artest player dismount");
