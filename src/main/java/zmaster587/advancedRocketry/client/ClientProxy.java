@@ -183,6 +183,7 @@ public class ClientProxy extends CommonProxy {
 
         registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockOxygenFluid);
         registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockNitrogenFluid);
+        registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockCarbonDioxideFluid);
         registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockHydrogenFluid);
         registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockFuelFluid);
         registerFluidModel((IFluidBlock) AdvancedRocketryBlocks.blockEnrichedLavaFluid);

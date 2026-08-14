@@ -14,6 +14,7 @@ public class AdvancedRocketryFluids {
     public static Fluid fluidHydrogen;
     public static Fluid fluidRocketFuel;
     public static Fluid fluidNitrogen;
+    public static Fluid fluidCarbonDioxide;
     public static Fluid fluidEnrichedLava;
     private static Set<FluidGasGiantGas> gasses = new HashSet<>();
 

@@ -63,6 +63,7 @@ tile.rocketFuelBlock.name=Ракетное топливо
 tile.hydrogenFluidBlock.name=Водород
 tile.oxygenFluidBlock.name=Кислород
 tile.nitrogenFluidBlock.name=Азот
+tile.carbonDioxideFluidBlock.name=Углекислый газ
 tile.oxygenCharger.name=Кислородная станция
 tile.dockingPad.name=Стыковочный узел
 tile.stationmonitor.name=Варп-контроллер
@@ -197,6 +198,7 @@ data.mass.name=Масса
 fluid.oxygen=Кислород
 fluid.hydrogen=Водород
 fluid.nitrogen=Азот
+fluid.carbonDioxide=Углекислый газ
 fluid.rocketFuel=Ракетное топливо
 
 mission.asteroidmining.name=Добыча на астероиде

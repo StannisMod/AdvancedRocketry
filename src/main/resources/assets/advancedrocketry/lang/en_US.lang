@@ -86,6 +86,7 @@ tile.rocketFuelBlock.name=Rocket Fuel
 tile.hydrogenFluidBlock.name=Hydrogen
 tile.oxygenFluidBlock.name=Oxygen
 tile.nitrogenFluidBlock.name=Nitrogen
+tile.carbonDioxideFluidBlock.name=Carbon Dioxide
 tile.oxygenCharger.name=Gas Charge Pad
 tile.dockingPad.name=Docking Pad
 tile.stationmonitor.name=Warp Controller
@@ -235,6 +236,7 @@ data.label.data=Data
 fluid.oxygen=Oxygen
 fluid.hydrogen=Hydrogen
 fluid.nitrogen=Nitrogen
+fluid.carbonDioxide=Carbon Dioxide
 fluid.rocketFuel=Rocket Fuel
 fluid.enrichedLava=Enriched Lava
 
