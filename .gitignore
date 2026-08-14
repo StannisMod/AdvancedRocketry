@@ -34,7 +34,7 @@ logs/
 /run/
 
 # Navigator / agent meta repository — tracked separately in a private repo
-# (.AdvancedRocketry-navigator.git) that shares this working tree.
+# (.Stellurgy-navigator.git) that shares this working tree.
 # These paths are owned by the meta repo and must NOT be tracked by main.
 .agent/
 /CLAUDE.md
@@ -42,4 +42,4 @@ logs/
 /SETUP-AR.md
 .claude/
 .codex/
-.AdvancedRocketry-navigator.git/
+.Stellurgy-navigator.git/
