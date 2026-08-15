@@ -524,6 +524,71 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
             return;
         }
+        if (args.length >= 5 && "console-info".equalsIgnoreCase(args[0])) {
+            // console-info <dim> <x> <y> <z> — what a shield CONSOLE is currently displaying, as
+            // opposed to what the network state says. The two can disagree, and that disagreement is
+            // the bug class this verb exists to make visible (ledger #260). Read out of the console's
+            // own writeToNBT, so it reports the same fields production persists rather than a
+            // parallel accessor that could drift from them.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\",\"tile\":\""
+                        + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+                return;
+            }
+            net.minecraft.nbt.NBTTagCompound shown =
+                    tile.writeToNBT(new net.minecraft.nbt.NBTTagCompound());
+            send(sender, "{\"ok\":true"
+                    + ",\"networkConnected\":" + shown.getBoolean("networkConnected")
+                    + ",\"networkStatus\":" + shown.getInteger("networkStatus")
+                    + ",\"cableCount\":" + shown.getInteger("cableCount")
+                    + ",\"sourceAvailable\":" + shown.getInteger("sourceAvailable")
+                    + ",\"sinkRequested\":" + shown.getInteger("sinkRequested")
+                    + ",\"deliveredFlow\":" + shown.getInteger("deliveredFlow")
+                    + ",\"resistanceBias\":" + shown.getDouble("shieldEnergyResistanceBias") + "}");
+            return;
+        }
+        if (args.length >= 6 && "console-bias".equalsIgnoreCase(args[0])) {
+            // console-bias <dim> <x> <y> <z> <0..1> — drive the console's own
+            // applyShieldEnergyResistanceBias, the method its GUI slider calls. The setting is
+            // console-OWNED and console-persisted, which is the property a restart test pins.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            double bias;
+            try {
+                bias = Double.parseDouble(args[5]);
+            } catch (NumberFormatException badNumber) {
+                send(sender, "{\"error\":\"bias must be a number\",\"got\":\"" + escapeJson(args[5]) + "\"}");
+                return;
+            }
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof com.github.stannismod.affs.te.TileEntityShieldConsole)) {
+                send(sender, "{\"error\":\"not a TileEntityShieldConsole\"}");
+                return;
+            }
+            com.github.stannismod.affs.te.TileEntityShieldConsole consoleTile =
+                    (com.github.stannismod.affs.te.TileEntityShieldConsole) tile;
+            consoleTile.applyShieldEnergyResistanceBias(bias);
+            send(sender, "{\"ok\":true,\"resistanceBias\":"
+                    + consoleTile.getShieldEnergyResistanceBias() + "}");
+            return;
+        }
         if (args.length >= 6 && "group".equalsIgnoreCase(args[0])) {
             // group <dim> <x> <y> <z> <op> [...] — drive the D134-5 priority-group control surface from
             // the console position <x,y,z> (any console/block in the domain gives the same answer, which
@@ -16641,12 +16706,15 @@ public class TestProbeCommand extends CommandBase {
         // through the SERVER half of the production path: the same useNetworkData branch the GUI
         // button's packet lands in, clamp included. The button itself is a client concern; this
         // drives what the server does when it arrives.
-        if (args.length >= 6 && "priority".equalsIgnoreCase(args[0])) {
+        if (args.length >= 5 && "priority".equalsIgnoreCase(args[0])) {
             int dim = parseIntOr(args[1], Integer.MIN_VALUE);
             int x = parseIntOr(args[2], 0);
             int y = parseIntOr(args[3], 0);
             int z = parseIntOr(args[4], 0);
-            int value = parseIntOr(args[5], 0);
+            // With no value this READS instead of writing — a restart test needs to ask what
+            // survived without first overwriting it.
+            boolean write = args.length >= 6;
+            int value = write ? parseIntOr(args[5], 0) : 0;
             net.minecraft.world.WorldServer world = server.getWorld(dim);
             if (world == null) {
                 send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
@@ -16659,10 +16727,12 @@ public class TestProbeCommand extends CommandBase {
             }
             zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent vent =
                     (zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) tile;
-            net.minecraft.nbt.NBTTagCompound payload = new net.minecraft.nbt.NBTTagCompound();
-            payload.setInteger("zonePriority", value);
-            vent.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER, (byte) 4, payload);
-            send(sender, "{\"ok\":true,\"requested\":" + value
+            if (write) {
+                net.minecraft.nbt.NBTTagCompound payload = new net.minecraft.nbt.NBTTagCompound();
+                payload.setInteger("zonePriority", value);
+                vent.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER, (byte) 4, payload);
+            }
+            send(sender, "{\"ok\":true,\"wrote\":" + write
                     + ",\"priority\":" + vent.getZonePriority() + "}");
             return;
         }

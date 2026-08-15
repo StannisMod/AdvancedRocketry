@@ -164,7 +164,6 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
                 || generationPerTick != 0
                 || consumptionPerTick != 0
                 || bottleneckUtilizationPermille != 0
-                || Double.compare(shieldEnergyResistanceBias, ModConfig.shieldEnergyResistanceBias) != 0
                 || rootX != 0
                 || rootY != 0
                 || rootZ != 0;
@@ -182,7 +181,12 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
         generationPerTick = 0;
         consumptionPerTick = 0;
         bottleneckUtilizationPermille = 0;
-        shieldEnergyResistanceBias = ModConfig.shieldEnergyResistanceBias;
+        // NOT the resistance bias. Everything above is a READOUT of a network that is gone and must
+        // be cleared; the bias is this console's own setting, persisted in its NBT and re-seeded
+        // INTO the network on every rebuild. Clearing it here reset a player's choice to the config
+        // default on the first tick after any world load — the network has not been rebuilt yet at
+        // that point, so this path runs — and the rebuild then seeded the network from the wiped
+        // value, making the loss look like the network's answer.
         rootX = 0;
         rootY = 0;
         rootZ = 0;

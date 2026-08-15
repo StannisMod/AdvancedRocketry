@@ -459,16 +459,17 @@ public final class SubsystemNetworkManager {
             BlockPos anchor = state.getRoot();
             state.setStatistics(false, SubsystemNetworkStatus.DISCONNECTED, anchor,
                     cables.size(), sources.size(), sinks.size(), 0, 0, 0, 0, 0, anchor, 0, 0, 0);
-            // Cables only, NOT controllers — inherited asymmetry, kept deliberately so this
-            // extraction changes no behaviour. It looks wrong (a console on a network that just lost
-            // its last source keeps displaying the readout from when it still worked), and it is
-            // written down as such rather than fixed in passing.
-            for (CableNode cable : cables) {
-                cable.cable.onNetworkStats(state);
-            }
+            publish();
         }
 
-        /** One report, to everything that displays it. */
+        /**
+         * One report, to everything that displays it — controllers AND cables, on every path.
+         * <p>
+         * The disconnected path used to skip controllers, so a console whose network had just lost
+         * its last source went on showing the readout from the tick before it died. A display that
+         * stops following its subject and keeps looking authoritative is the same defect twice over
+         * here, because the console is also where the domain's settings are persisted.
+         */
         private void publish() {
             for (ISubsystemNetworkController controller : controllers) {
                 controller.applyNetworkState(state);
