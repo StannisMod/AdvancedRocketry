@@ -7,6 +7,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.damage.DamageOutcome;
 import zmaster587.advancedRocketry.api.damage.StopReason;
+import zmaster587.advancedRocketry.util.SweptSegment;
 import zmaster587.advancedRocketry.util.WeightEngine;
 
 /**
@@ -50,12 +51,28 @@ public final class StructureDamageEngine {
      */
     private static final int GAP_TOLERANCE = 6;
 
+    /**
+     * Hard bound on how many blocks one walk may examine, derived from {@link #MAX_PATH_BLOCKS} and
+     * never reached before it. A segment of length L crosses at most about 1.74 L voxels (the sum of
+     * a unit vector's components), so three per block of reach is slack, not a second limit: the
+     * geometric end of the path always comes first. It exists so a traversal cannot run away.
+     */
+    private static final int MAX_VOXELS_EXAMINED = MAX_PATH_BLOCKS * 3 + 3;
+
     private StructureDamageEngine() {
     }
 
     /**
      * Walk from {@code entry} along {@code direction}, spending {@code budget}. Every coordinate in
      * and out is in the caller's frame.
+     *
+     * <h3>The path is TRAVERSED, not sampled</h3>
+     * <p>Every block the ray passes through is offered the budget, in order. The obvious alternative —
+     * step one unit along the ray and read the block under each sample — is wrong for any ray that is
+     * not parallel to an axis, because one unit of RAY is not one block of GRID: at thirty degrees it
+     * walks past roughly a third of what it crosses, and the blocks it walks past keep their budget
+     * and stand pristine inside the crater. Worse, each one is then counted as EMPTY, so six of them
+     * in a row convince the walk it has come out the far side of a hull it is still inside.</p>
      */
     public static WalkResult penetrate(World world, Vec3d entry, Vec3d direction, int budget) {
         WalkResult result = new WalkResult();
@@ -67,73 +84,108 @@ public final class StructureDamageEngine {
             return result;
         }
 
-        boolean enteredStructure = false;
-        int consecutiveEmpty = 0;
-        Vec3d lastSolidExit = null;
-        BlockPos previous = null;
+        Walk walk = new Walk(world, entry, direction, result);
+        SweptSegment.traverse(entry, walk.farEnd, MAX_VOXELS_EXAMINED, walk);
+        return walk.finish();
+    }
 
-        for (int step = 0; step < MAX_PATH_BLOCKS; step++) {
-            Vec3d samplePoint = entry.add(scale(direction, step + 0.5D));
-            BlockPos pos = new BlockPos(Math.floor(samplePoint.x), Math.floor(samplePoint.y),
-                    Math.floor(samplePoint.z));
-            if (pos.equals(previous)) {
-                continue;
+    /**
+     * One walk's state, told about each block the ray enters. It is an object rather than a loop only
+     * because the traversal calls back; every decision is the one the loop made.
+     */
+    private static final class Walk implements SweptSegment.Visitor {
+
+        private final World world;
+        private final Vec3d entry;
+        private final WalkResult result;
+        /** The far end of the reach, {@link #MAX_PATH_BLOCKS} blocks of RAY along the direction. */
+        private final Vec3d farEnd;
+
+        private boolean entered;
+        private boolean decided;
+        private int consecutiveEmpty;
+        private boolean previousWasSolid;
+        private Vec3d lastSolidExit;
+
+        private Walk(World world, Vec3d entry, Vec3d direction, WalkResult result) {
+            this.world = world;
+            this.entry = entry;
+            this.result = result;
+            double length = Math.sqrt(direction.x * direction.x + direction.y * direction.y
+                    + direction.z * direction.z);
+            Vec3d unit = length <= 1.0E-9D ? direction : scale(direction, 1.0D / length);
+            this.farEnd = entry.add(scale(unit, MAX_PATH_BLOCKS));
+        }
+
+        @Override
+        public boolean visit(BlockPos pos, double tEnter) {
+            Vec3d here = entry.add(scale(farEnd.subtract(entry), tEnter));
+            if (previousWasSolid) {
+                // The ray left the previous solid block exactly where it entered this one.
+                lastSolidExit = here;
+                previousWasSolid = false;
             }
-            previous = pos;
 
             if (!world.isBlockLoaded(pos)) {
                 // Not "there is nothing here" — nobody looked. A caller that can retry should.
-                result.outcome = enteredStructure ? DamageOutcome.ABSORBED : DamageOutcome.NOTHING_STRUCK;
-                result.stopReason = StopReason.TARGET_UNLOADED;
-                return result;
+                return decide(entered ? DamageOutcome.ABSORBED : DamageOutcome.NOTHING_STRUCK,
+                        StopReason.TARGET_UNLOADED, null);
             }
 
             IBlockState state = world.getBlockState(pos);
-            if (!isDamageable(world, pos, state)) {
-                if (enteredStructure && ++consecutiveEmpty >= GAP_TOLERANCE) {
-                    result.outcome = DamageOutcome.EXITED;
-                    result.stopReason = StopReason.EXITED_FAR_SIDE;
-                    result.exitPoint = lastSolidExit;
-                    return result;
+            if (!isStructure(world, pos, state)) {
+                if (entered && ++consecutiveEmpty >= GAP_TOLERANCE) {
+                    return decide(DamageOutcome.EXITED, StopReason.EXITED_FAR_SIDE, lastSolidExit);
                 }
-                continue;
+                return false;
             }
 
             consecutiveEmpty = 0;
-            if (!enteredStructure) {
-                enteredStructure = true;
-                result.entryPoint = samplePoint;
+            if (!entered) {
+                entered = true;
+                result.entryPoint = here;
             }
             result.penetrationDepth++;
-            lastSolidExit = entry.add(scale(direction, step + 1.0D));
+            previousWasSolid = true;
 
             if (isIndestructible(world, pos, state)) {
                 // Nothing gets through this. The budget dies here rather than tunnelling past it.
                 result.budgetSpent += result.budgetLeft;
                 result.budgetLeft = 0;
-                result.outcome = DamageOutcome.ABSORBED;
-                result.stopReason = StopReason.BUDGET_EXHAUSTED;
-                return result;
+                return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
             }
 
             spendInto(world, pos, state, result);
             if (result.budgetLeft <= 0) {
-                result.outcome = DamageOutcome.ABSORBED;
-                result.stopReason = StopReason.BUDGET_EXHAUSTED;
-                return result;
+                return decide(DamageOutcome.ABSORBED, StopReason.BUDGET_EXHAUSTED, null);
             }
+            return false;
         }
 
-        if (!enteredStructure) {
-            result.outcome = DamageOutcome.NOTHING_STRUCK;
-            result.stopReason = StopReason.NO_CANDIDATES;
+        private boolean decide(DamageOutcome outcome, StopReason reason, Vec3d exitPoint) {
+            result.outcome = outcome;
+            result.stopReason = reason;
+            result.exitPoint = exitPoint;
+            decided = true;
+            return true;
+        }
+
+        /** The outcome for a walk that ran off the end of its reach without deciding anything. */
+        private WalkResult finish() {
+            if (decided) {
+                return result;
+            }
+            if (!entered) {
+                result.outcome = DamageOutcome.NOTHING_STRUCK;
+                result.stopReason = StopReason.NO_CANDIDATES;
+                return result;
+            }
+            // Budget still in hand at the path limit: hand it back rather than absorb it silently.
+            result.outcome = DamageOutcome.EXITED;
+            result.stopReason = StopReason.EXITED_FAR_SIDE;
+            result.exitPoint = previousWasSolid ? farEnd : lastSolidExit;
             return result;
         }
-        // Budget still in hand at the path limit: hand it back rather than absorb it silently.
-        result.outcome = DamageOutcome.EXITED;
-        result.stopReason = StopReason.EXITED_FAR_SIDE;
-        result.exitPoint = lastSolidExit;
-        return result;
     }
 
     /** Spend as much of the remaining budget into one block as its stages will take. */
@@ -184,10 +236,6 @@ public final class StructureDamageEngine {
      */
     public static boolean isStructure(World world, BlockPos pos, IBlockState state) {
         return !state.getBlock().isAir(state, world, pos) && !state.getMaterial().isLiquid();
-    }
-
-    private static boolean isDamageable(World world, BlockPos pos, IBlockState state) {
-        return isStructure(world, pos, state);
     }
 
     private static boolean isIndestructible(World world, BlockPos pos, IBlockState state) {

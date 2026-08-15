@@ -1,4 +1,4 @@
-package zmaster587.advancedRocketry.projectile;
+package zmaster587.advancedRocketry.util;
 
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;

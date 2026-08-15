@@ -5,6 +5,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.damage.StructureDamageEngine;
+import zmaster587.advancedRocketry.util.SweptSegment;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 
 import java.util.Map;

@@ -3,7 +3,7 @@ package zmaster587.advancedRocketry.test.unit;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.junit.Test;
-import zmaster587.advancedRocketry.projectile.SweptSegment;
+import zmaster587.advancedRocketry.util.SweptSegment;
 
 import java.util.ArrayList;
 import java.util.List;
