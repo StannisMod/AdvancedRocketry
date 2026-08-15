@@ -117,8 +117,17 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
     private static final String SKY_CLASS =
             "zmaster587.advancedRocketry.client.render.planet.BoundarySky";
 
-    /** Cell the ship settles in. sy=5000 dodges the fallback stars (all at sy=sz=0). */
-    private static final String CELL = "0 5000 0";
+    /**
+     * Cell the ship settles in — FOUND at run time, never written down. See {@link #findEmptyCell()}.
+     *
+     * <p>It used to be the constant {@code "0 5000 0"}, with the note "dodges the fallback stars". That
+     * was true while a star's neighbourhood was a few hundred cells wide; once the star lattice became
+     * metric-true a system owns millions of cells around itself, the constant landed deep inside the
+     * home system's territory, and the arrangement below ("no body may be synced for the slot yet")
+     * became false with nothing wrong in production. A cell distance expressed as a bare number expires
+     * the next time the universe's scale moves — so this one is asked for instead.</p>
+     */
+    private String cell;
 
     /**
      * The cell's contents: {@code localX localY localZ kind dimId}. The ship settles at the cell CENTRE,
@@ -265,7 +274,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             // with it and the pilot is put into it.
             String setup = exec("artest space entry-setup 1");
             assertTrue("entry-setup must install the stack: " + setup, setup.contains("\"ok\":true"));
-            String settle = exec("artest space ledger-settle " + CELL + " 0");
+            cell = findEmptyCell();
+            String settle = exec("artest space ledger-settle " + cell + " 0");
             assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
             Matcher boundM = BOUND_DIM.matcher(settle);
             assertTrue("the settle must report which slot the cell was bound to: " + settle, boundM.find());
@@ -308,7 +318,7 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             emptyBefore = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "before_empty");
 
             for (String[] body : SYSTEM) {
-                String poi = exec("artest space add-poi " + CELL + " " + body[0] + " " + body[1] + " "
+                String poi = exec("artest space add-poi " + cell + " " + body[0] + " " + body[1] + " "
                         + body[2] + " " + body[3] + " " + body[4] + " 7");
                 assertTrue("add-poi must register the body: " + poi, poi.contains("\"ok\":true"));
             }
@@ -539,6 +549,49 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             }
             bot().setRenderDistance(previousRenderDistance);
         }
+    }
+
+    /**
+     * A cell that belongs to no system, asked of the universe rather than assumed.
+     *
+     * <p>This test supplies the whole contents of its cell itself, so its arrangement needs a cell the
+     * generator has put NOTHING in — otherwise the "before" captures already hold somebody else's
+     * planets and every difference below is attributed to the wrong cause. Emptiness is read with the
+     * feed's own predicate: {@code skyBodiesAt} is the union of the owning system's bodies and the
+     * cell's own, which {@code cell-info} reports as {@code systemBodies} and {@code bodiesAt}, so both
+     * must be zero.</p>
+     *
+     * <p>The search DOUBLES its distance instead of stepping by a territory, and that is the point: a
+     * territory's width is a property of the active generator, and the moment this test writes it down
+     * it inherits an assumption that expires. Doubling reaches past any width there will ever be — it
+     * only has to stop before {@code Integer.MAX_VALUE}, because the probe parses a sector as an int
+     * and would SILENTLY answer about cell 0/0/0 for anything wider. Which is why the echoed
+     * {@code cellKey} is checked against the cell that was asked for.</p>
+     */
+    private String findEmptyCell() throws Exception {
+        StringBuilder tried = new StringBuilder();
+        for (long sy = 4096L; sy > 0L && sy <= Integer.MAX_VALUE; sy *= 2L) {
+            String info = exec("artest space cell-info 0 " + sy + " 0");
+            assertTrue("cell-info must answer about the very cell it was asked about, or the sector"
+                            + " overflowed the probe's int parse and it silently answered about the"
+                            + " origin: " + info,
+                    info.contains("\"cellKey\":\"0_" + sy + "_0\""));
+            int system = intField(info, "systemBodies");
+            int here = intField(info, "bodiesAt");
+            tried.append(" 0/").append(sy).append("/0=").append(system).append('+').append(here);
+            if (system == 0 && here == 0) {
+                return "0 " + sy + " 0";
+            }
+        }
+        throw new AssertionError("no cell within the probe's int-sized sector range is free of bodies,"
+                + " so this test has nowhere to arrange its own system; tried (systemBodies+bodiesAt):"
+                + tried);
+    }
+
+    private static int intField(String json, String name) {
+        Matcher m = Pattern.compile("\"" + name + "\":(\\d+)").matcher(json);
+        assertTrue("cell-info must report " + name + ": " + json, m.find());
+        return Integer.parseInt(m.group(1));
     }
 
     /** How many body labels the client's last rendered frame wrote. */
