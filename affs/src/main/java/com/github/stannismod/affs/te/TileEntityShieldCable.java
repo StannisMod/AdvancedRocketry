@@ -104,6 +104,28 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
         // The cable tracks throughput through network statistics, not local accumulation.
     }
 
+    /**
+     * The network's report, as the shared primitive delivers it. A cable is the block a player looks
+     * at to ask "why is this network not keeping up", so it mirrors the whole component readout.
+     */
+    @Override
+    public void onNetworkStats(zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState state) {
+        setNetworkStats(
+                state.isConnected(),
+                state.getStatus(),
+                state.getRoot(),
+                state.getCableCount(),
+                state.getSourceCount(),
+                state.getSinkCount(),
+                state.getSourceAvailable(),
+                state.getSinkRequested(),
+                state.getCableCapacity(),
+                state.getDeliveredFlow(),
+                state.getSaturatedCables(),
+                state.getBottleneck(),
+                state.getBottleneckUtilizationPermille());
+    }
+
     public void setNetworkStats(boolean connected, int status, BlockPos anchor, int cableCount, int sourceCount, int sinkCount, int sourceAvailable, int sinkRequested, int cableCapacity, int deliveredFlow, int saturatedCables, BlockPos bottleneck, int bottleneckUtilizationPermille) {
         BlockPos safeAnchor = anchor == null ? BlockPos.ORIGIN : anchor;
         BlockPos safeBottleneck = bottleneck == null ? BlockPos.ORIGIN : bottleneck;

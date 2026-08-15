@@ -439,6 +439,15 @@ public class TileEntityFieldGenerator extends TileEntity implements ITickable, F
         return getShieldDrainForPhase(shieldDrainPhase);
     }
 
+    /**
+     * What the network should report as CONSUMPTION: the upkeep this emitter actually burns, not the
+     * larger amount it requests while topping its buffer back up.
+     */
+    @Override
+    public int getConsumptionPerTick() {
+        return getShieldDrainThisTick();
+    }
+
     private void pushEntityBack(Entity entity) {
         if (entity == null || entity.world == null || entity.world.isRemote) {
             return;

@@ -1,6 +1,8 @@
 package com.github.stannismod.affs.world.shield;
 
-public interface IShieldSink extends IShieldNetworkNode {
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
+
+public interface IShieldSink extends IShieldNetworkNode, ISubsystemSink {
 
     int getRequestedShieldEnergy();
 
@@ -16,5 +18,25 @@ public interface IShieldSink extends IShieldNetworkNode {
      */
     default int getShieldPriority() {
         return 0;
+    }
+
+    @Override
+    default int getRequested() {
+        return getRequestedShieldEnergy();
+    }
+
+    @Override
+    default int getFreeCapacity() {
+        return getFreeShieldCapacity();
+    }
+
+    @Override
+    default int receive(int amount) {
+        return receiveShieldEnergy(amount);
+    }
+
+    @Override
+    default int getPriority() {
+        return getShieldPriority();
     }
 }

@@ -146,6 +146,16 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
         return Math.max(0, Math.min(CONVERSION_PER_TICK, Math.min(feStorage.getEnergyStored(), shieldStorage.getMaxEnergyStored() - shieldStorage.getEnergyStored())));
     }
 
+    /**
+     * What the network should report as GENERATION, which is what this generator can convert this
+     * tick — not the buffer it happens to be sitting on. A readout that showed the buffer could not
+     * tell a running plant from a stopped one with a full tank.
+     */
+    @Override
+    public int getGenerationPerTick() {
+        return getShieldProductionPotential();
+    }
+
     public int getMaxFeStored() {
         return feStorage.getMaxEnergyStored();
     }
