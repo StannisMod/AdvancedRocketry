@@ -80,6 +80,8 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
      * what it has, which is the behaviour a player who never opens this screen should get.
      */
     private int zonePriority;
+    /** Ticks since this vent last let a breached zone's air out. */
+    private int ticksSinceVenting;
     private ModuleButton priorityButton;
 
 
@@ -440,6 +442,7 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
 
     @Override
     public void update() {
+        ventBreachedAir();
         if (canPerformFunction()) {
 
             if (hasEnoughEnergy(getPowerPerOperation())) {
@@ -455,6 +458,44 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         soundInit = true;
     }
 
+
+    /**
+     * A breached zone loses its air to space instead of losing it to bookkeeping.
+     * <p>
+     * When a hull is opened the flood-fill drops the room's cells, but the gases are not the cells:
+     * {@code AreaBlob.clearBlob()} empties the GRAPH while the blob keeps its {@code AirState}, and
+     * the handler hands that state back by VENT rather than by membership. So the air outlives the
+     * room by exactly as long as it takes to escape, which is the difference between a breach that
+     * costs the ship a tankful and one that costs nothing because the air was deleted rather than
+     * lost. Runs whatever the power state: a hole does not need electricity.
+     * <p>
+     * All three gases go together and proportionally — vacuum does not sort them.
+     */
+    private void ventBreachedAir() {
+        if (world == null || world.isRemote || isMaintainingAtmosphere()
+                || !ARConfiguration.getCurrentConfig().lifeSupportZones)
+            return;
+        int ratePerSecond = ARConfiguration.getCurrentConfig().lifeSupportBreachVentRate;
+        if (ratePerSecond <= 0)
+            return;
+        // Its own counter, never a world-clock modulo: that would wake every breached vent in the
+        // world on one tick and would be invisible to a force-ticking harness.
+        if (++ticksSinceVenting < 20)
+            return;
+        ticksSinceVenting = 0;
+
+        AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        if (handler == null)
+            return;
+        AirState air = handler.getAirState(this);
+        if (air == null || air.getTotalPressure() <= 0)
+            return;
+
+        air.drawNitrogen(ratePerSecond);
+        air.drawOxygen(ratePerSecond);
+        air.drawCarbonDioxide(ratePerSecond);
+        markDirty();
+    }
 
     private void setSealed(boolean sealed) {
         boolean prevSealed = isSealed;

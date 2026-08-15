@@ -288,6 +288,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int lifeSupportDuctThroughput;
     @ConfigProperty
+    public int lifeSupportBreachVentRate;
+    @ConfigProperty
     public int solarGeneratorMult;
     @ConfigProperty
     public boolean gravityAffectsFuel;
@@ -540,6 +542,7 @@ public class ARConfiguration {
         arConfig.lifeSupportPlantPower = config.get(OXYGEN, "lifeSupportPlantPower", 2000, "Power a central plant draws per second while regenerating at its full rate; a plant running below capacity draws proportionally less. Reversing combustion is endothermic — the energy is the mechanic, and centralising it is what buys the better rate.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportPlantCarbonPerDust = config.get(OXYGEN, "lifeSupportPlantCarbonPerDust", 1200000, "Regeneration work a central plant must do before one carbon dust is produced, in the same millionths-times-blocks unit as lifeSupportPlantRate. The default is the per-room figure scaled to a nominal 20-block cabin, so a plant and a recirculator yield the same dust for the same gas.", 1, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportDuctThroughput = config.get(OXYGEN, "lifeSupportDuctThroughput", 120000, "Regeneration work one ventilation duct block will carry each second, in the same unit as lifeSupportPlantRate. This is a THROUGHPUT, not a gas content: the duct carries a rate, and running a second line is how a ship supports more crew.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.lifeSupportBreachVentRate = config.get(OXYGEN, "lifeSupportBreachVentRate", 50000, "How fast a breached zone loses its air to space, in millionths of an atmosphere per second across all three gases. At the default a sea-level room empties in about twenty seconds, which is the window a player has to close a bulkhead or patch the hull. 0 disables venting: a breached room then keeps its air, which is the pre-3.0.0 behaviour.", 0, Integer.MAX_VALUE).getInt();
         arConfig.dropExTorches = config.get(OXYGEN, "dropExtinguishedTorches", false, "Drop an extinguished torch instead of a vanilla torch, when breaking an extinguished torch.").getBoolean();
         sealableBlockWhiteList = config.getStringList("sealableBlockWhiteList", OXYGEN, new String[]{}, "Blocks that should count as sealable. Format: modid:block  for example \"minecraft:chest\"");
         sealableBlockBlackList = config.getStringList("sealableBlockBlackList", OXYGEN, new String[]{}, "Blocks that should not count as sealable.  Format: modid:block  for example \"minecraft:chest\"");

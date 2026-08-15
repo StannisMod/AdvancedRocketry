@@ -16902,9 +16902,26 @@ public class TestProbeCommand extends CommandBase {
         // Gas contents of the zone this vent anchors. Reported as -1 where the position is in no
         // zone at all, so a caller can tell "no zone" from "a zone holding nothing".
         int airN2 = -1, airO2 = -1, airCo2 = -1, airPressure = -1;
+        // Where the answer came from: "zone" = the position is in a live zone; "vent" = the graph is
+        // empty but this vent still holds gases, which is a BREACHED room in the act of losing them;
+        // "none" = neither. Without the distinction a venting zone reads identically to a room life
+        // support never had an opinion about, and the whole of D127-9 is invisible to a test.
+        String airSource = "none";
         if (handler != null) {
             zmaster587.advancedRocketry.atmosphere.AirState air =
                     handler.getAirStateAt(new BlockPos(x, y + 1, z));
+            if (air != null) {
+                airSource = "zone";
+            } else if (tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) {
+                // Held by the vent even at zero pressure: a room that has finished venting is a
+                // real state and must not read as "there was never any air here". Emptiness is a
+                // VALUE — zeros with a source that says where they came from.
+                air = handler.getAirState(
+                        (zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) tile);
+                if (air != null) {
+                    airSource = "vent";
+                }
+            }
             if (air != null) {
                 airN2 = air.getNitrogen();
                 airO2 = air.getOxygen();
@@ -16945,6 +16962,7 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"airO2\":").append(airO2);
         out.append(",\"airCO2\":").append(airCo2);
         out.append(",\"airPressure\":").append(airPressure);
+        out.append(",\"airSource\":\"").append(airSource).append('"');
         out.append(",\"hasFluid\":").append(hasFluid);
         out.append(",\"fluidAmount\":").append(fluidAmount);
         out.append(",\"energyStored\":").append(energyStored);
