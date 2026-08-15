@@ -176,8 +176,18 @@ public final class StructureDamageEngine {
         return Math.max(1, (int) Math.ceil(perStage));
     }
 
-    private static boolean isDamageable(World world, BlockPos pos, IBlockState state) {
+    /**
+     * Whether there is structure at {@code pos} — the one definition of "something is here", shared
+     * with whatever decides <em>where</em> an impact happens. A travelling body that stopped at a
+     * different set of blocks from the ones this engine is willing to spend budget on would either
+     * halt in mid-air or bore through a wall it had already passed.
+     */
+    public static boolean isStructure(World world, BlockPos pos, IBlockState state) {
         return !state.getBlock().isAir(state, world, pos) && !state.getMaterial().isLiquid();
+    }
+
+    private static boolean isDamageable(World world, BlockPos pos, IBlockState state) {
+        return isStructure(world, pos, state);
     }
 
     private static boolean isIndestructible(World world, BlockPos pos, IBlockState state) {

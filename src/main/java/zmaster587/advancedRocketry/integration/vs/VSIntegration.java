@@ -788,6 +788,14 @@ public final class VSIntegration {
                 ? java.util.Collections.<String>emptyList() : VSBridge.shipIdsAt(world, x, y, z);
     }
 
+    /** Every loaded ship's grown world AABB, by uuid string — the candidate list for a swept SEGMENT
+     *  rather than a point (possibly empty; never null). */
+    public static java.util.Map<String, AxisAlignedBB> loadedShipWorldBounds(World world) {
+        return (!isAvailable() || world == null)
+                ? java.util.Collections.<String, AxisAlignedBB>emptyMap()
+                : VSBridge.loadedShipWorldBounds(world);
+    }
+
     /** World point to ship-frame point, for the anchored ship. See the anchored-access note. */
     public static double[] toShipFrameFor(World world, String shipId, double x, double y, double z) {
         return (!isAvailable() || world == null) ? null : VSBridge.toShipFrameFor(world, shipId, x, y, z);

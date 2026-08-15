@@ -49,6 +49,7 @@ public class ARConfiguration {
     private final static String OXYGEN = "Oxygen System";
     private final static String ENERGY = "Energy Production";
     private final static String MISSION = "Resource Collection Missions";
+    private final static String WEAPONS = "Weapons";
     private final static String PERFORMANCE = "Performance";
     private final static String CLIENT = "Client";
     private final static String COMPAT = "Compatibility";
@@ -385,6 +386,27 @@ public class ARConfiguration {
     public int repairWelderEnergyPerStage = 2000;
     @ConfigProperty(needsSync = true)
     public int repairWelderCapacity = 100000;
+    /**
+     * Whether shots exist as tracked records at all. With this off nothing is admitted to a world's
+     * registry and nothing already there is stepped, so a weapon built on the substrate fires and
+     * nothing travels — which is the whole of the mechanic gone, not half of it.
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean enableProjectileSubstrate = true;
+    /**
+     * Below this speed, in blocks per tick, a shot mirrored off a shield is ended at the shell rather
+     * than left alive. A body deflected to nearly nothing has to be somewhere if it is an entity; a
+     * record does not, and a cloud of near-motionless rounds loitering against a shell is both a
+     * simulation cost and a lie about what is in the air.
+     */
+    @ConfigProperty(needsSync = true)
+    public double shotReflectionSpeedFloor = 0.05;
+    /**
+     * How many shots one world may carry at once. A refusal, not an eviction: dropping somebody
+     * else's round to make room would turn a burst of cheap fire into a way of deleting incoming fire.
+     */
+    @ConfigProperty(needsSync = true)
+    public int maxShotsPerWorld = 256;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -632,6 +654,9 @@ public class ARConfiguration {
         arConfig.wearTankLeakChanceMax = config.get(ROCKET, "wearTankLeakChanceMax", 0.5, "Chance (0..1) that a fully-worn fuel tank carrying fuel/oxidizer leaks at launch. Scaled by the tank's wear stage. A leak both bleeds fuel and adds to the launch failure (explosion) probability").getDouble();
         arConfig.wearTankLeakFuelLoss = config.get(ROCKET, "wearTankLeakFuelLoss", 0.25, "Fraction of a fuel type's loaded fuel lost when a worn tank of that type leaks at launch").getDouble();
         arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();
+        arConfig.enableProjectileSubstrate = config.get(WEAPONS, "enableProjectileSubstrate", true, "Track fired shots as server-side records that fly across loaded and unloaded space alike. Turn off to disable long-range fire entirely: nothing is admitted and nothing in flight is stepped").getBoolean();
+        arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
+        arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

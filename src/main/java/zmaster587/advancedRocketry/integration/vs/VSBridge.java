@@ -1242,6 +1242,27 @@ final class VSBridge {
         return ids;
     }
 
+    /**
+     * Every loaded ship in {@code world} as uuid string → its grown world AABB. The SEGMENT-shaped
+     * sibling of {@link #shipIdsAt}: a body that moves a long way in one tick has no single point to
+     * ask about, and asking about its endpoints would miss every ship it passed through in between.
+     * Boxes overlap and overstate, exactly as they do for the point query, so a caller still has to
+     * confirm in each candidate's own frame.
+     */
+    static java.util.Map<String, AxisAlignedBB> loadedShipWorldBounds(World world) {
+        java.util.Map<String, AxisAlignedBB> out = new java.util.LinkedHashMap<>();
+        try {
+            for (PhysicsObject physo : ValkyrienUtils.getPhysosLoadedInWorld(world)) {
+                AxisAlignedBB bb = physo.getShipBB();
+                if (bb != null) {
+                    out.put(physo.getShipData().getUuid().toString(), bb.grow(ABOARD_MARGIN));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
     /** World point -> ship-frame point, for the ship {@code shipId}. Null when it is not loaded. */
     static double[] toShipFrameFor(World world, String shipId, double x, double y, double z) {
         try {

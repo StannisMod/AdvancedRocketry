@@ -34,28 +34,56 @@ public final class ShieldStrikeService {
                 || strike.getImpactEnergy() <= 0) {
             return ShieldStrikeResult.passed();
         }
-        // Cheap global short-circuit before any per-generator geometry.
-        if (!TileEntityFieldGenerator.hasActiveGenerators()) {
+
+        TileEntityFieldGenerator nearest = nearestShell(world, strike.getOrigin(),
+                strike.getDirection(), strike.getMaxDistance());
+        if (nearest == null) {
             return ShieldStrikeResult.passed();
         }
 
+        double nearestT = FieldSurfaceMath.rayShellEntry(nearest, strike.getOrigin(),
+                strike.getDirection(), strike.getMaxDistance());
+        Vec3d hitPoint = strike.getOrigin().add(FieldSurfaceMath.scale(strike.getDirection(), nearestT));
+        return absorb(nearest, strike, hitPoint);
+    }
+
+    /**
+     * How far along {@code dir} this ray first meets a powered shell, or {@code -1} when it meets
+     * none within {@code maxDist}. A pure geometric question: <b>nothing is absorbed and no shield is
+     * charged</b>.
+     *
+     * <p>It exists for a caller that has to decide which of several layers a travelling body meets
+     * FIRST — the field, or the hull behind it — and therefore has to know where the field is before
+     * committing to hitting it. {@link #resolve} finds its shell through the same search, so the two
+     * cannot answer differently about where the shell is.</p>
+     */
+    public static double nearestShellCrossing(World world, Vec3d origin, Vec3d dir, double maxDist) {
+        if (world == null || world.isRemote || origin == null || dir == null) {
+            return -1.0D;
+        }
+        TileEntityFieldGenerator nearest = nearestShell(world, origin, dir, maxDist);
+        return nearest == null ? -1.0D
+                : FieldSurfaceMath.rayShellEntry(nearest, origin, dir, maxDist);
+    }
+
+    /** The powered shell this ray enters first, or null. The one shell search in this service. */
+    private static TileEntityFieldGenerator nearestShell(World world, Vec3d origin, Vec3d dir,
+                                                         double maxDist) {
+        // Cheap global short-circuit before any per-generator geometry.
+        if (!TileEntityFieldGenerator.hasActiveGenerators()) {
+            return null;
+        }
         List<TileEntityFieldGenerator> generators = FieldSurfaceMath.getActiveGenerators(world);
         TileEntityFieldGenerator nearest = null;
         double nearestT = Double.POSITIVE_INFINITY;
         for (TileEntityFieldGenerator generator : generators) {
-            double t = FieldSurfaceMath.rayShellEntry(generator, strike.getOrigin(), strike.getDirection(),
-                    strike.getMaxDistance());
+            double t = FieldSurfaceMath.rayShellEntry(generator, origin, dir, maxDist);
             if (t >= 0.0D && t < nearestT) {
                 nearestT = t;
                 nearest = generator;
             }
         }
-        if (nearest == null) {
-            return ShieldStrikeResult.passed();
-        }
-
-        Vec3d hitPoint = strike.getOrigin().add(FieldSurfaceMath.scale(strike.getDirection(), nearestT));
-        return absorb(nearest, strike, hitPoint);
+        return nearest;
     }
 
     private static ShieldStrikeResult absorb(TileEntityFieldGenerator generator, ShieldStrike strike,

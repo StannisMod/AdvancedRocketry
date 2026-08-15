@@ -241,6 +241,9 @@ public class TestProbeCommand extends CommandBase {
                 case "damage":
                     handleDamage(server, sender, tail(args));
                     break;
+                case "shot":
+                    handleShot(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -250,6 +253,109 @@ public class TestProbeCommand extends CommandBase {
         } catch (RuntimeException e) {
             send(sender, "{\"error\":\"" + escapeJson(e.getClass().getSimpleName() + ": " + e.getMessage()) + "\"}");
         }
+    }
+
+    // Projectile substrate probes -----------------------------------------
+
+    /**
+     * {@code /artest shot ...} — fire and observe shots as the substrate holds them.
+     * <ul>
+     *   <li>{@code fire <dim> <x> <y> <z> <vx> <vy> <vz> <energy> [lifetime] [kind]} — admit one shot
+     *       through production's own entry point and report the id it was given ({@code -1} = the
+     *       launch was refused, which is a real answer and not an error);</li>
+     *   <li>{@code list <dim>} — every shot in flight in that world;</li>
+     *   <li>{@code read <dim> <id>} — one shot, or {@code present:false} once it has ended;</li>
+     *   <li>{@code clear <dim>} — drop everything in flight there (scenario isolation).</li>
+     * </ul>
+     *
+     * <p>There is deliberately no "step one shot" verb: shots advance through the world tick, so a
+     * test drives them with {@code /artest shield tick <dim>}, which posts the real end-phase event.
+     * A probe that stepped a shot privately would prove the integrator works when called by the
+     * probe.</p>
+     */
+    private void handleShot(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length == 0) {
+            send(sender, "{\"error\":\"usage: /artest shot fire|list|read|clear ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = args.length >= 2 ? parseIntOr(args[1], Integer.MIN_VALUE) : Integer.MIN_VALUE;
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.projectile.ShotRegistry registry =
+                zmaster587.advancedRocketry.projectile.ShotRegistry.get(world);
+
+        if ("fire".equals(sub) && args.length >= 9) {
+            net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[2], 0), parseDoubleOr(args[3], 0), parseDoubleOr(args[4], 0));
+            net.minecraft.util.math.Vec3d velocity = new net.minecraft.util.math.Vec3d(
+                    parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0), parseDoubleOr(args[7], 0));
+            int energy = parseIntOr(args[8], 0);
+            zmaster587.advancedRocketry.api.projectile.ShotSpec spec =
+                    zmaster587.advancedRocketry.api.projectile.ShotSpec.kinetic(origin, velocity, energy);
+            if (args.length >= 10) {
+                spec = spec.withLifetime(parseIntOr(args[9], 1200));
+            }
+            if (args.length >= 11) {
+                spec = spec.withKind(zmaster587.advancedRocketry.api.damage.ImpactKind
+                        .valueOf(args[10].toUpperCase(java.util.Locale.ROOT)));
+            }
+            long id = zmaster587.advancedRocketry.projectile.ShotSubstrate.launch(world, spec);
+            send(sender, "{\"ok\":true,\"id\":" + id + ",\"count\":" + registry.count() + "}");
+            return;
+        }
+        if ("list".equals(sub)) {
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"count\":")
+                    .append(registry.count()).append(",\"shots\":[");
+            boolean first = true;
+            for (zmaster587.advancedRocketry.projectile.Shot shot : registry.inFlight()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(shotJson(shot));
+            }
+            send(sender, sb.append("]}").toString());
+            return;
+        }
+        if ("read".equals(sub) && args.length >= 3) {
+            zmaster587.advancedRocketry.projectile.Shot shot =
+                    registry.get(Long.parseLong(args[2]));
+            if (shot == null) {
+                zmaster587.advancedRocketry.api.projectile.ShotEndReason ended =
+                        registry.endReasonOf(Long.parseLong(args[2]));
+                send(sender, "{\"ok\":true,\"present\":false,\"ended\":\""
+                        + (ended == null ? "" : ended.name()) + "\",\"count\":" + registry.count() + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"present\":true,\"shot\":" + shotJson(shot) + "}");
+            return;
+        }
+        if ("clear".equals(sub)) {
+            int before = registry.count();
+            registry.clear();
+            send(sender, "{\"ok\":true,\"cleared\":" + before + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown shot subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    private static String shotJson(zmaster587.advancedRocketry.projectile.Shot shot) {
+        return "{\"id\":" + shot.getId()
+                + ",\"x\":" + shot.getPosition().x
+                + ",\"y\":" + shot.getPosition().y
+                + ",\"z\":" + shot.getPosition().z
+                + ",\"vx\":" + shot.getVelocity().x
+                + ",\"vy\":" + shot.getVelocity().y
+                + ",\"vz\":" + shot.getVelocity().z
+                + ",\"speed\":" + shot.getSpeed()
+                + ",\"energy\":" + shot.getImpactEnergy()
+                + ",\"age\":" + shot.getAge()
+                + ",\"lifetime\":" + shot.getLifetimeTicks()
+                + ",\"kind\":\"" + shot.getKind().name() + "\"}";
     }
 
     // Vendored AFFS shield probes -----------------------------------------
@@ -20112,7 +20218,7 @@ public class TestProbeCommand extends CommandBase {
 
     private void handleChunk(MinecraftServer server, ICommandSender sender, String[] args) {
         if (args.length == 0) {
-            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | cycle <dim> <cx> <cz> | release <dim> <cx> <cz> | release-all | list\"}");
+            send(sender, "{\"error\":\"usage: /artest chunk forceload <dim> <cx> <cz> | cycle <dim> <cx> <cz> | loaded <dim> [cx cz] | release <dim> <cx> <cz> | release-all | list\"}");
             return;
         }
         String sub = args[0].toLowerCase(java.util.Locale.ROOT);
@@ -20200,6 +20306,29 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"wasLoaded\":" + wasLoaded + ",\"dropped\":" + dropped
                     + ",\"reloaded\":" + (fresh != null)
                     + ",\"sameInstance\":" + (fresh == loaded) + "}");
+            return;
+        }
+        if ("loaded".equals(sub) && args.length >= 2) {
+            // loaded <dim> [cx cz] — read-only: is that chunk in memory, and how many are. Asked
+            // WITHOUT loading anything (getLoadedChunk, never provideChunk), because the question
+            // "did this cause a load" cannot be answered by an instrument that loads.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            net.minecraft.world.gen.ChunkProviderServer provider = world.getChunkProvider();
+            if (args.length >= 4) {
+                int cx = parseIntOr(args[2], Integer.MIN_VALUE);
+                int cz = parseIntOr(args[3], Integer.MIN_VALUE);
+                boolean present = provider.id2ChunkMap.containsKey(
+                        net.minecraft.util.math.ChunkPos.asLong(cx, cz));
+                send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"cx\":" + cx + ",\"cz\":" + cz
+                        + ",\"loaded\":" + present + ",\"count\":" + provider.id2ChunkMap.size() + "}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"dim\":" + dim + ",\"count\":" + provider.id2ChunkMap.size() + "}");
             return;
         }
         if ("release".equals(sub) && args.length >= 4) {
