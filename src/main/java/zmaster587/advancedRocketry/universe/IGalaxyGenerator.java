@@ -71,6 +71,19 @@ public interface IGalaxyGenerator {
     }
 
     /**
+     * How much diffuse matter lies between two cells, in density-light-years — the column an
+     * observer at {@code from} looks THROUGH to see {@code to}.
+     *
+     * <p>The one query every looking-consequence of a cloud is written against, in both directions:
+     * what a survey loses to a cloud in the way, and what a ship inside one loses looking out, are
+     * this integral with the endpoints moved. Zero for a generator with no clouds, which is the
+     * correct answer for clear space and not a stub.</p>
+     */
+    default double columnDensityBetween(long seed, GalacticCoord from, GalacticCoord to) {
+        return 0d;
+    }
+
+    /**
      * The super-cell edge (in cells) this generator partitions space by — at most one system per
      * {@code minSpacingCells}-cube. The registry uses it to attribute member cells of AUTHORED systems and
      * to bound body-offset clamping ({@code radius <= minSpacingCells/2 - margin}).

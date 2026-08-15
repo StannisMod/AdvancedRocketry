@@ -139,6 +139,11 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private RegionScan activeScan;
     /** How many addresses the last finished scan wrote — what the operator gets told he learned. */
     private int lastScanDiscoveries;
+    /**
+     * How many of the last scan's looks a cloud stood in the way of. The crystal still gained their
+     * coordinates; what it did NOT gain is what is at them, and the operator is told which.
+     */
+    private int lastScanObscured;
     /** Which way the operator has the instrument pointed, as an index into {@link #SCAN_DIRECTIONS}. */
     private int scanDirection;
     /** How far out, in STEPS, he has it aimed. Clamped to the configured reach when it is used. */
@@ -402,6 +407,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             nbt.setTag("regionScan", scan);
         }
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("lastScanObscured", lastScanObscured);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
         nbt.setDouble("scanStepLy", stepLightYears);
@@ -425,6 +431,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (arr != null) for (int v : arr) printedButtonsThisSeed.add(v);
         activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        lastScanObscured = nbt.getInteger("lastScanObscured");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
         stepLightYears = nbt.getDouble("scanStepLy");
@@ -452,6 +459,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             nbt.setTag("regionScan", scan);
         }
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
+        nbt.setInteger("lastScanObscured", lastScanObscured);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
         nbt.setBoolean("scanPassive", passive);
@@ -470,6 +478,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
         activeScan = nbt.hasKey("regionScan") ? RegionScan.readFromNBT(nbt.getCompoundTag("regionScan")) : null;
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
+        lastScanObscured = nbt.getInteger("lastScanObscured");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
         passive = nbt.getBoolean("scanPassive");
@@ -797,6 +806,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
         passive = false;
         lastScanDiscoveries = 0;
+        lastScanObscured = 0;
         markDirty();
         return true;
     }
@@ -831,6 +841,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 RegionScan.Tuning.fromConfig());
         passive = true;
         lastScanDiscoveries = 0;
+        lastScanObscured = 0;
         markDirty();
         return true;
     }
@@ -875,11 +886,44 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return passive;
     }
 
+    /**
+     * How many of the looks in this batch a cloud stands in the way of.
+     *
+     * <p>Counted beside the resolve rather than inside it, because what the OPERATOR is owed and what
+     * the CRYSTAL is written with are different things: the crystal gains an address either way, and
+     * the operator needs to know the difference between "there is nothing out that way" and "I cannot
+     * see through that".</p>
+     */
+    private static int countObscured(UniverseRegistry registry, GalacticCoord origin, RegionScan scan,
+                                     int from, int count) {
+        if (registry == null || origin == null || scan == null) {
+            return 0;
+        }
+        int obscured = 0;
+        for (int index = from; index < from + count && index < scan.totalCells(); index++) {
+            GalacticCoord cell = scan.cellAt(index);
+            if (!registry.anchorForCell(cell).isPresent()) {
+                continue; // empty sky is not a hidden sky
+            }
+            if (TelescopeScan.isObscured(registry, origin, registry.anchorForCell(cell).get())) {
+                obscured++;
+            }
+        }
+        return obscured;
+    }
+
     /** What the tab tells the operator the instrument is doing right now. */
     private String scanStatusText() {
         if (activeScan != null) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.looking")
                     + " " + activeScan.cellsDone() + "/" + activeScan.totalCells();
+        }
+        // The dust is reported BEFORE the count of what was found: a survey that came back with
+        // coordinates and no bodies has a reason, and an operator who is not told it reads the
+        // instrument as broken.
+        if (lastScanObscured > 0) {
+            return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.obscured")
+                    + " " + lastScanObscured;
         }
         if (lastScanDiscoveries > 0) {
             return LibVulpes.proxy.getLocalizedString("msg.observetory.scan.found")
@@ -969,8 +1013,15 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
             extractData(cost, DataType.DISTANCE, EnumFacing.UP, true);
         }
 
-        lastScanDiscoveries += TelescopeScan.resolveBatch(UniverseRegistry.get(world), activeScan,
-                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames());
+        // The look is resolved FROM here, so a cloud standing between this instrument and what it is
+        // aimed at can cost the look its detail. Counted while we are at it: an operator whose
+        // survey came back with coordinates and no bodies must be told it was the dust, or the
+        // feature is indistinguishable from an instrument that found nothing.
+        GalacticCoord origin = scanOrigin();
+        UniverseRegistry registry = UniverseRegistry.get(world);
+        lastScanObscured += countObscured(registry, origin, activeScan, activeScan.cellsDone(), cells);
+        lastScanDiscoveries += TelescopeScan.resolveBatch(registry, activeScan,
+                activeScan.cellsDone(), cells, crystal, now, TelescopeScan.dimensionNames(), origin);
         activeScan = instant ? activeScan.completed(now) : activeScan.advanced(now, cells);
         if (activeScan.isComplete()) {
             activeScan = null;

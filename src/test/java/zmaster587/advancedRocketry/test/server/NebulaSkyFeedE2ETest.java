@@ -82,6 +82,96 @@ public class NebulaSkyFeedE2ETest extends AbstractHeadlessServerTest {
         assertEquals("and must draw none: " + feed, 0L, field(feed, "drawn"));
     }
 
+    /** The value of a decimal JSON field in a probe reply. */
+    private static double decimal(String json, String name) {
+        String key = "\"" + name + "\":";
+        int at = json.indexOf(key);
+        assertTrue("probe reply has no field " + name + ": " + json, at >= 0);
+        int from = at + key.length();
+        int to = from;
+        while (to < json.length() && "-+.eE0123456789".indexOf(json.charAt(to)) >= 0) {
+            to++;
+        }
+        return Double.parseDouble(json.substring(from, to));
+    }
+
+    @Test
+    public void aRealCloudDimsWhatIsBehindItAndClearSpaceDoesNot() throws Exception {
+        // What the unit tier cannot reach: it stubs the column, so it can prove the RULE and never
+        // that a generated cloud produces a column at all. This walks a real sight line through a
+        // real cloud in a real world, and a clear line beside it as the control.
+        String installed = exec(GEN_INSTALL);
+        assertTrue("the procedural generator must install: " + installed,
+                installed.contains("\"ok\":true"));
+
+        String found = exec("artest space nebula-find 512 64");
+        assertTrue("a dense galaxy must have a cloud somewhere in it: " + found,
+                found.contains("\"found\":true"));
+        // A sight line THROUGH the cloud's core: from two radii short of its centre to two radii
+        // past it, along X. Built from where the generator says the cloud IS — the first version of
+        // this used the cell the finder was standing in, which was the origin, so the "line" had
+        // zero length and measured nothing.
+        long centreX = field(found, "centreX");
+        long centreY = field(found, "centreY");
+        long centreZ = field(found, "centreZ");
+        long radius = field(found, "radiusCells");
+        String near = (centreX - 2 * radius) + " " + centreY + " " + centreZ;
+        String far = (centreX + 2 * radius) + " " + centreY + " " + centreZ;
+
+        String through = exec("artest space extinction " + near + " " + far);
+        assertTrue("the probe must answer for a real sight line: " + through,
+                through.contains("\"ok\":true"));
+        assertTrue("a line that reaches a cloud's neighbourhood must cross SOME matter: " + through,
+                decimal(through, "column") > 0d);
+        assertTrue("and the magnitudes must follow the column, not be invented: " + through,
+                decimal(through, "magnitudes") > 0d);
+
+        // The control: no generator, hence no clusters, hence nothing to cross.
+        String reset = exec("artest space gen-reset");
+        assertTrue("the default generator must be restorable: " + reset, reset.contains("\"ok\":true"));
+        String clear = exec("artest space extinction " + near + " " + far);
+        assertEquals("a universe with no clouds must dim nothing: " + clear, 0d,
+                decimal(clear, "magnitudes"), 1.0E-9d);
+    }
+
+    @Test
+    public void theConcealmentThresholdCanBeTurnedOff() throws Exception {
+        // Driven on the real config: a flag has to REMOVE its mechanic rather than soften it, and
+        // the reading it is judged against is unchanged either way.
+        String installed = exec(GEN_INSTALL);
+        assertTrue("the procedural generator must install: " + installed,
+                installed.contains("\"ok\":true"));
+        String found = exec("artest space nebula-find 512 64");
+        assertTrue("a dense galaxy must have a cloud somewhere in it: " + found,
+                found.contains("\"found\":true"));
+        // A sight line THROUGH the cloud's core: from two radii short of its centre to two radii
+        // past it, along X. Built from where the generator says the cloud IS — the first version of
+        // this used the cell the finder was standing in, which was the origin, so the "line" had
+        // zero length and measured nothing.
+        long centreX = field(found, "centreX");
+        long centreY = field(found, "centreY");
+        long centreZ = field(found, "centreZ");
+        long radius = field(found, "radiusCells");
+        String near = (centreX - 2 * radius) + " " + centreY + " " + centreZ;
+        String far = (centreX + 2 * radius) + " " + centreY + " " + centreZ;
+
+        try {
+            exec("artest config set telescopeObscuredAtMagnitudes 0.0001");
+            String strict = exec("artest space extinction " + near + " " + far);
+            assertTrue("at a threshold below the real reading the line must count as obscured: "
+                    + strict, strict.contains("\"obscured\":true"));
+
+            exec("artest config set telescopeObscuredAtMagnitudes 0");
+            String off = exec("artest space extinction " + near + " " + far);
+            assertTrue("with the mechanic off nothing is obscured: " + off,
+                    off.contains("\"obscured\":false"));
+            assertTrue("and the dust itself is still measured — the flag removes the RULE, not the"
+                    + " physics: " + off, decimal(off, "magnitudes") > 0d);
+        } finally {
+            exec("artest config set telescopeObscuredAtMagnitudes 5");
+        }
+    }
+
     @Test
     public void whatIsSeatedAndWhatIsDrawnAreReportedSeparately() throws Exception {
         // So a reader can tell a working level-of-detail filter from a missing cloud. Without the two

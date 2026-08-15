@@ -408,6 +408,7 @@ msg.observetory.scan.region=Observe
 msg.observetory.scan.region.tooltip=Look at the chosen region and write every system it resolves onto the crystal
 msg.observetory.scan.looking=Surveyed cells:
 msg.observetory.scan.found=Addresses written:
+msg.observetory.scan.obscured=Dust in the way - coordinates only:
 msg.observetory.scan.idle=Idle
 msg.observetory.scan.abort=Stop
 msg.observetory.scan.abort.tooltip=Stop the survey. Everything already resolved is already on the crystal.

@@ -3272,17 +3272,88 @@ public class TestProbeCommand extends CommandBase {
                             (long) i * stride, 0L, 0L, 0L, 0L, 0L);
             java.util.List<zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula> drawn =
                     zmaster587.advancedRocketry.space.SkyNebulaeProducer.around(gen, seed, cell);
-            if (!drawn.isEmpty()) {
-                send(sender, "{\"ok\":true,\"found\":true,\"cell\":\"" + cell.cellKey()
-                        + "\",\"sectorX\":" + cell.sectorX() + ",\"drawn\":" + drawn.size()
-                        + ",\"largest\":" + drawn.get(0).angularRadius + ",\"steps\":" + i + "}");
-                return;
+            if (drawn.isEmpty()) {
+                continue;
             }
+            // WHERE the cloud is, not just that one is visible. A caller measuring a sight line
+            // THROUGH a cloud needs its centre and its size, and computing them from the render
+            // record is impossible by design — that record carries a direction and an angle and
+            // deliberately no position. Taken from the generator's own objects instead.
+            zmaster587.advancedRocketry.universe.Nebula biggest = null;
+            for (zmaster587.advancedRocketry.universe.Nebula n : gen.nebulaeAround(seed, cell,
+                    zmaster587.advancedRocketry.space.SkyNebulaeProducer.SKY_REACH_LY)) {
+                if (biggest == null || n.radiusLy() > biggest.radiusLy()) {
+                    biggest = n;
+                }
+            }
+            StringBuilder out = new StringBuilder("{\"ok\":true,\"found\":true,\"cell\":\"");
+            out.append(cell.cellKey()).append("\",\"sectorX\":").append(cell.sectorX())
+                    .append(",\"drawn\":").append(drawn.size())
+                    .append(",\"largest\":").append(drawn.get(0).angularRadius)
+                    .append(",\"steps\":").append(i);
+            if (biggest != null) {
+                out.append(",\"centreX\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreXLy()))
+                        .append(",\"centreY\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreYLy()))
+                        .append(",\"centreZ\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsAt(biggest.centreZLy()))
+                        .append(",\"radiusCells\":")
+                        .append(zmaster587.advancedRocketry.universe.UniverseScale
+                                .cellsForLightYears(biggest.radiusLy()))
+                        .append(",\"radiusLy\":").append(biggest.radiusLy())
+                        .append(",\"peakDensity\":").append(biggest.peakDensity());
+            }
+            out.append('}');
+            send(sender, out.toString());
+            return;
         }
         send(sender, "{\"ok\":true,\"found\":false,\"searched\":" + steps + ",\"stride\":" + stride + "}");
     }
 
+    /**
+     * {@code space extinction <sx> <sy> <sz> <sx2> <sy2> <sz2>} — how much the dust between two cells
+     * dims what is behind it, in magnitudes, plus the raw column it was converted from.
+     *
+     * <p>Both numbers, because they answer different questions: the COLUMN says how much matter the
+     * line crossed (a fact about the generator) and the MAGNITUDES say what an observer loses (a fact
+     * about the calibration). A test that saw only one could not tell a generator that seats no
+     * clouds from a calibration that reads them as transparent.</p>
+     */
+    private void handleSpaceExtinction(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.space.GalacticCoord from =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[1], 0L), parseLongOr(args[2], 0L), parseLongOr(args[3], 0L),
+                        0L, 0L, 0L);
+        zmaster587.advancedRocketry.space.GalacticCoord to =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[4], 0L), parseLongOr(args[5], 0L), parseLongOr(args[6], 0L),
+                        0L, 0L, 0L);
+        double column = zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator()
+                .columnDensityBetween(reg.worldSeed(), from, to);
+        double magnitudes = reg.extinctionBetween(from, to);
+        send(sender, "{\"ok\":true,\"from\":\"" + from.cellKey() + "\",\"to\":\"" + to.cellKey()
+                + "\",\"column\":" + column + ",\"magnitudes\":" + magnitudes
+                + ",\"obscured\":" + zmaster587.advancedRocketry.universe.TelescopeScan
+                        .isObscured(reg, from, to)
+                + ",\"threshold\":" + zmaster587.advancedRocketry.api.ARConfiguration
+                        .getCurrentConfig().telescopeObscuredAtMagnitudes + "}");
+    }
+
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 7 && "extinction".equalsIgnoreCase(args[0])) {
+            handleSpaceExtinction(server, sender, args);
+            return;
+        }
         if (args.length >= 4 && "nebulae".equalsIgnoreCase(args[0])) {
             handleSpaceNebulae(server, sender, args);
             return;
@@ -11108,6 +11179,9 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeScanCellsPerStep",
                     "telescopePassiveRadiusCells",
                     "telescopeSurveyDataPerStep",
+                    // How much dust a survey sees through, in magnitudes. Flippable at runtime so a
+                    // test can drive BOTH sides of concealment against one generated cloud.
+                    "telescopeObscuredAtMagnitudes",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
                     "planetsMustBeDiscovered"));

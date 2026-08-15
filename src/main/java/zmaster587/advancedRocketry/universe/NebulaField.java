@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import zmaster587.advancedRocketry.space.GalacticCoord;
+
 /**
  * Where the nebulae are — which is: wherever a star cluster still has gas.
  *
@@ -26,6 +28,12 @@ public final class NebulaField {
 
     /** How much a cluster's residual gas may vary from the figure its type states. */
     private static final double GAS_VARIATION = 0.35d;
+
+    /** Step of the column integral, in light years. A cloud is tens across, so its profile is resolved. */
+    private static final double COLUMN_SAMPLE_STEP_LY = 1d;
+
+    /** Ceiling on that integral's samples: a bound on WORK, not a statement about the sky. */
+    private static final int MAX_COLUMN_SAMPLES = 512;
 
     private final GalaxyGenConfig config;
     private final ClusterField clusters;
@@ -119,6 +127,65 @@ public final class NebulaField {
             }
         }
         return out;
+    }
+
+    /**
+     * How much diffuse matter lies ALONG A LINE, in density-light-years — the integral of
+     * {@link #densityAtSector} from one cell to another.
+     *
+     * <p><b>Built once, on purpose.</b> Every consequence of a cloud that involves LOOKING is this
+     * number: what a survey loses to a cloud between it and its target, and what a ship inside one
+     * loses looking out, are the same integral with the endpoints moved. Two functions computing it
+     * would drift in the third decimal and nobody would notice for months.</p>
+     *
+     * <p>Sampled rather than solved. A closed form exists for one Gaussian, but the line crosses an
+     * arbitrary set of clouds seated on a lattice, and the sampled form stays correct when the
+     * profile changes. The step is a light year — a cloud is tens of them across, so its profile is
+     * resolved many times over — and the sample count is bounded, which is a bound on WORK and not a
+     * physical statement.</p>
+     */
+    public double columnDensityBetween(long seed, Galaxy galaxy, GalacticCoord from,
+                                       GalacticCoord to) {
+        if (galaxy == null || from == null || to == null) {
+            return 0d;
+        }
+        GalacticCoord a = from.cellCentre();
+        GalacticCoord b = to.cellCentre();
+        double ax = UniverseScale.lightYearsForCells(a.sectorX());
+        double ay = UniverseScale.lightYearsForCells(a.sectorY());
+        double az = UniverseScale.lightYearsForCells(a.sectorZ());
+        double bx = UniverseScale.lightYearsForCells(b.sectorX());
+        double by = UniverseScale.lightYearsForCells(b.sectorY());
+        double bz = UniverseScale.lightYearsForCells(b.sectorZ());
+        double dx = bx - ax, dy = by - ay, dz = bz - az;
+        double lengthLy = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (lengthLy <= 0d) {
+            return 0d;
+        }
+
+        int samples = (int) Math.max(2L, Math.min(MAX_COLUMN_SAMPLES,
+                Math.round(lengthLy / COLUMN_SAMPLE_STEP_LY) + 1L));
+        double step = lengthLy / (samples - 1);
+        double sum = 0d;
+        for (int i = 0; i < samples; i++) {
+            double t = i / (double) (samples - 1);
+            double density = densityAtLightYears(seed, galaxy, ax + dx * t, ay + dy * t, az + dz * t);
+            // Trapezoid: the endpoints are half-weighted, so the answer does not depend on which
+            // end the walk started from.
+            sum += (i == 0 || i == samples - 1) ? density * 0.5d : density;
+        }
+        return sum * step;
+    }
+
+    /** The density at a point stated in light years — what the line integral samples. */
+    public double densityAtLightYears(long seed, Galaxy galaxy, double xLy, double yLy, double zLy) {
+        long s = config.minSpacing;
+        long sectorX = UniverseScale.cellsAt(xLy);
+        long sectorY = UniverseScale.cellsAt(yLy);
+        long sectorZ = UniverseScale.cellsAt(zLy);
+        Optional<Nebula> nebula = nebulaAt(seed, galaxy, Math.floorDiv(sectorX, s),
+                Math.floorDiv(sectorY, s), Math.floorDiv(sectorZ, s));
+        return nebula.isPresent() ? nebula.get().densityAt(xLy, yLy, zLy) : 0d;
     }
 
     /**

@@ -259,6 +259,7 @@ msg.observetory.scan.region=Наблюдать
 msg.observetory.scan.region.tooltip=Осмотреть выбранную область и записать в кристалл все системы, которые она разрешит
 msg.observetory.scan.looking=Осмотрено ячеек:
 msg.observetory.scan.found=Записано адресов:
+msg.observetory.scan.obscured=Мешает пыль — только координаты:
 msg.observetory.scan.idle=Простаивает
 msg.observetory.scan.abort=Стоп
 msg.observetory.scan.abort.tooltip=Прервать обзор. Всё, что уже разрешено, уже лежит в кристалле.

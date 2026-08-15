@@ -40,6 +40,31 @@ public final class Nebula {
     static final double MINIMUM_VISIBLE_GAS = 0.05d;
 
     /**
+     * What one unit of {@link #densityAt} integrated over one light year costs the light behind it,
+     * in <b>magnitudes of visual extinction</b> ({@code A_V}) — the unit astronomy measures dust in.
+     *
+     * <p><b>A calibration, not a balance knob.</b> It maps this model's dimensionless density onto a
+     * physical quantity, so moving it silently redefines every threshold expressed in magnitudes. The
+     * anchor: a TYPICAL dark cloud should come out at the classic opaque value, {@code A_V ~ 10} —
+     * the Barnard-object regime, a hole in the star field. These clouds are Gaussian with
+     * {@code s = radius/2}, so a ray through the centre integrates to {@code peak * s * sqrt(pi)};
+     * for a representative dark cloud (radius ~30 ly, peak ~0.6) that is
+     * {@code 0.6 * 15 * 1.772 ~ 16} density-light-years, giving {@code 10/16 = 0.63}. Rounded to 0.6,
+     * and the rounding is deliberate: the anchor is itself "a typical cloud" and not a measurement of
+     * one particular object.</p>
+     *
+     * <p>For scale, once converted: {@code A_V ~ 1} is noticeable dimming, {@code ~5} is where faint
+     * objects behind a cloud disappear, {@code ~10} is opaque in the visible, and a real dense core
+     * (B68) reaches ~30.</p>
+     */
+    public static final double MAGNITUDES_PER_DENSITY_LIGHT_YEAR = 0.6d;
+
+    /** A column of diffuse matter, in density-light-years, read as visual extinction in magnitudes. */
+    public static double magnitudesForColumn(double columnDensityLightYears) {
+        return Math.max(0d, columnDensityLightYears) * MAGNITUDES_PER_DENSITY_LIGHT_YEAR;
+    }
+
+    /**
      * What a nebula looks like — DERIVED from how much gas is left, never drawn, because the three
      * appearances are one age sequence and not three options.
      *

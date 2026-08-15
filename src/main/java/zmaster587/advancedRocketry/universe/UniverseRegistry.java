@@ -822,6 +822,20 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
     }
 
     /**
+     * How much the diffuse matter between two cells dims what is behind it, in <b>magnitudes of
+     * visual extinction</b> — the unit astronomy states dust in.
+     *
+     * <p>Zero in clear space, and zero for a universe with no clusters. What the number MEANS:
+     * ~1 is noticeable dimming, ~5 is where faint things behind a cloud disappear, ~10 is opaque in
+     * the visible. The calibration from this model's density to magnitudes lives on
+     * {@link Nebula#MAGNITUDES_PER_DENSITY_LIGHT_YEAR} with its anchor written out; what a given
+     * mechanic does at a given number of magnitudes is that mechanic's own (tunable) business.</p>
+     */
+    public double extinctionBetween(GalacticCoord from, GalacticCoord to) {
+        return Nebula.magnitudesForColumn(generator.columnDensityBetween(worldSeed, from, to));
+    }
+
+    /**
      * Whether the system at {@code coord} is known. DERIVED, never stored: a system is known iff any of its
      * member bodies with a real dimension is in the global known set ({@link DimensionManager#isPlanetKnown}).
      * Non-dimension bodies (the star proxy, belts) carry {@link Constants#INVALID_PLANET} and are excluded.

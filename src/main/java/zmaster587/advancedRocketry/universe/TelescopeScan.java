@@ -5,6 +5,7 @@ import java.util.function.IntFunction;
 
 import net.minecraft.item.ItemStack;
 
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.item.ItemMemoryCrystal;
@@ -47,11 +48,19 @@ public final class TelescopeScan {
      */
     public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
                                    ItemStack crystal, long observedTick, IntFunction<String> nameOf) {
+        return resolveBatch(registry, scan, from, count, crystal, observedTick, nameOf, null);
+    }
+
+    /** The same, resolved from a stated observer, so a cloud in the way costs the look its detail. */
+    public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
+                                   ItemStack crystal, long observedTick, IntFunction<String> nameOf,
+                                   GalacticCoord observer) {
         if (!ItemMemoryCrystal.isCrystal(crystal)) {
             return 0;
         }
         CrystalMemory memory = ItemMemoryCrystal.memoryOf(crystal);
-        int written = resolveBatch(registry, scan, from, count, memory, observedTick, nameOf);
+        int written = resolveBatch(registry, scan, from, count, memory, observedTick, nameOf,
+                observer);
         if (written > 0) {
             ItemMemoryCrystal.writeMemory(crystal, memory);
         }
@@ -61,14 +70,47 @@ public final class TelescopeScan {
     /** The same, onto an already-opened memory. This is where the discovery actually happens. */
     public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
                                    CrystalMemory memory, long observedTick, IntFunction<String> nameOf) {
+        return resolveBatch(registry, scan, from, count, memory, observedTick, nameOf, null);
+    }
+
+    /**
+     * The same, resolved from a stated OBSERVER — the form that can see what is in the way.
+     *
+     * <p>A null observer means "nothing is between us and it", which is what a caller with no
+     * position can honestly claim, and what every look was before clouds could obscure one.</p>
+     */
+    public static int resolveBatch(UniverseRegistry registry, RegionScan scan, int from, int count,
+                                   CrystalMemory memory, long observedTick, IntFunction<String> nameOf,
+                                   GalacticCoord observer) {
         if (registry == null || scan == null || memory == null) {
             return 0;
         }
         int written = 0;
         for (int index = from; index < from + count && index < scan.totalCells(); index++) {
-            written += resolveCell(registry, scan.cellAt(index), memory, observedTick, nameOf);
+            written += resolveCell(registry, scan.cellAt(index), memory, observedTick, nameOf,
+                    observer);
         }
         return written;
+    }
+
+    /**
+     * Whether a look from {@code observer} to {@code target} is OBSCURED — a cloud between them thick
+     * enough that a survey can no longer make out what is there, only that something is.
+     *
+     * <p>The threshold is read in magnitudes of extinction, the unit the sky is measured in, and its
+     * shipped default is the astronomical boundary at which faint objects behind a cloud disappear.
+     * Zero or less turns the whole mechanic off, which is what "disable the flag" has to mean.</p>
+     */
+    public static boolean isObscured(UniverseRegistry registry, GalacticCoord observer,
+                                     GalacticCoord target) {
+        if (registry == null || observer == null || target == null) {
+            return false;
+        }
+        double threshold = ARConfiguration.getCurrentConfig().telescopeObscuredAtMagnitudes;
+        if (!(threshold > 0d)) {
+            return false;
+        }
+        return registry.extinctionBetween(observer, target) >= threshold;
     }
 
     /**
@@ -86,6 +128,22 @@ public final class TelescopeScan {
      */
     public static int resolveCell(UniverseRegistry registry, GalacticCoord cell, CrystalMemory memory,
                                   long observedTick, IntFunction<String> nameOf) {
+        return resolveCell(registry, cell, memory, observedTick, nameOf, null);
+    }
+
+    /**
+     * The same, from a stated OBSERVER, so a cloud in the way can cost the look its detail.
+     *
+     * <p><b>An obscured look still yields an address.</b> It falls back to the same bare coordinate a
+     * system with nothing enumerable already produced: the operator learns that something is there
+     * and has to go and see what. That is the whole mechanic — a reason to FLY somewhere rather than
+     * survey it from home — and it is why concealment costs detail and never the look itself. A
+     * survey that quietly returned nothing would be indistinguishable from an empty sky, which is
+     * the exact defect this instrument was carrying until it was fixed.</p>
+     */
+    public static int resolveCell(UniverseRegistry registry, GalacticCoord cell, CrystalMemory memory,
+                                  long observedTick, IntFunction<String> nameOf,
+                                  GalacticCoord observer) {
         if (registry == null || cell == null || memory == null) {
             return 0;
         }
@@ -95,10 +153,12 @@ public final class TelescopeScan {
         }
         int written = 0;
         boolean namedSomething = false;
-        for (SystemBody body : registry.systemBodiesAt(anchor.get())) {
-            namedSomething = true;
-            if (memory.record(entryFor(body, observedTick, nameOf))) {
-                written++;
+        if (!isObscured(registry, observer, anchor.get())) {
+            for (SystemBody body : registry.systemBodiesAt(anchor.get())) {
+                namedSomething = true;
+                if (memory.record(entryFor(body, observedTick, nameOf))) {
+                    written++;
+                }
             }
         }
         if (!namedSomething) {

@@ -584,6 +584,24 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                 supZ - reachSuper, supX + reachSuper, supY + reachSuper, supZ + reachSuper);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The galaxy is resolved at the OBSERVER's end. Over the ranges a look spans — a survey's
+     * horizon is ~100 ly against a galaxy thousands across — both ends share one galaxy; a sight line
+     * that genuinely left one would be looking at another galaxy, which is a different feature.</p>
+     */
+    @Override
+    public double columnDensityBetween(long seed, GalacticCoord from, GalacticCoord to) {
+        if (from == null || to == null) {
+            return 0d;
+        }
+        GalacticCoord a = from.cellCentre();
+        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, a.sectorX(), a.sectorY(),
+                a.sectorZ());
+        return galaxy.isPresent() ? nebulae.columnDensityBetween(seed, galaxy.get(), from, to) : 0d;
+    }
+
     @Override
     public Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
         Optional<Generated> g = systemForLattice(seed,

@@ -301,6 +301,8 @@ public class ARConfiguration {
     @ConfigProperty
     public int telescopePassiveRadiusCells;
     @ConfigProperty
+    public double telescopeObscuredAtMagnitudes;
+    @ConfigProperty
     public int telescopeSurveyDataPerStep;
     @ConfigProperty
     public boolean allowNonArBiomesInTerraforming;
@@ -542,6 +544,7 @@ public class ARConfiguration {
         arConfig.telescopeScanTicksPerLightYear = config.get(PLANET, "telescopeScanTicksPerLightYear", 20d, "Extra ticks per light year of distance, per step. This is what makes a far region a longer survey than a near one.", 0d, Double.MAX_VALUE).getDouble();
         arConfig.telescopeScanCellsPerStep = config.get(PLANET, "telescopeScanCellsPerStep", 5, "How many cells of the region one step of a survey resolves. This is the bound that stops a sweep from enumerating everything at once.", 1, Integer.MAX_VALUE).getInt();
         arConfig.telescopeSurveyDataPerStep = config.get(PLANET, "telescopeSurveyDataPerStep", 0, "Distance data one step of a survey consumes, drawn from the observatory's data buses the same way its asteroid scan draws. A step with too little data waits rather than resolving, so an unfed instrument stalls instead of working for free. Zero (the default) means a survey costs nothing - what it should cost is a balance question, not a mechanic one.", 0, Integer.MAX_VALUE).getInt();
+        arConfig.telescopeObscuredAtMagnitudes = config.get(PLANET, "telescopeObscuredAtMagnitudes", 5d, "How much dust a survey can see THROUGH, in magnitudes of visual extinction - the unit astronomy measures interstellar dust in. A nebula between the instrument and what it is looking at dims it; past this much, the survey can still tell that a system is there but can no longer make out its bodies, and writes the bare coordinate instead. The default is the real boundary at which faint objects behind a cloud disappear: ~1 magnitude is noticeable dimming, ~5 is where things start vanishing, ~10 is an opaque dark cloud. Raise it to see through thicker clouds; set it to 0 to turn concealment off entirely.", 0d, Double.MAX_VALUE).getDouble();
         arConfig.telescopePassiveRadiusCells = config.get(PLANET, "telescopePassiveRadiusCells", 2, "How far, in CELLS, the passive local radar reaches around the observatory's own cell. Cells and not star territories: this mode watches the neighbourhood, where the planet in the next cell over is a different destination from its star. Passive costs nothing; the directed survey is what looks far away.", 0, Integer.MAX_VALUE).getInt();
         DimensionManager.dimOffset = config.getInt("minDimension", PLANET, 2, -127, 8000, "Lowest dimension ID that can be used for planets.");
         arConfig.canPlayerRespawnInSpace = config.get(PLANET, "allowPlanetRespawn", false, "Allow bed respawn on planets with breathable air.").getBoolean();
