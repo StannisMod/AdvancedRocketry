@@ -24,6 +24,10 @@ import zmaster587.advancedRocketry.api.util.IBlobHandler;
 import zmaster587.advancedRocketry.atmosphere.AirState;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereType;
+import zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.inventory.TextureResources;
 import zmaster587.advancedRocketry.util.AudioRegistry;
@@ -47,10 +51,15 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
-public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBlobHandler, IModularInventory, INetworkMachine, IAdjBlockUpdate, IToggleableMachine, IButtonInventory, IToggleButton {
+public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBlobHandler, IModularInventory, INetworkMachine, IAdjBlockUpdate, IToggleableMachine, IButtonInventory, IToggleButton, ISubsystemSink {
 
     private final static byte PACKET_REDSTONE_ID = 2;
     private final static byte PACKET_TRACE_ID = 3;
+    private final static byte PACKET_PRIORITY_ID = 4;
+
+    /** Lowest and highest zone priority a player can dial in; 0 is the default everything starts at. */
+    private final static int PRIORITY_MIN = -1;
+    private final static int PRIORITY_MAX = 1;
     private boolean isSealed;
     private boolean firstRun;
     private boolean hasFluid;
@@ -65,6 +74,13 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     private ModuleToggleSwitch traceToggle;
     /** Gas contents read back from the save, waiting for the blob this vent will register. */
     private AirState pendingAirState;
+    /**
+     * Which zones the ventilation plant serves first when it cannot serve them all. Every zone
+     * starts equal (0) — a ship where nothing is prioritised is one where the plant simply shares
+     * what it has, which is the behaviour a player who never opens this screen should get.
+     */
+    private int zonePriority;
+    private ModuleButton priorityButton;
 
 
     public TileOxygenVent() {
@@ -153,6 +169,7 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     @Override
     public void invalidate() {
         unregisterAtmosphereBlob();
+        leaveVentilationNetwork();
         deactivateAdjBlocks();
         super.invalidate();
     }
@@ -160,6 +177,7 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     @Override
     public void onChunkUnload() {
         unregisterAtmosphereBlob();
+        leaveVentilationNetwork();
         super.onChunkUnload();
     }
 
@@ -315,6 +333,111 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         return isSealed && hasFluid;
     }
 
+    // ─── ventilation network: this vent IS its zone's port ─────────────
+    //
+    // The vent already owns the zone — it defines it, maintains it and is the authority on whether
+    // life support may touch it — so making it the network's sink is the whole of "one vent per
+    // zone connects to the plant" (D127-5). No second object learns what a zone is.
+
+    @Override
+    public World getNodeWorld() {
+        return world;
+    }
+
+    @Override
+    public BlockPos getNodePos() {
+        return pos;
+    }
+
+    /**
+     * Regeneration work this zone could use this tick: all of its carbon dioxide, as an absolute
+     * amount. A zone has no buffer to fill — it asks for what is wrong with its air, and the
+     * network's supply and ducts decide how much of that it gets.
+     */
+    @Override
+    public int getRequested() {
+        AirState air = zoneAirForNetwork();
+        return air == null ? 0 : LifeSupportNetwork.absolute(air.getCarbonDioxide(), zoneVolume());
+    }
+
+    @Override
+    public int getFreeCapacity() {
+        return getRequested();
+    }
+
+    /**
+     * Which zones the plant serves first when it cannot serve them all. Set per vent from its own
+     * screen; every zone starts equal, so a ship nobody has configured shares what there is.
+     */
+    @Override
+    public int getPriority() {
+        return zonePriority;
+    }
+
+    public int getZonePriority() {
+        return zonePriority;
+    }
+
+    /** Steps up and wraps back to the bottom, so one button covers the whole range. */
+    private void cycleZonePriority() {
+        zonePriority = zonePriority >= PRIORITY_MAX ? PRIORITY_MIN : zonePriority + 1;
+        markDirty();
+    }
+
+    private String priorityLabel() {
+        String key = zonePriority > 0 ? "msg.vent.priority.high"
+                : zonePriority < 0 ? "msg.vent.priority.low"
+                : "msg.vent.priority.normal";
+        return LibVulpes.proxy.getLocalizedString(key);
+    }
+
+    @Override
+    public int receive(int amount) {
+        AirState air = zoneAirForNetwork();
+        if (air == null || amount <= 0)
+            return 0;
+        int volume = zoneVolume();
+        int converted = air.regenerate(LifeSupportNetwork.partialPressure(amount, volume));
+        if (converted <= 0)
+            return 0;
+
+        AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        if (handler != null)
+            handler.refreshDerivedAtmosphere(this);
+        return LifeSupportNetwork.absolute(converted, volume);
+    }
+
+    /** The zone's gases, but only while this vent is actually maintaining them. */
+    @Nullable
+    private AirState zoneAirForNetwork() {
+        if (world == null || world.isRemote || !isMaintainingAtmosphere()
+                || !ARConfiguration.getCurrentConfig().lifeSupportZones)
+            return null;
+        AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        return handler == null ? null : handler.getAirState(this);
+    }
+
+    private int zoneVolume() {
+        AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
+        return handler == null ? 1 : Math.max(1, handler.getBlobSize(this));
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (world != null && !world.isRemote) {
+            SubsystemNetworkRegistry.register(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
+        }
+    }
+
+    private void leaveVentilationNetwork() {
+        if (world != null && !world.isRemote) {
+            SubsystemNetworkRegistry.unregister(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
+        }
+    }
+
     @Override
     public void update() {
         if (canPerformFunction()) {
@@ -429,6 +552,9 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         modules.add(new ModuleLiquidIndicator(32, 20, this));
         modules.add(redstoneControl);
         modules.add(traceToggle);
+        priorityButton = new ModuleButton(80, 40, PACKET_PRIORITY_ID, priorityLabel(), this,
+                TextureResources.buttonGeneric, 80, 18);
+        modules.add(priorityButton);
         //modules.add(toggleSwitch = new ModuleToggleSwitch(160, 5, 0, "", this, TextureResources.buttonToggleImage, 11, 26, getMachineEnabled()));
         return modules;
     }
@@ -470,6 +596,14 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
             allowTrace = traceToggle.getState();
             PacketHandler.sendToServer(new PacketMachine(this, PACKET_TRACE_ID));
         }
+        if (buttonId == PACKET_PRIORITY_ID) {
+            // Step the client's own copy so the label answers immediately, then tell the server —
+            // which steps its own and is the one the network reads.
+            cycleZonePriority();
+            if (priorityButton != null)
+                priorityButton.setText(priorityLabel());
+            PacketHandler.sendToServer(new PacketMachine(this, PACKET_PRIORITY_ID));
+        }
     }
 
     @Override
@@ -478,6 +612,8 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
             out.writeByte(state.ordinal());
         else if (id == PACKET_TRACE_ID)
             out.writeBoolean(allowTrace);
+        else if (id == PACKET_PRIORITY_ID)
+            out.writeInt(zonePriority);
     }
 
     @Override
@@ -487,6 +623,8 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
             nbt.setByte("state", in.readByte());
         else if (packetId == PACKET_TRACE_ID)
             nbt.setBoolean("trace", in.readBoolean());
+        else if (packetId == PACKET_PRIORITY_ID)
+            nbt.setInteger("zonePriority", in.readInt());
     }
 
     @Override
@@ -498,6 +636,12 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
             allowTrace = nbt.getBoolean("trace");
             if (!allowTrace)
                 radius = -1;
+        }
+        else if (id == PACKET_PRIORITY_ID) {
+            // The client sends the priority it now shows; the server clamps rather than trusts, so a
+            // malformed packet cannot invent a tier that out-ranks every real one.
+            zonePriority = Math.max(PRIORITY_MIN, Math.min(PRIORITY_MAX, nbt.getInteger("zonePriority")));
+            markDirty();
         }
     }
 
@@ -514,6 +658,7 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         // here until the blob exists (registerBlob happens on the first tick, not on load).
         if (nbt.hasKey("airState"))
             pendingAirState = AirState.readFromNBT(nbt.getCompoundTag("airState"));
+        zonePriority = Math.max(PRIORITY_MIN, Math.min(PRIORITY_MAX, nbt.getInteger("zonePriority")));
     }
 
     /**
@@ -537,6 +682,7 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         super.writeToNBT(nbt);
         nbt.setByte("redstoneState", (byte) state.ordinal());
         nbt.setBoolean("allowtrace", allowTrace);
+        nbt.setInteger("zonePriority", zonePriority);
 
         AirState air = getZoneAirState();
         if (air != null) {

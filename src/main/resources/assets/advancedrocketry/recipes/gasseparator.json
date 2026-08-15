@@ -1,0 +1,22 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"pfp",
+	"tmt",
+	"prp"
+    ],
+    "key":
+    {
+        "p": { "type": "forge:ore_dict", "ore": "plateSteel" },
+        "f": { "type": "forge:ore_dict", "ore": "fanSteel" },
+        "t": { "item": "advancedrocketry:pressuretank" },
+        "m": { "type": "forge:ore_dict", "ore": "blockMotor" },
+        "r": { "type": "forge:ore_dict", "ore": "dustRedstone" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:gasseparator",
+        "count": 1
+    }
+}

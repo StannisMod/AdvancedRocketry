@@ -205,6 +205,9 @@ public class TestProbeCommand extends CommandBase {
                 case "separator":
                     handleSeparator(server, sender, tail(args));
                     break;
+                case "subnet":
+                    handleSubsystemNetwork(server, sender, tail(args));
+                    break;
                 case "gascharge":
                     handleGasCharge(server, sender, tail(args));
                     break;
@@ -10776,7 +10779,12 @@ public class TestProbeCommand extends CommandBase {
                     // ceiling IS to assert that gas stopped there; hard-coding the default would
                     // make the assertion re-state a tuned number instead of the rule it enforces.
                     "lifeSupportMaxPartialO2",
-                    "lifeSupportMinPartialO2"));
+                    "lifeSupportMinPartialO2",
+                    // The ventilation plant's supply and a duct's capacity: a priority test needs a
+                    // real DEFICIT, and the honest way to create one is to turn the supply down
+                    // rather than to build a contrived amount of demand.
+                    "lifeSupportPlantRate",
+                    "lifeSupportDuctThroughput"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16384,6 +16392,98 @@ public class TestProbeCommand extends CommandBase {
         return null;
     }
 
+    // Subsystem-network probe ------------------------------------------
+
+    /**
+     * {@code /artest subnet info <domain> <dim> <x> <y> <z>} — the network the block at this
+     * position belongs to, in whichever domain was named ({@code lifesupport}, {@code shield}).
+     *
+     * <p>Naming the domain is the point: it is how a test can ask whether two subsystems laid
+     * through the same wall stayed apart, which is otherwise only inferable from gas that did or
+     * did not move. {@code inNetwork:false} means this position is in no network of that domain —
+     * emitted as a value, with the counters at zero beside it, so the reply parses the same either
+     * way.
+     *
+     * <pre>
+     * {"ok":true,"domain":"lifesupport","inNetwork":true,"connected":true,"status":5,
+     *  "cables":3,"sources":1,"sinks":1,"sourceAvailable":12000,"sinkRequested":2700000,
+     *  "cableCapacity":18000,"deliveredFlow":6000,"saturatedCables":1,"members":5}
+     * </pre>
+     */
+    private void handleSubsystemNetwork(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 3
+                || !("info".equalsIgnoreCase(args[0]) || "solve".equalsIgnoreCase(args[0]))) {
+            send(sender, "{\"error\":\"unknown subnet subcommand — try info <domain> <dim> <x> <y> <z>"
+                    + " | solve <domain> <dim> <ticks>\"}");
+            return;
+        }
+        String domainName = args[1].toLowerCase(java.util.Locale.ROOT);
+        zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain domain;
+        if ("lifesupport".equals(domainName)) {
+            domain = zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork.DOMAIN;
+        } else if ("shield".equals(domainName)) {
+            domain = com.github.stannismod.affs.world.shield.ShieldNetworkManager.DOMAIN;
+        } else {
+            send(sender, "{\"error\":\"unknown domain\",\"domain\":\"" + escapeJson(domainName)
+                    + "\",\"known\":[\"lifesupport\",\"shield\"]}");
+            return;
+        }
+        int dim = parseIntOr(args[2], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer solveWorld = server.getWorld(dim);
+        if (solveWorld == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+
+        // /artest subnet solve <domain> <dim> <ticks> — run the network's own per-tick work N times.
+        //
+        // A probe executes ON the server thread, so it holds the tick loop while it runs: waiting on
+        // wall-clock does not buy world ticks, and a network solved in a WorldTickEvent is therefore
+        // unreachable from a test the way a force-ticked tile is not. Measured before this verb
+        // existed: 300 requested ticks of waiting produced FOUR solves. This drives the same public
+        // entry point the event handler calls, so it exercises production and not a copy of it.
+        if ("solve".equalsIgnoreCase(args[0])) {
+            int ticks = args.length >= 4 ? parseIntOr(args[3], 1) : 1;
+            ticks = Math.max(0, Math.min(20000, ticks));
+            for (int i = 0; i < ticks; i++) {
+                zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager
+                        .tick(domain, solveWorld);
+            }
+            send(sender, "{\"ok\":true,\"domain\":\"" + escapeJson(domainName)
+                    + "\",\"ticksSolved\":" + ticks + "}");
+            return;
+        }
+
+        if (args.length < 6) {
+            send(sender, "{\"error\":\"usage: info <domain> <dim> <x> <y> <z>\"}");
+            return;
+        }
+        int x = parseIntOr(args[3], 0);
+        int y = parseIntOr(args[4], 0);
+        int z = parseIntOr(args[5], 0);
+        net.minecraft.world.WorldServer world = solveWorld;
+        zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState state =
+                zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager
+                        .getState(domain, world, new BlockPos(x, y, z));
+
+        StringBuilder out = new StringBuilder("{\"ok\":true");
+        out.append(",\"domain\":\"").append(escapeJson(domainName)).append('"');
+        out.append(",\"inNetwork\":").append(state != null);
+        out.append(",\"connected\":").append(state != null && state.isConnected());
+        out.append(",\"status\":").append(state == null ? 0 : state.getStatus());
+        out.append(",\"cables\":").append(state == null ? 0 : state.getCableCount());
+        out.append(",\"sources\":").append(state == null ? 0 : state.getSourceCount());
+        out.append(",\"sinks\":").append(state == null ? 0 : state.getSinkCount());
+        out.append(",\"sourceAvailable\":").append(state == null ? 0 : state.getSourceAvailable());
+        out.append(",\"sinkRequested\":").append(state == null ? 0 : state.getSinkRequested());
+        out.append(",\"cableCapacity\":").append(state == null ? 0 : state.getCableCapacity());
+        out.append(",\"deliveredFlow\":").append(state == null ? 0 : state.getDeliveredFlow());
+        out.append(",\"saturatedCables\":").append(state == null ? 0 : state.getSaturatedCables());
+        out.append(",\"members\":").append(state == null ? 0 : state.getMemberPositions().size());
+        out.append('}');
+        send(sender, out.toString());
+    }
+
     // Gas separator state probe ---------------------------------------
 
     /**
@@ -16534,6 +16634,36 @@ public class TestProbeCommand extends CommandBase {
             if (ok)
                 handler.refreshDerivedAtmosphereAt(new BlockPos(x, y + 1, z));
             send(sender, "{\"ok\":" + ok + "}");
+            return;
+        }
+
+        // /artest vent priority <dim> <x> <y> <z> <value> — set a zone's ventilation priority
+        // through the SERVER half of the production path: the same useNetworkData branch the GUI
+        // button's packet lands in, clamp included. The button itself is a client concern; this
+        // drives what the server does when it arrives.
+        if (args.length >= 6 && "priority".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            int value = parseIntOr(args[5], 0);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            if (!(tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent)) {
+                send(sender, "{\"error\":\"not a TileOxygenVent\"}");
+                return;
+            }
+            zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent vent =
+                    (zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) tile;
+            net.minecraft.nbt.NBTTagCompound payload = new net.minecraft.nbt.NBTTagCompound();
+            payload.setInteger("zonePriority", value);
+            vent.useNetworkData(null, net.minecraftforge.fml.relauncher.Side.SERVER, (byte) 4, payload);
+            send(sender, "{\"ok\":true,\"requested\":" + value
+                    + ",\"priority\":" + vent.getZonePriority() + "}");
             return;
         }
 

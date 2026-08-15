@@ -1,0 +1,21 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"tRt",
+	"rMr",
+	"tRt"
+    ],
+    "key":
+    {
+        "t": { "type": "forge:ore_dict", "ore": "plateTitanium" },
+        "R": { "item": "advancedrocketry:airrecirculator" },
+        "r": { "type": "forge:ore_dict", "ore": "dustRedstone" },
+        "M": { "type": "forge:ore_dict", "ore": "blockMotor" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:lifesupportplant",
+        "count": 1
+    }
+}

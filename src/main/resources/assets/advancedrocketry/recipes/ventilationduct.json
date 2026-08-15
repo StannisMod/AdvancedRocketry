@@ -1,0 +1,19 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"ppp",
+	"b b",
+	"ppp"
+    ],
+    "key":
+    {
+        "p": { "type": "forge:ore_dict", "ore": "plateIron" },
+        "b": { "item": "minecraft:iron_bars" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:ventilationduct",
+        "count": 8
+    }
+}

@@ -89,6 +89,8 @@ public class AdvancedRocketryBlocks {
     public static Block blockCarbonDioxideFluid;
     public static Block blockAirRecirculator;
     public static Block blockGasSeparator;
+    public static Block blockLifeSupportPlant;
+    public static Block blockVentilationDuct;
     public static Block blockCircleLight;
     public static Block blockSolarGenerator;
     public static Block blockDockingPort;

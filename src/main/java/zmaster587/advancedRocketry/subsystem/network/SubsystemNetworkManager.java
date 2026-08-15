@@ -76,15 +76,27 @@ public final class SubsystemNetworkManager {
             return;
         }
         for (SubsystemNetworkDomain domain : SubsystemNetworkRegistry.domains()) {
-            WorldState state = getState(domain, world);
-            if (state.dirty) {
-                // Topology changes are expensive; only rebuild adjacency when the network actually changed.
-                state.rebuild(domain, world);
-            }
-            // Capacities and demands still change every tick, so max-flow is solved against the
-            // cached topology each tick.
-            state.solve();
+            tick(domain, world);
         }
+    }
+
+    /**
+     * One domain's rebuild-if-dirty plus solve, for this world. Extracted from the tick handler so
+     * the work has a name a caller can invoke: the event is one caller, and anything that needs the
+     * network advanced without waiting on the natural tick loop is another.
+     */
+    public static void tick(SubsystemNetworkDomain domain, World world) {
+        if (domain == null || world == null || world.isRemote) {
+            return;
+        }
+        WorldState state = getState(domain, world);
+        if (state.dirty) {
+            // Topology changes are expensive; only rebuild adjacency when the network actually changed.
+            state.rebuild(domain, world);
+        }
+        // Capacities and demands still change every tick, so max-flow is solved against the cached
+        // topology each tick.
+        state.solve();
     }
 
     @SubscribeEvent

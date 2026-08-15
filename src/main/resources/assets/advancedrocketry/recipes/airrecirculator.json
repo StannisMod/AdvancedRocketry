@@ -1,0 +1,22 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern":
+    [
+	"pfp",
+	"rSr",
+	"pmp"
+    ],
+    "key":
+    {
+        "p": { "type": "forge:ore_dict", "ore": "plateSteel" },
+        "f": { "type": "forge:ore_dict", "ore": "fanSteel" },
+        "r": { "type": "forge:ore_dict", "ore": "dustRedstone" },
+        "S": { "item": "advancedrocketry:oxygenscrubber" },
+        "m": { "type": "forge:ore_dict", "ore": "blockMotor" }
+    },
+    "result":
+    {
+        "item": "advancedrocketry:airrecirculator",
+        "count": 1
+    }
+}

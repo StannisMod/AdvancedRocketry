@@ -352,6 +352,16 @@ public class AtmosphereHandler {
      * changed its gases. A no-op where there is no zone, or where the vent has not declared one
      * breathable — the vent stays the authority on whether a zone is maintained at all.
      */
+    /**
+     * The same refresh, for a caller that owns the zone rather than a position inside it. A vent
+     * knows its blob by identity; making it name a cell would be guessing at its own geometry.
+     */
+    public void refreshDerivedAtmosphere(@Nonnull IBlobHandler handler) {
+        AreaBlob blob = blobs.get(handler);
+        if (blob instanceof AtmosphereBlob && isLifeSupportManaged((AtmosphereBlob) blob))
+            blob.setData(((AtmosphereBlob) blob).getAirState().deriveAtmosphere());
+    }
+
     public void refreshDerivedAtmosphereAt(@Nonnull BlockPos pos) {
         AtmosphereBlob blob = getBlobContaining(new HashedBlockPosition(pos));
         if (blob != null && isLifeSupportManaged(blob))
