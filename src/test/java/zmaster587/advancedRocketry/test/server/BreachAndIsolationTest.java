@@ -23,6 +23,8 @@ public class BreachAndIsolationTest extends AbstractSharedServerTest {
 
     private static final Pattern AIR_PRESSURE = Pattern.compile("\"airPressure\":(-?\\d+)");
     private static final Pattern AIR_SOURCE = Pattern.compile("\"airSource\":\"([a-z]+)\"");
+    private static final Pattern VENT_HAS_AIR = Pattern.compile("\"ventHasAir\":(true|false)");
+    private static final Pattern VENT_PRESSURE = Pattern.compile("\"ventAirPressure\":(-?\\d+)");
     private static final Pattern SINKS = Pattern.compile("\"sinks\":(-?\\d+)");
     private static final Pattern BLOB_SIZE = Pattern.compile("\"blobSize\":(-?\\d+)");
 
@@ -40,7 +42,7 @@ public class BreachAndIsolationTest extends AbstractSharedServerTest {
         String sealed = ventInfo(CX_BREACH);
         assertEquals("premise: the room must start as a live zone: " + sealed,
                 "zone", extractString(sealed, AIR_SOURCE));
-        int pressureBefore = extract(sealed, AIR_PRESSURE);
+        int pressureBefore = extract(sealed, VENT_PRESSURE);
         assertTrue("premise: it must start pressurised: " + sealed, pressureBefore > 0);
 
         // Open the hull. The flood-fill drops the room's cells; the gases are not the cells.
@@ -50,14 +52,17 @@ public class BreachAndIsolationTest extends AbstractSharedServerTest {
         String venting = ventInfo(CX_BREACH);
         assertEquals("a breached room is no longer a zone — its cells are gone: " + venting,
                 0, extract(venting, BLOB_SIZE));
-        assertEquals("but its air must still be reachable from the vent, because it is escaping "
-                + "rather than being deleted: " + venting, "vent", extractString(venting, AIR_SOURCE));
+        assertEquals("the position is in no zone any more — that is what the breach did: " + venting,
+                "none", extractString(venting, AIR_SOURCE));
+        assertEquals("but the air must still be reachable from the VENT, because it is escaping "
+                + "rather than being deleted: " + venting,
+                "true", extractString(venting, VENT_HAS_AIR));
 
         // 20 ticks per drain step; well past what emptying takes at the default rate.
         forceTick(CX_BREACH, 600);
 
         String emptied = ventInfo(CX_BREACH);
-        int pressureAfter = extract(emptied, AIR_PRESSURE);
+        int pressureAfter = extract(emptied, VENT_PRESSURE);
         assertTrue("the air must actually leave (before=" + pressureBefore + " after="
                 + pressureAfter + "): " + emptied, pressureAfter < pressureBefore);
         assertEquals("and keep leaving until the room is vacuum: " + emptied, 0, pressureAfter);

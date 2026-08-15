@@ -433,8 +433,37 @@ def configureHarnessTest = { Test t, boolean enableClient ->
     // min(test_harness_forks, --max-workers) - when forking, do NOT pass --max-workers=1 on the
     // CLI. Budget ~4 GB per fork: 512m this worker + 1g server child + 2.5g client child (the
     // child caps live in the harness, overridable via forge.test.server.xmx/forge.test.client.xmx).
-    def harnessForks = (findProperty('test_harness_forks') ?: '1') as int
+    // ONE number per machine: `test_harness_forks` = N = how many SERVER forks this box runs.
+    // The client tier takes N/2, because a client fork is not the same animal — it carries a second
+    // heavyweight JVM with a GL context on top of the server child, so a box comfortable with N
+    // server forks is not comfortable with N client ones. Deriving it keeps the developer answering
+    // one question about their hardware instead of two, and keeps the ratio in the build where it
+    // can be explained rather than in each person's properties file where it cannot.
+    //
+    // It is a MACHINE fact, so it belongs in ~/.gradle/gradle.properties and NOT in this repo.
+    // Unset is not defaulted: a silent fallback to 1 turns a twenty-minute gate into a multi-hour
+    // one and says nothing, which is exactly how a day gets lost (2026-08-15). The task asks.
+    def declaredForks = findProperty('test_harness_forks')
+    def harnessForks = declaredForks == null ? 1 : Math.max(1, declaredForks as int)
+    if (enableClient) {
+        harnessForks = Math.max(1, (int) (harnessForks / 2))
+    }
     t.maxParallelForks = harnessForks
+    t.doFirst {
+        if (declaredForks == null) {
+            throw new GradleException(
+                    "test_harness_forks is not set, so this run would be SERIAL and take hours.\n" +
+                    "  It is a fact about YOUR machine — one fork is roughly a core and ~4 GB —\n" +
+                    "  so put it in ~/.gradle/gradle.properties, not in the repo:\n" +
+                    "      test_harness_forks=<server forks>      # the client tier takes half\n" +
+                    "  or say it once on the command line: -Ptest_harness_forks=<n>\n" +
+                    "  Deliberately serial? -Ptest_harness_forks=1.")
+        }
+        // Name the regime in the run's own output: two results are not comparable unless both say
+        // what concurrency they were measured at.
+        logger.lifecycle("[harness] ${t.name}: maxParallelForks=${harnessForks}" +
+                " (test_harness_forks=${declaredForks}${enableClient ? ', client tier takes half' : ''})")
+    }
     t.forkEvery 1L
     t.minHeapSize = '256m'
     t.maxHeapSize = '512m'

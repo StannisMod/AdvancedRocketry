@@ -16902,25 +16902,18 @@ public class TestProbeCommand extends CommandBase {
         // Gas contents of the zone this vent anchors. Reported as -1 where the position is in no
         // zone at all, so a caller can tell "no zone" from "a zone holding nothing".
         int airN2 = -1, airO2 = -1, airCo2 = -1, airPressure = -1;
-        // Where the answer came from: "zone" = the position is in a live zone; "vent" = the graph is
-        // empty but this vent still holds gases, which is a BREACHED room in the act of losing them;
-        // "none" = neither. Without the distinction a venting zone reads identically to a room life
-        // support never had an opinion about, and the whole of D127-9 is invisible to a test.
+        // "zone" when the position is in a live zone, "none" otherwise. This field describes the
+        // POSITION fields below and nothing else: -1 has meant "in no zone" since INV-ATM-19 was
+        // pinned, and a probe may not quietly widen what an existing field answers. The vent's own
+        // held gases are reported SEPARATELY (ventAir*), because a vent holding air is not the same
+        // claim as a position being in a zone — a blob starts out earth-like whether or not it has
+        // ever sealed.
         String airSource = "none";
         if (handler != null) {
             zmaster587.advancedRocketry.atmosphere.AirState air =
                     handler.getAirStateAt(new BlockPos(x, y + 1, z));
             if (air != null) {
                 airSource = "zone";
-            } else if (tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) {
-                // Held by the vent even at zero pressure: a room that has finished venting is a
-                // real state and must not read as "there was never any air here". Emptiness is a
-                // VALUE — zeros with a source that says where they came from.
-                air = handler.getAirState(
-                        (zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) tile);
-                if (air != null) {
-                    airSource = "vent";
-                }
             }
             if (air != null) {
                 airN2 = air.getNitrogen();
@@ -16963,6 +16956,28 @@ public class TestProbeCommand extends CommandBase {
         out.append(",\"airCO2\":").append(airCo2);
         out.append(",\"airPressure\":").append(airPressure);
         out.append(",\"airSource\":\"").append(airSource).append('"');
+        // The gases this VENT holds, independent of whether its position resolves to a zone. While
+        // a breached room is losing its air the graph is already empty, so the position fields
+        // above say -1 and only these can see the loss happening. Zeros once it is vacuum, which is
+        // a state and not an absence; ventHasAir separates "no air left" from "no state at all".
+        int ventN2 = 0, ventO2 = 0, ventCo2 = 0, ventPressure = 0;
+        boolean ventHasAir = false;
+        if (handler != null && tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) {
+            zmaster587.advancedRocketry.atmosphere.AirState held = handler.getAirState(
+                    (zmaster587.advancedRocketry.tile.atmosphere.TileOxygenVent) tile);
+            if (held != null) {
+                ventHasAir = true;
+                ventN2 = held.getNitrogen();
+                ventO2 = held.getOxygen();
+                ventCo2 = held.getCarbonDioxide();
+                ventPressure = held.getPressureCentiAtm();
+            }
+        }
+        out.append(",\"ventHasAir\":").append(ventHasAir);
+        out.append(",\"ventAirN2\":").append(ventN2);
+        out.append(",\"ventAirO2\":").append(ventO2);
+        out.append(",\"ventAirCO2\":").append(ventCo2);
+        out.append(",\"ventAirPressure\":").append(ventPressure);
         out.append(",\"hasFluid\":").append(hasFluid);
         out.append(",\"fluidAmount\":").append(fluidAmount);
         out.append(",\"energyStored\":").append(energyStored);
