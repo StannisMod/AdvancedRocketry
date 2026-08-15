@@ -713,6 +713,43 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
+        if (args.length >= 8 && "records".equalsIgnoreCase(args[0])) {
+            // records <dim> <minX> <minY> <minZ> <maxX> <maxY> <maxZ> — every damage record the world
+            // holds inside the inclusive box. A single position's reading is "stage"; this is what a
+            // whole STRUCTURE carries, which is the only way to ask whether a relocation lost some of
+            // it. Positions come back sorted so two readings of the same structure compare directly,
+            // and "count" is emitted as 0 with an empty list rather than the list being dropped.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + ",\"count\":0,\"entries\":[]}");
+                return;
+            }
+            int minX = parseIntOr(args[2], 0), minY = parseIntOr(args[3], 0), minZ = parseIntOr(args[4], 0);
+            int maxX = parseIntOr(args[5], 0), maxY = parseIntOr(args[6], 0), maxZ = parseIntOr(args[7], 0);
+            zmaster587.advancedRocketry.damage.BlockDamageSavedData data =
+                    zmaster587.advancedRocketry.damage.BlockDamageSavedData.get(world);
+            java.util.List<BlockPos> found = data.positionsIn(minX, minY, minZ, maxX, maxY, maxZ);
+            found.sort(java.util.Comparator.comparingInt(BlockPos::getX)
+                    .thenComparingInt(BlockPos::getY).thenComparingInt(BlockPos::getZ));
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"ok\":true,\"count\":").append(found.size()).append(",\"entries\":[");
+            for (int i = 0; i < found.size(); i++) {
+                BlockPos p = found.get(i);
+                String was = data.getDestroyedBlockName(p);
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append("{\"x\":").append(p.getX()).append(",\"y\":").append(p.getY())
+                        .append(",\"z\":").append(p.getZ())
+                        .append(",\"stage\":").append(data.getStage(p))
+                        .append(",\"wasDestroyed\":").append(was != null)
+                        .append(",\"destroyedBlock\":\"").append(was == null ? "" : was).append("\"}");
+            }
+            sb.append("]}");
+            send(sender, sb.toString());
+            return;
+        }
         if (args.length >= 10 && "impact".equalsIgnoreCase(args[0])) {
             // impact <dim> <x> <y> <z> <dx> <dy> <dz> <budget> [kind] [impactId] — declare one impact
             // against whatever structure occupies the point and report what the engine did with it.

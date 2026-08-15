@@ -32,6 +32,14 @@ import javax.annotation.Nonnull;
 import java.util.*;
 
 public class WorldServerShipManager implements IPhysObjectWorld {
+
+    /**
+     * How far outside a spawning structure's surviving blocks its damage records are still collected
+     * and carried. A destroyed position keeps the note of what stood there, has no block to travel
+     * with, and can therefore sit outside bounds computed from blocks that remain — one full hull
+     * layer's worth is the case worth covering, and this is that in blocks.
+     */
+    private static final int HOLE_SWEEP_MARGIN = 8;
     private final WorldServer world;
     private final VSWorldPhysicsLoop physicsLoop;
     private final Thread physicsThread;
@@ -164,6 +172,11 @@ public class WorldServerShipManager implements IPhysObjectWorld {
             BlockPos centerDifference = toSpawn.getChunkClaim().getRegionCenter().subtract(physicsInfuserPos);
             MutableBlockPos pasteLocationPos = new MutableBlockPos();
             Map<Long, Chunk> copiedChunksMap = new HashMap<>();
+            // Bounds of the region being taken out of the world, tracked so that the damage records
+            // of positions holding no block (the holes a weapon left) can be carried too - they have
+            // nothing to ride along with, since this loop enumerates blocks.
+            int damageMinX = Integer.MAX_VALUE, damageMinY = Integer.MAX_VALUE, damageMinZ = Integer.MAX_VALUE;
+            int damageMaxX = Integer.MIN_VALUE, damageMaxY = Integer.MIN_VALUE, damageMaxZ = Integer.MIN_VALUE;
             // First, copy the blocks and tiles to the new chunks
             TIntIterator blocksIterator = detector.foundSet.iterator();
             while (blocksIterator.hasNext()) {
@@ -200,6 +213,17 @@ public class WorldServerShipManager implements IPhysObjectWorld {
                     newChunk.storageArrays[newChunkStorageIndex] = new ExtendedBlockStorage(newChunkStorageIndex << 4, true);
                 }
                 newChunk.storageArrays[newChunkStorageIndex].set(pasteLocationPos.getX() & 15, pasteLocationPos.getY() & 15, pasteLocationPos.getZ() & 15, srcState);
+                // Carry the block's damage record to its new address, for the same reason the tile
+                // entity below is carried: the stage of a block that has no tile of its own is held
+                // by position, so an assembly that moves only the block would build a pristine ship
+                // out of a wrecked structure - and leave the wreck's records on the empty ground.
+                zmaster587.advancedRocketry.damage.DamageState.blockMoved(world, srcLocationPos, pasteLocationPos);
+                damageMinX = Math.min(damageMinX, srcLocationPos.getX());
+                damageMinY = Math.min(damageMinY, srcLocationPos.getY());
+                damageMinZ = Math.min(damageMinZ, srcLocationPos.getZ());
+                damageMaxX = Math.max(damageMaxX, srcLocationPos.getX());
+                damageMaxY = Math.max(damageMaxY, srcLocationPos.getY());
+                damageMaxZ = Math.max(damageMaxZ, srcLocationPos.getZ());
                 // If this block is force block, then add it to the activeForcePositions list of the ship.
                 if (BlockPhysicsDetails.isBlockProvidingForce(srcState)) {
                     toSpawn.activeForcePositions.add(pasteLocationPos);
@@ -223,6 +247,18 @@ public class WorldServerShipManager implements IPhysObjectWorld {
                     // Finally, add the new TileEntity to the new ship chunk.
                     newChunk.addTileEntity(pasteTile);
                 }
+            }
+            // The blocks are carried; now the holes between them, which the loop above could not see.
+            // Widened by a margin because the bounds above are drawn around blocks that still EXIST:
+            // a structure whose outermost layer was shot away keeps its records outside them. The
+            // margin is a bound, not a proof - a hole further out than this than the surviving hull
+            // is left behind, and the structural-damage subsystem doc says so.
+            if (damageMinX != Integer.MAX_VALUE) {
+                final int m = HOLE_SWEEP_MARGIN;
+                zmaster587.advancedRocketry.damage.DamageState.holesMoved(world,
+                    new BlockPos(damageMinX - m, damageMinY - m, damageMinZ - m),
+                    new BlockPos(damageMaxX + m, damageMaxY + m, damageMaxZ + m),
+                    centerDifference);
             }
             for (final Chunk chunk : copiedChunksMap.values()) {
                 chunk.generateSkylightMap();

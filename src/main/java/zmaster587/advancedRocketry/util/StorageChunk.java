@@ -40,6 +40,8 @@ import zmaster587.advancedRocketry.api.satellite.SatelliteBase;
 import zmaster587.advancedRocketry.api.stations.IStorageChunk;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.block.*;
+import zmaster587.advancedRocketry.damage.BlockDamageSavedData;
+import zmaster587.advancedRocketry.damage.DamageLayer;
 import zmaster587.advancedRocketry.item.ItemPackedStructure;
 import zmaster587.advancedRocketry.api.capability.CapabilityWear;
 import zmaster587.advancedRocketry.api.capability.IPartWear;
@@ -87,6 +89,14 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     private Entity entity;
     private float weight;
     private boolean hasServiceMonitor;
+
+    /**
+     * The stages and destruction provenance of the captured blocks that cannot hold their own — the
+     * half of a structure's damage that does not ride along in tile NBT. Captured with the blocks,
+     * carried in this chunk's NBT and replayed at the paste site, so a relocated structure arrives
+     * as battered as it left. Empty for a pristine capture, which is the ordinary case.
+     */
+    private DamageLayer damage = new DamageLayer();
 
     public Block[][][] getblocks() {
         return blocks;
@@ -451,6 +461,14 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         }
 
         ret.weight = weight;
+        // SELECTED over the caller's whole box, because a cut empties all of it and a record left
+        // out here is a record destroyed. MEASURED from the tight bounds, because that is the origin
+        // the block array and the transformed tile coordinates above already use. The two differ
+        // exactly where it matters: tight bounds are drawn around blocks that still exist, and a
+        // shot-away outer column leaves its records outside them.
+        ret.damage = DamageLayer.harvest(world, (int) bb.minX, (int) bb.minY, (int) bb.minZ,
+                (int) bb.maxX, (int) bb.maxY, (int) bb.maxZ,
+                actualMinX, actualMinY, actualMinZ);
 
         return ret;
     }
@@ -480,6 +498,14 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         }
         } finally {
             relocationDepth--;
+        }
+
+        // The cut region is air now, and its damage went into the copy above. Leaving the entries
+        // behind would hand them to whatever is pasted here next - in a shipyard, that is the very
+        // next ship to be assembled at these coordinates.
+        if (!worldObj.isRemote) {
+            BlockDamageSavedData.get(worldObj).clearBox((int) bb.minX, (int) bb.minY, (int) bb.minZ,
+                    (int) bb.maxX, (int) bb.maxY, (int) bb.maxZ);
         }
 
         //Carpenter's block's dupe
@@ -702,6 +728,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         nbt.setTag("idList", idList);
         nbt.setTag("metaList", metaList);
         nbt.setTag("tiles", tileList);
+        damage.writeToNBT(nbt);
     }
 
     public void readFromNBT(NBTTagCompound nbt) {
@@ -713,6 +740,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         sizeZ = nbt.getInteger("zSize");
         weight = nbt.getFloat("weight");
         hasServiceMonitor = nbt.getBoolean("hasServiceMonitor");
+        damage = DamageLayer.readFromNBT(nbt);
 
         blocks = new Block[sizeX][sizeY][sizeZ];
         metas = new short[sizeX][sizeY][sizeZ];
@@ -785,6 +813,13 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         // rocket cargo carrying any of them lost those blocks the moment it landed: the pilot seat
         // (cloth) was replaced by fire before its tile was restored, which left the arriving craft
         // with no seat at all and its crew with nowhere to sit.
+        // A position this paste WRITES gets a block that has never been shot, so whatever the
+        // destination recorded there belongs to something that used to stand here. Cleared per
+        // written block rather than over the whole footprint: the air gaps of an arriving structure
+        // are not its business, and a damaged wall standing inside them keeps its record.
+        BlockDamageSavedData destinationDamage =
+                world.isRemote ? null : BlockDamageSavedData.get(world);
+
         AtmosphereHandler.beginStructurePaste();
         try {
             //Set all the blocks
@@ -793,11 +828,20 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                     for (int y = 0; y < sizeY; y++) {
 
                         if (blocks[x][y][z] != Blocks.AIR) {
-                            world.setBlockState(new BlockPos(xCoord + x, yCoord + y, zCoord + z), blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
+                            BlockPos target = new BlockPos(xCoord + x, yCoord + y, zCoord + z);
+                            world.setBlockState(target, blocks[x][y][z].getStateFromMeta(metas[x][y][z]), 2);
+                            if (destinationDamage != null) {
+                                destinationDamage.clear(target);
+                            }
                         }
                     }
                 }
             }
+
+            // Now the structure's own damage, on top of the clean slate just laid down. After the
+            // blocks, because a destroyed position is air here and carries only its provenance -
+            // there is no block arriving to clear it.
+            damage.applyAt(world, xCoord, yCoord, zCoord);
 
             //Set tiles for each block
             for (TileEntity tile : tileEntities) {

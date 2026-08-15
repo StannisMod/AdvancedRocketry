@@ -9,7 +9,9 @@ import net.minecraft.world.World;
 import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldSavedData;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,11 +33,12 @@ import java.util.Map;
  * state id: ids are an install-local encoding and a save that outlives one registry order would
  * otherwise rebuild a hull out of whatever now occupies that number.</p>
  *
- * <h3>Known limit — this store is per WORLD, and a ship can leave its world</h3>
- * <p>Entries are keyed by position in the world the blocks currently occupy. A ship that crosses into
- * another world is re-pasted at fresh coordinates, and these entries do not follow it: its damage is
- * left behind. Carrying the map across a crossing is owed work, not a decision — until it lands, a
- * crossed ship reads as pristine.</p>
+ * <h3>This store is per WORLD, and a structure can leave its world</h3>
+ * <p>Entries are keyed by position in the world the blocks currently occupy, so they are stable for
+ * as long as the blocks are: a ship moves by transform, not by moving its blocks. A structure that is
+ * relocated IS re-pasted at fresh coordinates, and there the entries are carried by
+ * {@link DamageLayer} — harvested into the capture, expressed as offsets, and replayed at the far
+ * end. No block owns the map, so no block can be broken to reset it.</p>
  */
 public class BlockDamageSavedData extends WorldSavedData {
 
@@ -125,9 +128,60 @@ public class BlockDamageSavedData extends WorldSavedData {
         }
     }
 
+    /**
+     * Give {@code to} exactly what {@code from} had, and leave {@code from} with nothing — for a block
+     * that was relocated rather than repaired or rebuilt.
+     *
+     * <p>"Exactly what it had" includes having had NOTHING: an undamaged block arriving at a position
+     * some earlier structure left a record at must read as undamaged, so the absent case clears the
+     * destination instead of returning early. Neither argument is retained, so a caller may pass the
+     * mutable cursor it is iterating with.</p>
+     */
+    public void move(BlockPos from, BlockPos to) {
+        if (from == null || to == null || from.equals(to)) {
+            return;
+        }
+        Entry entry = entries.remove(from.toLong());
+        if (entry == null) {
+            clear(to);
+            return;
+        }
+        entries.put(to.toLong(), entry);
+        markDirty();
+    }
+
     /** How many positions this world currently holds damage for (diagnostics and tests). */
     public int size() {
         return entries.size();
+    }
+
+    /**
+     * Every damaged position inside the inclusive box. Walks the entries rather than the volume: a
+     * capture box is tens of thousands of positions and almost none of them are damaged, so the cost
+     * belongs to what is recorded, not to how big the structure is.
+     */
+    public List<BlockPos> positionsIn(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        List<BlockPos> found = new ArrayList<>();
+        for (Long key : entries.keySet()) {
+            BlockPos pos = BlockPos.fromLong(key);
+            if (pos.getX() >= minX && pos.getX() <= maxX
+                    && pos.getY() >= minY && pos.getY() <= maxY
+                    && pos.getZ() >= minZ && pos.getZ() <= maxZ) {
+                found.add(pos);
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Forget every position inside the inclusive box — what a relocation's CUT does to the region it
+     * empties. Without it the vacated coordinates keep their damage, and the next structure pasted
+     * over them inherits somebody else's holes.
+     */
+    public void clearBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        for (BlockPos pos : positionsIn(minX, minY, minZ, maxX, maxY, maxZ)) {
+            clear(pos);
+        }
     }
 
     @Override
