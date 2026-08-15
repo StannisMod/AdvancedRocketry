@@ -2610,15 +2610,21 @@ public class TestProbeCommand extends CommandBase {
     }
 
     /**
-     * The scan half of a telescope reply. The sector COUNT ships with the corners it was computed
+     * The scan half of a telescope reply. The cell COUNT ships with the corners it was computed
      * from, and the deadline with the clock it is measured against, so a stuck number says which
      * component is stuck. {@code side} is stated because every field here is the server's answer.
+     *
+     * <p>The instrument's HORIZON ships in both of its forms — the configured length and the number
+     * of steps it buys at this world's star spacing — because a reach that means nothing is a defect
+     * that reads as an empty sky, and no count alone can be checked against a telescope.</p>
      */
     private String telescopeScanFields(zmaster587.advancedRocketry.tile.multiblock.TileObservatory scope,
                                        zmaster587.advancedRocketry.universe.RegionScan scan,
                                        net.minecraft.world.WorldServer world) {
         long now = world.getTotalWorldTime();
         zmaster587.advancedRocketry.space.GalacticCoord origin = scope.scanOrigin();
+        zmaster587.advancedRocketry.universe.RegionScan.Tuning tuning =
+                zmaster587.advancedRocketry.universe.RegionScan.Tuning.fromConfig();
         StringBuilder out = new StringBuilder();
         out.append(",\"side\":\"server\",\"now\":").append(now)
                 .append(",\"origin\":").append(origin == null ? "null" : "\"" + origin.cellKey() + "\"")
@@ -2630,6 +2636,12 @@ public class TestProbeCommand extends CommandBase {
                 // running scan is already looking at, below.
                 .append(",\"aim\":").append(scope.scanDirectionIndex())
                 .append(",\"aimDistance\":").append(scope.getScanDistance())
+                .append(",\"aimLy\":").append(scope.getAimLightYears())
+                .append(",\"reachLy\":").append(tuning.maxRangeLightYears())
+                .append(",\"reachSteps\":").append(tuning.maxRangeSteps())
+                // What ONE step of that aim is worth in cells — the instrument's own stride, readable
+                // while it is idle, so a fixture can be placed where the next look will actually land.
+                .append(",\"stepCells\":").append(tuning.strideCells())
                 .append(",\"passive\":").append(scope.isPassive());
         if (scan != null) {
             // The cell counts ship beside the region they are counted over, and the next deadline
@@ -2640,7 +2652,11 @@ public class TestProbeCommand extends CommandBase {
                     .append("\",\"cells\":").append(scan.totalCells())
                     .append(",\"cellsDone\":").append(scan.cellsDone())
                     .append(",\"cellsPerStep\":").append(scan.cellsPerStep())
-                    .append(",\"distance\":").append(scan.distanceSectors())
+                    // The reach in BOTH forms, and the stride that relates them: a survey that
+                    // resolves nothing must be able to say whether it is looking at the wrong scale.
+                    .append(",\"distance\":").append(scan.distanceCells())
+                    .append(",\"distanceLy\":").append(scan.distanceLightYears())
+                    .append(",\"stride\":").append(scan.strideCells())
                     .append(",\"start\":").append(scan.startTick())
                     .append(",\"stepDeadline\":").append(scan.stepDeadline())
                     .append(",\"ticksPerStep\":").append(scan.ticksPerStep())
@@ -10992,13 +11008,13 @@ public class TestProbeCommand extends CommandBase {
                     // The telescope's reach and what a look costs in time, all read at scan START,
                     // so flipping them at runtime is enough to exercise a short scan in a test
                     // without waiting out a production-length observation.
-                    "telescopeScanRangeSectors",
-                    "telescopeScanHalfWidthSectors",
-                    "telescopeScanMaxSectors",
+                    "telescopeScanRangeLightYears",
+                    "telescopeScanHalfWidthSteps",
+                    "telescopeScanMaxCells",
                     "telescopeScanBaseTicks",
-                    "telescopeScanTicksPerSector",
+                    "telescopeScanTicksPerLightYear",
                     "telescopeScanCellsPerStep",
-                    "telescopePassiveRadiusSectors",
+                    "telescopePassiveRadiusCells",
                     "telescopeSurveyDataPerStep",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.

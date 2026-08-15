@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Every number here is the SERVER's answer; the probes state their own side.</p>
  *
- * <p>Position-isolated at x=4300-4460 (clear of the observatory-multiblock fixtures at x=4000-4060).</p>
+ * <p>Position-isolated at x=4300-4660 (clear of the observatory-multiblock fixtures at x=4000-4060).</p>
  */
 public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
 
@@ -36,15 +36,26 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
      * the default game, where what the instrument reaches is resolved outright; on is the research
      * mode, where the sweep is paced and the time curve is the mechanic.
      */
-    private void surveySetup(boolean research, int cellsPerStep, int ticksPerSector) throws Exception {
+    private void surveySetup(boolean research, int cellsPerStep, double ticksPerLightYear)
+            throws Exception {
         exec("artest config set planetsMustBeDiscovered " + research);
         exec("artest config set telescopeScanBaseTicks 0");
-        exec("artest config set telescopeScanTicksPerSector " + ticksPerSector);
-        exec("artest config set telescopeScanRangeSectors 24");
-        exec("artest config set telescopeScanHalfWidthSectors 1");
-        exec("artest config set telescopeScanMaxSectors 1000");
+        exec("artest config set telescopeScanTicksPerLightYear " + ticksPerLightYear);
+        exec("artest config set telescopeScanRangeLightYears 100");
+        exec("artest config set telescopeScanHalfWidthSteps 1");
+        exec("artest config set telescopeScanMaxCells 1000");
         exec("artest config set telescopeScanCellsPerStep " + cellsPerStep);
-        exec("artest config set telescopePassiveRadiusSectors 1");
+        exec("artest config set telescopePassiveRadiusCells 1");
+    }
+
+    /** How far apart, in cells, the looks of a directed survey stand in THIS server's universe. */
+    private long stride(int x) throws Exception {
+        String started = exec("artest telescope scan " + where(x) + " 1 0 0 1");
+        assertTrue("could not aim the instrument to read its stride: " + started,
+                started.contains("\"ok\":true"));
+        long stride = field(started, "stride");
+        exec("artest telescope abort " + where(x));
+        return stride;
     }
 
     /** The value of a numeric JSON field in a probe reply. */
@@ -58,6 +69,19 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
             to++;
         }
         return Long.parseLong(json.substring(from, to));
+    }
+
+    /** The value of a decimal JSON field in a probe reply — a length, not a count. */
+    private static double decimal(String json, String name) {
+        String key = "\"" + name + "\":";
+        int at = json.indexOf(key);
+        assertTrue("probe reply has no field " + name + ": " + json, at >= 0);
+        int from = at + key.length();
+        int to = from;
+        while (to < json.length() && "-+.eE0123456789".indexOf(json.charAt(to)) >= 0) {
+            to++;
+        }
+        return Double.parseDouble(json.substring(from, to));
     }
 
     /** The value of a string JSON field in a probe reply. */
@@ -92,6 +116,18 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         assertTrue("could not place a system to be found: " + system, system.contains("\"ok\":true"));
     }
 
+    /**
+     * Seat a system {@code steps} territories out along +X, deliberately OFF the cell the survey
+     * looks at.
+     *
+     * <p>The offset is the point of the fixture: a star is one cell of a territory millions of cells
+     * wide, so a survey that could see a system only by landing on its star's own address finds
+     * nothing. What must be found is the system that OWNS the cell that was looked at.</p>
+     */
+    private void systemNearTheLookAt(int x, String[] home, int steps) throws Exception {
+        systemAt(Long.parseLong(home[0]) + steps * stride(x) + 13L, home[1], home[2]);
+    }
+
     /** Poll the machine until its survey is finished. Bounded: 40 × 250 ms = 10 s. */
     private String awaitSurveyComplete(int x) throws Exception {
         String info = "";
@@ -110,7 +146,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         final int x = 4300;
         surveySetup(false, 2, 40);
         String[] home = observatoryWithCrystal(x);
-        systemAt(Long.parseLong(home[0]) + 4, home[1], home[2]);
+        systemNearTheLookAt(x, home, 4);
 
         String started = exec("artest telescope scan " + where(x) + " 1 0 0 4");
         assertTrue("the survey did not start: " + started, started.contains("\"ok\":true"));
@@ -128,7 +164,8 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         // One cell a step — the claim under test — and a step short enough that 27 of them fit in
         // the poll budget: at 20 ticks per sector of distance a single cell took 4 s, so the whole
         // region wanted 108 s against a 10 s budget and the sweep was blamed for the arithmetic.
-        surveySetup(true, 1, 1);
+        // Priced per LIGHT YEAR now, and four steps out is ~17 of them, so the rate is a fraction.
+        surveySetup(true, 1, 0.2);
         String[] home = observatoryWithCrystal(x);
 
         String started = exec("artest telescope scan " + where(x) + " 1 0 0 4");
@@ -159,7 +196,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         final int x = 4380;
         surveySetup(true, 1, 60);
         String[] home = observatoryWithCrystal(x);
-        systemAt(Long.parseLong(home[0]) + 3, home[1], home[2]);
+        systemNearTheLookAt(x, home, 3);
 
         exec("artest telescope scan " + where(x) + " 1 0 0 3");
         String before = exec("artest telescope info " + where(x));
@@ -212,6 +249,15 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         long hi = Long.parseLong(maxKey.split("_")[0]);
         assertTrue("the radar must look around home (" + homeX + "), not at " + minKey + ".." + maxKey,
                 lo <= homeX && homeX <= hi);
+        assertEquals("and it must walk CELLS: close to home the next cell is a different destination",
+                1L, field(passive, "stride"));
+
+        // An observatory stands on a PLANET, never on its own star. Under the gate this test was
+        // written against, the cell it is standing in reported empty and the machine could not name
+        // the system it was sitting in.
+        String done = awaitSurveyComplete(x);
+        assertTrue("the radar must resolve the system the observatory is standing in: " + done,
+                field(done, "addresses") >= 1);
     }
 
     @Test
@@ -271,7 +317,7 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         final int x = 4620;
         surveySetup(false, 4, 1);
         String[] home = observatoryWithCrystal(x);
-        systemAt(Long.parseLong(home[0]) + 3, home[1], home[2]);
+        systemNearTheLookAt(x, home, 3);
 
         exec("artest telescope scan " + where(x) + " 1 0 0 3");
         String surveyed = awaitSurveyComplete(x);
@@ -290,6 +336,30 @@ public class TelescopeRegionScanE2ETest extends AbstractSharedServerTest {
         String status = exec("artest nav status 0 " + navX + " " + CY + " " + CZ);
         assertTrue("the console must read the telescope's own crystal: " + status,
                 field(status, "ship") >= 1);
+    }
+
+    @Test
+    public void theHorizonIsALengthAnInstrumentCouldActuallyHave() throws Exception {
+        final int x = 4660;
+        // The half of the defect that no amount of resolving would have fixed: the reach was stated
+        // in cells, so 24 of them was 0.16 AU — a fifth of the way to Mercury — and every aim inside
+        // the horizon stayed inside the solar system. A horizon is a LENGTH.
+        surveySetup(false, 4, 1);
+        observatoryWithCrystal(x);
+
+        String idle = exec("artest telescope info " + where(x));
+        double reachLy = decimal(idle, "reachLy");
+        assertTrue("a telescope's horizon must reach other stars, in light years: " + reachLy,
+                reachLy >= 4d);
+        assertTrue("and must buy more than one star's territory: " + field(idle, "reachSteps"),
+                field(idle, "reachSteps") >= 2);
+
+        String aimed = exec("artest telescope scan " + where(x) + " 1 0 0 " + field(idle, "reachSteps"));
+        assertTrue("the survey did not start: " + aimed, aimed.contains("\"ok\":true"));
+        assertTrue("an aim at the horizon must land an interstellar distance away: "
+                        + decimal(aimed, "distanceLy") + " ly",
+                decimal(aimed, "distanceLy") >= 4d);
+        exec("artest telescope abort " + where(x));
     }
 
     @Test

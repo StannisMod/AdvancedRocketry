@@ -10,6 +10,7 @@ import zmaster587.advancedRocketry.navigation.CrystalEntry;
 import zmaster587.advancedRocketry.navigation.CrystalMemory;
 import zmaster587.advancedRocketry.space.GalacticCoord;
 import zmaster587.advancedRocketry.universe.EmptyGalaxyGenerator;
+import zmaster587.advancedRocketry.universe.GalaxyGenConfig;
 import zmaster587.advancedRocketry.universe.InfoTier;
 import zmaster587.advancedRocketry.universe.RegionScan;
 import zmaster587.advancedRocketry.universe.SystemBody;
@@ -30,19 +31,27 @@ import static org.junit.Assert.fail;
  * writes onto a crystal. Pure-JUnit — no MC bootstrap; the registry's generator and star lookup are
  * the injectable seams.
  *
- * <p>These pin player-facing promises — a far survey costs more than a near one, the horizon is the
- * configured reach, one step never enumerates the sky, an unknown system is discoverable, and what a
- * telescope writes is a BODY at the coarsest grade, dated — plus the save contract that a sweep
- * outlives the chunk it started in and resumes where it stood. They do not pin the time formula, the
- * sweep order or the storage shape.</p>
+ * <p>These pin player-facing promises — a far survey costs more than a near one, the horizon is a
+ * LENGTH a telescope could have, a look finds the system that OWNS the cell rather than only a star
+ * seated on it, empty sky stays empty, one step never enumerates the sky, an unknown system is
+ * discoverable, and what a telescope writes is a BODY at the coarsest grade, dated — plus the save
+ * contract that a sweep outlives the chunk it started in and resumes where it stood. They do not pin
+ * the time formula, the sweep order or the storage shape.</p>
  */
 public class TelescopeRegionScanTest {
 
     private static final GalacticCoord HOME = GalacticCoord.ofSectorLocal(0, 0, 0, 0, 0, 0);
 
-    /** Reach 10 sectors, a 3×3×3 region, room for it, 100 ticks a step plus 50 per sector, 2 cells a step. */
+    /**
+     * One survey STEP: the edge of the cube that holds at most one system, which is what the sweep
+     * strides by and what an operator's aim is counted in. Taken from the generator rather than
+     * invented — the registry attributes a member cell to its system by the same number.
+     */
+    private static final long STEP = GalaxyGenConfig.DEFAULT_MIN_SPACING;
+
+    /** Reach 50 light years, a 3×3×3 patch of territories, room for it, 100 ticks a step + 50 a ly. */
     private static RegionScan.Tuning tuning() {
-        return new RegionScan.Tuning(10, 1, 512, 100, 50, 2);
+        return new RegionScan.Tuning(50d, 1, 512, 100, 50d, 2, STEP);
     }
 
     private static StellarBody star(int id) {
@@ -54,6 +63,11 @@ public class TelescopeRegionScanTest {
 
     private static GalacticCoord cell(long x, long y, long z) {
         return GalacticCoord.ofSectorLocal(x, y, z, 0L, 0L, 0L);
+    }
+
+    /** The cell {@code steps} territories out along +X — where an aim of {@code steps} lands. */
+    private static GalacticCoord stepsOut(long steps) {
+        return cell(steps * STEP, 0, 0);
     }
 
     @After
@@ -76,14 +90,37 @@ public class TelescopeRegionScanTest {
     }
 
     @Test
+    public void theReachIsALengthAndTheAimIsCountedInStars() {
+        // The defect this replaced: a reach stated in cells read as 0.16 AU — a fifth of the way to
+        // Mercury — and no aim inside it could ever leave the solar system. A horizon is a LENGTH,
+        // and what it buys is a number of star territories, so both must be recognisable.
+        RegionScan.Tuning tuning = tuning();
+
+        assertTrue("a telescope's horizon must be quoted in light years: " + tuning.maxRangeLightYears(),
+                tuning.maxRangeLightYears() >= 1d);
+        assertTrue("and must reach at least the nearest few stars, or nothing is discoverable: "
+                        + tuning.maxRangeSteps() + " steps",
+                tuning.maxRangeSteps() >= 3);
+
+        RegionScan aimed = RegionScan.directed(HOME, 1, 0, 0, 3, 0L, tuning);
+        assertEquals("an aim of three stars must land three territories out, not three cells",
+                stepsOut(3).cellKey(),
+                cell(aimed.distanceCells(), 0, 0).cellKey());
+        assertTrue("and that distance, read as a length, must be interstellar: "
+                        + aimed.distanceLightYears() + " ly",
+                aimed.distanceLightYears() >= 3d);
+    }
+
+    @Test
     public void theHorizonIsTheConfiguredReach() {
         // "You cannot see beyond your own cluster": an aim past the reach is answered at the reach,
         // and costs exactly what looking at the reach costs — not more.
-        RegionScan reached = RegionScan.directed(HOME, 0, 0, 1, 10, 0L, tuning());
+        int horizon = tuning().maxRangeSteps();
+        RegionScan reached = RegionScan.directed(HOME, 0, 0, 1, horizon, 0L, tuning());
         RegionScan overreached = RegionScan.directed(HOME, 0, 0, 1, 9999, 0L, tuning());
 
         assertEquals("an aim past the horizon must be answered at the horizon",
-                reached.distanceSectors(), overreached.distanceSectors());
+                reached.distanceCells(), overreached.distanceCells());
         assertEquals("and must cost what the horizon costs",
                 reached.estimatedTicks(), overreached.estimatedTicks());
         assertEquals("the region itself must be the one at the horizon",
@@ -94,7 +131,7 @@ public class TelescopeRegionScanTest {
     public void oneStepNeverResolvesMoreThanItsCellBudget() {
         // The structural guard against reading an endless procedural universe off one instrument:
         // a survey may cover a large region, but never in one step.
-        RegionScan.Tuning wide = new RegionScan.Tuning(10, 2, 1000, 100, 50, 3);
+        RegionScan.Tuning wide = new RegionScan.Tuning(50d, 2, 1000, 100, 50d, 3, STEP);
         RegionScan scan = RegionScan.directed(HOME, 1, 1, 0, 3, 0L, wide);
 
         assertTrue("the fixture must be a region worth sweeping", scan.totalCells() > 3);
@@ -105,7 +142,7 @@ public class TelescopeRegionScanTest {
     @Test
     public void aRegionNeverExceedsItsCeiling() {
         // Ask for a 9×9×9 region with room for 27 cells and the ceiling wins.
-        RegionScan.Tuning greedy = new RegionScan.Tuning(10, 4, 27, 100, 50, 2);
+        RegionScan.Tuning greedy = new RegionScan.Tuning(50d, 4, 27, 100, 50d, 2, STEP);
         RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 3, 0L, greedy);
 
         assertTrue("a survey may never cover more than its ceiling: " + scan.totalCells(),
@@ -153,6 +190,39 @@ public class TelescopeRegionScanTest {
     }
 
     @Test
+    public void aSweepStridesByOneStarsTerritoryRatherThanByCells() {
+        // What makes a sweep worth its time: every look is a different candidate system. Walking
+        // cell by cell would spend a whole survey inside one system's own neighbourhood, since
+        // every cell of that neighbourhood answers with the same system.
+        RegionScan scan = RegionScan.directed(HOME, 1, 0, 0, 4, 0L, tuning());
+
+        assertEquals("a directed survey strides by one star's territory", STEP, scan.strideCells());
+        assertTrue("the fixture must span more than one look along X", scan.totalCells() > 1);
+
+        long first = scan.cellAt(0).sectorX();
+        long second = scan.cellAt(1).sectorX();
+        assertEquals("two consecutive looks must be a whole territory apart, not a cell",
+                STEP, Math.abs(second - first));
+    }
+
+    @Test
+    public void theLocalRadarWalksCellsNotTerritories() {
+        // The other half of the same decision: close to home the cells ARE the granularity — the
+        // planet in the next cell is a different destination from its star — so the radar keeps a
+        // cell stride while the directed survey strides by stars.
+        RegionScan radar = RegionScan.local(HOME, 1, 0L, tuning());
+
+        assertEquals("the local radar walks cell by cell", 1L, radar.strideCells());
+        assertEquals("a radius of one cell is a 3x3x3 neighbourhood", 27, radar.totalCells());
+
+        boolean looksAtHome = false;
+        for (int i = 0; i < radar.totalCells(); i++) {
+            looksAtHome |= radar.cellAt(i).cellKey().equals(HOME.cellKey());
+        }
+        assertTrue("and it must look at the cell the instrument is standing in", looksAtHome);
+    }
+
+    @Test
     public void aSurveyWithNoDirectionIsRefused() {
         try {
             RegionScan.directed(HOME, 0, 0, 0, 4, 0L, tuning());
@@ -189,25 +259,36 @@ public class TelescopeRegionScanTest {
 
     // ── what a survey discovers ───────────────────────────────────────────────
 
-    /** A registry holding two systems with bodies, plus one well outside the surveyed region. */
+    /**
+     * A registry holding two systems inside the surveyed patch and one well outside it.
+     *
+     * <p><b>Not one of the three stars is seated on a cell the sweep looks at</b>, and that is the
+     * fixture's whole point. A star is one cell of a territory millions of cells wide, so a survey
+     * that could only see a system by landing on its star's own address would find nothing here —
+     * which is exactly what the instrument used to do. Each seat is offset from the look that must
+     * find it, by a distance that is inside its own neighbourhood and nowhere near the next.</p>
+     */
     private UniverseRegistry threeSystems() {
         UniverseRegistry.setGenerator(new EmptyGalaxyGenerator());
         UniverseRegistry.setStarLookup(TelescopeRegionScanTest::star);
 
         UniverseRegistry registry = new UniverseRegistry();
-        registry.place(cell(4, 0, 0), 4);
-        registry.addPoi(SystemBody.fixedAt(cell(4, 0, 0), SystemBodyKind.STAR, Constants.INVALID_PLANET, 4));
-        registry.addPoi(SystemBody.fixedAt(cell(4, 0, 0), SystemBodyKind.PLANET, 401, 4));
+        GalacticCoord inner = cell(4 * STEP - 20, 0, 0);          // found by the look at 4 steps out
+        registry.place(inner, 4);
+        registry.addPoi(SystemBody.fixedAt(inner, SystemBodyKind.STAR, Constants.INVALID_PLANET, 4));
+        registry.addPoi(SystemBody.fixedAt(inner, SystemBodyKind.PLANET, 401, 4));
 
-        registry.place(cell(5, 1, 0), 5);
-        registry.addPoi(SystemBody.fixedAt(cell(5, 1, 0), SystemBodyKind.PLANET, 501, 5));
+        GalacticCoord edge = cell(5 * STEP + 7, STEP - 3, 0);     // found by the look at the corner
+        registry.place(edge, 5);
+        registry.addPoi(SystemBody.fixedAt(edge, SystemBodyKind.PLANET, 501, 5));
 
-        registry.place(cell(9, 0, 0), 9);
-        registry.addPoi(SystemBody.fixedAt(cell(9, 0, 0), SystemBodyKind.PLANET, 901, 9));
+        GalacticCoord beyond = cell(9 * STEP, 0, 0);              // far outside the patch
+        registry.place(beyond, 9);
+        registry.addPoi(SystemBody.fixedAt(beyond, SystemBodyKind.PLANET, 901, 9));
         return registry;
     }
 
-    /** The survey the fixture is built around: 4 sectors out along +X, one sector wide. */
+    /** The survey the fixture is built around: 4 territories out along +X, one territory wide. */
     private RegionScan boxAroundFourthSector() {
         return RegionScan.directed(HOME, 1, 0, 0, 4, 0L, tuning());
     }
@@ -246,13 +327,61 @@ public class TelescopeRegionScanTest {
     }
 
     @Test
+    public void aSystemIsFoundFromAnyCellItOWNS_notOnlyFromItsStarsSeat() {
+        // THE defect. A system is a neighbourhood: its star holds one cell of it and its planets hold
+        // others. Asking "is a star seated exactly here" makes discovery a lottery whose odds are one
+        // cell in a territory millions wide — so a survey found nothing and reported an empty sky.
+        // Asking "which system owns this cell" is the same question a telescope asks of the light.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+
+        GalacticCoord look = stepsOut(4);
+        assertFalse("the fixture is worthless unless the look is NOT the star's own seat",
+                registry.starIdForCoord(look).isPresent());
+
+        TelescopeScan.resolveCell(registry, look, crystal, 7_000L, dimId -> "Body-" + dimId);
+
+        assertNotNull("a survey must discover the system that OWNS the cell it looked at",
+                crystal.forBody(401));
+    }
+
+    @Test
+    public void aLookIntoTheVoidDiscoversNothing() {
+        // The gate exists so that empty sky does not manufacture addresses — and the fix must not
+        // trade one failure for its opposite by attributing every cell to some system.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+
+        int written = TelescopeScan.resolveCell(registry, cell(400 * STEP, 0, 0), crystal, 7_000L,
+                dimId -> "Body-" + dimId);
+
+        assertEquals("interstellar void must yield no addresses at all", 0, written);
+        assertEquals("and must write nothing onto the crystal", 0, crystal.size());
+    }
+
+    @Test
+    public void anInstrumentInsideASystemResolvesTheSystemItStandsIn() {
+        // An observatory does not stand on its own star: it stands on a planet, in one of its
+        // system's member cells. Under the old gate that cell reported empty, so the machine could
+        // not name the system it was sitting in — which is also what the local radar is for.
+        UniverseRegistry registry = threeSystems();
+        CrystalMemory crystal = new CrystalMemory();
+        GalacticCoord standingOn = cell(4 * STEP - 20 + 5_000, 3_000, 0); // a member cell, not the seat
+
+        TelescopeScan.resolveCell(registry, standingOn, crystal, 7_000L, dimId -> "Body-" + dimId);
+
+        assertNotNull("an instrument inside a system must be able to name that system",
+                crystal.forBody(401));
+    }
+
+    @Test
     public void aSystemTheCrystalNeverHeardOfIsStillDiscovered() {
         // The discriminator against the tempting wrong shape — reporting only what is already known.
         // The crystal is armed with ONE of the two systems in the region, so the other is genuinely
         // new: a knowledge gate anywhere on this path leaves it missing and this test red.
         UniverseRegistry registry = threeSystems();
         CrystalMemory crystal = new CrystalMemory();
-        crystal.record(new CrystalEntry(cell(4, 0, 0), "Body-401", SystemBodyKind.PLANET,
+        crystal.record(new CrystalEntry(stepsOut(4), "Body-401", SystemBodyKind.PLANET,
                 InfoTier.TELESCOPE, 1_000L, 401));
         assertNull("the fixture must start ignorant of the body under test", crystal.forBody(501));
 
@@ -288,7 +417,7 @@ public class TelescopeRegionScanTest {
 
         int firstCellWithContent = -1;
         for (int i = 0; i < scan.totalCells(); i++) {
-            if (scan.cellAt(i).cellKey().equals(cell(4, 0, 0).cellKey())) {
+            if (scan.cellAt(i).cellKey().equals(stepsOut(4).cellKey())) {
                 firstCellWithContent = i;
                 break;
             }

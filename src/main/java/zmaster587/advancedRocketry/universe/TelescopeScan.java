@@ -1,6 +1,6 @@
 package zmaster587.advancedRocketry.universe;
 
-import java.util.Map;
+import java.util.Optional;
 import java.util.function.IntFunction;
 
 import net.minecraft.item.ItemStack;
@@ -72,31 +72,39 @@ public final class TelescopeScan {
     }
 
     /**
-     * Resolve ONE cell: every body of the system standing there, or the bare coordinate when the
-     * system has no content the registry can name.
+     * Resolve ONE cell: every body of the system that OWNS it, or the bare coordinate when that
+     * system has no content the registry can name. Void space yields nothing, which is the point of
+     * asking at all — an empty sky must not manufacture an address.
+     *
+     * <p>The question is <b>which system owns this cell</b>, never "is a star seated exactly here".
+     * A system is a neighbourhood: its star holds the anchor cell and every planet holds one of its
+     * own, so a cell that is a system's planet — or simply the space between its bodies — is a cell
+     * that resolves to that system. Asking whether the cell IS the seat means a survey discovers a
+     * system only by landing on its star's own address, which for a lattice a few thousand cells wide
+     * is a thing that never happens. Resolving through the owner is also what lets an observatory
+     * standing on a planet report the system it is standing in.</p>
      */
     public static int resolveCell(UniverseRegistry registry, GalacticCoord cell, CrystalMemory memory,
                                   long observedTick, IntFunction<String> nameOf) {
         if (registry == null || cell == null || memory == null) {
             return 0;
         }
-        Map<GalacticCoord, StarSystem> here = registry.systemsInRegion(cell, cell);
-        if (here.isEmpty()) {
+        Optional<GalacticCoord> anchor = registry.anchorForCell(cell);
+        if (!anchor.isPresent()) {
             return 0;
         }
         int written = 0;
         boolean namedSomething = false;
-        for (SystemBody body : registry.systemBodiesAt(cell)) {
+        for (SystemBody body : registry.systemBodiesAt(anchor.get())) {
             namedSomething = true;
             if (memory.record(entryFor(body, observedTick, nameOf))) {
                 written++;
             }
         }
         if (!namedSomething) {
-            for (Map.Entry<GalacticCoord, StarSystem> system : here.entrySet()) {
-                if (memory.record(entryForSystem(system.getKey(), system.getValue(), observedTick))) {
-                    written++;
-                }
+            StarSystem system = registry.systemForCoord(anchor.get()).orElse(null);
+            if (memory.record(entryForSystem(anchor.get(), system, observedTick))) {
+                written++;
             }
         }
         return written;

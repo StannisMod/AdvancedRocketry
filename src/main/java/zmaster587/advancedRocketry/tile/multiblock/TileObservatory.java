@@ -141,8 +141,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     private int lastScanDiscoveries;
     /** Which way the operator has the instrument pointed, as an index into {@link #SCAN_DIRECTIONS}. */
     private int scanDirection;
-    /** How far out, in sectors, he has it aimed. Clamped to the configured reach when it is used. */
+    /** How far out, in STEPS, he has it aimed. Clamped to the configured reach when it is used. */
     private int scanDistance = 1;
+    /**
+     * What one step of aim is worth in light years — how the operator's pick is turned into a length
+     * he can recognise. Derived from the SERVER's galaxy generator and synced, never computed on the
+     * client: a client attached to a pack whose star spacing it does not hold would quote its own.
+     */
+    private double stepLightYears;
     /** Client-side only: which way the distance button just pressed wants to move the aim. */
     private int pendingDistanceDelta;
     /** Watching the neighbourhood rather than a distant patch. The two modes are exclusive. */
@@ -299,6 +305,12 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
 
         if (!world.isRemote) {
+            // Once per load: the stride is the installed generator's, and that is fixed for a world.
+            if (stepLightYears <= 0d) {
+                stepLightYears = zmaster587.advancedRocketry.universe.UniverseScale
+                        .lightYearsForCells(RegionScan.Tuning.fromConfig().strideCells());
+                markDirty();
+            }
             completeRegionScanIfDue();
         }
 
@@ -392,6 +404,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         nbt.setInteger("lastScanDiscoveries", lastScanDiscoveries);
         nbt.setInteger("scanDirection", scanDirection);
         nbt.setInteger("scanDistance", scanDistance);
+        nbt.setDouble("scanStepLy", stepLightYears);
         nbt.setBoolean("scanPassive", passive);
     }
 
@@ -414,6 +427,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         lastScanDiscoveries = nbt.getInteger("lastScanDiscoveries");
         scanDirection = nbt.getInteger("scanDirection");
         scanDistance = Math.max(1, nbt.getInteger("scanDistance"));
+        stepLightYears = nbt.getDouble("scanStepLy");
         passive = nbt.getBoolean("scanPassive");
 
         if (world != null && world.isRemote && prevSeed != lastSeed) {
@@ -678,7 +692,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
 
             modules.add(new ModuleText(8, 70,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance")
-                            + " " + scanDistance, 0x2d2d2d, false));
+                            + " " + scanDistance + aimInLightYears(), 0x2d2d2d, false));
             modules.add(new ModuleButton(100, 66, 4, "-", this,
                     zmaster587.libVulpes.inventory.TextureResources.buttonBuild,
                     LibVulpes.proxy.getLocalizedString("msg.observetory.scan.distance.tooltip"), 18, 18));
@@ -762,13 +776,14 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
     /**
      * Aim the instrument at a region and start looking. Server side; one observation at a time.
      *
-     * <p>The distance is in galactic sectors and is clamped to the configured reach rather than
-     * refused — asking to see farther than the instrument can gets you the instrument's reach.</p>
+     * <p>The distance is in STEPS — one step is one star's territory — and is clamped to the
+     * configured reach rather than refused: asking to see farther than the instrument can gets you
+     * the instrument's reach.</p>
      *
      * @return {@code false} when the machine is already looking somewhere, or when it does not know
      *         where it is standing and so has nothing to aim FROM
      */
-    public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSectors) {
+    public boolean beginRegionScan(int dirX, int dirY, int dirZ, int distanceSteps) {
         if (world == null || world.isRemote) {
             return false;
         }
@@ -778,7 +793,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         }
         // Re-aiming mid-sweep is allowed and costs only the cell in flight: every cell already
         // resolved is already written to the crystal, so there is nothing else to lose.
-        activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSectors,
+        activeScan = RegionScan.directed(origin, dirX, dirY, dirZ, distanceSteps,
                 world.getTotalWorldTime(), RegionScan.Tuning.fromConfig());
         passive = false;
         lastScanDiscoveries = 0;
@@ -811,12 +826,8 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         if (origin == null) {
             return false;
         }
-        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusSectors);
-        GalacticCoord lo = GalacticCoord.ofSectorLocal(origin.sectorX() - radius,
-                origin.sectorY() - radius, origin.sectorZ() - radius, 0L, 0L, 0L);
-        GalacticCoord hi = GalacticCoord.ofSectorLocal(origin.sectorX() + radius,
-                origin.sectorY() + radius, origin.sectorZ() + radius, 0L, 0L, 0L);
-        activeScan = RegionScan.box(lo, hi, radius, world.getTotalWorldTime(),
+        int radius = Math.max(0, ARConfiguration.getCurrentConfig().telescopePassiveRadiusCells);
+        activeScan = RegionScan.local(origin, radius, world.getTotalWorldTime(),
                 RegionScan.Tuning.fromConfig());
         passive = true;
         lastScanDiscoveries = 0;
@@ -835,9 +846,28 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
         return Math.floorMod(scanDirection, SCAN_DIRECTIONS.length);
     }
 
-    /** How far out the operator has the instrument aimed, in sectors. */
+    /** How far out the operator has the instrument aimed, in steps of one star's territory. */
     public int getScanDistance() {
         return scanDistance;
+    }
+
+    /** How far the current aim reaches, in light years, or zero before the server has said. */
+    public double getAimLightYears() {
+        return scanDistance * stepLightYears;
+    }
+
+    /**
+     * The aim as a length, in brackets — because a bare "3" says nothing about the sky. Empty until
+     * the server has told this tile what a step is worth, so the client never invents the number.
+     */
+    private String aimInLightYears() {
+        double ly = getAimLightYears();
+        if (ly <= 0d) {
+            return "";
+        }
+        // The unit travels with the translation: a bracket reading "ly" is English, and this GUI
+        // already speaks two languages.
+        return String.format(LibVulpes.proxy.getLocalizedString("msg.observetory.scan.lightyears"), ly);
     }
 
     /** Whether the instrument is watching its own neighbourhood rather than a distant patch. */
@@ -1054,7 +1084,7 @@ public class TileObservatory extends TileMultiPowerConsumer implements IModularI
                 if (id == PICK_DIRECTION) {
                     scanDirection = (scanDirectionIndex() + 1) % SCAN_DIRECTIONS.length;
                 } else {
-                    int reach = Math.max(1, ARConfiguration.getCurrentConfig().telescopeScanRangeSectors);
+                    int reach = RegionScan.Tuning.fromConfig().maxRangeSteps();
                     scanDistance = Math.max(1, Math.min(reach, scanDistance + nbt.getInteger("d")));
                 }
                 markDirty();
