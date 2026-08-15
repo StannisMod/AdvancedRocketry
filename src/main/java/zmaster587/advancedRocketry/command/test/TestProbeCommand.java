@@ -713,6 +713,52 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(info));
             return;
         }
+        if (args.length >= 7 && "weld".equalsIgnoreCase(args[0])) {
+            // weld <dim> <x> <y> <z> <charge> <material|none> [count] — one use of the repair welder
+            // against the block at (x,y,z), by a player carrying exactly what this call says: the
+            // tool at <charge> FE and <count> of <material>. Drives production's own decision
+            // (ItemRepairWelder.weld), so a refusal here is the item's refusal, not the probe's.
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer world = server.getWorld(dim);
+            if (world == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos pos = new BlockPos(parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+            int charge = parseIntOr(args[5], 0);
+            String materialId = args[6];
+            int materialCount = args.length >= 8 ? parseIntOr(args[7], 0) : 0;
+
+            net.minecraft.entity.player.EntityPlayerMP welder = weldingPlayer(server, world, pos);
+            welder.inventory.clear();
+            net.minecraft.item.ItemStack tool = new net.minecraft.item.ItemStack(
+                    zmaster587.advancedRocketry.api.AdvancedRocketryItems.itemRepairWelder);
+            zmaster587.advancedRocketry.item.ItemRepairWelder.setStoredEnergy(tool, charge);
+            welder.inventory.addItemStackToInventory(tool);
+            net.minecraft.item.Item material = "none".equalsIgnoreCase(materialId)
+                    ? null : net.minecraft.item.Item.getByNameOrId(materialId);
+            if (material != null && materialCount > 0) {
+                welder.inventory.addItemStackToInventory(
+                        new net.minecraft.item.ItemStack(material, materialCount));
+            }
+
+            int stageBefore = zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos);
+            int materialBefore = countOf(welder, material);
+            zmaster587.advancedRocketry.item.ItemRepairWelder.Outcome outcome =
+                    zmaster587.advancedRocketry.item.ItemRepairWelder.weld(welder, world, pos, tool);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.put("outcome", outcome.name());
+            m.put("stageBefore", stageBefore);
+            m.put("stageAfter", zmaster587.advancedRocketry.damage.DamageState.getStage(world, pos));
+            m.put("energyBefore", charge);
+            m.put("energyAfter", zmaster587.advancedRocketry.item.ItemRepairWelder.storedEnergy(tool));
+            m.put("materialBefore", materialBefore);
+            m.put("materialAfter", countOf(welder, material));
+            m.put("block", String.valueOf(world.getBlockState(pos).getBlock().getRegistryName()));
+            send(sender, jsonMap(m));
+            return;
+        }
         if (args.length >= 8 && "records".equalsIgnoreCase(args[0])) {
             // records <dim> <minX> <minY> <minZ> <maxX> <maxY> <maxZ> — every damage record the world
             // holds inside the inclusive box. A single position's reading is "stage"; this is what a
@@ -17496,6 +17542,46 @@ public class TestProbeCommand extends CommandBase {
 
     private static double parseDoubleOr(String s, double dflt) {
         try { return Double.parseDouble(s); } catch (NumberFormatException nfe) { return dflt; }
+    }
+
+    /**
+     * A player for the welding probe, its OWN and not the shared fake one: this player is handed a
+     * cleared inventory on every call, which would rob whatever else the shared player is carrying.
+     * Connectionless like the shared one, so nothing may send it a packet — which is why the probe
+     * drives {@code ItemRepairWelder.weld} (silent) rather than {@code onItemUse} (speaks).
+     */
+    private static net.minecraft.entity.player.EntityPlayerMP weldingPlayer(
+            MinecraftServer server, net.minecraft.world.WorldServer world, BlockPos near) {
+        if (weldTestPlayer == null) {
+            weldTestPlayer = new net.minecraft.entity.player.EntityPlayerMP(server, world,
+                    new com.mojang.authlib.GameProfile(
+                            java.util.UUID.nameUUIDFromBytes("ARWeldTestPlayer".getBytes()),
+                            "ARWeldTestPlayer"),
+                    new net.minecraft.server.management.PlayerInteractionManager(world));
+            weldTestPlayer.capabilities.disableDamage = true;
+        }
+        weldTestPlayer.setWorld(world);
+        weldTestPlayer.dimension = world.provider.getDimension();
+        weldTestPlayer.setLocationAndAngles(near.getX() + 0.5, near.getY() + 1.0, near.getZ() + 0.5, 0, 0);
+        return weldTestPlayer;
+    }
+
+    private static net.minecraft.entity.player.EntityPlayerMP weldTestPlayer;
+
+    /** How many of {@code item} the player is carrying, counting every slot; 0 for a null item. */
+    private static int countOf(net.minecraft.entity.player.EntityPlayerMP player,
+                               net.minecraft.item.Item item) {
+        if (item == null) {
+            return 0;
+        }
+        int total = 0;
+        for (int i = 0; i < player.inventory.getSizeInventory(); i++) {
+            net.minecraft.item.ItemStack stack = player.inventory.getStackInSlot(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                total += stack.getCount();
+            }
+        }
+        return total;
     }
 
     /**

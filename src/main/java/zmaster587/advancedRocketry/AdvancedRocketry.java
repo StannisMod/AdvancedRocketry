@@ -538,6 +538,7 @@ public class AdvancedRocketry {
         //TODO: move registration in the case we have more than one chip type
         AdvancedRocketryItems.itemDataUnit = new ItemData().setUnlocalizedName("advancedrocketry:dataUnit").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemMemoryCrystal = new zmaster587.advancedRocketry.item.ItemMemoryCrystal().setUnlocalizedName("advancedrocketry:memoryCrystal").setCreativeTab(tabAdvRocketry);
+        AdvancedRocketryItems.itemRepairWelder = new zmaster587.advancedRocketry.item.ItemRepairWelder().setUnlocalizedName("advancedrocketry:repairWelder").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemOreScanner = new ItemOreScanner().setUnlocalizedName("OreScanner").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemQuartzCrucible = new ItemBlock(AdvancedRocketryBlocks.blockQuartzCrucible).setUnlocalizedName("qcrucible").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryItems.itemSatellite = new ItemSatellite().setUnlocalizedName("satellite").setCreativeTab(tabAdvRocketry).setMaxStackSize(1);
@@ -595,6 +596,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSpaceStationChip.setRegistryName("spaceStationChip"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemDataUnit.setRegistryName("dataUnit"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemMemoryCrystal.setRegistryName("memoryCrystal"));
+        LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemRepairWelder.setRegistryName("repairWelder"));
         //Satellite bits
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSatellite.setRegistryName("satellite"));
         LibVulpesBlocks.registerItem(AdvancedRocketryItems.itemSatellitePowerSource.setRegistryName("satellitePowerSource"));

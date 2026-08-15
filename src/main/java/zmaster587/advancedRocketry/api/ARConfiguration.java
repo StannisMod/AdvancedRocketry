@@ -373,6 +373,18 @@ public class ARConfiguration {
     public boolean wearCriticalBlocksLaunch = false;
     @ConfigProperty(needsSync = true)
     public double serviceStationStandaloneRepairMultiplier = 3.0;
+    /**
+     * Share of a block's own crafting recipe charged to repair it from destroyed-adjacent back to
+     * pristine BY HAND, spread over its stages. 1.0 means a full hand repair costs about what the
+     * block costs — the welder's advantage over simply replacing it is that the block, and whatever
+     * its tile entity holds, stays where it is.
+     */
+    @ConfigProperty(needsSync = true)
+    public double repairCostPerStageFraction = 1.0;
+    @ConfigProperty(needsSync = true)
+    public int repairWelderEnergyPerStage = 2000;
+    @ConfigProperty(needsSync = true)
+    public int repairWelderCapacity = 100000;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -614,6 +626,9 @@ public class ARConfiguration {
         arConfig.wearWarnProbability = config.get(ROCKET, "wearWarnProbability", 0.05, "Failure probability (0..1) at or above which the pilot is warned before launch that the rocket is worn. Also the threshold that blocks launch when wearCriticalBlocksLaunch is true").getDouble();
         arConfig.wearCriticalBlocksLaunch = config.get(ROCKET, "wearCriticalBlocksLaunch", false, "If true, a rocket whose failure probability is at/above wearWarnProbability is refused launch (no explosion). If false, the pilot is warned but may still launch and risk the stochastic explosion").getBoolean();
         arConfig.serviceStationStandaloneRepairMultiplier = config.get(ROCKET, "serviceStationStandaloneRepairMultiplier", 3.0, "Resource cost multiplier when the service station repairs a worn part WITHOUT a linked PrecisionAssembler (consumes the repair recipe's non-part ingredients times this factor). The assembler-backed path stays at 1x").getDouble();
+        arConfig.repairCostPerStageFraction = config.get(ROCKET, "repairCostPerStageFraction", 1.0, "Share of a block's own crafting recipe charged for a FULL hand repair with the welder, spread evenly over its damage stages (1.0 = repairing a block from its worst stage costs about what crafting it costs). Ingredient counts round up, so no stage is ever free").getDouble();
+        arConfig.repairWelderEnergyPerStage = config.get(ROCKET, "repairWelderEnergyPerStage", 2000, "Forge Energy the repair welder spends per stage of damage removed").getInt();
+        arConfig.repairWelderCapacity = config.get(ROCKET, "repairWelderCapacity", 100000, "Forge Energy the repair welder holds when fully charged").getInt();
         arConfig.wearTankLeakChanceMax = config.get(ROCKET, "wearTankLeakChanceMax", 0.5, "Chance (0..1) that a fully-worn fuel tank carrying fuel/oxidizer leaks at launch. Scaled by the tank's wear stage. A leak both bleeds fuel and adds to the launch failure (explosion) probability").getDouble();
         arConfig.wearTankLeakFuelLoss = config.get(ROCKET, "wearTankLeakFuelLoss", 0.25, "Fraction of a fuel type's loaded fuel lost when a worn tank of that type leaks at launch").getDouble();
         arConfig.wearSeatBlockStageFraction = config.get(ROCKET, "wearSeatBlockStageFraction", 0.7, "Wear fraction (0..1 of max stage) at or above which a worn seat blocks a CREWED launch. Uncrewed/automated rockets ignore seat wear").getDouble();

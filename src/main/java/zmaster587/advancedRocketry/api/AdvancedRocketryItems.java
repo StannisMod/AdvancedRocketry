@@ -24,6 +24,7 @@ public class AdvancedRocketryItems {
     public static Item itemQuartzCrucible;
     public static Item itemDataUnit;
     public static Item itemMemoryCrystal;
+    public static Item itemRepairWelder;
     public static Item itemSatellite;
     public static Item itemSatelliteIdChip;
     public static Item itemPlanetIdChip;
