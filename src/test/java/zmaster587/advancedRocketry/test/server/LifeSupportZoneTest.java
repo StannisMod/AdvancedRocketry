@@ -13,15 +13,18 @@ import static zmaster587.advancedRocketry.test.server.WorldCommandFixtures.exec;
  * Life support as a placed machine rather than as arithmetic.
  *
  * <p>{@code AirStateTest} already pins the gas maths in isolation. What it cannot see is whether a
- * zone exists at all, whether the vent stays the authority over it, and whether a recirculator
- * standing in a room actually moves that room's air and produces the carbon it removed. Those are
- * the three things here.</p>
+ * zone exists at all, whether the vent stays the authority over it, and whether a machine standing
+ * in a room actually finds that room, moves its air, and stops where it is told to. Those are the
+ * things here — including the combiner's governor, which is a refusal and so can only be told from
+ * a broken machine by watching it act first and then decline.</p>
  */
 public class LifeSupportZoneTest extends AbstractSharedServerTest {
 
     private static final Pattern AIR_O2 = Pattern.compile("\"airO2\":(-?\\d+)");
     private static final Pattern AIR_CO2 = Pattern.compile("\"airCO2\":(-?\\d+)");
     private static final Pattern AIR_PRESSURE = Pattern.compile("\"airPressure\":(-?\\d+)");
+    private static final Pattern TANK_AMOUNT = Pattern.compile("\"tankAmount\":(-?\\d+)");
+    private static final Pattern CONFIG_VALUE = Pattern.compile("\"value\":(-?\\d+)");
 
     private static final int CY_BASE = 64;
     private static final int CZ_BASE = 2100;
@@ -29,6 +32,8 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     private static final int CX_UNPOWERED = 2200;
     private static final int CX_RECIRC = 2400;
     private static final int CX_SEPARATOR = 2600;
+    private static final int CX_COMBINE = 2800;
+    private static final int CX_GOVERNOR = 3000;
 
     /** A maintained zone starts as sea-level air, and reports the pressure the mod has always
      *  reported for a pressurised room. This is the probe's own grounding: if it lied, the two
@@ -99,6 +104,10 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
                 o2After > 60_000);
         assertEquals("regeneration must not change the room's pressure: " + after,
                 100, extract(after, AIR_PRESSURE));
+        // The gases are only half the story: what damages the crew is the atmosphere the zone
+        // PUBLISHES, and a room that has been regenerated must publish a breathable one.
+        assertTrue("a regenerated room must read as breathable, not merely contain oxygen: " + after,
+                after.contains("\"blobAtmosphere\":\"PressurizedAir\""));
 
         // Forge lowercases registry paths, so the id Java passes as "carbonDust" is stored — and
         // reported — as "carbondust".
@@ -136,6 +145,97 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
         String tank = exec("artest fluid stored 0 " + (CX_SEPARATOR + 1) + " " + CY_BASE + " " + CZ_BASE);
         assertTrue("the gas it removed must be in its tank as carbon dioxide: " + tank,
                 tank.contains("carbon_dioxide"));
+    }
+
+    /** MECH-ATM-21 combine: the other direction. A separator flipped to combine puts the gas in
+     *  its tank back into the room — which is what makes a stripped cabin habitable again, and is
+     *  the half of the machine no test had ever driven in a world. */
+    @Test
+    public void aSeparatorInCombineModeGivesItsOxygenBackToTheRoom() throws Exception {
+        buildSealableRoom(CX_COMBINE);
+        placeVent(CX_COMBINE);
+        injectEnergy(CX_COMBINE, 1_000_000);
+        injectOxygen(CX_COMBINE, 16000);
+        forceTickAndReseal(CX_COMBINE);
+
+        // A room whose oxygen has been stripped out: still pressurised by its nitrogen, but not
+        // breathable. This is the state a split-mode separator leaves behind.
+        String set = exec("artest vent setair 0 " + CX_COMBINE + " " + CY_BASE + " " + CZ_BASE
+                + " 790000 60000 0");
+        assertTrue("setair failed: " + set, set.contains("\"ok\":true"));
+        String before = ventInfo(CX_COMBINE);
+        assertTrue("premise: the room must start un-breathable: " + before,
+                before.contains("\"blobAtmosphere\":\"lowO2\""));
+
+        placeSeparator(CX_COMBINE);
+        injectEnergyAt(CX_COMBINE + 1, 1_000_000);
+        String filled = exec("artest fluid inject 0 " + (CX_COMBINE + 1) + " " + CY_BASE + " "
+                + CZ_BASE + " oxygen 8000");
+        assertTrue("could not put oxygen in the separator's tank: " + filled,
+                filled.contains("\"ok\":true"));
+
+        flipMode(CX_COMBINE + 1);
+        String mode = separatorInfo(CX_COMBINE + 1);
+        assertTrue("premise: the sneak-click must have put it in combine mode: " + mode,
+                mode.contains("\"combining\":true"));
+        assertTrue("premise: it must have found the room it stands in: " + mode,
+                mode.contains("\"hasServedCell\":true"));
+
+        exec("artest tile force-tick 0 " + (CX_COMBINE + 1) + " " + CY_BASE + " " + CZ_BASE + " 200");
+
+        String after = ventInfo(CX_COMBINE);
+        int o2After = extract(after, AIR_O2);
+        assertTrue("the separator must push its oxygen into the room (before=60000 after="
+                + o2After + "): " + after, o2After > 60_000);
+        assertTrue("and the room must become breathable again: " + after,
+                after.contains("\"blobAtmosphere\":\"PressurizedAir\""));
+
+        String tank = separatorInfo(CX_COMBINE + 1);
+        assertTrue("the oxygen it gave the room must have left its tank: " + tank,
+                extract(tank, TANK_AMOUNT) < 8000);
+    }
+
+    /** MECH-ATM-21 governor — the reason the combiner exists. Oxygen is admitted only up to the
+     *  configured ceiling, so a cabin cannot be enriched into a fire hazard however much gas is
+     *  piped at it. Pinned as "climbs, then stops exactly at the ceiling with gas to spare": a
+     *  machine that simply did nothing would satisfy "never exceeds" without governing anything. */
+    @Test
+    public void theCombinerRefusesToPushOxygenPastTheSafeCeiling() throws Exception {
+        int ceiling = configInt("lifeSupportMaxPartialO2");
+        int start = ceiling - 40_000;
+
+        buildSealableRoom(CX_GOVERNOR);
+        placeVent(CX_GOVERNOR);
+        injectEnergy(CX_GOVERNOR, 1_000_000);
+        injectOxygen(CX_GOVERNOR, 16000);
+        forceTickAndReseal(CX_GOVERNOR);
+
+        String set = exec("artest vent setair 0 " + CX_GOVERNOR + " " + CY_BASE + " " + CZ_BASE
+                + " 790000 " + start + " 0");
+        assertTrue("setair failed: " + set, set.contains("\"ok\":true"));
+
+        placeSeparator(CX_GOVERNOR);
+        injectEnergyAt(CX_GOVERNOR + 1, 1_000_000);
+        String filled = exec("artest fluid inject 0 " + (CX_GOVERNOR + 1) + " " + CY_BASE + " "
+                + CZ_BASE + " oxygen 8000");
+        assertTrue("could not put oxygen in the separator's tank: " + filled,
+                filled.contains("\"ok\":true"));
+
+        flipMode(CX_GOVERNOR + 1);
+        // Far longer than the two operations the gap needs: the machine must stop by decision,
+        // not by running out of time.
+        exec("artest tile force-tick 0 " + (CX_GOVERNOR + 1) + " " + CY_BASE + " " + CZ_BASE + " 400");
+
+        String after = ventInfo(CX_GOVERNOR);
+        int o2After = extract(after, AIR_O2);
+        assertEquals("oxygen must stop exactly at the ceiling — climbing from " + start
+                + " and no further than " + ceiling + ": " + after, ceiling, o2After);
+        assertTrue("and the room must stay breathable rather than turn oxygen-toxic: " + after,
+                after.contains("\"blobAtmosphere\":\"PressurizedAir\""));
+
+        String tank = separatorInfo(CX_GOVERNOR + 1);
+        assertTrue("it must have stopped because of the ceiling, not because the tank ran dry: "
+                + tank, extract(tank, TANK_AMOUNT) > 0);
     }
 
     // ─── helpers ───────────────────────────────────────────────────────
@@ -203,6 +303,24 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
 
     private String ventInfo(int cx) throws Exception {
         return exec("artest vent info 0 " + cx + " " + CY_BASE + " " + CZ_BASE);
+    }
+
+    private String separatorInfo(int x) throws Exception {
+        return exec("artest separator info 0 " + x + " " + CY_BASE + " " + CZ_BASE);
+    }
+
+    /** The production toggle: a sneak-right-click on the block, through the block's own
+     *  onBlockActivated. Calling toggleMode() on the tile would skip the dispatch that decides
+     *  whether a click means "open me" or "flip me", which is the part a player uses. */
+    private void flipMode(int x) throws Exception {
+        String resp = exec("artest block activate 0 " + x + " " + CY_BASE + " " + CZ_BASE + " true");
+        assertTrue("sneak-click failed: " + resp, resp.contains("\"handled\":true"));
+    }
+
+    private int configInt(String key) throws Exception {
+        String resp = exec("artest config get " + key);
+        assertTrue("config get " + key + " failed: " + resp, resp.contains("\"ok\":true"));
+        return extract(resp, CONFIG_VALUE);
     }
 
     private static int extract(String src, Pattern pattern) {

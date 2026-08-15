@@ -30,6 +30,12 @@ public class AreaBlob {
         return true;
     }
 
+    /** The machine this blob belongs to — the one that decides whether the zone is maintained. */
+    @Nonnull
+    public IBlobHandler getBlobHandler() {
+        return blobHandler;
+    }
+
     @Nullable
     public Object getData() {
         return data;

@@ -188,9 +188,15 @@ public class TileGasSeparator extends TileInventoriedRFConsumerTank implements I
 
     // ─── zone and tank access ──────────────────────────────────────────
 
-    /** The air cell this machine serves — a neighbour, never its own solid position. */
+    /**
+     * The air cell this machine serves — a neighbour, never its own solid position.
+     * <p>
+     * Public because "which room am I working on, if any" is the one question that separates a
+     * machine refusing to act from a machine that never found a room; a diagnostic that cannot
+     * tell those apart reads both as silence.
+     */
     @Nullable
-    private BlockPos findServedCell() {
+    public BlockPos findServedCell() {
         AtmosphereHandler handler = AtmosphereHandler.getOxygenHandler(world.provider.getDimension());
         if (handler == null)
             return null;

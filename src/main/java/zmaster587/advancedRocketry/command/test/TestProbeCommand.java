@@ -202,6 +202,9 @@ public class TestProbeCommand extends CommandBase {
                 case "scrubber":
                     handleScrubber(server, sender, tail(args));
                     break;
+                case "separator":
+                    handleSeparator(server, sender, tail(args));
+                    break;
                 case "gascharge":
                     handleGasCharge(server, sender, tail(args));
                     break;
@@ -10768,7 +10771,12 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeSurveyDataPerStep",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
-                    "planetsMustBeDiscovered"));
+                    "planetsMustBeDiscovered",
+                    // The oxygen band. A test of the combiner's governor has to know where the
+                    // ceiling IS to assert that gas stopped there; hard-coding the default would
+                    // make the assertion re-state a tuned number instead of the rule it enforces.
+                    "lifeSupportMaxPartialO2",
+                    "lifeSupportMinPartialO2"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {
@@ -16376,6 +16384,97 @@ public class TestProbeCommand extends CommandBase {
         return null;
     }
 
+    // Gas separator state probe ---------------------------------------
+
+    /**
+     * {@code /artest separator info <dim> <x> <y> <z>} — the gas separator's direction, its tank
+     * and the air cell it has resolved.
+     *
+     * <p>The direction matters to a test as a PREMISE: a combine-path assertion that fails
+     * without it cannot say whether the machine refused to act or was never flipped in the first
+     * place. {@code hasServedCell} is the same distinction one step further down — a machine
+     * walled in by solid blocks and a machine whose governor is holding the line both move no gas.
+     *
+     * <pre>
+     * {
+     *   "ok": true,
+     *   "isSeparator": true,
+     *   "combining": true|false,       // false = split (room to tank), true = combine (tank to room)
+     *   "hasServedCell": true|false,
+     *   "servedCell": [x,y,z],         // all zeroes when hasServedCell is false
+     *   "tankFluid": "oxygen"|"none",
+     *   "tankAmount": &lt;int&gt;,
+     *   "tankCapacity": &lt;int&gt;,
+     *   "energyStored": &lt;int&gt;
+     * }
+     * </pre>
+     */
+    private void handleSeparator(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5 || !"info".equalsIgnoreCase(args[0])) {
+            send(sender, "{\"error\":\"unknown separator subcommand — try info <dim> <x> <y> <z>\"}");
+            return;
+        }
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        int x = parseIntOr(args[2], 0);
+        int y = parseIntOr(args[3], 0);
+        int z = parseIntOr(args[4], 0);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.atmosphere.TileGasSeparator)) {
+            send(sender, "{\"error\":\"not a TileGasSeparator\",\"tile\":\""
+                    + (tile == null ? "null" : tile.getClass().getName()) + "\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.atmosphere.TileGasSeparator separator =
+                (zmaster587.advancedRocketry.tile.atmosphere.TileGasSeparator) tile;
+
+        BlockPos served = separator.findServedCell();
+        boolean hasServed = served != null;
+        BlockPos reported = hasServed ? served : BlockPos.ORIGIN;
+
+        // Tank. Reported as "none" with a zero amount rather than a dropped field, so an empty
+        // tank parses the same way a full one does.
+        String tankFluid = "none";
+        int tankAmount = 0, tankCapacity = 0;
+        net.minecraftforge.fluids.capability.IFluidHandler fluidH = findFluidHandler(tile);
+        if (fluidH != null) {
+            for (net.minecraftforge.fluids.capability.IFluidTankProperties p : fluidH.getTankProperties()) {
+                tankCapacity += p.getCapacity();
+                if (p.getContents() != null) {
+                    tankAmount += p.getContents().amount;
+                    tankFluid = p.getContents().getFluid().getName();
+                }
+            }
+        }
+
+        int energyStored = 0;
+        net.minecraftforge.energy.IEnergyStorage es = null;
+        for (net.minecraft.util.EnumFacing dir : net.minecraft.util.EnumFacing.values()) {
+            if (tile.hasCapability(net.minecraftforge.energy.CapabilityEnergy.ENERGY, dir)) {
+                es = tile.getCapability(net.minecraftforge.energy.CapabilityEnergy.ENERGY, dir);
+                break;
+            }
+        }
+        if (es == null && tile.hasCapability(net.minecraftforge.energy.CapabilityEnergy.ENERGY, null)) {
+            es = tile.getCapability(net.minecraftforge.energy.CapabilityEnergy.ENERGY, null);
+        }
+        if (es != null) energyStored = es.getEnergyStored();
+
+        send(sender, "{\"ok\":true,\"isSeparator\":true"
+                + ",\"combining\":" + separator.isCombining()
+                + ",\"hasServedCell\":" + hasServed
+                + ",\"servedCell\":[" + reported.getX() + "," + reported.getY() + ","
+                + reported.getZ() + "]"
+                + ",\"tankFluid\":\"" + escapeJson(tankFluid) + "\""
+                + ",\"tankAmount\":" + tankAmount
+                + ",\"tankCapacity\":" + tankCapacity
+                + ",\"energyStored\":" + energyStored + "}");
+    }
+
     // Oxygen vent state probe -----------------------------------------
 
     /**
@@ -18896,9 +18995,59 @@ public class TestProbeCommand extends CommandBase {
      * mutation) without going through a tile entity.
      */
     private void handleBlock(MinecraftServer server, ICommandSender sender, String[] args) {
+        // /artest block activate <dim> <x> <y> <z> [sneak] — drive the block's own
+        // onBlockActivated with a player, exactly as a right-click does. `sneak` (default false)
+        // sets isSneaking first, which is how a block tells "open me" from "toggle me".
+        //
+        // The server tier has no client to click with, and the client bot's interactBlock is
+        // client-side only, so without this a sneak-click behaviour can only be tested by calling
+        // the tile method directly — which pins the tile and leaves the block's dispatch, the very
+        // half that decides WHICH action a click means, unexercised.
+        if (args.length >= 5 && "activate".equalsIgnoreCase(args[0])) {
+            int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+            int x = parseIntOr(args[2], 0);
+            int y = parseIntOr(args[3], 0);
+            int z = parseIntOr(args[4], 0);
+            boolean sneak = args.length >= 6 && Boolean.parseBoolean(args[5]);
+            net.minecraft.world.WorldServer activateWorld = server.getWorld(dim);
+            if (activateWorld == null) {
+                send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+                return;
+            }
+            BlockPos target = new BlockPos(x, y, z);
+            net.minecraft.block.state.IBlockState targetState = activateWorld.getBlockState(target);
+            // Forge's own FakePlayer, not the bare `player ensure-fake` one: it is what production
+            // already sees when something clicks a block with no client behind it, and it no-ops
+            // exactly the calls that need a connection (sendStatusMessage, openGui). The bare test
+            // player would take the tick loop down with an NPE on the first status message.
+            java.util.List<net.minecraft.entity.player.EntityPlayerMP> connected =
+                    server.getPlayerList().getPlayers();
+            boolean headless = connected.isEmpty();
+            net.minecraft.entity.player.EntityPlayer clicker = headless
+                    ? net.minecraftforge.common.util.FakePlayerFactory.getMinecraft(activateWorld)
+                    : connected.get(0);
+            boolean wasSneaking = clicker.isSneaking();
+            clicker.setSneaking(sneak);
+            boolean handled;
+            try {
+                handled = targetState.getBlock().onBlockActivated(activateWorld, target, targetState,
+                        clicker, net.minecraft.util.EnumHand.MAIN_HAND,
+                        net.minecraft.util.EnumFacing.UP, 0.5f, 0.5f, 0.5f);
+            } finally {
+                clicker.setSneaking(wasSneaking);
+            }
+            net.minecraft.util.ResourceLocation clicked = targetState.getBlock().getRegistryName();
+            send(sender, "{\"ok\":true,\"pos\":[" + x + "," + y + "," + z + "]"
+                    + ",\"block\":\"" + escapeJson(clicked == null ? "null" : clicked.toString()) + "\""
+                    + ",\"sneaking\":" + sneak
+                    + ",\"handled\":" + handled
+                    + ",\"player\":\"" + escapeJson(clicker.getName()) + "\""
+                    + ",\"fakePlayer\":" + headless + "}");
+            return;
+        }
         if (args.length < 5
                 || !("at".equalsIgnoreCase(args[0]) || "biome-at".equalsIgnoreCase(args[0]))) {
-            send(sender, "{\"error\":\"unknown block subcommand — try at <dim> <x> <y> <z> | biome-at <dim> <x> <y> <z>\"}");
+            send(sender, "{\"error\":\"unknown block subcommand — try at <dim> <x> <y> <z> | biome-at <dim> <x> <y> <z> | activate <dim> <x> <y> <z> [sneak]\"}");
             return;
         }
         boolean biomeMode = "biome-at".equalsIgnoreCase(args[0]);
@@ -20270,6 +20419,7 @@ public class TestProbeCommand extends CommandBase {
     private static net.minecraft.entity.player.EntityPlayerMP fakePlayer;
     private static volatile int fakeLivingTicksRemaining = 0;
     private static boolean fakeTickerRegistered = false;
+
 
     /** Posts one LivingUpdateEvent per server tick for the fake player while
      *  `tick-living` has remaining budget — the un-spawned test player never

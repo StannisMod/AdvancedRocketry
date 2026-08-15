@@ -305,6 +305,16 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
         return allowTrace ? radius : -1;
     }
 
+    /**
+     * Sealed and actually supplying gas — the same two facts that make this vent publish a
+     * breathable atmosphere for its zone. Life support may move that zone's gases exactly while
+     * this holds.
+     */
+    @Override
+    public boolean isMaintainingAtmosphere() {
+        return isSealed && hasFluid;
+    }
+
     @Override
     public void update() {
         if (canPerformFunction()) {

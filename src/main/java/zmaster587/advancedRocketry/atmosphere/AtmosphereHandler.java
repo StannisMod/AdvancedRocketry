@@ -359,20 +359,21 @@ public class AtmosphereHandler {
     }
 
     /**
-     * Whether life support may act on this zone's gases at all.
+     * Whether life support may act on this zone's gases at all — a question about the MACHINE
+     * holding the zone, never about the atmosphere the zone currently shows.
      * <p>
-     * True in exactly two cases: the vent has declared the zone breathable, or the zone already
-     * shows the state its own gases derive to — meaning we put it there and may keep moving it.
-     * The second clause is what lets a room go on degrading past the safe band and be recovered
-     * again; without it the first derived hazard froze the zone permanently. It is deliberately an
-     * identity check against THIS zone's own gases rather than a list of hazard types: a planet
-     * whose default atmosphere happens to be one of those types must not read as maintained.
+     * The distinction is not academic. Asking the published value ("is it breathable, or is it
+     * already what these gases derive to?") reads correctly only while the two agree, and the
+     * whole purpose of a refresh is the moment they stop: a zone that has just gone stale shows
+     * low-oxygen while its gases now derive to something else, so the gate closes exactly when it
+     * is needed and the zone latches on the first hazard it ever reaches — never getting worse as
+     * the crew keep breathing, and never recoverable by a recirculator or a combiner either.
+     * <p>
+     * A planet's own atmosphere is excluded by the same rule for the honest reason: nothing is
+     * maintaining it.
      */
     private boolean isLifeSupportManaged(@Nonnull AtmosphereBlob blob) {
-        Object data = blob.getData();
-        if (!(data instanceof IAtmosphere))
-            return false;
-        return ((IAtmosphere) data).isBreathable() || data == blob.getAirState().deriveAtmosphere();
+        return blob.getBlobHandler().isMaintainingAtmosphere();
     }
 
     /**
