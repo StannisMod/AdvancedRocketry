@@ -88,7 +88,10 @@ public final class ShotSubstrate {
         for (Shot shot : shots) {
             ShotEndReason end = step(world, shot);
             if (end != null) {
-                registry.end(shot.getId(), end);
+                // The shot's own position IS where it ended: every terminal branch of the step sets
+                // it to the crossing point before returning, so there is one place that decides
+                // where a round stopped rather than two that could disagree.
+                registry.end(shot.getId(), end, shot.getPosition());
             }
         }
         registry.markDirty();

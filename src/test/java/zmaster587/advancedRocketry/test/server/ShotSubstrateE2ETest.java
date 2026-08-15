@@ -31,6 +31,9 @@ public class ShotSubstrateE2ETest extends AbstractSharedServerTest {
     /** A site of this class's own, clear of the other server scenarios. */
     private static final int X = 9200, Y = 80, Z = 9200;
 
+    /** The emitter's mid-shell radius, as the shield tests use it — the face a round bounces off. */
+    private static final double SHELL_RADIUS = 4.0D;
+
     @Test
     public void aShotCrossesEmptySpaceWithoutLoadingAnyWorld() throws Exception {
         exec("artest shot clear 0");
@@ -145,6 +148,66 @@ public class ShotSubstrateE2ETest extends AbstractSharedServerTest {
 
         exec("artest shot clear 0");
         exec("artest chunk release -1 0 0");
+    }
+
+    @Test
+    public void aShotThatMeetsAChargedShellBouncesOffItAndStaysUp() throws Exception {
+        // The one place the substrate calls the shield and reads a velocity back. The shell owns the
+        // reflection law — this pins that the answer is USED: the round turns around, resumes from
+        // the crossing and is still in the air, rather than stopping at the shield or ploughing on.
+        exec("artest shot clear 0");
+        int gx = 1040, gz = 880, gy = 96;
+        int ex = gx + 1;
+        clearShieldSite(gx, gy, gz);
+        place("affs:shield_generator", gx, gy, gz);
+        place("affs:field_generator", ex, gy, gz);
+        for (int i = 0; i < 15; i++) {
+            exec("artest energy inject 0 " + gx + " " + gy + " " + gz + " 4000");
+            exec("artest tile force-tick 0 " + gx + " " + gy + " " + gz + " 1");
+            exec("artest shield tick 0");
+        }
+        String emitter = exec("artest shield read 0 " + ex + " " + gy + " " + gz);
+        assertTrue("the emitter never powered, so there is no shell to bounce off: " + emitter,
+                emitter.contains("\"powered\":true"));
+
+        // Fired from outside the +Z shell straight inward, at a speed that reaches it this tick.
+        double cz = gz + 0.5D;
+        double startZ = cz + SHELL_RADIUS + 3.0D;
+        long id = readLong(exec("artest shot fire 0 " + (ex + 0.5D) + " " + (gy + 0.5D) + " " + startZ
+                + " 0 0 -4 2000 300"), "id");
+        assertTrue("the launch was refused", id > 0);
+        exec("artest shield tick 0");
+
+        String after = exec("artest shot read 0 " + id);
+        assertTrue("a shell that could afford the round consumed it instead of mirroring it — a "
+                + "kinetic body declared to the shield must come back out: " + after,
+                after.contains("\"present\":true"));
+        double vz = readDouble(after, "vz");
+        assertTrue("the round is still travelling inward (vz=" + vz + ", it arrived at -4): the shell's"
+                + " answer was read but not applied: " + after, vz > 0.0D);
+        double z = readDouble(after, "z");
+        assertTrue("the round bounced but is still inside the shell (z=" + z + ", shell face at "
+                + (cz + SHELL_RADIUS) + "): it resumed on the wrong side of the crossing: " + after,
+                z >= cz + SHELL_RADIUS - 1.0D);
+        assertTrue("the round left faster than it arrived (vz=" + vz + " vs 4): a mirror returns"
+                + " energy, it does not create it: " + after, vz <= 4.0D + 1.0E-6D);
+
+        exec("artest shot clear 0");
+    }
+
+    private void clearShieldSite(int gx, int gy, int gz) throws Exception {
+        assertTrue("chunk warmup failed", exec("artest chunk warmup 0 " + ((gx - 16) >> 4) + " "
+                + ((gz - 16) >> 4) + " " + ((gx + 16) >> 4) + " " + ((gz + 16) >> 4))
+                .contains("\"ok\":true"));
+        assertTrue("could not clear the site", exec("artest fill 0 " + (gx - 12) + " " + (gy - 4) + " "
+                + (gz - 12) + " " + (gx + 12) + " " + (gy + 8) + " " + (gz + 12) + " minecraft:air")
+                .contains("\"ok\":true"));
+    }
+
+    private void place(String block, int x, int y, int z) throws Exception {
+        String resp = exec("artest place 0 " + x + " " + y + " " + z + " " + block);
+        assertTrue("failed to place " + block + " at " + x + "," + y + "," + z + ": " + resp,
+                resp.contains("\"placed\":true"));
     }
 
     /** A wall one block thick, three by three, with clear air on both sides of it. */

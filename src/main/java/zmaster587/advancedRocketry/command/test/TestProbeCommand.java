@@ -325,10 +325,14 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.projectile.Shot shot =
                     registry.get(Long.parseLong(args[2]));
             if (shot == null) {
-                zmaster587.advancedRocketry.api.projectile.ShotEndReason ended =
-                        registry.endReasonOf(Long.parseLong(args[2]));
+                zmaster587.advancedRocketry.projectile.ShotRegistry.Ending ended =
+                        registry.endingOf(Long.parseLong(args[2]));
                 send(sender, "{\"ok\":true,\"present\":false,\"ended\":\""
-                        + (ended == null ? "" : ended.name()) + "\",\"count\":" + registry.count() + "}");
+                        + (ended == null ? "" : ended.getReason().name()) + "\""
+                        + (ended == null ? "" : ",\"endX\":" + ended.getPoint().x
+                                + ",\"endY\":" + ended.getPoint().y
+                                + ",\"endZ\":" + ended.getPoint().z)
+                        + ",\"count\":" + registry.count() + "}");
                 return;
             }
             send(sender, "{\"ok\":true,\"present\":true,\"shot\":" + shotJson(shot) + "}");

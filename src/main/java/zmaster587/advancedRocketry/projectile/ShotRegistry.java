@@ -41,12 +41,12 @@ public class ShotRegistry extends WorldSavedData {
     private final Map<Long, Shot> shots = new LinkedHashMap<>();
 
     /**
-     * Why recently ended shots ended. Not world state and not saved — the oldest is dropped once the
+     * How recently ended shots ended. Not world state and not saved — the oldest is dropped once the
      * map is full, so a caller that waits too long is told nothing rather than told a guess.
      */
-    private final Map<Long, ShotEndReason> endings = new LinkedHashMap<Long, ShotEndReason>() {
+    private final Map<Long, Ending> endings = new LinkedHashMap<Long, Ending>() {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, ShotEndReason> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<Long, Ending> eldest) {
             return size() > ENDINGS_REMEMBERED;
         }
     };
@@ -102,17 +102,42 @@ public class ShotRegistry extends WorldSavedData {
      * gone: a weapon asks about its round after the fact, and "it is not in the registry" cannot tell
      * a hit from a round that timed out half a kilometre short.
      */
-    void end(long id, ShotEndReason reason) {
+    void end(long id, ShotEndReason reason, Vec3d where) {
         remove(id);
-        endings.put(id, reason);
+        endings.put(id, new Ending(reason, where));
     }
 
     /**
-     * Why the shot with this id ended, or null if it is still up or was forgotten. Deliberately NOT
+     * How the shot with this id ended, or null if it is still up or was forgotten. Deliberately NOT
      * persisted: it is an answer to a question asked seconds later, not world state.
      */
-    public ShotEndReason endReasonOf(long id) {
+    public Ending endingOf(long id) {
         return endings.get(id);
+    }
+
+    /**
+     * How a shot ended: the reason, and the WORLD point it ended at. The point is world-frame even
+     * when the thing it hit was a ship's block, which lives millions of blocks away in a shipyard
+     * subspace — a weapon showing an impact where its round actually stopped needs the place the
+     * player can see, not the address the block is filed under.
+     */
+    public static final class Ending {
+        private final ShotEndReason reason;
+        private final Vec3d point;
+
+        private Ending(ShotEndReason reason, Vec3d point) {
+            this.reason = reason;
+            this.point = point;
+        }
+
+        public ShotEndReason getReason() {
+            return reason;
+        }
+
+        /** WORLD point, never null: a shot that ended is always somewhere. */
+        public Vec3d getPoint() {
+            return point;
+        }
     }
 
     /**
