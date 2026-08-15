@@ -452,6 +452,95 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
                 descendTargets, boundariesWithBodies);
     }
 
+    /**
+     * A pilot in a cell near a molecular cloud sees the cloud.
+     *
+     * <p>A star cluster is invisible from outside it — it can be told apart only by counting its stars,
+     * which nobody will do — so the cloud wrapping it is the one landmark the universe layer has. This
+     * measures whether it reaches the screen at all.</p>
+     *
+     * <p><b>Counted, not photographed, and that is deliberate.</b> A nebula is haze whose alpha falls to
+     * zero at its rim; a pixel-difference test would be measuring the tuning of {@code NEBULA_MAX_ALPHA}
+     * as much as the feed, and would go red the first time the haze was made subtler. The renderer's own
+     * per-frame counter answers "did a cloud reach the rasterizer" exactly. It is read BESIDE
+     * {@code skyFramesDrawn}, because a zero means "no cloud was drawn" only if the sky renderer ran at
+     * all — the two are different questions and one counter cannot tell them apart.</p>
+     *
+     * <p><b>Where the cloud is comes from the SERVER, not from this test.</b> A cloud's position is a
+     * fact about the seed; a hard-coded cell would pin this test to one world's generation and would
+     * fail as an accusation against the renderer the first time the seed moved. The probe is asked where
+     * to stand.</p>
+     */
+    @Test
+    public void aPilotNearACloudSeesIt() throws Exception {
+        JsonObject rd = bot().setRenderDistance(SKY_RENDER_DISTANCE);
+        int previousRenderDistance = rd.get("previous").getAsInt();
+        assertTrue("the sky pass gate must be open, read back off the client's own field: " + rd,
+                rd.get("skyPassEnabled").getAsBoolean());
+        String health = exec("artest player health");
+        Matcher nameM = PLAYER_NAME.matcher(health);
+        assertTrue("player health must echo the player name: " + health, nameM.find());
+        botName = nameM.group(1);
+        try {
+            String setup = exec("artest space entry-setup 1");
+            assertTrue("entry-setup must install the stack: " + setup, setup.contains("\"ok\":true"));
+
+            // A universe with clusters in it. Without <galaxyGen> a world has no galaxies, hence no
+            // clusters, hence no gas — and an empty sky would be honest for the wrong reason.
+            String gen = exec("artest space gen-install 0.9 8");
+            assertTrue("the procedural generator must install: " + gen, gen.contains("\"ok\":true"));
+
+            String found = exec("artest space nebula-find 512 64");
+            assertTrue("the generator must be able to name a cell with a cloud in reach: " + found,
+                    found.contains("\"found\":true"));
+            Matcher sectorM = Pattern.compile("\"sectorX\":(-?\\d+)").matcher(found);
+            assertTrue("the find must report the cell it found: " + found, sectorM.find());
+            String cloudCell = sectorM.group(1) + " 0 0";
+
+            String settle = exec("artest space ledger-settle " + cloudCell + " 0");
+            assertTrue("ledger-settle must succeed: " + settle, settle.contains("\"ok\":true"));
+            Matcher boundM = BOUND_DIM.matcher(settle);
+            assertTrue("the settle must report which slot the cell was bound to: " + settle,
+                    boundM.find());
+            int slotDim = Integer.parseInt(boundM.group(1));
+
+            // The server's own answer for that cell, as the cross-side oracle: what it will send.
+            String feed = exec("artest space nebulae " + cloudCell);
+            Matcher drawnM = Pattern.compile("\"drawn\":(\\d+)").matcher(feed);
+            assertTrue("the probe must report the cell's sky: " + feed, drawnM.find());
+            int serverClouds = Integer.parseInt(drawnM.group(1));
+            assertTrue("the cell the finder chose must actually have a cloud in its sky: " + feed,
+                    serverClouds >= 1);
+
+            exec("time set 18000");
+            seat(slotDim, CELL_CAPTURE_Y);
+
+            // Gate on the FEED reaching the client, then on a frame being drawn after it did. Waiting
+            // a fixed number of ticks would make a slow broadcast read as a renderer that draws nothing.
+            int drawn = 0;
+            long frames = 0L;
+            for (int attempt = 0; attempt < 30 && drawn == 0; attempt++) {
+                bot().waitTicks(10);
+                frames = Long.parseLong(bot().readStaticField(SKY_CLASS, "skyFramesDrawn")
+                        .get("value").getAsString().trim());
+                drawn = skyCounter("nebulaeDrawnLastFrame");
+            }
+
+            assertTrue("HARNESS CONTROL: the sky renderer never ran, so nothing below could mean"
+                    + " anything (frames=" + frames + ")", frames > 0L);
+            assertTrue("the server had " + serverClouds + " cloud(s) in this cell's sky and the client"
+                    + " drew " + drawn + ": a landmark that reaches the feed and not the frame is a"
+                    + " landmark nobody can navigate by", drawn >= 1);
+        } finally {
+            try {
+                exec("artest space gen-reset");
+            } catch (Exception ignored) {
+                // the generator is a JVM global: a shared client run must not inherit this one
+            }
+            bot().setRenderDistance(previousRenderDistance);
+        }
+    }
+
     /** How many body labels the client's last rendered frame wrote. */
     private int labelsDrawn() throws Exception {
         return skyCounter("labelsDrawnLastFrame");

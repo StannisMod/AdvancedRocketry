@@ -3198,7 +3198,99 @@ public class TestProbeCommand extends CommandBase {
         }
     }
 
+    /**
+     * {@code space nebulae <sx> <sy> <sz>} — the CLOUD half of a cell's sky, as the server would send
+     * it: how many are seated in reach, how many survive the render filter, and each one's bearing,
+     * apparent size, appearance and thickness.
+     *
+     * <p>{@code seated} beside {@code drawn} is the point of the reply. The feed drops clouds too small
+     * to be a landmark and caps what is left, so "the sky shows two" and "there are two out there" are
+     * different facts and a test that could not tell them apart would read a working LOD filter as a
+     * missing cloud.</p>
+     */
+    private void handleSpaceNebulae(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.space.GalacticCoord cell =
+                zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                        parseLongOr(args[1], 0L), parseLongOr(args[2], 0L), parseLongOr(args[3], 0L),
+                        0L, 0L, 0L);
+        zmaster587.advancedRocketry.universe.IGalaxyGenerator gen =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator();
+        long seed = reg.worldSeed();
+        java.util.List<zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula> drawn =
+                zmaster587.advancedRocketry.space.SkyNebulaeProducer.around(gen, seed, cell);
+        int seated = zmaster587.advancedRocketry.space.SkyNebulaeProducer.countAround(gen, seed, cell);
+        StringBuilder out = new StringBuilder("{\"ok\":true,\"cell\":\"");
+        out.append(cell.cellKey()).append("\",\"seed\":").append(seed)
+                .append(",\"seated\":").append(seated)
+                .append(",\"drawn\":").append(drawn.size()).append(",\"nebulae\":[");
+        int n = 0;
+        for (zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula cloud : drawn) {
+            if (n++ > 0) {
+                out.append(',');
+            }
+            out.append("{\"dirX\":").append(cloud.dirX).append(",\"dirY\":").append(cloud.dirY)
+                    .append(",\"dirZ\":").append(cloud.dirZ)
+                    .append(",\"angularRadius\":").append(cloud.angularRadius)
+                    .append(",\"appearance\":").append(cloud.appearanceOrdinal)
+                    .append(",\"opacity\":").append(cloud.opacity).append('}');
+        }
+        out.append("]}");
+        send(sender, out.toString());
+    }
+
+    /**
+     * {@code space nebula-find <steps> <stride>} — walk out along +X from the origin looking for a cell
+     * whose sky holds a cloud, and report the first one.
+     *
+     * <p>An arrangement helper, and it exists because a cloud's position is a fact about the SEED. A
+     * test that hard-coded a cell would be pinned to one world's generation and would fail as an
+     * accusation against the renderer the first time the seed changed; this asks the generator where
+     * to stand instead. Bounded by {@code steps}, and reports {@code found:false} rather than
+     * searching forever.</p>
+     */
+    private void handleSpaceNebulaFind(MinecraftServer server, ICommandSender sender, String[] args) {
+        zmaster587.advancedRocketry.universe.UniverseRegistry reg =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.get(server);
+        if (reg == null) {
+            send(sender, "{\"error\":\"registry unavailable\"}");
+            return;
+        }
+        int steps = Math.max(1, Math.min(4096, parseIntOr(args[1], 64)));
+        long stride = Math.max(1L, parseLongOr(args[2], 1L));
+        zmaster587.advancedRocketry.universe.IGalaxyGenerator gen =
+                zmaster587.advancedRocketry.universe.UniverseRegistry.getGenerator();
+        long seed = reg.worldSeed();
+        for (int i = 0; i < steps; i++) {
+            zmaster587.advancedRocketry.space.GalacticCoord cell =
+                    zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(
+                            (long) i * stride, 0L, 0L, 0L, 0L, 0L);
+            java.util.List<zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula> drawn =
+                    zmaster587.advancedRocketry.space.SkyNebulaeProducer.around(gen, seed, cell);
+            if (!drawn.isEmpty()) {
+                send(sender, "{\"ok\":true,\"found\":true,\"cell\":\"" + cell.cellKey()
+                        + "\",\"sectorX\":" + cell.sectorX() + ",\"drawn\":" + drawn.size()
+                        + ",\"largest\":" + drawn.get(0).angularRadius + ",\"steps\":" + i + "}");
+                return;
+            }
+        }
+        send(sender, "{\"ok\":true,\"found\":false,\"searched\":" + steps + ",\"stride\":" + stride + "}");
+    }
+
     private void handleSpace(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 4 && "nebulae".equalsIgnoreCase(args[0])) {
+            handleSpaceNebulae(server, sender, args);
+            return;
+        }
+        if (args.length >= 3 && "nebula-find".equalsIgnoreCase(args[0])) {
+            handleSpaceNebulaFind(server, sender, args);
+            return;
+        }
         // --- PRODUCTION-wiring probes. Unlike every other verb here these deliberately touch the real
         //     SpaceSubsystem rather than a probe-local stack, so a restart test can prove the shipped
         //     server-start / world-save path actually persists and restores. They are only useful when

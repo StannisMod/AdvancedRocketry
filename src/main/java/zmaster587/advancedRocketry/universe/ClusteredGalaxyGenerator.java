@@ -557,6 +557,33 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                 body.kind() == SystemBodyKind.MOON, body.orbitalDistance());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Cost is the number of CLUSTER cells the reach crosses, not its volume in cells — the clouds
+     * are enumerated on the cluster lattice they are derived from. Outside a galaxy the answer is
+     * empty by construction: clusters are seated inside galaxies, and a cloud is a cluster's own gas.</p>
+     */
+    @Override
+    public List<Nebula> nebulaeAround(long seed, GalacticCoord cell, double radiusLy) {
+        if (cell == null || !(radiusLy > 0d)) {
+            return Collections.emptyList();
+        }
+        GalacticCoord c = cell.cellCentre();
+        Optional<Galaxy> galaxy = galaxies.galaxyOwningSector(seed, c.sectorX(), c.sectorY(),
+                c.sectorZ());
+        if (!galaxy.isPresent()) {
+            return Collections.emptyList();
+        }
+        long s = config.minSpacing;
+        long reachSuper = Math.max(1L, UniverseScale.cellsForLightYears(radiusLy) / s);
+        long supX = Math.floorDiv(c.sectorX(), s);
+        long supY = Math.floorDiv(c.sectorY(), s);
+        long supZ = Math.floorDiv(c.sectorZ(), s);
+        return nebulae.nebulaeInRegion(seed, galaxy.get(), supX - reachSuper, supY - reachSuper,
+                supZ - reachSuper, supX + reachSuper, supY + reachSuper, supZ + reachSuper);
+    }
+
     @Override
     public Optional<GalacticCoord> anchorAt(long seed, GalacticCoord cell) {
         Optional<Generated> g = systemForLattice(seed,

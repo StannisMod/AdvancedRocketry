@@ -8,6 +8,7 @@ import zmaster587.advancedRocketry.AdvancedRocketry;
 import zmaster587.advancedRocketry.api.Constants;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
+import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula;
 import zmaster587.advancedRocketry.universe.SystemBody;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
@@ -199,7 +200,8 @@ public final class SystemBodiesProducer {
 
     /** Build the live packet from the production cell bindings + universe registry, or an empty packet. */
     public static PacketSystemBodiesSync currentPacket(MinecraftServer server) {
-        return PacketSystemBodiesSync.forDims(currentByDim(server));
+        return PacketSystemBodiesSync.forDims(currentByDim(server),
+                SkyNebulaeProducer.currentByDim(server));
     }
 
     /**
@@ -215,7 +217,8 @@ public final class SystemBodiesProducer {
      * stale sky, where an absent one would leave it standing. A player who is not in a slot world at
      * all is sent nothing.</p>
      */
-    private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim) {
+    private static void broadcastTo(EntityPlayerMP player, Map<Integer, List<RenderBody>> byDim,
+                                    Map<Integer, List<RenderNebula>> nebulaeByDim) {
         if (player == null) {
             return;
         }
@@ -227,9 +230,15 @@ public final class SystemBodiesProducer {
             }
             bodies = Collections.emptyList();
         }
+        // The clouds follow the bodies through the same gate: a cell that is his gets both halves of
+        // its sky, and a cell that is not gets neither. Absent here means the same as it does above —
+        // the cell has no cloud, and the empty list is what clears a stale one.
+        List<RenderNebula> clouds = nebulaeByDim == null ? null : nebulaeByDim.get(dim);
         Map<Integer, List<RenderBody>> one = new LinkedHashMap<>();
         one.put(dim, bodies);
-        PacketHandler.sendToPlayer(PacketSystemBodiesSync.forDims(one), player);
+        Map<Integer, List<RenderNebula>> oneSky = new LinkedHashMap<>();
+        oneSky.put(dim, clouds == null ? Collections.<RenderNebula>emptyList() : clouds);
+        PacketHandler.sendToPlayer(PacketSystemBodiesSync.forDims(one, oneSky), player);
     }
 
     /** Login send: give a joining player the sky of the dimension he arrived in. */
@@ -238,7 +247,8 @@ public final class SystemBodiesProducer {
             return;
         }
         try {
-            broadcastTo(player, currentByDim(FMLCommonHandler.instance().getMinecraftServerInstance()));
+            MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+            broadcastTo(player, currentByDim(server), SkyNebulaeProducer.currentByDim(server));
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies login send failed", t);
         }
@@ -258,16 +268,18 @@ public final class SystemBodiesProducer {
         }
         try {
             Map<Integer, List<RenderBody>> byDim = currentByDim(server);
+            Map<Integer, List<RenderNebula>> nebulaeByDim = SkyNebulaeProducer.currentByDim(server);
             for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
-                broadcastTo(player, byDim);
+                broadcastTo(player, byDim, nebulaeByDim);
             }
         } catch (Throwable t) {
             AdvancedRocketry.logger.warn("[SPACE] system-bodies broadcast failed", t);
         }
     }
 
-    /** Reset the broadcast cadence (server stop). */
+    /** Reset the broadcast cadence and the sky's derived caches (server stop). */
     public static void reset() {
         tickCounter = 0;
+        SkyNebulaeProducer.reset();
     }
 }

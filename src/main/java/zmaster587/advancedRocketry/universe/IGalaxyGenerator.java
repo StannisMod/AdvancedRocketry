@@ -59,6 +59,18 @@ public interface IGalaxyGenerator {
     }
 
     /**
+     * The nebulae seated within {@code radiusLy} light years of {@code cell} — what a sky asks, because
+     * a cloud is meant to be seen from OUTSIDE it.
+     *
+     * <p>A DIRECTION-and-size query, never a placement one: a nebula has no cell name and is not a
+     * body, so nothing here can be flown to. The default is empty, which is the correct answer for a
+     * generator with no clusters rather than a stub — no clusters means no gas.</p>
+     */
+    default List<Nebula> nebulaeAround(long seed, GalacticCoord cell, double radiusLy) {
+        return Collections.emptyList();
+    }
+
+    /**
      * The super-cell edge (in cells) this generator partitions space by — at most one system per
      * {@code minSpacingCells}-cube. The registry uses it to attribute member cells of AUTHORED systems and
      * to bound body-offset clamping ({@code radius <= minSpacingCells/2 - margin}).

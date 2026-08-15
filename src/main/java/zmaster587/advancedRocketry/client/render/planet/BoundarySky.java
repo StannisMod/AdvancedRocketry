@@ -18,6 +18,7 @@ import zmaster587.advancedRocketry.dimension.DimensionManager;
 import zmaster587.advancedRocketry.dimension.DimensionProperties;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
 import zmaster587.advancedRocketry.space.HyperspaceWorld;
+import zmaster587.advancedRocketry.universe.Nebula;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 
 import java.util.List;
@@ -64,6 +65,13 @@ public class BoundarySky extends IRenderHandler {
 
     private static final float STAR_ALPHA = 0.9F;
 
+    /** Sky-frame radius the nebulae are emitted on. Outside the starfield: a cloud is the backdrop. */
+    private static final float NEBULA_SKY_RADIUS = 105.0F;
+    /** Points around one cloud's rim. A cloud is soft, so it needs far fewer than a hard circle. */
+    private static final int NEBULA_SEGMENTS = 24;
+    /** How bright the densest cloud may draw at its core. Haze, never a light source. */
+    private static final float NEBULA_MAX_ALPHA = 0.45F;
+
     /**
      * How many body labels the last frame actually drew. A counter rather than a flag: the contract
      * is that the toggle removes the label ENTIRELY, and "zero drawn while bodies were fed" is the
@@ -81,6 +89,13 @@ public class BoundarySky extends IRenderHandler {
      * drawn" only if the renderer ran at all, and the two are separate questions.</p>
      */
     public static volatile int boundariesDrawnLastFrame;
+
+    /**
+     * How many nebulae the last frame drew. Same shape and same reason as the two counters above: a
+     * cloud is haze with no edge, so "is one on the screen" is a question pixels answer badly and the
+     * renderer answers exactly. Read it beside {@link #skyFramesDrawn}, never alone.
+     */
+    public static volatile int nebulaeDrawnLastFrame;
 
     /**
      * Frames on which this sky renderer ran AT ALL, counted before any branch inside it.
@@ -124,9 +139,10 @@ public class BoundarySky extends IRenderHandler {
 
         GlStateManager.disableTexture2D();
 
-        // Stars first: the billboards are meant to sit in front of them.
-        GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
-        GL11.glCallList(this.glStarList);
+        // The backdrop: the clouds and the starfield, in the one order that is right for both. The
+        // billboards below are meant to sit in front of all of it.
+        nebulaeDrawnLastFrame = drawBackdrop(
+                PacketSystemBodiesSync.nebulaeForDim(world.provider.getDimension()));
 
         // In hyperspace this same provider serves the transit lanes, and the two things below are
         // both wrong there: the ring marks a descent boundary in a world nothing descends to, and
@@ -170,6 +186,139 @@ public class BoundarySky extends IRenderHandler {
         labelsDrawnLastFrame = labelled;
 
         restoreState();
+    }
+
+    /**
+     * Draw the backdrop of this cell's sky — the clouds and the starfield — and return how many clouds
+     * were emitted.
+     *
+     * <p><b>The starfield is drawn here and exactly once</b>, between the two cloud passes, because
+     * where it belongs is the whole point of the ordering and splitting it across two methods is how
+     * a sky comes to have no stars in it (or two sets of them).</p>
+     *
+     * <p><b>A dark cloud goes AFTER the stars and the other two before them</b>, and that is not a
+     * flourish: the three appearances are one age sequence, and a molecular cloud is visible precisely
+     * because it BLOTS OUT what is behind it. Drawn behind the starfield like the other two it would
+     * paint near-black on black and render as nothing at all — one of the three appearances silently
+     * missing, which reads as a bug and is indistinguishable from one.</p>
+     */
+    private int drawBackdrop(List<PacketSystemBodiesSync.RenderNebula> clouds) {
+        int drawn = 0;
+        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
+        // Culling OFF while the fans are emitted. They sit on a sphere the camera is INSIDE, which is
+        // the one case where a winding mistake is silent — the class note above records what that
+        // costs. A cloud has no facing to get wrong, so the honest fix is to stop asking.
+        if (clouds != null && !clouds.isEmpty()) {
+            GlStateManager.disableCull();
+            for (PacketSystemBodiesSync.RenderNebula cloud : clouds) {
+                if (!isDark(cloud)) {
+                    drawn += drawNebula(buffer, cloud) ? 1 : 0;
+                }
+            }
+            GlStateManager.enableCull();
+        }
+
+        GlStateManager.color(1.0F, 1.0F, 1.0F, STAR_ALPHA);
+        GL11.glCallList(this.glStarList);
+
+        if (clouds != null && !clouds.isEmpty()) {
+            GlStateManager.disableCull();
+            for (PacketSystemBodiesSync.RenderNebula cloud : clouds) {
+                if (isDark(cloud)) {
+                    drawn += drawNebula(buffer, cloud) ? 1 : 0;
+                }
+            }
+            GlStateManager.enableCull();
+        }
+        return drawn;
+    }
+
+    /** Whether this cloud is the young, thick, star-forming kind — the one that hides what is behind it. */
+    private static boolean isDark(PacketSystemBodiesSync.RenderNebula cloud) {
+        return cloud.appearanceOrdinal == Nebula.Appearance.DARK.ordinal();
+    }
+
+    /**
+     * One cloud: a fan on the sky sphere about its bearing, opaque at the core and fading to nothing
+     * at the rim. Returns whether anything was emitted.
+     *
+     * <p>The falloff is in the VERTEX COLOURS rather than in a texture, because a nebula's edge is a
+     * Gaussian with no edge — {@code Nebula.densityAt} says so — and an alpha that reaches zero at the
+     * rim is what makes the primitive's own boundary invisible. A textured quad would draw a square of
+     * haze with four corners in it.</p>
+     *
+     * <p>Sampled as {@code cosθ·n + sinθ·(cosφ·u + sinφ·v)}, the same construction the atmosphere
+     * boundary uses and for the same reason: on the sphere there is no singularity, so a viewer INSIDE
+     * a cloud (θ = 90°) gets a hemisphere of haze rather than a divide-by-zero.</p>
+     */
+    private boolean drawNebula(BufferBuilder buffer, PacketSystemBodiesSync.RenderNebula cloud) {
+        double nx = cloud.dirX;
+        double ny = cloud.dirY;
+        double nz = cloud.dirZ;
+        double len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (len < 1.0E-6D || cloud.angularRadius <= 0.0F || cloud.opacity <= 0.0F) {
+            return false;
+        }
+        nx /= len;
+        ny /= len;
+        nz /= len;
+
+        // Any axis n is not parallel to spans the perpendicular plane with it; take the one it is
+        // LEAST aligned with, so a cloud lying along a world axis does not degenerate.
+        double hx = 0.0D, hy = 0.0D, hz = 0.0D;
+        double ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+        if (ax <= ay && ax <= az) {
+            hx = 1.0D;
+        } else if (ay <= az) {
+            hy = 1.0D;
+        } else {
+            hz = 1.0D;
+        }
+        double ux = ny * hz - nz * hy, uy = nz * hx - nx * hz, uz = nx * hy - ny * hx;
+        double ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (ul < 1.0E-9D) {
+            return false;
+        }
+        ux /= ul; uy /= ul; uz /= ul;
+        double vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
+
+        float[] tint = tintOf(cloud);
+        float alpha = Math.min(NEBULA_MAX_ALPHA, cloud.opacity * NEBULA_MAX_ALPHA);
+        double theta = Math.min(Math.PI / 2.0D, cloud.angularRadius);
+        double ct = Math.cos(theta), st = Math.sin(theta);
+
+        buffer.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
+        buffer.pos(nx * NEBULA_SKY_RADIUS, ny * NEBULA_SKY_RADIUS, nz * NEBULA_SKY_RADIUS)
+                .color(tint[0], tint[1], tint[2], alpha).endVertex();
+        for (int i = 0; i <= NEBULA_SEGMENTS; i++) {
+            double phi = (Math.PI * 2.0D * i) / NEBULA_SEGMENTS;
+            double cp = Math.cos(phi), sp = Math.sin(phi);
+            buffer.pos((ct * nx + st * (cp * ux + sp * vx)) * NEBULA_SKY_RADIUS,
+                    (ct * ny + st * (cp * uy + sp * vy)) * NEBULA_SKY_RADIUS,
+                    (ct * nz + st * (cp * uz + sp * vz)) * NEBULA_SKY_RADIUS)
+                    .color(tint[0], tint[1], tint[2], 0.0F).endVertex();
+        }
+        Tessellator.getInstance().draw();
+        return true;
+    }
+
+    /**
+     * What a cloud is coloured, by its age. Not a palette choice: the sequence is physical — cold
+     * molecular gas is nearly black, gas ionised by the stars inside it emits in hydrogen red, and
+     * what is left once the gas is blown clear is dust reflecting the blue it scatters best.
+     */
+    private static float[] tintOf(PacketSystemBodiesSync.RenderNebula cloud) {
+        Nebula.Appearance[] looks = Nebula.Appearance.values();
+        Nebula.Appearance look = cloud.appearanceOrdinal >= 0 && cloud.appearanceOrdinal < looks.length
+                ? looks[cloud.appearanceOrdinal] : Nebula.Appearance.REFLECTION;
+        switch (look) {
+            case DARK:
+                return new float[] {0.04F, 0.03F, 0.06F};
+            case EMISSION:
+                return new float[] {0.85F, 0.25F, 0.35F};
+            default:
+                return new float[] {0.35F, 0.50F, 0.90F};
+        }
     }
 
     /**
