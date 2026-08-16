@@ -61,6 +61,7 @@ tile.airRecirculator.name=Рециркулятор воздуха
 tile.gasSeparator.name=Газоразделитель
 tile.lifeSupportPlant.name=Установка жизнеобеспечения
 tile.ventilationDuct.name=Вентиляционный канал
+tile.jettisonPort.name=Шлюз сброса
 tile.oxygenVent.name=Кислородный клапан
 tile.liquidHatch.name=Жидкостный люк
 tile.rocketFuelBlock.name=Ракетное топливо

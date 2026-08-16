@@ -59,6 +59,9 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
     private static final int PAD_DX = 16;
     private static final int PAD_DZ = 16;
     private static final int PAD_EDGE = 8;
+    private static final int ROOM_DX = 40;
+    private static final int ROOM_DZ = 40;
+    private static final int ROOM_Y = Plot.DEFAULT_Y;
     private static final int STAND_DX = PAD_DX + 4;
     private static final int STAND_DZ = PAD_DZ + 4;
 
@@ -529,6 +532,171 @@ public class VacuumAndSuitClientGroupE2ETest extends AbstractSharedClientE2ETest
                     + " before=1000 after=" + chestAirAfter, chestAirAfter < 1000);
             assertTrue("a full suit must keep isImmune=true while the tank has oxygen; healthStart="
                     + healthStart + " healthAfter=" + healthAfter, healthAfter >= healthStart);
+        } finally {
+            restoreDim(originalDensity);
+        }
+    }
+
+    // ── a zone that is still PRESSURISED but no longer breathable ─────────────
+
+    /**
+     * Builds a sealed room in this scenario's plot, seals it with a powered vent, overwrites the
+     * zone's gas so it reads pressurised-but-stale, and stands the player inside it in survival.
+     *
+     * <p>The dimension around the room is left BREATHABLE on purpose. Every other scenario in this
+     * class makes the whole dimension a vacuum, which would make "the player was hurt" true whether
+     * or not the room ever became a zone at all. Here the only thing in the world that can hurt
+     * anyone is the room's own air — so an arrangement that silently failed to build a zone surfaces
+     * as the control below staying at full health, instead of as a false pass.</p>
+     *
+     * @return the vent's position as {@code dim x y z}, for the probes the scenario then runs
+     */
+    private String sealStaleZoneAndStandInIt() throws Exception {
+        int dim = plot().dim;
+        int vx = plot().x(ROOM_DX), vy = ROOM_Y, vz = plot().z(ROOM_DZ);
+        String at = dim + " " + vx + " " + vy + " " + vz;
+
+        scenario().arranging("build a sealed room and seal it with a powered vent");
+        exec("artest fill " + dim + " " + (vx - 2) + " " + (vy - 1) + " " + (vz - 2)
+                + " " + (vx + 2) + " " + vy + " " + (vz + 2) + " minecraft:stone");
+        for (int yy = vy + 1; yy <= vy + 2; yy++) {
+            exec("artest fill " + dim + " " + (vx - 2) + " " + yy + " " + (vz - 2)
+                    + " " + (vx + 2) + " " + yy + " " + (vz + 2) + " minecraft:stone");
+            exec("artest fill " + dim + " " + (vx - 1) + " " + yy + " " + (vz - 1)
+                    + " " + (vx + 1) + " " + yy + " " + (vz + 1) + " minecraft:air");
+        }
+        exec("artest fill " + dim + " " + (vx - 2) + " " + (vy + 3) + " " + (vz - 2)
+                + " " + (vx + 2) + " " + (vy + 3) + " " + (vz + 2) + " minecraft:stone");
+
+        String placed = exec("artest place " + at + " advancedrocketry:oxygenVent");
+        scenario().requireArranged("the vent must place: " + placed, placed.contains("\"placed\":true"));
+        exec("artest energy inject " + at + " 1000000");
+        exec("artest fluid inject " + at + " oxygen 16000");
+        exec("artest tile force-tick " + at + " 1");
+        exec("artest vent reseal " + at);
+        exec("artest tile force-tick " + at + " 5");
+
+        // Pressurised, and short of oxygen: the three partials still total one atmosphere, so this
+        // is emphatically NOT the vacuum every other scenario here uses — it is a room whose air has
+        // been breathed. 50 000 sits below lifeSupportMinPartialO2's 160 000 default.
+        String setAir = exec("artest vent setair " + at + " 790000 50000 160000");
+        scenario().requireArranged("setair must take: " + setAir, setAir.contains("\"ok\":true"));
+
+        String info = exec("artest vent info " + at);
+        scenario().record("ventInfo", info);
+        scenario().requireArranged("the room must actually BE a zone before anyone stands in it, and"
+                + " it must read as pressurised-but-stale rather than as vacuum: " + info,
+                info.contains("\"airO2\":50000") && info.contains("\"airPressure\":100")
+                        && info.contains("lowO2"));
+
+        // Stand him in the room while still CREATIVE, and check "unhurt" THERE. Creative
+        // short-circuits AtmosphereNeedsSuit.isImmune, so the room cannot hurt him yet — which is
+        // what makes the check meaningful: it can only fail on arriving in a wall or falling, the
+        // two things it exists to catch. Checking it in survival instead measured the subject:
+        // the room bit once during the settling ticks and the precondition read 19.0, i.e. this
+        // scenario refusing to run because its own contract had already fired.
+        exec("tp @a " + (vx + 0.5) + " " + (vy + 1) + " " + (vz + 0.5));
+        bot().waitTicks(10);
+
+        double health = health(bot().reportState());
+        scenario().record("healthInRoom", health);
+        scenario().requireArranged("the player must be standing unhurt INSIDE the sealed room before"
+                + " the window opens; client health=" + health, health >= 20.0);
+        return at;
+    }
+
+    /**
+     * Closes the arrangement: survival LAST, with no settling tick after it, so the damage window
+     * starts where the scenario says it does and not a second earlier.
+     */
+    private double openSurvivalWindow() throws Exception {
+        exec("gamerule naturalRegeneration false");
+        exec("gamemode survival @a");
+        bot().waitTicks(2);
+        double health = health(bot().reportState());
+        scenario().record("healthAtWindowOpen", health);
+        return health;
+    }
+
+    /**
+     * The control, and the reason the scenario below means anything: a room whose oxygen has fallen
+     * under the breathable floor hurts someone standing in it with no suit.
+     *
+     * <p>This is the half of the suit-fallback contract that is NOT a breach. A breach is already
+     * covered by this class's vacuum scenarios; this is the other failure the life-support design
+     * names — regeneration not keeping up, leaving a room still full of gas and still lethal.</p>
+     */
+    @Test
+    public void staleZoneAirHurtsAnUnsuitedPlayer() throws Exception {
+        int originalDensity = snapshotDensity();
+        try {
+            setDensityAndConfirm(100, true);
+            String at = sealStaleZoneAndStandInIt();
+            exec("artest player clear-armor");
+
+            scenario().measuring("health before the stale-air window");
+            double healthStart = openSurvivalWindow();
+
+            scenario().asserting("stale zone air damages an unsuited player");
+            double healthAfter = waitForHealthDrop(healthStart);
+            scenario().record("healthAfter", healthAfter)
+                    .record("ventInfoAfter", exec("artest vent info " + at));
+
+            assertTrue("a pressurised room below the breathable oxygen floor must hurt an unsuited"
+                    + " player — if this passes at full health the room never became a stale zone and"
+                    + " the suited scenario proves nothing; healthStart=" + healthStart
+                    + " healthAfter=" + healthAfter, healthAfter < healthStart);
+        } finally {
+            restoreDim(originalDensity);
+        }
+    }
+
+    /**
+     * The suit fallback, on the case that is not a breach: the suit is a personal contour ON TOP of
+     * the zone air, so in a room life support can no longer keep breathable the crew breathe from
+     * the suit — and pay for it.
+     *
+     * <p>Both halves are asserted because either alone is satisfiable by a broken system: unchanged
+     * health alone is what a room that never went stale looks like (which is what the control above
+     * rules out), and a falling air buffer alone is what a suit draining without protecting anybody
+     * looks like.</p>
+     */
+    @Test
+    public void staleZoneAirDrainsTheSuitAndNotTheCrew() throws Exception {
+        int originalDensity = snapshotDensity();
+        try {
+            setDensityAndConfirm(100, true);
+            sealStaleZoneAndStandInIt();
+
+            scenario().arranging("equip an air-carrying suit");
+            String equip = exec("artest player equip-airsuit 1000");
+            scenario().requireArranged("equip-airsuit must succeed: " + equip,
+                    equip.contains("\"ok\":true"));
+            assertEquals("the suit must start full so any fall belongs to this window",
+                    1000, readChestAir());
+
+            // Survival only once the suit is on: an unprotected settling tick here would spend the
+            // wearer's health on the very hazard this scenario claims the suit covers.
+            scenario().measuring("health and suit air before the stale-air window");
+            double healthStart = openSurvivalWindow();
+
+            scenario().asserting("the suit covers the stale zone, and spends air doing it");
+            // AtmosphereLowOxygen.onTick gates on `% 20 == 0`, and the isImmune call that spends the
+            // air sits inside that gate — so this window is ~6 chances to spend, not 120.
+            bot().waitTicks(120);
+
+            int chestAirAfter = readChestAir();
+            int clientAirAfter = clientChestAir();
+            double healthAfter = health(bot().reportState());
+            scenario().record("chestAirAfter", chestAirAfter).record("clientChestAir", clientAirAfter)
+                    .record("healthAfter", healthAfter);
+
+            assertTrue("the suit must protect its wearer from stale zone air; healthStart="
+                    + healthStart + " healthAfter=" + healthAfter, healthAfter >= healthStart);
+            assertTrue("and it must PAY for that protection — a fallback that costs nothing is not a"
+                    + " fallback; before=1000 after=" + chestAirAfter, chestAirAfter < 1000);
+            assertTrue("the client must render the drained suit, not a stale full one; client="
+                    + clientAirAfter, clientAirAfter < 1000);
         } finally {
             restoreDim(originalDensity);
         }

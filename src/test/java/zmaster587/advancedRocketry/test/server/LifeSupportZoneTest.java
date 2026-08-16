@@ -25,6 +25,9 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     private static final Pattern AIR_PRESSURE = Pattern.compile("\"airPressure\":(-?\\d+)");
     private static final Pattern TANK_AMOUNT = Pattern.compile("\"tankAmount\":(-?\\d+)");
     private static final Pattern CONFIG_VALUE = Pattern.compile("\"value\":(-?\\d+)");
+    private static final Pattern OBSTRUCTION = Pattern.compile("\"obstruction\":(-?\\d+)");
+    private static final Pattern HELD_COUNT = Pattern.compile("\"heldCount\":(-?\\d+)");
+    private static final Pattern EJECTED = Pattern.compile("\"ejected\":(-?\\d+)");
 
     private static final int CY_BASE = 64;
     private static final int CZ_BASE = 2100;
@@ -34,6 +37,8 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     private static final int CX_SEPARATOR = 2600;
     private static final int CX_COMBINE = 2800;
     private static final int CX_GOVERNOR = 3000;
+    private static final int CX_JETTISON = 3200;
+    private static final int CX_JETTISON_BLOCKED = 3400;
 
     /** A maintained zone starts as sea-level air, and reports the pressure the mod has always
      *  reported for a pressurised room. This is the probe's own grounding: if it lied, the two
@@ -224,7 +229,7 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
         flipMode(CX_GOVERNOR + 1);
         // Far longer than the two operations the gap needs: the machine must stop by decision,
         // not by running out of time.
-        exec("artest tile force-tick 0 " + (CX_GOVERNOR + 1) + " " + CY_BASE + " " + CZ_BASE + " 400");
+        forceTick(CX_GOVERNOR + 1, 400);
 
         String after = ventInfo(CX_GOVERNOR);
         int o2After = extract(after, AIR_O2);
@@ -239,6 +244,73 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
     }
 
     // ─── helpers ───────────────────────────────────────────────────────
+
+    /**
+     * The carbon has somewhere to go. A scrubber's output slot backs the machine up when it fills,
+     * so a closed air loop is only closed if the dust can leave the ship — this is that exit.
+     *
+     * <p>The assertion is deliberately about the WORLD and not about the slot: an emptied slot is
+     * equally consistent with a port that simply voided its cargo, and "the dust was deleted" is
+     * not the contract. {@code ejected} counts loose item entities beside the port.</p>
+     */
+    @Test
+    public void aJettisonPortThrowsItsCargoOverboard() throws Exception {
+        clearAirPocket(CX_JETTISON);
+        placeJettisonPort(CX_JETTISON);
+
+        String loaded = exec("artest jettison load 0 " + CX_JETTISON + " " + CY_BASE + " " + CZ_BASE
+                + " advancedrocketry:carbonDust 1");
+        assertTrue("the port must accept a stack: " + loaded, loaded.contains("\"ok\":true"));
+
+        forceTick(CX_JETTISON, 25);
+
+        String info = exec("artest jettison info 0 " + CX_JETTISON + " " + CY_BASE + " " + CZ_BASE);
+        assertEquals("a port with a clear exit must report no obstruction: " + info,
+                0, extract(info, OBSTRUCTION));
+        assertEquals("and its slot must be empty afterwards: " + info, 0, extract(info, HELD_COUNT));
+        assertTrue("the dust must exist in the world as a jettisoned item — an empty slot alone is"
+                + " what voiding it would also look like: " + info, extract(info, EJECTED) >= 1);
+    }
+
+    /**
+     * The counter-test, and the one that makes the port safe to build badly: a port whose exit is
+     * blocked HOLDS its cargo instead of firing into the wall or quietly voiding it.
+     */
+    @Test
+    public void aBlockedJettisonPortHoldsItsCargo() throws Exception {
+        clearAirPocket(CX_JETTISON_BLOCKED);
+        placeJettisonPort(CX_JETTISON_BLOCKED);
+        // Wall it in on every side, so the outcome does not depend on which way the port was placed.
+        exec("artest fill 0 " + (CX_JETTISON_BLOCKED - 1) + " " + (CY_BASE - 1) + " " + (CZ_BASE - 1)
+                + " " + (CX_JETTISON_BLOCKED + 1) + " " + (CY_BASE + 1) + " " + (CZ_BASE + 1)
+                + " minecraft:stone");
+        placeJettisonPort(CX_JETTISON_BLOCKED);
+
+        exec("artest jettison load 0 " + CX_JETTISON_BLOCKED + " " + CY_BASE + " " + CZ_BASE
+                + " advancedrocketry:carbonDust 1");
+        forceTick(CX_JETTISON_BLOCKED, 25);
+
+        String info = exec("artest jettison info 0 " + CX_JETTISON_BLOCKED + " " + CY_BASE + " "
+                + CZ_BASE);
+        assertTrue("a walled-in port must report where the obstruction is: " + info,
+                extract(info, OBSTRUCTION) > 0);
+        assertEquals("and it must still be holding the dust: " + info, 1, extract(info, HELD_COUNT));
+        assertEquals("with nothing jettisoned: " + info, 0, extract(info, EJECTED));
+    }
+
+    /** Open sky around the port, on a stone floor, so its exit is clear whichever way it faces. */
+    private void clearAirPocket(int cx) throws Exception {
+        exec("artest fill 0 " + (cx - 4) + " " + (CY_BASE - 1) + " " + (CZ_BASE - 4)
+                + " " + (cx + 4) + " " + (CY_BASE + 4) + " " + (CZ_BASE + 4) + " minecraft:air");
+        exec("artest fill 0 " + (cx - 4) + " " + (CY_BASE - 2) + " " + (CZ_BASE - 4)
+                + " " + (cx + 4) + " " + (CY_BASE - 2) + " " + (CZ_BASE + 4) + " minecraft:stone");
+    }
+
+    private void placeJettisonPort(int cx) throws Exception {
+        String resp = exec("artest place 0 " + cx + " " + CY_BASE + " " + CZ_BASE
+                + " advancedrocketry:jettisonPort");
+        assertTrue("jettison port place failed: " + resp, resp.contains("\"placed\":true"));
+    }
 
     private void buildSealableRoom(int cx) throws Exception {
         int by = CY_BASE, bz = CZ_BASE;
@@ -293,6 +365,22 @@ public class LifeSupportZoneTest extends AbstractSharedServerTest {
         String resp = exec("artest fluid inject 0 " + cx + " " + CY_BASE + " " + CZ_BASE
                 + " oxygen " + amount);
         assertTrue("oxygen inject failed: " + resp, resp.contains("\"ok\":true"));
+    }
+
+    /**
+     * Force-ticks a machine and CHECKS that it was there to tick.
+     * <p>
+     * The probe answers {@code {"error":"tile not ITickable","tile":"null"}} when the chunk has gone
+     * — and an unchecked force-tick makes that indistinguishable from the machine declining to act,
+     * which is exactly the shape several assertions here are testing for. Measured 2026-08-16: a
+     * combiner scenario read as "the machine stopped at its ceiling" when in truth nothing had
+     * ticked at all.
+     */
+    private void forceTick(int x, int ticks) throws Exception {
+        String resp = exec("artest tile force-tick 0 " + x + " " + CY_BASE + " " + CZ_BASE
+                + " " + ticks);
+        assertTrue("force-tick found no tile at x=" + x + " — the machine was not there to act, so"
+                + " nothing below is a statement about it: " + resp, !resp.contains("\"error\""));
     }
 
     private void forceTickAndReseal(int cx) throws Exception {

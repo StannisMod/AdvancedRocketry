@@ -274,6 +274,10 @@ public class ARConfiguration {
     @ConfigProperty
     public int lifeSupportCarbonPerDust;
     @ConfigProperty
+    public int jettisonPortIntervalTicks;
+    @ConfigProperty
+    public int jettisonPortClearance;
+    @ConfigProperty
     public int lifeSupportFluidPerAtmBlock;
     @ConfigProperty
     public int lifeSupportSeparatorRate;
@@ -535,6 +539,8 @@ public class ARConfiguration {
         arConfig.lifeSupportRecirculatorRate = config.get(OXYGEN, "lifeSupportRecirculatorRate", 6000, "CO2 a single recirculator turns back into oxygen each second, in millionths of an atmosphere. At the default it keeps up with three crew in a room of any size.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportRecirculatorPower = config.get(OXYGEN, "lifeSupportRecirculatorPower", 400, "Power a recirculator draws per operation. Reversing combustion is endothermic: the energy cost is the point, not a tax.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportCarbonPerDust = config.get(OXYGEN, "lifeSupportCarbonPerDust", 60000, "CO2 that must be regenerated before one carbon dust is produced, in millionths of an atmosphere. At the defaults a recirculator running flat out yields a dust every ten seconds.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.jettisonPortIntervalTicks = config.get(OXYGEN, "jettisonPortIntervalTicks", 20, "How often a jettison port tries to throw its contents overboard, in ticks. This is a duty cycle, not a throttle on how much leaves: the port ejects whatever stack it holds, so a faster port empties a busier scrubber line rather than exporting more per firing.", 1, Integer.MAX_VALUE).getInt();
+        arConfig.jettisonPortClearance = config.get(OXYGEN, "jettisonPortClearance", 3, "How many blocks in front of a jettison port must be empty before it will fire. The port refuses rather than firing into a wall, and it HOLDS its cargo while blocked instead of voiding it, so the only cost of a badly placed port is that nothing leaves.", 1, 64).getInt();
         arConfig.lifeSupportFluidPerAtmBlock = config.get(OXYGEN, "lifeSupportFluidPerAtmBlock", 1000, "How many millibuckets of gas one whole atmosphere of partial pressure amounts to in ONE block of room. This is the exchange rate between air in a room and gas in a pipe: at the default, emptying a 20-block cabin of its 0.21 atm of oxygen yields 4200 mB.", 1, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportSeparatorRate = config.get(OXYGEN, "lifeSupportSeparatorRate", 20000, "Partial pressure a separator moves between room and tank each second, in millionths of an atmosphere. At the default it clears a badly stale room in under ten seconds.", 0, Integer.MAX_VALUE).getInt();
         arConfig.lifeSupportSeparatorPower = config.get(OXYGEN, "lifeSupportSeparatorPower", 300, "Power a separator draws per operation.", 0, Integer.MAX_VALUE).getInt();

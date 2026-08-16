@@ -423,6 +423,7 @@ public class AdvancedRocketry {
         GameRegistry.registerTileEntity(TileGasSeparator.class, "ARgasSeparator");
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.atmosphere.TileLifeSupportPlant.class, "ARlifeSupportPlant");
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.atmosphere.TileVentilationDuct.class, "ARventilationDuct");
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.infrastructure.TileJettisonPort.class, "ARjettisonPort");
         GameRegistry.registerTileEntity(TileWarpController.class, "ARStationMonitor");
         GameRegistry.registerTileEntity(TileAtmosphereDetector.class, "AROxygenDetector");
         GameRegistry.registerTileEntity(TileStationOrientationController.class, "AROrientationControl");
@@ -784,6 +785,7 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockGasSeparator = new zmaster587.advancedRocketry.block.BlockGasSeparator(TileGasSeparator.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("gasSeparator").setHardness(3f);
         AdvancedRocketryBlocks.blockLifeSupportPlant = new BlockTile(zmaster587.advancedRocketry.tile.atmosphere.TileLifeSupportPlant.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("lifeSupportPlant").setHardness(3f);
         AdvancedRocketryBlocks.blockVentilationDuct = new zmaster587.advancedRocketry.block.BlockVentilationDuct().setCreativeTab(tabAdvRocketry).setUnlocalizedName("ventilationDuct").setHardness(1f);
+        AdvancedRocketryBlocks.blockJettisonPort = new BlockTile(zmaster587.advancedRocketry.tile.infrastructure.TileJettisonPort.class, GuiHandler.guiId.MODULAR.ordinal()).setCreativeTab(tabAdvRocketry).setUnlocalizedName("jettisonPort").setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenVent = new BlockTile(TileOxygenVent.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenVent").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenCharger = new BlockHalfTile(TileGasChargePad.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("oxygenCharger").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockOxygenDetection = new BlockRedstoneEmitter(Material.IRON, "advancedrocketry:atmosphereDetector_active").setUnlocalizedName("atmosphereDetector").setHardness(3f).setCreativeTab(tabAdvRocketry);
@@ -979,6 +981,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGasSeparator.setRegistryName("gasSeparator"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockLifeSupportPlant.setRegistryName("lifeSupportPlant"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockVentilationDuct.setRegistryName("ventilationDuct"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockJettisonPort.setRegistryName("jettisonPort"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenVent.setRegistryName("oxygenVent"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenCharger.setRegistryName("oxygenCharger"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockOxygenDetection.setRegistryName("oxygenDetection"));

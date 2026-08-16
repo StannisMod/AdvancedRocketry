@@ -175,6 +175,9 @@ public class TestProbeCommand extends CommandBase {
                 case "vent":
                     handleVent(server, sender, tail(args));
                     break;
+                case "jettison":
+                    handleJettison(server, sender, tail(args));
+                    break;
                 case "item":
                     handleItem(server, sender, tail(args));
                     break;
@@ -16455,6 +16458,80 @@ public class TestProbeCommand extends CommandBase {
                     .FLUID_HANDLER_CAPABILITY, null);
         }
         return null;
+    }
+
+    // Jettison-port probe ----------------------------------------------
+
+    /**
+     * {@code /artest jettison load <dim> <x> <y> <z> <itemId> <count>} — put a stack in the port's
+     * slot, the way a hopper would.
+     * <p>
+     * {@code /artest jettison info <dim> <x> <y> <z>} — what the port holds, whether its exit is
+     * clear, and how many loose item entities are floating within a few blocks of it:
+     *
+     * <pre>
+     * {"ok":true,"held":"advancedrocketry:carbonDust","heldCount":1,"obstruction":0,"ejected":0}
+     * </pre>
+     *
+     * <p>{@code ejected} is the assertion the contract actually needs — "the dust LEFT" is a claim
+     * about the world, not about the slot, and a port that merely voided its contents would empty
+     * its slot exactly as convincingly. {@code obstruction} is reported as a DISTANCE rather than a
+     * flag so a red test says which block to go and look at.</p>
+     */
+    private void handleJettison(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5
+                || !("load".equalsIgnoreCase(args[0]) || "info".equalsIgnoreCase(args[0]))) {
+            send(sender, "{\"error\":\"unknown jettison subcommand — try load <dim> <x> <y> <z>"
+                    + " <itemId> <count> | info <dim> <x> <y> <z>\"}");
+            return;
+        }
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        int x = parseIntOr(args[2], 0);
+        int y = parseIntOr(args[3], 0);
+        int z = parseIntOr(args[4], 0);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        BlockPos pos = new BlockPos(x, y, z);
+        TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.infrastructure.TileJettisonPort)) {
+            send(sender, "{\"error\":\"not a TileJettisonPort\",\"tileClass\":\""
+                    + escapeJson(tile == null ? "null" : tile.getClass().getName()) + "\"}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.infrastructure.TileJettisonPort port =
+                (zmaster587.advancedRocketry.tile.infrastructure.TileJettisonPort) tile;
+
+        if ("load".equalsIgnoreCase(args[0])) {
+            if (args.length < 7) {
+                send(sender, "{\"error\":\"usage: load <dim> <x> <y> <z> <itemId> <count>\"}");
+                return;
+            }
+            net.minecraft.item.Item item =
+                    ForgeRegistries.ITEMS.getValue(new ResourceLocation(args[5]));
+            if (item == null) {
+                send(sender, "{\"error\":\"unknown item id\",\"id\":\"" + escapeJson(args[5]) + "\"}");
+                return;
+            }
+            port.setInventorySlotContents(0,
+                    new net.minecraft.item.ItemStack(item, Math.max(1, parseIntOr(args[6], 1))));
+            send(sender, "{\"ok\":true,\"loaded\":\"" + escapeJson(args[5]) + "\"}");
+            return;
+        }
+
+        net.minecraft.item.ItemStack held = port.getStackInSlot(0);
+        // Loose items only, and only close by: the port's own muzzle offset puts an ejected stack
+        // well under a block away, so a wider box would start counting the world's litter.
+        java.util.List<net.minecraft.entity.item.EntityItem> loose = world.getEntitiesWithinAABB(
+                net.minecraft.entity.item.EntityItem.class,
+                new net.minecraft.util.math.AxisAlignedBB(pos).grow(4.0D));
+        send(sender, "{\"ok\":true,\"held\":\""
+                + escapeJson(held.isEmpty() ? "" : held.getItem().getRegistryName().toString())
+                + "\",\"heldCount\":" + held.getCount()
+                + ",\"obstruction\":" + port.getObstruction()
+                + ",\"ejected\":" + loose.size() + "}");
     }
 
     // Subsystem-network probe ------------------------------------------
