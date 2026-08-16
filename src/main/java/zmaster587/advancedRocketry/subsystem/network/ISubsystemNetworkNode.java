@@ -14,6 +14,14 @@ import net.minecraft.world.World;
  */
 public interface ISubsystemNetworkNode {
 
+    /**
+     * Which commodity this node deals in. A node states its own domain rather than being told one
+     * at registration, so a block cannot end up in a graph it does not belong to, and so anything
+     * holding a node — a cable deciding whether to connect to its neighbour, a readout walking the
+     * world — can ask without a per-domain marker interface to test against.
+     */
+    SubsystemNetworkDomain getNetworkDomain();
+
     World getNodeWorld();
 
     BlockPos getNodePos();

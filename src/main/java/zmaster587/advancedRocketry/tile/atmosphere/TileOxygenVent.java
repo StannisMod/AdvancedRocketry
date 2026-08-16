@@ -26,6 +26,7 @@ import zmaster587.advancedRocketry.atmosphere.AtmosphereHandler;
 import zmaster587.advancedRocketry.atmosphere.AtmosphereType;
 import zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 import zmaster587.advancedRocketry.dimension.DimensionManager;
@@ -342,6 +343,11 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     // zone connects to the plant" (D127-5). No second object learns what a zone is.
 
     @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return LifeSupportNetwork.DOMAIN;
+    }
+
+    @Override
     public World getNodeWorld() {
         return world;
     }
@@ -428,14 +434,14 @@ public class TileOxygenVent extends TileInventoriedRFConsumerTank implements IBl
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.register(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.register(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }
 
     private void leaveVentilationNetwork() {
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.unregister(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.unregister(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }

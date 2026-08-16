@@ -7,6 +7,7 @@ import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemCable;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 
@@ -21,6 +22,11 @@ public class TileVentilationDuct extends TileEntity implements ISubsystemCable {
 
     /** Work carried on the last solved tick, for a readout; not persisted, it is a per-tick figure. */
     private int transferredThisTick;
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return LifeSupportNetwork.DOMAIN;
+    }
 
     @Override
     public World getNodeWorld() {
@@ -53,7 +59,7 @@ public class TileVentilationDuct extends TileEntity implements ISubsystemCable {
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.register(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.register(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }
@@ -72,7 +78,7 @@ public class TileVentilationDuct extends TileEntity implements ISubsystemCable {
 
     private void leaveNetwork() {
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.unregister(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.unregister(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }

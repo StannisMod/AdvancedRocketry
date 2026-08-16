@@ -2,10 +2,7 @@ package com.github.stannismod.affs.te;
 
 import com.github.stannismod.affs.AdvancedForceFieldSystem;
 import com.github.stannismod.affs.config.ModConfig;
-import com.github.stannismod.affs.world.shield.IShieldSink;
-import com.github.stannismod.affs.world.shield.IShieldSource;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
-import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.server.SPacketUpdateTileEntity;
@@ -15,15 +12,20 @@ import net.minecraftforge.energy.EnergyStorage;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSource;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 
 /**
- * Bulk shield-energy reserve. It is BOTH an {@link IShieldSource} and an {@link IShieldSink}: it fills
+ * Bulk shield-energy reserve. It is BOTH an {@link ISubsystemSource} and an {@link ISubsystemSink}: it fills
  * when the network has spare supply and drains when the network is under load. The shield network's
  * max-flow solve drives both roles (there is no per-tick self-logic here). Its own storage imposes no
  * per-tick throttle — the emitter coil's intake rate and the cables are the throttles; the accumulator
  * is a store of duration, not a rate.
  */
-public class TileEntityShieldAccumulator extends TileEntity implements IShieldSource, IShieldSink {
+public class TileEntityShieldAccumulator extends TileEntity implements ISubsystemSource, ISubsystemSink {
 
     private final ShieldEnergyStorage storage =
             new ShieldEnergyStorage(ModConfig.accumulatorBuffer, ModConfig.accumulatorBuffer, ModConfig.accumulatorBuffer);
@@ -34,16 +36,16 @@ public class TileEntityShieldAccumulator extends TileEntity implements IShieldSo
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.register(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.register(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
     }
 
     @Override
     public void invalidate() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
         super.invalidate();
     }
@@ -51,10 +53,15 @@ public class TileEntityShieldAccumulator extends TileEntity implements IShieldSo
     @Override
     public void onChunkUnload() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
         super.onChunkUnload();
+    }
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return ShieldNetworkManager.DOMAIN;
     }
 
     @Override
@@ -67,15 +74,15 @@ public class TileEntityShieldAccumulator extends TileEntity implements IShieldSo
         return world;
     }
 
-    // --- IShieldSource: hand stored energy to the network under load -----------------------------
+    // --- source: hand stored energy to the network under load --------------------------------------
 
     @Override
-    public int getAvailableShieldEnergy() {
+    public int getAvailable() {
         return storage.getEnergyStored();
     }
 
     @Override
-    public int extractShieldEnergy(int amount) {
+    public int extract(int amount) {
         if (world == null || world.isRemote || amount <= 0) {
             return 0;
         }
@@ -87,20 +94,20 @@ public class TileEntityShieldAccumulator extends TileEntity implements IShieldSo
         return extracted;
     }
 
-    // --- IShieldSink: soak up spare supply -------------------------------------------------------
+    // --- sink: soak up spare supply ----------------------------------------------------------------
 
     @Override
-    public int getRequestedShieldEnergy() {
-        return getFreeShieldCapacity();
+    public int getRequested() {
+        return getFreeCapacity();
     }
 
     @Override
-    public int getFreeShieldCapacity() {
+    public int getFreeCapacity() {
         return Math.max(0, storage.getMaxEnergyStored() - storage.getEnergyStored());
     }
 
     @Override
-    public int receiveShieldEnergy(int amount) {
+    public int receive(int amount) {
         if (world == null || world.isRemote || amount <= 0) {
             return 0;
         }

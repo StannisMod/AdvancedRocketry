@@ -1,9 +1,7 @@
 package com.github.stannismod.affs.te;
 
 import com.github.stannismod.affs.config.ModConfig;
-import com.github.stannismod.affs.world.shield.IShieldSource;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
-import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.server.SPacketUpdateTileEntity;
@@ -17,8 +15,12 @@ import net.minecraftforge.energy.EnergyStorage;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSource;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 
-public class TileEntityShieldGenerator extends TileEntity implements ITickable, IShieldSource {
+public class TileEntityShieldGenerator extends TileEntity implements ITickable, ISubsystemSource {
 
     public static final int CONVERSION_PER_TICK = 4_000;
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
@@ -69,8 +71,8 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.register(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.register(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] load generator at {} dim={}", pos, world.provider.getDimension());
             }
@@ -80,8 +82,8 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
     @Override
     public void invalidate() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] invalidate generator at {} dim={}", pos, world.provider.getDimension());
             }
@@ -92,13 +94,18 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
     @Override
     public void onChunkUnload() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] chunk unload generator at {} dim={}", pos, world.provider.getDimension());
             }
         }
         super.onChunkUnload();
+    }
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return ShieldNetworkManager.DOMAIN;
     }
 
     @Override
@@ -112,12 +119,12 @@ public class TileEntityShieldGenerator extends TileEntity implements ITickable, 
     }
 
     @Override
-    public int getAvailableShieldEnergy() {
+    public int getAvailable() {
         return shieldStorage.getEnergyStored();
     }
 
     @Override
-    public int extractShieldEnergy(int amount) {
+    public int extract(int amount) {
         if (world == null || world.isRemote || amount <= 0) {
             return 0;
         }

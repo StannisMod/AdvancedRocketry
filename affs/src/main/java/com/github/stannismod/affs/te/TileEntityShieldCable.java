@@ -1,18 +1,21 @@
 package com.github.stannismod.affs.te;
 
-import com.github.stannismod.affs.world.shield.IShieldCable;
 import com.github.stannismod.affs.world.shield.ShieldNetworkManager;
-import com.github.stannismod.affs.world.shield.ShieldNetworkRegistry;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.server.SPacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemCable;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
 
 import javax.annotation.Nullable;
 
-public class TileEntityShieldCable extends TileEntity implements ITickable, IShieldCable {
+public class TileEntityShieldCable extends TileEntity implements ITickable, ISubsystemCable {
 
     private static final int CLIENT_SYNC_BASE_INTERVAL_TICKS = 20;
     private static final int CLIENT_SYNC_JITTER_TICKS = 10;
@@ -50,8 +53,8 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.register(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.register(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] load cable at {} dim={}", pos, world.provider.getDimension());
             }
@@ -61,8 +64,8 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
     @Override
     public void invalidate() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] invalidate cable at {} dim={}", pos, world.provider.getDimension());
             }
@@ -73,13 +76,18 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
     @Override
     public void onChunkUnload() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
             if (com.github.stannismod.affs.AdvancedForceFieldSystem.LOG != null) {
                 com.github.stannismod.affs.AdvancedForceFieldSystem.LOG.info("[ShieldNetwork] chunk unload cable at {} dim={}", pos, world.provider.getDimension());
             }
         }
         super.onChunkUnload();
+    }
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return ShieldNetworkManager.DOMAIN;
     }
 
     @Override
@@ -100,46 +108,33 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
     }
 
     @Override
-    public void addTransferredShield(int amount) {
+    public void addTransferred(int amount) {
         // The cable tracks throughput through network statistics, not local accumulation.
     }
 
     /**
      * The network's report, as the shared primitive delivers it. A cable is the block a player looks
      * at to ask "why is this network not keeping up", so it mirrors the whole component readout.
+     * <p>
+     * The readout is unpacked into fields here rather than kept as the state object: these values
+     * are what goes over the wire and into NBT, and the client half of this tile has no network to
+     * read, only the fields it was sent.
      */
     @Override
-    public void onNetworkStats(zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState state) {
-        setNetworkStats(
-                state.isConnected(),
-                state.getStatus(),
-                state.getRoot(),
-                state.getCableCount(),
-                state.getSourceCount(),
-                state.getSinkCount(),
-                state.getSourceAvailable(),
-                state.getSinkRequested(),
-                state.getCableCapacity(),
-                state.getDeliveredFlow(),
-                state.getSaturatedCables(),
-                state.getBottleneck(),
-                state.getBottleneckUtilizationPermille());
-    }
-
-    public void setNetworkStats(boolean connected, int status, BlockPos anchor, int cableCount, int sourceCount, int sinkCount, int sourceAvailable, int sinkRequested, int cableCapacity, int deliveredFlow, int saturatedCables, BlockPos bottleneck, int bottleneckUtilizationPermille) {
-        BlockPos safeAnchor = anchor == null ? BlockPos.ORIGIN : anchor;
-        BlockPos safeBottleneck = bottleneck == null ? BlockPos.ORIGIN : bottleneck;
-        boolean changed = componentConnected != connected
-                || componentStatus != status
-                || componentCableCount != cableCount
-                || componentSourceCount != sourceCount
-                || componentSinkCount != sinkCount
-                || componentSourceAvailable != sourceAvailable
-                || componentSinkRequested != sinkRequested
-                || componentCableCapacity != cableCapacity
-                || componentDeliveredFlow != deliveredFlow
-                || componentSaturatedCables != saturatedCables
-                || componentBottleneckUtilizationPermille != bottleneckUtilizationPermille
+    public void onNetworkStats(SubsystemNetworkState state) {
+        BlockPos safeAnchor = state.getRoot() == null ? BlockPos.ORIGIN : state.getRoot();
+        BlockPos safeBottleneck = state.getBottleneck() == null ? BlockPos.ORIGIN : state.getBottleneck();
+        boolean changed = componentConnected != state.isConnected()
+                || componentStatus != state.getStatus()
+                || componentCableCount != state.getCableCount()
+                || componentSourceCount != state.getSourceCount()
+                || componentSinkCount != state.getSinkCount()
+                || componentSourceAvailable != state.getSourceAvailable()
+                || componentSinkRequested != state.getSinkRequested()
+                || componentCableCapacity != state.getCableCapacity()
+                || componentDeliveredFlow != state.getDeliveredFlow()
+                || componentSaturatedCables != state.getSaturatedCables()
+                || componentBottleneckUtilizationPermille != state.getBottleneckUtilizationPermille()
                 || componentAnchorX != safeAnchor.getX()
                 || componentAnchorY != safeAnchor.getY()
                 || componentAnchorZ != safeAnchor.getZ()
@@ -147,17 +142,17 @@ public class TileEntityShieldCable extends TileEntity implements ITickable, IShi
                 || componentBottleneckY != safeBottleneck.getY()
                 || componentBottleneckZ != safeBottleneck.getZ();
 
-        componentConnected = connected;
-        componentStatus = status;
-        componentCableCount = cableCount;
-        componentSourceCount = sourceCount;
-        componentSinkCount = sinkCount;
-        componentSourceAvailable = sourceAvailable;
-        componentSinkRequested = sinkRequested;
-        componentCableCapacity = cableCapacity;
-        componentDeliveredFlow = deliveredFlow;
-        componentSaturatedCables = saturatedCables;
-        componentBottleneckUtilizationPermille = bottleneckUtilizationPermille;
+        componentConnected = state.isConnected();
+        componentStatus = state.getStatus();
+        componentCableCount = state.getCableCount();
+        componentSourceCount = state.getSourceCount();
+        componentSinkCount = state.getSinkCount();
+        componentSourceAvailable = state.getSourceAvailable();
+        componentSinkRequested = state.getSinkRequested();
+        componentCableCapacity = state.getCableCapacity();
+        componentDeliveredFlow = state.getDeliveredFlow();
+        componentSaturatedCables = state.getSaturatedCables();
+        componentBottleneckUtilizationPermille = state.getBottleneckUtilizationPermille();
         componentAnchorX = safeAnchor.getX();
         componentAnchorY = safeAnchor.getY();
         componentAnchorZ = safeAnchor.getZ();

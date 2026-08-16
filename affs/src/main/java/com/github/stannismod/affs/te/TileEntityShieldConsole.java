@@ -18,6 +18,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSink;
+import zmaster587.advancedRocketry.subsystem.network.ISubsystemSource;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
 
 public class TileEntityShieldConsole extends TileEntity implements ITickable, IShieldNetworkController, com.github.stannismod.affs.gui.INetworkMapSource {
 
@@ -69,16 +75,16 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.register(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.register(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
     }
 
     @Override
     public void invalidate() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
         super.invalidate();
     }
@@ -86,10 +92,15 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     @Override
     public void onChunkUnload() {
         if (world != null && !world.isRemote) {
-            ShieldNetworkRegistry.unregister(this);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkRegistry.unregister(this);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
         super.onChunkUnload();
+    }
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return ShieldNetworkManager.DOMAIN;
     }
 
     @Override
@@ -103,46 +114,49 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
     }
 
     @Override
-    public void applyNetworkState(ShieldNetworkState state) {
-        if (world == null || world.isRemote || state == null) {
+    public void applyNetworkState(SubsystemNetworkState state) {
+        // The shield domain's own state type: this console edits and displays the resistance
+        // bias, which only that subclass carries.
+        if (world == null || world.isRemote || !(state instanceof ShieldNetworkState)) {
             return;
         }
+        ShieldNetworkState shieldState = (ShieldNetworkState) state;
 
-        boolean changed = networkConnected != state.isConnected()
-                || networkStatus != state.getStatus()
-                || cableCount != state.getCableCount()
-                || generatorCount != state.getSourceCount()
-                || injectorCount != state.getSinkCount()
-                || sourceAvailable != state.getSourceAvailable()
-                || sinkRequested != state.getSinkRequested()
-                || cableCapacity != state.getCableCapacity()
-                || deliveredFlow != state.getDeliveredFlow()
-                || saturatedCables != state.getSaturatedCables()
-                || generationPerTick != state.getGenerationPerTick()
-                || consumptionPerTick != state.getConsumptionPerTick()
-                || bottleneckUtilizationPermille != state.getBottleneckUtilizationPermille()
-                || Double.compare(shieldEnergyResistanceBias, state.getShieldEnergyResistanceBias()) != 0
-                || rootX != state.getRoot().getX()
-                || rootY != state.getRoot().getY()
-                || rootZ != state.getRoot().getZ();
+        boolean changed = networkConnected != shieldState.isConnected()
+                || networkStatus != shieldState.getStatus()
+                || cableCount != shieldState.getCableCount()
+                || generatorCount != shieldState.getSourceCount()
+                || injectorCount != shieldState.getSinkCount()
+                || sourceAvailable != shieldState.getSourceAvailable()
+                || sinkRequested != shieldState.getSinkRequested()
+                || cableCapacity != shieldState.getCableCapacity()
+                || deliveredFlow != shieldState.getDeliveredFlow()
+                || saturatedCables != shieldState.getSaturatedCables()
+                || generationPerTick != shieldState.getGenerationPerTick()
+                || consumptionPerTick != shieldState.getConsumptionPerTick()
+                || bottleneckUtilizationPermille != shieldState.getBottleneckUtilizationPermille()
+                || Double.compare(shieldEnergyResistanceBias, shieldState.getShieldEnergyResistanceBias()) != 0
+                || rootX != shieldState.getRoot().getX()
+                || rootY != shieldState.getRoot().getY()
+                || rootZ != shieldState.getRoot().getZ();
 
-        networkConnected = state.isConnected();
-        networkStatus = state.getStatus();
-        cableCount = state.getCableCount();
-        generatorCount = state.getSourceCount();
-        injectorCount = state.getSinkCount();
-        sourceAvailable = state.getSourceAvailable();
-        sinkRequested = state.getSinkRequested();
-        cableCapacity = state.getCableCapacity();
-        deliveredFlow = state.getDeliveredFlow();
-        saturatedCables = state.getSaturatedCables();
-        generationPerTick = state.getGenerationPerTick();
-        consumptionPerTick = state.getConsumptionPerTick();
-        bottleneckUtilizationPermille = state.getBottleneckUtilizationPermille();
-        shieldEnergyResistanceBias = state.getShieldEnergyResistanceBias();
-        rootX = state.getRoot().getX();
-        rootY = state.getRoot().getY();
-        rootZ = state.getRoot().getZ();
+        networkConnected = shieldState.isConnected();
+        networkStatus = shieldState.getStatus();
+        cableCount = shieldState.getCableCount();
+        generatorCount = shieldState.getSourceCount();
+        injectorCount = shieldState.getSinkCount();
+        sourceAvailable = shieldState.getSourceAvailable();
+        sinkRequested = shieldState.getSinkRequested();
+        cableCapacity = shieldState.getCableCapacity();
+        deliveredFlow = shieldState.getDeliveredFlow();
+        saturatedCables = shieldState.getSaturatedCables();
+        generationPerTick = shieldState.getGenerationPerTick();
+        consumptionPerTick = shieldState.getConsumptionPerTick();
+        bottleneckUtilizationPermille = shieldState.getBottleneckUtilizationPermille();
+        shieldEnergyResistanceBias = shieldState.getShieldEnergyResistanceBias();
+        rootX = shieldState.getRoot().getX();
+        rootY = shieldState.getRoot().getY();
+        rootZ = shieldState.getRoot().getZ();
 
         if (changed) {
             markDirty();
@@ -315,7 +329,7 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
         markDirty();
         if (world != null && !world.isRemote) {
             ShieldNetworkManager.setShieldEnergyResistanceBias(world, pos, clamped);
-            ShieldNetworkManager.markDirty(world);
+            SubsystemNetworkManager.markDirty(ShieldNetworkManager.DOMAIN, world);
         }
         queueClientSync();
     }
@@ -380,11 +394,11 @@ public class TileEntityShieldConsole extends TileEntity implements ITickable, IS
                     putMarker(nextMarkers, new NetworkMapMarker(memberPos.getX(), memberPos.getY(), memberPos.getZ(), NetworkMapMarker.KIND_CONSOLE));
                     continue;
                 }
-                if (member instanceof IShieldSink) {
+                if (member instanceof ISubsystemSink) {
                     putMarker(nextMarkers, new NetworkMapMarker(memberPos.getX(), memberPos.getY(), memberPos.getZ(), NetworkMapMarker.KIND_SINK));
                     continue;
                 }
-                if (member instanceof IShieldSource) {
+                if (member instanceof ISubsystemSource) {
                     putMarker(nextMarkers, new NetworkMapMarker(memberPos.getX(), memberPos.getY(), memberPos.getZ(), NetworkMapMarker.KIND_SOURCE));
                     continue;
                 }

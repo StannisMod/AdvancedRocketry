@@ -48,10 +48,14 @@ public final class ShieldNetworkManager {
     private ShieldNetworkManager() {
     }
 
-    public static void markDirty(World world) {
-        SubsystemNetworkManager.markDirty(DOMAIN, world);
-    }
-
+    /**
+     * The shield network at this position, as the shield's own state type.
+     * <p>
+     * Kept where a plain domain-supplying forwarder was not: this one narrows the shared state to
+     * the subclass that carries the resistance bias, so every caller does not repeat the same cast.
+     * Callers that only need to name the domain — marking the topology dirty, registering a node —
+     * say {@link #DOMAIN} at the call site instead, exactly as the ventilation domain does.
+     */
     public static ShieldNetworkState getState(World world, BlockPos pos) {
         SubsystemNetworkState state = SubsystemNetworkManager.getState(DOMAIN, world, pos);
         return state instanceof ShieldNetworkState ? (ShieldNetworkState) state : null;

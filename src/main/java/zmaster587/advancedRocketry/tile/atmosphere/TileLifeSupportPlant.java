@@ -11,6 +11,7 @@ import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
 import zmaster587.advancedRocketry.api.AdvancedRocketryItems;
 import zmaster587.advancedRocketry.atmosphere.LifeSupportNetwork;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemSource;
+import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkManager;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 import zmaster587.libVulpes.inventory.modules.IModularInventory;
@@ -44,6 +45,11 @@ public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements I
     }
 
     // ─── network node ──────────────────────────────────────────────────
+
+    @Override
+    public SubsystemNetworkDomain getNetworkDomain() {
+        return LifeSupportNetwork.DOMAIN;
+    }
 
     @Override
     public World getNodeWorld() {
@@ -134,7 +140,7 @@ public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements I
     public void onLoad() {
         super.onLoad();
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.register(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.register(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }
@@ -153,7 +159,7 @@ public class TileLifeSupportPlant extends TileInventoriedRFConsumer implements I
 
     private void leaveNetwork() {
         if (world != null && !world.isRemote) {
-            SubsystemNetworkRegistry.unregister(LifeSupportNetwork.DOMAIN, this);
+            SubsystemNetworkRegistry.unregister(this);
             SubsystemNetworkManager.markDirty(LifeSupportNetwork.DOMAIN, world);
         }
     }

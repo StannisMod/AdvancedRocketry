@@ -316,7 +316,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("shieldStored", emitter.getEnergyStored());
                 info.put("shieldMax", emitter.getMaxEnergyStored());
                 info.put("radius", emitter.getRadius());
-                info.put("requested", emitter.getRequestedShieldEnergy());
+                info.put("requested", emitter.getRequested());
                 // P2 (D134-3/4): the emitter's tier, its tier-scaled recharge throughput (the per-zone
                 // regen cap), the passive-maintenance draw this tick, and how much it actually received
                 // this tick — so a test can assert the throughput cap and the tier scaling.
@@ -333,7 +333,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("worldZ", wc.z);
                 info.put("shipFramed", emitter.isShipFramed());
                 info.put("frameReady", emitter.isFrameReady());
-                info.put("priority", emitter.getShieldPriority());
+                info.put("priority", emitter.getPriority());
                 // P4 (D134-5/6): the emitter's domain, the priority group that lists it (if any), and its
                 // carried access credential — so a test can assert group push-down and code rotation.
                 String domainId = com.github.stannismod.affs.world.shield.ShieldDomains.forBlock(
@@ -352,7 +352,7 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "generator");
                 info.put("shieldStored", gen.getShieldStored());
                 info.put("feStored", gen.getFeStored());
-                info.put("available", gen.getAvailableShieldEnergy());
+                info.put("available", gen.getAvailable());
             } else if (tile instanceof com.github.stannismod.affs.te.TileEntityShieldCable) {
                 // P6: a cable's transport cap, so a test can compare the two limiters (transport vs the
                 // emitter's recharge throughput) without pinning either magnitude.
@@ -366,8 +366,8 @@ public class TestProbeCommand extends CommandBase {
                 info.put("kind", "accumulator");
                 info.put("shieldStored", acc.getShieldStored());
                 info.put("shieldMax", acc.getMaxShieldStored());
-                info.put("available", acc.getAvailableShieldEnergy());
-                info.put("free", acc.getFreeShieldCapacity());
+                info.put("available", acc.getAvailable());
+                info.put("free", acc.getFreeCapacity());
             } else {
                 info.put("error", "not a shield tile");
                 info.put("tileClass", tile == null ? "null" : tile.getClass().getName());
@@ -521,7 +521,7 @@ public class TestProbeCommand extends CommandBase {
             if (args.length >= 6) {
                 emitter.setPriority(parseIntOr(args[5], 0));
             }
-            send(sender, "{\"ok\":true,\"priority\":" + emitter.getShieldPriority() + "}");
+            send(sender, "{\"ok\":true,\"priority\":" + emitter.getPriority() + "}");
             return;
         }
         if (args.length >= 5 && "console-info".equalsIgnoreCase(args[0])) {

@@ -13,8 +13,9 @@ import java.util.Set;
  * Which nodes exist, per domain. A tile registers itself when it joins the world and unregisters
  * when it leaves; the manager reads a snapshot when it rebuilds.
  * <p>
- * Keyed by domain so the graphs stay apart. Synchronized because tiles are created and invalidated
- * off the tick that reads them.
+ * Keyed by domain so the graphs stay apart; a node names its own domain, so registering one into
+ * the wrong graph is not expressible. Synchronized because tiles are created and invalidated off
+ * the tick that reads them.
  */
 public final class SubsystemNetworkRegistry {
 
@@ -23,16 +24,18 @@ public final class SubsystemNetworkRegistry {
     private SubsystemNetworkRegistry() {
     }
 
-    public static synchronized void register(SubsystemNetworkDomain domain, ISubsystemNetworkNode node) {
-        if (domain == null || node == null) {
+    public static synchronized void register(ISubsystemNetworkNode node) {
+        SubsystemNetworkDomain domain = node == null ? null : node.getNetworkDomain();
+        if (domain == null) {
             return;
         }
         nodesOf(domain).add(node);
         log(domain, "register", node);
     }
 
-    public static synchronized void unregister(SubsystemNetworkDomain domain, ISubsystemNetworkNode node) {
-        if (domain == null || node == null) {
+    public static synchronized void unregister(ISubsystemNetworkNode node) {
+        SubsystemNetworkDomain domain = node == null ? null : node.getNetworkDomain();
+        if (domain == null) {
             return;
         }
         nodesOf(domain).remove(node);
