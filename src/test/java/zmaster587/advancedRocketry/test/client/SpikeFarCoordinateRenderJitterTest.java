@@ -20,7 +20,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * SPIKE — is the render actually quantized far from the origin, the thing the 4M cell was sized for?
  *
- * <p>`space-model.md` justifies `CELL = 4_000_000` with "entity doubles / chunks / lighting degrade
+ * <p>The cell used to be 4,000,000 blocks, justified with "entity doubles / chunks / lighting degrade
  * past ~±2M blocks in 1.12.2". The server half of that (chunk generation, block storage) measured
  * CLEAN out to 28M. This measures the visual half.
  *

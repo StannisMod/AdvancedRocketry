@@ -205,9 +205,22 @@ public final class PlanetDerivation {
         return (int) clamp(distance, DimensionProperties.MIN_DISTANCE, 1_000_000d);
     }
 
-    /** The innermost orbit this star's system may hold, in Advanced Rocketry distance units. */
+    /**
+     * The innermost orbit this star's system may hold, in Advanced Rocketry distance units.
+     *
+     * <p>Two floors, and they answer different questions. {@code MIN_DISTANCE} is what the body
+     * FORMAT can express; {@link AstronomicalBodyHelper#MIN_ADDRESSABLE_ORBIT_UNITS} is what the
+     * universe can ADDRESS — one cell's worth of orbit, below which a body shares its star's cell and
+     * is silently dropped in the seat race rather than becoming an ambiguous destination. A dim
+     * star's zone can sit entirely inside that radius, so without this floor its innermost world is
+     * generated and then lost, which reads as "the generator drops bodies" and is really "the cell is
+     * the resolution".</p>
+     */
     public static double innerOrbit(StellarBody star) {
-        return Math.max(DimensionProperties.MIN_DISTANCE, referenceDistance(star) * INNER_ORBIT_FACTOR);
+        return Math.max(
+                Math.max(DimensionProperties.MIN_DISTANCE,
+                        AstronomicalBodyHelper.MIN_ADDRESSABLE_ORBIT_UNITS),
+                referenceDistance(star) * INNER_ORBIT_FACTOR);
     }
 
     /** The outermost orbit this star's system may hold. Always comfortably above {@link #innerOrbit}. */

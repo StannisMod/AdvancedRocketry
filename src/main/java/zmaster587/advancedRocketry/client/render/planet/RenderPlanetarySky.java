@@ -904,7 +904,7 @@ GL11.glPopMatrix();
                     shadowColorMultiplier = new float[]{shadowColorMultiplier[0] * (1 - multiplier) + f1 * multiplier, shadowColorMultiplier[1] * (1 - multiplier) + f2 * multiplier, shadowColorMultiplier[2] * (1 - multiplier) + f3 * multiplier};
                 }
                 //System.out.println("draw moon (renderplanet");
-                renderPlanet(buffer, parentProperties, planetOrbitalDistance, multiplier, rotation, false, parentHasRings, (float) Math.pow(parentProperties.getGravitationalMultiplier(), 0.4), shadowColorMultiplier, alpha2);
+                renderPlanet(buffer, parentProperties, planetOrbitalDistance, multiplier, rotation, false, parentHasRings, skyRadiusEarths(parentProperties), shadowColorMultiplier, alpha2);
                 xrotangle = 0;
                 GL11.glPopMatrix();
             }
@@ -939,7 +939,7 @@ GL11.glPopMatrix();
                     shadowColorMultiplier = afloat;
                     shadowColorMultiplier = new float[]{shadowColorMultiplier[0] * (1 - multiplier) + f1 * multiplier, shadowColorMultiplier[1] * (1 - multiplier) + f2 * multiplier, shadowColorMultiplier[2] * (1 - multiplier) + f3 * multiplier};
                 }
-                renderPlanet(buffer, moons, moons.getParentOrbitalDistance(), multiplier, rotation, moons.hasAtmosphere(), moons.hasRings, (float) Math.pow(moons.gravitationalMultiplier, 0.4), shadowColorMultiplier, alpha2);
+                renderPlanet(buffer, moons, moons.getParentOrbitalDistance(), multiplier, rotation, moons.hasAtmosphere(), moons.hasRings, skyRadiusEarths(moons), shadowColorMultiplier, alpha2);
                 GL11.glPopMatrix();
             }
         }
@@ -1101,8 +1101,12 @@ GL11.glPopMatrix();
         return EnumFacing.EAST;
     }
 
-    protected void renderPlanet(BufferBuilder buffer, DimensionProperties properties, float planetOrbitalDistance, float alphaMultiplier, double shadowAngle, boolean hasAtmosphere, boolean hasRing, float gravitationalMultiplier, float[] shadowColorMultiplier, float alphaMultiplier2) {
-        renderPlanet2(buffer, properties, 20f * AstronomicalBodyHelper.getBodySizeMultiplier(planetOrbitalDistance) * gravitationalMultiplier, alphaMultiplier, shadowAngle, hasRing, shadowColorMultiplier, alphaMultiplier2);
+    protected void renderPlanet(BufferBuilder buffer, DimensionProperties properties, float separationToObserver, float alphaMultiplier, double shadowAngle, boolean hasAtmosphere, boolean hasRing, float radiusEarths, float[] shadowColorMultiplier, float alphaMultiplier2) {
+        // Size is the body's OWN radius over the distance to it. It used to be its surface GRAVITY
+        // over that distance, which drew two worlds of equal size at different sizes and two worlds
+        // of different size at the same one whenever their densities happened to agree. The scale
+        // constant is unchanged, so a body of one Earth radius draws exactly as it always did.
+        renderPlanet2(buffer, properties, 20f * AstronomicalBodyHelper.getBodySizeMultiplier(separationToObserver) * radiusEarths, alphaMultiplier, shadowAngle, hasRing, shadowColorMultiplier, alphaMultiplier2);
     }
 
     protected void renderPlanet2(BufferBuilder buffer, DimensionProperties properties, float size, float alphaMultiplier, double shadowAngle, boolean hasRing, float[] shadowColorMultiplier, float alphaMultiplier2) {
@@ -1372,5 +1376,22 @@ GL11.glPopMatrix();
             buffer.pos(-f10, 120.0D, f10).tex(0.0D, 1.0D).endVertex();
             Tessellator.getInstance().draw();
         }
+    }
+
+    /**
+     * The radius a SKY draws this body at, in Earth radii — its stated radius, or one Earth radius
+     * when nobody has stated one.
+     *
+     * <p>The fallback is the same reading the orbital maths already takes ({@code getMoonOrbitalPeriod}:
+     * a body with no stated bulk is a body assumed to be one Earth radius across), and it is what keeps
+     * every authored planet looking exactly as it did before bodies had sizes. The alternative —
+     * treating an unset radius as zero — would make every un-edited world vanish from every sky.</p>
+     */
+    protected static float skyRadiusEarths(DimensionProperties properties) {
+        if (properties == null) {
+            return 1f;
+        }
+        double r = properties.getRadius();
+        return r > 0d ? (float) r : 1f;
     }
 }

@@ -185,4 +185,64 @@ public class StellarHierarchyTest {
         assertEquals("the geometry survives to the third star", c.separationAuFrom(a),
                 readC.separationAuFrom(read), 1e-9);
     }
+
+    // ─── the forms the model must be able to express ───────────────────────────
+
+    @Test
+    public void anSTypeWorldIsLitByBothStarsOfItsPair() {
+        // The form: a wide binary whose COMPANION carries the world. It is a planet in a binary, not
+        // a planet with one sun that happens to have a bright neighbour — so the light it receives
+        // must include the primary's, and must fall as the pair is drawn apart.
+        StellarBody primary = star("A", 1f);
+        primary.setId(3);
+        StellarBody companion = star("B", 1f);
+        companion.setId(4);
+        companion.setOrbitalDistance(200); // 2 AU: a close pair
+        primary.addSubStar(companion);
+
+        double closePair = AstronomicalBodyHelper.getStellarBrightness(companion, 100);
+        double lone = AstronomicalBodyHelper.getStellarBrightness(star("C", 1f), 100);
+        assertTrue("a world of the companion must be lit by the primary too (" + closePair
+                + " vs a lone star's " + lone + ")", closePair > lone);
+
+        companion.setOrbitalDistance(20_000); // 200 AU: a wide pair
+        double widePair = AstronomicalBodyHelper.getStellarBrightness(companion, 100);
+        assertTrue("drawing the pair apart must cost the world the primary's light (" + closePair
+                + " -> " + widePair + ")", widePair < closePair);
+        assertTrue("...but never below what its own star alone delivers", widePair >= lone * 0.999d);
+    }
+
+    @Test
+    public void aCircumbinaryWorldIsLitByBothStarsOfItsPair() {
+        // The other form of the same pair: the world is bound to the PRIMARY and the companion is
+        // one of its suns. Neither arrangement may need a special case.
+        StellarBody primary = star("A", 1f);
+        StellarBody companion = star("B", 1f);
+        companion.setOrbitalDistance(50);
+        primary.addSubStar(companion);
+
+        double both = AstronomicalBodyHelper.getStellarBrightness(primary, 100);
+        double alone = AstronomicalBodyHelper.getStellarBrightness(star("C", 1f), 100);
+        assertTrue("a circumbinary world must be warmed by both (" + both + " vs " + alone + ")",
+                both > alone);
+    }
+
+    @Test
+    public void everyStarOfAThreeStarHierarchyContributesToTheLightAWorldGets() {
+        // Composition, not enumeration: adding a third star to the system must add its flux from
+        // wherever it hangs in the tree, or "hierarchical" is a storage claim and nothing more.
+        StellarBody primary = star("A", 1f);
+        StellarBody companion = star("B", 1f);
+        companion.setOrbitalDistance(100);
+        primary.addSubStar(companion);
+        double two = AstronomicalBodyHelper.getStellarBrightness(primary, 100);
+
+        StellarBody third = star("C", 1f);
+        third.setOrbitalDistance(60);
+        companion.addSubStar(third);
+        double three = AstronomicalBodyHelper.getStellarBrightness(primary, 100);
+
+        assertTrue("a third star must light the world too (" + two + " -> " + three + ")",
+                three > two);
+    }
 }

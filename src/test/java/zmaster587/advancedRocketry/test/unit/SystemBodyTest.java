@@ -182,4 +182,56 @@ public class SystemBodyTest {
         assertFalse(SystemBodyKind.ASTEROID_BELT.canDescend());
         assertFalse(SystemBodyKind.STATION_SLOT.canDescend());
     }
+
+    @Test
+    public void aBodyCarriesItsOwnRadiusThroughNbt() {
+        // A body's SIZE travels with it: nothing downstream can recover it (a procedural world has no
+        // dimension until a descent mints one, and the render feed reaches a client with no registry).
+        SystemBody sized = SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.GAS_GIANT,
+                Constants.INVALID_PLANET, 4).withRadius(11.2d);
+        NBTTagCompound tag = new NBTTagCompound();
+        sized.writeToNBT(tag);
+        assertEquals(11.2d, SystemBody.readFromNBT(tag).radiusEarths(), 1e-9);
+
+        // A body that is not a sphere says so, and says it the same way after a round trip — the
+        // renderer draws that as a marker rather than inventing a size for it.
+        SystemBody belt = SystemBody.fixedAt(GalacticCoord.ORIGIN, SystemBodyKind.ASTEROID_BELT,
+                Constants.INVALID_PLANET, 4);
+        NBTTagCompound beltTag = new NBTTagCompound();
+        belt.writeToNBT(beltTag);
+        assertEquals(SystemBody.RADIUS_UNKNOWN, SystemBody.readFromNBT(beltTag).radiusEarths(), 0d);
+        assertFalse("an unstated radius writes no key at all", beltTag.hasKey("radiusEarths"));
+    }
+
+    @Test
+    public void aGiantsMoonSystemSpansFromInsideItsOwnRadiusToBeyondTheCell() {
+        // The last form the model owes: a giant whose retinue runs from a moon skimming its surface
+        // out to one that no longer fits in the cell they share. Both must be EXPRESSIBLE, and the
+        // far one must not corrupt the address — a body outside its own cell would be a body in a
+        // different cell, so the offset saturates on the face instead (and, since 2026-08-16, says
+        // so in the log rather than flattening a whole moon system onto one point in silence).
+        GalacticCoord giantCell = GalacticCoord.ofSectorLocal(9, 0, -3, 0, 0, 0);
+        CellFrame frame = CellFrame.staticAt(giantCell);
+
+        SystemBody inner = new SystemBody(giantCell, frame, orbit(2d, 100_000L),
+                SystemBodyKind.MOON, Constants.INVALID_PLANET, 1);
+        SystemBody outer = new SystemBody(giantCell, frame,
+                orbit(4d, GalacticCoord.HALF_CELL), SystemBodyKind.MOON,
+                Constants.INVALID_PLANET, 1);
+
+        assertEquals("both moons share the giant's cell — they are one destination",
+                inner.name(), outer.name());
+        assertNotEquals("and they are not in the same place inside it",
+                inner.inCellOffsetAt(0L), outer.inCellOffsetAt(0L));
+
+        for (long tick = 0L; tick < 1000L; tick += 137L) {
+            long dx = Math.abs(outer.inCellOffsetAt(tick).dx());
+            long dy = Math.abs(outer.inCellOffsetAt(tick).dy());
+            long dz = Math.abs(outer.inCellOffsetAt(tick).dz());
+            assertTrue("an offset may never leave the cell that names it, got " + dx + "," + dy
+                            + "," + dz + " against a half-cell of " + GalacticCoord.HALF_CELL,
+                    dx <= GalacticCoord.HALF_CELL && dy <= GalacticCoord.HALF_CELL
+                            && dz <= GalacticCoord.HALF_CELL);
+        }
+    }
 }

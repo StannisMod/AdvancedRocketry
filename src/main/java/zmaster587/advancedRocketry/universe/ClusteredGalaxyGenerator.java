@@ -87,12 +87,16 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
      * Separation band for a companion, in orbital-distance units — 0.01 AU to 2 000 AU, drawn
      * log-uniformly, which is roughly how real separations are distributed over that range.
      *
-     * <p>The floor is one cell's worth of orbit, so a companion always gets a cell of its own to be
-     * addressed by. The ceiling is a quarter of the guaranteed clear space around a system, which is
-     * what lets that clear space state "no two unrelated stars come this close" without a binary ever
-     * being mistaken for one.</p>
+     * <p>The floor IS one cell's worth of orbit ({@link AstronomicalBodyHelper#MIN_ADDRESSABLE_ORBIT_UNITS}),
+     * so a companion always gets a cell of its own to be addressed by — derived rather than written
+     * down, because it was written down as {@code 1} and quietly stopped meaning "one cell" when the
+     * cell grew, at which point every tightest-band companion landed in the primary's cell, lost the
+     * seat race and was dropped. The ceiling is a quarter of the guaranteed clear space around a
+     * system, which is what lets that clear space state "no two unrelated stars come this close"
+     * without a binary ever being mistaken for one.</p>
      */
-    private static final int COMPANION_MIN_SEPARATION = 1;
+    private static final int COMPANION_MIN_SEPARATION =
+            AstronomicalBodyHelper.MIN_ADDRESSABLE_ORBIT_UNITS;
     private static final int COMPANION_MAX_SEPARATION = 200_000;
     /**
      * A retinue cannot survive inside a companion's orbit, nor a companion inside the retinue's: a
@@ -339,10 +343,31 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             bodies.add(new SystemBody(seat.cell,
                     CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()), seat.law),
                     BodyEphemeris.STATIC, SystemBodyKind.STAR, Constants.INVALID_PLANET,
-                    companion.getId(), companion.getOrbitalDistance()));
+                    companion.getId(), companion.getOrbitalDistance())
+                    .withRadius(AstronomicalBodyHelper.starRadiusEarths(companion)));
         }
 
-        int count = retinueSize(seed, cell);
+        appendRetinue(bodies, seed, cell, star, starId, lattice, taken, outerBound,
+                retinueSize(seed, cell));
+        return bodies;
+    }
+
+    /**
+     * Append a system's RETINUE — its worlds, their moons and its belts — to {@code bodies}.
+     *
+     * <p>Extracted so an AUTHORED system can have one too. The legacy random generator used to fill an
+     * authored star's system at world creation from {@code new Random(System.currentTimeMillis())},
+     * which meant two saves of one seed differed and every fix had to be made twice, in two models
+     * that answered the same question differently. This is the one model, and an authored system now
+     * reaches it through {@link #authoredRetinueFor} with the pack's own body count as the bound.</p>
+     *
+     * @param taken cells already claimed — an authored system passes the cells its authored worlds
+     *              hold, so a derived body can never land on one
+     * @param count how many major bodies to attempt; the drawn orbits still decide how many FIT
+     */
+    private void appendRetinue(List<SystemBody> bodies, long seed, GalacticCoord cell, StellarBody star,
+                               int starId, Lattice lattice, Set<String> taken, double outerBound,
+                               int count) {
         int outermostOrbit = 0;
         int innermostGiantOrbit = 0;
         for (int i = 0; i < count; i++) {
@@ -378,8 +403,12 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
             // forever while its own moons orbited it, and the identical system authored in XML moved.
             CellFrame bodyFrame = CellFrame.of(AbsolutePos.ofCellName(cell.cellCentre()), seat.law);
             // Procedural bodies have no realized dimension yet — a descent (Layer 2) realizes one.
+            // The body carries its OWN size. Nothing downstream can recover it: a procedural world
+            // has no dimension until a descent mints one, and the render feed reaches a client with
+            // no registry to ask.
             bodies.add(new SystemBody(seat.cell, bodyFrame, BodyEphemeris.STATIC, profile.kind(),
-                    Constants.INVALID_PLANET, starId, orbit));
+                    Constants.INVALID_PLANET, starId, orbit)
+                    .withRadius(profile.radiusEarths()));
             outermostOrbit = Math.max(outermostOrbit, orbit);
             if (profile.kind() == SystemBodyKind.GAS_GIANT
                     && (innermostGiantOrbit == 0 || orbit < innermostGiantOrbit)) {
@@ -405,6 +434,34 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                 PlanetDerivation.innerOrbit(star) * 2d);
         addBelt(bodies, seed, cell, (int) Math.min(outerBelt, outerBound), star, lattice, starId, taken,
                 count + 2);
+    }
+
+    /**
+     * The retinue an AUTHORED system gets: derived from {@code (seed, anchor)} like every other, and
+     * bounded by the pack's own {@code numPlanets} rather than by the generator's draw.
+     *
+     * <p>What this preserves from the generator it replaces: a pack that asks for twelve worlds around
+     * its star still gets twelve. What it changes, deliberately: the worlds are the same two saves
+     * running from the same seed, because the clock is no longer an input.</p>
+     *
+     * @param takenCells the cells the system's AUTHORED bodies already occupy, so nothing derived
+     *                   lands on one
+     */
+    public List<SystemBody> authoredRetinueFor(long seed, GalacticCoord anchor, StellarBody star,
+                                               int starId, int count, Set<String> takenCells) {
+        List<SystemBody> bodies = new ArrayList<>();
+        if (star == null || anchor == null || count <= 0) {
+            return bodies;
+        }
+        GalacticCoord cell = anchor.cellCentre();
+        Lattice lattice = latticeAt(seed, cell.sectorX(), cell.sectorY(), cell.sectorZ());
+        Set<String> taken = new HashSet<>();
+        taken.add(cell.cellKey());
+        if (takenCells != null) {
+            taken.addAll(takenCells);
+        }
+        appendRetinue(bodies, seed, cell, star, starId, lattice, taken,
+                maxNamedOrbitUnits(lattice.minEdge()), count);
         return bodies;
     }
 
@@ -539,8 +596,13 @@ public final class ClusteredGalaxyGenerator implements IGalaxyGenerator {
                     SystemContent.MOON_UNIT_BLOCKS);
             // A moon rides its PARENT's frame, so a planet and its moons travel as one destination.
             // It used to ride a static frame of its own, which pinned the whole family in place.
+            // A moon's size comes from the SAME derivation a descent will realize it with, so the
+            // moon a pilot sees from orbit is the moon he lands on.
+            BodyProfile moonProfile = PlanetDerivation.derive(seed, anchor, parent, j, star, true,
+                    parentOrbit);
             bodies.add(new SystemBody(parent, parentFrame, law, SystemBodyKind.MOON,
-                    Constants.INVALID_PLANET, starId, parentOrbit));
+                    Constants.INVALID_PLANET, starId, parentOrbit)
+                    .withRadius(moonProfile.radiusEarths()));
         }
     }
 

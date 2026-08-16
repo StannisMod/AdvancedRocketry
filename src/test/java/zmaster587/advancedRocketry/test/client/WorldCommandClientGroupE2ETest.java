@@ -60,7 +60,7 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
     private static final Pattern DIM_LINE = Pattern.compile("DIM(\\d+):");
     private static final Pattern PLAYER_NAME = Pattern.compile("\"player\":\"([^\"]+)\"");
     private static final Pattern STATION_ID = Pattern.compile("\"id\":(-?\\d+)");
-    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     /** The space dim, where {@code /ar goto station} lands the player. */
     private static final int SPACE_DIM = -2;
@@ -241,7 +241,7 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
         scenario().arranging("op the bot and generate a planet to travel to");
         opTheBot();
         String before = exec("ar planet list");
-        exec("ar planet generate 0 GotoTarget 10 10 10");
+        exec("ar planet generate 0 GotoTarget");
         String after = exec("ar planet list");
         int targetDim = newDimFromDiff(before, after);
         scenario().record("targetDim", targetDim);
@@ -284,7 +284,7 @@ public class WorldCommandClientGroupE2ETest extends AbstractSharedClientE2ETest 
                 + " comparison below has nothing to change FROM; got '" + home + "'", !home.isEmpty());
 
         String before = exec("ar planet list");
-        exec("ar planet generate 0 WorldTypeTarget 10 10 10");
+        exec("ar planet generate 0 WorldTypeTarget");
         String after = exec("ar planet list");
         int targetDim = newDimFromDiff(before, after);
         scenario().record("targetDim", targetDim);

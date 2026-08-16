@@ -425,10 +425,11 @@ public class BoundarySky extends IRenderHandler {
 
         float yaw = (float) Math.toDegrees(Math.atan2(nx, nz));
         float pitch = (float) Math.toDegrees(Math.asin(Math.max(-1.0F, Math.min(1.0F, ny))));
-        // The vector's LENGTH is the true distance to the body at the broadcast tick, so apparent
-        // size follows it. A fixed size made a moon at 3 km and one at 59 km indistinguishable, and
-        // left "the planet is crawling away" a thing the sky could not show at all.
-        float half = ApparentSize.halfSizeFor(len);
+        // Apparent size follows the ANGLE the body subtends — its own radius over the true distance
+        // at the broadcast tick. Distance alone made a moon at 3 km and one at 59 km
+        // indistinguishable; radius alone would not move as a ship approaches. Both, and a giant
+        // beside a moon finally looks like one.
+        float half = ApparentSize.halfSizeFor(body.radiusBlocks, len);
 
         // The STRICT dimension lookup: the lenient one answers an unknown dimension with the
         // OVERWORLD's properties, so the star -- which has no dimension of its own -- was drawn

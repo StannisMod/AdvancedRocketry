@@ -88,6 +88,21 @@ public interface IGalaxyGenerator {
      * {@code minSpacingCells}-cube. The registry uses it to attribute member cells of AUTHORED systems and
      * to bound body-offset clamping ({@code radius <= minSpacingCells/2 - margin}).
      */
+    /**
+     * The DERIVED retinue an AUTHORED system asks for — {@code count} major bodies from
+     * {@code (seed, anchor)}, avoiding {@code takenCells}.
+     *
+     * <p>Default: none. A generator with no procedural content has no retinue to lend, and an
+     * authored system then holds exactly what its pack authored — which is the honest answer rather
+     * than a stub, and is what the {@code EmptyGalaxyGenerator} means.</p>
+     */
+    default java.util.List<SystemBody> authoredRetinueFor(long seed,
+            zmaster587.advancedRocketry.space.GalacticCoord anchor,
+            zmaster587.advancedRocketry.api.dimension.solar.StellarBody star, int starId, int count,
+            java.util.Set<String> takenCells) {
+        return java.util.Collections.emptyList();
+    }
+
     default int minSpacingCells() {
         return GalaxyGenConfig.DEFAULT_MIN_SPACING;
     }

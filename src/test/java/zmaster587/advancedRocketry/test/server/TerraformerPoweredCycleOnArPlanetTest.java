@@ -68,9 +68,10 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
     @Before
     public void generatePlanet() throws Exception {
         Set<Integer> before = arDims();
-        // Args 10 10 10 are positive randomness factors — see
-        // WorldCommandPlanetLifecycleContractTest for the same idiom.
-        exec("ar planet generate 0 Phase1aTerraformer 10 10 10");
+        // The world is DERIVED, not rolled: /ar planet generate lost its three randomness arguments
+        // with the legacy generator behind them, so the same command on the same seed now mints the
+        // same planet.
+        exec("ar planet generate 0 Phase1aTerraformer");
         Set<Integer> diff = arDims();
         diff.removeAll(before);
         assertEquals("planet generate must add exactly one dim — diff=" + diff,
@@ -125,7 +126,17 @@ public class TerraformerPoweredCycleOnArPlanetTest extends AbstractSharedServerT
         assertTrue("controller-state probe missing batteries readout — " + preState,
                 preState.contains("\"batteriesPresent\":true"));
 
+        // ARRANGE the starting density instead of taking whatever the world hands over. The
+        // terraformer only steps UP while density is below its ceiling of 1600, and a planet's
+        // pressure is now DERIVED from its own physics — so a fixture that inherits it can be handed
+        // a world already AT the ceiling and then measures nothing. (It was: this leg failed with
+        // before=1600 after=1600 while its two siblings passed, which is what a fixture at the
+        // ceiling looks like, not a terraformer that does not work.) The subject is whether a
+        // powered, fuelled terraformer MOVES the density; where it starts is arrangement.
+        exec("ar planet set " + newDim + " atmosphereDensity 100");
         int densityBefore = readDensity();
+        assertTrue("arrangement: the planet must start below the terraformer's ceiling, got "
+                + densityBefore, densityBefore < 1600);
         // Refill loop: terraformer needs BOTH N2 and O2 each tick.
         // TileFluidHatch holds one fluid per tank — so split: hatch 0+1
         // are N2 sources, hatch 2+3 are O2 sources. The controller's

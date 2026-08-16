@@ -27,7 +27,23 @@ public class ShipChunkAllocator {
      */
     public static final int MAX_CHUNK_LENGTH = 3200; // Who even really cares tbh
     public static final int MAX_CHUNK_RADIUS = (MAX_CHUNK_LENGTH / 2) - 1;
-    public static final int CHUNK_X_START = 320000;
+    /**
+     * Where the reserved shipyard begins, in chunks. Raised from upstream's 320000 (block X
+     * 5 094 416 once {@link #MAX_CHUNK_RADIUS} is taken off) to 1 200 000 (block X 19 174 416),
+     * because {@link #isChunkInShipyard} is what a teleport into the region is silently cancelled
+     * by — so this constant, not anything in vanilla, is the wall that bounds how far a ship may be
+     * posed from the origin. It is paired with {@code GalacticCoord.CELL}: a 16M half-cell needs
+     * clearance to 16M plus room to manoeuvre, and this leaves 3.17M of it.
+     *
+     * <p>Note the asymmetry the move does NOT fix: the predicate is a half-PLANE, so it reserves the
+     * whole quadrant out to the world edge while the allocator only ever walks a strip in +Z.</p>
+     *
+     * <p><b>Timing.</b> The allocator's cursor ({@code lastChunkX}/{@code lastChunkZ}) is SERIALIZED
+     * into the world, and this constant is not — so a world created before this change restores the
+     * old cursor and keeps allocating outside the new predicate. The move therefore has to land
+     * before the release ships, not merely "sometime under the clean break".</p>
+     */
+    public static final int CHUNK_X_START = 1200000;
     public static final int CHUNK_Z_START = 0;
     private int lastChunkX = CHUNK_X_START;
     private int lastChunkZ = CHUNK_Z_START;

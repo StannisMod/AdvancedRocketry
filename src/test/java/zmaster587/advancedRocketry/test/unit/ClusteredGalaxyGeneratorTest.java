@@ -22,6 +22,7 @@ import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -565,5 +566,88 @@ public class ClusteredGalaxyGeneratorTest {
             keys.add(a.cellKey());
         }
         return keys;
+    }
+
+    // ─── the retinue an AUTHORED system gets: one generator, never two ─────────
+
+    private static zmaster587.advancedRocketry.api.dimension.solar.StellarBody authoredStar() {
+        zmaster587.advancedRocketry.api.dimension.solar.StellarBody star =
+                new zmaster587.advancedRocketry.api.dimension.solar.StellarBody();
+        star.setName("Authored");
+        star.setId(0);
+        star.setSize(1f);
+        star.setTemperature(100);
+        return star;
+    }
+
+    @Test
+    public void anAuthoredSystemsDerivedRetinueIsTheSameEverySave() {
+        // The whole reason the legacy generator had to go: it drew from
+        // new Random(System.currentTimeMillis()), so two saves of one seed held different worlds and
+        // nothing about a system could be predicted, reproduced or reported.
+        ClusteredGalaxyGenerator g = new ClusteredGalaxyGenerator(defaultsCfg());
+        GalacticCoord anchor = cell(0, 0, 0);
+
+        List<SystemBody> first = g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 6,
+                java.util.Collections.<String>emptySet());
+        List<SystemBody> again = g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 6,
+                java.util.Collections.<String>emptySet());
+
+        assertEquals("the same seed must produce the same system, body for body", first, again);
+        assertTrue("...and it must actually produce one", first.size() > 1);
+
+        List<SystemBody> otherSeed = g.authoredRetinueFor(SEED + 1L, anchor, authoredStar(), 0, 6,
+                java.util.Collections.<String>emptySet());
+        assertNotEquals("a different seed must produce a different system, or the derivation ignores"
+                + " its seed and determinism is vacuous", first, otherSeed);
+    }
+
+    @Test
+    public void aPacksBodyCountBoundsWhatItsStarGets() {
+        // The pack-facing knob the legacy generator consumed: a pack that asks for more worlds gets
+        // more of them. Stated as a bound rather than an equality, because the drawn orbits still
+        // decide how many FIT — a system squeezed by its neighbours holds fewer worlds rather than
+        // the same worlds at the wrong distances.
+        ClusteredGalaxyGenerator g = new ClusteredGalaxyGenerator(defaultsCfg());
+        GalacticCoord anchor = cell(0, 0, 0);
+
+        int few = majorBodies(g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 2,
+                java.util.Collections.<String>emptySet()));
+        int many = majorBodies(g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 10,
+                java.util.Collections.<String>emptySet()));
+
+        assertTrue("asking for two must not hand out more than two worlds, got " + few, few <= 2);
+        assertTrue("asking for ten must hand out more than asking for two (" + few + " -> " + many
+                + ")", many > few);
+    }
+
+    @Test
+    public void anAuthoredWorldsCellIsNeverTakenByADerivedOne() {
+        // The authored system wins: a pack's own world may not be displaced, or shadowed, by a body
+        // the generator drew.
+        ClusteredGalaxyGenerator g = new ClusteredGalaxyGenerator(defaultsCfg());
+        GalacticCoord anchor = cell(0, 0, 0);
+        List<SystemBody> free = g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 6,
+                java.util.Collections.<String>emptySet());
+        assertTrue("arrangement: the free draw must place something to reserve", free.size() > 1);
+
+        java.util.Set<String> reserved = new java.util.HashSet<>();
+        for (SystemBody b : free) {
+            reserved.add(b.name().cellKey());
+        }
+        for (SystemBody b : g.authoredRetinueFor(SEED, anchor, authoredStar(), 0, 6, reserved)) {
+            assertFalse("a derived body landed on a cell the authored system holds: "
+                    + b.name().cellKey(), reserved.contains(b.name().cellKey()));
+        }
+    }
+
+    private static int majorBodies(List<SystemBody> bodies) {
+        int n = 0;
+        for (SystemBody b : bodies) {
+            if (b.kind() == SystemBodyKind.PLANET || b.kind() == SystemBodyKind.GAS_GIANT) {
+                n++;
+            }
+        }
+        return n;
     }
 }

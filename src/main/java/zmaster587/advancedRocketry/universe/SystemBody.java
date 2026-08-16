@@ -42,6 +42,14 @@ public final class SystemBody {
     /** Sentinel for {@link #orbitalDistance()}: this body has no orbit of its own (a star, a POI). */
     public static final int ORBIT_UNKNOWN = 0;
 
+    /**
+     * Sentinel for {@link #radiusEarths()}: this body has no radius of its own — a belt, a POI,
+     * anything that is not a sphere. NOT "we forgot to set one": a consumer draws such a body at its
+     * minimum size rather than guessing, because guessing is how a moon and a gas giant came to be
+     * drawn identically.
+     */
+    public static final double RADIUS_UNKNOWN = 0d;
+
     private final GalacticCoord name;
     private final CellFrame frame;
     private final BodyEphemeris offsetLaw;
@@ -49,6 +57,8 @@ public final class SystemBody {
     private final int dimId;
     private final int starId;
     private final int orbitalDistance;
+    /** This body's own radius in EARTH radii, or {@link #RADIUS_UNKNOWN}. See {@link #radiusEarths()}. */
+    private final double radiusEarths;
 
     /**
      * A body at rest in a STATIC frame — the reading for a POI, a fixture, or anything derived
@@ -87,6 +97,12 @@ public final class SystemBody {
 
     public SystemBody(GalacticCoord name, CellFrame frame, BodyEphemeris offsetLaw,
                       SystemBodyKind kind, int dimId, int starId, int orbitalDistance) {
+        this(name, frame, offsetLaw, kind, dimId, starId, orbitalDistance, RADIUS_UNKNOWN);
+    }
+
+    public SystemBody(GalacticCoord name, CellFrame frame, BodyEphemeris offsetLaw,
+                      SystemBodyKind kind, int dimId, int starId, int orbitalDistance,
+                      double radiusEarths) {
         if (name == null) {
             throw new NullPointerException("name");
         }
@@ -100,6 +116,27 @@ public final class SystemBody {
         this.dimId = dimId;
         this.starId = starId;
         this.orbitalDistance = orbitalDistance;
+        this.radiusEarths = Double.isNaN(radiusEarths) || radiusEarths < 0d
+                ? RADIUS_UNKNOWN : radiusEarths;
+    }
+
+    /**
+     * How big this body actually is, in EARTH radii, or {@link #RADIUS_UNKNOWN}.
+     *
+     * <p>A body's size is a property of the body, and it travels with it because nothing downstream
+     * can recover it: a procedural world has no dimension to look it up in until somebody lands on
+     * it, and the render feed reaches a client that cannot see the universe registry at all. Until
+     * this existed the sky sized every body by DISTANCE alone, so a moon and a gas giant beside each
+     * other drew identically.</p>
+     */
+    public double radiusEarths() {
+        return radiusEarths;
+    }
+
+    /** The same body, carrying {@code radiusEarths}. The generators' way of stating a body's size. */
+    public SystemBody withRadius(double newRadiusEarths) {
+        return new SystemBody(name, frame, offsetLaw, kind, dimId, starId, orbitalDistance,
+                newRadiusEarths);
     }
 
     private static GalacticCoord requireAddress(GalacticCoord address) {
@@ -220,7 +257,8 @@ public final class SystemBody {
     public SystemBody withFrame(CellFrame newFrame) {
         return newFrame == null || newFrame.equals(frame)
                 ? this
-                : new SystemBody(name, newFrame, offsetLaw, kind, dimId, starId, orbitalDistance);
+                : new SystemBody(name, newFrame, offsetLaw, kind, dimId, starId, orbitalDistance,
+                        radiusEarths);
     }
 
     public void writeToNBT(NBTTagCompound nbt) {
@@ -232,6 +270,9 @@ public final class SystemBody {
         nbt.setInteger("starId", starId);
         if (orbitalDistance != ORBIT_UNKNOWN) {
             nbt.setInteger("orbitalDist", orbitalDistance);
+        }
+        if (radiusEarths != RADIUS_UNKNOWN) {
+            nbt.setDouble("radiusEarths", radiusEarths);
         }
     }
 
@@ -247,7 +288,8 @@ public final class SystemBody {
                 kind,
                 nbt.hasKey("dimId") ? nbt.getInteger("dimId") : Constants.INVALID_PLANET,
                 nbt.getInteger("starId"),
-                nbt.getInteger("orbitalDist"));
+                nbt.getInteger("orbitalDist"),
+                nbt.getDouble("radiusEarths"));
     }
 
     @Override
@@ -261,6 +303,7 @@ public final class SystemBody {
         SystemBody other = (SystemBody) o;
         return dimId == other.dimId && starId == other.starId && kind == other.kind
                 && orbitalDistance == other.orbitalDistance
+                && Double.compare(radiusEarths, other.radiusEarths) == 0
                 && name.equals(other.name) && offsetLaw.equals(other.offsetLaw)
                 && frame.equals(other.frame);
     }
@@ -272,6 +315,7 @@ public final class SystemBody {
         result = 31 * result + dimId;
         result = 31 * result + starId;
         result = 31 * result + orbitalDistance;
+        result = 31 * result + Double.hashCode(radiusEarths);
         result = 31 * result + offsetLaw.hashCode();
         return result;
     }
@@ -282,10 +326,41 @@ public final class SystemBody {
                 + (offsetLaw.isStatic() ? "" : " +orbit") + "]";
     }
 
+    /**
+     * An in-cell offset held inside the cell, <b>reporting the first time it has to</b>.
+     *
+     * <p>The clamp itself is right: a body outside its own neighbourhood would be a body in a
+     * different cell, so saturating is the only safe answer. What was wrong is that it was SILENT.
+     * An orbit that overflows does not fail — every point of it beyond the face collapses onto the
+     * face, so a giant's outer moons stack at one spot and stop moving, which is a defect that gets
+     * looked for in the renderer, in the ephemeris and in the frame before anyone suspects a clamp.
+     * One line per axis per JVM run, naming the overflow, turns a week into a grep.</p>
+     */
     private static long clampInCell(long v) {
         if (v > MAX_IN_CELL) {
+            reportOverflow(v, MAX_IN_CELL);
             return MAX_IN_CELL;
         }
-        return v < -GalacticCoord.HALF_CELL ? -GalacticCoord.HALF_CELL : v;
+        if (v < -GalacticCoord.HALF_CELL) {
+            reportOverflow(v, -GalacticCoord.HALF_CELL);
+            return -GalacticCoord.HALF_CELL;
+        }
+        return v;
     }
+
+    /** Said ONCE per distinct overflow magnitude: a flooded log is a log nobody reads either. */
+    private static void reportOverflow(long raw, long clamped) {
+        if (REPORTED_OVERFLOWS.add(raw / GalacticCoord.CELL)) {
+            LOGGER.error("a body's in-cell offset {} is outside its own cell (half-cell {}) and was "
+                            + "flattened onto the face at {}. Every further point of that orbit lands "
+                            + "on the same spot, so the body will appear to stop moving: its orbit is "
+                            + "wider than the cell that names it.",
+                    raw, GalacticCoord.HALF_CELL, clamped);
+        }
+    }
+
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            org.apache.logging.log4j.LogManager.getLogger("advancedrocketry/universe");
+    private static final java.util.Set<Long> REPORTED_OVERFLOWS =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
 }

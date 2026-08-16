@@ -64,6 +64,50 @@ public class AstronomicalBodyHelper {
      */
     public static final long BLOCKS_PER_ORBIT_UNIT = BLOCKS_PER_AU / DISTANCE_UNITS_PER_AU;
 
+    /**
+     * The smallest orbit, in {@code orbitalDistance} units, that can carry an ADDRESS of its own —
+     * one cell's worth. A body closer in than this shares its star's cell, and a cell is a
+     * destination: two bodies in one would be one indistinguishable address that neither a jump nor
+     * an arrival could resolve.
+     *
+     * <p>So it is the addressing granularity of the whole universe layer, and it is <b>derived from
+     * the cell edge, never picked</b>. It used to be picked — the companion band's floor was a
+     * literal {@code 1} with a comment saying it was one cell's worth, which was true at a 4M cell
+     * (0.67 units) and stopped being true the moment the cell grew. A number whose javadoc states a
+     * derivation should BE that derivation.</p>
+     *
+     * <p>What it costs, said plainly: a bigger cell buys reach and spends inner resolution. At a 32M
+     * cell this is 6 units = 0.06 AU, so a contact binary or a body orbiting closer than that cannot
+     * be a separate destination — it is not generated rather than being generated unreachable.</p>
+     */
+    public static final int MIN_ADDRESSABLE_ORBIT_UNITS = (int) Math.max(1L,
+            (zmaster587.advancedRocketry.space.GalacticCoord.CELL + BLOCKS_PER_ORBIT_UNIT - 1L)
+                    / BLOCKS_PER_ORBIT_UNIT);
+
+    /**
+     * Earth radii in one SOLAR radius (696 340 km / 6 378 km). A star states its size in solar radii
+     * and every other body in Earth radii, so anything that draws them on one scale needs this.
+     */
+    public static final double EARTH_RADII_PER_SOLAR_RADIUS = 109.17d;
+
+    /**
+     * A star's radius in EARTH radii — the unit the render feed sizes every body in.
+     *
+     * <p>{@code StellarBody.getSize()} is in solar radii, so a star fed straight into a body-sized
+     * channel would be drawn a hundred times too small. A star with no stated size falls back to one
+     * solar radius rather than to zero: a sun that vanishes is worse than a sun of the wrong size.</p>
+     */
+    public static double starRadiusEarths(zmaster587.advancedRocketry.api.dimension.solar.StellarBody star) {
+        if (star == null) {
+            return EARTH_RADII_PER_SOLAR_RADIUS;
+        }
+        double solarRadii = star.getSize();
+        if (Double.isNaN(solarRadii) || solarRadii <= 0d) {
+            solarRadii = 1d;
+        }
+        return solarRadii * EARTH_RADII_PER_SOLAR_RADIUS;
+    }
+
     /** Earth's equatorial radius in metres — the unit a body's {@code radius} is stated in. */
     public static final double EARTH_RADIUS_METRES = 6_378_137d;
     /** Earth's radius in chart blocks: what one unit of a body's radius is worth on the chart. */

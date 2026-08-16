@@ -86,6 +86,8 @@ public class StellarBody {
      * registry's job, because the id space is the registry's; this method only states the
      * relationship.</p>
      */
+    private int maxRetinueBodies;
+
     public void addSubStar(StellarBody star) {
         if (star.name == null)
             star.setName(name + "-" + (subStars.size() + 1));
@@ -93,6 +95,25 @@ public class StellarBody {
             star.baseTheta = subStars.size() * GOLDEN_ANGLE;
         subStars.add(star);
         star.parentStar = this;
+    }
+
+    /**
+     * How many DERIVED worlds this authored system asks for — the pack's own {@code numPlanets} plus
+     * {@code numGasGiants}, carried past XML load so the universe layer can honour it.
+     *
+     * <p>It used to be consumed at world creation by a random generator seeded on the wall clock, so
+     * two saves of one seed differed and the same defect had to be fixed in two world-making models.
+     * The number survives; the second model does not. Planets and giants are ONE count here because
+     * giant-ness is derived from a body's own physics — the procedural model does not take it as an
+     * instruction.</p>
+     */
+    public int getMaxRetinueBodies() {
+        return maxRetinueBodies;
+    }
+
+    /** State how many derived worlds this system asks for; negative reads as none. */
+    public void setMaxRetinueBodies(int count) {
+        this.maxRetinueBodies = Math.max(0, count);
     }
 
     /** This star's primary, or {@code null} when it is the one its system is named for. */

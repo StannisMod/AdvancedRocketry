@@ -253,163 +253,6 @@ public class DimensionManager implements IGalaxy {
         return -1;
     }
 
-    public DimensionProperties generateRandom(int starId, int atmosphereFactor, int distanceFactor, int gravityFactor) {
-        return generateRandom(starId, 100, 100, 100, atmosphereFactor, distanceFactor, gravityFactor);
-    }
-
-    public DimensionProperties generateRandom(int starId, String name, int atmosphereFactor, int distanceFactor, int gravityFactor) {
-        return generateRandom(starId, name, 100, 100, 100, atmosphereFactor, distanceFactor, gravityFactor);
-    }
-
-    /**
-     * Creates and registers a planet with the given properties, Xfactor is the amount of variance from the supplied base property; ie: base - (factor/2) <= generated property value <= base - (factor/2)
-     *
-     * @param name             name of the planet
-     * @param baseAtmosphere
-     * @param baseDistance
-     * @param baseGravity
-     * @param atmosphereFactor
-     * @param distanceFactor
-     * @param gravityFactor
-     * @return the new dimension properties created for this planet
-     */
-    public DimensionProperties generateRandom(int starId, String name, int baseAtmosphere, int baseDistance, int baseGravity, int atmosphereFactor, int distanceFactor, int gravityFactor) {
-        DimensionProperties properties = new DimensionProperties(getNextFreeDim(dimOffset));
-
-        if (properties.getId() == Constants.INVALID_PLANET) return null;
-
-        if (name.equals("")) properties.setName(getNextName(starId, properties.getId()));
-        else {
-            properties.setName(name);
-        }
-        properties.setAtmosphereDensityDirect(MathHelper.clamp(baseAtmosphere + random.nextInt(atmosphereFactor) - atmosphereFactor / 2, DimensionProperties.MIN_ATM_PRESSURE, DimensionProperties.MAX_ATM_PRESSURE));
-        int newDist = properties.orbitalDist = MathHelper.clamp(baseDistance + random.nextInt(distanceFactor), DimensionProperties.MIN_DISTANCE, DimensionProperties.MAX_DISTANCE);
-
-        properties.gravitationalMultiplier = Math.min(Math.max(0.05f, (baseGravity + random.nextInt(gravityFactor) - gravityFactor / 2f) / 100f), 1.3f);
-
-        double minDistance;
-        int walkDist = 0;
-
-        do {
-            minDistance = Double.MAX_VALUE;
-
-            for (IDimensionProperties properties2 : getStar(starId).getPlanets()) {
-                int dist = Math.abs(((DimensionProperties) properties2).orbitalDist - newDist);
-                if (minDistance > dist) minDistance = dist;
-            }
-
-            newDist = properties.orbitalDist + walkDist;
-            if (walkDist > -1) walkDist = -walkDist - 1;
-            else walkDist = -walkDist;
-
-        } while (minDistance < 4);
-
-        properties.orbitalDist = newDist;
-        properties.baseOrbitTheta = random.nextInt(360) * Math.PI / 180d;
-
-        properties.orbitalPhi = (random.nextGaussian() - 0.5d) * 180;
-        properties.rotationalPhi = (random.nextGaussian() - 0.5d) * 180;
-
-        //Get Star Color
-        properties.setStar(getStar(starId));
-
-        //Linear is easier. Earth is nominal!
-        properties.averageTemperature = AstronomicalBodyHelper.getAverageTemperature(properties.getStar(), properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity());
-
-
-        if (AtmosphereTypes.getAtmosphereTypeFromValue(properties.getAtmosphereDensity()) == AtmosphereTypes.NONE && random.nextInt() % 5 == 0 && !AdvancedRocketryFluids.fluidOxygen.isGaseous()) {
-            properties.setOceanBlock(AdvancedRocketryBlocks.blockOxygenFluid.getDefaultState());
-            properties.setSeaLevel(random.nextInt(6) + 72);
-        }
-
-        if (random.nextInt() % 10 == 0) {
-            properties.setSeaLevel(random.nextInt(40) + 43);
-        }
-
-        properties.skyColor[0] *= 1 - MathHelper.clamp(random.nextFloat() * 0.1f + (70 - (properties.averageTemperature / 3f)) / 100f, 0.2f, 1);
-        properties.skyColor[1] *= 1 - (random.nextFloat() * .5f);
-        properties.skyColor[2] *= 1 - MathHelper.clamp(random.nextFloat() * 0.1f + ((properties.averageTemperature / 3f) - 70) / 100f, 0, 1);
-
-        if (random.nextInt() % 50 == 0) {
-            properties.setHasRings(true);
-            properties.ringColor[0] = properties.skyColor[0];
-            properties.ringColor[1] = properties.skyColor[1];
-            properties.ringColor[2] = properties.skyColor[2];
-        }
-
-        // A day is DRAWN, log-uniform between a quarter and four times the default. It used to be
-        // (1/g)^3 * DEFAULT — a fabricated law that made spin a function of surface gravity, which has
-        // no bearing on it, so a half-gravity world got a day eight times longer than Earth's.
-        double spinFactor = 0.25d * Math.pow(16d, random.nextDouble());
-        properties.rotationalPeriod = (int) Math.max(1L, Math.round(spinFactor
-                * DimensionProperties.DEFAULT_ROTATIONAL_PERIOD));
-
-        properties.addBiomes(properties.getViableBiomes(true));
-        properties.initDefaultAttributes();
-
-        registerDim(properties, true);
-        return properties;
-    }
-
-    public DimensionProperties generateRandom(int starId, int baseAtmosphere, int baseDistance, int baseGravity, int atmosphereFactor, int distanceFactor, int gravityFactor) {
-        return generateRandom(starId, "", baseAtmosphere, baseDistance, baseGravity, atmosphereFactor, distanceFactor, gravityFactor);
-    }
-
-    public DimensionProperties generateRandomGasGiant(int starId, String name, int baseAtmosphere, int baseDistance, int baseGravity, int atmosphereFactor, int distanceFactor, int gravityFactor) {
-        DimensionProperties properties = new DimensionProperties(getNextFreeDim(dimOffset));
-
-        if (name.isEmpty()) properties.setName(getNextName(starId, properties.getId()));
-        else {
-            properties.setName(name);
-        }
-        properties.setAtmosphereDensityDirect(MathHelper.clamp(baseAtmosphere + random.nextInt(atmosphereFactor) - atmosphereFactor / 2, DimensionProperties.MIN_ATM_PRESSURE, DimensionProperties.MAX_ATM_PRESSURE));
-        properties.orbitalDist = MathHelper.clamp(baseDistance + random.nextInt(distanceFactor), DimensionProperties.MIN_DISTANCE, 800);
-        //System.out.println(properties.orbitalDist);
-        properties.gravitationalMultiplier = Math.min(Math.max(0.05f, (baseGravity + random.nextInt(gravityFactor) - gravityFactor / 2f) / 100f), 1.3f);
-
-        double minDistance;
-
-        do {
-            minDistance = Double.MAX_VALUE;
-
-            properties.orbitTheta = random.nextInt(360) * (2f * Math.PI) / 360f;
-
-            for (IDimensionProperties properties2 : getStar(starId).getPlanets()) {
-                double dist = Math.abs(((DimensionProperties) properties2).orbitTheta - properties.orbitTheta);
-                if (dist < minDistance) minDistance = dist;
-            }
-
-        } while (minDistance < (Math.PI / 40f));
-
-        //Get Star Color
-        properties.setStar(getStar(starId));
-
-        //Linear is easier. Earth is nominal!
-        properties.averageTemperature = AstronomicalBodyHelper.getAverageTemperature(properties.getStar(), properties.getSolarOrbitalDistance(), properties.getAtmosphereDensity());
-        properties.setGasGiant(true);
-
-        // Rings belong to giants, and on a giant they are the RULE rather than a flourish: all four of
-        // the Solar System's have them, because only a body that massive has a Roche limit reaching far
-        // enough past its own surface for a moon to have come apart out there. The rocky-planet path
-        // still rolls its rare 1-in-50; this is the same story told where it actually happens.
-        if (random.nextInt(4) != 0) {
-            properties.setHasRings(true);
-            properties.ringColor[0] = properties.skyColor[0];
-            properties.ringColor[1] = properties.skyColor[1];
-            properties.ringColor[2] = properties.skyColor[2];
-        }
-
-        // Add all gasses for the default world
-        for (FluidGasGiantGas gas : AdvancedRocketryFluids.getGasGiantGasses()) {
-            if (((properties.gravitationalMultiplier * 100) >= gas.getMinGravity()) && (gas.getMaxGravity() >= (properties.gravitationalMultiplier * 100)) && 0 > (Math.random() - gas.getChance())) {
-                properties.getHarvestableGasses().add(gas.getFluid());
-            }
-        }
-
-        registerDim(properties, true);
-        return properties;
-    }
-
     /**
      * @param dimId dimension id to check
      * @return true if it can be traveled to, in general if it has a surface
@@ -814,81 +657,6 @@ public class DimensionManager implements IGalaxy {
         return knownPlanets != null && knownPlanets.contains(dimId);
     }
 
-    private List<DimensionProperties> generateRandomPlanets(StellarBody star, int numRandomGeneratedPlanets, int numRandomGeneratedGasGiants) {
-        List<DimensionProperties> dimPropList = new LinkedList<>();
-
-        Random random = new Random(System.currentTimeMillis());
-
-
-        for (int i = 0; i < numRandomGeneratedGasGiants; i++) {
-            int baseAtm = 180;
-            int baseDistance = 100;
-
-            // Atmosphere first, then distance — the order the signature declares. These two arguments
-            // were swapped, and it was invisible because both quantities sit near 100 while meaning
-            // entirely different things (see AstronomicalBodyHelper's header: the distance, atmosphere
-            // and star-temperature scales are three separate 100s). A giant is thick-aired and far
-            // out; swapped, it came out thin-aired at 180 distance units.
-            DimensionProperties properties = DimensionManager.getInstance().generateRandomGasGiant(star.getId(), "", baseAtm, baseDistance + 50, 125, 100, 100, 75);
-
-            dimPropList.add(properties);
-            if (properties.gravitationalMultiplier >= 1f) {
-                int numMoons = random.nextInt(8);
-
-                for (int ii = 0; ii < numMoons; ii++) {
-                    DimensionProperties moonProperties = DimensionManager.getInstance().generateRandom(star.getId(), properties.getName() + ": " + ii, 25, 100, (int) (properties.gravitationalMultiplier / .02f), 25, 100, 50);
-                    if (moonProperties == null) continue;
-
-                    dimPropList.add(moonProperties);
-
-                    moonProperties.setParentPlanet(properties);
-                    star.removePlanet(moonProperties);
-                }
-            }
-        }
-
-        for (int i = 0; i < numRandomGeneratedPlanets; i++) {
-            int baseAtm = 75;
-            int baseDistance = 100;
-
-            if (i % 4 == 0) {
-                baseAtm = 0;
-            } else if (i != 6 && (i + 2) % 4 == 0) baseAtm = 120;
-
-            if (i % 3 == 0) {
-                baseDistance = 170;
-            } else if ((i + 1) % 3 == 0) {
-                baseDistance = 30;
-            }
-
-            // Atmosphere first, then distance — see the gas-giant call above; the same two arguments
-            // were swapped here. The tables say what was meant: baseAtm is driven by i % 4 to 0 or 120
-            // (an atmosphere table, including the airless world every fourth planet was to be), and
-            // baseDistance by i % 3 to 170 or 30 (a distance table).
-            DimensionProperties properties = DimensionManager.getInstance().generateRandom(star.getId(), baseAtm, baseDistance, 125, 100, 100, 75);
-
-            if (properties == null) continue;
-
-            dimPropList.add(properties);
-
-            if (properties.gravitationalMultiplier >= 1f) {
-                int numMoons = random.nextInt(4);
-
-                for (int ii = 0; ii < numMoons; ii++) {
-                    DimensionProperties moonProperties = DimensionManager.getInstance().generateRandom(star.getId(), properties.getName() + ": " + ii, 25, 100, (int) (properties.gravitationalMultiplier / .02f), 25, 100, 50);
-
-                    if (moonProperties == null) continue;
-
-                    dimPropList.add(moonProperties);
-                    moonProperties.setParentPlanet(properties);
-                    star.removePlanet(moonProperties);
-                }
-            }
-        }
-
-        return dimPropList;
-    }
-
     @Nullable
     private File getCurrentSaveRootDirectory() {
         File dir = net.minecraftforge.common.DimensionManager.getCurrentSaveRootDirectory();
@@ -971,9 +739,13 @@ public class DimensionManager implements IGalaxy {
                 }
 
                 for (StellarBody star : dimCouplingList.stars) {
-                    numRandomGeneratedPlanets = loader.getMaxNumPlanets(star);
-                    numRandomGeneratedGasGiants = loader.getMaxNumGasGiants(star);
-                    dimCouplingList.dims.addAll(generateRandomPlanets(star, numRandomGeneratedPlanets, numRandomGeneratedGasGiants));
+                    // The pack's body count is CARRIED, not consumed. It used to be spent here by a
+                    // second world-making model seeded on the wall clock, which registered its worlds
+                    // as Forge dimensions up front and made two saves of one seed differ. The count
+                    // now bounds the ONE model's derived retinue for this system, and the worlds are
+                    // realized on arrival like everywhere else.
+                    star.setMaxRetinueBodies(loader.getMaxNumPlanets(star)
+                            + loader.getMaxNumGasGiants(star));
                 }
 
                 loadedFromXML = true;
@@ -1016,7 +788,8 @@ public class DimensionManager implements IGalaxy {
                     DimensionManager.getInstance().registerDimNoUpdate(dimensionProperties, !Loader.isModLoaded("GalacticraftCore"));
                 }
 
-                generateRandomPlanets(DimensionManager.getInstance().getStar(0), numRandomGeneratedPlanets, numRandomGeneratedGasGiants);
+                DimensionManager.getInstance().getStar(0)
+                        .setMaxRetinueBodies(numRandomGeneratedPlanets + numRandomGeneratedGasGiants);
 
                 StellarBody star = new StellarBody();
                 star.setTemperature(10);
@@ -1025,7 +798,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Wolf 12");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 5, 0);
+                star.setMaxRetinueBodies(5);
 
                 star = new StellarBody();
                 star.setTemperature(170);
@@ -1034,7 +807,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Epsilon ire");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 7, 0);
+                star.setMaxRetinueBodies(7);
 
                 star = new StellarBody();
                 star.setTemperature(200);
@@ -1043,7 +816,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Proxima Centaurs");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 3, 0);
+                star.setMaxRetinueBodies(3);
 
                 star = new StellarBody();
                 star.setTemperature(70);
@@ -1052,7 +825,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Magnis Vulpes");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 2, 0);
+                star.setMaxRetinueBodies(2);
 
 
                 star = new StellarBody();
@@ -1062,7 +835,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Ma-Roo");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 6, 0);
+                star.setMaxRetinueBodies(6);
 
                 star = new StellarBody();
                 star.setTemperature(120);
@@ -1071,7 +844,7 @@ public class DimensionManager implements IGalaxy {
                 star.setId(DimensionManager.getInstance().getNextFreeStarId());
                 star.setName("Alykitt");
                 DimensionManager.getInstance().addStar(star);
-                generateRandomPlanets(star, 3, 1);
+                star.setMaxRetinueBodies(4);
 
             }
         }
@@ -1137,11 +910,11 @@ public class DimensionManager implements IGalaxy {
             // duplicate random planets every load. Gate on the true first-run
             // discriminator: only generate randoms when no persisted dims exist.
             if (!loadedFromXML && loadedPlanets.isEmpty()) {
-                //Add planets
+                // Carry each system's body count into the universe layer instead of spending it on a
+                // second world-making model here — see the sibling site above.
                 for (StellarBody star : dimCouplingList.stars) {
-                    int numRandomGeneratedPlanets = loader.getMaxNumPlanets(star);
-                    int numRandomGeneratedGasGiants = loader.getMaxNumGasGiants(star);
-                    generateRandomPlanets(star, numRandomGeneratedPlanets, numRandomGeneratedGasGiants);
+                    star.setMaxRetinueBodies(loader.getMaxNumPlanets(star)
+                            + loader.getMaxNumGasGiants(star));
                 }
             }
 

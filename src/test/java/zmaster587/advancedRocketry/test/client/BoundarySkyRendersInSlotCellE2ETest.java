@@ -140,13 +140,23 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      * feed carries both kinds and so must the subject.</p>
      */
     private static final String[][] SYSTEM = {
-            {"768", "-1072", "-2652", "MOON", "0"},           // ~2 961 - the nearest descend target
-            {"-23443", "11940", "10363", "MOON", "0"},        // ~28 275
-            {"-30108", "-13988", "11037", "MOON", "0"},       // ~34 985
-            {"7644", "34614", "-16382", "GAS_GIANT", "-1"},   // ~39 050 - not a descend target
-            {"-42912", "-23517", "-24475", "MOON", "0"},      // ~54 713
-            {"-39818", "28442", "-33418", "MOON", "0"},       // ~59 255
+            {"768", "-1072", "-2652", "MOON", "0", "0.27"},           // ~2 961 - the nearest descend target
+            {"-23443", "11940", "10363", "MOON", "0", "0.27"},        // ~28 275
+            {"-30108", "-13988", "11037", "MOON", "0", "0.27"},       // ~34 985
+            {"7644", "34614", "-16382", "GAS_GIANT", "-1", "11.0"},   // ~39 050 - not a descend target
+            {"-42912", "-23517", "-24475", "MOON", "0", "0.27"},      // ~54 713
+            {"-39818", "28442", "-33418", "MOON", "0", "0.27"},       // ~59 255
     };
+
+    /** A body's radius in Earth radii, as the fixture states it — the sixth column above. */
+    private static double radiusEarths(int index) {
+        return Double.parseDouble(SYSTEM[index][5]);
+    }
+
+    /** The same, in the chart blocks the feed sends and the renderer sizes with. */
+    private static double radiusBlocks(int index) {
+        return radiusEarths(index) * zmaster587.advancedRocketry.util.AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS;
+    }
 
     /** The nearest descend target: the body a pilot has to find and fly at to descend at all. */
     private static final int NEAREST = 0;
@@ -318,8 +328,11 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
             emptyBefore = capture(slotDim, CELL_CAPTURE_Y, EMPTY_YAW, EMPTY_PITCH, "before_empty");
 
             for (String[] body : SYSTEM) {
+                // The radius is stated, not implied: since 2026-08-16 the sky sizes a body by the
+                // ANGLE it subtends, so a fixture that named no radius would draw six identical
+                // markers and the size legs below would be measuring nothing.
                 String poi = exec("artest space add-poi " + cell + " " + body[0] + " " + body[1] + " "
-                        + body[2] + " " + body[3] + " " + body[4] + " 7");
+                        + body[2] + " " + body[3] + " " + body[4] + " 7 " + body[5]);
                 assertTrue("add-poi must register the body: " + poi, poi.contains("\"ok\":true"));
             }
 
@@ -661,7 +674,8 @@ public class BoundarySkyRendersInSlotCellE2ETest extends AbstractClientE2ETest {
      * the client actually drew, so a build that drew nothing fails whatever the box is.
      */
     private static double discRadiusOf(int index) {
-        return Math.toDegrees(Math.atan(ApparentSize.halfSizeFor(distanceOf(index)) / 90.0)) / 70.0;
+        return Math.toDegrees(Math.atan(
+                ApparentSize.halfSizeFor(radiusBlocks(index), distanceOf(index)) / 90.0)) / 70.0;
     }
 
     /** How far the configured body {@code index} is from the settled ship, in blocks. */

@@ -8,8 +8,8 @@ public class PlanetCommand extends CommandTreeBase {
     public PlanetCommand() {
         addSubcommand(new PlanetResetCommand());
         addSubcommand(new PlanetListCommand());
-        addSubcommand(new PlanetDeleteCommand());
         addSubcommand(new PlanetGenerateCommand());
+        addSubcommand(new PlanetDeleteCommand());
         addSubcommand(new PlanetSetCommand());
         addSubcommand(new PlanetGetCommand());
         addSubcommand(new PlanetWeatherCommand());

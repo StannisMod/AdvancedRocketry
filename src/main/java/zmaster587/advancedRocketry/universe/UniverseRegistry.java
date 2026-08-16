@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -461,10 +463,12 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
         Integer id = byCell.get(key);
         if (id != null) {
             StellarBody star = starLookup.apply(id);
-            return star == null
-                    ? new ArrayList<SystemBody>()
-                    : SystemContent.bodiesOf(star, anchor, generator.minSpacingCells(),
-                            this::durableName);
+            if (star == null) {
+                return new ArrayList<SystemBody>();
+            }
+            List<SystemBody> authored = SystemContent.bodiesOf(star, anchor,
+                    generator.minSpacingCells(), this::durableName);
+            return withDerivedRetinue(anchor, star, id, authored);
         }
         return new ArrayList<>(generator.bodiesFor(worldSeed, anchor));
     }
@@ -1209,5 +1213,34 @@ public final class UniverseRegistry extends WorldSavedData implements CellFrames
             star.setName(name);
             return star;
         }
+    }
+
+    /**
+     * An authored system's bodies, plus the DERIVED worlds its pack asked for.
+     *
+     * <p>An authored system used to be filled by a second world-making model: a random generator seeded
+     * on {@code System.currentTimeMillis()} that registered Forge dimensions up front at world
+     * creation. It meant two saves of one seed differed, and every defect in this family had to be
+     * found and fixed twice in two models that answered the same question differently. The pack-facing
+     * knob survives as {@link StellarBody#getMaxRetinueBodies()}; the second model does not, and the
+     * worlds it used to mint are now derived from {@code (seed, cell)} and realized on arrival like
+     * every other world in the game.</p>
+     *
+     * <p>The authored bodies always win: their cells are handed to the derivation as already taken, so
+     * nothing derived can land on one. A system that asks for none is untouched.</p>
+     */
+    private List<SystemBody> withDerivedRetinue(GalacticCoord anchor, StellarBody star, int starId,
+                                                List<SystemBody> authored) {
+        int asked = star.getMaxRetinueBodies();
+        if (asked <= 0 || generator == null) {
+            return authored;
+        }
+        Set<String> taken = new HashSet<>();
+        for (SystemBody b : authored) {
+            taken.add(b.name().cellKey());
+        }
+        List<SystemBody> all = new ArrayList<>(authored);
+        all.addAll(generator.authoredRetinueFor(worldSeed, anchor, star, starId, asked, taken));
+        return all;
     }
 }

@@ -32,7 +32,8 @@ import java.util.Map;
  * {@code writeInt(slotDimId)}, {@code writeInt(bodyCount)} and, per body,
  * {@code writeInt(kindOrdinal)}, {@code writeLong(localX)}, {@code writeLong(localY)},
  * {@code writeLong(localZ)}, {@code writeInt(dimId)}, {@code writeBoolean(descendTarget)},
- * {@code writeLong(boundaryRadius)}; then the NEBULA half, {@code writeInt(dimCount)} and, per dim,
+ * {@code writeLong(boundaryRadius)}, {@code writeLong(radiusBlocks)}, {@code writeInt(parentIndex)};
+ * then the NEBULA half, {@code writeInt(dimCount)} and, per dim,
  * {@code writeInt(slotDimId)}, {@code writeInt(nebulaCount)} and, per cloud,
  * {@code writeFloat(dirX/dirY/dirZ)}, {@code writeFloat(angularRadius)},
  * {@code writeInt(appearanceOrdinal)}, {@code writeFloat(opacity)}.
@@ -49,6 +50,10 @@ public final class PacketSystemBodiesSync extends BasePacket {
 
     /** One render body for a slot dim: what to draw and where, plus the descend-target highlight flag. */
     public static final class RenderBody {
+
+        /** {@link #parentIndex} of a body that belongs to nothing — a star, a planet, a lone POI. */
+        public static final int NO_PARENT = -1;
+
         public final int kindOrdinal;
         public final long localX;
         public final long localY;
@@ -67,8 +72,39 @@ public final class PacketSystemBodiesSync extends BasePacket {
          */
         public final long boundaryRadius;
 
+        /**
+         * How big the body itself is, in blocks — its own radius on the chart metric, not the shell
+         * around it.
+         *
+         * <p>Sent because the client cannot derive it: the universe registry is server-side, and a
+         * procedural world has no dimension to read a radius out of until somebody lands on it.
+         * Without this the sky sized a body by DISTANCE alone, so a moon and a gas giant side by
+         * side drew exactly the same disc. Zero for anything that is not a sphere — a belt, a
+         * station slot — which a renderer must treat as "no size of its own" rather than as
+         * "infinitely small".</p>
+         */
+        public final long radiusBlocks;
+
+        /**
+         * Index, WITHIN THIS DIM'S BODY LIST, of the body this one belongs to — or {@code -1} for a
+         * body that belongs to nothing.
+         *
+         * <p>Structure, which is the half of the feed that was missing: a moon carried a direction
+         * and a size but no way to say whose moon it was, so the sky could draw a giant and its
+         * retinue and not tell a pilot they were one destination. An INDEX rather than an id because
+         * the list is sent as a unit and a procedural body has no id of any kind — it has no
+         * dimension until somebody lands on it.</p>
+         *
+         * <p>Resolved server-side from the invariant the universe layer already holds: a moon shares
+         * its parent's CELL, and a cell holds at most one real body with moons excepted. So the
+         * parent of a moon is the non-moon body of the same cell, and there is never a second
+         * candidate.</p>
+         */
+        public final int parentIndex;
+
         public RenderBody(int kindOrdinal, long localX, long localY, long localZ, int dimId,
-                          boolean descendTarget, long boundaryRadius) {
+                          boolean descendTarget, long boundaryRadius, long radiusBlocks,
+                          int parentIndex) {
             this.kindOrdinal = kindOrdinal;
             this.localX = localX;
             this.localY = localY;
@@ -76,12 +112,15 @@ public final class PacketSystemBodiesSync extends BasePacket {
             this.dimId = dimId;
             this.descendTarget = descendTarget;
             this.boundaryRadius = boundaryRadius;
+            this.radiusBlocks = radiusBlocks;
+            this.parentIndex = parentIndex;
         }
 
         @Override
         public String toString() {
             return "RenderBody{kind=" + kindOrdinal + ",dir=" + localX + "," + localY + "," + localZ
-                    + ",dim=" + dimId + ",descend=" + descendTarget + ",shell=" + boundaryRadius + "}";
+                    + ",dim=" + dimId + ",descend=" + descendTarget + ",shell=" + boundaryRadius
+                    + ",r=" + radiusBlocks + ",parent=" + parentIndex + "}";
         }
     }
 
@@ -206,6 +245,8 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 buffer.writeInt(b.dimId);
                 buffer.writeBoolean(b.descendTarget);
                 buffer.writeLong(b.boundaryRadius);
+                buffer.writeLong(b.radiusBlocks);
+                buffer.writeInt(b.parentIndex);
             }
         }
         buffer.writeInt(nebulaeByDim.size());
@@ -241,8 +282,10 @@ public final class PacketSystemBodiesSync extends BasePacket {
                 int dimId = buffer.readInt();
                 boolean descendTarget = buffer.readBoolean();
                 long boundaryRadius = buffer.readLong();
+                long radiusBlocks = buffer.readLong();
+                int parentIndex = buffer.readInt();
                 bodies.add(new RenderBody(kindOrdinal, localX, localY, localZ, dimId, descendTarget,
-                        boundaryRadius));
+                        boundaryRadius, radiusBlocks, parentIndex));
             }
             decoded.put(slotDimId, bodies);
         }

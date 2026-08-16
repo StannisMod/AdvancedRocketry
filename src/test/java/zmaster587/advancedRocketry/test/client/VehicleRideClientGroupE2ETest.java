@@ -72,8 +72,8 @@ public class VehicleRideClientGroupE2ETest extends AbstractSharedClientE2ETest {
 
     private static final Pattern ENTITY_ID = Pattern.compile("\"entityId\":(-?\\d+)");
     private static final Pattern RIDING_ID = Pattern.compile("\"ridingEntityId(?:Now)?\":(-?\\d+)");
-    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern POS_X = Pattern.compile("\"posX\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern POS_Z = Pattern.compile("\"posZ\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     @Override
     protected String subsystem() {

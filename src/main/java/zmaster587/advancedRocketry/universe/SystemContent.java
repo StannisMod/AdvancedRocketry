@@ -144,7 +144,8 @@ public final class SystemContent {
         AbsolutePos anchorAbs = AbsolutePos.ofCellName(anchor);
         // The star sits at the anchor and does not move: a degenerate frame, not an exemption.
         bodies.add(new SystemBody(anchor, CellFrame.staticAt(anchor), BodyEphemeris.STATIC,
-                SystemBodyKind.STAR, Constants.INVALID_PLANET, starId));
+                SystemBodyKind.STAR, Constants.INVALID_PLANET, starId, SystemBody.ORBIT_UNKNOWN,
+                AstronomicalBodyHelper.starRadiusEarths(star)));
 
         for (IDimensionProperties p : star.getPlanets()) {
             if (!(p instanceof DimensionProperties)) {
@@ -159,7 +160,7 @@ public final class SystemContent {
             // only when it was procedural would be a field that lies for half the galaxy.
             bodies.add(new SystemBody(planetName, planetFrame, BodyEphemeris.STATIC,
                     kindOf(planet, SystemBodyKind.PLANET), planet.getId(), starId,
-                    planet.getOrbitalDist()));
+                    planet.getOrbitalDist(), planet.getRadius()));
 
             for (int moonId : planet.getChildPlanets()) {
                 DimensionProperties moon = DimensionManager.getInstance().getDimensionProperties(moonId);
@@ -173,7 +174,7 @@ public final class SystemContent {
                 // positions it. Same convention as the procedural side.
                 bodies.add(new SystemBody(planetName, planetFrame, moonLawOf(moon, planet),
                         kindOf(moon, SystemBodyKind.MOON), moon.getId(), starId,
-                        planet.getOrbitalDist()));
+                        planet.getOrbitalDist(), moon.getRadius()));
             }
         }
         auditOneRealBodyPerCell(bodies, starId);

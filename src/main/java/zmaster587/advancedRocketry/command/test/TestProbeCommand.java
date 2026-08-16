@@ -4705,11 +4705,17 @@ public class TestProbeCommand extends CommandBase {
             zmaster587.advancedRocketry.space.GalacticCoord coord =
                     zmaster587.advancedRocketry.space.GalacticCoord.ofSectorLocal(sx, sy, sz, lx, ly, lz);
             // A POI planted by hand does not move — say so, rather than letting a constructor decide.
+            // The 11th argument is the body's RADIUS in Earth radii; without it the body has none,
+            // which is a real state (a belt is not a sphere) and is what the sky draws as a marker.
+            // A test that wants a body drawn at a size has to say what size, because the renderer
+            // stopped guessing one from distance.
+            double poiRadiusEarths = args.length >= 11 ? parseDoubleOr(args[10], 0d) : 0d;
             zmaster587.advancedRocketry.universe.SystemBody body =
-                    zmaster587.advancedRocketry.universe.SystemBody.fixedAt(coord, kind, dimId, starId);
+                    zmaster587.advancedRocketry.universe.SystemBody.fixedAt(coord, kind, dimId, starId)
+                            .withRadius(poiRadiusEarths);
             reg.addPoi(body);
             send(sender, "{\"ok\":true,\"cellKey\":\"" + coord.cellKey() + "\",\"descendTarget\":"
-                    + body.isDescendTarget() + "}");
+                    + body.isDescendTarget() + ",\"radiusEarths\":" + body.radiusEarths() + "}");
             return;
         }
         // cell-info <sx> <sy> <sz> [dimId]: what the universe registry says is AT one cell, and by which
@@ -5877,48 +5883,6 @@ public class TestProbeCommand extends CommandBase {
             out.put("atmosphereDensity", props.getAtmosphereDensity());
             out.put("atmosphere", props.getAtmosphere().getUnlocalizedName());
             send(sender, jsonMap(out));
-            return;
-        }
-        if (args.length >= 2 && "moon-generate-catch".equalsIgnoreCase(args[0])) {
-            // /artest planet moon-generate-catch <planetDim>
-            //
-            // Repro for C072: run the REAL PlanetGenerateCommand moon path against
-            // a planet whose star id resolves to no star, and report what it
-            // throws. Temporarily orphans the planet's star (setStar to an id with
-            // no StellarBody), invokes execute(...), and restores the original star
-            // in a finally. Pre-fix the command NPEs (getStar dereferenced inside
-            // generateRandom); post-fix a star-existence guard on the moon branch
-            // throws a clean CommandException before any generation. No dimension
-            // is registered in either case (the throw precedes registerDim), so the
-            // registered-dim count must be unchanged both pre and post.
-            int planetDim = parseIntOr(args[1], Integer.MIN_VALUE);
-            DimensionProperties props = DimensionManager.getInstance().getDimensionProperties(planetDim);
-            if (props == null) {
-                send(sender, "{\"error\":\"unknown planet\",\"dim\":" + planetDim + "}");
-                return;
-            }
-            // Find a star id genuinely absent from the star table.
-            int bogusStar = 0x40000000;
-            while (DimensionManager.getInstance().getStar(bogusStar) != null) bogusStar++;
-            int origStar = props.getStarId();
-            int dimsBefore = DimensionManager.getInstance().getRegisteredDimensions().length;
-            String thrown = "null";
-            try {
-                props.setStar(bogusStar);
-                new zmaster587.advancedRocketry.command.sub.planet.PlanetGenerateCommand().execute(
-                        sender.getServer(), sender,
-                        new String[]{String.valueOf(planetDim), "moon", "C072Moon", "10", "10", "10"});
-            } catch (Throwable t) {
-                thrown = t.getClass().getSimpleName();
-            } finally {
-                props.setStar(origStar);
-            }
-            int dimsAfter = DimensionManager.getInstance().getRegisteredDimensions().length;
-            send(sender, "{\"ok\":true,\"planetDim\":" + planetDim
-                    + ",\"bogusStar\":" + bogusStar
-                    + ",\"thrown\":\"" + thrown + "\""
-                    + ",\"dimsBefore\":" + dimsBefore
-                    + ",\"dimsAfter\":" + dimsAfter + "}");
             return;
         }
         send(sender, "{\"error\":\"unknown planet subcommand\"}");

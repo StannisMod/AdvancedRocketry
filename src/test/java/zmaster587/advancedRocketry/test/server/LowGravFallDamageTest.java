@@ -29,9 +29,9 @@ public class LowGravFallDamageTest {
 
     private static final int DIM_LOW_GRAV = 9701;
     private static final Pattern IS_PLANETARY = Pattern.compile("\"isPlanetaryProvider\":(true|false)");
-    private static final Pattern INPUT_DIST = Pattern.compile("\"inputDistance\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern RESULT_DIST = Pattern.compile("\"resultDistance\":(-?\\d+(?:\\.\\d+)?)");
-    private static final Pattern GRAVITY = Pattern.compile("\"gravityMultiplier\":(-?\\d+(?:\\.\\d+)?)");
+    private static final Pattern INPUT_DIST = Pattern.compile("\"inputDistance\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern RESULT_DIST = Pattern.compile("\"resultDistance\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
+    private static final Pattern GRAVITY = Pattern.compile("\"gravityMultiplier\":(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)");
 
     private Path workDir;
     private RealDedicatedServerHarness harness;

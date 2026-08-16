@@ -10,6 +10,7 @@ import zmaster587.advancedRocketry.network.PacketSystemBodiesSync;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderBody;
 import zmaster587.advancedRocketry.network.PacketSystemBodiesSync.RenderNebula;
 import zmaster587.advancedRocketry.universe.SystemBody;
+import zmaster587.advancedRocketry.util.AstronomicalBodyHelper;
 import zmaster587.advancedRocketry.universe.SystemBodyKind;
 import zmaster587.advancedRocketry.universe.UniverseRegistry;
 import zmaster587.libVulpes.network.PacketHandler;
@@ -133,11 +134,17 @@ public final class SystemBodiesProducer {
                     // descendable while carrying a zero shell would draw a boundary of no radius,
                     // which is the unvisited-planet bug above coming back through the other field.
                     long shell = descendable ? DescentShell.radiusAround(b) : 0L;
+                    // The body's own size, converted ONCE here from the universe layer's Earth radii
+                    // into the chart blocks the client draws in. A body with no radius of its own (a
+                    // belt, a station slot) sends zero, which is what says "not a sphere".
+                    long radiusBlocks = Math.round(b.radiusEarths()
+                            * AstronomicalBodyHelper.EARTH_RADIUS_BLOCKS);
                     bodies.add(new RenderBody(b.kind().ordinal(), dir.dx(), dir.dy(), dir.dz(),
-                            renderDimIdOf(b), descendable, shell));
+                            renderDimIdOf(b), descendable, shell, radiusBlocks,
+                            RenderBody.NO_PARENT));
                 }
             }
-            byDim.put(slotDim, bodies);
+            byDim.put(slotDim, linkMoonsToTheirParents(found, bodies));
         }
         return byDim;
     }
@@ -281,5 +288,40 @@ public final class SystemBodiesProducer {
     public static void reset() {
         tickCounter = 0;
         SkyNebulaeProducer.reset();
+    }
+
+    /**
+     * Re-emit {@code bodies} with each MOON pointing at the body it belongs to.
+     *
+     * <p>Resolved from the invariant the universe layer already holds rather than from a new
+     * identity: a moon shares its parent's CELL, and a cell holds at most one REAL body (moons
+     * excepted, which is exactly why they can share one). So the parent of a moon is the non-moon
+     * body of the same cell — and if there is none, the moon says so with {@link
+     * RenderBody#NO_PARENT} instead of pointing at a neighbour. A wrong parent would draw a moon
+     * orbiting a world it has nothing to do with, which is worse than an unparented moon.</p>
+     */
+    private static List<RenderBody> linkMoonsToTheirParents(List<SystemBody> source,
+                                                            List<RenderBody> bodies) {
+        if (source == null || source.size() != bodies.size()) {
+            return bodies;
+        }
+        Map<String, Integer> primaryByCell = new LinkedHashMap<>();
+        for (int i = 0; i < source.size(); i++) {
+            SystemBody b = source.get(i);
+            if (b.kind() != SystemBodyKind.MOON) {
+                primaryByCell.put(b.name().cellKey(), i);
+            }
+        }
+        List<RenderBody> linked = new ArrayList<>(bodies.size());
+        for (int i = 0; i < bodies.size(); i++) {
+            SystemBody b = source.get(i);
+            RenderBody r = bodies.get(i);
+            Integer parent = b.kind() == SystemBodyKind.MOON
+                    ? primaryByCell.get(b.name().cellKey()) : null;
+            linked.add(parent == null ? r
+                    : new RenderBody(r.kindOrdinal, r.localX, r.localY, r.localZ, r.dimId,
+                            r.descendTarget, r.boundaryRadius, r.radiusBlocks, parent));
+        }
+        return linked;
     }
 }

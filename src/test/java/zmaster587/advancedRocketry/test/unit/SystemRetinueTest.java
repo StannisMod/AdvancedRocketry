@@ -209,7 +209,13 @@ public class SystemRetinueTest {
         ClusteredGalaxyGenerator g = gen(SPACING);
         int multiple = 0;
         int lostSome = 0;
-        for (GalacticCoord anchor : anchors(g, SEED, SPACING, 2)) {
+        // A WIDER sweep than its neighbours (3 super-cells, not 2) because this test's thresholds are
+        // about a proportion — some systems lose worlds, not all of them — and a proportion needs a
+        // sample. At 2 the sweep returned 28 anchors of which 10 were multiple, i.e. the "more than
+        // ten multiple systems" arrangement sat exactly ON its own threshold and turned a re-rolled
+        // universe into a failure about nothing. The rate itself (10/28 = 36 %) is what the
+        // multiplicity contract says it should be.
+        for (GalacticCoord anchor : anchors(g, SEED, SPACING, 3)) {
             if (g.systemAt(SEED, anchor).get().star().getSubStars().isEmpty()) {
                 continue;
             }
@@ -224,7 +230,8 @@ public class SystemRetinueTest {
                 lostSome++;
             }
         }
-        assertTrue("the sweep must find multiple systems", multiple > 10);
+        assertTrue("the sweep must find multiple systems, saw " + multiple + " of "
+                + anchors(g, SEED, SPACING, 3).size() + " anchors", multiple > 10);
         assertTrue("a companion must cost its system something, or the band is not being applied",
                 lostSome > 0);
         assertTrue("but it must not cost every system everything, saw " + lostSome + "/" + multiple,
