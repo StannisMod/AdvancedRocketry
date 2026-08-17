@@ -67,6 +67,7 @@ public final class SpaceSubsystem {
     public final ShipTransitManager transit;
     public final ShipEntryController entry;
     public final DescentController descent;
+    public final CellSeamController seam;
     private int gcTickCounter;
     /** Set by the pool-pressure eviction listener; consumed on the next server tick to run an extra GC. */
     private boolean pressureGcRequested;
@@ -117,6 +118,8 @@ public final class SpaceSubsystem {
                 SpaceSubsystem::launchBodyAddress, useClock);
         this.descent = new DescentController(this.manager, this.ledger, new VSShipCrossingOps(),
                 new VSDescentPasteResolver(), useClock);
+        this.seam = new CellSeamController(this.manager, this.ledger, new VSShipCrossingOps(),
+                useClock);
     }
 
     /** The live subsystem, or {@code null} when none is attached (before server start, or on a client). */
@@ -207,6 +210,11 @@ public final class SpaceSubsystem {
     /** The live entry controller, or {@code null} when no subsystem is attached. */
     public static ShipEntryController entry() {
         return current == null ? null : current.entry;
+    }
+
+    /** The live cell-seam controller, or {@code null} when no subsystem is attached. */
+    public static CellSeamController seam() {
+        return current == null ? null : current.seam;
     }
 
     /** The live descent controller, or {@code null} when no subsystem is attached. */

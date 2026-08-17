@@ -4522,6 +4522,70 @@ public class TestProbeCommand extends CommandBase {
             send(sender, "{\"ok\":true,\"started\":" + started + ",\"pending\":" + d.descendingCount() + "}");
             return;
         }
+        // seam-carry <slotDim>: drive the PRODUCTION cell-seam carry for the settled ship in that slot
+        // world — the counterpart of descent-begin, and for the same reason. The trigger lives in the
+        // flight computer's own tick, which a headless slot world does not run (no player, no ticking
+        // chunks there), so an e2e that waited for it would be measuring chunk-ticking rather than the
+        // crossing. WHEN a carry fires is pinned deterministically by CellSeamTest; this verb exists so
+        // the crossing itself — materialize, cut, paste, settle, ledger handoff — can be exercised on a
+        // real ship. The ship's LIVE pose is used, never the ledger's: past the face the ledger's copy
+        // is saturated, so a lookup from it would miss the ship by the whole overshoot.
+        if (args.length >= 2 && "seam-carry".equalsIgnoreCase(args[0])) {
+            zmaster587.advancedRocketry.space.CellSeamController seamCtl =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.seam();
+            zmaster587.advancedRocketry.space.ShipLedger seamLedger =
+                    zmaster587.advancedRocketry.space.SpaceSubsystem.ledger();
+            if (seamCtl == null || seamLedger == null) {
+                send(sender, "{\"error\":\"space subsystem not registered\"}");
+                return;
+            }
+            int slotDim = parseIntOr(args[1], Integer.MIN_VALUE);
+            net.minecraft.world.WorldServer slotWorld =
+                    net.minecraftforge.common.DimensionManager.getWorld(slotDim);
+            if (slotWorld == null) {
+                send(sender, "{\"error\":\"slot world not loaded\",\"slotDim\":" + slotDim + "}");
+                return;
+            }
+            for (java.util.Map.Entry<java.util.UUID, zmaster587.advancedRocketry.space.ShipLedger.Entry> e
+                    : seamLedger.snapshot().entrySet()) {
+                zmaster587.advancedRocketry.space.ShipLedger.Entry entry = e.getValue();
+                if (entry.state != zmaster587.advancedRocketry.space.ShipLedger.State.SETTLED
+                        || slotDimOfCell(entry.coord) != slotDim) {
+                    continue;
+                }
+                double[] ledgerPose =
+                        zmaster587.advancedRocketry.space.CellWorldMapper.poseWorldOf(entry.coord);
+                double[] live = zmaster587.advancedRocketry.integration.vs.VSIntegration
+                        .nearestShipState(slotWorld, ledgerPose[0], ledgerPose[1], ledgerPose[2],
+                                zmaster587.advancedRocketry.space.GalacticCoord.CELL);
+                if (live == null) {
+                    send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"no loaded ship near the "
+                            + "ledger pose\",\"shipId\":\"" + e.getKey() + "\"}");
+                    return;
+                }
+                net.minecraft.util.math.BlockPos afc = zmaster587.advancedRocketry.integration.vs
+                        .VSIntegration.flightComputerAt(slotWorld, live[0], live[1], live[2]);
+                if (afc == null) {
+                    send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"ship carries no flight "
+                            + "computer\",\"shipId\":\"" + e.getKey() + "\"}");
+                    return;
+                }
+                boolean wouldCarry = zmaster587.advancedRocketry.space.CellSeam
+                        .shouldCarry(live[0], live[1], live[2]);
+                boolean started = seamCtl.requestCarry(slotDim, afc, e.getKey(), entry.coord,
+                        new double[]{live[0], live[1], live[2]});
+                send(sender, "{\"ok\":true,\"started\":" + started
+                        + ",\"wouldCarry\":" + wouldCarry
+                        + ",\"shipId\":\"" + e.getKey() + "\""
+                        + ",\"fromCell\":\"" + entry.coord.cellKey() + "\""
+                        + ",\"pose\":[" + live[0] + "," + live[1] + "," + live[2] + "]"
+                        + ",\"afc\":[" + afc.getX() + "," + afc.getY() + "," + afc.getZ() + "]}");
+                return;
+            }
+            send(sender, "{\"ok\":true,\"started\":false,\"reason\":\"no settled ship in this slot\""
+                    + ",\"slotDim\":" + slotDim + "}");
+            return;
+        }
         // descent-status: the in-flight descent count (settle progress).
         if (args.length >= 1 && "descent-status".equalsIgnoreCase(args[0])) {
             zmaster587.advancedRocketry.space.DescentController d =

@@ -498,10 +498,24 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
             if (ledger != null && cell != null) {
                 double[] pose = VSIntegration.getShipWorldPosition(world, getPos());
                 if (pose != null) {
-                    // A ship reports its position WITHIN its cell. It may not rename the cell by moving:
-                    // the name is the world it is in, the slot it is bound to and the ledger row that
-                    // protects that cell from collection, and none of those follow a pose over a cell
-                    // face. A pose outside the local range is therefore saturated, not carried.
+                    // FLYING OUT OF THE CELL. A ship far enough past its face is carried into the
+                    // neighbour it left through - the crossing cuts this tile out of the world, so
+                    // nothing below may run on this tick. The margin that "far enough" means, and the
+                    // depth the ship arrives at, are the seam's; this call site only owns the ORDER:
+                    // the carry is asked BEFORE the position is reported, because a report that
+                    // saturates is what a ship gets when the carry was refused, not what it gets while
+                    // one is available.
+                    zmaster587.advancedRocketry.space.CellSeamController seamCtl =
+                            zmaster587.advancedRocketry.space.SpaceSubsystem.seam();
+                    if (seamCtl != null && seamCtl.requestCarry(world.provider.getDimension(),
+                            getPos(), shipId, cell, pose)) {
+                        return;
+                    }
+                    // The carry did not happen (none was needed, or the pool refused one). A ship
+                    // reports its position WITHIN its cell: the name is the world it is in, the slot it
+                    // is bound to and the ledger row that protects that cell from collection, and none
+                    // of those follow a pose over a cell face on their own. So a pose outside the local
+                    // range is saturated - wrong by the overshoot, but naming a cell that exists.
                     ledger.updatePosition(shipId, zmaster587.advancedRocketry.space.CellWorldMapper
                             .coordOfPoseWithin(cell, pose[0], pose[1], pose[2]));
                     // Only a SETTLED ship can be at its cell's edge by flying there. A ship mid-crossing
@@ -517,9 +531,10 @@ public class TileAdvancedFlightComputer extends TileEntity implements IModularIn
                             .poseEscapesCell(pose[0], pose[1], pose[2])) {
                         cellEdgeReported = true;
                         zmaster587.advancedRocketry.AdvancedRocketry.logger.warn(
-                                "[SPACE] ship {} reached the edge of cell {} (pose {},{},{}) - its position "
-                                        + "is held at the boundary. Leaving a neighbourhood is a jump, not a "
-                                        + "flight.",
+                                "[SPACE] ship {} is outside cell {} (pose {},{},{}) and was not carried "
+                                        + "into the neighbour - its position is held at the boundary. "
+                                        + "Either it has not yet passed the carry margin, or the carry was "
+                                        + "refused (no free slot); the seam logs a refusal when it is one.",
                                 shipId, cellKey, pose[0], pose[1], pose[2]);
                     }
                 }
