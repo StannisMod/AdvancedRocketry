@@ -8,7 +8,9 @@ import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.api.AdvancedRocketryBlocks;
+import zmaster587.advancedRocketry.api.sensor.TargetTrack;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
 import zmaster587.advancedRocketry.subsystem.network.ISubsystemNetworkController;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkDomain;
@@ -189,6 +191,17 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
         return state == null ? null : state.getTarget();
     }
 
+    /**
+     * What the installation's sensor is currently holding, or null. Shown beside the assigned target
+     * rather than instead of it: the two are different things, and a crew that cannot see which one
+     * their guns are going on cannot tell an acquisition they want from one they need to override.
+     */
+    public TargetTrack getAcquiredTrack() {
+        WeaponNetworkState state = network();
+        return state == null || world == null ? null
+                : state.getAcquiredTrack(world.getTotalWorldTime());
+    }
+
     /** How many guns this console is commanding, as the last solve counted them. */
     public int getGunCount() {
         WeaponNetworkState state = network();
@@ -280,6 +293,7 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
         addReadout(modules, 10, 68, statusLine());
         addReadout(modules, 10, 80, gunLine());
         addReadout(modules, 10, 92, targetLine());
+        addReadout(modules, 10, 104, sensorLine());
         return modules;
     }
 
@@ -303,6 +317,17 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
         Vec3d target = getTarget();
         return target == null ? "Target: none"
                 : String.format("Target: %.0f, %.0f, %.0f", target.x, target.y, target.z);
+    }
+
+    private String sensorLine() {
+        TargetTrack acquired = getAcquiredTrack();
+        if (acquired == null) {
+            return "Sensor: no contact";
+        }
+        boolean locked = acquired.isLocked(ARConfiguration.getCurrentConfig()
+                .fireControlSensorLockQualityToFire);
+        return String.format("Sensor: contact at %.0fm, lock %.2f%s", acquired.getDistance(),
+                acquired.getQuality(), locked ? "" : " (too poor to fire)");
     }
 
     @Override

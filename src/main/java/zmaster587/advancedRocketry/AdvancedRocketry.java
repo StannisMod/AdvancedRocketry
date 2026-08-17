@@ -459,6 +459,8 @@ public class AdvancedRocketry {
                 new ResourceLocation(Constants.modId, "ARturret"));
         GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
                 new ResourceLocation(Constants.modId, "ARweaponConsole"));
+        GameRegistry.registerTileEntity(zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor.class,
+                new ResourceLocation(Constants.modId, "ARfireControlSensor"));
 
         if (zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().enableGravityController)
             GameRegistry.registerTileEntity(TileAreaGravityController.class, "ARGravityMachine");
@@ -751,6 +753,12 @@ public class AdvancedRocketry {
         AdvancedRocketryBlocks.blockWeaponConsole = new BlockTile(zmaster587.advancedRocketry.tile.weapon.TileWeaponConsole.class,
                 GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("weaponConsole")
                 .setCreativeTab(tabAdvRocketry).setHardness(3f);
+        // The battery's eyes. A node of the same network the guns are on, so a sensor placed against
+        // a gun feeds it with no wiring, and one placed alone feeds nothing - which is honest: there
+        // is nothing for it to hand a contact to.
+        AdvancedRocketryBlocks.blockFireControlSensor = new BlockTile(zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor.class,
+                GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("fireControlSensor")
+                .setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockGuidanceComputer = new BlockTile(TileGuidanceComputer.class, GuiHandler.guiId.MODULAR.ordinal()).setUnlocalizedName("guidanceComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         AdvancedRocketryBlocks.blockAdvancedFlightComputer = new zmaster587.advancedRocketry.block.BlockAdvancedFlightComputer(GuiHandler.guiId.MODULARNOINV.ordinal()).setUnlocalizedName("advancedFlightComputer").setCreativeTab(tabAdvRocketry).setHardness(3f);
         // MODULARNOINV, not MODULAR: the console needs the whole panel for its own controls, and a
@@ -943,6 +951,7 @@ public class AdvancedRocketry {
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockNuclearCore.setRegistryName("nuclearcore"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockTurret.setRegistryName("turret"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockWeaponConsole.setRegistryName("weaponConsole"));
+        LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockFireControlSensor.setRegistryName("fireControlSensor"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunBarrel.setRegistryName("gunBarrel"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunAmmoFeed.setRegistryName("gunAmmoFeed"));
         LibVulpesBlocks.registerBlock(AdvancedRocketryBlocks.blockGunCooling.setRegistryName("gunCooling"));

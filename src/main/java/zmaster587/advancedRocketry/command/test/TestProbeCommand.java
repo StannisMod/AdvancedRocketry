@@ -250,6 +250,9 @@ public class TestProbeCommand extends CommandBase {
                 case "weaponconsole":
                     handleWeaponConsole(server, sender, tail(args));
                     break;
+                case "sensor":
+                    handleFireControlSensor(server, sender, tail(args));
+                    break;
                 case "sound":
                     handleSound(server, sender, tail(args));
                     break;
@@ -468,6 +471,9 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"shots\":" + turret.getShotsFired()
                     + ",\"lastShot\":" + turret.getLastShotId()
                     + ",\"trackingEntity\":" + (turret.getTargetEntity() != null)
+                    + ",\"acquired\":" + (turret.acquiredTrack() != null)
+                    + (turret.acquiredTrack() == null ? ""
+                            : ",\"acquiredQuality\":" + turret.acquiredTrack().getQuality())
                     + ",\"code\":\"" + escapeJson(turret.getEffectiveAccessCode()) + "\""
                     + ",\"manual\":" + turret.isManuallyControlled()
                     + ",\"inputs\":\"" + escapeJson(spec.getDeclaredInputs().toString()) + "\""
@@ -558,6 +564,9 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"saturated\":" + console.getMountTelemetry()[1]
                     + ",\"holdFire\":" + console.isHoldFire()
                     + ",\"code\":\"" + escapeJson(console.getAccessCode()) + "\""
+                    + ",\"sensorContact\":" + (console.getAcquiredTrack() != null)
+                    + (console.getAcquiredTrack() == null ? ""
+                            : ",\"sensorQuality\":" + console.getAcquiredTrack().getQuality())
                     + ",\"trackingEntity\":" + (console.getTargetEntity() != null)
                     + ",\"hasTarget\":" + (target != null)
                     + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
@@ -566,6 +575,123 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown weaponconsole subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /**
+     * {@code /artest sensor ...} — what the battery's eyes can see, and which way they are working.
+     * <ul>
+     *   <li>{@code read <dim> <x> <y> <z>} — the mode it is in, what it is actually managing (an
+     *       unpowered illuminator falls back to listening), how many contacts it holds and how well
+     *       it holds the best one;</li>
+     *   <li>{@code mode <dim> <x> <y> <z> <passive|active>};</li>
+     *   <li>{@code code <dim> <x> <y> <z> [code]} — the credential that keeps a friend out of the
+     *       contact list entirely;</li>
+     *   <li>{@code charge <dim> <x> <y> <z>} — fill the buffer, for scenarios that are not about
+     *       wiring;</li>
+     *   <li>{@code sees <dim> <x> <y> <z> <player>} — whether ONE named player is a contact, which
+     *       is what a friend-or-foe test needs: a count cannot distinguish "this player was
+     *       excluded" from "something else was found instead".</li>
+     * </ul>
+     * <p>{@code locked} is the field a test about the passive/active trade watches: a contact can be
+     * present and not lockable, which is the whole of what illuminating buys.</p>
+     */
+    private void handleFireControlSensor(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 5) {
+            send(sender, "{\"error\":\"usage: /artest sensor read|mode|code|charge <dim> <x> <y> <z> ...\"}");
+            return;
+        }
+        String sub = args[0].toLowerCase(java.util.Locale.ROOT);
+        int dim = parseIntOr(args[1], Integer.MIN_VALUE);
+        net.minecraft.world.WorldServer world = server.getWorld(dim);
+        if (world == null) {
+            send(sender, "{\"error\":\"world not loaded\",\"dim\":" + dim + "}");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = new net.minecraft.util.math.BlockPos(
+                parseIntOr(args[2], 0), parseIntOr(args[3], 0), parseIntOr(args[4], 0));
+        net.minecraft.tileentity.TileEntity tile = world.getTileEntity(pos);
+        if (!(tile instanceof zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor)) {
+            send(sender, "{\"error\":\"no fire control sensor there\",\"x\":" + pos.getX() + ",\"y\":"
+                    + pos.getY() + ",\"z\":" + pos.getZ() + "}");
+            return;
+        }
+        zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor sensor =
+                (zmaster587.advancedRocketry.tile.sensor.TileFireControlSensor) tile;
+
+        if ("mode".equals(sub) && args.length >= 6) {
+            zmaster587.advancedRocketry.api.sensor.SensorMode wanted;
+            try {
+                wanted = zmaster587.advancedRocketry.api.sensor.SensorMode
+                        .valueOf(args[5].toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                send(sender, jsonError("unknown mode: " + args[5]));
+                return;
+            }
+            sensor.setMode(wanted);
+            send(sender, "{\"ok\":true,\"mode\":\"" + sensor.getMode().name() + "\"}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            sensor.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"code\":\"" + escapeJson(sensor.effectiveAccessCode()) + "\"}");
+            return;
+        }
+        if ("charge".equals(sub)) {
+            sensor.chargeFully();
+            send(sender, "{\"ok\":true,\"energy\":" + sensor.getEnergyStored() + "}");
+            return;
+        }
+        if ("sees".equals(sub) && args.length >= 6) {
+            // Whether ONE named player is in the contact list. Asked by name rather than counted,
+            // because "the list is empty" is a different claim: a cave full of mobs a hundred blocks
+            // away would make it false without saying anything about the player this is asking about.
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            boolean seen = false;
+            double quality = 0.0D;
+            for (zmaster587.advancedRocketry.api.sensor.TargetTrack track : sensor.getContacts()) {
+                if (player.getUniqueID().equals(track.getEntity())) {
+                    seen = true;
+                    quality = track.getQuality();
+                    break;
+                }
+            }
+            send(sender, "{\"ok\":true,\"seen\":" + seen + ",\"quality\":" + quality
+                    + ",\"contacts\":" + sensor.getContacts().size() + "}");
+            return;
+        }
+        if ("read".equals(sub)) {
+            zmaster587.advancedRocketry.api.sensor.TargetTrack best = sensor.getBestContact();
+            double floor = zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig()
+                    .fireControlSensorLockQualityToFire;
+            send(sender, "{\"ok\":true"
+                    + ",\"enabled\":" + zmaster587.advancedRocketry.api.ARConfiguration
+                            .getCurrentConfig().enableFireControlSensor
+                    + ",\"mode\":\"" + sensor.getMode().name() + "\""
+                    + ",\"effectiveMode\":\"" + sensor.effectiveMode().name() + "\""
+                    + ",\"emitting\":" + sensor.isEmitting()
+                    + ",\"underpowered\":" + sensor.isUnderpowered()
+                    + ",\"energy\":" + sensor.getEnergyStored()
+                    + ",\"network\":" + (sensor.networkState() != null)
+                    + ",\"code\":\"" + escapeJson(sensor.effectiveAccessCode()) + "\""
+                    + ",\"contacts\":" + sensor.getContacts().size()
+                    + ",\"hasContact\":" + (best != null)
+                    + (best == null ? "" : ",\"quality\":" + best.getQuality()
+                            + ",\"locked\":" + best.isLocked(floor)
+                            + ",\"distance\":" + best.getDistance()
+                            + ",\"radiance\":" + best.getRadianceWattsPerSquareMetre()
+                            + ",\"contactX\":" + best.getPosition().x
+                            + ",\"contactY\":" + best.getPosition().y
+                            + ",\"contactZ\":" + best.getPosition().z
+                            + ",\"speed\":" + best.getVelocity().lengthVector())
+                    + "}");
+            return;
+        }
+        send(sender, "{\"error\":\"unknown sensor subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
     }
 
     /** One-line error payload, so a new verb does not hand-build JSON and get a quote wrong. */
@@ -11313,7 +11439,20 @@ public class TestProbeCommand extends CommandBase {
                     "telescopeSurveyDataPerStep",
                     // The research master switch. A survey is instant without it and paced by the
                     // time curve with it, so both halves of boundary B need it flippable at runtime.
-                    "planetsMustBeDiscovered"));
+                    "planetsMustBeDiscovered",
+                    // Fire control. The master switch is here so a test can watch the SAME battery
+                    // and the SAME target with acquisition off and then on — a control in the same
+                    // run, rather than the hope that a gun which fired did so because of the sensor.
+                    // The rest are the tuning a lock/no-lock scenario has to state rather than
+                    // assume: a test that silently depended on the shipped radius would go red the
+                    // day somebody rebalanced it, for a reason that has nothing to do with it.
+                    "enableFireControlSensor",
+                    "fireControlSensorRadius",
+                    "fireControlSensorScanIntervalTicks",
+                    "fireControlSensorActiveEnergyPerTick",
+                    "fireControlSensorActiveLockQuality",
+                    "fireControlSensorLockQualityToFire",
+                    "fireControlSensorAcquireHostilesOnly"));
 
     private void handleConfig(ICommandSender sender, String[] args) {
         if (args.length == 0) {

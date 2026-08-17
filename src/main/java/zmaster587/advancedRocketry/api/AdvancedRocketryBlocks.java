@@ -50,6 +50,12 @@ public class AdvancedRocketryBlocks {
     public static Block blockGunCooling;
     /** The one thing the weapons network adds: a place to point every gun at once. */
     public static Block blockWeaponConsole;
+    /**
+     * The eyes of a battery: it finds targets so that nobody has to name them, and hands its
+     * network one contact at a time. Off a ship it is a planetary-defence radar; the block is the
+     * same either way.
+     */
+    public static Block blockFireControlSensor;
     /** The hyperdrive family: the machines that make a jump possible. */
     public static Block blockHyperdriveGenerator;
     public static Block blockHyperdriveCoil;

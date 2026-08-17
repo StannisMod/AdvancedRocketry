@@ -80,6 +80,62 @@ public final class TurretFireControl {
     }
 
     /**
+     * Where a block of a gun's installation actually is, in WORLD coordinates. The block's own
+     * position is its ship's if it has one, and a distance measured between a subspace address and a
+     * world one is a number with no meaning — so anything comparing a mount against something out in
+     * the world converts first. Null when the ship's transform is unavailable, which is the caller's
+     * cue to do nothing rather than to fall back on the unconverted position.
+     */
+    public static Vec3d worldPositionOf(World world, BlockPos pos, String shipId) {
+        if (world == null || pos == null) {
+            return null;
+        }
+        if (shipId == null) {
+            return center(pos);
+        }
+        Vec3d local = center(pos);
+        double[] point = VSIntegration.toWorldFrameFor(world, shipId, local.x, local.y, local.z);
+        return point == null ? null : new Vec3d(point[0], point[1], point[2]);
+    }
+
+    /**
+     * Where to point so that the round and the target arrive together.
+     *
+     * <p>A gun handed a POINT misses a moving target by however far it moves during the round's
+     * flight, and no amount of tracking fixes that — by the time the mount has followed the target,
+     * the round is still going where the target was. The fix needs one thing a gun cannot know on
+     * its own: how fast the target is going. That comes from the sensor, and this is where it is
+     * spent.</p>
+     *
+     * <p>Solved by iteration rather than by the quadratic: four passes converge to well inside a
+     * block at any speed a gun is worth firing, and a target moving faster than the round simply
+     * fails to converge — which is the truth, and better than a closed form that returns a confident
+     * aim point at an interception that cannot happen.</p>
+     *
+     * @param targetVelocity the target's velocity RELATIVE to the shooter, blocks per tick
+     * @param projectileSpeed the round's own muzzle speed, blocks per tick
+     */
+    public static Vec3d interceptPoint(Vec3d muzzle, Vec3d targetPosition, Vec3d targetVelocity,
+                                       double projectileSpeed) {
+        if (muzzle == null || targetPosition == null) {
+            return targetPosition;
+        }
+        if (targetVelocity == null || projectileSpeed <= 0.0D
+                || targetVelocity.lengthVector() < 1.0E-6D) {
+            // A target that is not moving is its own intercept point. Said explicitly so that a
+            // still target is aimed at exactly, rather than at the result of four rounds of
+            // arithmetic on a zero.
+            return targetPosition;
+        }
+        Vec3d aim = targetPosition;
+        for (int pass = 0; pass < 4; pass++) {
+            double flightTicks = aim.distanceTo(muzzle) / projectileSpeed;
+            aim = targetPosition.add(targetVelocity.scale(flightTicks));
+        }
+        return aim;
+    }
+
+    /**
      * Fire one round along {@code localAim} and answer the shot id, or {@code -1} if the substrate
      * refused it. {@code localAim} is in the mount's own frame — the same frame
      * {@link #aimDirection} answers in.

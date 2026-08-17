@@ -17,6 +17,8 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.energy.EnergyStorage;
+import zmaster587.advancedRocketry.api.ARConfiguration;
+import zmaster587.advancedRocketry.api.sensor.TargetTrack;
 import zmaster587.advancedRocketry.api.weapon.GunSpec;
 import zmaster587.advancedRocketry.api.weapon.TurretDriveState;
 import zmaster587.advancedRocketry.integration.vs.VSIntegration;
@@ -232,6 +234,7 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     /** Everything that must be true before a round leaves, other than pointing the right way. */
     private boolean canFireNow() {
         return !targetIsFriendly()
+                && isLockedWellEnoughToFire()
                 && spec.isOperable()
                 && mechanism.getDriveState().permitsFiring()
                 && fireCooldown <= 0
@@ -249,13 +252,98 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         if (tracked != null) {
             // Aim at the middle of the body rather than its feet: a round at foot height passes
             // under everything that is not standing on flat ground.
-            return tracked.getPositionVector().addVector(0.0D, tracked.height * 0.5D, 0.0D);
+            return bodyCentre(tracked);
         }
         WeaponNetworkState state = networkState();
         if (state != null && state.getTarget() != null) {
             return state.getTarget();
         }
-        return localTarget;
+        if (localTarget != null) {
+            return localTarget;
+        }
+        // Nobody has said anything, so what the installation's sensor found is what there is. Last
+        // deliberately: an order a player gave stands until they retract it, and a sensor refreshing
+        // its contact every few ticks would otherwise overrule them continuously.
+        TargetTrack acquired = acquiredTrack();
+        return acquired == null ? null : interceptOf(acquired);
+    }
+
+    /**
+     * Where to point so the round and an acquired target arrive together.
+     *
+     * <p>The contact's POSITION is refreshed from the entity itself when it can still be found —
+     * the sensor sweeps every few ticks and the mount follows every tick — while the VELOCITY comes
+     * from the sensor, because measuring it is what a fire-control sensor is for. Aboard a moving
+     * hull the shooter's own motion is taken out first: the round inherits the ship's velocity, so
+     * the lead that matters is the target's motion relative to the gun and not its motion over the
+     * ground.</p>
+     */
+    private Vec3d interceptOf(TargetTrack track) {
+        Vec3d position = track.getPosition();
+        Entity live = entityById(track.getEntity());
+        if (live != null) {
+            position = bodyCentre(live);
+        }
+        String shipId = TurretFireControl.shipIdAt(world, pos);
+        Vec3d muzzle = TurretFireControl.worldPositionOf(world, pos, shipId);
+        if (muzzle == null) {
+            return position;
+        }
+        Vec3d relative = track.getVelocity();
+        if (shipId != null) {
+            double[] carried = VSIntegration.shipVelocityAtPointFor(world, shipId, muzzle.x, muzzle.y,
+                    muzzle.z);
+            if (carried != null) {
+                relative = relative.subtract(new Vec3d(carried[0], carried[1], carried[2]));
+            }
+        }
+        return TurretFireControl.interceptPoint(muzzle, position, relative, spec.getMuzzleSpeed());
+    }
+
+    /** The contact the installation's sensor is currently handing this gun, or null. */
+    public TargetTrack acquiredTrack() {
+        WeaponNetworkState state = networkState();
+        return state == null || world == null ? null
+                : state.getAcquiredTrack(world.getTotalWorldTime());
+    }
+
+    /**
+     * Whether this gun is going on an acquisition rather than on an order. False under a hand and
+     * false whenever anybody — a console, a linker, this gun's own controls — has named a target:
+     * the acquisition is what is left when nothing else has been said.
+     */
+    private boolean engagementIsAcquired() {
+        if (manualControl || trackedEntity() != null || localTarget != null) {
+            return false;
+        }
+        WeaponNetworkState state = networkState();
+        if (state != null && state.getTarget() != null) {
+            return false;
+        }
+        return acquiredTrack() != null;
+    }
+
+    /**
+     * Whether the contact is resolved well enough to shoot at.
+     *
+     * <p>Only ever asked of an ACQUISITION. A target a player named is a target a player named — the
+     * sensor's opinion of how well it is resolved is not a veto over an order — so this gate exists
+     * for exactly the case the sensor created: a battery that can see something out there and cannot
+     * yet hold it well enough to hit it. That state is the reason to turn the illuminator on, and
+     * turning it on is the reason it costs you your silence.</p>
+     */
+    private boolean isLockedWellEnoughToFire() {
+        if (!engagementIsAcquired()) {
+            return true;
+        }
+        TargetTrack acquired = acquiredTrack();
+        return acquired != null && acquired.isLocked(
+                ARConfiguration.getCurrentConfig().fireControlSensorLockQualityToFire);
+    }
+
+    /** The middle of a body: a round at foot height passes under everything on uneven ground. */
+    private static Vec3d bodyCentre(Entity entity) {
+        return entity.getPositionVector().addVector(0.0D, entity.height * 0.5D, 0.0D);
     }
 
     /**
@@ -271,6 +359,11 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         } else if (localTargetEntity != null) {
             id = localTargetEntity;
         }
+        return entityById(id);
+    }
+
+    /** One entity by id, or null if it has died, logged out or was never there. */
+    private Entity entityById(UUID id) {
         if (id == null || !(world instanceof WorldServer)) {
             return null;
         }
@@ -285,12 +378,27 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * installation's access code is a friend for exactly as long as it carries it, and nothing here
      * keeps a list of who is friendly. A gun with no code set recognises nobody — deliberately, since
      * a battery that shoots nothing is indistinguishable from a broken one.</p>
+     *
+     * <p>An acquired contact was screened for this before it ever became a contact, so asking again
+     * here is depth rather than the primary check — and it is the half that answers within a tick
+     * rather than within a sweep, which is the difference between a boarder who produced the code
+     * and a boarder who produced it and was shot anyway.</p>
      */
     private boolean targetIsFriendly() {
-        Entity tracked = trackedEntity();
-        return tracked != null
-                && com.github.stannismod.affs.util.CodeUtils.entityHasMatchingCode(tracked,
+        Entity engaged = engagedEntity();
+        return engaged != null
+                && com.github.stannismod.affs.util.CodeUtils.entityHasMatchingCode(engaged,
                         getEffectiveAccessCode());
+    }
+
+    /** The entity this gun is shooting at, whether it was named or found. Null for a point target. */
+    private Entity engagedEntity() {
+        Entity named = trackedEntity();
+        if (named != null) {
+            return named;
+        }
+        TargetTrack acquired = engagementIsAcquired() ? acquiredTrack() : null;
+        return acquired == null ? null : entityById(acquired.getEntity());
     }
 
     /** The network's code when it has one, otherwise this gun's own. */

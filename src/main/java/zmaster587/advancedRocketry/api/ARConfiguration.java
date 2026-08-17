@@ -416,6 +416,54 @@ public class ARConfiguration {
      */
     @ConfigProperty(needsSync = true)
     public int shotVisibilityRadius = 256;
+    /**
+     * Whether the fire-control sensor searches for targets at all. With this off the block still
+     * exists and still says what it is, and it acquires nothing, publishes nothing and draws no
+     * power — so a battery falls back to being pointed by hand, which is exactly what it was before
+     * the sensor existed rather than a broken version of it.
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean enableFireControlSensor = true;
+    /** How far a fire-control sensor can look at all, in blocks. Its envelope, not its lock range. */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorRadius = 96.0;
+    /**
+     * Ticks between sweeps. A contact's position is re-read by the gun every tick from the entity
+     * itself, so this is the cadence at which the sensor reconsiders WHICH thing to shoot at, not
+     * the cadence at which the mount is allowed to follow it.
+     */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorScanIntervalTicks = 10;
+    /** How many contacts one sensor can hold. A bound on work, and on how much a readout can say. */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorMaxTracks = 8;
+    /**
+     * FE per tick an ACTIVE sensor draws. An illuminating sensor is a machine that is running; a
+     * listening one costs nothing, which is what makes going quiet a genuine option rather than a
+     * penalty. A sensor that cannot pay falls back to listening rather than lying about its lock.
+     */
+    @ConfigProperty(needsSync = true)
+    public int fireControlSensorActiveEnergyPerTick = 40;
+    /**
+     * The lock quality an ACTIVE sensor holds a contact at inside its envelope. This is the
+     * passive/active gap: everything a listening sensor gets is bounded by what the target radiates,
+     * and this is what illuminating buys instead.
+     */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorActiveLockQuality = 0.95;
+    /**
+     * How well a contact must be resolved before a gun will fire at it, 0..1. Below it a battery
+     * still tracks — knowing something is out there and being unable to hit it is a real state, and
+     * the reason to switch the sensor on.
+     */
+    @ConfigProperty(needsSync = true)
+    public double fireControlSensorLockQualityToFire = 0.25;
+    /**
+     * Whether acquisition is limited to hostile mobs and players. Off, a defence battery opens up on
+     * whatever wanders past, which is a legitimate way to run a perimeter and a poor default.
+     */
+    @ConfigProperty(needsSync = true)
+    public boolean fireControlSensorAcquireHostilesOnly = true;
     @ConfigProperty(needsSync = true)
     public double wearTankLeakChanceMax = 0.5;
     @ConfigProperty(needsSync = true)
@@ -667,6 +715,14 @@ public class ARConfiguration {
         arConfig.shotReflectionSpeedFloor = config.get(WEAPONS, "shotReflectionSpeedFloor", 0.05, "Speed in blocks per tick below which a shot deflected by a shield is ended at the shell instead of continuing. Prevents near-motionless rounds loitering against a shield", 0.0, Double.MAX_VALUE).getDouble();
         arConfig.maxShotsPerWorld = config.get(WEAPONS, "maxShotsPerWorld", 256, "How many shots one world may have in flight at once. Further fire is refused until some land; nothing already in flight is ever dropped to make room", 1, Integer.MAX_VALUE).getInt();
         arConfig.shotVisibilityRadius = config.get(WEAPONS, "shotVisibilityRadius", 256, "How near a player the path of a fired round must pass before that player is told about it and can see it drawn, in blocks. 0 disables shot replication entirely — the mechanic still works, nothing is drawn", 0, Integer.MAX_VALUE).getInt();
+        arConfig.enableFireControlSensor = config.get(WEAPONS, "enableFireControlSensor", true, "Whether fire-control sensors search for targets. Off, a sensor acquires nothing, publishes nothing and draws no power: batteries are pointed by hand, as they were before sensors existed").getBoolean();
+        arConfig.fireControlSensorRadius = config.get(WEAPONS, "fireControlSensorRadius", 96.0, "How far a fire-control sensor can look, in blocks. Its envelope — a target inside it may still be too poorly resolved to shoot at", 1.0, 1024.0).getDouble();
+        arConfig.fireControlSensorScanIntervalTicks = config.get(WEAPONS, "fireControlSensorScanIntervalTicks", 10, "Ticks between sweeps. The cadence at which a sensor reconsiders which contact to hand its battery, not the rate at which the guns follow it", 1, 200).getInt();
+        arConfig.fireControlSensorMaxTracks = config.get(WEAPONS, "fireControlSensorMaxTracks", 8, "How many contacts one sensor holds at once", 1, 64).getInt();
+        arConfig.fireControlSensorActiveEnergyPerTick = config.get(WEAPONS, "fireControlSensorActiveEnergyPerTick", 40, "FE per tick an actively illuminating sensor draws. Passive listening is free; a sensor that cannot pay falls back to listening", 0, Integer.MAX_VALUE).getInt();
+        arConfig.fireControlSensorActiveLockQuality = config.get(WEAPONS, "fireControlSensorActiveLockQuality", 0.95, "Lock quality an active sensor holds a contact at inside its envelope, 0..1 — what illuminating buys over listening", 0.0, 1.0).getDouble();
+        arConfig.fireControlSensorLockQualityToFire = config.get(WEAPONS, "fireControlSensorLockQualityToFire", 0.25, "How well a contact must be resolved, 0..1, before a gun fires at it. Below it the battery tracks without shooting", 0.0, 1.0).getDouble();
+        arConfig.fireControlSensorAcquireHostilesOnly = config.get(WEAPONS, "fireControlSensorAcquireHostilesOnly", true, "Whether acquisition is limited to hostile mobs and players. Off, a battery engages whatever wanders into range").getBoolean();
         arConfig.partsWearSystem = config.get(ROCKET, "partsWearSystem", true, "Enable rocket part wear and exploding chance.").getBoolean();
         arConfig.increaseWearIntensityProb = config.get(ROCKET, "increaseWearIntensityProb", 0.025, "Chance for each part to gain wear on launch.").getDouble();
 

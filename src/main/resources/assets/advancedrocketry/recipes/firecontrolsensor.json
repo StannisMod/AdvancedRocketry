@@ -1,0 +1,30 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "igi",
+        "ici",
+        "iri"
+    ],
+    "key": {
+        "i": {
+            "type": "forge:ore_dict",
+            "ore": "ingotIron"
+        },
+        "g": {
+            "type": "forge:ore_dict",
+            "ore": "blockGlass"
+        },
+        "c": {
+            "type": "forge:ore_dict",
+            "ore": "circuitBasic"
+        },
+        "r": {
+            "type": "forge:ore_dict",
+            "ore": "blockRedstone"
+        }
+    },
+    "result": {
+        "item": "advancedrocketry:fireControlSensor",
+        "count": 1
+    }
+}
