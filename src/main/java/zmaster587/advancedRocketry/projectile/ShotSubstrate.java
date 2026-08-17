@@ -6,11 +6,9 @@ import com.github.stannismod.affs.world.shield.ShieldStrikeService;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import zmaster587.advancedRocketry.api.ARConfiguration;
-import zmaster587.advancedRocketry.api.damage.ImpactKind;
-import zmaster587.advancedRocketry.api.damage.ImpactRequest;
+import zmaster587.advancedRocketry.api.damage.ContactResult;
 import zmaster587.advancedRocketry.api.projectile.ShotEndReason;
 import zmaster587.advancedRocketry.api.projectile.ShotSpec;
-import zmaster587.advancedRocketry.damage.ShipDamageService;
 
 import java.util.List;
 
@@ -25,8 +23,9 @@ import java.util.List;
  *   <li><b>The field layer</b> (the shield's strike seam) owns what a shell does to a body that
  *       reaches it: how much it absorbs, and where a mirrored body goes. This class hands a strike
  *       over and reads the answer; it never computes a deflection or spends shield energy itself.</li>
- *   <li><b>The structure layer</b> (the damage service) owns what an impact does to blocks. This
- *       class hands over a point, a direction and a budget; it names no block, no stage, no ship.</li>
+ *   <li><b>The structure layer</b> owns what an impact does to blocks, and the BLOCK it met owns
+ *       what happens to the body: this class asks (through {@link ContactResolver}) and obeys the
+ *       answer. It still names no stage and no ship, and it never decides a deflection itself.</li>
  * </ul>
  *
  * <h3>Ordering is geometric, not a pipeline</h3>
@@ -145,8 +144,26 @@ public final class ShotSubstrate {
             if (structureFirst) {
                 shot.setPosition(structure.point);
                 shot.setVelocity(velocity);
-                strikeStructure(world, shot, structure.point, direction);
-                return ShotEndReason.STRUCTURE_IMPACT;
+
+                // The block decides, this loop obeys — the same relationship the shell above already
+                // has with the field layer. Today every ordinary block answers "stopped", which is
+                // exactly what happened before there was a contract; armour is what makes the other
+                // two answers reachable.
+                ContactResult contact = ContactResolver.resolve(world, shot, structure, velocity);
+                if (contact.isStopped()) {
+                    return ShotEndReason.STRUCTURE_IMPACT;
+                }
+
+                double consumed = (structure.distance + CROSSING_EPSILON) / speed;
+                timeLeft -= consumed;
+                shot.setImpactEnergy(contact.getResidualEnergy());
+                if (contact.isDeflected()) {
+                    velocity = contact.getDeflectedVelocity();
+                    position = structure.point.add(velocity.normalize().scale(CROSSING_EPSILON));
+                } else {
+                    position = structure.point.add(direction.scale(CROSSING_EPSILON));
+                }
+                continue;
             }
             if (!fieldFirst) {
                 position = segmentEnd;
@@ -199,10 +216,4 @@ public final class ShotSubstrate {
         return null;
     }
 
-    /** Hand the impact over. One call, one identity, and no opinion about what it means. */
-    private static void strikeStructure(World world, Shot shot, Vec3d point, Vec3d direction) {
-        ImpactKind kind = shot.getKind();
-        ShipDamageService.apply(world, ImpactRequest.penetrating(shot.nextImpactId(), point, direction,
-                shot.getImpactEnergy(), kind));
-    }
 }

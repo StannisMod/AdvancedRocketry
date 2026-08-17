@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.projectile;
 
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -48,16 +49,23 @@ public final class StructureCrossing {
         final double distance;
         /** Where it happened, in WORLD coordinates. */
         final Vec3d point;
-        /** The block struck, in the frame it was found in — diagnostics only. */
+        /** The block struck, in the frame it was found in. */
         final BlockPos block;
-        /** The ship whose blocks were struck, or null for the world's own. Diagnostics only. */
+        /** The ship whose blocks were struck, or null for the world's own. */
         final String shipId;
+        /**
+         * The face the segment came in through, as an outward normal IN THAT FRAME — so on a ship it
+         * is a subspace face, which is what makes it comparable with a subspace-expressed velocity.
+         * Null when the segment began already inside the block it struck.
+         */
+        final EnumFacing entryFace;
 
-        private Hit(double distance, Vec3d point, BlockPos block, String shipId) {
+        private Hit(double distance, Vec3d point, BlockPos block, String shipId, EnumFacing entryFace) {
             this.distance = distance;
             this.point = point;
             this.block = block;
             this.shipId = shipId;
+            this.entryFace = entryFace;
         }
     }
 
@@ -143,7 +151,7 @@ public final class StructureCrossing {
         final Vec3d segTo = to;
         SweptSegment.traverse(from, to, MAX_VOXELS_PER_SEGMENT, new SweptSegment.Visitor() {
             @Override
-            public boolean visit(BlockPos pos, double tEnter) {
+            public boolean visit(BlockPos pos, double tEnter, net.minecraft.util.EnumFacing entryFace) {
                 if (!world.isBlockLoaded(pos)) {
                     return false; // nobody looked; see the class note
                 }
@@ -160,7 +168,7 @@ public final class StructureCrossing {
                     }
                     worldPoint = new Vec3d(w[0], w[1], w[2]);
                 }
-                found[0] = new Hit(tEnter * worldLength, worldPoint, pos, shipId);
+                found[0] = new Hit(tEnter * worldLength, worldPoint, pos, shipId, entryFace);
                 return true;
             }
         });

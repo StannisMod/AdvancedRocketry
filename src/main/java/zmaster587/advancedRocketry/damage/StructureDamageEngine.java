@@ -118,7 +118,7 @@ public final class StructureDamageEngine {
         }
 
         @Override
-        public boolean visit(BlockPos pos, double tEnter) {
+        public boolean visit(BlockPos pos, double tEnter, net.minecraft.util.EnumFacing entryFace) {
             Vec3d here = entry.add(scale(farEnd.subtract(entry), tEnter));
             if (previousWasSolid) {
                 // The ray left the previous solid block exactly where it entered this one.

@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.test.unit;
 
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.junit.Test;
@@ -9,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -27,8 +30,8 @@ public class SweptSegmentTest {
         final List<Visit> visits = new ArrayList<>();
         SweptSegment.traverse(from, to, 100_000, new SweptSegment.Visitor() {
             @Override
-            public boolean visit(BlockPos pos, double tEnter) {
-                visits.add(new Visit(pos, tEnter));
+            public boolean visit(BlockPos pos, double tEnter, EnumFacing entryFace) {
+                visits.add(new Visit(pos, tEnter, entryFace));
                 return false;
             }
         });
@@ -111,7 +114,7 @@ public class SweptSegmentTest {
         int visited = SweptSegment.traverse(new Vec3d(0.5D, 0.5D, 0.5D), new Vec3d(900.5D, 0.5D, 0.5D),
                 7, new SweptSegment.Visitor() {
                     @Override
-                    public boolean visit(BlockPos pos, double tEnter) {
+                    public boolean visit(BlockPos pos, double tEnter, EnumFacing entryFace) {
                         seen[0]++;
                         return false;
                     }
@@ -120,13 +123,57 @@ public class SweptSegmentTest {
         assertEquals("and must report exactly what it examined", 7, seen[0]);
     }
 
+    /**
+     * Every voxel is reported WITH the way the segment got in, and the way in points back the way it
+     * came. Anything answering a contact needs that normal, and deriving it afterwards from the entry
+     * point is exactly what cannot be done at a corner — which is why the traversal, the only thing
+     * that knows which axis it stepped, is what says it.
+     */
+    @Test
+    public void everyVoxelIsReportedWithTheFaceItWasEnteredThrough() {
+        List<Visit> east = walk(new Vec3d(0.5D, 0.5D, 0.5D), new Vec3d(4.5D, 0.5D, 0.5D));
+        assertNull("the voxel the segment starts in was not entered through anything",
+                east.get(0).entryFace);
+        for (int i = 1; i < east.size(); i++) {
+            assertEquals("a segment travelling +X enters each next voxel through its WEST face, whose"
+                    + " normal points back at where the segment came from", EnumFacing.WEST,
+                    east.get(i).entryFace);
+        }
+
+        List<Visit> down = walk(new Vec3d(0.5D, 8.5D, 0.5D), new Vec3d(0.5D, 4.5D, 0.5D));
+        for (int i = 1; i < down.size(); i++) {
+            assertEquals("a segment travelling down enters through the UP face", EnumFacing.UP,
+                    down.get(i).entryFace);
+        }
+    }
+
+    /** On a diagonal the face changes with the axis actually crossed, never staying on one. */
+    @Test
+    public void aDiagonalReportsWhicheverAxisItActuallyCrossed() {
+        List<Visit> diagonal = walk(new Vec3d(0.5D, 0.5D, 0.5D), new Vec3d(6.5D, 0.5D, 6.5D));
+        boolean sawWest = false;
+        boolean sawNorth = false;
+        for (int i = 1; i < diagonal.size(); i++) {
+            EnumFacing face = diagonal.get(i).entryFace;
+            assertNotNull("every entered voxel carries the face it was entered through", face);
+            sawWest |= face == EnumFacing.WEST;
+            sawNorth |= face == EnumFacing.NORTH;
+            assertTrue("a segment moving +X +Z can only enter through a WEST or a NORTH face, never"
+                    + " the ones it is travelling away from: " + face,
+                    face == EnumFacing.WEST || face == EnumFacing.NORTH);
+        }
+        assertTrue("a 45-degree segment must cross both axes, not just one", sawWest && sawNorth);
+    }
+
     private static final class Visit {
         private final BlockPos pos;
         private final double t;
+        private final EnumFacing entryFace;
 
-        private Visit(BlockPos pos, double t) {
+        private Visit(BlockPos pos, double t, EnumFacing entryFace) {
             this.pos = pos;
             this.t = t;
+            this.entryFace = entryFace;
         }
     }
 }

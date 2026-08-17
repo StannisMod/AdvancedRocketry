@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.util;
 
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
@@ -29,9 +30,13 @@ public final class SweptSegment {
          * @param pos    the voxel
          * @param tEnter the parameter in {@code [0,1]} along {@code from -> to} at which the segment
          *               enters it ({@code 0} for the voxel the segment starts in)
+         * @param entryFace the face of {@code pos} the segment came in through, as an OUTWARD normal
+         *               — it points back the way the segment came, which is the surface normal
+         *               anything answering a contact needs. {@code null} for the voxel the segment
+         *               starts in: nothing was crossed to get there.
          * @return true to stop the traversal here
          */
-        boolean visit(BlockPos pos, double tEnter);
+        boolean visit(BlockPos pos, double tEnter, EnumFacing entryFace);
     }
 
     private SweptSegment() {
@@ -70,9 +75,13 @@ public final class SweptSegment {
 
         double t = 0.0D;
         int visited = 0;
+        // Null for the first voxel and then the face last crossed: the segment is always reported
+        // WITH the way it got in, so a caller never has to re-derive it from the entry point — which
+        // at a corner cannot be done unambiguously.
+        EnumFacing entryFace = null;
         while (visited < maxVoxels) {
             visited++;
-            if (visitor.visit(new BlockPos(x, y, z), t)) {
+            if (visitor.visit(new BlockPos(x, y, z), t, entryFace)) {
                 return visited;
             }
             double next = Math.min(tMaxX, Math.min(tMaxY, tMaxZ));
@@ -86,12 +95,15 @@ public final class SweptSegment {
             if (next == tMaxX) {
                 x += stepX;
                 tMaxX += tDeltaX;
+                entryFace = stepX > 0 ? EnumFacing.WEST : EnumFacing.EAST;
             } else if (next == tMaxY) {
                 y += stepY;
                 tMaxY += tDeltaY;
+                entryFace = stepY > 0 ? EnumFacing.DOWN : EnumFacing.UP;
             } else {
                 z += stepZ;
                 tMaxZ += tDeltaZ;
+                entryFace = stepZ > 0 ? EnumFacing.NORTH : EnumFacing.SOUTH;
             }
         }
         return visited;
