@@ -30,9 +30,10 @@ public class BlockNuclearRocketMotor extends BlockRocketMotor {
         super(mat);
     }
 
+    /** Rated thrust, newtons. */
     @Override
     public int getThrust(World world, BlockPos pos) {
-        return 35;
+        return 1_716_750;
     }
     @Override
     public IBlockState getActualState(@Nonnull IBlockState state, IBlockAccess world, BlockPos pos) {

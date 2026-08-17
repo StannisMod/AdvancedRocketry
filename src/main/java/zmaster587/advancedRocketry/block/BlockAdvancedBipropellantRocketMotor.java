@@ -16,9 +16,10 @@ public class BlockAdvancedBipropellantRocketMotor extends BlockBipropellantRocke
         super(mat);
     }
 
+    /** Rated thrust, newtons. */
     @Override
     public int getThrust(World world, BlockPos pos) {
-        return 50;
+        return 2_452_500;
     }
 
     @Override

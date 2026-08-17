@@ -76,12 +76,12 @@ public class RocketAssemblySmokeTest extends AbstractSharedServerTest {
         String info = String.join("\n", client().execute("artest rocket info " + entityId));
         int thrust = extractInt(info, "\"thrust\":(-?\\d+)");
         assertTrue("thrust must be positive after assembling with 2 engines: " + info, thrust > 0);
-        // Weight is serialised as a float; match a generous regex.
-        Matcher wm = Pattern.compile("\"weight_no_fuel\":(\\d+(?:\\.\\d+)?)").matcher(info);
-        assertTrue("weight_no_fuel field missing: " + info, wm.find());
-        double weight = Double.parseDouble(wm.group(1));
-        assertTrue("weight_no_fuel must be > 0 with 6 tanks + 2 engines + guidance: " + info,
-                weight > 0);
+        // Dry mass is serialised as a float, in kilograms; match a generous regex.
+        Matcher wm = Pattern.compile("\"dry_mass_kg\":(\\d+(?:\\.\\d+)?)").matcher(info);
+        assertTrue("dry_mass_kg field missing: " + info, wm.find());
+        double dryMass = Double.parseDouble(wm.group(1));
+        assertTrue("dry_mass_kg must be > 0 with 6 tanks + 2 engines + guidance: " + info,
+                dryMass > 0);
         // At least one fuel type must have non-zero capacity (6 fuel tanks).
         // jsonMap serialises nested maps via Map.toString() (capacity=N) rather
         // than nested JSON ("capacity":N), so accept both spellings.

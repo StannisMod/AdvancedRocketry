@@ -912,6 +912,170 @@ public class VSDeckCaptureAndDismountE2ETest extends AbstractSharedVsClientE2ETe
         return Double.parseDouble(m.group(1));
     }
 
+    // ---- Deck support under a gravity the body does not share -----------------------------------
+    //
+    // The two scenarios above assert the CONTRACT ("the pilot stays on the deck"). This pair measures
+    // the THRESHOLD that contract is decided by: an outcome alone cannot separate "the deck held" from
+    // "the body was never near the deck", and those two look identical in a green. A threshold test
+    // that does not assert the quantity the production code compares is measuring its own arrangement.
+    //
+    // WHY THE NUMBER MATTERS HERE. An entity and a VS ship do not fall at the same rate: an entity
+    // accumulates -0.08 per game tick against a 0.98 drag (terminal 3.92 blocks/tick), a ship
+    // integrates -9.8 blocks/s^2 at a 1/60 step against a 0.99-per-game-tick drag (terminal ~2.44
+    // blocks/tick). A body aboard a FALLING deck therefore sinks toward it. A captured body is immune
+    // by construction - its ship-frame position is authoritative and the deck is static in that frame
+    // - so the exposure is the SEAM: the ticks when a body is aboard but not resolved in the ship
+    // frame. Support counts only boxes whose top is at or below the feet, so once a body has sunk past
+    // the deck it cannot be seated, and the refusal hands it back to world gravity to sink further.
+    //
+    // These read the decision's inputs from the CLIENT, because for a player the client owns the
+    // movement and therefore makes the decision; the same statics read server-side would describe a
+    // different body's tick.
+
+    private static final String SHIP_FRAME_TRAVEL_CLASS =
+            "zmaster587.advancedRocketry.integration.vs.ShipFrameTravel";
+
+    /** Ticks sampled after a dismount: ~1.5 s, past the point where the relative rate saturates. */
+    private static final int SUPPORT_SAMPLES = 30;
+
+    /** One sampled tick: what the client's capture decision saw, plus where both bodies were. */
+    private static final class SupportRow {
+        int standing;
+        double feetToTop;
+        double probeReach;
+        double clientY;
+        double shipY;
+    }
+
+    private SupportRow sampleSupport() throws Exception {
+        SupportRow r = new SupportRow();
+        r.standing = (int) clientDouble(SHIP_FRAME_TRAVEL_CLASS, "lastSupportStanding");
+        r.feetToTop = clientDouble(SHIP_FRAME_TRAVEL_CLASS, "lastSupportFeetToHighestTop");
+        r.probeReach = clientDouble(SHIP_FRAME_TRAVEL_CLASS, "lastSupportProbeReach");
+        r.clientY = bot().reportState().get("playerY").getAsDouble();
+        r.shipY = readShipInfoXYZ(shipInfo())[1];
+        return r;
+    }
+
+    /** Stand up for REAL: the dismount must run the client's own sneak handling, not a server probe. */
+    private void dismountByRealKey() throws Exception {
+        bot().holdKey(Keyboard.KEY_LSHIFT);
+        bot().waitTicks(4);
+        bot().setKey(Keyboard.KEY_LSHIFT, false);
+    }
+
+    /**
+     * Travel of the body against its deck across the trace, in blocks; positive = the body sank toward
+     * or through the deck. Computed from the two POSITIONS, never from a gravity constant, so it cannot
+     * inherit the arithmetic it exists to check.
+     */
+    private static double relativeSink(SupportRow first, SupportRow last) {
+        return (first.clientY - last.clientY) - (first.shipY - last.shipY);
+    }
+
+    private static String supportTrace(SupportRow[] rows) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < rows.length; i++) {
+            b.append(String.format("[%d st=%d f2t=%.3f reach=%.2f y=%.2f shipY=%.2f] ", i,
+                    rows[i].standing, rows[i].feetToTop, rows[i].probeReach,
+                    rows[i].clientY, rows[i].shipY));
+        }
+        return b.toString();
+    }
+
+    @Test
+    public void yDeckSupportSurvivesADeckThatIsFalling() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 4820, by = 64, bz = 4820;
+
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        dismountByRealKey();
+        bot().waitTicks(6); // let the dismount capture settle before the deck starts moving
+
+        // The deck must actually descend, and it has to be COMMANDED to. Measured 2026-08-17: simply
+        // standing up does NOT drop the ship on this build - the first run of this scenario read
+        // shipDrop=0.0 over all 30 ticks and its arrangement gate correctly refused to conclude
+        // anything. So the descent is driven through the addressable velocity channel, which is the
+        // same downward deck motion a fall produces and the only part the seam cares about.
+        // Re-issued EVERY sampled tick, because one command does not sustain: measured 2026-08-17, a
+        // single force-vel moved the deck for ~3 ticks and then the hold re-asserted, so the deck was
+        // static for 27 of 30 samples and the body simply settled back onto it. A seam that only
+        // exists while the deck is moving cannot be studied on a deck that stopped.
+        SupportRow[] rows = new SupportRow[SUPPORT_SAMPLES];
+        int ticksWithoutSupport = 0;
+        for (int i = 0; i < SUPPORT_SAMPLES; i++) {
+            exec("artest vs force-vel-by-id 0 " + scenarioShipId + " 0.0 -2.0 0.0");
+            bot().waitTicks(1);
+            rows[i] = sampleSupport();
+            if (rows[i].standing == 0) {
+                ticksWithoutSupport++;
+            }
+        }
+        String tr = supportTrace(rows);
+        double shipDrop = rows[0].shipY - rows[SUPPORT_SAMPLES - 1].shipY;
+        double sink = relativeSink(rows[0], rows[SUPPORT_SAMPLES - 1]);
+        System.out.println("[decksupport] falling shipDrop=" + shipDrop + " relativeSink=" + sink
+                + " ticksWithoutSupport=" + ticksWithoutSupport + "/" + SUPPORT_SAMPLES);
+        System.out.println("[decksupport] falling trace=" + tr);
+
+        // Arrangement gate FIRST: without a deck that actually dropped, a green here means nothing.
+        Assume.assumeTrue("the deck never dropped, so this run says nothing about a falling deck "
+                + "(shipDrop=" + shipDrop + " over " + SUPPORT_SAMPLES + " ticks) trace=" + tr,
+                shipDrop > 0.5);
+        assertTrue("the support probe never reported, so the client's capture decision was never "
+                + "reached and this test measured its own arrangement: trace=" + tr,
+                rows[SUPPORT_SAMPLES - 1].probeReach >= 0.0);
+
+        // The contract: a body aboard cannot drift from the deck it is aboard. The bound is generous
+        // on purpose - a tenth of a block over 30 ticks - because the claim is "this must not
+        // accumulate at all", not a tuned tolerance.
+        assertTrue("a body aboard a FALLING deck drifted " + sink + " blocks relative to it over "
+                + SUPPORT_SAMPLES + " ticks (deck fell " + shipDrop + "), and lost support on "
+                + ticksWithoutSupport + " of them. trace=" + tr,
+                Math.abs(sink) <= 0.1);
+    }
+
+    @Test
+    public void zDeckSupportOnAHeldDeckIsTheControlForTheFallingOne() throws Exception {
+        Assume.assumeTrue("needs Valkyrien Skies on the classpath (run with -PwithVS)", serverHasVs());
+        final int bx = 4920, by = 64, bz = 4920;
+
+        buildAndBoardShip(bx, by, bz);
+        bot().waitTicks(20);
+
+        // The control: hold the ship's attitude and velocity through the addressable probe channel, so
+        // the deck does NOT fall when the pilot stands up. Everything else is identical - which is what
+        // makes the comparison mean anything. If THIS arm drifts too, relative sink is not about the
+        // deck's fall and the falling arm's red is evidence for something else entirely.
+        exec("artest vs point-by-id 0 " + scenarioShipId + " 1.0 0.0 0.0 0.0");
+        exec("artest vs force-vel-by-id 0 " + scenarioShipId + " 0.0 0.0 0.0");
+        bot().waitTicks(10);
+
+        dismountByRealKey();
+
+        SupportRow[] rows = new SupportRow[SUPPORT_SAMPLES];
+        for (int i = 0; i < SUPPORT_SAMPLES; i++) {
+            bot().waitTicks(1);
+            rows[i] = sampleSupport();
+        }
+        String tr = supportTrace(rows);
+        double shipDrop = rows[0].shipY - rows[SUPPORT_SAMPLES - 1].shipY;
+        double sink = relativeSink(rows[0], rows[SUPPORT_SAMPLES - 1]);
+        System.out.println("[decksupport] held shipDrop=" + shipDrop + " relativeSink=" + sink);
+        System.out.println("[decksupport] held trace=" + tr);
+
+        // A control whose deck also fell is not a control.
+        Assume.assumeTrue("the held deck moved " + shipDrop + " blocks, so it is not a control for a "
+                + "falling deck. trace=" + tr, Math.abs(shipDrop) <= 0.5);
+
+        assertTrue("the CONTROL drifted " + sink + " blocks over " + SUPPORT_SAMPLES + " ticks on a "
+                + "deck that did not move, so relative sink is not explained by the deck's fall and "
+                + "the falling arm proves nothing about gravity. trace=" + tr,
+                Math.abs(sink) <= 0.1);
+    }
+
     private int readInt(String json, Pattern p) {
         Matcher m = p.matcher(json);
         assertTrue("expected an integer in: " + json, m.find());

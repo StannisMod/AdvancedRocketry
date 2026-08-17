@@ -24,9 +24,10 @@ public class BlockNuclearCore extends Block implements IRocketNuclearCore {
         super(mat);
     }
 
+    /** Largest thrust this core can feed, newtons. */
     @Override
     public int getMaxThrust(World world, BlockPos pos) {
-        return (int) (1000 * ARConfiguration.getCurrentConfig().nuclearCoreThrustRatio);
+        return (int) (49_050_000L * ARConfiguration.getCurrentConfig().nuclearCoreThrustRatio);
     }
 
     @SideOnly(Side.CLIENT)

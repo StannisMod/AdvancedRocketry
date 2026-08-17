@@ -60,9 +60,10 @@ public class BlockRocketMotor extends BlockFullyRotatable implements IRocketEngi
         return super.getActualState(state, world, pos);
     }
 
+    /** Rated thrust, newtons. */
     @Override
     public int getThrust(World world, BlockPos pos) {
-        return 10;
+        return 490_500;
     }
 
     @Override

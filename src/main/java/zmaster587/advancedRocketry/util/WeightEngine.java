@@ -37,27 +37,34 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Resolves the weight (in kN, the unit the rocket maths uses) of any block, item or fluid.
+ * Resolves the MASS, in kilograms, of any block, item or fluid. One block is one cubic metre,
+ * so a table entry is also that material's density in kg/m³; fluid entries are kilograms per
+ * millibucket. Nothing here is a weight: gravity is applied where the force is needed, never
+ * baked into the table.
  *
  * Resolution chain for a stack (first hit wins, per single item, before multiplying by count):
  *   1. {@code individual}  — explicit per-registry-name override from weights.json
  *   2. {@code byRegex}     — first matching regex over the registry name
  *   3. AR component specifics (motor / tank / pressure tank / guidance / loader)
- *   4. {@code materials}   — by the block's {@link Material}, scaled by weightMaterialScale
- *   5. {@code fallback}    — global default, scaled by weightMaterialScale
- *
- * Only steps 4-5 are scaled by {@code weightMaterialScale}; explicit overrides and AR
- * component values are intentional absolutes and are left untouched.
+ *   4. {@code materials}   — by the block's {@link Material}
+ *   5. {@code fallback}    — global default
  */
 public enum WeightEngine {
     INSTANCE("config/advRocketry/weights.json");
 
-    // AR component defaults (kN) — heavy, purpose-built parts that should not fall back to material.
-    private static final double TANK_WEIGHT = 0.2;
-    private static final double MOTOR_WEIGHT = 2;
-    private static final double GUIDANCE_COMPUTER_WEIGHT = 1.8;
-    private static final double PRESSURE_TANK_WEIGHT = 5;
-    private static final double SATELLITE_HATCH_WEIGHT = 5;
+    /**
+     * Schema version of weights.json. Bumped to 2 when the tables moved from a dimensionless
+     * rating to kilograms; a file without a matching version is set aside and reseeded, because
+     * reading pre-kilogram numbers as kilograms makes every hull ~5000x too light.
+     */
+    private static final int FORMAT_VERSION = 2;
+
+    // AR component defaults (kg) — heavy, purpose-built parts that should not fall back to material.
+    private static final double TANK_MASS = 1000;
+    private static final double MOTOR_MASS = 10000;
+    private static final double GUIDANCE_COMPUTER_MASS = 9000;
+    private static final double PRESSURE_TANK_MASS = 25000;
+    private static final double SATELLITE_HATCH_MASS = 25000;
 
     private final String file;
 
@@ -66,8 +73,8 @@ public enum WeightEngine {
     private Map<String, Double> byRegex = new LinkedHashMap<>();
     private Map<String, Double> fluids = new HashMap<>();
     private Map<String, Double> materials = new HashMap<>();
-    private double fallback = 0.1;
-    private double fluidFallback = 0.001;
+    private double fallback = 500;
+    private double fluidFallback = 5;
 
     // Transient runtime caches (not persisted; cleared on load()).
     private final Map<String, Float> resolvedItemCache = new HashMap<>();
@@ -76,10 +83,6 @@ public enum WeightEngine {
     WeightEngine(String file) {
         this.file = file;
         load();
-    }
-
-    private static double scale() {
-        return ARConfiguration.getCurrentConfig().weightMaterialScale;
     }
 
     public float getWeight(ItemStack stack) {
@@ -119,27 +122,27 @@ public enum WeightEngine {
             Block block = ((ItemBlock) stack.getItem()).getBlock();
 
             if (block instanceof BlockFuelTank) {
-                return (float) TANK_WEIGHT;
+                return (float) TANK_MASS;
             }
             if (block instanceof BlockRocketMotor || block instanceof BlockBipropellantRocketMotor) {
-                return (float) MOTOR_WEIGHT;
+                return (float) MOTOR_MASS;
             }
             if (block instanceof BlockPressurizedFluidTank) {
-                return (float) PRESSURE_TANK_WEIGHT;
+                return (float) PRESSURE_TANK_MASS;
             }
             if (key.equals("advancedrocketry:guidancecomputer")) {
-                return (float) GUIDANCE_COMPUTER_WEIGHT;
+                return (float) GUIDANCE_COMPUTER_MASS;
             }
             if (key.equals("advancedrocketry:loader")) {
-                return (float) SATELLITE_HATCH_WEIGHT;
+                return (float) SATELLITE_HATCH_MASS;
             }
 
-            Double materialWeight = materials.get(materialName(block.getDefaultState().getMaterial()));
-            if (materialWeight != null) {
-                return (float) (materialWeight * scale());
+            Double materialMass = materials.get(materialName(block.getDefaultState().getMaterial()));
+            if (materialMass != null) {
+                return materialMass.floatValue();
             }
         }
-        return (float) (fallback * scale());
+        return (float) fallback;
     }
 
     private Double matchRegex(String key) {
@@ -228,29 +231,41 @@ public enum WeightEngine {
             save();
             return;
         }
+        boolean incompatibleSchema = false;
         try (Reader r = new FileReader(file)) {
             Gson gson = new GsonBuilder().disableHtmlEscaping().create();
             JsonObject root = gson.fromJson(r, JsonObject.class);
-            Type mapType = new TypeToken<HashMap<String, Double>>() {}.getType();
-            Type linkedType = new TypeToken<LinkedHashMap<String, Double>>() {}.getType();
+            if (root == null || !root.has("formatVersion")
+                    || root.get("formatVersion").getAsInt() != FORMAT_VERSION) {
+                // Do NOT retire the file here: the reader above is still open, and Windows refuses
+                // to rename an open file. Flag it and act once the resource has closed.
+                incompatibleSchema = true;
+            } else {
+                Type mapType = new TypeToken<HashMap<String, Double>>() {}.getType();
+                Type linkedType = new TypeToken<LinkedHashMap<String, Double>>() {}.getType();
 
-            individual = readMap(gson, root, "individual", mapType);
-            byRegex = readMap(gson, root, "byRegex", linkedType);
-            fluids = readMap(gson, root, "fluids", mapType);
-            materials = readMap(gson, root, "materials", mapType);
-            if (materials.isEmpty()) {
-                materials = defaultMaterials();
-            }
-            if (root.has("fallback")) {
-                fallback = root.get("fallback").getAsDouble();
-            }
-            if (root.has("fluidFallback")) {
-                fluidFallback = root.get("fluidFallback").getAsDouble();
+                individual = readMap(gson, root, "individual", mapType);
+                byRegex = readMap(gson, root, "byRegex", linkedType);
+                fluids = readMap(gson, root, "fluids", mapType);
+                materials = readMap(gson, root, "materials", mapType);
+                if (materials.isEmpty()) {
+                    materials = defaultMaterials();
+                }
+                if (root.has("fallback")) {
+                    fallback = root.get("fallback").getAsDouble();
+                }
+                if (root.has("fluidFallback")) {
+                    fluidFallback = root.get("fluidFallback").getAsDouble();
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
             seedDefaults();
             System.out.println("The weight config was wrong, could not be read, was broken, not there or something else! Defaults will be used");
+            return;
+        }
+        if (incompatibleSchema) {
+            retireIncompatibleFile();
         }
     }
 
@@ -269,8 +284,32 @@ public enum WeightEngine {
         byRegex = new LinkedHashMap<>();
         fluids = new HashMap<>();
         materials = defaultMaterials();
-        fallback = 0.1;
-        fluidFallback = 0.001;
+        fallback = 500;
+        fluidFallback = 5;
+    }
+
+    /**
+     * Move a weights.json written against another schema aside and write fresh defaults. The old
+     * file is kept next to it so a player's hand-tuned numbers can be carried over by hand — its
+     * values cannot be converted automatically, because an entry may be either a material default
+     * or a deliberate absolute.
+     */
+    private void retireIncompatibleFile() {
+        File current = new File(file);
+        File retired = new File(file + ".v" + (FORMAT_VERSION - 1) + ".bak");
+        if (retired.exists() && !retired.delete()) {
+            System.out.println("Could not replace " + retired + "; leaving weights.json in place and using defaults in memory");
+            seedDefaults();
+            return;
+        }
+        if (!current.renameTo(retired)) {
+            System.out.println("Could not set aside " + current + "; using default weights in memory");
+            seedDefaults();
+            return;
+        }
+        System.out.println("weights.json predates the move to kilograms; kept as " + retired.getName() + " and reseeded with defaults");
+        seedDefaults();
+        save();
     }
 
     // ---- Runtime / test mutation hooks --------------------------------------
@@ -318,6 +357,7 @@ public enum WeightEngine {
         try (FileWriter w = new FileWriter(file)) {
             Gson gson = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
             JsonObject json = new JsonObject();
+            json.addProperty("formatVersion", FORMAT_VERSION);
             json.add("individual", gson.toJsonTree(individual));
             json.add("byRegex", gson.toJsonTree(byRegex));
             json.add("fluids", gson.toJsonTree(fluids));
@@ -332,35 +372,40 @@ public enum WeightEngine {
 
     // ---- Material table -----------------------------------------------------
 
+    /**
+     * Mass of one block of each material, in kilograms — a block is a cubic metre, so these are
+     * also densities. An ordinary block lands at 500 kg/m³ (the density of wood), stone at 2000
+     * and iron at 5000: a hollow structural block rather than a solid billet.
+     */
     private static Map<String, Double> defaultMaterials() {
         Map<String, Double> m = new LinkedHashMap<>();
         m.put("AIR", 0.0);
-        m.put("CLOTH", 0.05);
-        m.put("CARPET", 0.05);
-        m.put("WEB", 0.02);
-        m.put("PLANTS", 0.02);
-        m.put("VINE", 0.02);
-        m.put("LEAVES", 0.02);
-        m.put("CACTUS", 0.05);
-        m.put("GOURD", 0.1);
-        m.put("SNOW", 0.05);
-        m.put("CRAFTED_SNOW", 0.1);
-        m.put("SAND", 0.2);
-        m.put("GROUND", 0.2);
-        m.put("GRASS", 0.2);
-        m.put("CLAY", 0.25);
-        m.put("WOOD", 0.15);
-        m.put("GLASS", 0.1);
-        m.put("ICE", 0.15);
-        m.put("PACKED_ICE", 0.2);
-        m.put("CORAL", 0.2);
-        m.put("CAKE", 0.05);
-        m.put("CIRCUITS", 0.3);
-        m.put("REDSTONE_LIGHT", 0.3);
-        m.put("TNT", 0.3);
-        m.put("ROCK", 0.4);
-        m.put("IRON", 1.0);
-        m.put("ANVIL", 1.5);
+        m.put("CLOTH", 250.0);
+        m.put("CARPET", 250.0);
+        m.put("WEB", 100.0);
+        m.put("PLANTS", 100.0);
+        m.put("VINE", 100.0);
+        m.put("LEAVES", 100.0);
+        m.put("CACTUS", 250.0);
+        m.put("GOURD", 500.0);
+        m.put("SNOW", 250.0);
+        m.put("CRAFTED_SNOW", 500.0);
+        m.put("SAND", 1000.0);
+        m.put("GROUND", 1000.0);
+        m.put("GRASS", 1000.0);
+        m.put("CLAY", 1250.0);
+        m.put("WOOD", 750.0);
+        m.put("GLASS", 500.0);
+        m.put("ICE", 750.0);
+        m.put("PACKED_ICE", 1000.0);
+        m.put("CORAL", 1000.0);
+        m.put("CAKE", 250.0);
+        m.put("CIRCUITS", 1500.0);
+        m.put("REDSTONE_LIGHT", 1500.0);
+        m.put("TNT", 1500.0);
+        m.put("ROCK", 2000.0);
+        m.put("IRON", 5000.0);
+        m.put("ANVIL", 7500.0);
         return m;
     }
 

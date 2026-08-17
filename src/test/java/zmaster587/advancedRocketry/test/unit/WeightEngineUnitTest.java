@@ -6,6 +6,10 @@ import org.junit.Test;
 import zmaster587.advancedRocketry.api.ARConfiguration;
 import zmaster587.advancedRocketry.util.WeightEngine;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.Writer;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -85,6 +89,54 @@ public class WeightEngineUnitTest {
                     Double.valueOf(42.0), we.rawIndividual("ar:roundtrip_probe"));
         } finally {
             // Leave no residue in the on-disk config for other tests.
+            we.resetTables();
+            we.save();
+        }
+    }
+
+    @Test
+    public void aTableFromAnotherSchemaIsSetAsideRatherThanRead() throws Exception {
+        // The numbers in weights.json changed meaning when the tables were denominated in
+        // kilograms: a value that used to mean "an ordinary block" now means a two-hundredth of
+        // one. Reading such a file would silently make every hull far too light and every rocket
+        // able to launch, so a file whose schema version does not match must be set aside and
+        // replaced with defaults — never reinterpreted, and never deleted either, because only its
+        // author can tell a material default from a deliberate absolute.
+        WeightEngine we = WeightEngine.INSTANCE;
+        File table = new File("config/advRocketry/weights.json");
+        File retired = new File(table.getPath() + ".v1.bak");
+        try {
+            if (retired.exists()) {
+                assertTrue("could not clear a stale backup from an earlier run", retired.delete());
+            }
+            File parent = table.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
+            }
+            // Shaped like the pre-kilogram schema: no formatVersion, and an override that would be
+            // read back verbatim if the version check were absent.
+            try (Writer w = new FileWriter(table)) {
+                w.write("{\"individual\":{\"ar:legacy_probe\":0.1},\"byRegex\":{},"
+                        + "\"fluids\":{},\"materials\":{\"ROCK\":0.4},"
+                        + "\"fallback\":0.1,\"fluidFallback\":0.001}");
+            }
+
+            we.load();
+
+            assertNull("a table from another schema must NOT be read into the live tables",
+                    we.rawIndividual("ar:legacy_probe"));
+            assertTrue("the incompatible file must be kept beside the new one, not dropped",
+                    retired.exists());
+            assertTrue("defaults must be reseeded so the engine stays usable", we.materialCount() > 10);
+
+            // The file just written must survive its own version check, i.e. save() stamps it.
+            we.load();
+            assertTrue("the reseeded file must pass the version check on the next load",
+                    we.materialCount() > 10);
+        } finally {
+            if (retired.exists()) {
+                retired.delete();
+            }
             we.resetTables();
             we.save();
         }

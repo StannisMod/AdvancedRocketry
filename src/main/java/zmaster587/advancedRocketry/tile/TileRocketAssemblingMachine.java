@@ -55,6 +55,7 @@ import javax.annotation.Nullable;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import zmaster587.advancedRocketry.util.NuclearEngineLimit;
 
 /**
  * Purpose: validate the rocket structure as well as give feedback to the player as to what needs to be
@@ -250,25 +251,29 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         return stats.getAcceleration(gravitationalMultiplier);
     }
 
-    public float getWeight() {
-        return stats.getWeight();
+    /** Wet mass of the scanned rocket, kilograms. */
+    public float getMass() {
+        return stats.getMass();
     }
 
     public int getThrust() {
         return stats.getThrust();
     }
 
+    /** Thrust in newtons the launch gate demands here — local weight times the minimum TWR.
+     *  With the weight system off there is no TWR launch gate (see StatsRocket.canLaunch), so
+     *  there is no thrust requirement to display. */
     public float getNeededThrust() {
-        // With the weight system off there is no TWR launch gate (see
-        // StatsRocket.canLaunch), so there is no thrust requirement to display.
         if (!ARConfiguration.getCurrentConfig().advancedWeightSystem) {
             return 0;
         }
-        return getWeight() * (float) ARConfiguration.getCurrentConfig().minLaunchTWR;
+        return stats.getWeightNewtons(getGravityMultiplier())
+                * (float) ARConfiguration.getCurrentConfig().minLaunchTWR;
     }
 
+    /** Thrust-to-weight ratio at the gravity of the world this assembler stands in. */
     public float getThrustToWeightRatio() {
-        return stats.getThrustToWeightRatio();
+        return stats.getThrustToWeightRatio(getGravityMultiplier());
     }
 
     public boolean hasEnoughFuel(@Nonnull FuelType fuelType) {
@@ -399,11 +404,11 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         }
 
 
-            int thrustMonopropellant = 0;
-        int thrustBipropellant = 0;
-        int thrustNuclearNozzleLimit = 0;
-        int thrustNuclearReactorLimit = 0;
-        int thrustNuclearTotalLimit = 0;
+        long thrustMonopropellant = 0;
+        long thrustBipropellant = 0;
+        long thrustNuclearNozzleLimit = 0;
+        long thrustNuclearReactorLimit = 0;
+        int thrustNuclearTotalLimit;
         int monopropellantfuelUse = 0;
         int bipropellantfuelUse = 0;
         int nuclearWorkingFluidUseMax = 0;
@@ -458,7 +463,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         // computer ticks and fights the linked one for the ship, a second seat is silently dead).
         int flightComputerCount = 0;
         int pilotSeatCount = 0;
-        float weight = 0;
+        float mass = 0;
 
         if (verifyScan(bb, world)) {
             for (int yCurr = (int) bb.minY; yCurr <= bb.maxY; yCurr++) {
@@ -483,9 +488,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                             }
 
                             if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
-                                weight += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
+                                mass += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
                             } else {
-                                weight += 1;
+                                // Weight system off: every block counts as one unit of mass.
+                                mass += 1;
                             }
 
                             //If rocketEngine increaseThrust
@@ -535,10 +541,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                                 if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
                                     TileSatelliteHatch hatch = (TileSatelliteHatch) tile;
                                     if (hatch.getSatellite() != null) {
-                                        weight += hatch.getSatellite().getProperties().getWeight();
+                                        mass += hatch.getSatellite().getProperties().getWeight();
                                     } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
                                         ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
-                                        weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
+                                        mass += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
                                     }
                                 }
                             } else if (tile instanceof TileGuidanceComputer) {
@@ -559,13 +565,10 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
                 }
             }
 
-            int nuclearWorkingFluidUse = 0;
-            if (thrustNuclearNozzleLimit > 0) {
-                //Only run the number of engines our cores can support - we can't throttle these effectively because they're small, so they shut off if they don't get full power
-                thrustNuclearTotalLimit = Math.min(thrustNuclearNozzleLimit, thrustNuclearReactorLimit);
-                nuclearWorkingFluidUse = (int) (nuclearWorkingFluidUseMax * (thrustNuclearTotalLimit / (float) thrustNuclearNozzleLimit));
-                thrustNuclearTotalLimit = (nuclearWorkingFluidUse * thrustNuclearNozzleLimit) / nuclearWorkingFluidUseMax;
-            }
+            NuclearEngineLimit nuclear = NuclearEngineLimit.derive(
+                    thrustNuclearNozzleLimit, thrustNuclearReactorLimit, nuclearWorkingFluidUseMax);
+            int nuclearWorkingFluidUse = nuclear.workingFluidUse;
+            thrustNuclearTotalLimit = nuclear.thrust;
 
             // Set fuel stats
             // Thrust depending on rocket type
@@ -586,7 +589,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             stats.setFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID,      fuelCapacityNuclearWorkingFluid);
 
             //Non-fuel stats
-            stats.setWeight(weight);
+            stats.setMass(mass);
             stats.setThrust(Math.max(Math.max(thrustMonopropellant, thrustBipropellant), thrustNuclearTotalLimit));
             stats.setDrillingPower(drillPower);
 
@@ -1153,8 +1156,8 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         if (thrustText == null || weightText == null || fuelText == null || accelerationText == null || errorText == null) {
             return;
         }
-        thrustText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust") + ": ???") : String.format("%s: %dkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust"), getThrust()));
-        weightText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight") + ": ???") : String.format("%s: %.2fkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight"), (getWeight() * getGravityMultiplier())));
+        thrustText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust") + ": ???") : String.format("%s: %.1fkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.thrust"), getThrust() / 1000f));
+        weightText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight") + ": ???") : String.format("%s: %.1fkN", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.weight"), stats.getWeightNewtons(getGravityMultiplier()) / 1000f));
         fuelText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel") + ": ???") : String.format("%s: %dmb/s", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.fuel"), 20* getRocketStats().getFuelRate((stats.getFuelCapacity(FuelType.LIQUID_MONOPROPELLANT) > 0) ? FuelType.LIQUID_MONOPROPELLANT : (stats.getFuelCapacity(FuelType.NUCLEAR_WORKING_FLUID) > 0) ? FuelType.NUCLEAR_WORKING_FLUID : FuelType.LIQUID_BIPROPELLANT)));
         accelerationText.setText(isScanning() ? (LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc") + ": ???") : String.format("%s: %.2fm/s\u00b2 (TWR %.2f)", LibVulpes.proxy.getLocalizedString("msg.rocketbuilder.acc"), getAcceleration(getGravityMultiplier()) * 20f, getThrustToWeightRatio()));
         if (!world.isRemote) {
@@ -1236,7 +1239,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
             case 2:
                 return (float) this.getNormallizedProgress();
             case 3:
-                return this.getWeight() > 0 ? 0.5f : 0f;
+                return this.getMass() > 0 ? 0.5f : 0f;
             case 4:
                 return this.getThrust() > 0 ? 0.9f : 0f;
         }
@@ -1276,7 +1279,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
     public void setData(int id, int value) {
         switch (id) {
             case 0:
-                getRocketStats().setWeight(value/1000f);
+                getRocketStats().setMass(value);
                 break;
             case 1:
                 getRocketStats().setThrust(value);
@@ -1335,7 +1338,7 @@ public class TileRocketAssemblingMachine extends TileEntityRFConsumer implements
         switch (id) {
 
             case 0:
-                return (int)(getRocketStats().getWeight_NoFuel()*1000);
+                return Math.round(getRocketStats().getDryMass());
             case 1:
                 return getRocketStats().getThrust();
             case 2:

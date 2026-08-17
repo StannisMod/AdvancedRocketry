@@ -12,19 +12,18 @@ import static org.junit.Assert.assertTrue;
  * Contract coverage for {@link zmaster587.advancedRocketry.util.WeightEngine}
  * exercised against real (registered) blocks and fluids in a booted server.
  *
- * <p>These tests pin the <em>contracts</em> of the weight resolution chain, not
- * the exact kN constants in the default material table:</p>
+ * <p>These tests pin the <em>contracts</em> of the mass resolution chain, not
+ * the exact kilogram constants in the default material table:</p>
  *
  * <ul>
- *   <li>heavier materials resolve to a larger weight than lighter ones;</li>
- *   <li>stack count multiplies the per-item weight;</li>
+ *   <li>denser materials resolve to a larger mass than lighter ones;</li>
+ *   <li>stack count multiplies the per-item mass;</li>
  *   <li>resolution precedence: individual override &gt; regex &gt; material;</li>
- *   <li>{@code weightMaterialScale} scales material-derived weights;</li>
- *   <li>fluid weight uses the fallback per-mB rate and {@code fuelMassScale}.</li>
+ *   <li>fluid mass uses the fallback per-mB rate and {@code fuelMassScale}.</li>
  * </ul>
  *
  * <p>Every method calls {@code /artest weight reset} first so the shared
- * WeightEngine singleton + the two scale config keys start from defaults
+ * WeightEngine singleton + the fuel mass scale start from defaults
  * (see {@link AbstractSharedServerTest} state-leak contract).</p>
  */
 public class WeightSystemTest extends AbstractSharedServerTest {
@@ -99,18 +98,6 @@ public class WeightSystemTest extends AbstractSharedServerTest {
         assertTrue("weight set failed: " + set, set.contains("\"ok\":true"));
         assertEquals("individual override must win over a matching regex rule",
                 50.0, itemWeight("minecraft:glass", 1), 1e-4);
-    }
-
-    @Test
-    public void materialScaleScalesMaterialWeights() throws Exception {
-        reset();
-        double base = itemWeight("minecraft:stone", 1);
-
-        String sc = String.join("\n", client().execute("artest weight material-scale 2.0"));
-        assertTrue("material-scale failed: " + sc, sc.contains("\"ok\":true"));
-
-        assertEquals("material weight must scale by weightMaterialScale",
-                2 * base, itemWeight("minecraft:stone", 1), 1e-4);
     }
 
     @Test

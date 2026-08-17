@@ -76,6 +76,20 @@ public final class ShipFrameTravel {
     /** Ship-frame obstacles the last resolved sweep saw. Zero on every tick means the deck's blocks
      *  are not being found, and an aboard body falls straight through it. */
     public static volatile int lastObstacleCount = -1;
+
+    /** Support count the LAST deck-support decision compared — the quantity the capture path gates on.
+     *  Written at the decision site, so on a player's own client this is the client's number and not a
+     *  server tick's; that distinction is the whole reason these are statics and not a server probe. */
+    public static volatile int lastSupportStanding = -1;
+
+    /** Probe reach that decision used, in blocks: the base reach plus the body's own downward
+     *  ship-frame speed. Distinguishes "no deck near" from "the probe was too short". */
+    public static volatile double lastSupportProbeReach = -1.0;
+
+    /** Feet-to-highest-box-top of that decision, in ship-frame blocks, or NaN when the probe found
+     *  nothing. POSITIVE means the body has sunk PAST the highest box, so it can no longer count as
+     *  support however close it is — the quantity a body crosses when it loses its deck. */
+    public static volatile double lastSupportFeetToHighestTop = Double.NaN;
     /** The sweep's horizontal collision flags on the last resolved tick, and how many obstacles it
      *  saw (test diagnostics). A body that is ON the deck, whose input the resolver SEES, and which
      *  still does not travel has exactly two candidate writers: the sweep zeroing the horizontal
@@ -1395,11 +1409,23 @@ public final class ShipFrameTravel {
                 local[0] - half, local[1] - reach, local[2] - half,
                 local[0] + half, local[1], local[2] + half);
         int standing = 0;
+        double highestTop = Double.NEGATIVE_INFINITY;
+        int boxes = 0;
         for (AxisAlignedBB box : entity.world.getCollisionBoxes(entity, underFeet)) {
+            boxes++;
+            if (box.maxY > highestTop) {
+                highestTop = box.maxY;
+            }
             if (box.maxY <= local[1] + STANDING_TOLERANCE) {
                 standing++;
             }
         }
+        // Recorded at the DECISION site, so the numbers belong to whichever side actually ran it -
+        // capture is the client's for a player, and a server-side reading of these would describe a
+        // different body's tick. See the fields' own javadoc.
+        lastSupportStanding = standing;
+        lastSupportProbeReach = reach;
+        lastSupportFeetToHighestTop = boxes == 0 ? Double.NaN : highestTop - local[1];
         return standing;
     }
 
@@ -1591,6 +1617,90 @@ public final class ShipFrameTravel {
     /** How far below the feet to look for a supporting block. Small, so a body genuinely airborne over a
      *  deck still resolves in the ship frame; extended by the fall speed for a fast faller. */
     private static final double SUPPORT_PROBE = 0.30;
+
+    /**
+     * READ-ONLY. The numbers the deck-support decision is actually made on, for one body: the support
+     * count the capture path compares, the probe reach it used, and where the body's feet sit relative
+     * to the highest box the probe found — in the SHIP frame, which is the frame the decision is made
+     * in.
+     *
+     * <p>Exists because the support test is a THRESHOLD ("is a box top at or below the feet") and its
+     * outcome alone cannot distinguish "the deck held" from "the body was never near the deck". A
+     * caller that asserts only capture/no-capture is measuring its own arrangement. The three numbers
+     * here are that threshold's inputs.</p>
+     *
+     * <p>{@code feetToHighestBoxTop} is positive when the highest box found is ABOVE the feet, i.e.
+     * the body has sunk past it and it can no longer count as support however close it is. That is the
+     * quantity a body losing its deck on a moving ship crosses, and the one worth plotting per tick.</p>
+     */
+    public static Map<String, Object> explainDeckSupport(EntityLivingBase entity) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (entity == null || entity.world == null) {
+            m.put("error", "no entity/world");
+            return m;
+        }
+        ShipFrameState state = STATE.get(entity);
+        // Attribute an uncaptured body the way the capture path does — the first ship whose bounds
+        // hold it — rather than by a distance guess of this method's own, or the diagnostic would be
+        // answering about a different ship than the decision it is meant to explain.
+        String shipId = state != null ? state.shipId : null;
+        if (shipId == null) {
+            for (String candidate : VSIntegration.shipIdsAt(
+                    entity.world, entity.posX, entity.posY, entity.posZ)) {
+                shipId = candidate;
+                break;
+            }
+        }
+        m.put("captured", state != null);
+        m.put("shipId", shipId);
+        if (shipId == null) {
+            m.put("reason", "not over a loaded ship");
+            return m;
+        }
+        double[] local = VSIntegration.toShipFrameFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        if (local == null) {
+            m.put("reason", "no ship-frame mapping");
+            return m;
+        }
+        double[] motion = VSIntegration.rotateToShipFrameFor(entity.world, shipId,
+                entity.motionX, entity.motionY, entity.motionZ);
+        double reach = SUPPORT_PROBE + (motion != null && motion[1] < 0.0 ? -motion[1] : 0.0);
+        double half = entity.width / 2.0;
+        AxisAlignedBB underFeet = new AxisAlignedBB(
+                local[0] - half, local[1] - reach, local[2] - half,
+                local[0] + half, local[1], local[2] + half);
+        int standing = 0;
+        int intersecting = 0;
+        double highestTop = Double.NEGATIVE_INFINITY;
+        for (AxisAlignedBB box : entity.world.getCollisionBoxes(entity, underFeet)) {
+            intersecting++;
+            if (box.maxY > highestTop) {
+                highestTop = box.maxY;
+            }
+            if (box.maxY <= local[1] + STANDING_TOLERANCE) {
+                standing++;
+            }
+        }
+        double[] shipVel = VSIntegration.shipVelocityAtPointFor(
+                entity.world, shipId, entity.posX, entity.posY, entity.posZ);
+        m.put("standing", standing);
+        m.put("boxesInProbe", intersecting);
+        m.put("probeReach", reach);
+        m.put("feetShipY", local[1]);
+        m.put("highestBoxTopShipY", intersecting == 0 ? null : highestTop);
+        m.put("feetToHighestBoxTop", intersecting == 0 ? null : highestTop - local[1]);
+        m.put("standingTolerance", STANDING_TOLERANCE);
+        // Both vertical rates, in blocks per GAME tick, so a caller can subtract them: this pair is
+        // what sets how far a body drifts from its deck during any tick it is not resolved in the
+        // ship frame.
+        m.put("bodyMotionY", entity.motionY);
+        m.put("shipMotionYPerTick", shipVel == null ? null : shipVel[1] * TICK_SECONDS);
+        m.put("shipFrameMotionY", motion == null ? null : motion[1]);
+        m.put("entityId", entity.getEntityId());
+        m.put("isRemote", entity.world.isRemote);
+        return m;
+    }
 
     /** Deck tilt in degrees (deck up vs world up) for an already-resolved ship attitude, or {@code "n/a"}
      *  when the point maps to no loaded ship. The discriminator for whether a drop is attitude-dependent. */

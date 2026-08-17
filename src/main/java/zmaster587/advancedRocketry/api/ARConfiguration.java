@@ -360,8 +360,6 @@ public class ARConfiguration {
     @ConfigProperty
     public boolean advancedWeightSystemInventories;
     @ConfigProperty(needsSync = true)
-    public double weightMaterialScale = 1.0;
-    @ConfigProperty(needsSync = true)
     public double fuelMassScale = 1.0;
     @ConfigProperty(needsSync = true)
     public double minLaunchTWR = 1.05;
@@ -607,7 +605,6 @@ public class ARConfiguration {
         blackListRocketBlocksStr = config.getStringList("rocketBlockBlackList", ROCKET, new String[]{"minecraft:portal", "minecraft:bedrock", "minecraft:snow_layer", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava", "minecraft:fire", "advancedrocketry:rocketfire"}, "Blocks that cannot be part of rocket. Format: modid:block e.g \"minecraft:chest\"");
         arConfig.advancedWeightSystem = config.get(ROCKET, "advancedWeightSystem", true, "Enable advanced rocket weight calculation, including the handled inventories. Block weights are stored in weights.json").getBoolean();
         arConfig.advancedWeightSystemInventories = config.get(ROCKET, "advancedWeightSystemInventories", true, "Include inventory contents in rocket weight. Note: may not work with modded inventories (eg IE storage chests)").getBoolean();
-        arConfig.weightMaterialScale = config.get(ROCKET, "weightMaterialScale", 1.0, "Global multiplier applied to material-derived and fallback block weights (does not affect explicit overrides or rocket component parts). Raise to make hulls/structure mass matter more").getDouble();
         arConfig.fuelMassScale = config.get(ROCKET, "fuelMassScale", 1.0, "Global multiplier applied to the mass of fuel/oxidizer carried by a rocket. Raise to make full tanks weigh more relative to thrust").getDouble();
         arConfig.minLaunchTWR = config.get(ROCKET, "minLaunchTWR", 1.05, "Minimum thrust-to-weight ratio (thrust / wet weight) a rocket needs before it is allowed to launch. 1.0 means it can barely lift itself; values above 1.0 add a safety margin").getDouble();
         arConfig.wearThrustPenaltyMax = config.get(ROCKET, "wearThrustPenaltyMax", 0.5, "Fraction of thrust a fully-worn rocket motor loses (partsWearSystem). 0.5 means a motor at max wear produces half thrust; 0 disables the thrust penalty (wear then only affects explosion chance)").getDouble();

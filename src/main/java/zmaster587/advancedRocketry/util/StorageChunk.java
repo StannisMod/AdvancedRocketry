@@ -85,7 +85,8 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     private ArrayList<TileEntity> inventoryTiles;
     private ArrayList<TileEntity> liquidTiles;
     private Entity entity;
-    private float weight;
+    /** Total mass of the packed structure, kilograms. */
+    private float mass;
     private boolean hasServiceMonitor;
 
     public Block[][][] getblocks() {
@@ -142,17 +143,20 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
     }
 
 
-    public void setWeight(int weight) {
-        this.weight = weight;
+    /** @param mass total mass of the packed structure, kilograms */
+    public void setMass(int mass) {
+        this.mass = mass;
     }
 
+    /** Total mass of the packed structure, kilograms. */
     @Override
     public float getWeight() {
-        return this.weight;
+        return this.mass;
     }
 
-    public float recalculateWeight() {
-        this.weight = 0;
+    /** Re-walk the packed blocks and tile contents and return the total mass in kilograms. */
+    public float recalculateMass() {
+        this.mass = 0;
 
         // plain blocks
         for (int x = 0; x < this.sizeX; x++) {
@@ -160,7 +164,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 for (int z = 0; z < this.sizeZ; z++) {
                     Block block = this.blocks[x][y][z];
                     if (block != null) {
-                        this.weight += WeightEngine.INSTANCE.getWeight(null, block);
+                        this.mass += WeightEngine.INSTANCE.getWeight(null, block);
                     }
                 }
             }
@@ -168,27 +172,29 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
         // TEs
         for (TileEntity te : this.tileEntities) {
-            this.weight += WeightEngine.INSTANCE.getTEWeight(te);
+            this.mass += WeightEngine.INSTANCE.getTEWeight(te);
 
             if (te instanceof TileSatelliteHatch) {
                 TileSatelliteHatch hatch = (TileSatelliteHatch) te;
                 if (hatch.getSatellite() != null) {
-                    weight += hatch.getSatellite().getProperties().getWeight();
+                    mass += hatch.getSatellite().getProperties().getWeight();
                 } else if (hatch.getStackInSlot(0).getItem() instanceof ItemPackedStructure) {
                     ItemPackedStructure struct = (ItemPackedStructure) hatch.getStackInSlot(0).getItem();
-                    weight += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
+                    mass += struct.getStructure(hatch.getStackInSlot(0)).getWeight();
                 }
             }
         }
-        return this.weight;
+        return this.mass;
     }
 
     public void recalculateStats(StatsRocket stats) {
-        int thrustMonopropellant = 0;
-        int thrustBipropellant = 0;
-        int thrustNuclearNozzleLimit = 0;
-        int thrustNuclearReactorLimit = 0;
-        int thrustNuclearTotalLimit = 0;
+        // Thrust is in newtons and accumulates per engine, so these sum in long: a stack of
+        // reactor cores alone runs into tens of millions.
+        long thrustMonopropellant = 0;
+        long thrustBipropellant = 0;
+        long thrustNuclearNozzleLimit = 0;
+        long thrustNuclearReactorLimit = 0;
+        int thrustNuclearTotalLimit;
         int monopropellantfuelUse = 0;
         int bipropellantfuelUse = 0;
         int nuclearWorkingFluidUseMax = 0;
@@ -202,7 +208,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         stats.reset_no_fuel();// Oh Quarter... you can not keep adding engine and seat locations every launch
         final boolean isSD = (this.entity instanceof zmaster587.advancedRocketry.entity.EntityStationDeployedRocket);
 
-        float weight = 0;
+        float mass = 0;
 
         for (int yCurr = 0; yCurr <= this.sizeY; yCurr++) {
             for (int xCurr = 0; xCurr <= this.sizeX; xCurr++) {
@@ -216,9 +222,10 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                         Block block = state.getBlock();
 
                         if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
-                            weight += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
+                            mass += WeightEngine.INSTANCE.getWeight(world, currBlockPos);
                         } else {
-                            weight += 1;
+                            // Weight system off: every block counts as one unit of mass.
+                            mass += 1;
                         }
 
                         //If rocketEngine increaseThrust
@@ -300,13 +307,10 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             }
         }
 
-        int nuclearWorkingFluidUse = 0;
-        if (thrustNuclearNozzleLimit > 0) {
-            //Only run the number of engines our cores can support - we can't throttle these effectively because they're small, so they shut off if they don't get full power
-            thrustNuclearTotalLimit = Math.min(thrustNuclearNozzleLimit, thrustNuclearReactorLimit);
-            nuclearWorkingFluidUse = (int) (nuclearWorkingFluidUseMax * (thrustNuclearTotalLimit / (float) thrustNuclearNozzleLimit));
-            thrustNuclearTotalLimit = (nuclearWorkingFluidUse * thrustNuclearNozzleLimit) / nuclearWorkingFluidUseMax;
-        }
+        NuclearEngineLimit nuclear = NuclearEngineLimit.derive(
+                thrustNuclearNozzleLimit, thrustNuclearReactorLimit, nuclearWorkingFluidUseMax);
+        int nuclearWorkingFluidUse = nuclear.workingFluidUse;
+        thrustNuclearTotalLimit = nuclear.thrust;
 
         //Set fuel stats
         //Thrust depending on rocket type
@@ -351,7 +355,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
 
         //Non-fuel stats (keep these after the capacity/tag work)
-        stats.setWeight(weight);
+        stats.setMass(mass);
         stats.setThrust(Math.max(Math.max(thrustMonopropellant, thrustBipropellant), thrustNuclearTotalLimit));
         stats.setDrillingPower(drillPower);
         stats.setStatTag("intakePower", intakePower);
@@ -399,7 +403,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
 
         StorageChunk ret = new StorageChunk((actualMaxX - actualMinX + 1), (actualMaxY - actualMinY + 1), (actualMaxZ - actualMinZ + 1));
 
-        float weight = 0;
+        float mass = 0;
 
         //Iterate though the bounds given storing blocks/meta/tiles
         for (int x = actualMinX; x <= actualMaxX; x++) {
@@ -407,7 +411,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
                 for (int y = actualMinY; y <= actualMaxY; y++) {
                     BlockPos pos = new BlockPos(x, y, z);
 
-                    weight += WeightEngine.INSTANCE.getWeight(world, pos);
+                    mass += WeightEngine.INSTANCE.getWeight(world, pos);
 
                     IBlockState state = world.getBlockState(pos);
                     ret.blocks[x - actualMinX][y - actualMinY][z - actualMinZ] = state.getBlock();
@@ -450,7 +454,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
             }
         }
 
-        ret.weight = weight;
+        ret.mass = mass;
 
         return ret;
     }
@@ -666,7 +670,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         nbt.setInteger("xSize", sizeX);
         nbt.setInteger("ySize", sizeY);
         nbt.setInteger("zSize", sizeZ);
-        nbt.setFloat("weight", weight);
+        nbt.setFloat("mass", mass);
         nbt.setBoolean("hasServiceMonitor", hasServiceMonitor);
 
         Iterator<TileEntity> tileEntityIterator = tileEntities.iterator();
@@ -711,7 +715,7 @@ public class StorageChunk implements IBlockAccess, IStorageChunk, IWeighted, IBr
         sizeX = nbt.getInteger("xSize");
         sizeY = nbt.getInteger("ySize");
         sizeZ = nbt.getInteger("zSize");
-        weight = nbt.getFloat("weight");
+        mass = nbt.getFloat("mass");
         hasServiceMonitor = nbt.getBoolean("hasServiceMonitor");
 
         blocks = new Block[sizeX][sizeY][sizeZ];

@@ -971,7 +971,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         this.dataManager.set(FF_QY, 0f);
         this.dataManager.set(FF_QZ, 0f);
         ffTrace("startFreeFlight mode=" + getFlightMode() + " thrust=" + stats.getThrust()
-                + " weight=" + stats.getWeight() + " accel=" + stats.getAcceleration(1f)
+                + " massKg=" + stats.getMass() + " accel=" + stats.getAcceleration(1f)
                 + " liftoffTargetY=" + ffLiftoffTargetY);
     }
 
@@ -1185,7 +1185,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
      */
     private void logFreeFlightLandReason(boolean thrustAppliedLastTick) {
         int thrust = stats.getThrust();
-        float weight = stats.getWeight();
+        float massKg = stats.getMass();
         float gravMult = DimensionManager.getInstance()
                 .getDimensionProperties(this.world.provider.getDimension())
                 .getGravitationalMultiplier();
@@ -1194,7 +1194,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         // Climb authority is exactly the classic ascent acceleration: > 0 means
         // the rocket can gain altitude at full vertical thrust (i.e. TWR > 1).
         double netAccel = stats.getAcceleration(gravMult);
-        double twr = weight > 0 ? (double) thrust / weight : Double.POSITIVE_INFINITY;
+        double twr = stats.getThrustToWeightRatio(gravMult);
         boolean canClimb = netAccel > 0;
         String verdict = canClimb
                 ? "thrust OK (getAcceleration > 0, TWR > 1) — re-landed without sustained vertical (Z) input, or auto-land fired near the pad"
@@ -1202,11 +1202,11 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         AdvancedRocketry.logger.info(String.format(
                 "[FF-DEBUG] FreeFlight OFF (landed) after %d ticks: onGround=%b motionY=%.4f thrustAppliedLastTick=%b%n"
-              + "           climb: thrust=%d weight=%.2f TWR=%.3f getAcceleration=%.5f gravity=%.5f canClimb=%b%n"
+              + "           climb: thrustN=%d massKg=%.2f TWR=%.3f getAcceleration=%.5f gravity=%.5f canClimb=%b%n"
               + "           verdict: %s%n"
               + "           lastInput=%s",
                 freeFlightTicksSinceStart, this.onGround, this.motionY, thrustAppliedLastTick,
-                thrust, weight, twr, netAccel, gravity, canClimb,
+                thrust, massKg, twr, netAccel, gravity, canClimb,
                 verdict, String.valueOf(currentFreeFlightInput)));
     }
 
@@ -1363,11 +1363,13 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         if (isInOrbit()) return true;   // already at orbit
 
-        if (stats.getThrust() <= stats.getWeight()) return false;
-
         final DimensionProperties src = DimensionManager.getInstance()
                 .getDimensionProperties(this.world.provider.getDimension());
-        final float gSrc = Math.max(0.01f, src.getGravitationalMultiplier()); 
+        final float gSrc = Math.max(0.01f, src.getGravitationalMultiplier());
+
+        // Cannot even lift itself here, so no amount of fuel gets it to orbit.
+        if (stats.getThrustToWeightRatio(gSrc) <= 1f) return false;
+
         final double a = Math.max(0.0001d, stats.getAcceleration(gSrc));    
         final double h = Math.max(0.0, stats.orbitHeight - this.posY);
 
@@ -1918,7 +1920,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
             this.dataManager.set(LAUNCH_COUNTER, launchCount);
             //Just before launch, damage the ground. We'll do it again on the tick that we launch
             if (ARConfiguration.getCurrentConfig().launchingDestroysBlocks && launchCount <= 100 && launchCount != 0 && this.getFuelCapacity(getRocketFuelType()) > 0)
-                damageGroundBelowRocket(world, (int) this.posX, (int) this.posY, (int) this.posZ, (int) Math.pow(stats.getThrust(), 0.4));
+                damageGroundBelowRocket(world, (int) this.posX, (int) this.posY, (int) this.posZ, scorchRadius());
         }
 
         if(!world.isRemote){
@@ -2199,7 +2201,7 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
         //When we're landing, we should also destroy the blocks below the rocket if they are valid to be destroyed - but overall we do it fewer times than on launch (once instead of twice)
         if (this.posY < getTopBlock(getPosition()).getY() + 5 && this.posX > getTopBlock(getPosition()).getY() && ARConfiguration.getCurrentConfig().launchingDestroysBlocks && motionY < -0.1) {
-            damageGroundBelowRocket(world, (int) this.posX, (int) this.posY - 1, (int) this.posZ, (int) Math.pow(stats.getThrust(), 0.4));
+            damageGroundBelowRocket(world, (int) this.posX, (int) this.posY - 1, (int) this.posZ, scorchRadius());
         }
 
         //System.out.println("motiony:"+motionY);
@@ -2671,14 +2673,14 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
 
 
         if (ARConfiguration.getCurrentConfig().advancedWeightSystem) {
-            this.stats.setWeight(storage.recalculateWeight());
+            this.stats.setMass(storage.recalculateMass());
             for (HashedBlockPosition pos : this.infrastructureCoords) {
                 TileEntity te = world.getTileEntity(pos.getBlockPos());
                 if (te instanceof TileRocketAssemblingMachine) {
-                    //this does not work: getWeight() returns weight + fuel. setWeight() should not include fuel weight because it is calculated on every getweight()
-                    // so if you say setweight(getweight()) and next time I call getweight() it returns weight+fuel+fuel
+                    // this does not work: getMass() returns dry mass + fuel, while setMass() takes the DRY
+                    // mass, so setMass(getMass()) accumulates the fuel again on every call.
                     // we do not need this anyway because the assembler has IDataSync interface and syncs itself
-                    //((TileRocketAssemblingMachine) te).getRocketStats().setWeight(this.stats.getWeight());
+                    //((TileRocketAssemblingMachine) te).getRocketStats().setMass(this.stats.getMass());
                 }
             }
         }
@@ -2812,7 +2814,9 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
         }
 
 
-        if (!this.stats.canLaunch()) {
+        if (!this.stats.canLaunch(DimensionManager.getInstance()
+                .getDimensionProperties(this.world.provider.getDimension())
+                .getGravitationalMultiplier())) {
             setError("error.rocket.tooHeavy");
             return; // hard stop; no silent fall-through
         }
@@ -2874,6 +2878,16 @@ public class EntityRocket extends EntityRocketBase implements INetworkEntity, IM
     /**
      * Damages the ground beneath the rocket, depending on block type
      */
+    /**
+     * Radius, in blocks, of the ground the exhaust scorches. The curve is empirical and was fitted
+     * against the pre-3.0.0 dimensionless thrust rating, so thrust is normalised back into that
+     * rating before the exponent is applied — feeding it raw newtons would scorch hundreds of
+     * blocks for an ordinary rocket.
+     */
+    private int scorchRadius() {
+        return (int) Math.pow(stats.getThrust() / StatsRocket.THRUST_RATING_UNIT_NEWTONS, 0.4);
+    }
+
     private void damageGroundBelowRocket(World world, int x, int y, int z, int radius) {
         //Start on the same level as the bottom of the rocket
         BlockPos center = new BlockPos(x - 1, y, z);

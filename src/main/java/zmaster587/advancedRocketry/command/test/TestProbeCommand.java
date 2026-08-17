@@ -1921,6 +1921,40 @@ public class TestProbeCommand extends CommandBase {
             send(sender, jsonMap(m));
             return;
         }
+        // deck-support [<dim> <entityId>] - READ-ONLY. The numbers the deck-support decision is made
+        // on: the `standing` count the capture path compares, the probe reach it used, where the
+        // body's feet sit relative to the highest box the probe found (positive = the body has sunk
+        // PAST it, so it can never count as support), and both vertical rates in blocks per game tick.
+        //
+        // Exists because support is a THRESHOLD and captured/not-captured cannot tell "the deck held"
+        // from "the body was never near the deck". A scenario that asserts only the outcome is
+        // measuring its own arrangement; these are that threshold's inputs.
+        if (args.length >= 1 && "deck-support".equalsIgnoreCase(args[0])) {
+            net.minecraft.entity.Entity subject;
+            if (args.length >= 3) {
+                net.minecraft.world.WorldServer w = vsWorld(sender, parseIntOr(args[1], Integer.MIN_VALUE));
+                subject = w == null ? null : w.getEntityByID(parseIntOr(args[2], -1));
+            } else {
+                java.util.List<EntityPlayerMP> ps = sender.getServer() == null
+                        ? java.util.Collections.<EntityPlayerMP>emptyList()
+                        : sender.getServer().getPlayerList().getPlayers();
+                subject = ps.isEmpty() ? null : ps.get(0);
+            }
+            if (subject == null) {
+                send(sender, "{\"error\":\"entity not found\"}");
+                return;
+            }
+            if (!(subject instanceof net.minecraft.entity.EntityLivingBase)) {
+                send(sender, "{\"error\":\"not a living entity\"}");
+                return;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ok", true);
+            m.putAll(zmaster587.advancedRocketry.integration.vs.ShipFrameTravel.explainDeckSupport(
+                    (net.minecraft.entity.EntityLivingBase) subject));
+            send(sender, jsonMap(m));
+            return;
+        }
         // subspace-census [<dim> <entityId>] - READ-ONLY. What the SERVER world holds at the subject's
         // position mapped into its ship's subspace: chunk loaded, non-air block count, collision boxes.
         // The server-side control for the client's per-tick census statics (ShipFrameTravel.census*):
@@ -6061,7 +6095,7 @@ public class TestProbeCommand extends CommandBase {
             }
             info.put("fuel", fuel);
             info.put("thrust", rocket.stats.getThrust());
-            info.put("weight_no_fuel", rocket.stats.getWeight_NoFuel());
+            info.put("dry_mass_kg", rocket.stats.getDryMass());
             info.put("breakingProb", rocket.storage.getBreakingProbability());
             // expose stats fields that aggregate per-block
             // contributions during scanRocket. drillingPower sums every
@@ -15851,17 +15885,16 @@ public class TestProbeCommand extends CommandBase {
      * {@code /artest weight ...} — probes the {@link zmaster587.advancedRocketry.util.WeightEngine}.
      * Verbs:
      *   reset                         — restore default tables + scales (test isolation)
-     *   item <registry-id> [count]    — resolved weight of an ItemStack
-     *   fluid <fluid-name> <amount>   — resolved weight of a FluidStack-equivalent
-     *   set <registry-id> <weight>    — register an individual override
-     *   set-regex <pattern> <weight>  — register a regex rule
-     *   material-scale <value>        — set ARConfiguration.weightMaterialScale
+     *   item <registry-id> [count]    — resolved mass (kg) of an ItemStack
+     *   fluid <fluid-name> <amount>   — resolved mass (kg) of a FluidStack-equivalent
+     *   set <registry-id> <mass>      — register an individual override
+     *   set-regex <pattern> <mass>    — register a regex rule
      *   fuel-scale <value>            — set ARConfiguration.fuelMassScale
      */
     private void handleWeight(ICommandSender sender, String[] args) {
         zmaster587.advancedRocketry.util.WeightEngine we = zmaster587.advancedRocketry.util.WeightEngine.INSTANCE;
         if (args.length == 0) {
-            send(sender, "{\"error\":\"unknown weight subcommand — try reset|item|fluid|set|set-regex|material-scale|fuel-scale\"}");
+            send(sender, "{\"error\":\"unknown weight subcommand — try reset|item|fluid|set|set-regex|fuel-scale\"}");
             return;
         }
         Map<String, Object> info = new LinkedHashMap<>();
@@ -15869,7 +15902,6 @@ public class TestProbeCommand extends CommandBase {
         switch (verb) {
             case "reset":
                 we.resetTables();
-                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = 1.0;
                 zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = 1.0;
                 info.put("reset", true);
                 info.put("materialCount", we.materialCount());
@@ -15908,11 +15940,6 @@ public class TestProbeCommand extends CommandBase {
                 we.setRegex(args[1], Double.parseDouble(args[2]));
                 info.put("regex", args[1]);
                 info.put("value", Double.parseDouble(args[2]));
-                break;
-            case "material-scale":
-                zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().weightMaterialScale = Double.parseDouble(args[1]);
-                we.clearResolveCache();
-                info.put("materialScale", Double.parseDouble(args[1]));
                 break;
             case "fuel-scale":
                 zmaster587.advancedRocketry.api.ARConfiguration.getCurrentConfig().fuelMassScale = Double.parseDouble(args[1]);

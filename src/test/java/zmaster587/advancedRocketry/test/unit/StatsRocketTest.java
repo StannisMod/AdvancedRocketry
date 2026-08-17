@@ -47,7 +47,7 @@ public class StatsRocketTest {
     private static StatsRocket sample() {
         StatsRocket stats = new StatsRocket();
         stats.setThrust(12345);
-        stats.setWeight(987.5f);
+        stats.setMass(987.5f);
         stats.setDrillingPower(0.75f);
         stats.setFuelFluid("ar:test_fuel");
         stats.setOxidizerFluid("ar:test_ox");
@@ -78,7 +78,7 @@ public class StatsRocketTest {
         restored.readFromNBT(nbt);
 
         assertEquals(original.getThrust(), restored.getThrust());
-        assertEquals(original.getWeight_NoFuel(), restored.getWeight_NoFuel(), 1e-6);
+        assertEquals(original.getDryMass(), restored.getDryMass(), 1e-6);
         assertEquals(original.getDrillingPower(), restored.getDrillingPower(), 1e-6);
         assertEquals(original.getFuelFluid(), restored.getFuelFluid());
         assertEquals(original.getOxidizerFluid(), restored.getOxidizerFluid());
@@ -266,7 +266,7 @@ public class StatsRocketTest {
     public void rocketStatsBackwardCompatibleWithOldNbt() {
         NBTTagCompound stats = new NBTTagCompound();
         stats.setInteger("thrust", 999);
-        stats.setFloat("weight", 12.5f);
+        stats.setFloat("mass", 12.5f);
         stats.setString("fuelFluid", "ar:legacy_fuel");
         stats.setInteger("fuelMonopropellant", 250);
         // Intentionally omit: bipropellant / oxidizer / nuclear / ion / warp /
@@ -280,7 +280,7 @@ public class StatsRocketTest {
         restored.readFromNBT(outer);
 
         assertEquals(999, restored.getThrust());
-        assertEquals(12.5f, restored.getWeight_NoFuel(), 1e-6);
+        assertEquals(12.5f, restored.getDryMass(), 1e-6);
         assertEquals("ar:legacy_fuel", restored.getFuelFluid());
         assertEquals(250, restored.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT));
         // Missing keys default to zero — no NPE, no exception.
@@ -308,38 +308,100 @@ public class StatsRocketTest {
     }
 
     @Test
-    public void accelerationOnWeightlessRocketIsZeroNotInfinite() {
-        // getAcceleration divides by weight; a zero-weight rocket must not yield
+    public void accelerationOnMasslessRocketIsZeroNotInfinite() {
+        // getAcceleration divides by mass; a massless rocket must not yield
         // NaN/Infinity (which would propagate into motion and the assembler GUI).
         StatsRocket stats = new StatsRocket();
         stats.setThrust(100);
-        stats.setWeight(0f);
+        stats.setMass(0f);
 
         float a = stats.getAcceleration(1f);
         assertEquals(0f, a, 0f);
-        assertEquals(0f, stats.getThrustToWeightRatio(), 0f);
+        assertEquals(0f, stats.getThrustToWeightRatio(1f), 0f);
 
-        // With the weight system ENABLED a weightless rocket (TWR 0) is refused.
+        // With the weight system ENABLED a massless rocket (TWR 0) is refused.
         // (The TWR launch gate only applies when advancedWeightSystem is on.)
         boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
         try {
             ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
-            assertFalse(stats.canLaunch());
+            assertFalse(stats.canLaunch(1f));
         } finally {
             ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
         }
     }
 
     @Test
-    public void thrustToWeightRatioIsThrustOverWeight() {
+    public void thrustToWeightRatioIsThrustOverLocalWeight() {
+        // Contract: thrust is a force in newtons and mass is a mass in kilograms, so the ratio is
+        // thrust over the LOCAL weight (mass * g * gravityMultiplier) — never over the mass.
         boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
         boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
         try {
-            ARConfiguration.getCurrentConfig().advancedWeightSystem = false; // getWeight() == dry weight
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false; // getMass() == dry mass
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = true;
+
             StatsRocket stats = new StatsRocket();
-            stats.setThrust(200);
-            stats.setWeight(100f);
-            assertEquals(2.0f, stats.getThrustToWeightRatio(), 1e-6);
+            stats.setMass(100f);
+            stats.setThrust(Math.round(2f * 100f * StatsRocket.STANDARD_GRAVITY)); // twice its earth weight
+
+            assertEquals("thrust of twice the earth weight is TWR 2 at one gee",
+                    2.0f, stats.getThrustToWeightRatio(1f), 1e-3);
+            assertEquals("the same rocket has twice the TWR at half the gravity",
+                    4.0f, stats.getThrustToWeightRatio(0.5f), 1e-3);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void launchGateFollowsLocalGravityNotEarthGravity() {
+        // A rocket that cannot leave Earth can still leave a light moon, and the gate has to agree
+        // with the flight model about which body it stands on. The gate used to compare thrust
+        // against the mass alone, so it gave the same verdict on every world.
+        double prevTWR = ARConfiguration.getCurrentConfig().minLaunchTWR;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = true;
+            ARConfiguration.getCurrentConfig().minLaunchTWR = 1.05;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setMass(1000f);
+            // Half of what it takes to hover on Earth — but three times what one sixth gee asks.
+            stats.setThrust(Math.round(0.5f * 1000f * StatsRocket.STANDARD_GRAVITY));
+
+            assertFalse("cannot lift itself at one gee", stats.canLaunch(1f));
+            assertTrue("the same rocket clears the gate at one sixth gee", stats.canLaunch(1f / 6f));
+            assertTrue("net climb must agree with the gate on the light body",
+                    stats.getAcceleration(1f / 6f) > 0);
+            assertTrue("net climb must agree with the gate at one gee",
+                    stats.getAcceleration(1f) < 0);
+        } finally {
+            ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void gravityMayBeDetachedFromTheModelEntirely() {
+        // Disableability: with gravityAffectsFuel off, BOTH the gate and the flight model pin
+        // themselves to one gee, so no world is easier or harder to leave than another.
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = false;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setMass(100f);
+            stats.setThrust(Math.round(2f * 100f * StatsRocket.STANDARD_GRAVITY));
+
+            assertEquals("gravity is ignored, so a light world reads the same as earth",
+                    stats.getThrustToWeightRatio(1f), stats.getThrustToWeightRatio(0.1f), 1e-6);
+            assertEquals(stats.getAcceleration(1f), stats.getAcceleration(0.1f), 1e-9);
         } finally {
             ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
             ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
@@ -358,16 +420,17 @@ public class StatsRocketTest {
             ARConfiguration.getCurrentConfig().minLaunchTWR = 1.5;
 
             StatsRocket stats = new StatsRocket();
-            stats.setWeight(100f);
+            stats.setMass(100f);
+            float earthWeight = 100f * StatsRocket.STANDARD_GRAVITY;
 
-            stats.setThrust(160); // TWR 1.6 >= 1.5
-            assertTrue("TWR above the threshold must allow launch", stats.canLaunch());
+            stats.setThrust(Math.round(1.6f * earthWeight)); // TWR 1.6 >= 1.5
+            assertTrue("TWR above the threshold must allow launch", stats.canLaunch(1f));
 
-            stats.setThrust(140); // TWR 1.4 < 1.5
-            assertFalse("TWR below the threshold must block launch", stats.canLaunch());
+            stats.setThrust(Math.round(1.4f * earthWeight)); // TWR 1.4 < 1.5
+            assertFalse("TWR below the threshold must block launch", stats.canLaunch(1f));
 
-            stats.setThrust(150); // TWR exactly 1.5 — boundary is inclusive
-            assertTrue("TWR exactly at the threshold must allow launch", stats.canLaunch());
+            stats.setThrust((int) Math.ceil(1.5f * earthWeight)); // boundary is inclusive
+            assertTrue("TWR exactly at the threshold must allow launch", stats.canLaunch(1f));
         } finally {
             ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
             ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
@@ -387,16 +450,16 @@ public class StatsRocketTest {
             ARConfiguration.getCurrentConfig().minLaunchTWR = 1.5;
 
             StatsRocket underweight = new StatsRocket();
-            underweight.setWeight(100f);
-            underweight.setThrust(10); // TWR 0.1 — far below the 1.5 gate
+            underweight.setMass(100f);
+            underweight.setThrust(98); // TWR 0.1 — far below the 1.5 gate
 
             ARConfiguration.getCurrentConfig().advancedWeightSystem = true;
             assertFalse("sanity: the gate rejects this rocket while the system is on",
-                    underweight.canLaunch());
+                    underweight.canLaunch(1f));
 
             ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
             assertTrue("with the weight system disabled the TWR gate must not block launch",
-                    underweight.canLaunch());
+                    underweight.canLaunch(1f));
         } finally {
             ARConfiguration.getCurrentConfig().minLaunchTWR = prevTWR;
             ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
@@ -412,21 +475,22 @@ public class StatsRocketTest {
             ARConfiguration.getCurrentConfig().gravityAffectsFuel = false;
 
             StatsRocket stats = new StatsRocket();
-            stats.setWeight(100f); // dry weight
+            stats.setMass(100f); // dry mass, kg
+            float earthWeight = 100f * StatsRocket.STANDARD_GRAVITY;
 
             // Contract: the sign follows the net force (thrust vs dry weight),
             // and more thrust accelerates harder. The exact scaling constant is
             // an implementation detail.
-            stats.setThrust(100); // thrust == counter-gravity weight -> no net force
+            stats.setThrust(Math.round(earthWeight)); // thrust == weight -> no net force
             assertEquals(0f, stats.getDryAcceleration(1f), 1e-6);
 
-            stats.setThrust(300);
-            float a300 = stats.getDryAcceleration(1f);
-            assertTrue("thrust above dry weight must give positive dry acceleration", a300 > 0);
+            stats.setThrust(Math.round(3f * earthWeight));
+            float a3 = stats.getDryAcceleration(1f);
+            assertTrue("thrust above dry weight must give positive dry acceleration", a3 > 0);
 
-            stats.setThrust(600);
+            stats.setThrust(Math.round(6f * earthWeight));
             assertTrue("more thrust must accelerate the dry rocket harder",
-                    stats.getDryAcceleration(1f) > a300);
+                    stats.getDryAcceleration(1f) > a3);
         } finally {
             ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
             ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
@@ -434,10 +498,78 @@ public class StatsRocketTest {
     }
 
     @Test
+    public void accelerationDependsOnlyOnTheThrustToWeightRatio() {
+        // Dimensional homogeneity: scale mass and thrust by the same factor and the flight model
+        // does not move. This is the property that let the tables be redenominated into kilograms
+        // and newtons without re-balancing anything, and it is what an absolute constant sneaking
+        // into the formula would break.
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = true;
+
+            StatsRocket small = new StatsRocket();
+            small.setMass(250f);
+            small.setThrust(4000);
+
+            StatsRocket large = new StatsRocket();
+            large.setMass(250f * 37f);
+            large.setThrust(4000 * 37);
+
+            for (float g : new float[] {0.25f, 1f, 2.5f}) {
+                assertEquals("TWR must be scale-free at g=" + g,
+                        small.getThrustToWeightRatio(g), large.getThrustToWeightRatio(g), 1e-4);
+                assertEquals("net climb must be scale-free at g=" + g,
+                        small.getAcceleration(g), large.getAcceleration(g), 1e-6);
+            }
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void oneBasicMotorExactlyHoldsAHundredOrdinaryBlocks() {
+        // The calibration anchor between the two tables. An ordinary block is 500 kg and a basic
+        // rocket motor is rated 490_500 N, so one motor holds a hundred-block hull at one gee and
+        // no more. Both numbers are player-facing balance: if either table is edited without the
+        // other, every rocket in the pack changes what it can lift, and this is the test that
+        // notices.
+        boolean prevWeightSys = ARConfiguration.getCurrentConfig().advancedWeightSystem;
+        boolean prevGravity = ARConfiguration.getCurrentConfig().gravityAffectsFuel;
+        try {
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = false;
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = true;
+
+            StatsRocket stats = new StatsRocket();
+            stats.setMass(100 * 500f);
+            stats.setThrust(490_500);
+
+            assertEquals("one motor per hundred ordinary blocks is exactly TWR 1",
+                    1.0f, stats.getThrustToWeightRatio(1f), 1e-4);
+            assertEquals("at TWR 1 the rocket hovers and climbs nowhere",
+                    0f, stats.getAcceleration(1f), 1e-6);
+        } finally {
+            ARConfiguration.getCurrentConfig().gravityAffectsFuel = prevGravity;
+            ARConfiguration.getCurrentConfig().advancedWeightSystem = prevWeightSys;
+        }
+    }
+
+    @Test
+    public void thrustSaturatesInsteadOfWrapping() {
+        // The scan paths sum a per-engine rating in newtons, which overflows int on a large hull;
+        // a wrapped total would read as a NEGATIVE thrust and silently ground the rocket.
+        StatsRocket stats = new StatsRocket();
+        stats.setThrust(3L * Integer.MAX_VALUE);
+        assertEquals(Integer.MAX_VALUE, stats.getThrust());
+    }
+
+    @Test
     public void copyProducesIndependentInstance() {
         StatsRocket original = new StatsRocket();
         original.setThrust(500);
-        original.setWeight(50f);
+        original.setMass(50f);
         original.setFuelCapacity(FuelType.LIQUID_MONOPROPELLANT, 1000);
         original.setFuelAmount(FuelType.LIQUID_MONOPROPELLANT, 800);
 
@@ -445,9 +577,9 @@ public class StatsRocketTest {
 
         // Mutating original must not leak into the copy.
         original.setFuelAmount(FuelType.LIQUID_MONOPROPELLANT, 100);
-        original.setWeight(999f);
+        original.setMass(999f);
 
         assertEquals(800, copy.getFuelAmount(FuelType.LIQUID_MONOPROPELLANT));
-        assertEquals(50f, copy.getWeight_NoFuel(), 1e-6);
+        assertEquals(50f, copy.getDryMass(), 1e-6);
     }
 }

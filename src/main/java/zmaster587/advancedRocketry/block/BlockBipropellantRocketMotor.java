@@ -43,9 +43,10 @@ public class BlockBipropellantRocketMotor extends BlockFullyRotatable implements
         return false;
     }
 
+    /** Rated thrust, newtons. */
     @Override
     public int getThrust(World world, BlockPos pos) {
-        return 10;
+        return 490_500;
     }
 
     @Override
