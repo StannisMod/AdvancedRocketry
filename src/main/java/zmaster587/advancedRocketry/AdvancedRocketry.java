@@ -742,7 +742,8 @@ public class AdvancedRocketry {
                 .setUnlocalizedName("gunBarrel").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockGunAmmoFeed = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
                 builder -> builder.speedUpFireIntervalBy(3).addImpactEnergy(6).addEnergyPerShot(75)
-                        .addHeatPerShot(2))
+                        .addHeatPerShot(2)
+                        .declareInput(zmaster587.advancedRocketry.api.weapon.GunInput.FORGE_ENERGY))
                 .setUnlocalizedName("gunAmmoFeed").setCreativeTab(tabAdvRocketry);
         AdvancedRocketryBlocks.blockGunCooling = new zmaster587.advancedRocketry.block.weapon.BlockGunPart(
                 builder -> builder.addHeatCapacity(40).addCoolingPerTick(2).addTraverseDegreesPerTick(0.5D))

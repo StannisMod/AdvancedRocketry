@@ -399,6 +399,7 @@ public class TestProbeCommand extends CommandBase {
         }
         if ("cleartarget".equals(sub)) {
             turret.setTarget(null);
+            turret.setTargetEntity(null);
             send(sender, "{\"ok\":true}");
             return;
         }
@@ -411,6 +412,36 @@ public class TestProbeCommand extends CommandBase {
             turret.setDriveState(zmaster587.advancedRocketry.api.weapon.TurretDriveState
                     .valueOf(args[5].toUpperCase(java.util.Locale.ROOT)));
             send(sender, "{\"ok\":true,\"drive\":\"" + turret.getMechanism().getDriveState().name() + "\"}");
+            return;
+        }
+        if ("target-player".equals(sub) && args.length >= 6) {
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            turret.setTargetEntity(player.getUniqueID());
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            turret.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"code\":\"" + escapeJson(turret.getEffectiveAccessCode()) + "\"}");
+            return;
+        }
+        if ("manual".equals(sub) && args.length >= 6) {
+            turret.setManualControl(Boolean.parseBoolean(args[5]));
+            send(sender, "{\"ok\":true,\"manual\":" + turret.isManuallyControlled() + "}");
+            return;
+        }
+        if ("bearing".equals(sub) && args.length >= 7) {
+            turret.commandManualBearing(parseDoubleOr(args[5], 0), parseDoubleOr(args[6], 0));
+            send(sender, "{\"ok\":true}");
+            return;
+        }
+        if ("fire".equals(sub)) {
+            send(sender, "{\"ok\":true,\"fired\":" + turret.fireOnce() + "}");
             return;
         }
         if ("read".equals(sub)) {
@@ -436,6 +467,10 @@ public class TestProbeCommand extends CommandBase {
                     + ",\"drive\":\"" + mount.getDriveState().name() + "\""
                     + ",\"shots\":" + turret.getShotsFired()
                     + ",\"lastShot\":" + turret.getLastShotId()
+                    + ",\"trackingEntity\":" + (turret.getTargetEntity() != null)
+                    + ",\"code\":\"" + escapeJson(turret.getEffectiveAccessCode()) + "\""
+                    + ",\"manual\":" + turret.isManuallyControlled()
+                    + ",\"inputs\":\"" + escapeJson(spec.getDeclaredInputs().toString()) + "\""
                     + ",\"hasTarget\":" + (target != null)
                     + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
                             + ",\"targetZ\":" + target.z)
@@ -496,13 +531,34 @@ public class TestProbeCommand extends CommandBase {
                     + console.isHoldFire() + "}");
             return;
         }
+        if ("target-player".equals(sub) && args.length >= 6) {
+            net.minecraft.entity.player.EntityPlayerMP player =
+                    server.getPlayerList().getPlayerByUsername(args[5]);
+            if (player == null) {
+                send(sender, jsonError("no such player"));
+                return;
+            }
+            send(sender, "{\"ok\":true,\"applied\":"
+                    + console.assignTargetEntity(player.getUniqueID()) + "}");
+            return;
+        }
+        if ("code".equals(sub)) {
+            boolean applied = console.setAccessCode(args.length >= 6 ? args[5] : "");
+            send(sender, "{\"ok\":true,\"applied\":" + applied + ",\"code\":\""
+                    + escapeJson(console.getAccessCode()) + "\"}");
+            return;
+        }
         if ("read".equals(sub)) {
             net.minecraft.util.math.Vec3d target = console.getTarget();
             send(sender, "{\"ok\":true"
                     + ",\"network\":" + (console.network() != null)
                     + ",\"status\":\"" + escapeJson(console.getNetworkStatusText()) + "\""
                     + ",\"guns\":" + console.getGunCount()
+                    + ",\"onTarget\":" + console.getMountTelemetry()[0]
+                    + ",\"saturated\":" + console.getMountTelemetry()[1]
                     + ",\"holdFire\":" + console.isHoldFire()
+                    + ",\"code\":\"" + escapeJson(console.getAccessCode()) + "\""
+                    + ",\"trackingEntity\":" + (console.getTargetEntity() != null)
                     + ",\"hasTarget\":" + (target != null)
                     + (target == null ? "" : ",\"targetX\":" + target.x + ",\"targetY\":" + target.y
                             + ",\"targetZ\":" + target.z)
@@ -510,6 +566,11 @@ public class TestProbeCommand extends CommandBase {
             return;
         }
         send(sender, "{\"error\":\"unknown weaponconsole subcommand\",\"sub\":\"" + escapeJson(sub) + "\"}");
+    }
+
+    /** One-line error payload, so a new verb does not hand-build JSON and get a quote wrong. */
+    private static String jsonError(String message) {
+        return "{\"error\":\"" + escapeJson(message) + "\"}";
     }
 
     private static String shotJson(zmaster587.advancedRocketry.projectile.Shot shot) {

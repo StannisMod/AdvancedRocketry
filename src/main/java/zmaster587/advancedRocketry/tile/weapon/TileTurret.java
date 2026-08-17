@@ -1,5 +1,6 @@
 package zmaster587.advancedRocketry.tile.weapon;
 
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.block.state.IBlockState;
@@ -12,6 +13,7 @@ import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.energy.EnergyStorage;
@@ -70,11 +72,14 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
     private GunSpec spec = GunSpec.EMPTY;
     private int assemblyReach;
     private boolean assemblyDirty = true;
+    private boolean manualControl;
     private int fireCooldown;
     private int heat;
     private boolean registered;
 
     private Vec3d localTarget;
+    private UUID localTargetEntity;
+    private String accessCode = "";
     private String faction;
     private UUID owner;
 
@@ -132,6 +137,14 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
             fireCooldown--;
         }
 
+        if (manualControl) {
+            // Under a hand: the mount obeys the bearing it was given and nothing chooses a target
+            // for it. Firing is a separate, deliberate act — see fireOnce.
+            mechanism.tick(spec.getTraverseDegreesPerTick());
+            syncCommandIfChanged();
+            return;
+        }
+
         Vec3d target = getEffectiveTarget();
         if (target == null) {
             mechanism.clearCommand();
@@ -151,21 +164,75 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
             return;
         }
 
+        launch(shipId);
+    }
+
+    /**
+     * Send one round down the current bearing and answer whether it left, spending nothing unless it
+     * did. Extracted so the automatic path and the manual one cannot drift apart: a manned gun that
+     * skipped the heat or the cooldown would be strictly better than the same gun on a console,
+     * which is a balance decision nobody made.
+     */
+    private boolean launch(String shipId) {
+        String stamped = faction != null ? faction : getEffectiveAccessCode();
         long id = TurretFireControl.fire(world, pos, shipId, mechanism.getAimDirection(), spec,
-                assemblyReach, owner, faction, random);
-        if (id >= 0L) {
-            lastShotId = id;
-            shotsFired++;
-            fireCooldown = spec.getFireIntervalTicks();
-            heat += spec.getHeatPerShot();
-            energy.extractEnergy(spec.getEnergyPerShot(), false);
-            markDirty();
+                assemblyReach, owner, stamped, random);
+        if (id < 0L) {
+            return false;
         }
+        lastShotId = id;
+        shotsFired++;
+        fireCooldown = spec.getFireIntervalTicks();
+        heat += spec.getHeatPerShot();
+        energy.extractEnergy(spec.getEnergyPerShot(), false);
+        markDirty();
+        return true;
+    }
+
+    // ---- the manual seam: present at the API, driven by nothing that ships today
+
+    /**
+     * Take the gun out of automatic control, or give it back.
+     *
+     * <p>The seat, the first-person view and the trigger are a later wave; what is here is the part
+     * that has to exist for them not to be a rewrite — a mode in which nothing assigns a target, the
+     * mount obeys a bearing it is handed, and firing is an explicit act. A gun left in manual with
+     * nobody driving it simply holds still, which is the correct behaviour for an abandoned seat.</p>
+     */
+    public void setManualControl(boolean manual) {
+        this.manualControl = manual;
+        if (manual) {
+            mechanism.clearCommand();
+        }
+        markDirty();
+    }
+
+    public boolean isManuallyControlled() {
+        return manualControl;
+    }
+
+    /** Point the mount by hand. Ignored unless the gun is in manual control. */
+    public void commandManualBearing(double yaw, double pitch) {
+        if (manualControl) {
+            mechanism.commandBearing(yaw, pitch);
+        }
+    }
+
+    /**
+     * Pull the trigger once. Answers whether a round left — the same conditions the automatic path
+     * checks apply, including friend-or-foe, heat, charge and the line of fire.
+     */
+    public boolean fireOnce() {
+        if (world == null || world.isRemote || !manualControl || !canFireNow()) {
+            return false;
+        }
+        return launch(TurretFireControl.shipIdAt(world, pos));
     }
 
     /** Everything that must be true before a round leaves, other than pointing the right way. */
     private boolean canFireNow() {
-        return spec.isOperable()
+        return !targetIsFriendly()
+                && spec.isOperable()
                 && mechanism.getDriveState().permitsFiring()
                 && fireCooldown <= 0
                 && heat + spec.getHeatPerShot() <= spec.getHeatCapacity()
@@ -178,11 +245,61 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
      * battery" means — and its silence is not an instruction to stop.
      */
     public Vec3d getEffectiveTarget() {
+        Entity tracked = trackedEntity();
+        if (tracked != null) {
+            // Aim at the middle of the body rather than its feet: a round at foot height passes
+            // under everything that is not standing on flat ground.
+            return tracked.getPositionVector().addVector(0.0D, tracked.height * 0.5D, 0.0D);
+        }
         WeaponNetworkState state = networkState();
         if (state != null && state.getTarget() != null) {
             return state.getTarget();
         }
         return localTarget;
+    }
+
+    /**
+     * The entity this gun is following, or null. The network's order wins over the gun's own, the
+     * same way a point target does; a target that has died or logged out simply stops being found,
+     * which leaves the gun holding its bearing rather than swinging to a remembered position.
+     */
+    private Entity trackedEntity() {
+        UUID id = null;
+        WeaponNetworkState state = networkState();
+        if (state != null && state.getTargetEntity() != null) {
+            id = state.getTargetEntity();
+        } else if (localTargetEntity != null) {
+            id = localTargetEntity;
+        }
+        if (id == null || !(world instanceof WorldServer)) {
+            return null;
+        }
+        Entity entity = ((WorldServer) world).getEntityFromUuid(id);
+        return entity == null || entity.isDead ? null : entity;
+    }
+
+    /**
+     * Whether the thing this gun is pointed at has proved it is on our side.
+     *
+     * <p>The credential is carried by the TARGET, not held about it: an entity presenting the
+     * installation's access code is a friend for exactly as long as it carries it, and nothing here
+     * keeps a list of who is friendly. A gun with no code set recognises nobody — deliberately, since
+     * a battery that shoots nothing is indistinguishable from a broken one.</p>
+     */
+    private boolean targetIsFriendly() {
+        Entity tracked = trackedEntity();
+        return tracked != null
+                && com.github.stannismod.affs.util.CodeUtils.entityHasMatchingCode(tracked,
+                        getEffectiveAccessCode());
+    }
+
+    /** The network's code when it has one, otherwise this gun's own. */
+    public String getEffectiveAccessCode() {
+        WeaponNetworkState state = networkState();
+        if (state != null && !state.getAccessCode().isEmpty()) {
+            return state.getAccessCode();
+        }
+        return accessCode;
     }
 
     private boolean isHoldingFire() {
@@ -229,6 +346,22 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
 
     public Vec3d getTarget() {
         return localTarget;
+    }
+
+    /** Follow an entity. Cleared with null; a point target set later replaces it. */
+    public void setTargetEntity(UUID entity) {
+        this.localTargetEntity = entity;
+        markDirty();
+    }
+
+    public UUID getTargetEntity() {
+        return localTargetEntity;
+    }
+
+    /** This gun's own access code, used when it is on no network or the network has none. */
+    public void setAccessCode(String code) {
+        this.accessCode = code == null ? "" : code;
+        markDirty();
     }
 
     public GunSpec getSpec() {
@@ -467,6 +600,11 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
         if (faction != null) {
             nbt.setString("faction", faction);
         }
+        if (localTargetEntity != null) {
+            nbt.setUniqueId("targetEntity", localTargetEntity);
+        }
+        nbt.setString("accessCode", accessCode);
+        nbt.setBoolean("manual", manualControl);
         if (owner != null) {
             nbt.setUniqueId("owner", owner);
         }
@@ -488,6 +626,9 @@ public class TileTurret extends TileEntity implements ITickable, ISubsystemSink,
                 ? new Vec3d(nbt.getDouble("targetX"), nbt.getDouble("targetY"), nbt.getDouble("targetZ"))
                 : null;
         faction = nbt.hasKey("faction") ? nbt.getString("faction") : null;
+        localTargetEntity = nbt.hasUniqueId("targetEntity") ? nbt.getUniqueId("targetEntity") : null;
+        accessCode = nbt.getString("accessCode");
+        manualControl = nbt.getBoolean("manual");
         owner = nbt.hasUniqueId("owner") ? nbt.getUniqueId("owner") : null;
     }
 }

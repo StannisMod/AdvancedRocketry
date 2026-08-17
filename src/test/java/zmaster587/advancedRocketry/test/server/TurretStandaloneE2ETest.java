@@ -220,6 +220,55 @@ public class TurretStandaloneE2ETest extends AbstractSharedServerTest {
                 + " an address no player can reach: " + inFlight, furthest < 1_000_000.0D);
     }
 
+    /**
+     * The manual seam: a gun under a hand chooses no target, obeys the bearing it is given, and fires
+     * only when told — on exactly the same conditions the automatic path checks.
+     *
+     * <p>This is the half of the manned gun that has to exist for the seat and the first-person view
+     * to be an addition rather than a rewrite. It is pinned now, while there is nothing driving it,
+     * because a seam nobody exercises is a seam that quietly stops working.</p>
+     */
+    @Test
+    public void aGunUnderManualControlIgnoresItsTargetAndFiresOnlyWhenTold() throws Exception {
+        int bx = X + 500;
+        buildSite(bx);
+        buildGun(bx);
+        awaitOperable(bx);
+        exec("artest turret charge 0 " + bx + " " + Y + " " + Z);
+
+        // A target it WOULD engage on its own, so "did not fire" is about the mode.
+        exec("artest turret target 0 " + bx + " " + Y + " " + Z + " " + (bx + 40.5D) + " "
+                + (Y + 0.5D) + " " + (Z + 0.5D));
+        exec("artest turret manual 0 " + bx + " " + Y + " " + Z + " true");
+        Thread.sleep(4_000L);
+
+        String held = read(bx);
+        assertEquals("a gun in manual control fired on an assigned target by itself: " + held, 0,
+                extractInt(held, "shots"));
+        assertTrue("the gun did not enter manual control: " + held, held.contains("\"manual\":true"));
+
+        // It obeys a hand-given bearing...
+        exec("artest turret bearing 0 " + bx + " " + Y + " " + Z + " -90 0");
+        Thread.sleep(3_000L);
+        String aimed = read(bx);
+        assertEquals("the mount ignored the bearing it was handed: " + aimed, -90.0D,
+                readDouble(aimed, "yaw"), 2.0D);
+
+        // ...and fires when the trigger is pulled, once per pull.
+        String shot = exec("artest turret fire 0 " + bx + " " + Y + " " + Z);
+        assertTrue("the trigger did nothing: " + shot + " state: " + read(bx),
+                shot.contains("\"fired\":true"));
+        assertEquals("one pull fired more than one round: " + read(bx), 1,
+                extractInt(read(bx), "shots"));
+
+        // Returning it to automatic re-engages the target it was given.
+        exec("artest turret manual 0 " + bx + " " + Y + " " + Z + " false");
+        exec("artest turret charge 0 " + bx + " " + Y + " " + Z);
+        String resumed = awaitShots(bx, 2);
+        assertTrue("the gun never went back to firing on its own: " + resumed,
+                extractInt(resumed, "shots") >= 2);
+    }
+
     // ---- scenario construction
 
     /**

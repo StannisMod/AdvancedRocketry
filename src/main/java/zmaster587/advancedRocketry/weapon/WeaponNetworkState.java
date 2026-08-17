@@ -19,6 +19,8 @@ import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
 public class WeaponNetworkState extends SubsystemNetworkState {
 
     private Vec3d target;
+    private java.util.UUID targetEntity;
+    private String accessCode = "";
     private boolean holdFire;
 
     /** Where the network's guns are pointed, in WORLD coordinates, or null when nothing is assigned. */
@@ -32,6 +34,34 @@ public class WeaponNetworkState extends SubsystemNetworkState {
 
     public void clearTarget() {
         this.target = null;
+        this.targetEntity = null;
+    }
+
+    /**
+     * The entity every gun on this network is following, or null. Kept beside the point target
+     * rather than replacing it: a battery told to shell a position and a battery told to track a
+     * ship are different orders, and one of them survives the target moving.
+     */
+    public java.util.UUID getTargetEntity() {
+        return targetEntity;
+    }
+
+    public void setTargetEntity(java.util.UUID entity) {
+        this.targetEntity = entity;
+    }
+
+    /**
+     * The network's access code — the credential a target may present to be recognised as friendly.
+     * Empty means "no code set", which recognises nobody: an unarmed default that shoots everything
+     * is safer than one that shoots nothing, because the second is indistinguishable from a broken
+     * gun.
+     */
+    public String getAccessCode() {
+        return accessCode == null ? "" : accessCode;
+    }
+
+    public void setAccessCode(String code) {
+        this.accessCode = code == null ? "" : code;
     }
 
     /** True while the network's guns must track but not shoot. */
@@ -48,6 +78,8 @@ public class WeaponNetworkState extends SubsystemNetworkState {
         WeaponNetworkState copy = new WeaponNetworkState();
         copyInto(copy);
         copy.target = target;
+        copy.targetEntity = targetEntity;
+        copy.accessCode = accessCode;
         copy.holdFire = holdFire;
         return copy;
     }

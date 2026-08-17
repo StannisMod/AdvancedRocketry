@@ -40,6 +40,7 @@ public final class GunSpec {
     private final double projectileMass;
     private final ImpactKind kind;
     private final int partCount;
+    private final java.util.EnumSet<GunInput> inputs;
 
     private GunSpec(Builder builder) {
         this.muzzleSpeed = builder.muzzleSpeed;
@@ -56,6 +57,8 @@ public final class GunSpec {
         this.projectileMass = builder.projectileMass;
         this.kind = builder.kind;
         this.partCount = builder.partCount;
+        this.inputs = java.util.EnumSet.copyOf(builder.inputs.isEmpty()
+                ? java.util.EnumSet.of(GunInput.FORGE_ENERGY) : builder.inputs);
     }
 
     /**
@@ -127,6 +130,14 @@ public final class GunSpec {
         return kind;
     }
 
+    /**
+     * What this build needs delivered to it. Never empty: a gun that declared nothing would be a gun
+     * nothing could be said about, so the floor is Forge Energy — which every build draws anyway.
+     */
+    public java.util.Set<GunInput> getDeclaredInputs() {
+        return java.util.Collections.unmodifiableSet(inputs);
+    }
+
     /** How many parts were counted. Diagnostics, and the "is this thing built" test's raw material. */
     public int getPartCount() {
         return partCount;
@@ -157,6 +168,7 @@ public final class GunSpec {
         private double projectileMass = 1.0D;
         private ImpactKind kind = ImpactKind.KINETIC;
         private int partCount;
+        private final java.util.EnumSet<GunInput> inputs = java.util.EnumSet.noneOf(GunInput.class);
 
         public Builder addMuzzleSpeed(double blocksPerTick) {
             this.muzzleSpeed += Math.max(0.0D, blocksPerTick);
@@ -223,6 +235,17 @@ public final class GunSpec {
         public Builder setKind(ImpactKind kind) {
             if (kind != null) {
                 this.kind = kind;
+            }
+            return this;
+        }
+
+        /**
+         * State that this part needs something delivered. Additive like everything else: a build with
+         * one gas-fed component declares gas, whatever the rest of it wants.
+         */
+        public Builder declareInput(GunInput input) {
+            if (input != null) {
+                this.inputs.add(input);
             }
             return this;
         }

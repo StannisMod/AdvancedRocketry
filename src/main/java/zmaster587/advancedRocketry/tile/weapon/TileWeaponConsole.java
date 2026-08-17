@@ -17,6 +17,7 @@ import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkRegistry;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkState;
 import zmaster587.advancedRocketry.subsystem.network.SubsystemNetworkStatus;
 import zmaster587.advancedRocketry.weapon.TurretFireControl;
+import zmaster587.advancedRocketry.weapon.TurretMechanism;
 import zmaster587.advancedRocketry.weapon.WeaponNetworkDomain;
 import zmaster587.advancedRocketry.weapon.WeaponNetworkState;
 import zmaster587.libVulpes.LibVulpes;
@@ -121,6 +122,40 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
         return true;
     }
 
+    /** Point every gun on this network at an entity, and keep pointing as it moves. */
+    public boolean assignTargetEntity(java.util.UUID entity) {
+        WeaponNetworkState state = network();
+        if (state == null) {
+            return false;
+        }
+        state.setTargetEntity(entity);
+        return true;
+    }
+
+    /**
+     * The credential a target may present to be recognised as friendly. Set on the network rather
+     * than per gun, because "who is on our side" is a property of the installation, and a battery
+     * whose guns disagreed about it would shoot its own crew at random.
+     */
+    public boolean setAccessCode(String code) {
+        WeaponNetworkState state = network();
+        if (state == null) {
+            return false;
+        }
+        state.setAccessCode(code);
+        return true;
+    }
+
+    public String getAccessCode() {
+        WeaponNetworkState state = network();
+        return state == null ? "" : state.getAccessCode();
+    }
+
+    public java.util.UUID getTargetEntity() {
+        WeaponNetworkState state = network();
+        return state == null ? null : state.getTargetEntity();
+    }
+
     public boolean clearTarget() {
         WeaponNetworkState state = network();
         if (state == null) {
@@ -158,6 +193,41 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
     public int getGunCount() {
         WeaponNetworkState state = network();
         return state == null ? 0 : state.getSinkCount();
+    }
+
+    /**
+     * How many of this network's guns are pointing where they were told, and how many are asking for
+     * a bearing they cannot reach.
+     *
+     * <p>Read off the member tiles rather than accumulated into the network state: the mounts already
+     * know, and a second copy updated on a different cadence would be a readout that disagrees with
+     * the guns it describes. A saturated count above zero is the console's answer to "why is nothing
+     * being hit" — the target is outside somebody's arc, which is a fact about the BUILD, not a
+     * fault.</p>
+     *
+     * @return {@code [onTarget, saturated, total]}
+     */
+    public int[] getMountTelemetry() {
+        WeaponNetworkState state = network();
+        int onTarget = 0, saturated = 0, total = 0;
+        if (state == null || world == null) {
+            return new int[] {0, 0, 0};
+        }
+        for (BlockPos member : state.getMemberPositions()) {
+            TileEntity tile = world.getTileEntity(member);
+            if (!(tile instanceof TileTurret)) {
+                continue;
+            }
+            total++;
+            TurretMechanism mount = ((TileTurret) tile).getMechanism();
+            if (mount.isOnTarget()) {
+                onTarget++;
+            }
+            if (mount.isSaturated()) {
+                saturated++;
+            }
+        }
+        return new int[] {onTarget, saturated, total};
     }
 
     public String getNetworkStatusText() {
@@ -224,7 +294,9 @@ public class TileWeaponConsole extends TileEntity implements ITickable, ISubsyst
     }
 
     private String gunLine() {
-        return "Guns: " + getGunCount();
+        int[] mounts = getMountTelemetry();
+        return "Guns: " + getGunCount() + "  on target: " + mounts[0]
+                + (mounts[1] > 0 ? "  out of arc: " + mounts[1] : "");
     }
 
     private String targetLine() {
